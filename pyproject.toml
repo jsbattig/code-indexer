@@ -77,9 +77,14 @@ warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
 ignore_missing_imports = true
+no_site_packages = true
 
 [[tool.mypy.overrides]]
 module = "pydantic.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "pydantic._internal.*"
 ignore_errors = true
 
 [tool.pytest.ini_options]
