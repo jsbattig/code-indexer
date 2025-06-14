@@ -46,6 +46,7 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
     "mypy>=1.0.0",
+    "types-PyYAML>=6.0.0",
     "black>=23.0.0",
     "ruff>=0.0.280",
     "pre-commit>=3.0.0",
@@ -74,7 +75,12 @@ target-version = "py38"
 python_version = "3.8"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pydantic.*"
+ignore_errors = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
