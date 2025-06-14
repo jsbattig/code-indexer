@@ -1,0 +1,97 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Code Indexer specific
+.code-indexer/ollama/        # Exclude Ollama models (environment-specific)
+.code-indexer/metadata.json  # Exclude metadata (regenerated)
+docker-compose.yml
+*.log
+
+# Ollama models and data (large binary files)
+ollama-models/
+*.blob
+*.model
+*.gguf
+
+# Old bash scripts (replaced by Python)
+scripts/
+code-index
+debug*.sh
+config/
+PODMAN_SETUP.md
+code-indexing-structure.md
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+
+# Test project databases
+tests/projects/*/data/
+tests/projects/*/.code-indexer/
+tests/projects/*/docker-compose.yml
