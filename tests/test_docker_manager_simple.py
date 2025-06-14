@@ -20,11 +20,17 @@ class TestDockerManager(unittest.TestCase):
 
     def setUp(self):
         """Set up for each test."""
-        self.original_cwd = os.getcwd()
+        # Use absolute path instead of os.getcwd() to avoid FileNotFoundError
+        self.original_cwd = str(Path(__file__).parent.parent.absolute())
 
     def tearDown(self):
         """Clean up after each test."""
-        os.chdir(self.original_cwd)
+        # Return to original directory if it exists
+        try:
+            if os.path.exists(self.original_cwd):
+                os.chdir(self.original_cwd)
+        except Exception as e:
+            print(f"Error returning to original directory: {e}")
 
     def test_project_name_detection_from_folder(self):
         """Test project name detection from current folder name."""

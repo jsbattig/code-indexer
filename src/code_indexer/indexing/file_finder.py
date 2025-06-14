@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Dict
 import pathspec
 
 from ..config import Config
@@ -201,7 +201,7 @@ class FileFinder:
         """Get statistics about discoverable files."""
         total_files = 0
         total_size = 0
-        extensions = {}
+        extensions: Dict[str, int] = {}
 
         for file_path in self.find_files():
             total_files += 1

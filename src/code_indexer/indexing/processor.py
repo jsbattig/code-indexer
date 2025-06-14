@@ -2,7 +2,7 @@
 
 import time
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 from dataclasses import dataclass
 
 from ..config import Config
@@ -87,7 +87,7 @@ class DocumentProcessor:
         self,
         files: List[Path],
         batch_size: int = 50,
-        progress_callback: Optional[callable] = None,
+        progress_callback: Optional[Callable] = None,
     ) -> ProcessingStats:
         """Process multiple files with batching."""
         stats = ProcessingStats()
@@ -134,7 +134,7 @@ class DocumentProcessor:
         self,
         clear_existing: bool = False,
         batch_size: int = 50,
-        progress_callback: Optional[callable] = None,
+        progress_callback: Optional[Callable] = None,
     ) -> ProcessingStats:
         """Index the entire codebase."""
         # Clear existing index if requested
@@ -154,7 +154,7 @@ class DocumentProcessor:
         self,
         since_timestamp: float,
         batch_size: int = 50,
-        progress_callback: Optional[callable] = None,
+        progress_callback: Optional[Callable] = None,
     ) -> ProcessingStats:
         """Update index with files modified since timestamp."""
         # Find modified files

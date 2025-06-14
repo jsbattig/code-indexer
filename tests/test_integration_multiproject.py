@@ -34,7 +34,8 @@ class TestMultiProjectIntegration(unittest.TestCase):
 
     def setUp(self):
         """Set up for each test."""
-        self.original_cwd = os.getcwd()
+        # Use absolute path instead of os.getcwd() to avoid FileNotFoundError
+        self.original_cwd = str(Path(__file__).parent.parent.absolute())
         self.docker_managers = []
 
     def tearDown(self):
@@ -47,8 +48,12 @@ class TestMultiProjectIntegration(unittest.TestCase):
             except Exception as e:
                 print(f"Error cleaning up Docker manager: {e}")
 
-        # Return to original directory
-        os.chdir(self.original_cwd)
+        # Return to original directory if it exists
+        try:
+            if os.path.exists(self.original_cwd):
+                os.chdir(self.original_cwd)
+        except Exception as e:
+            print(f"Error returning to original directory: {e}")
 
     def test_project_name_detection(self):
         """Test automatic project name detection based on folder name."""

@@ -1,5 +1,6 @@
 """Command line interface for Code Indexer."""
 
+import datetime
 import sys
 import time
 from pathlib import Path
@@ -281,7 +282,7 @@ def index(ctx, clear: bool, batch_size: int):
 )
 @click.option("--batch-size", default=50, help="Batch size for processing")
 @click.pass_context
-def update(ctx, since: Optional[str], batch_size: int):
+def update(ctx, since: Optional[datetime.datetime], batch_size: int):
     """Update the index with modified files."""
     config_manager = ctx.obj["config_manager"]
 

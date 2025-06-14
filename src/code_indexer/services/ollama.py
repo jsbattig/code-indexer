@@ -20,7 +20,7 @@ class OllamaClient:
         """Check if Ollama service is accessible."""
         try:
             response = self.client.get("/api/tags")
-            return response.status_code == 200
+            return bool(response.status_code == 200)
         except Exception:
             return False
 
@@ -29,7 +29,7 @@ class OllamaClient:
         try:
             response = self.client.get("/api/tags")
             response.raise_for_status()
-            return response.json().get("models", [])
+            return list(response.json().get("models", []))
         except httpx.RequestError as e:
             raise ConnectionError(f"Failed to connect to Ollama: {e}")
         except httpx.HTTPStatusError as e:
@@ -74,7 +74,7 @@ class OllamaClient:
             if not embedding:
                 raise ValueError("No embedding returned from Ollama")
 
-            return embedding
+            return list(embedding)
 
         except httpx.RequestError as e:
             raise ConnectionError(f"Failed to connect to Ollama: {e}")
@@ -104,7 +104,7 @@ class OllamaClient:
                 if not embedding:
                     raise ValueError("No embedding returned from Ollama")
 
-                return embedding
+                return list(embedding)
 
             except httpx.RequestError as e:
                 raise ConnectionError(f"Failed to connect to Ollama: {e}")

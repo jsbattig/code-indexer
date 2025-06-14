@@ -5,7 +5,7 @@ import time
 import re
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-import yaml
+import yaml  # type: ignore
 
 from rich.console import Console
 
@@ -28,8 +28,8 @@ class DockerManager:
 
     def _sanitize_project_name(self, name: str) -> str:
         """Sanitize project name for use as Docker container name."""
-        # Replace invalid characters with hyphens
-        sanitized = re.sub(r"[^a-zA-Z0-9_.-]", "-", name)
+        # Replace invalid characters (including underscores, dots, spaces, special chars) with hyphens
+        sanitized = re.sub(r"[^a-zA-Z0-9-]", "-", name)
         # Remove consecutive hyphens
         sanitized = re.sub(r"-+", "-", sanitized)
         # Remove leading/trailing hyphens
@@ -265,7 +265,7 @@ class DockerManager:
                     if not isinstance(services, list):
                         services = [services]
 
-                    status = {
+                    status: Dict[str, Any] = {
                         "status": "running" if services else "stopped",
                         "services": {},
                     }
@@ -423,6 +423,49 @@ class DockerManager:
 
         self.console.print("❌ Services did not become ready in time", style="red")
         return False
+
+    def get_container_name(self, service: str) -> str:
+        """Get the container name for a given service."""
+        return f"code-{service}-{self.project_name}"
+
+    def get_network_name(self) -> str:
+        """Get the network name for this project."""
+        return f"code-indexer-{self.project_name}"
+
+    def stop(self) -> bool:
+        """Stop all services."""
+        return self.stop_services()
+
+    def start(self) -> bool:
+        """Start all services."""
+        return self.start_services()
+
+    def status(self) -> Dict[str, Any]:
+        """Get status of all services in a format expected by tests."""
+        service_status = self.get_service_status()
+        
+        # Transform to the format expected by tests
+        result = {}
+        if service_status.get("services"):
+            for service_name, service_info in service_status["services"].items():
+                # Extract service type from container name (e.g., "code-ollama-project" -> "ollama")
+                service_type = None
+                if "ollama" in service_name:
+                    service_type = "ollama"
+                elif "qdrant" in service_name:
+                    service_type = "qdrant"
+                
+                if service_type:
+                    result[service_type] = {
+                        "running": service_info["state"] == "running",
+                        "name": service_name
+                    }
+        
+        return result
+
+    def clean(self) -> bool:
+        """Clean up all resources without removing data."""
+        return self.cleanup(remove_data=False)
 
     def cleanup(self, remove_data: bool = False) -> bool:
         """Clean up Docker resources."""

@@ -107,7 +107,9 @@ class Config(BaseModel):
         """Convert string paths to Path objects."""
         if isinstance(v, str):
             return Path(v)
-        return v
+        if isinstance(v, Path):
+            return v
+        raise ValueError(f"Expected str or Path, got {type(v)}")
 
     @field_validator("file_extensions")
     @classmethod
@@ -161,6 +163,8 @@ class ConfigManager:
         """Get current configuration, loading if necessary."""
         if self._config is None:
             self.load()
+        if self._config is None:
+            raise RuntimeError("Failed to load configuration")
         return self._config
 
     def create_default_config(self, codebase_dir: Path = Path(".")) -> Config:

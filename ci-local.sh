@@ -62,12 +62,13 @@ else
     exit 1
 fi
 
-# 4. Type check with mypy (optional for now)
+# 4. Type check with mypy (strict mode like GitHub Actions)
 print_step "Running mypy type checking"
 if mypy src/; then
     print_success "MyPy type checking passed"
 else
-    print_warning "MyPy type checking found issues (continuing anyway)"
+    print_error "MyPy type checking failed"
+    exit 1
 fi
 
 # 5. Run tests with coverage

@@ -20,7 +20,7 @@ class QdrantClient:
         """Check if Qdrant service is accessible."""
         try:
             response = self.client.get("/healthz")
-            return response.status_code == 200
+            return bool(response.status_code == 200)
         except Exception:
             return False
 
@@ -29,7 +29,7 @@ class QdrantClient:
         collection = collection_name or self.config.collection
         try:
             response = self.client.get(f"/collections/{collection}")
-            return response.status_code == 200
+            return bool(response.status_code == 200)
         except Exception:
             return False
 
@@ -69,7 +69,7 @@ class QdrantClient:
             response = self.client.delete(
                 f"/collections/{collection}/points", params={"filter": "{}"}
             )
-            return response.status_code == 200
+            return bool(response.status_code == 200)
         except Exception as e:
             self.console.print(
                 f"Failed to clear collection {collection}: {e}", style="red"
@@ -134,7 +134,7 @@ class QdrantClient:
             response.raise_for_status()
 
             result = response.json()
-            return result.get("result", [])
+            return list(result.get("result", []))
 
         except httpx.RequestError as e:
             raise ConnectionError(f"Failed to connect to Qdrant: {e}")
@@ -167,7 +167,7 @@ class QdrantClient:
         try:
             response = self.client.get(f"/collections/{collection}")
             response.raise_for_status()
-            return response.json()["result"]
+            return dict(response.json()["result"])
         except Exception as e:
             raise RuntimeError(f"Failed to get collection info: {e}")
 
@@ -180,14 +180,14 @@ class QdrantClient:
                 f"/collections/{collection}/points/count", json={}
             )
             response.raise_for_status()
-            return response.json()["result"]["count"]
+            return int(response.json()["result"]["count"])
         except Exception:
             return 0
 
     def create_point(
         self,
         point_id: Optional[str] = None,
-        vector: List[float] = None,
+        vector: Optional[List[float]] = None,
         payload: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Create a point object for upserting."""

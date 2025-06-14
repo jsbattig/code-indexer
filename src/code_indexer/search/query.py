@@ -63,12 +63,12 @@ class SearchEngine:
         if language or file_path_pattern:
             filter_conditions = {"must": []}
 
-            if language:
+            if language and filter_conditions is not None:
                 filter_conditions["must"].append(
                     {"key": "language", "match": {"value": language}}
                 )
 
-            if file_path_pattern:
+            if file_path_pattern and filter_conditions is not None:
                 filter_conditions["must"].append(
                     {"key": "path", "match": {"text": file_path_pattern}}
                 )
