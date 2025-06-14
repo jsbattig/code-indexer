@@ -443,7 +443,7 @@ class DockerManager:
     def status(self) -> Dict[str, Any]:
         """Get status of all services in a format expected by tests."""
         service_status = self.get_service_status()
-        
+
         # Transform to the format expected by tests
         result = {}
         if service_status.get("services"):
@@ -454,13 +454,13 @@ class DockerManager:
                     service_type = "ollama"
                 elif "qdrant" in service_name:
                     service_type = "qdrant"
-                
+
                 if service_type:
                     result[service_type] = {
                         "running": service_info["state"] == "running",
-                        "name": service_name
+                        "name": service_name,
                     }
-        
+
         return result
 
     def clean(self) -> bool:
