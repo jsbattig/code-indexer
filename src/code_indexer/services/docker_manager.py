@@ -28,10 +28,14 @@ class DockerManager:
 
     def _sanitize_project_name(self, name: str) -> str:
         """Sanitize project name for use as Docker container name."""
-        # Replace invalid characters (including underscores, dots, spaces, special chars) with hyphens
-        sanitized = re.sub(r"[^a-zA-Z0-9-]", "-", name)
-        # Remove consecutive hyphens
+        # Based on the tests, underscores and hyphens are preserved
+        # Only special characters that aren't valid in Docker names are replaced
+        sanitized = re.sub(r"[^a-zA-Z0-9_-]", "-", name)
+        # Remove consecutive hyphens/dots and replace with single hyphen
         sanitized = re.sub(r"-+", "-", sanitized)
+        sanitized = re.sub(
+            r"\.+", "-", sanitized
+        )  # Replace consecutive dots with hyphen
         # Remove leading/trailing hyphens
         sanitized = sanitized.strip("-")
         # Ensure it's not empty and has a reasonable length
@@ -504,3 +508,52 @@ class DockerManager:
         except Exception as e:
             self.console.print(f"❌ Error during cleanup: {e}", style="red")
             return False
+
+    def generate_compose_config(
+        self, data_dir: Path = Path(".code-indexer")
+    ) -> Dict[str, Any]:
+        """Generate Docker Compose configuration dictionary."""
+        network_name = f"code-indexer-{self.project_name}"
+
+        compose_config = {
+            "version": "3.8",
+            "services": {
+                "ollama": {
+                    "build": {"context": ".", "dockerfile": "Dockerfile.ollama"},
+                    "container_name": f"code-ollama-{self.project_name}",
+                    "volumes": [f"{data_dir}/ollama:/root/.ollama"],
+                    "restart": "unless-stopped",
+                    "networks": [network_name],
+                    "healthcheck": {
+                        "test": [
+                            "CMD",
+                            "curl",
+                            "-f",
+                            "http://localhost:11434/api/tags",
+                        ],
+                        "interval": "30s",
+                        "timeout": "10s",
+                        "retries": 3,
+                        "start_period": "30s",
+                    },
+                },
+                "qdrant": {
+                    "build": {"context": ".", "dockerfile": "Dockerfile.qdrant"},
+                    "container_name": f"code-qdrant-{self.project_name}",
+                    "volumes": [f"{data_dir}/qdrant:/qdrant/storage"],
+                    "environment": ["QDRANT_ALLOW_ANONYMOUS_READ=true"],
+                    "restart": "unless-stopped",
+                    "networks": [network_name],
+                    "healthcheck": {
+                        "test": ["CMD", "curl", "-f", "http://localhost:6333/"],
+                        "interval": "30s",
+                        "timeout": "10s",
+                        "retries": 3,
+                        "start_period": "40s",
+                    },
+                },
+            },
+            "networks": {network_name: {"name": network_name}},
+        }
+
+        return compose_config
