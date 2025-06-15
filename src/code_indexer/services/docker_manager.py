@@ -38,11 +38,11 @@ class DockerManager:
 
         # Convert to lowercase first
         sanitized = name.lower()
-        
+
         # Replace all invalid chars with underscores for qdrant collection naming
         # Collection names must be valid identifiers (letters, numbers, underscores)
         sanitized = re.sub(r"[^a-zA-Z0-9_]", "_", sanitized)
-        
+
         # Remove leading/trailing underscores
         sanitized = sanitized.strip("_")
 
@@ -59,9 +59,9 @@ class DockerManager:
         config_paths = [
             Path("code-indexer.yaml"),
             Path(".code-indexer/config.yaml"),
-            Path("~/.code-indexer/config.yaml").expanduser()
+            Path("~/.code-indexer/config.yaml").expanduser(),
         ]
-        
+
         for config_path in config_paths:
             if config_path.exists():
                 try:
@@ -69,33 +69,38 @@ class DockerManager:
                         config = yaml.safe_load(f) or {}
                     return config.get("services", {})
                 except Exception as e:
-                    self.console.print(f"Warning: Failed to load config from {config_path}: {e}", style="yellow")
-        
+                    self.console.print(
+                        f"Warning: Failed to load config from {config_path}: {e}",
+                        style="yellow",
+                    )
+
         # Return default configuration if no config file found
         return {
             "ollama": {
                 "external": False,
                 "url": "http://localhost:11434",
-                "docker": {"port": 11434}
+                "docker": {"port": 11434},
             },
             "qdrant": {
                 "external": False,
                 "url": "http://localhost:6333",
-                "docker": {"port": 6333}
-            }
+                "docker": {"port": 6333},
+            },
         }
 
     def _get_service_url(self, service: str) -> str:
         """Get the URL for a service based on configuration."""
         service_config = self._config.get(service, {})
-        
+
         # If external service is configured, use external URL
         if service_config.get("external", False):
             return service_config.get("url", "")
-        
+
         # Otherwise, use localhost with configured port
         default_ports = {"ollama": 11434, "qdrant": 6333}
-        port = service_config.get("docker", {}).get("port", default_ports.get(service, 0))
+        port = service_config.get("docker", {}).get(
+            "port", default_ports.get(service, 0)
+        )
         return f"http://localhost:{port}"
 
     def is_docker_available(self) -> bool:
@@ -187,17 +192,20 @@ class DockerManager:
     def _find_project_root(self) -> Path:
         """Find the project root directory containing Dockerfiles."""
         current = Path.cwd()
-        
+
         # First check current directory and walk up to find Dockerfiles directly
         for path in [current] + list(current.parents):
-            if (path / "Dockerfile.ollama").exists() and (path / "Dockerfile.qdrant").exists():
+            if (path / "Dockerfile.ollama").exists() and (
+                path / "Dockerfile.qdrant"
+            ).exists():
                 return path
-        
+
         # If not found, look for common project structure indicators that indicate code-indexer root
         for path in [current] + list(current.parents):
             # Check for our specific project structure: src/code_indexer + pyproject.toml
-            if ((path / "src" / "code_indexer").exists() and 
-                (path / "pyproject.toml").exists()):
+            if (path / "src" / "code_indexer").exists() and (
+                path / "pyproject.toml"
+            ).exists():
                 return path
             # Check for pyproject.toml with code-indexer name
             if (path / "pyproject.toml").exists():
@@ -207,7 +215,7 @@ class DockerManager:
                         return path
                 except Exception:
                     pass
-        
+
         # Last resort: return current directory
         return current
 
@@ -215,12 +223,15 @@ class DockerManager:
         """Create docker-compose.yml file."""
         # Find project root where Dockerfiles are located
         project_root = self._find_project_root()
-        
+
         compose_config = {
             "version": "3.8",
             "services": {
                 "ollama": {
-                    "build": {"context": str(project_root), "dockerfile": "Dockerfile.ollama"},
+                    "build": {
+                        "context": str(project_root),
+                        "dockerfile": "Dockerfile.ollama",
+                    },
                     "container_name": f"code-ollama-{self.project_name}",
                     "volumes": [f"{data_dir}/ollama:/root/.ollama"],
                     "restart": "unless-stopped",
@@ -238,7 +249,10 @@ class DockerManager:
                     },
                 },
                 "qdrant": {
-                    "build": {"context": str(project_root), "dockerfile": "Dockerfile.qdrant"},
+                    "build": {
+                        "context": str(project_root),
+                        "dockerfile": "Dockerfile.qdrant",
+                    },
                     "container_name": f"code-qdrant-{self.project_name}",
                     "volumes": [f"{data_dir}/qdrant:/qdrant/storage"],
                     "environment": ["QDRANT_ALLOW_ANONYMOUS_READ=true"],
@@ -270,7 +284,7 @@ class DockerManager:
         """Start Docker services."""
         if not self.compose_file.exists():
             compose_config = self.generate_compose_config()
-            with open(self.compose_file, 'w') as f:
+            with open(self.compose_file, "w") as f:
                 yaml.dump(compose_config, f, default_flow_style=False)
 
         compose_cmd = self.get_compose_command()
@@ -311,7 +325,10 @@ class DockerManager:
         try:
             with self.console.status("Stopping services..."):
                 result = subprocess.run(
-                    compose_cmd + ["-p", self.project_name, "down"], capture_output=True, text=True, timeout=60
+                    compose_cmd + ["-p", self.project_name, "down"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
                 )
 
             if result.returncode == 0:
@@ -371,7 +388,7 @@ class DockerManager:
                             name = names[0]  # Take first name from array
                         else:
                             name = service.get("Name", service.get("name", "unknown"))
-                        
+
                         state = service.get("State", service.get("state", "unknown"))
                         status["services"][name] = {
                             "state": state,
@@ -388,17 +405,16 @@ class DockerManager:
         except Exception:
             return {"status": "unavailable", "services": {}}
 
-
     def ollama_request(
         self, endpoint: str, method: str = "GET", data: Optional[Dict] = None
     ) -> Dict[str, Any]:
         """Make a direct HTTP request to Ollama service."""
         import requests
         import json
-        
+
         base_url = self._get_service_url("ollama")
         url = f"{base_url}{endpoint}"
-        
+
         try:
             if method == "GET":
                 response = requests.get(url, timeout=30)
@@ -407,7 +423,7 @@ class DockerManager:
                 response = requests.post(url, headers=headers, json=data, timeout=30)
             else:
                 return {"success": False, "error": f"Unsupported method: {method}"}
-            
+
             if response.status_code == 200:
                 try:
                     return {
@@ -418,10 +434,10 @@ class DockerManager:
                     return {"success": True, "data": response.text}
             else:
                 return {
-                    "success": False, 
-                    "error": f"HTTP {response.status_code}: {response.text}"
+                    "success": False,
+                    "error": f"HTTP {response.status_code}: {response.text}",
                 }
-                
+
         except requests.exceptions.RequestException as e:
             return {"success": False, "error": f"Request failed: {str(e)}"}
 
@@ -431,13 +447,13 @@ class DockerManager:
         """Make a direct HTTP request to Qdrant service."""
         import requests
         import json
-        
+
         base_url = self._get_service_url("qdrant")
         url = f"{base_url}{endpoint}"
-        
+
         try:
             headers = {"Content-Type": "application/json"}
-            
+
             if method == "GET":
                 response = requests.get(url, timeout=30)
             elif method == "POST":
@@ -448,7 +464,7 @@ class DockerManager:
                 response = requests.delete(url, timeout=30)
             else:
                 return {"success": False, "error": f"Unsupported method: {method}"}
-            
+
             if response.status_code in [200, 201, 204]:
                 try:
                     return {
@@ -459,29 +475,30 @@ class DockerManager:
                     return {"success": True, "data": response.text}
             else:
                 return {
-                    "success": False, 
-                    "error": f"HTTP {response.status_code}: {response.text}"
+                    "success": False,
+                    "error": f"HTTP {response.status_code}: {response.text}",
                 }
-                
+
         except requests.exceptions.RequestException as e:
             return {"success": False, "error": f"Request failed: {str(e)}"}
 
     def wait_for_services(self, timeout: int = 120, retry_interval: int = 2) -> bool:
         """Wait for services to be healthy using robust retry logic with exponential backoff."""
         import requests
-        
+
         self.console.print(f"Waiting for services to be ready (timeout: {timeout}s)...")
 
         import time
+
         start_time = time.time()
         attempt = 1
         last_status = {"ollama": "unknown", "qdrant": "unknown"}
-        
+
         while time.time() - start_time < timeout:
             ollama_healthy = False
             qdrant_healthy = False
             current_status = {}
-            
+
             # Check ollama service with detailed error reporting
             try:
                 ollama_url = self._get_service_url("ollama")
@@ -517,12 +534,18 @@ class DockerManager:
             # Log status changes for debugging
             if current_status != last_status:
                 elapsed = int(time.time() - start_time)
-                self.console.print(f"[{elapsed:3d}s] Attempt {attempt:2d}: ollama={current_status['ollama']}, qdrant={current_status['qdrant']}", style="dim")
+                self.console.print(
+                    f"[{elapsed:3d}s] Attempt {attempt:2d}: ollama={current_status['ollama']}, qdrant={current_status['qdrant']}",
+                    style="dim",
+                )
                 last_status = current_status.copy()
 
             if ollama_healthy and qdrant_healthy:
                 elapsed = int(time.time() - start_time)
-                self.console.print(f"✅ All services ready after {elapsed}s ({attempt} attempts)", style="green")
+                self.console.print(
+                    f"✅ All services ready after {elapsed}s ({attempt} attempts)",
+                    style="green",
+                )
                 return True
 
             # Exponential backoff with max 10 seconds
@@ -531,38 +554,53 @@ class DockerManager:
             attempt += 1
 
         elapsed = int(time.time() - start_time)
-        self.console.print(f"❌ Services did not become ready within {elapsed}s timeout (after {attempt} attempts)", style="red")
-        self.console.print(f"Final status: ollama={current_status.get('ollama', 'unknown')}, qdrant={current_status.get('qdrant', 'unknown')}", style="red")
-        
+        self.console.print(
+            f"❌ Services did not become ready within {elapsed}s timeout (after {attempt} attempts)",
+            style="red",
+        )
+        self.console.print(
+            f"Final status: ollama={current_status.get('ollama', 'unknown')}, qdrant={current_status.get('qdrant', 'unknown')}",
+            style="red",
+        )
+
         # Show container logs for debugging
         for service in ["ollama", "qdrant"]:
             if current_status.get(service) != "ready":
                 logs = self.get_container_logs(service, lines=10)
                 if logs.strip():
-                    self.console.print(f"\n{service} container logs (last 10 lines):", style="red")
+                    self.console.print(
+                        f"\n{service} container logs (last 10 lines):", style="red"
+                    )
                     self.console.print(logs, style="dim")
-        
+
         return False
 
     def get_container_logs(self, service: str, lines: int = 50) -> str:
         """Get recent container logs for debugging startup issues."""
         import subprocess
-        
+
         container_name = self.get_container_name(service)
-        
+
         # Detect container engine (podman or docker)
-        container_engine = "podman" if subprocess.run(["which", "podman"], capture_output=True).returncode == 0 else "docker"
-        
+        container_engine = (
+            "podman"
+            if subprocess.run(["which", "podman"], capture_output=True).returncode == 0
+            else "docker"
+        )
+
         try:
-            result = subprocess.run([
-                container_engine, "logs", "--tail", str(lines), container_name
-            ], capture_output=True, text=True, timeout=10)
-            
+            result = subprocess.run(
+                [container_engine, "logs", "--tail", str(lines), container_name],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
             if result.returncode == 0:
                 return result.stdout
             else:
                 return f"Failed to get logs: {result.stderr}"
-                
+
         except subprocess.TimeoutExpired:
             return "Log retrieval timed out"
         except Exception as e:
@@ -587,7 +625,7 @@ class DockerManager:
     def status(self) -> Dict[str, Any]:
         """Get status of services using direct HTTP calls."""
         import requests
-        
+
         # Check ollama service availability
         ollama_running = False
         try:
@@ -610,12 +648,12 @@ class DockerManager:
         return {
             "ollama": {
                 "running": ollama_running,
-                "name": "code-indexer-ollama"  # Global container name
+                "name": "code-indexer-ollama",  # Global container name
             },
             "qdrant": {
                 "running": qdrant_running,
-                "name": "code-indexer-qdrant"  # Global container name
-            }
+                "name": "code-indexer-qdrant",  # Global container name
+            },
         }
 
     def clean(self) -> bool:
@@ -629,7 +667,11 @@ class DockerManager:
         try:
             # Stop and remove containers
             result = subprocess.run(
-                compose_cmd + ["-p", self.project_name, "down", "-v"] if remove_data else compose_cmd + ["-p", self.project_name, "down"],
+                (
+                    compose_cmd + ["-p", self.project_name, "down", "-v"]
+                    if remove_data
+                    else compose_cmd + ["-p", self.project_name, "down"]
+                ),
                 capture_output=True,
                 text=True,
                 timeout=60,
@@ -674,7 +716,7 @@ class DockerManager:
 
         # Get global configuration directory
         global_config_dir = Path.home() / ".code-indexer" / "global"
-        
+
         # Current working directory for project-specific qdrant storage
         # current_project_dir = Path.cwd()  # Currently unused but may be needed for future features
 
@@ -718,7 +760,7 @@ class DockerManager:
                     "environment": [
                         "QDRANT_ALLOW_ANONYMOUS_READ=true",
                         # Enable collection management via API
-                        "QDRANT_CLUSTER__ENABLED=false"
+                        "QDRANT_CLUSTER__ENABLED=false",
                     ],
                     "restart": "unless-stopped",
                     "networks": [network_name],

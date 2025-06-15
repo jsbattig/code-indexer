@@ -110,12 +110,8 @@ class TestMultiProjectIntegration(unittest.TestCase):
         self.assertIn("qdrant", services)
 
         # Verify container names are global
-        self.assertEqual(
-            services["ollama"]["container_name"], "code-indexer-ollama"
-        )
-        self.assertEqual(
-            services["qdrant"]["container_name"], "code-indexer-qdrant"
-        )
+        self.assertEqual(services["ollama"]["container_name"], "code-indexer-ollama")
+        self.assertEqual(services["qdrant"]["container_name"], "code-indexer-qdrant")
 
         # Verify network name is global
         networks = compose_config["networks"]
@@ -152,10 +148,22 @@ class TestMultiProjectIntegration(unittest.TestCase):
             print(f"Project 1 status: {status1}")
             print(f"Project 2 status: {status2}")
 
-            self.assertTrue(status1["ollama"]["running"], f"Ollama not running for project 1: {status1['ollama']}")
-            self.assertTrue(status1["qdrant"]["running"], f"Qdrant not running for project 1: {status1['qdrant']}")
-            self.assertTrue(status2["ollama"]["running"], f"Ollama not running for project 2: {status2['ollama']}")
-            self.assertTrue(status2["qdrant"]["running"], f"Qdrant not running for project 2: {status2['qdrant']}")
+            self.assertTrue(
+                status1["ollama"]["running"],
+                f"Ollama not running for project 1: {status1['ollama']}",
+            )
+            self.assertTrue(
+                status1["qdrant"]["running"],
+                f"Qdrant not running for project 1: {status1['qdrant']}",
+            )
+            self.assertTrue(
+                status2["ollama"]["running"],
+                f"Ollama not running for project 2: {status2['ollama']}",
+            )
+            self.assertTrue(
+                status2["qdrant"]["running"],
+                f"Qdrant not running for project 2: {status2['qdrant']}",
+            )
 
             # Verify they have identical container names (global architecture)
             self.assertEqual(status1["ollama"]["name"], status2["ollama"]["name"])
