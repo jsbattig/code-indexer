@@ -1,7 +1,6 @@
 """Docker container management for Ollama and Qdrant services."""
 
 import subprocess
-import time
 import re
 from pathlib import Path
 from typing import Optional, Dict, Any, List
@@ -470,10 +469,10 @@ class DockerManager:
     def wait_for_services(self, timeout: int = 120, retry_interval: int = 2) -> bool:
         """Wait for services to be healthy using robust retry logic with exponential backoff."""
         import requests
-        import time
         
         self.console.print(f"Waiting for services to be ready (timeout: {timeout}s)...")
 
+        import time
         start_time = time.time()
         attempt = 1
         last_status = {"ollama": "unknown", "qdrant": "unknown"}
@@ -677,7 +676,7 @@ class DockerManager:
         global_config_dir = Path.home() / ".code-indexer" / "global"
         
         # Current working directory for project-specific qdrant storage
-        current_project_dir = Path.cwd()
+        # current_project_dir = Path.cwd()  # Currently unused but may be needed for future features
 
         compose_config = {
             "version": "3.8",
