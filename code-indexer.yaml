@@ -1,0 +1,38 @@
+# Code Indexer System Configuration
+# This file configures global settings for the code-indexer system
+
+services:
+  # Ollama configuration
+  ollama:
+    # Use external ollama instance (if false, will use Docker container)
+    external: false
+    # External ollama URL (only used if external: true)
+    url: "http://localhost:11434"
+    # Docker configuration (only used if external: false)
+    docker:
+      port: 11434
+      container_name: "code-indexer-ollama"
+      image_tag: "ollama"
+      volumes:
+        # Global ollama models storage
+        models: "~/.code-indexer/global/ollama"
+  
+  # Qdrant configuration  
+  qdrant:
+    # Use external qdrant instance (if false, will use Docker container)
+    external: false
+    # External qdrant URL (only used if external: true)
+    url: "http://localhost:6333"
+    # Docker configuration (only used if external: false)
+    docker:
+      port: 6333
+      container_name: "code-indexer-qdrant"
+      image_tag: "qdrant"
+      # Note: Each project will have its own database collection
+      # Database files are stored per project in .code-indexer/qdrant/
+
+# Default behavior:
+# - If no configuration file exists, defaults will be used
+# - Local Docker containers will be started if not running
+# - Project databases will be stored in project/.code-indexer/qdrant/
+# - Global ollama models stored in ~/.code-indexer/global/ollama/

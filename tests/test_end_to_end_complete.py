@@ -22,7 +22,11 @@ class TestEndToEndComplete:
         self.docker_manager = DockerManager()
         self.test_containers = set()
         self.test_networks = set()
-        self.original_cwd = os.getcwd()
+        try:
+            self.original_cwd = os.getcwd()
+        except FileNotFoundError:
+            # Handle case where current directory doesn't exist
+            self.original_cwd = Path(__file__).parent.absolute()
 
         yield
 

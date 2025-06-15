@@ -60,17 +60,17 @@ class TestMultiProjectIntegration(unittest.TestCase):
         # Test project 1
         os.chdir(self.project1_path)
         docker_manager1 = DockerManager()
-        self.assertEqual(docker_manager1.project_name, "test-project-1")
+        self.assertEqual(docker_manager1.project_name, "test_project_1")
         self.docker_managers.append(docker_manager1)
 
         # Test project 2
         os.chdir(self.project2_path)
         docker_manager2 = DockerManager()
-        self.assertEqual(docker_manager2.project_name, "test-project-2")
+        self.assertEqual(docker_manager2.project_name, "test_project_2")
         self.docker_managers.append(docker_manager2)
 
     def test_unique_container_names(self):
-        """Test that different projects get unique container names."""
+        """Test that global containers share the same name across projects."""
         # Create Docker managers for both projects
         os.chdir(self.project1_path)
         docker_manager1 = DockerManager()
@@ -80,20 +80,20 @@ class TestMultiProjectIntegration(unittest.TestCase):
         docker_manager2 = DockerManager()
         self.docker_managers.append(docker_manager2)
 
-        # Check container names are unique
+        # Check container names are identical (global architecture)
         ollama_name1 = docker_manager1.get_container_name("ollama")
         qdrant_name1 = docker_manager1.get_container_name("qdrant")
         ollama_name2 = docker_manager2.get_container_name("ollama")
         qdrant_name2 = docker_manager2.get_container_name("qdrant")
 
-        self.assertNotEqual(ollama_name1, ollama_name2)
-        self.assertNotEqual(qdrant_name1, qdrant_name2)
+        self.assertEqual(ollama_name1, ollama_name2)
+        self.assertEqual(qdrant_name1, qdrant_name2)
 
-        # Verify naming pattern
-        self.assertEqual(ollama_name1, "code-ollama-test-project-1")
-        self.assertEqual(qdrant_name1, "code-qdrant-test-project-1")
-        self.assertEqual(ollama_name2, "code-ollama-test-project-2")
-        self.assertEqual(qdrant_name2, "code-qdrant-test-project-2")
+        # Verify global naming pattern
+        self.assertEqual(ollama_name1, "code-indexer-ollama")
+        self.assertEqual(qdrant_name1, "code-indexer-qdrant")
+        self.assertEqual(ollama_name2, "code-indexer-ollama")
+        self.assertEqual(qdrant_name2, "code-indexer-qdrant")
 
     def test_docker_compose_generation(self):
         """Test that Docker Compose configurations are generated correctly."""
@@ -104,25 +104,25 @@ class TestMultiProjectIntegration(unittest.TestCase):
         # Generate compose configuration
         compose_config = docker_manager.generate_compose_config()
 
-        # Verify services have project-specific names
+        # Verify services have global names
         services = compose_config["services"]
         self.assertIn("ollama", services)
         self.assertIn("qdrant", services)
 
-        # Verify container names include project name
+        # Verify container names are global
         self.assertEqual(
-            services["ollama"]["container_name"], "code-ollama-test-project-1"
+            services["ollama"]["container_name"], "code-indexer-ollama"
         )
         self.assertEqual(
-            services["qdrant"]["container_name"], "code-qdrant-test-project-1"
+            services["qdrant"]["container_name"], "code-indexer-qdrant"
         )
 
-        # Verify network name includes project name
+        # Verify network name is global
         networks = compose_config["networks"]
-        self.assertIn("code-indexer-test-project-1", networks)
+        self.assertIn("code-indexer-global", networks)
 
     def test_multiple_projects_setup_simultaneously(self):
-        """Test setting up multiple projects simultaneously without conflicts."""
+        """Test setting up multiple projects with shared global containers."""
         # Set up project 1
         os.chdir(self.project1_path)
         docker_manager1 = DockerManager()
@@ -133,29 +133,33 @@ class TestMultiProjectIntegration(unittest.TestCase):
         docker_manager2 = DockerManager()
         self.docker_managers.append(docker_manager2)
 
-        # Start both projects
+        # Start global containers using first project manager
         try:
-            print("Starting project 1 containers...")
+            print("Starting global containers...")
             docker_manager1.start()
 
-            print("Starting project 2 containers...")
-            docker_manager2.start()
+            # Wait for services to be actually ready using robust health checking
+            print("Waiting for services to be ready...")
+            if not docker_manager1.wait_for_services(timeout=120):
+                self.fail("Services failed to become ready within timeout")
 
-            # Wait for containers to be ready
-            time.sleep(30)
-
-            # Verify both sets of containers are running
+            # Now verify both projects can access the same global containers
+            print("Verifying service status...")
             status1 = docker_manager1.status()
             status2 = docker_manager2.status()
 
-            self.assertTrue(status1["ollama"]["running"])
-            self.assertTrue(status1["qdrant"]["running"])
-            self.assertTrue(status2["ollama"]["running"])
-            self.assertTrue(status2["qdrant"]["running"])
+            # Print status for debugging
+            print(f"Project 1 status: {status1}")
+            print(f"Project 2 status: {status2}")
 
-            # Verify they have different container names
-            self.assertNotEqual(status1["ollama"]["name"], status2["ollama"]["name"])
-            self.assertNotEqual(status1["qdrant"]["name"], status2["qdrant"]["name"])
+            self.assertTrue(status1["ollama"]["running"], f"Ollama not running for project 1: {status1['ollama']}")
+            self.assertTrue(status1["qdrant"]["running"], f"Qdrant not running for project 1: {status1['qdrant']}")
+            self.assertTrue(status2["ollama"]["running"], f"Ollama not running for project 2: {status2['ollama']}")
+            self.assertTrue(status2["qdrant"]["running"], f"Qdrant not running for project 2: {status2['qdrant']}")
+
+            # Verify they have identical container names (global architecture)
+            self.assertEqual(status1["ollama"]["name"], status2["ollama"]["name"])
+            self.assertEqual(status1["qdrant"]["name"], status2["qdrant"]["name"])
 
         except Exception as e:
             self.fail(f"Failed to start multiple projects: {e}")
@@ -172,14 +176,16 @@ class TestMultiProjectIntegration(unittest.TestCase):
             time.sleep(30)  # Wait for services to be ready
 
             # Test Ollama communication
-            ollama_response = docker_manager.ollama_request("GET", "/api/tags")
+            ollama_response = docker_manager.ollama_request("/api/tags", "GET")
             self.assertIsNotNone(ollama_response)
-            self.assertIn("models", ollama_response)
+            self.assertTrue(ollama_response.get("success", False))
+            self.assertIn("models", ollama_response.get("data", {}))
 
             # Test Qdrant communication
-            qdrant_response = docker_manager.qdrant_request("GET", "/")
+            qdrant_response = docker_manager.qdrant_request("/", "GET")
             self.assertIsNotNone(qdrant_response)
-            self.assertIn("title", qdrant_response)
+            self.assertTrue(qdrant_response.get("success", False))
+            self.assertIn("title", qdrant_response.get("data", {}))
 
         except Exception as e:
             self.fail(f"Container communication test failed: {e}")
@@ -209,8 +215,8 @@ class TestMultiProjectIntegration(unittest.TestCase):
 
         # Both should execute without errors (even if containers aren't running)
         # The important thing is that they don't conflict with each other
-        self.assertIn("Project:", result1.stdout + result1.stderr)
-        self.assertIn("Project:", result2.stdout + result2.stderr)
+        self.assertIn("Code Indexer Status", result1.stdout + result1.stderr)
+        self.assertIn("Code Indexer Status", result2.stdout + result2.stderr)
 
     def test_config_isolation(self):
         """Test that projects have isolated configurations."""
@@ -267,11 +273,11 @@ class TestMultiProjectIntegration(unittest.TestCase):
         """Test that project names are properly sanitized for Docker."""
         # Test various problematic folder names
         test_cases = [
-            ("Test_Project", "test-project"),
-            ("test project", "test-project"),
-            ("TEST-PROJECT", "test-project"),
-            ("test.project", "test-project"),
-            ("test@project", "test-project"),
+            ("Test_Project", "test_project"),
+            ("test project", "test_project"),
+            ("TEST-PROJECT", "test_project"),
+            ("test.project", "test_project"),
+            ("test@project", "test_project"),
         ]
 
         for folder_name, expected_name in test_cases:

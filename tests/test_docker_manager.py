@@ -36,14 +36,14 @@ class TestDockerManager(unittest.TestCase):
     def test_project_name_detection_from_folder(self):
         """Test project name detection from current folder name."""
         test_cases = [
-            ("simple-project", "simple-project"),
+            ("simple-project", "simple_project"),  # Hyphens become underscores for qdrant
             ("MyProject", "myproject"),
             ("test_project", "test_project"),  # Underscores preserved
-            ("Test Project", "test-project"),  # Spaces become hyphens
-            ("project@123", "project-123"),
-            ("project.name", "project.name"),  # Dots preserved
+            ("Test Project", "test_project"),  # Spaces become underscores
+            ("project@123", "project_123"),  # Special chars become underscores
+            ("project.name", "project_name"),  # Dots become underscores
             ("PROJECT", "project"),
-            ("a-b-c", "a-b-c"),
+            ("a-b-c", "a_b_c"),  # Hyphens become underscores
         ]
 
         for folder_name, expected in test_cases:
@@ -65,11 +65,11 @@ class TestDockerManager(unittest.TestCase):
         docker_manager = DockerManager()
 
         test_cases = [
-            ("Test_Project", "test_project"),  # Underscores are kept
-            ("TEST-PROJECT", "test-project"),
-            ("project@special#chars", "project-special-chars"),
-            ("project with spaces", "project-with-spaces"),
-            ("project...dots", "project-dots"),
+            ("Test_Project", "test_project"),  # Underscores preserved for qdrant
+            ("TEST-PROJECT", "test_project"),  # Hyphens become underscores
+            ("project@special#chars", "project_special_chars"),  # Special chars become underscores
+            ("project with spaces", "project_with_spaces"),  # Spaces become underscores
+            ("project...dots", "project___dots"),  # Dots become underscores
             (
                 "project__underscores",
                 "project__underscores",
@@ -96,8 +96,8 @@ class TestDockerManager(unittest.TestCase):
             ollama_name = docker_manager.get_container_name("ollama")
             qdrant_name = docker_manager.get_container_name("qdrant")
 
-            self.assertEqual(ollama_name, "code-ollama-test-project")
-            self.assertEqual(qdrant_name, "code-qdrant-test-project")
+            self.assertEqual(ollama_name, "code-indexer-ollama")
+            self.assertEqual(qdrant_name, "code-indexer-qdrant")
 
     def test_explicit_project_name(self):
         """Test providing explicit project name."""
@@ -105,9 +105,9 @@ class TestDockerManager(unittest.TestCase):
 
         self.assertEqual(docker_manager.project_name, "custom-project")
 
-        # Test container names with explicit project name
+        # Test container names (global architecture ignores project name)
         ollama_name = docker_manager.get_container_name("ollama")
-        self.assertEqual(ollama_name, "code-ollama-custom-project")
+        self.assertEqual(ollama_name, "code-indexer-ollama")
 
     def test_compose_config_generation(self):
         """Test Docker Compose configuration generation."""
@@ -130,22 +130,22 @@ class TestDockerManager(unittest.TestCase):
             self.assertIn("ollama", services)
             self.assertIn("qdrant", services)
 
-            # Check container names include project name
+            # Check container names are now global
             self.assertEqual(
-                services["ollama"]["container_name"], "code-ollama-test-project"
+                services["ollama"]["container_name"], "code-indexer-ollama"
             )
             self.assertEqual(
-                services["qdrant"]["container_name"], "code-qdrant-test-project"
+                services["qdrant"]["container_name"], "code-indexer-qdrant"
             )
 
-            # Check network configuration
+            # Check network configuration is now global
             networks = config["networks"]
-            self.assertIn("code-indexer-test-project", networks)
+            self.assertIn("code-indexer-global", networks)
 
-            # Check that services use the project-specific network
+            # Check that services use the global network
             for service in services.values():
                 self.assertIn("networks", service)
-                self.assertIn("code-indexer-test-project", service["networks"])
+                self.assertIn("code-indexer-global", service["networks"])
 
     def test_health_check_configuration(self):
         """Test health check configuration in Docker Compose."""
@@ -157,12 +157,14 @@ class TestDockerManager(unittest.TestCase):
         # Check Ollama health check
         ollama_healthcheck = services["ollama"]["healthcheck"]
         self.assertIn("test", ollama_healthcheck)
-        self.assertIn("curl", ollama_healthcheck["test"][0])
+        self.assertEqual(ollama_healthcheck["test"][0], "CMD")
+        self.assertIn("curl", ollama_healthcheck["test"][1])
 
         # Check Qdrant health check
         qdrant_healthcheck = services["qdrant"]["healthcheck"]
         self.assertIn("test", qdrant_healthcheck)
-        self.assertIn("curl", qdrant_healthcheck["test"][0])
+        self.assertEqual(qdrant_healthcheck["test"][0], "CMD")
+        self.assertIn("curl", qdrant_healthcheck["test"][1])
 
     def test_volume_configuration(self):
         """Test volume configuration for data persistence."""
@@ -211,19 +213,19 @@ class TestDockerManager(unittest.TestCase):
         # Test container communication command construction
         # This tests the internal command building without actual execution
         container_name = docker_manager.get_container_name("ollama")
-        self.assertEqual(container_name, "code-ollama-test")
+        self.assertEqual(container_name, "code-indexer-ollama")
 
     def test_network_name_generation(self):
-        """Test network name generation with project specificity."""
+        """Test network name generation - now uses global network."""
         docker_manager = DockerManager(project_name="my-project")
         config = docker_manager.generate_compose_config()
 
         networks = config["networks"]
-        expected_network = "code-indexer-my-project"
+        expected_network = "code-indexer-global"
 
         self.assertIn(expected_network, networks)
 
-        # Check that all services use this network
+        # Check that all services use the global network
         services = config["services"]
         for service in services.values():
             self.assertIn(expected_network, service["networks"])
@@ -245,7 +247,7 @@ class TestDockerManager(unittest.TestCase):
 
         # Test with empty string
         empty_sanitized = docker_manager._sanitize_project_name("")
-        self.assertEqual(empty_sanitized, "unknown")
+        self.assertEqual(empty_sanitized, "default")
 
 
 class TestDockerManagerConfig(unittest.TestCase):

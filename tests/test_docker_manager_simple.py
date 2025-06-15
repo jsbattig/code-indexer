@@ -35,14 +35,14 @@ class TestDockerManager(unittest.TestCase):
     def test_project_name_detection_from_folder(self):
         """Test project name detection from current folder name."""
         test_cases = [
-            ("simple-project", "simple-project"),
+            ("simple-project", "simple_project"),  # Hyphens become underscores for qdrant
             ("MyProject", "myproject"),
             ("test_project", "test_project"),  # Underscores preserved
-            ("Test Project", "test-project"),  # Spaces become hyphens
-            ("project@123", "project-123"),
-            ("project.name", "project.name"),  # Dots preserved
+            ("Test Project", "test_project"),  # Spaces become underscores
+            ("project@123", "project_123"),  # Special chars become underscores
+            ("project.name", "project_name"),  # Dots become underscores
             ("PROJECT", "project"),
-            ("a-b-c", "a-b-c"),
+            ("a-b-c", "a_b_c"),  # Hyphens become underscores
         ]
 
         for folder_name, expected in test_cases:
@@ -64,11 +64,11 @@ class TestDockerManager(unittest.TestCase):
         docker_manager = DockerManager()
 
         test_cases = [
-            ("Test_Project", "test_project"),  # Underscores are kept
-            ("TEST-PROJECT", "test-project"),
-            ("project@special#chars", "project-special-chars"),
-            ("project with spaces", "project-with-spaces"),
-            ("project...dots", "project...dots"),  # Dots preserved
+            ("Test_Project", "test_project"),  # Underscores preserved for qdrant
+            ("TEST-PROJECT", "test_project"),  # Hyphens become underscores
+            ("project@special#chars", "project_special_chars"),  # Special chars become underscores
+            ("project with spaces", "project_with_spaces"),  # Spaces become underscores
+            ("project...dots", "project___dots"),  # Dots become underscores
             (
                 "project__underscores",
                 "project__underscores",
