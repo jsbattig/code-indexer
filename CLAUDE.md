@@ -1,0 +1,1 @@
+- When bumping the version label, you need to always update the readme installs instructions to the command to install matches the latest version
