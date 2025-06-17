@@ -32,7 +32,9 @@ class TestGitAwareDocumentProcessor:
     @pytest.fixture
     def mock_clients(self):
         ollama_client = MagicMock()
-        ollama_client.get_embedding.return_value = [0.1] * 768  # Match default vector size
+        ollama_client.get_embedding.return_value = [
+            0.1
+        ] * 768  # Match default vector size
 
         qdrant_client = MagicMock()
         qdrant_client.create_point.return_value = {"id": "test_point"}
@@ -85,6 +87,7 @@ class TestGitAwareDocumentProcessor:
         point_id = processor._create_point_id(file_metadata, 0)
         # Point ID should be a valid UUID string
         import uuid
+
         assert uuid.UUID(point_id)  # Validates it's a proper UUID
         # Check it's deterministic (same input = same output)
         point_id2 = processor._create_point_id(file_metadata, 0)
@@ -101,6 +104,7 @@ class TestGitAwareDocumentProcessor:
         point_id = processor._create_point_id(file_metadata, 1)
         # Point ID should be a valid UUID string
         import uuid
+
         assert uuid.UUID(point_id)  # Validates it's a proper UUID
         # Check it's deterministic
         point_id2 = processor._create_point_id(file_metadata, 1)

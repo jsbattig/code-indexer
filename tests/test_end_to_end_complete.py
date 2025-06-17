@@ -31,7 +31,7 @@ class TestEndToEndComplete:
         # Check if services are already running
         self.services_were_running = self.are_services_running()
         self.setup_required = not self.services_were_running
-        
+
         # If services aren't running, set them up
         if self.setup_required:
             print("Setting up services for e2e tests...")
@@ -43,7 +43,7 @@ class TestEndToEndComplete:
         if self.setup_required and not self.services_were_running:
             print("Cleaning up services that were set up for e2e tests...")
             self.cleanup_services()
-        
+
         # Always cleanup project-specific compose files
         compose_cmd = self.docker_manager.get_compose_command()
         for project_dir in ["test_project_1", "test_project_2"]:
@@ -73,7 +73,7 @@ class TestEndToEndComplete:
             return ollama_running and qdrant_running
         except Exception:
             return False
-    
+
     def setup_services(self):
         """Set up services using code-indexer setup command"""
         try:
@@ -81,12 +81,14 @@ class TestEndToEndComplete:
             test_setup_dir = Path(__file__).parent / "temp_setup"
             test_setup_dir.mkdir(exist_ok=True)
             os.chdir(test_setup_dir)
-            
+
             # Run setup command
-            result = self.run_cli_command(["setup", "--quiet"], cwd=test_setup_dir, timeout=300)
+            result = self.run_cli_command(
+                ["setup", "--quiet"], cwd=test_setup_dir, timeout=300
+            )
             if result.returncode != 0:
                 raise RuntimeError(f"Setup failed: {result.stderr}")
-                
+
             # Wait for services to be ready
             max_wait = 120
             start_time = time.time()
@@ -94,17 +96,18 @@ class TestEndToEndComplete:
                 if self.are_services_running():
                     return
                 time.sleep(2)
-            
+
             raise RuntimeError("Services did not become ready within timeout")
-            
+
         except Exception as e:
             raise RuntimeError(f"Failed to setup services for e2e tests: {e}")
         finally:
             # Clean up temp directory
             if test_setup_dir.exists():
                 import shutil
+
                 shutil.rmtree(test_setup_dir, ignore_errors=True)
-    
+
     def cleanup_services(self):
         """Clean up services that we set up"""
         try:
@@ -112,7 +115,7 @@ class TestEndToEndComplete:
             temp_cleanup_dir = Path(__file__).parent / "temp_cleanup"
             temp_cleanup_dir.mkdir(exist_ok=True)
             old_cwd = os.getcwd()
-            
+
             try:
                 os.chdir(temp_cleanup_dir)
                 # Use docker manager to stop services
@@ -122,8 +125,9 @@ class TestEndToEndComplete:
                 # Clean up temp directory
                 if temp_cleanup_dir.exists():
                     import shutil
+
                     shutil.rmtree(temp_cleanup_dir, ignore_errors=True)
-                    
+
         except Exception as e:
             print(f"Warning: Failed to cleanup services: {e}")
 
@@ -249,18 +253,14 @@ class TestEndToEndComplete:
             result1 = self.run_cli_command(["index"])
             assert result1.returncode == 0, f"Project 1 index failed: {result1.stderr}"
 
-            self.test_containers.update(
-                ["code-indexer-ollama", "code-indexer-qdrant"]
-            )
+            self.test_containers.update(["code-indexer-ollama", "code-indexer-qdrant"])
             self.test_networks.add("code-indexer-global")
 
             os.chdir(project2_path)
             result2 = self.run_cli_command(["index"])
             assert result2.returncode == 0, f"Project 2 index failed: {result2.stderr}"
 
-            self.test_containers.update(
-                ["code-indexer-ollama", "code-indexer-qdrant"]
-            )
+            self.test_containers.update(["code-indexer-ollama", "code-indexer-qdrant"])
             self.test_networks.add("code-indexer-global")
 
             # Wait for both to be ready
@@ -387,9 +387,7 @@ class TestEndToEndComplete:
             result = self.run_cli_command(["index", "--path", ".", "--wait"])
             assert result.returncode == 0
 
-            self.test_containers.update(
-                ["code-indexer-ollama", "code-indexer-qdrant"]
-            )
+            self.test_containers.update(["code-indexer-ollama", "code-indexer-qdrant"])
 
             result = self.run_cli_command(["clean"])
             assert result.returncode == 0
