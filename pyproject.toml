@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "code-indexer"
-version = "0.1.0"
+dynamic = ["version"]
 description = "AI-powered semantic code search with local models"
 authors = [
     {name = "Code Indexer Team", email = "team@example.com"}
@@ -62,6 +62,9 @@ code-indexer = "code_indexer.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/code_indexer"]
+
+[tool.hatch.version]
+path = "src/code_indexer/__init__.py"
 
 [tool.black]
 line-length = 88

@@ -24,6 +24,7 @@ from .config import ConfigManager, Config
 from .services import OllamaClient, QdrantClient, DockerManager
 from .services.git_aware_processor import GitAwareDocumentProcessor
 from .services.generic_query_service import GenericQueryService
+from . import __version__
 
 
 # Global console for rich output
@@ -33,6 +34,7 @@ console = Console()
 @click.group()
 @click.option("--config", "-c", type=click.Path(exists=False), help="Config file path")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
+@click.version_option(version=__version__, prog_name="code-indexer")
 @click.pass_context
 def cli(ctx, config: Optional[str], verbose: bool):
     """🔍 AI-powered semantic code search with local models.
