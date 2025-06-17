@@ -225,7 +225,7 @@ class DockerManager:
         package_dockerfile = Path(__file__).parent.parent / "docker" / dockerfile_name
         if package_dockerfile.exists():
             return package_dockerfile
-        
+
         # Fall back to project root (for development)
         project_root = self._find_project_root()
         project_dockerfile = project_root / dockerfile_name
