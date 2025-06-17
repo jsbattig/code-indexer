@@ -104,28 +104,41 @@ class DockerManager:
         return f"http://localhost:{port}"
 
     def is_docker_available(self) -> bool:
-        """Check if Docker or Podman is available."""
-        # Try Docker first
+        """Check if Podman or Docker is available, prioritizing Podman."""
+        # Try Podman first (Podman shop priority)
         try:
             result = subprocess.run(
-                ["docker", "--version"], capture_output=True, text=True, timeout=5
+                ["podman", "--version"], capture_output=True, text=True, timeout=5
             )
             if result.returncode == 0:
                 return True
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
 
-        # Try Podman as fallback
+        # Try Docker as fallback
         try:
             result = subprocess.run(
-                ["podman", "--version"], capture_output=True, text=True, timeout=5
+                ["docker", "--version"], capture_output=True, text=True, timeout=5
             )
             return result.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
 
     def is_compose_available(self) -> bool:
-        """Check if Docker Compose or Podman Compose is available."""
+        """Check if Podman Compose or Docker Compose is available, prioritizing Podman."""
+        # Try podman-compose first (Podman shop priority)
+        try:
+            result = subprocess.run(
+                ["podman-compose", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                return True
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
         # Try docker compose (new syntax)
         try:
             result = subprocess.run(
@@ -147,26 +160,23 @@ class DockerManager:
                 text=True,
                 timeout=5,
             )
-            if result.returncode == 0:
-                return True
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-
-        # Try podman-compose
-        try:
-            result = subprocess.run(
-                ["podman-compose", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
             return result.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
 
     def get_compose_command(self) -> List[str]:
-        """Get the appropriate docker compose command."""
-        # Prefer docker compose (new syntax)
+        """Get the appropriate compose command, prioritizing Podman."""
+        # Prefer podman-compose (Podman shop priority)
+        try:
+            result = subprocess.run(
+                ["podman-compose", "--version"], capture_output=True, timeout=5
+            )
+            if result.returncode == 0:
+                return ["podman-compose"]
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        # Try docker compose (new syntax)
         try:
             result = subprocess.run(
                 ["docker", "compose", "version"], capture_output=True, timeout=5
@@ -176,7 +186,7 @@ class DockerManager:
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
 
-        # Try docker-compose (old syntax)
+        # Fall back to docker-compose (old syntax)
         try:
             result = subprocess.run(
                 ["docker-compose", "--version"], capture_output=True, timeout=5
@@ -186,7 +196,7 @@ class DockerManager:
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
 
-        # Fall back to podman-compose
+        # Last resort fallback
         return ["podman-compose"]
 
     def _find_project_root(self) -> Path:
@@ -230,67 +240,6 @@ class DockerManager:
         project_root = self._find_project_root()
         project_dockerfile = project_root / dockerfile_name
         return project_dockerfile  # Return this even if it doesn't exist for error messages
-
-    def create_compose_file(self, data_dir: Path = Path(".code-indexer")) -> None:
-        """Create docker-compose.yml file."""
-        # Find Dockerfiles (package location first, then project root)
-        ollama_dockerfile = self._find_dockerfile("Dockerfile.ollama")
-        qdrant_dockerfile = self._find_dockerfile("Dockerfile.qdrant")
-
-        compose_config = {
-            "services": {
-                "ollama": {
-                    "build": {
-                        "context": str(ollama_dockerfile.parent),
-                        "dockerfile": str(ollama_dockerfile.name),
-                    },
-                    "container_name": f"code-ollama-{self.project_name}",
-                    "volumes": [f"{data_dir}/ollama:/root/.ollama"],
-                    "restart": "unless-stopped",
-                    "healthcheck": {
-                        "test": [
-                            "CMD",
-                            "curl",
-                            "-f",
-                            "http://localhost:11434/api/tags",
-                        ],
-                        "interval": "30s",
-                        "timeout": "10s",
-                        "retries": 3,
-                        "start_period": "30s",
-                    },
-                },
-                "qdrant": {
-                    "build": {
-                        "context": str(qdrant_dockerfile.parent),
-                        "dockerfile": str(qdrant_dockerfile.name),
-                    },
-                    "container_name": f"code-qdrant-{self.project_name}",
-                    "volumes": [f"{data_dir}/qdrant:/qdrant/storage"],
-                    "environment": ["QDRANT_ALLOW_ANONYMOUS_READ=true"],
-                    "restart": "unless-stopped",
-                    "healthcheck": {
-                        "test": [
-                            "CMD",
-                            "curl",
-                            "-f",
-                            "http://localhost:6333/",
-                        ],
-                        "interval": "30s",
-                        "timeout": "10s",
-                        "retries": 3,
-                        "start_period": "40s",
-                    },
-                },
-            },
-            "networks": {"default": {"name": f"code-indexer-{self.project_name}"}},
-        }
-
-        # Ensure data directory exists
-        data_dir.mkdir(parents=True, exist_ok=True)
-
-        with open(self.compose_file, "w") as f:
-            yaml.dump(compose_config, f, default_flow_style=False)
 
     def start_services(self, recreate: bool = False) -> bool:
         """Start Docker services."""
@@ -725,6 +674,18 @@ class DockerManager:
         ollama_dockerfile = self._find_dockerfile("Dockerfile.ollama")
         qdrant_dockerfile = self._find_dockerfile("Dockerfile.qdrant")
 
+        # Copy Dockerfiles to temporary directory so Docker can find them
+        import tempfile
+        import shutil
+
+        # Create a temporary directory for Dockerfiles
+        temp_docker_dir = Path(tempfile.mkdtemp(prefix="code-indexer-docker-"))
+        local_ollama_dockerfile = temp_docker_dir / "Dockerfile.ollama"
+        local_qdrant_dockerfile = temp_docker_dir / "Dockerfile.qdrant"
+
+        shutil.copy2(ollama_dockerfile, local_ollama_dockerfile)
+        shutil.copy2(qdrant_dockerfile, local_qdrant_dockerfile)
+
         # Get global configuration directory
         global_config_dir = Path.home() / ".code-indexer" / "global"
 
@@ -735,8 +696,8 @@ class DockerManager:
             "services": {
                 "ollama": {
                     "build": {
-                        "context": str(ollama_dockerfile.parent),
-                        "dockerfile": str(ollama_dockerfile.name),
+                        "context": str(temp_docker_dir),
+                        "dockerfile": str(local_ollama_dockerfile.name),
                     },
                     "container_name": "code-indexer-ollama",
                     "ports": ["11434:11434"],  # External port mapping
@@ -758,8 +719,8 @@ class DockerManager:
                 },
                 "qdrant": {
                     "build": {
-                        "context": str(qdrant_dockerfile.parent),
-                        "dockerfile": str(qdrant_dockerfile.name),
+                        "context": str(temp_docker_dir),
+                        "dockerfile": str(local_qdrant_dockerfile.name),
                     },
                     "container_name": "code-indexer-qdrant",
                     "ports": ["6333:6333"],  # External port mapping
