@@ -126,10 +126,10 @@ class TestDockerManager(unittest.TestCase):
 
             config = docker_manager.generate_compose_config()
 
-            # Check basic structure
-            self.assertIn("version", config)
+            # Check basic structure (version field is deprecated in Docker Compose v2+)
             self.assertIn("services", config)
             self.assertIn("networks", config)
+            self.assertNotIn("version", config)  # Should not have version field
 
             # Check services
             services = config["services"]

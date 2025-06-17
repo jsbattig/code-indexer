@@ -238,7 +238,6 @@ class DockerManager:
         qdrant_dockerfile = self._find_dockerfile("Dockerfile.qdrant")
 
         compose_config = {
-            "version": "3.8",
             "services": {
                 "ollama": {
                     "build": {
@@ -733,7 +732,6 @@ class DockerManager:
         # current_project_dir = Path.cwd()  # Currently unused but may be needed for future features
 
         compose_config = {
-            "version": "3.8",
             "services": {
                 "ollama": {
                     "build": {
