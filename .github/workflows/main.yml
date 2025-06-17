@@ -85,14 +85,8 @@ jobs:
       id: previous-version
       if: steps.version-file-check.outputs.version-file-changed == 'true'
       run: |
-        # Get the version from the previous commit only if version file changed
-        git checkout HEAD~1 2>/dev/null || true
-        if [ -f "src/code_indexer/__init__.py" ]; then
-          PREV_VERSION=$(python -c "import sys; sys.path.insert(0, 'src'); from code_indexer import __version__; print(__version__)" 2>/dev/null || echo "none")
-        else
-          PREV_VERSION="none"
-        fi
-        git checkout - > /dev/null 2>&1
+        # Get the version from the previous commit by extracting it from git show
+        PREV_VERSION=$(git show HEAD~1:src/code_indexer/__init__.py 2>/dev/null | grep -E '^__version__' | sed -E 's/__version__ = "(.*)"/\1/' || echo "none")
         echo "previous=$PREV_VERSION" >> $GITHUB_OUTPUT
         echo "Previous version: $PREV_VERSION"
     
