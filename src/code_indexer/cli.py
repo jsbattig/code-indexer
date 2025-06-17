@@ -408,7 +408,6 @@ def index(ctx, clear: bool, batch_size: int):
                 progress_bar = Progress(
                     TextColumn("[bold blue]Indexing", justify="right"),
                     BarColumn(bar_width=None),
-                    "[progress.percentage]{task.percentage:>3.1f}%",
                     "•",
                     TaskProgressColumn(),
                     "•",
@@ -580,7 +579,6 @@ def update(ctx, since: Optional[datetime.datetime], batch_size: int):
                 progress_bar = Progress(
                     TextColumn("[bold green]Updating", justify="right"),
                     BarColumn(bar_width=None),
-                    "[progress.percentage]{task.percentage:>3.1f}%",
                     "•",
                     TaskProgressColumn(),
                     "•",
@@ -727,7 +725,93 @@ def watch(ctx, debounce: float, batch_size: int):
             console.print("❌ Qdrant service not available", style="red")
             sys.exit(1)
 
-        console.print(f"👀 Watching {config.codebase_dir} for changes...")
+        # Perform initial update to catch up on any missed changes
+        console.print("🔄 Performing initial update to catch up on changes...")
+
+        # Initialize git-aware processor for smart updates
+        processor = GitAwareDocumentProcessor(config, ollama_client, qdrant_client)
+
+        # Set up progress tracking using Rich Progress (consistent with update/index commands)
+        progress_bar = None
+        task_id = None
+
+        def progress_callback(
+            current: int, total: int, filename: str, error: Optional[str] = None
+        ):
+            """Progress callback for initial update - consistent with update command"""
+            nonlocal progress_bar, task_id
+
+            # Initialize progress bar on first call
+            if progress_bar is None and total > 0:
+                progress_bar = Progress(
+                    TextColumn("[bold green]Watch Update", justify="right"),
+                    BarColumn(bar_width=None),
+                    "•",
+                    TaskProgressColumn(),
+                    "•",
+                    TimeElapsedColumn(),
+                    "•",
+                    TimeRemainingColumn(),
+                    "•",
+                    TextColumn("[cyan]{task.description}"),
+                    console=console,
+                )
+                progress_bar.start()
+                task_id = progress_bar.add_task("Starting...", total=total)
+
+            if progress_bar and task_id is not None and total > 0:
+                # Get relative path for display
+                file_path = Path(filename)
+                try:
+                    relative_path = str(file_path.relative_to(config.codebase_dir))
+                except (Exception, ValueError):
+                    try:
+                        relative_path = str(file_path.relative_to(Path.cwd()))
+                    except ValueError:
+                        relative_path = file_path.name
+
+                # Truncate long paths to fit display
+                if len(relative_path) > 47:
+                    relative_path = "..." + relative_path[-44:]
+
+                progress_bar.update(task_id, advance=1, description=relative_path)
+
+            # Show errors
+            if error and ctx.obj["verbose"]:
+                if progress_bar:
+                    progress_bar.console.print(
+                        f"❌ Failed to process {filename}: {error}", style="red"
+                    )
+                else:
+                    console.print(
+                        f"❌ Failed to process {filename}: {error}", style="red"
+                    )
+
+        # Run smart update with progress tracking
+        try:
+            stats = processor.update_index_smart(
+                batch_size=batch_size, progress_callback=progress_callback
+            )
+
+            # Stop progress bar with completion message
+            if progress_bar and task_id is not None:
+                progress_bar.update(task_id, description="✅ Completed")
+                progress_bar.stop()
+
+            if stats.files_processed > 0:
+                console.print(
+                    f"✅ Initial update complete: {stats.files_processed} files processed"
+                )
+            else:
+                console.print("✅ Index is up to date - no changes detected")
+
+        except Exception as e:
+            if progress_bar:
+                progress_bar.stop()
+            console.print(f"⚠️  Initial update failed: {e}", style="yellow")
+            console.print("Continuing with file watching...", style="yellow")
+
+        console.print(f"\n👀 Now watching {config.codebase_dir} for changes...")
         console.print(f"⏱️  Debounce: {debounce}s")
         console.print("Press Ctrl+C to stop")
 
@@ -779,9 +863,9 @@ def watch(ctx, debounce: float, batch_size: int):
                     changes_to_process = pending_changes.copy()
                     pending_changes.clear()
 
-                console.print(
-                    f"📁 Processing {len(changes_to_process)} changed files..."
-                )
+                # Start progress tracking for this batch using Rich Progress
+                total_files = len(changes_to_process)
+                console.print(f"\n📁 Processing {total_files} changed files...")
 
                 # Import here to avoid circular imports
                 from .indexing import TextChunker
@@ -804,9 +888,42 @@ def watch(ctx, debounce: float, batch_size: int):
                         except ValueError:
                             continue
 
+                # Create progress bar for batch processing
+                total_operations = len(deleted_files) + len(modified_files)
+                batch_progress = None
+                batch_task_id = None
+
+                if total_operations > 0:
+                    batch_progress = Progress(
+                        TextColumn("[bold orange1]Processing", justify="right"),
+                        BarColumn(bar_width=None),
+                        "•",
+                        TaskProgressColumn(),
+                        "•",
+                        TimeElapsedColumn(),
+                        "•",
+                        TextColumn("[cyan]{task.description}"),
+                        console=console,
+                    )
+                    batch_progress.start()
+                    batch_task_id = batch_progress.add_task(
+                        "Starting batch...", total=total_operations
+                    )
+
                 # Process deletions
                 if deleted_files:
                     for deleted_file in deleted_files:
+                        if batch_progress and batch_task_id is not None:
+                            # Truncate path for display
+                            display_path = deleted_file
+                            if len(display_path) > 47:
+                                display_path = "..." + display_path[-44:]
+                            batch_progress.update(
+                                batch_task_id,
+                                advance=1,
+                                description=f"🗑️ {display_path}",
+                            )
+
                         qdrant_client.delete_by_filter(
                             {
                                 "must": [
@@ -815,17 +932,29 @@ def watch(ctx, debounce: float, batch_size: int):
                             }
                         )
 
-                # Process modifications
+                # Process modifications with progress tracking
                 if modified_files:
                     batch_points = []
                     total_chunks = 0
 
                     for file_path in modified_files:
                         try:
-                            # Delete existing points for this file first
                             relative_path = str(
                                 file_path.relative_to(config.codebase_dir)
                             )
+
+                            # Update progress bar
+                            if batch_progress and batch_task_id is not None:
+                                display_path = relative_path
+                                if len(display_path) > 47:
+                                    display_path = "..." + display_path[-44:]
+                                batch_progress.update(
+                                    batch_task_id,
+                                    advance=1,
+                                    description=f"📝 {display_path}",
+                                )
+
+                            # Delete existing points for this file first
                             qdrant_client.delete_by_filter(
                                 {
                                     "must": [
@@ -875,7 +1004,7 @@ def watch(ctx, debounce: float, batch_size: int):
                         except Exception as e:
                             if ctx.obj["verbose"]:
                                 console.print(
-                                    f"❌ Failed to process {file_path}: {e}",
+                                    f"\n❌ Failed to process {file_path}: {e}",
                                     style="red",
                                 )
 
@@ -883,11 +1012,20 @@ def watch(ctx, debounce: float, batch_size: int):
                     if batch_points:
                         qdrant_client.upsert_points(batch_points)
 
+                # Stop progress bar and show completion
+                if batch_progress and batch_task_id is not None:
+                    batch_progress.update(
+                        batch_task_id, description="✅ Batch completed"
+                    )
+                    batch_progress.stop()
+
+                # Final status update
                 if modified_files or deleted_files:
                     console.print(
-                        f"✅ Updated index: {len(modified_files)} modified, {len(deleted_files)} deleted",
+                        f"✅ Batch complete: {len(modified_files)} modified, {len(deleted_files)} deleted",
                         style="green",
                     )
+                    console.print("👀 Watching for new changes...", style="dim")
 
         # Start the change processor thread
         processor_thread = threading.Thread(target=process_changes, daemon=True)

@@ -113,6 +113,12 @@ else
     print_warning "Docker not available, skipping Docker build"
 fi
 
+# Cleanup
+print_step "Cleaning up temporary files"
+# Remove coverage files
+rm -f .coverage .coverage.*
+print_success "Coverage files cleaned up"
+
 # Summary
 echo -e "\n${GREEN}🎉 Local CI pipeline completed successfully!${NC}"
 echo "================================="
@@ -124,5 +130,6 @@ echo "✅ Package built and validated"
 if command -v docker &> /dev/null; then
     echo "✅ Docker image built"
 fi
+echo "✅ Temporary files cleaned up"
 echo ""
 echo "Ready to push to GitHub! 🚀"

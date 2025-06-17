@@ -69,10 +69,23 @@ jobs:
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "Current version: $VERSION"
     
+    - name: Check if version file changed
+      id: version-file-check
+      run: |
+        # Check if __init__.py was modified in this commit
+        if git diff --name-only HEAD~1 HEAD | grep -q "src/code_indexer/__init__.py"; then
+          echo "version-file-changed=true" >> $GITHUB_OUTPUT
+          echo "Version file was modified in this commit"
+        else
+          echo "version-file-changed=false" >> $GITHUB_OUTPUT
+          echo "Version file was not modified in this commit"
+        fi
+    
     - name: Get previous version
       id: previous-version
+      if: steps.version-file-check.outputs.version-file-changed == 'true'
       run: |
-        # Get the version from the previous commit
+        # Get the version from the previous commit only if version file changed
         git checkout HEAD~1 2>/dev/null || true
         if [ -f "src/code_indexer/__init__.py" ]; then
           PREV_VERSION=$(python -c "import sys; sys.path.insert(0, 'src'); from code_indexer import __version__; print(__version__)" 2>/dev/null || echo "none")
@@ -87,14 +100,20 @@ jobs:
       id: version-check
       run: |
         CURRENT="${{ steps.current-version.outputs.version }}"
-        PREVIOUS="${{ steps.previous-version.outputs.previous }}"
+        VERSION_FILE_CHANGED="${{ steps.version-file-check.outputs.version-file-changed }}"
         
-        if [ "$CURRENT" != "$PREVIOUS" ]; then
-          echo "changed=true" >> $GITHUB_OUTPUT
-          echo "Version changed from $PREVIOUS to $CURRENT"
+        if [ "$VERSION_FILE_CHANGED" = "true" ]; then
+          PREVIOUS="${{ steps.previous-version.outputs.previous }}"
+          if [ "$CURRENT" != "$PREVIOUS" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Version changed from $PREVIOUS to $CURRENT"
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "Version file changed but version is the same: $CURRENT"
+          fi
         else
           echo "changed=false" >> $GITHUB_OUTPUT
-          echo "Version unchanged: $CURRENT"
+          echo "Version file not modified in this commit: $CURRENT"
         fi
         echo "version=$CURRENT" >> $GITHUB_OUTPUT
 
