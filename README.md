@@ -24,13 +24,10 @@ A Python CLI tool that uses [Ollama](https://ollama.ai/) for embeddings and [Qdr
 ### Installation
 
 ```bash
-# Install from PyPI
-pip install code-indexer
+# Install from GitHub releases
+pip install https://github.com/jsbattig/code-indexer/releases/latest/download/code_indexer-py3-none-any.whl
 
-# Install from GitHub (latest development version)
-pip install git+https://github.com/jsbattig/code-indexer.git
-
-# Or install from source
+# Install from source
 git clone https://github.com/jsbattig/code-indexer.git
 cd code-indexer
 pip install -e .
@@ -42,47 +39,39 @@ pip install -e .
 # Navigate to your codebase
 cd /path/to/your/project
 
-# Initialize configuration
-python -m code_indexer.cli init
-
-# Start services and download AI model
-python -m code_indexer.cli setup
+# Start services and download AI model (creates config automatically)
+code-indexer setup
 
 # Index your codebase
-python -m code_indexer.cli index
+code-indexer index
 
 # Search your code
-python -m code_indexer.cli query "authentication logic"
+code-indexer query "authentication logic"
 
 # Keep index updated as code changes
-python -m code_indexer.cli update
+code-indexer update
 
 # Watch for changes and auto-update (real-time)
-python -m code_indexer.cli watch
+code-indexer watch
 ```
 
 ## Usage
 
 ### Commands
 
-#### Initialize Project
-```bash
-python -m code_indexer.cli init [--codebase-dir PATH] [--force]
-```
-
 #### Setup Services
 ```bash
-python -m code_indexer.cli setup [--model MODEL_NAME] [--force-recreate]
+code-indexer setup [--model MODEL_NAME] [--force-recreate]
 ```
 
 #### Index Codebase
 ```bash
-python -m code_indexer.cli index [--clear] [--batch-size 50]
+code-indexer index [--clear] [--batch-size 50]
 ```
 
 #### Search Code
 ```bash
-python -m code_indexer.cli query "search terms" [OPTIONS]
+code-indexer query "search terms" [OPTIONS]
 
 Options:
   --limit, -l INTEGER     Number of results (default: 10)
@@ -93,57 +82,85 @@ Options:
 
 #### Check Status
 ```bash
-python -m code_indexer.cli status
+code-indexer status
+```
+
+#### Update Index
+```bash
+code-indexer update [--since DATETIME] [--batch-size INT]
+```
+
+#### Watch for Changes
+```bash
+code-indexer watch [--debounce FLOAT] [--batch-size INT]
 ```
 
 #### Cleanup
 ```bash
-python -m code_indexer.cli clean [--remove-data]
+code-indexer clean [--remove-data] [--all-projects]
 ```
 
 ### Search Examples
 
 ```bash
 # Find authentication-related code
-python -m code_indexer.cli query "user authentication login"
+code-indexer query "user authentication login"
 
 # Find React components
-python -m code_indexer.cli query "component props state" --language tsx
+code-indexer query "component props state" --language tsx
 
 # Find server-side database code
-python -m code_indexer.cli query "database query" --path server
+code-indexer query "database query" --path server
 
 # High-precision search
-python -m code_indexer.cli query "error handling" --min-score 0.8
+code-indexer query "error handling" --min-score 0.8
 
 # Get more results
-python -m code_indexer.cli query "api endpoint" --limit 20
+code-indexer query "api endpoint" --limit 20
 ```
 
-### Incremental Updates
+## Incremental Updates
 
 Keep your index current as your codebase evolves:
 
 ```bash
 # Manual update - indexes only changed files since last index
-python -m code_indexer.cli update
+code-indexer update
 
 # Update with custom timestamp
-python -m code_indexer.cli update --since "2024-01-01T00:00:00"
+code-indexer update --since "2024-01-01T00:00:00"
 
 # Real-time watching - automatically updates index when files change
-python -m code_indexer.cli watch
+code-indexer watch
 
 # Watch with custom debounce (wait time before processing changes)
-python -m code_indexer.cli watch --debounce 5.0
+code-indexer watch --debounce 5.0
 ```
 
 **How it works:**
-- `update` compares file modification times against the last index timestamp
+- `update` uses git hashes and file timestamps to detect changes
 - Automatically detects and removes deleted files from the index
 - Only re-indexes files that have actually changed, making updates fast
 - `watch` mode uses file system events for real-time updates
 - Batches changes and waits for a debounce period to avoid excessive processing
+
+## Git-Aware Indexing
+
+Code Indexer provides intelligent git-aware indexing that automatically adapts to your repository state:
+
+### Automatic Git Detection
+- **Branch-aware**: Indexes files based on current git branch context
+- **Change tracking**: Uses git hashes to detect when files have changed
+- **Fallback support**: Works in non-git directories using filesystem metadata
+
+### Smart Re-indexing
+```bash
+# Re-index only when files have changed
+code-indexer index
+
+# Force complete re-index
+code-indexer index --clear
+```
 
 ## File Watcher Deep Dive
 
@@ -348,64 +365,33 @@ python -m code_indexer.cli watch --batch-size 10   # Smaller batches, more frequ
 
 The watcher provides a seamless "live sync" experience, ensuring your semantic search index is always current with your latest code changes, making development more efficient and search results more relevant.
 
-## Sharing Indexes with Git LFS
+## Multi-Project Support
 
-Code Indexer supports sharing vector databases across teams using Git LFS, compatible with both **GitHub** and **GitLab**:
+Code Indexer automatically supports indexing multiple projects simultaneously without port conflicts:
 
-### Setup Git LFS (One-time)
+### Automatic Project Detection
+- **Git Repository Name**: Uses the git repository name from `git remote get-url origin`
+- **Directory Name**: Falls back to the current directory name if not a git repository
+- **Sanitization**: Converts names to Docker-compatible format (lowercase, hyphens only)
+
+### Isolated Storage
+Each project gets its own isolated vector database:
 ```bash
-# Install Git LFS (if not already installed)
-# On RHEL/Rocky/Fedora: dnf install git-lfs
-# On Ubuntu/Debian: apt install git-lfs
-# On macOS: brew install git-lfs
-git lfs install
-
-# Database files are automatically tracked via included .gitattributes
-# Git hooks for clean commits and branch changes
-python -m code_indexer.cli git-hooks --install
+# Project: my-app → Collection: my_app
+# Project: api-server → Collection: api_server
 ```
 
-### Workflow
-```bash
-# Commit and push your index to share with team
-git add .code-indexer/
-git commit -m "Update semantic search index"
-git push origin main
-
-# Team members get latest index
-git pull origin main
-git lfs pull  # Download large files
-```
-
-### Cross-Platform Compatibility
-- **Same .gitattributes**: Works on both GitHub and GitLab
-- **Universal commands**: Same `git lfs` commands across platforms
-- **Easy migration**: Move repositories between platforms seamlessly
-- **Team flexibility**: Mix of GitHub/GitLab users in same project
-
-### Git Hooks for Clean Commits
-
-```bash
-# Install hooks to ensure database integrity
-python -m code_indexer.cli git-hooks --install
-
-# Remove hooks if needed
-python -m code_indexer.cli git-hooks --uninstall
-```
-
-**What the hooks do:**
-- **pre-commit**: Flush Qdrant database before commits (ensures clean state)
-- **pre-checkout**: Stop Qdrant before branch changes (prevents file locks)
-- **post-checkout**: Restart Qdrant after branch changes (ready for new branch)
+### Global Services
+- **Single Ollama instance**: Shared AI model server for all projects
+- **Single Qdrant instance**: Multiple collections in one database
+- **No port conflicts**: Projects access services via internal communication
+- **Efficient resource usage**: Shared containers reduce memory footprint
 
 ### Benefits
-- **Branch-specific indexes**: Each branch has its own vector database state
-- **Clean commits**: Database buffers are flushed before committing
-- **No file conflicts**: Automatic Qdrant management during Git operations
-- **Faster onboarding**: New team members get pre-built index
-- **Consistent search**: Everyone searches same codebase state
-- **Reduced compute**: Share AI embeddings instead of regenerating
-- **Version control**: Track index changes alongside code changes
+- **Work on multiple projects**: Index and search different codebases simultaneously
+- **Clean isolation**: Projects can't interfere with each other's data
+- **Zero configuration**: Project names are detected automatically
+- **Resource efficient**: Shared services minimize system resource usage
 
 ## Configuration
 
@@ -574,17 +560,17 @@ docker logs code-ollama
 docker logs code-qdrant
 
 # Restart services
-python -m code_indexer.cli clean
-python -m code_indexer.cli setup
+code-indexer clean
+code-indexer setup
 ```
 
 ### Search Not Working
 ```bash
 # Check service status
-python -m code_indexer.cli status
+code-indexer status
 
 # Re-index if needed
-python -m code_indexer.cli index --clear
+code-indexer index --clear
 ```
 
 ### Performance Issues
