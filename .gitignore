@@ -95,3 +95,4 @@ code-indexing-structure.md
 tests/projects/*/data/
 tests/projects/*/.code-indexer/
 tests/projects/*/docker-compose.yml
+/tests
