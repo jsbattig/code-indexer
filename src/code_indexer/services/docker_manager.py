@@ -219,18 +219,31 @@ class DockerManager:
         # Last resort: return current directory
         return current
 
+    def _find_dockerfile(self, dockerfile_name: str) -> Path:
+        """Find Dockerfile in package location first, then project root."""
+        # Try package location first (for pip/pipx installations)
+        package_dockerfile = Path(__file__).parent.parent / "docker" / dockerfile_name
+        if package_dockerfile.exists():
+            return package_dockerfile
+        
+        # Fall back to project root (for development)
+        project_root = self._find_project_root()
+        project_dockerfile = project_root / dockerfile_name
+        return project_dockerfile  # Return this even if it doesn't exist for error messages
+
     def create_compose_file(self, data_dir: Path = Path(".code-indexer")) -> None:
         """Create docker-compose.yml file."""
-        # Find project root where Dockerfiles are located
-        project_root = self._find_project_root()
+        # Find Dockerfiles (package location first, then project root)
+        ollama_dockerfile = self._find_dockerfile("Dockerfile.ollama")
+        qdrant_dockerfile = self._find_dockerfile("Dockerfile.qdrant")
 
         compose_config = {
             "version": "3.8",
             "services": {
                 "ollama": {
                     "build": {
-                        "context": str(project_root),
-                        "dockerfile": "Dockerfile.ollama",
+                        "context": str(ollama_dockerfile.parent),
+                        "dockerfile": str(ollama_dockerfile.name),
                     },
                     "container_name": f"code-ollama-{self.project_name}",
                     "volumes": [f"{data_dir}/ollama:/root/.ollama"],
@@ -250,8 +263,8 @@ class DockerManager:
                 },
                 "qdrant": {
                     "build": {
-                        "context": str(project_root),
-                        "dockerfile": "Dockerfile.qdrant",
+                        "context": str(qdrant_dockerfile.parent),
+                        "dockerfile": str(qdrant_dockerfile.name),
                     },
                     "container_name": f"code-qdrant-{self.project_name}",
                     "volumes": [f"{data_dir}/qdrant:/qdrant/storage"],
@@ -709,10 +722,9 @@ class DockerManager:
         # Single global network for all services
         network_name = "code-indexer-global"
 
-        # Find project root where Dockerfiles are located
-        project_root = self._find_project_root()
-        ollama_dockerfile = project_root / "Dockerfile.ollama"
-        qdrant_dockerfile = project_root / "Dockerfile.qdrant"
+        # Find Dockerfiles (package location first, then project root)
+        ollama_dockerfile = self._find_dockerfile("Dockerfile.ollama")
+        qdrant_dockerfile = self._find_dockerfile("Dockerfile.qdrant")
 
         # Get global configuration directory
         global_config_dir = Path.home() / ".code-indexer" / "global"
@@ -725,8 +737,8 @@ class DockerManager:
             "services": {
                 "ollama": {
                     "build": {
-                        "context": str(project_root),
-                        "dockerfile": str(ollama_dockerfile),
+                        "context": str(ollama_dockerfile.parent),
+                        "dockerfile": str(ollama_dockerfile.name),
                     },
                     "container_name": "code-indexer-ollama",
                     "ports": ["11434:11434"],  # External port mapping
@@ -748,8 +760,8 @@ class DockerManager:
                 },
                 "qdrant": {
                     "build": {
-                        "context": str(project_root),
-                        "dockerfile": str(qdrant_dockerfile),
+                        "context": str(qdrant_dockerfile.parent),
+                        "dockerfile": str(qdrant_dockerfile.name),
                     },
                     "container_name": "code-indexer-qdrant",
                     "ports": ["6333:6333"],  # External port mapping

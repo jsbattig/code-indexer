@@ -62,6 +62,9 @@ code-indexer = "code_indexer.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/code_indexer"]
+include = [
+    "src/code_indexer/docker/*"
+]
 
 [tool.hatch.version]
 path = "src/code_indexer/__init__.py"
