@@ -91,3 +91,20 @@ ignore_errors = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v"
+
+[tool.coverage.run]
+source = ["src/code_indexer"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "setup.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
