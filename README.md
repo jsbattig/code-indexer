@@ -30,8 +30,11 @@ A Python CLI tool that uses [Ollama](https://ollama.ai/) for embeddings and [Qdr
 # Install pipx if not already installed (Ubuntu/Debian)
 sudo apt update && sudo apt install pipx
 
-# Install code-indexer using pipx
-pipx install https://github.com/jsbattig/code-indexer/releases/latest/download/code_indexer-py3-none-any.whl
+# Install code-indexer using pipx (from latest release)
+pipx install https://github.com/jsbattig/code-indexer/releases/download/v0.0.7.0/code_indexer-0.0.7.0-py3-none-any.whl
+
+# Or install directly from git (latest development)
+pipx install git+https://github.com/jsbattig/code-indexer.git
 
 # Ensure pipx bin directory is in PATH
 pipx ensurepath
@@ -44,7 +47,10 @@ python3 -m venv ~/code-indexer-env
 source ~/code-indexer-env/bin/activate
 
 # Install from GitHub releases
-pip install https://github.com/jsbattig/code-indexer/releases/latest/download/code_indexer-py3-none-any.whl
+pip install https://github.com/jsbattig/code-indexer/releases/download/v0.0.7.0/code_indexer-0.0.7.0-py3-none-any.whl
+
+# Or install directly from git (latest development)
+pip install git+https://github.com/jsbattig/code-indexer.git
 
 # Note: Remember to activate the environment before using: source ~/code-indexer-env/bin/activate
 ```
