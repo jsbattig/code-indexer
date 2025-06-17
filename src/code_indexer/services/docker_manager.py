@@ -13,12 +13,16 @@ class DockerManager:
     """Manages Docker containers for Code Indexer services."""
 
     def __init__(
-        self, console: Optional[Console] = None, project_name: Optional[str] = None
+        self,
+        console: Optional[Console] = None,
+        project_name: Optional[str] = None,
+        force_docker: bool = False,
     ):
         self.console = console or Console()
         self.project_name = project_name or self._detect_project_name()
         self.compose_file = Path("docker-compose.yml")
         self._config = self._load_service_config()
+        self.force_docker = force_docker
 
     def _detect_project_name(self) -> str:
         """Detect project name from current folder name for qdrant collection naming."""
@@ -104,7 +108,19 @@ class DockerManager:
         return f"http://localhost:{port}"
 
     def is_docker_available(self) -> bool:
-        """Check if Podman or Docker is available, prioritizing Podman."""
+        """Check if Podman or Docker is available, prioritizing Podman unless force_docker is True."""
+
+        if self.force_docker:
+            # Force Docker mode - only check Docker
+            try:
+                result = subprocess.run(
+                    ["docker", "--version"], capture_output=True, text=True, timeout=5
+                )
+                return result.returncode == 0
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                return False
+
+        # Normal Podman-first mode
         # Try Podman first (Podman shop priority)
         try:
             result = subprocess.run(
@@ -125,7 +141,36 @@ class DockerManager:
             return False
 
     def is_compose_available(self) -> bool:
-        """Check if Podman Compose or Docker Compose is available, prioritizing Podman."""
+        """Check if Podman Compose or Docker Compose is available, prioritizing Podman unless force_docker is True."""
+
+        if self.force_docker:
+            # Force Docker mode - only check Docker Compose
+            # Try docker compose (new syntax)
+            try:
+                result = subprocess.run(
+                    ["docker", "compose", "version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode == 0:
+                    return True
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+
+            # Try docker-compose (old syntax)
+            try:
+                result = subprocess.run(
+                    ["docker-compose", "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                return result.returncode == 0
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                return False
+
+        # Normal Podman-first mode
         # Try podman-compose first (Podman shop priority)
         try:
             result = subprocess.run(
@@ -165,7 +210,36 @@ class DockerManager:
             return False
 
     def get_compose_command(self) -> List[str]:
-        """Get the appropriate compose command, prioritizing Podman."""
+        """Get the appropriate compose command, prioritizing Podman unless force_docker is True."""
+
+        if self.force_docker:
+            # Force Docker mode - try Docker options only
+            # Try docker compose (new syntax)
+            try:
+                result = subprocess.run(
+                    ["docker", "compose", "version"], capture_output=True, timeout=5
+                )
+                if result.returncode == 0:
+                    return ["docker", "compose"]
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+
+            # Fall back to docker-compose (old syntax)
+            try:
+                result = subprocess.run(
+                    ["docker-compose", "--version"], capture_output=True, timeout=5
+                )
+                if result.returncode == 0:
+                    return ["docker-compose"]
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+
+            # Force Docker was requested but not available
+            raise RuntimeError(
+                "Docker was forced but docker/docker-compose is not available"
+            )
+
+        # Normal Podman-first mode
         # Prefer podman-compose (Podman shop priority)
         try:
             result = subprocess.run(
@@ -257,7 +331,7 @@ class DockerManager:
 
             with self.console.status("Starting services..."):
                 result = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=120
+                    cmd, capture_output=True, text=True, timeout=300
                 )
 
             if result.returncode == 0:
@@ -333,9 +407,19 @@ class DockerManager:
                 import json
 
                 try:
-                    services = json.loads(result.stdout)
-                    if not isinstance(services, list):
-                        services = [services]
+                    # Handle both single JSON object and multiple JSON objects (one per line)
+                    stdout = result.stdout.strip()
+                    if not stdout:
+                        services = []
+                    elif stdout.startswith("["):
+                        # JSON array format
+                        services = json.loads(stdout)
+                    else:
+                        # Multiple JSON objects, one per line (Docker compose format)
+                        services = []
+                        for line in stdout.split("\n"):
+                            if line.strip():
+                                services.append(json.loads(line.strip()))
 
                     status: Dict[str, Any] = {
                         "status": "running" if services else "stopped",
@@ -569,10 +653,21 @@ class DockerManager:
 
     def get_container_name(self, service: str) -> str:
         """Get the global container name for a given service."""
+        # In dual-engine testing mode, add engine suffix and test identifier to prevent conflicts
+        import os
+        if os.getenv("CODE_INDEXER_DUAL_ENGINE_TEST_MODE") == "true":
+            engine_suffix = "docker" if self.force_docker else "podman"
+            # Add test identifier to make it clear these are test containers
+            return f"code-indexer-test-{service}-{engine_suffix}"
         return f"code-indexer-{service}"
 
     def get_network_name(self) -> str:
         """Get the global network name."""
+        # In dual-engine testing mode, add engine suffix and test identifier to prevent conflicts
+        import os
+        if os.getenv("CODE_INDEXER_DUAL_ENGINE_TEST_MODE") == "true":
+            engine_suffix = "docker" if self.force_docker else "podman"
+            return f"code-indexer-test-global-{engine_suffix}"
         return "code-indexer-global"
 
     def stop(self) -> bool:
@@ -674,14 +769,15 @@ class DockerManager:
         ollama_dockerfile = self._find_dockerfile("Dockerfile.ollama")
         qdrant_dockerfile = self._find_dockerfile("Dockerfile.qdrant")
 
-        # Copy Dockerfiles to temporary directory so Docker can find them
-        import tempfile
+        # Copy Dockerfiles to .code-indexer directory so Docker can find them
         import shutil
 
-        # Create a temporary directory for Dockerfiles
-        temp_docker_dir = Path(tempfile.mkdtemp(prefix="code-indexer-docker-"))
-        local_ollama_dockerfile = temp_docker_dir / "Dockerfile.ollama"
-        local_qdrant_dockerfile = temp_docker_dir / "Dockerfile.qdrant"
+        # Use .code-indexer/docker directory for Dockerfiles
+        local_docker_dir = data_dir / "docker"
+        local_docker_dir.mkdir(parents=True, exist_ok=True)
+
+        local_ollama_dockerfile = local_docker_dir / "Dockerfile.ollama"
+        local_qdrant_dockerfile = local_docker_dir / "Dockerfile.qdrant"
 
         shutil.copy2(ollama_dockerfile, local_ollama_dockerfile)
         shutil.copy2(qdrant_dockerfile, local_qdrant_dockerfile)
@@ -692,15 +788,20 @@ class DockerManager:
         # Current working directory for project-specific qdrant storage
         # current_project_dir = Path.cwd()  # Currently unused but may be needed for future features
 
+        # Get configured ports for services
+        default_ports = {"ollama": 11434, "qdrant": 6333}
+        ollama_port = self._config.get("ollama", {}).get("docker", {}).get("port", default_ports["ollama"])
+        qdrant_port = self._config.get("qdrant", {}).get("docker", {}).get("port", default_ports["qdrant"])
+
         compose_config = {
             "services": {
                 "ollama": {
                     "build": {
-                        "context": str(temp_docker_dir),
+                        "context": str(local_docker_dir),
                         "dockerfile": str(local_ollama_dockerfile.name),
                     },
-                    "container_name": "code-indexer-ollama",
-                    "ports": ["11434:11434"],  # External port mapping
+                    "container_name": self.get_container_name("ollama"),
+                    "ports": [f"{ollama_port}:{ollama_port}"],  # External port mapping
                     "volumes": [f"{global_config_dir}/ollama:/root/.ollama"],
                     "restart": "unless-stopped",
                     "networks": [network_name],
@@ -719,11 +820,11 @@ class DockerManager:
                 },
                 "qdrant": {
                     "build": {
-                        "context": str(temp_docker_dir),
+                        "context": str(local_docker_dir),
                         "dockerfile": str(local_qdrant_dockerfile.name),
                     },
-                    "container_name": "code-indexer-qdrant",
-                    "ports": ["6333:6333"],  # External port mapping
+                    "container_name": self.get_container_name("qdrant"),
+                    "ports": [f"{qdrant_port}:{qdrant_port}"],  # External port mapping
                     "volumes": [
                         # Mount global qdrant storage that contains all project databases
                         f"{global_config_dir}/qdrant:/qdrant/storage"

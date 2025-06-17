@@ -17,11 +17,7 @@
     ".next",
     ".nuxt",
     "dist-*",
-    ".code-indexer",
-    ".github",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache"
+    ".code-indexer"
   ],
   "file_extensions": [
     "py",

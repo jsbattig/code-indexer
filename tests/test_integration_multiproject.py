@@ -254,22 +254,35 @@ class TestMultiProjectIntegration(unittest.TestCase):
 
         try:
             # Start containers
-            docker_manager.start()
-            time.sleep(10)
+            success = docker_manager.start()
+            self.assertTrue(success, "Failed to start Docker services")
+            
+            # Wait for services to be ready (up to 2 minutes)
+            services_ready = docker_manager.wait_for_services(timeout=120)
+            self.assertTrue(services_ready, "Services did not become ready within timeout")
 
             # Verify containers are running
             status = docker_manager.status()
-            self.assertTrue(status["ollama"]["running"])
-            self.assertTrue(status["qdrant"]["running"])
+            self.assertTrue(status["ollama"]["running"], f"Ollama not running. Status: {status}")
+            self.assertTrue(status["qdrant"]["running"], f"Qdrant not running. Status: {status}")
 
             # Stop containers
-            docker_manager.stop()
-            time.sleep(5)
+            stop_success = docker_manager.stop()
+            self.assertTrue(stop_success, "Failed to stop Docker services")
+            
+            # Wait for services to actually stop
+            max_wait = 30
+            start_time = time.time()
+            while time.time() - start_time < max_wait:
+                status = docker_manager.status()
+                if not status["ollama"]["running"] and not status["qdrant"]["running"]:
+                    break
+                time.sleep(2)
 
             # Verify containers are stopped
             status = docker_manager.status()
-            self.assertFalse(status["ollama"]["running"])
-            self.assertFalse(status["qdrant"]["running"])
+            self.assertFalse(status["ollama"]["running"], f"Ollama still running. Status: {status}")
+            self.assertFalse(status["qdrant"]["running"], f"Qdrant still running. Status: {status}")
 
             # Clean up
             docker_manager.clean()

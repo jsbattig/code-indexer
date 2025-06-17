@@ -179,9 +179,14 @@ def init(
 @cli.command()
 @click.option("--model", "-m", help="Ollama model to use (default: nomic-embed-text)")
 @click.option("--force-recreate", "-f", is_flag=True, help="Force recreate containers")
+@click.option(
+    "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
+)
 @click.option("--quiet", "-q", is_flag=True, help="Suppress output")
 @click.pass_context
-def setup(ctx, model: Optional[str], force_recreate: bool, quiet: bool):
+def setup(
+    ctx, model: Optional[str], force_recreate: bool, force_docker: bool, quiet: bool
+):
     """Setup and start required services (Ollama + Qdrant).
 
     \b
@@ -213,9 +218,10 @@ def setup(ctx, model: Optional[str], force_recreate: bool, quiet: bool):
 
     \b
     EXAMPLES:
-      code-indexer setup                    # Basic setup
+      code-indexer setup                    # Basic setup (prefers Podman)
       code-indexer setup --quiet           # Silent mode
       code-indexer setup --force-recreate  # Reset containers
+      code-indexer setup --force-docker    # Force use Docker instead of Podman
       code-indexer setup -m all-minilm-l6-v2  # Different model
 
     Run this command once per machine, services persist between sessions.
@@ -249,7 +255,7 @@ def setup(ctx, model: Optional[str], force_recreate: bool, quiet: bool):
             config_manager.save(config)
 
         # Check Docker availability (auto-detect project name)
-        docker_manager = DockerManager(setup_console)
+        docker_manager = DockerManager(setup_console, force_docker=force_docker)
 
         if not docker_manager.is_docker_available():
             setup_console.print(
@@ -1248,8 +1254,11 @@ def query(
 
 
 @cli.command()
+@click.option(
+    "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
+)
 @click.pass_context
-def status(ctx):
+def status(ctx, force_docker: bool):
     """Show status of services and index.
 
     \b
@@ -1297,7 +1306,7 @@ def status(ctx):
         table.add_column("Details", style="green")
 
         # Check Docker services (auto-detect project name)
-        docker_manager = DockerManager()
+        docker_manager = DockerManager(force_docker=force_docker)
         service_status = docker_manager.get_service_status()
 
         docker_status = (
@@ -1576,8 +1585,11 @@ fi
     help="Remove data for ALL projects (use with --remove-data)",
 )
 @click.option("--quiet", "-q", is_flag=True, help="Suppress output")
+@click.option(
+    "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
+)
 @click.pass_context
-def clean(ctx, remove_data: bool, all_projects: bool, quiet: bool):
+def clean(ctx, remove_data: bool, all_projects: bool, quiet: bool, force_docker: bool):
     """Stop services and optionally remove data.
 
     By default, --remove-data only removes the current project's data.
@@ -1594,7 +1606,7 @@ def clean(ctx, remove_data: bool, all_projects: bool, quiet: bool):
             )
             sys.exit(1)
 
-        docker_manager = DockerManager(clean_console)
+        docker_manager = DockerManager(clean_console, force_docker=force_docker)
 
         if remove_data:
             if all_projects:

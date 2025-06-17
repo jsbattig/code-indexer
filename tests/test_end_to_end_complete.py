@@ -28,6 +28,9 @@ class TestEndToEndComplete:
             # Handle case where current directory doesn't exist
             self.original_cwd = Path(__file__).parent.absolute()
 
+        # ALWAYS clean up any leftover data first
+        self.cleanup_all_data()
+
         # Check if services are already running
         self.services_were_running = self.are_services_running()
         self.setup_required = not self.services_were_running
@@ -131,6 +134,54 @@ class TestEndToEndComplete:
         except Exception as e:
             print(f"Warning: Failed to cleanup services: {e}")
 
+    def cleanup_all_data(self):
+        """Clean up all data directories and collections to ensure clean test state"""
+        import shutil
+
+        # Clean up all .code-indexer directories in test projects
+        test_projects_dir = Path(__file__).parent / "projects"
+        if test_projects_dir.exists():
+            for project_dir in test_projects_dir.iterdir():
+                if project_dir.is_dir():
+                    code_indexer_dir = project_dir / ".code-indexer"
+                    if code_indexer_dir.exists():
+                        shutil.rmtree(code_indexer_dir, ignore_errors=True)
+                    
+                    # Also remove any docker-compose.yml files
+                    compose_file = project_dir / "docker-compose.yml"
+                    if compose_file.exists():
+                        compose_file.unlink(missing_ok=True)
+        
+        # Clean up global .code-indexer directory
+        global_code_indexer = Path.home() / ".code-indexer"
+        if global_code_indexer.exists():
+            shutil.rmtree(global_code_indexer, ignore_errors=True)
+        
+        # Clean up any leftover compose files in current directory
+        current_compose = Path("docker-compose.yml")
+        if current_compose.exists():
+            current_compose.unlink(missing_ok=True)
+        
+        # If services are running, try to clear vector database collections
+        try:
+            if self.are_services_running():
+                # Clear any existing collections via direct API calls
+                import requests
+                qdrant_url = "http://localhost:6333"
+                
+                # Get all collections
+                response = requests.get(f"{qdrant_url}/collections", timeout=5)
+                if response.status_code == 200:
+                    collections = response.json().get("result", {}).get("collections", [])
+                    for collection in collections:
+                        collection_name = collection.get("name")
+                        if collection_name:
+                            # Delete the collection
+                            requests.delete(f"{qdrant_url}/collections/{collection_name}", timeout=5)
+        except Exception:
+            # If clearing collections fails, that's ok - we'll continue
+            pass
+
     def run_cli_command(self, args, cwd=None, timeout=120):
         """Run code-indexer CLI command and return result"""
         cmd = ["python", "-m", "code_indexer.cli"] + args
@@ -160,6 +211,8 @@ class TestEndToEndComplete:
         os.chdir(project_path)
 
         try:
+            # Ensure clean state for this test
+            self.cleanup_all_data()
             # 1. Start containers and index
             result = self.run_cli_command(["index"])
             assert result.returncode == 0, f"Index failed: {result.stderr}"
@@ -248,6 +301,8 @@ class TestEndToEndComplete:
         project2_path = Path(__file__).parent / "projects" / "test_project_2"
 
         try:
+            # Ensure clean state for this test
+            self.cleanup_all_data()
             # Index both projects
             os.chdir(project1_path)
             result1 = self.run_cli_command(["index"])
@@ -369,13 +424,17 @@ class TestEndToEndComplete:
         os.chdir(project_path)
 
         try:
+            # Extra cleanup to ensure completely clean state for this test
+            self.cleanup_all_data()
+            
             # Test search without indexing first
             result = self.run_cli_command(["query", "test query"])
-            assert result.returncode != 0, "Search should fail without indexing"
+            assert result.returncode != 0, f"Search should fail without indexing. Got: {result.stdout}\nStderr: {result.stderr}"
 
-            # Test list without indexing first
+            # Test status without indexing - should succeed but show no index
             result = self.run_cli_command(["status"])
-            assert result.returncode != 0, "List should fail without indexing"
+            assert result.returncode == 0, f"Status should succeed but show no index. Got: {result.stdout}\nStderr: {result.stderr}"
+            assert "❌ Not Found" in result.stdout or "Not Found" in result.stdout, "Status should indicate no index found"
 
             # Test clean without containers (should not error)
             result = self.run_cli_command(["clean"])
