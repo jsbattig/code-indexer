@@ -159,6 +159,106 @@ class ConfigManager:
         with open(self.config_path, "w") as f:
             json.dump(config_dict, f, indent=2)
 
+    def save_with_documentation(self, config: Optional[Config] = None) -> None:
+        """Save configuration with documentation and helpful comments."""
+        if config is None:
+            config = self._config
+
+        if config is None:
+            raise ValueError("No configuration to save")
+
+        # Ensure config directory exists
+        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Convert to dict and handle Path serialization
+        config_dict = config.model_dump()
+        config_dict["codebase_dir"] = str(config.codebase_dir)
+
+        # Create documentation content
+        doc_content = """# Code Indexer Configuration Guide
+
+This directory contains your project's code indexing configuration.
+
+## Quick Start
+
+1. **Review** the `config.json` file below
+2. **Customize** the settings (especially `exclude_dirs`)
+3. **Run** `code-indexer index` to start indexing
+
+## Configuration File: config.json
+
+Edit `config.json` to customize how your codebase is indexed.
+
+### Key Settings
+
+#### `exclude_dirs` - Folders to Skip
+Add directory names to exclude from indexing:
+```json
+"exclude_dirs": [
+  "node_modules", "dist", "build",     // Build outputs
+  "logs", "cache", "tmp",              // Temporary files  
+  "coverage", ".pytest_cache",         // Test artifacts
+  "vendor", "third_party",             // Dependencies
+  "my_custom_folder"                   // Your custom exclusions
+]
+```
+
+#### `file_extensions` - File Types to Index
+Specify which file types to include:
+```json
+"file_extensions": ["py", "js", "ts", "java", "cpp", "go", "rs", "md"]
+```
+
+#### `max_file_size` - Size Limit (bytes)
+Files larger than this are skipped (default: 1MB):
+```json
+"max_file_size": 2097152  // 2MB limit
+```
+
+#### `chunk_size` - Text Processing Size
+How text is split for AI processing:
+- Larger = more context, slower processing
+- Smaller = less context, faster processing
+```json
+"chunk_size": 1500  // 1500 characters (default)
+```
+
+## Additional Exclusions
+
+The system also respects `.gitignore` patterns automatically.
+You can use `.gitignore` for file-level exclusions:
+
+```gitignore
+*.log
+*.tmp
+temp_files/
+generated_*
+```
+
+## After Making Changes
+
+Run this command to apply your configuration changes:
+```bash
+code-indexer index --clear
+```
+
+## Need Help?
+
+- Run `code-indexer --help` for command documentation
+- Run `code-indexer COMMAND --help` for specific command help
+- Check the main documentation for advanced configuration
+
+"""
+
+        # Write clean JSON config (no comments to avoid parsing issues)
+        with open(self.config_path, "w") as f:
+            json.dump(config_dict, f, indent=2, sort_keys=True)
+
+        # Create a separate README file with documentation
+        readme_path = self.config_path.parent / "README.md"
+        with open(readme_path, "w") as f:
+            f.write(doc_content)
+
     def get_config(self) -> Config:
         """Get current configuration, loading if necessary."""
         if self._config is None:

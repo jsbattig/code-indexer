@@ -43,22 +43,22 @@ pip install -e .
 cd /path/to/your/project
 
 # Initialize configuration
-code-indexer init
+python -m code_indexer.cli init
 
 # Start services and download AI model
-code-indexer setup
+python -m code_indexer.cli setup
 
 # Index your codebase
-code-indexer index
+python -m code_indexer.cli index
 
 # Search your code
-code-indexer query "authentication logic"
+python -m code_indexer.cli query "authentication logic"
 
 # Keep index updated as code changes
-code-indexer update
+python -m code_indexer.cli update
 
 # Watch for changes and auto-update (real-time)
-code-indexer watch
+python -m code_indexer.cli watch
 ```
 
 ## Usage
@@ -67,22 +67,22 @@ code-indexer watch
 
 #### Initialize Project
 ```bash
-code-indexer init [--codebase-dir PATH] [--force]
+python -m code_indexer.cli init [--codebase-dir PATH] [--force]
 ```
 
 #### Setup Services
 ```bash
-code-indexer setup [--model MODEL_NAME] [--force-recreate]
+python -m code_indexer.cli setup [--model MODEL_NAME] [--force-recreate]
 ```
 
 #### Index Codebase
 ```bash
-code-indexer index [--clear] [--batch-size 50]
+python -m code_indexer.cli index [--clear] [--batch-size 50]
 ```
 
 #### Search Code
 ```bash
-code-indexer query "search terms" [OPTIONS]
+python -m code_indexer.cli query "search terms" [OPTIONS]
 
 Options:
   --limit, -l INTEGER     Number of results (default: 10)
@@ -93,31 +93,31 @@ Options:
 
 #### Check Status
 ```bash
-code-indexer status
+python -m code_indexer.cli status
 ```
 
 #### Cleanup
 ```bash
-code-indexer clean [--remove-data]
+python -m code_indexer.cli clean [--remove-data]
 ```
 
 ### Search Examples
 
 ```bash
 # Find authentication-related code
-code-indexer query "user authentication login"
+python -m code_indexer.cli query "user authentication login"
 
 # Find React components
-code-indexer query "component props state" --language tsx
+python -m code_indexer.cli query "component props state" --language tsx
 
 # Find server-side database code
-code-indexer query "database query" --path server
+python -m code_indexer.cli query "database query" --path server
 
 # High-precision search
-code-indexer query "error handling" --min-score 0.8
+python -m code_indexer.cli query "error handling" --min-score 0.8
 
 # Get more results
-code-indexer query "api endpoint" --limit 20
+python -m code_indexer.cli query "api endpoint" --limit 20
 ```
 
 ### Incremental Updates
@@ -126,16 +126,16 @@ Keep your index current as your codebase evolves:
 
 ```bash
 # Manual update - indexes only changed files since last index
-code-indexer update
+python -m code_indexer.cli update
 
 # Update with custom timestamp
-code-indexer update --since "2024-01-01T00:00:00"
+python -m code_indexer.cli update --since "2024-01-01T00:00:00"
 
 # Real-time watching - automatically updates index when files change
-code-indexer watch
+python -m code_indexer.cli watch
 
 # Watch with custom debounce (wait time before processing changes)
-code-indexer watch --debounce 5.0
+python -m code_indexer.cli watch --debounce 5.0
 ```
 
 **How it works:**
@@ -314,15 +314,15 @@ with change_lock:
 
 ```bash
 # Default 2-second debounce
-code-indexer watch
+python -m code_indexer.cli watch
 
 # Custom debounce for different development patterns
-code-indexer watch --debounce 5.0    # Slower, more batching
-code-indexer watch --debounce 0.5    # Faster, more responsive
+python -m code_indexer.cli watch --debounce 5.0    # Slower, more batching
+python -m code_indexer.cli watch --debounce 0.5    # Faster, more responsive
 
 # Custom batch size for network optimization  
-code-indexer watch --batch-size 100  # Larger batches, less frequent uploads
-code-indexer watch --batch-size 10   # Smaller batches, more frequent uploads
+python -m code_indexer.cli watch --batch-size 100  # Larger batches, less frequent uploads
+python -m code_indexer.cli watch --batch-size 10   # Smaller batches, more frequent uploads
 ```
 
 ### Use Cases & Best Practices
@@ -362,7 +362,7 @@ git lfs install
 
 # Database files are automatically tracked via included .gitattributes
 # Git hooks for clean commits and branch changes
-code-indexer git-hooks --install
+python -m code_indexer.cli git-hooks --install
 ```
 
 ### Workflow
@@ -387,10 +387,10 @@ git lfs pull  # Download large files
 
 ```bash
 # Install hooks to ensure database integrity
-code-indexer git-hooks --install
+python -m code_indexer.cli git-hooks --install
 
 # Remove hooks if needed
-code-indexer git-hooks --uninstall
+python -m code_indexer.cli git-hooks --uninstall
 ```
 
 **What the hooks do:**
@@ -574,17 +574,17 @@ docker logs code-ollama
 docker logs code-qdrant
 
 # Restart services
-code-indexer clean
-code-indexer setup
+python -m code_indexer.cli clean
+python -m code_indexer.cli setup
 ```
 
 ### Search Not Working
 ```bash
 # Check service status
-code-indexer status
+python -m code_indexer.cli status
 
 # Re-index if needed
-code-indexer index --clear
+python -m code_indexer.cli index --clear
 ```
 
 ### Performance Issues

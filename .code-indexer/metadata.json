@@ -1,0 +1,10 @@
+{
+  "indexed_at": "2025-06-16T22:50:35Z",
+  "files_processed": 41,
+  "chunks_indexed": 326,
+  "failed_files": 0,
+  "git_available": true,
+  "project_id": "code-indexer",
+  "current_branch": "master",
+  "current_commit": "d2b3730e1a4f2ce672dccc8237a851d5b63f17fd"
+}

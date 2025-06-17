@@ -1,0 +1,73 @@
+{
+  "codebase_dir": "/home/jsbattig/Dev/code-indexer",
+  "exclude_dirs": [
+    "node_modules",
+    "venv",
+    "__pycache__",
+    ".git",
+    "dist",
+    "build",
+    "target",
+    ".idea",
+    ".vscode",
+    ".gradle",
+    "bin",
+    "obj",
+    "coverage",
+    ".next",
+    ".nuxt",
+    "dist-*",
+    ".code-indexer",
+    ".github",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache"
+  ],
+  "file_extensions": [
+    "py",
+    "js",
+    "ts",
+    "tsx",
+    "java",
+    "c",
+    "cpp",
+    "h",
+    "hpp",
+    "go",
+    "rs",
+    "rb",
+    "php",
+    "sh",
+    "bash",
+    "html",
+    "css",
+    "md",
+    "json",
+    "yaml",
+    "yml",
+    "toml",
+    "sql",
+    "swift",
+    "kt",
+    "scala",
+    "dart",
+    "vue",
+    "jsx"
+  ],
+  "indexing": {
+    "chunk_overlap": 150,
+    "chunk_size": 1500,
+    "index_comments": true,
+    "max_file_size": 1048576
+  },
+  "ollama": {
+    "host": "http://localhost:11434",
+    "model": "nomic-embed-text",
+    "timeout": 30
+  },
+  "qdrant": {
+    "collection": "code_index",
+    "host": "http://localhost:6333",
+    "vector_size": 768
+  }
+}

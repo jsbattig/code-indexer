@@ -18,7 +18,7 @@ from code_indexer.services.docker_manager import DockerManager
 class TestEndToEndComplete:
     @pytest.fixture(autouse=True)
     def setup_and_teardown(self):
-        """Setup test environment and ensure cleanup"""
+        """Setup test environment and ensure cleanup (Boy Scout Rule)"""
         self.docker_manager = DockerManager()
         self.test_containers = set()
         self.test_networks = set()
@@ -28,9 +28,23 @@ class TestEndToEndComplete:
             # Handle case where current directory doesn't exist
             self.original_cwd = Path(__file__).parent.absolute()
 
+        # Check if services are already running
+        self.services_were_running = self.are_services_running()
+        self.setup_required = not self.services_were_running
+        
+        # If services aren't running, set them up
+        if self.setup_required:
+            print("Setting up services for e2e tests...")
+            self.setup_services()
+
         yield
 
-        # Cleanup containers and networks using CLI
+        # Boy Scout Rule: Clean up only if we set up the services
+        if self.setup_required and not self.services_were_running:
+            print("Cleaning up services that were set up for e2e tests...")
+            self.cleanup_services()
+        
+        # Always cleanup project-specific compose files
         compose_cmd = self.docker_manager.get_compose_command()
         for project_dir in ["test_project_1", "test_project_2"]:
             project_path = Path(__file__).parent / "projects" / project_dir
@@ -42,10 +56,76 @@ class TestEndToEndComplete:
                         capture_output=True,
                         timeout=30,
                     )
+                    # Remove the compose file we created
+                    (project_path / "docker-compose.yml").unlink(missing_ok=True)
                 except Exception:
                     pass
 
         os.chdir(self.original_cwd)
+
+    def are_services_running(self):
+        """Check if Ollama and Qdrant services are already running"""
+        try:
+            # Use docker manager to check service status
+            status = self.docker_manager.status()
+            ollama_running = status.get("ollama", {}).get("running", False)
+            qdrant_running = status.get("qdrant", {}).get("running", False)
+            return ollama_running and qdrant_running
+        except Exception:
+            return False
+    
+    def setup_services(self):
+        """Set up services using code-indexer setup command"""
+        try:
+            # Go to a temporary directory to avoid interfering with project-specific configs
+            test_setup_dir = Path(__file__).parent / "temp_setup"
+            test_setup_dir.mkdir(exist_ok=True)
+            os.chdir(test_setup_dir)
+            
+            # Run setup command
+            result = self.run_cli_command(["setup", "--quiet"], cwd=test_setup_dir, timeout=300)
+            if result.returncode != 0:
+                raise RuntimeError(f"Setup failed: {result.stderr}")
+                
+            # Wait for services to be ready
+            max_wait = 120
+            start_time = time.time()
+            while time.time() - start_time < max_wait:
+                if self.are_services_running():
+                    return
+                time.sleep(2)
+            
+            raise RuntimeError("Services did not become ready within timeout")
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to setup services for e2e tests: {e}")
+        finally:
+            # Clean up temp directory
+            if test_setup_dir.exists():
+                import shutil
+                shutil.rmtree(test_setup_dir, ignore_errors=True)
+    
+    def cleanup_services(self):
+        """Clean up services that we set up"""
+        try:
+            # Change to a directory where we can safely run cleanup
+            temp_cleanup_dir = Path(__file__).parent / "temp_cleanup"
+            temp_cleanup_dir.mkdir(exist_ok=True)
+            old_cwd = os.getcwd()
+            
+            try:
+                os.chdir(temp_cleanup_dir)
+                # Use docker manager to stop services
+                self.docker_manager.cleanup(remove_data=True)
+            finally:
+                os.chdir(old_cwd)
+                # Clean up temp directory
+                if temp_cleanup_dir.exists():
+                    import shutil
+                    shutil.rmtree(temp_cleanup_dir, ignore_errors=True)
+                    
+        except Exception as e:
+            print(f"Warning: Failed to cleanup services: {e}")
 
     def run_cli_command(self, args, cwd=None, timeout=120):
         """Run code-indexer CLI command and return result"""
@@ -56,39 +136,19 @@ class TestEndToEndComplete:
         return result
 
     def wait_for_container_ready(self, container_name, max_wait=60):
-        """Wait for container to be ready and healthy using CLI"""
+        """Wait for container to be ready and healthy (simplified for global containers)"""
+        # Since we use global containers, just check if services are running
         start_time = time.time()
         while time.time() - start_time < max_wait:
-            try:
-                # Check if container exists and is running
-                cmd = self.docker_manager.get_compose_command()[0]
-                result = subprocess.run(
-                    [cmd, "ps", "-q", "-f", f"name={container_name}"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    # Container exists, try health check
-                    health_result = subprocess.run(
-                        [
-                            cmd,
-                            "exec",
-                            container_name,
-                            "curl",
-                            "-f",
-                            "http://localhost:11434/api/version",
-                        ],
-                        capture_output=True,
-                        timeout=5,
-                    )
-                    if health_result.returncode == 0:
-                        return True
-            except Exception:
-                pass
+            if self.are_services_running():
+                return True
             time.sleep(2)
         return False
 
+    @pytest.mark.skipif(
+        os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
+        reason="End-to-end tests require Docker services which are not available in CI",
+    )
     def test_single_project_full_cycle(self):
         """Test complete single project cycle: index -> search -> clean"""
         # Use test_project_1 (calculator)
@@ -100,14 +160,13 @@ class TestEndToEndComplete:
             result = self.run_cli_command(["index"])
             assert result.returncode == 0, f"Index failed: {result.stderr}"
 
-            self.test_containers.add("test-project-1-ollama-1")
-            self.test_containers.add("test-project-1-qdrant-1")
-            self.test_networks.add("test-project-1_default")
+            # Use global container names (not project-specific)
+            self.test_containers.add("code-indexer-ollama")
+            self.test_containers.add("code-indexer-qdrant")
+            self.test_networks.add("code-indexer-global")
 
-            # Wait for services to be ready
-            assert self.wait_for_container_ready(
-                "test-project-1-ollama-1"
-            ), "Ollama container not ready"
+            # Wait for services to be ready (but they should already be ready from setup)
+            assert self.are_services_running(), "Services not ready after index command"
 
             # 2. Test search functionality with specific queries for calculator code
             search_queries = [
@@ -119,7 +178,7 @@ class TestEndToEndComplete:
             ]
 
             for query in search_queries:
-                result = self.run_cli_command(["search", query])
+                result = self.run_cli_command(["query", query])
                 assert (
                     result.returncode == 0
                 ), f"Search '{query}' failed: {result.stderr}"
@@ -133,18 +192,15 @@ class TestEndToEndComplete:
                     file in output for file in ["main.py", "utils.py"]
                 ), f"Search '{query}' didn't find expected files: {result.stdout}"
 
-            # 3. Test list functionality
-            result = self.run_cli_command(["list"])
-            assert result.returncode == 0, f"List failed: {result.stderr}"
-            assert "main.py" in result.stdout
-            assert "utils.py" in result.stdout
-
-            # 4. Test status
+            # 3. Test status functionality
             result = self.run_cli_command(["status"])
             assert result.returncode == 0, f"Status failed: {result.stderr}"
+            # Check that index is available and has documents
+            assert "Available" in result.stdout
+            assert "Documents:" in result.stdout or "Points:" in result.stdout
 
-            # 5. Clean and verify complete removal
-            result = self.run_cli_command(["clean"])
+            # 4. Clean project data (not global services)
+            result = self.run_cli_command(["clean", "--remove-data"])
             assert result.returncode == 0, f"Clean failed: {result.stderr}"
 
             # Verify no traces remain
@@ -162,8 +218,8 @@ class TestEndToEndComplete:
             # Check that containers no longer exist
             cmd = self.docker_manager.get_compose_command()[0]
             for container_name in [
-                "test-project-1-ollama-1",
-                "test-project-1-qdrant-1",
+                "code-indexer-ollama",
+                "code-indexer-qdrant",
             ]:
                 result = subprocess.run(
                     [cmd, "ps", "-q", "-f", f"name={container_name}"],
@@ -178,6 +234,10 @@ class TestEndToEndComplete:
             # Ensure cleanup even if test fails
             self.run_cli_command(["clean"])
 
+    @pytest.mark.skipif(
+        os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
+        reason="End-to-end tests require Docker services which are not available in CI",
+    )
     def test_multi_project_isolation_and_search(self):
         """Test multi-project functionality with proper isolation"""
         project1_path = Path(__file__).parent / "projects" / "test_project_1"
@@ -190,32 +250,32 @@ class TestEndToEndComplete:
             assert result1.returncode == 0, f"Project 1 index failed: {result1.stderr}"
 
             self.test_containers.update(
-                ["test-project-1-ollama-1", "test-project-1-qdrant-1"]
+                ["code-indexer-ollama", "code-indexer-qdrant"]
             )
-            self.test_networks.add("test-project-1_default")
+            self.test_networks.add("code-indexer-global")
 
             os.chdir(project2_path)
             result2 = self.run_cli_command(["index"])
             assert result2.returncode == 0, f"Project 2 index failed: {result2.stderr}"
 
             self.test_containers.update(
-                ["test-project-2-ollama-1", "test-project-2-qdrant-1"]
+                ["code-indexer-ollama", "code-indexer-qdrant"]
             )
-            self.test_networks.add("test-project-2_default")
+            self.test_networks.add("code-indexer-global")
 
             # Wait for both to be ready
             assert self.wait_for_container_ready(
-                "test-project-1-ollama-1"
+                "code-indexer-ollama"
             ), "Project 1 not ready"
             assert self.wait_for_container_ready(
-                "test-project-2-ollama-1"
+                "code-indexer-ollama"
             ), "Project 2 not ready"
 
             # Test project 1 searches (calculator-specific)
             os.chdir(project1_path)
             calc_queries = ["add function", "factorial", "calculator"]
             for query in calc_queries:
-                result = self.run_cli_command(["search", query])
+                result = self.run_cli_command(["query", query])
                 assert (
                     result.returncode == 0
                 ), f"Project 1 search '{query}' failed: {result.stderr}"
@@ -232,7 +292,7 @@ class TestEndToEndComplete:
             os.chdir(project2_path)
             web_queries = ["web server", "route function", "authentication"]
             for query in web_queries:
-                result = self.run_cli_command(["search", query])
+                result = self.run_cli_command(["query", query])
                 assert (
                     result.returncode == 0
                 ), f"Project 2 search '{query}' failed: {result.stderr}"
@@ -247,13 +307,13 @@ class TestEndToEndComplete:
 
             # Test that each project only lists its own files
             os.chdir(project1_path)
-            result = self.run_cli_command(["list"])
+            result = self.run_cli_command(["status"])
             assert "main.py" in result.stdout
             assert "utils.py" in result.stdout
             assert "web_server.py" not in result.stdout
 
             os.chdir(project2_path)
-            result = self.run_cli_command(["list"])
+            result = self.run_cli_command(["status"])
             assert "web_server.py" in result.stdout
             assert "auth.py" in result.stdout
             assert "main.py" not in result.stdout or "calculator" not in result.stdout
@@ -278,10 +338,10 @@ class TestEndToEndComplete:
             # Verify all containers removed
             cmd = self.docker_manager.get_compose_command()[0]
             all_containers = [
-                "test-project-1-ollama-1",
-                "test-project-1-qdrant-1",
-                "test-project-2-ollama-1",
-                "test-project-2-qdrant-1",
+                "code-indexer-ollama",
+                "code-indexer-qdrant",
+                "code-indexer-ollama",
+                "code-indexer-qdrant",
             ]
             for container_name in all_containers:
                 result = subprocess.run(
@@ -299,6 +359,10 @@ class TestEndToEndComplete:
                 os.chdir(project_path)
                 self.run_cli_command(["clean"])
 
+    @pytest.mark.skipif(
+        os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
+        reason="End-to-end tests require Docker services which are not available in CI",
+    )
     def test_error_conditions_and_recovery(self):
         """Test error handling and recovery scenarios"""
         project_path = Path(__file__).parent / "projects" / "test_project_1"
@@ -306,11 +370,11 @@ class TestEndToEndComplete:
 
         try:
             # Test search without indexing first
-            result = self.run_cli_command(["search", "test query"])
+            result = self.run_cli_command(["query", "test query"])
             assert result.returncode != 0, "Search should fail without indexing"
 
             # Test list without indexing first
-            result = self.run_cli_command(["list"])
+            result = self.run_cli_command(["status"])
             assert result.returncode != 0, "List should fail without indexing"
 
             # Test clean without containers (should not error)
@@ -324,19 +388,23 @@ class TestEndToEndComplete:
             assert result.returncode == 0
 
             self.test_containers.update(
-                ["test-project-1-ollama-1", "test-project-1-qdrant-1"]
+                ["code-indexer-ollama", "code-indexer-qdrant"]
             )
 
             result = self.run_cli_command(["clean"])
             assert result.returncode == 0
 
             # Now search should fail again
-            result = self.run_cli_command(["search", "test query"])
+            result = self.run_cli_command(["query", "test query"])
             assert result.returncode != 0, "Search should fail after clean"
 
         finally:
             self.run_cli_command(["clean"])
 
+    @pytest.mark.skipif(
+        os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
+        reason="End-to-end tests require Docker services which are not available in CI",
+    )
     def test_concurrent_operations(self):
         """Test that concurrent operations on different projects work correctly"""
         project1_path = Path(__file__).parent / "projects" / "test_project_1"
@@ -369,21 +437,21 @@ class TestEndToEndComplete:
 
             self.test_containers.update(
                 [
-                    "test-project-1-ollama-1",
-                    "test-project-1-qdrant-1",
-                    "test-project-2-ollama-1",
-                    "test-project-2-qdrant-1",
+                    "code-indexer-ollama",
+                    "code-indexer-qdrant",
+                    "code-indexer-ollama",
+                    "code-indexer-qdrant",
                 ]
             )
 
             # Verify both work independently
             os.chdir(project1_path)
-            result = self.run_cli_command(["search", "calculator"])
+            result = self.run_cli_command(["query", "calculator"])
             assert result.returncode == 0
             assert "main.py" in result.stdout.lower()
 
             os.chdir(project2_path)
-            result = self.run_cli_command(["search", "server"])
+            result = self.run_cli_command(["query", "server"])
             assert result.returncode == 0
             assert "web_server.py" in result.stdout.lower()
 

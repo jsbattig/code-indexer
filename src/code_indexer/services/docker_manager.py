@@ -67,7 +67,7 @@ class DockerManager:
                 try:
                     with open(config_path, "r") as f:
                         config = yaml.safe_load(f) or {}
-                    return config.get("services", {})
+                    return dict(config.get("services", {}))
                 except Exception as e:
                     self.console.print(
                         f"Warning: Failed to load config from {config_path}: {e}",
@@ -94,7 +94,7 @@ class DockerManager:
 
         # If external service is configured, use external URL
         if service_config.get("external", False):
-            return service_config.get("url", "")
+            return str(service_config.get("url", ""))
 
         # Otherwise, use localhost with configured port
         default_ports = {"ollama": 11434, "qdrant": 6333}
@@ -409,7 +409,7 @@ class DockerManager:
         self, endpoint: str, method: str = "GET", data: Optional[Dict] = None
     ) -> Dict[str, Any]:
         """Make a direct HTTP request to Ollama service."""
-        import requests
+        import requests  # type: ignore
         import json
 
         base_url = self._get_service_url("ollama")
@@ -445,7 +445,7 @@ class DockerManager:
         self, endpoint: str, method: str = "GET", data: Optional[Dict] = None
     ) -> Dict[str, Any]:
         """Make a direct HTTP request to Qdrant service."""
-        import requests
+        import requests  # type: ignore
         import json
 
         base_url = self._get_service_url("qdrant")
@@ -484,7 +484,7 @@ class DockerManager:
 
     def wait_for_services(self, timeout: int = 120, retry_interval: int = 2) -> bool:
         """Wait for services to be healthy using robust retry logic with exponential backoff."""
-        import requests
+        import requests  # type: ignore
 
         self.console.print(f"Waiting for services to be ready (timeout: {timeout}s)...")
 
@@ -624,7 +624,7 @@ class DockerManager:
 
     def status(self) -> Dict[str, Any]:
         """Get status of services using direct HTTP calls."""
-        import requests
+        import requests  # type: ignore
 
         # Check ollama service availability
         ollama_running = False
@@ -777,35 +777,3 @@ class DockerManager:
         }
 
         return compose_config
-
-    def _find_project_root(self) -> Path:
-        """Find the project root directory containing Dockerfiles."""
-        current_path = Path.cwd()
-
-        # Look for Dockerfiles in current directory first
-        if (current_path / "Dockerfile.ollama").exists() and (
-            current_path / "Dockerfile.qdrant"
-        ).exists():
-            return current_path
-
-        # Walk up the directory tree to find the project root
-        for parent in current_path.parents:
-            if (parent / "Dockerfile.ollama").exists() and (
-                parent / "Dockerfile.qdrant"
-            ).exists():
-                return parent
-
-        # If not found, check if we're in a package and look for code-indexer root
-        try:
-            import code_indexer
-
-            package_path = Path(code_indexer.__file__).parent.parent.parent
-            if (package_path / "Dockerfile.ollama").exists() and (
-                package_path / "Dockerfile.qdrant"
-            ).exists():
-                return package_path
-        except ImportError:
-            pass
-
-        # Fallback to current directory
-        return current_path
