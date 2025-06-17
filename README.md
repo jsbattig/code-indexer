@@ -23,15 +23,55 @@ A Python CLI tool that uses [Ollama](https://ollama.ai/) for embeddings and [Qdr
 
 ### Installation
 
+**Choose the installation method that works best for your system:**
+
+#### Option 1: Using pipx (Recommended for CLI tools)
 ```bash
+# Install pipx if not already installed (Ubuntu/Debian)
+sudo apt update && sudo apt install pipx
+
+# Install code-indexer using pipx
+pipx install https://github.com/jsbattig/code-indexer/releases/latest/download/code_indexer-py3-none-any.whl
+
+# Ensure pipx bin directory is in PATH
+pipx ensurepath
+```
+
+#### Option 2: Using pip in a virtual environment
+```bash
+# Create and activate a virtual environment
+python3 -m venv ~/code-indexer-env
+source ~/code-indexer-env/bin/activate
+
 # Install from GitHub releases
 pip install https://github.com/jsbattig/code-indexer/releases/latest/download/code_indexer-py3-none-any.whl
 
-# Install from source
+# Note: Remember to activate the environment before using: source ~/code-indexer-env/bin/activate
+```
+
+#### Option 3: Install from source (Development)
+```bash
 git clone https://github.com/jsbattig/code-indexer.git
 cd code-indexer
+
+# Using pipx (recommended)
+pipx install -e .
+
+# Or using pip in virtual environment
+python3 -m venv venv
+source venv/bin/activate
 pip install -e .
 ```
+
+#### Troubleshooting Modern Python Environments
+
+If you encounter the error `externally-managed-environment` on Ubuntu/Debian systems:
+
+- **Recommended**: Use pipx (Option 1 above) - it's designed for CLI applications
+- **Alternative**: Use a virtual environment (Option 2 above)
+- **Not recommended**: Using `--break-system-packages` can damage your system Python
+
+**Why pipx?** It automatically manages isolated environments for CLI tools, making `code-indexer` globally available without affecting your system Python.
 
 ### Initialize and Setup
 
