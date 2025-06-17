@@ -1,0 +1,119 @@
+name: Auto Release on Version Change
+
+on:
+  push:
+    branches: [master, main]
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version-changed: ${{ steps.version-check.outputs.changed }}
+      current-version: ${{ steps.version-check.outputs.version }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Get full history for comparison
+    
+    - name: Get current version
+      id: current-version
+      run: |
+        VERSION=$(python -c "import sys; sys.path.insert(0, 'src'); from code_indexer import __version__; print(__version__)")
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Current version: $VERSION"
+    
+    - name: Get previous version
+      id: previous-version
+      run: |
+        # Get the version from the previous commit
+        git checkout HEAD~1 2>/dev/null || true
+        if [ -f "src/code_indexer/__init__.py" ]; then
+          PREV_VERSION=$(python -c "import sys; sys.path.insert(0, 'src'); from code_indexer import __version__; print(__version__)" 2>/dev/null || echo "none")
+        else
+          PREV_VERSION="none"
+        fi
+        git checkout - > /dev/null 2>&1
+        echo "previous=$PREV_VERSION" >> $GITHUB_OUTPUT
+        echo "Previous version: $PREV_VERSION"
+    
+    - name: Check if version changed
+      id: version-check
+      run: |
+        CURRENT="${{ steps.current-version.outputs.version }}"
+        PREVIOUS="${{ steps.previous-version.outputs.previous }}"
+        
+        if [ "$CURRENT" != "$PREVIOUS" ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "Version changed from $PREVIOUS to $CURRENT"
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+          echo "Version unchanged: $CURRENT"
+        fi
+        echo "version=$CURRENT" >> $GITHUB_OUTPUT
+
+  auto-release:
+    needs: check-version
+    if: needs.check-version.outputs.version-changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required to create releases
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build
+    
+    - name: Build package
+      run: python -m build
+    
+    - name: Create GitHub Release
+      id: create-release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ needs.check-version.outputs.current-version }}
+        release_name: Release v${{ needs.check-version.outputs.current-version }}
+        body: |
+          🚀 **Automatic release for version ${{ needs.check-version.outputs.current-version }}**
+          
+          This release was automatically created when the version number changed.
+          
+          ## Installation
+          
+          ```bash
+          # Install from source
+          pip install https://github.com/${{ github.repository }}/archive/v${{ needs.check-version.outputs.current-version }}.tar.gz
+          
+          # Or download and install wheel
+          pip install code_indexer-${{ needs.check-version.outputs.current-version }}-py3-none-any.whl
+          ```
+        draft: false
+        prerelease: false
+    
+    - name: Upload wheel to release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create-release.outputs.upload_url }}
+        asset_path: dist/code_indexer-${{ needs.check-version.outputs.current-version }}-py3-none-any.whl
+        asset_name: code_indexer-${{ needs.check-version.outputs.current-version }}-py3-none-any.whl
+        asset_content_type: application/octet-stream
+    
+    - name: Upload source distribution to release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create-release.outputs.upload_url }}
+        asset_path: dist/code_indexer-${{ needs.check-version.outputs.current-version }.tar.gz
+        asset_name: code_indexer-${{ needs.check-version.outputs.current-version }}.tar.gz
+        asset_content_type: application/gzip
