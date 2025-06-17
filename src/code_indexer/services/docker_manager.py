@@ -655,6 +655,7 @@ class DockerManager:
         """Get the global container name for a given service."""
         # In dual-engine testing mode, add engine suffix and test identifier to prevent conflicts
         import os
+
         if os.getenv("CODE_INDEXER_DUAL_ENGINE_TEST_MODE") == "true":
             engine_suffix = "docker" if self.force_docker else "podman"
             # Add test identifier to make it clear these are test containers
@@ -665,6 +666,7 @@ class DockerManager:
         """Get the global network name."""
         # In dual-engine testing mode, add engine suffix and test identifier to prevent conflicts
         import os
+
         if os.getenv("CODE_INDEXER_DUAL_ENGINE_TEST_MODE") == "true":
             engine_suffix = "docker" if self.force_docker else "podman"
             return f"code-indexer-test-global-{engine_suffix}"
@@ -790,8 +792,16 @@ class DockerManager:
 
         # Get configured ports for services
         default_ports = {"ollama": 11434, "qdrant": 6333}
-        ollama_port = self._config.get("ollama", {}).get("docker", {}).get("port", default_ports["ollama"])
-        qdrant_port = self._config.get("qdrant", {}).get("docker", {}).get("port", default_ports["qdrant"])
+        ollama_port = (
+            self._config.get("ollama", {})
+            .get("docker", {})
+            .get("port", default_ports["ollama"])
+        )
+        qdrant_port = (
+            self._config.get("qdrant", {})
+            .get("docker", {})
+            .get("port", default_ports["qdrant"])
+        )
 
         compose_config = {
             "services": {
