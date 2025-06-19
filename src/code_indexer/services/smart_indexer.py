@@ -264,7 +264,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
             # Use scroll to get all points in batches
             offset = None
             while True:
-                result = self.qdrant_client.client.scroll(
+                points, next_offset = self.qdrant_client.scroll_points(
                     collection_name=collection_name,
                     limit=1000,  # Process in batches of 1000
                     offset=offset,
@@ -272,26 +272,26 @@ class SmartIndexer(GitAwareDocumentProcessor):
                     with_vectors=False,  # We don't need vectors, just metadata
                 )
 
-                if not result[0]:  # No more points
+                if not points:  # No more points
                     break
 
                 # Extract file paths and timestamps from points
-                for point in result[0]:
-                    if point.payload and "file_path" in point.payload:
-                        file_path = Path(point.payload["file_path"])
+                for point in points:
+                    if point.get("payload") and "file_path" in point["payload"]:
+                        file_path = Path(point["payload"]["file_path"])
 
                         # Get timestamp from database (try different fields based on git vs filesystem)
                         db_timestamp = None
 
                         # For filesystem-based projects, use filesystem_mtime
-                        if "filesystem_mtime" in point.payload:
-                            db_timestamp = point.payload["filesystem_mtime"]
+                        if "filesystem_mtime" in point["payload"]:
+                            db_timestamp = point["payload"]["filesystem_mtime"]
                         # For git-based projects, we'll compare using git hash or use indexed_at as fallback
-                        elif "indexed_at" in point.payload:
+                        elif "indexed_at" in point["payload"]:
                             # Convert indexed_at string back to timestamp for comparison
                             try:
                                 dt = datetime.datetime.strptime(
-                                    point.payload["indexed_at"], "%Y-%m-%dT%H:%M:%SZ"
+                                    point["payload"]["indexed_at"], "%Y-%m-%dT%H:%M:%SZ"
                                 )
                                 db_timestamp = dt.timestamp()
                             except (ValueError, TypeError):
@@ -307,7 +307,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                                 indexed_files_with_timestamps[file_path] = db_timestamp
 
                 # Update offset for next batch
-                offset = result[1]
+                offset = next_offset
                 if offset is None:
                     break
 

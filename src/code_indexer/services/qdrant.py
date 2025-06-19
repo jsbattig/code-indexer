@@ -1,7 +1,7 @@
 """Qdrant vector database client."""
 
 import uuid
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union, Tuple
 import httpx
 from rich.console import Console
 
@@ -501,6 +501,47 @@ class QdrantClient:
             return int(response.json()["result"]["count"])
         except Exception:
             return 0
+
+    def scroll_points(
+        self,
+        collection_name: Optional[str] = None,
+        limit: int = 1000,
+        offset: Optional[Union[str, int]] = None,
+        with_payload: bool = True,
+        with_vectors: bool = False,
+    ) -> Tuple[List[Dict[str, Any]], Optional[Union[str, int]]]:
+        """Scroll through points in collection using HTTP API.
+
+        Returns:
+            Tuple of (points_list, next_offset)
+        """
+        collection = collection_name or self.config.collection
+
+        try:
+            request_body: Dict[str, Any] = {
+                "limit": limit,
+                "with_payload": with_payload,
+                "with_vector": with_vectors,
+            }
+
+            if offset is not None:
+                request_body["offset"] = offset
+
+            response = self.client.post(
+                f"/collections/{collection}/points/scroll", json=request_body
+            )
+            response.raise_for_status()
+            result = response.json()["result"]
+
+            points = result.get("points", [])
+            next_page_offset = result.get("next_page_offset")
+
+            return points, next_page_offset
+
+        except Exception as e:
+            if self.console:
+                self.console.print(f"Error scrolling points: {e}", style="red")
+            return [], None
 
     def create_point(
         self,
