@@ -1,15 +1,17 @@
 # Code Indexer
 
-AI-powered semantic code search with local models
+AI-powered semantic code search with local and cloud models
 
-A Python CLI tool that uses [Ollama](https://ollama.ai/) for embeddings and [Qdrant](https://qdrant.tech/) for vector storage to provide semantic code search capabilities across your codebase.
+A Python CLI tool that supports multiple embedding providers including [Ollama](https://ollama.ai/) for local models and [VoyageAI](https://www.voyageai.com/) for cloud-based embeddings, with [Qdrant](https://qdrant.tech/) for vector storage to provide semantic code search capabilities across your codebase.
 
 Includes incremental updates to keep your index current as code changes.
 
 ## Features
 
 - **Semantic Search** - Find code by meaning, not just keywords
+- **Multiple Embedding Providers** - Support for Ollama (local) and VoyageAI (cloud)
 - **Local AI Models** - Uses Ollama for privacy-preserving embeddings
+- **Cloud AI Models** - VoyageAI for high-quality embeddings with 8-parallel processing
 - **Vector Search** - Powered by Qdrant vector database
 - **Automated Setup** - Docker container management
 - **Incremental Updates** - Only re-index changed files
@@ -85,8 +87,12 @@ pipx automatically manages isolated environments for CLI tools, making `code-ind
 # Navigate to your codebase
 cd /path/to/your/project
 
-# Start services and download AI model (creates config automatically)
+# Option 1: Local setup with Ollama (privacy-first)
 code-indexer setup
+
+# Option 2: Cloud setup with VoyageAI (high-quality embeddings)
+export VOYAGE_API_KEY="your-api-key"
+code-indexer init --embedding-provider voyage-ai --embedding-model voyage-code-2
 
 # Index your codebase
 code-indexer index
@@ -119,7 +125,7 @@ code-indexer setup --queue-size 1024                    # Larger request queue
 
 #### Index Codebase
 ```bash
-code-indexer index [--clear] [--batch-size 50]
+code-indexer index [--clear] [--resume] [--batch-size 50]
 
 # Smart indexing (default):
 # - Automatically detects if full or incremental indexing is needed
@@ -127,8 +133,12 @@ code-indexer index [--clear] [--batch-size 50]
 # - Only processes modified files since last index
 # - Handles provider/model changes intelligently
 
+# Resume interrupted indexing:
+code-indexer index --resume  # Continue from where you left off after Ctrl+C
+
 # Options:
 # --clear: Force full reindex (clears existing data)
+# --resume: Resume a previously interrupted indexing operation
 # --batch-size: Number of files to process in each batch
 ```
 
@@ -204,11 +214,40 @@ code-indexer watch --debounce 5.0
 - **Configuration Aware**: Forces full reindex when provider/model changes
 - **Resumable**: Can resume interrupted indexing operations seamlessly
 - **Git Integration**: Handles branch changes and repository state intelligently
+- **Throughput Monitoring**: Real-time performance metrics with throttling detection
+- **Smart Throttling**: Automatically detects and displays rate limiting status
 
 **Real-time Updates:**
 - `watch` mode uses file system events for live synchronization
 - Batches changes and waits for a debounce period to avoid excessive processing
 - Automatically detects and removes deleted files from the index
+
+### True Resumability
+
+Code Indexer now supports true resumability, allowing you to interrupt and resume indexing operations seamlessly:
+
+```bash
+# Start indexing a large codebase
+code-indexer index
+
+# Press Ctrl+C to interrupt (e.g., after processing 500/2000 files)
+^C
+
+# Resume exactly from where you left off
+code-indexer index --resume
+# ✅ Continues from file #501, skipping already processed files
+
+# Check resumable status
+code-indexer status
+# Shows: "Can resume interrupted operation: 1500 files remaining"
+```
+
+**How Resumability Works:**
+- **File-by-file tracking**: Metadata saved after each successful file processing
+- **Exact position resumption**: Resumes from the exact file where interrupted
+- **Failed file handling**: Tracks and skips files that failed during processing
+- **Cross-session persistence**: Resume works across different terminal sessions
+- **Automatic detection**: `status` command shows if resumable operation exists
 
 ## Git-Aware Indexing
 
