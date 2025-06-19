@@ -5,6 +5,7 @@ Smart incremental indexer that combines index and update functionality.
 import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Callable
+from dataclasses import dataclass
 
 from ..config import Config
 from ..services import QdrantClient
@@ -12,6 +13,18 @@ from ..services.embedding_provider import EmbeddingProvider
 from ..services.git_aware_processor import GitAwareDocumentProcessor
 from ..indexing.processor import ProcessingStats
 from .progressive_metadata import ProgressiveMetadata
+
+
+@dataclass
+class ThroughputStats:
+    """Statistics for tracking indexing throughput and throttling."""
+
+    files_per_minute: float = 0.0
+    chunks_per_minute: float = 0.0
+    embedding_requests_per_minute: float = 0.0
+    is_throttling: bool = False
+    throttle_reason: str = ""
+    average_processing_time_per_file: float = 0.0
 
 
 class SmartIndexer(GitAwareDocumentProcessor):
@@ -197,12 +210,19 @@ class SmartIndexer(GitAwareDocumentProcessor):
     def _process_files_with_metadata(
         self, files: List[Path], batch_size: int, progress_callback: Optional[Callable]
     ) -> ProcessingStats:
-        """Process files with progressive metadata updates."""
+        """Process files with progressive metadata updates and throughput monitoring."""
 
         stats = ProcessingStats()
         stats.start_time = time.time()
 
         batch_points = []
+
+        # Throughput tracking
+        throughput_window_start = time.time()
+        throughput_window_files = 0
+        throughput_window_chunks = 0
+        throughput_window_size = 60.0  # 1 minute window
+        last_throttle_check = time.time()
 
         def update_metadata(chunks_count=0, failed=False):
             """Update metadata after each file."""
@@ -210,6 +230,55 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 files_processed=1,
                 chunks_added=chunks_count,
                 failed_files=1 if failed else 0,
+            )
+
+        def calculate_throughput() -> ThroughputStats:
+            """Calculate current throughput and detect throttling."""
+            current_time = time.time()
+            elapsed = current_time - throughput_window_start
+
+            if elapsed <= 0:
+                return ThroughputStats()
+
+            # Calculate rates per minute
+            files_per_min = (throughput_window_files / elapsed) * 60
+            chunks_per_min = (throughput_window_chunks / elapsed) * 60
+            avg_time_per_file = elapsed / max(throughput_window_files, 1)
+
+            # Detect throttling by checking embedding provider
+            is_throttling = False
+            throttle_reason = ""
+
+            # Check if we're using VoyageAI and detect rate limiting
+            provider_name = self.embedding_provider.get_provider_name()
+            if provider_name == "voyage-ai":
+                # Check if rate limiter indicates throttling
+                if hasattr(self.embedding_provider, "rate_limiter"):
+                    rate_limiter = self.embedding_provider.rate_limiter
+                    wait_time = rate_limiter.wait_time(100)  # Estimate for 100 tokens
+                    if wait_time > 0.5:  # If we need to wait more than 0.5 seconds
+                        is_throttling = True
+                        throttle_reason = f"API rate limiting (wait: {wait_time:.1f}s)"
+                    elif rate_limiter.request_tokens < 10:  # Low on request tokens
+                        is_throttling = True
+                        throttle_reason = "API request quota running low"
+
+            # Detect slow processing (could indicate network issues or service slowdown)
+            if (
+                avg_time_per_file > 5.0 and not is_throttling
+            ):  # More than 5 seconds per file
+                is_throttling = True
+                throttle_reason = (
+                    f"Slow processing detected ({avg_time_per_file:.1f}s/file)"
+                )
+
+            return ThroughputStats(
+                files_per_minute=files_per_min,
+                chunks_per_minute=chunks_per_min,
+                embedding_requests_per_minute=chunks_per_min,  # Assuming 1 request per chunk
+                is_throttling=is_throttling,
+                throttle_reason=throttle_reason,
+                average_processing_time_per_file=avg_time_per_file,
             )
 
         for i, file_path in enumerate(files):
@@ -222,9 +291,11 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 if points:
                     batch_points.extend(points)
                     stats.chunks_created += len(points)
+                    throughput_window_chunks += len(points)
 
                 stats.files_processed += 1
                 stats.total_size += file_path.stat().st_size
+                throughput_window_files += 1
 
                 # Process batch if full
                 if len(batch_points) >= batch_size:
@@ -235,9 +306,39 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 # Update metadata after successful processing
                 update_metadata(chunks_count=len(points), failed=False)
 
-                # Call progress callback
+                # Calculate throughput every 30 seconds or every 50 files
+                current_time = time.time()
+                if (current_time - last_throttle_check > 30) or (i % 50 == 0 and i > 0):
+                    throughput_stats = calculate_throughput()
+                    last_throttle_check = current_time
+
+                    # Reset throughput window if it's been more than window size
+                    if current_time - throughput_window_start > throughput_window_size:
+                        throughput_window_start = current_time
+                        throughput_window_files = 0
+                        throughput_window_chunks = 0
+
+                # Call progress callback with throughput info
                 if progress_callback:
-                    progress_callback(i + 1, len(files), file_path)
+                    throughput_stats = calculate_throughput()
+
+                    # Create enhanced info string
+                    info_parts = []
+                    if throughput_stats.files_per_minute > 0:
+                        info_parts.append(
+                            f"{throughput_stats.files_per_minute:.1f} files/min"
+                        )
+                    if throughput_stats.chunks_per_minute > 0:
+                        info_parts.append(
+                            f"{throughput_stats.chunks_per_minute:.1f} chunks/min"
+                        )
+                    if throughput_stats.is_throttling:
+                        info_parts.append(f"🐌 {throughput_stats.throttle_reason}")
+                    elif throughput_stats.files_per_minute > 60:  # Fast processing
+                        info_parts.append("🚀 Full speed")
+
+                    info = " | ".join(info_parts) if info_parts else None
+                    progress_callback(i + 1, len(files), file_path, info=info)
 
             except Exception as e:
                 stats.failed_files += 1

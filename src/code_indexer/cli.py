@@ -609,6 +609,11 @@ def index(ctx, clear: bool, batch_size: int):
                 console.print(f"ℹ️  {info}", style="cyan")
                 return
 
+            # Handle info-only updates (for status messages during processing)
+            if file_path == Path("") and info and progress_bar:
+                progress_bar.update(task_id, description=f"ℹ️  {info}")
+                return
+
             # Initialize progress bar on first call
             if progress_bar is None:
                 progress_bar = Progress(
@@ -643,11 +648,18 @@ def index(ctx, clear: bool, batch_size: int):
                 except ValueError:
                     relative_path = file_path.name
 
-            # Truncate long paths to fit display
-            if len(relative_path) > 47:
-                relative_path = "..." + relative_path[-44:]
+            # Truncate long paths to fit display (leave room for throughput info)
+            max_path_length = 35 if info else 47
+            if len(relative_path) > max_path_length:
+                relative_path = "..." + relative_path[-(max_path_length - 3) :]
 
-            progress_bar.update(task, advance=1, description=relative_path)
+            # Create description with throughput info
+            if info:
+                description = f"{relative_path} | {info}"
+            else:
+                description = relative_path
+
+            progress_bar.update(task, advance=1, description=description)
 
             # Show errors
             if error:
@@ -675,11 +687,19 @@ def index(ctx, clear: bool, batch_size: int):
             console.print(f"❌ Indexing failed: {e}", style="red")
             sys.exit(1)
 
-        # Show completion summary
+        # Show completion summary with throughput
         console.print("✅ Indexing complete!", style="green")
         console.print(f"📄 Files processed: {stats.files_processed}")
         console.print(f"📦 Chunks indexed: {stats.chunks_created}")
         console.print(f"⏱️  Duration: {stats.duration:.2f}s")
+
+        # Calculate final throughput
+        if stats.duration > 0:
+            files_per_min = (stats.files_processed / stats.duration) * 60
+            chunks_per_min = (stats.chunks_created / stats.duration) * 60
+            console.print(
+                f"🚀 Throughput: {files_per_min:.1f} files/min, {chunks_per_min:.1f} chunks/min"
+            )
 
         if stats.failed_files > 0:
             console.print(f"⚠️  Failed files: {stats.failed_files}", style="yellow")
@@ -1367,7 +1387,12 @@ def status(ctx, force_docker: bool):
         qdrant_details = ""
         if qdrant_ok:
             try:
-                count = qdrant_client.count_points()
+                # Get the correct collection name using the current embedding provider
+                embedding_provider = EmbeddingProviderFactory.create(config, console)
+                collection_name = qdrant_client.resolve_collection_name(
+                    config, embedding_provider
+                )
+                count = qdrant_client.count_points(collection_name)
                 qdrant_details = f"Documents: {count}"
             except Exception:
                 qdrant_details = "Collection ready"
@@ -1432,7 +1457,12 @@ def status(ctx, force_docker: bool):
         # Storage information
         if qdrant_ok:
             try:
-                size_info = qdrant_client.get_collection_size()
+                # Use the correct collection name for storage info too
+                embedding_provider = EmbeddingProviderFactory.create(config, console)
+                collection_name = qdrant_client.resolve_collection_name(
+                    config, embedding_provider
+                )
+                size_info = qdrant_client.get_collection_size(collection_name)
                 if "error" not in size_info:
                     storage_details = f"Size: ~{size_info['estimated_vector_size_mb']}MB | Points: {size_info['points_count']:,}"
                     table.add_row("Storage", "📊", storage_details)
