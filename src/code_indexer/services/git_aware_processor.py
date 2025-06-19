@@ -68,7 +68,7 @@ class GitAwareDocumentProcessor(DocumentProcessor):
 
                 # Create payload using create_git_aware_metadata
                 payload = GitAwareMetadataSchema.create_git_aware_metadata(
-                    path=str(file_path.relative_to(self.config.codebase_dir)),
+                    path=str(file_path),
                     content=chunk["text"],
                     language=chunk["file_extension"],
                     file_size=file_path.stat().st_size,

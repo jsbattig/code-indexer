@@ -255,7 +255,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 0,
                 0,
                 Path(""),
-                info="Checking database for indexed files and timestamps...",
+                info=f"Checking database collection '{collection_name}' for indexed files...",
             )
 
         # Get all points from the database for this collection with file timestamps
@@ -277,8 +277,9 @@ class SmartIndexer(GitAwareDocumentProcessor):
 
                 # Extract file paths and timestamps from points
                 for point in points:
-                    if point.get("payload") and "file_path" in point["payload"]:
-                        file_path = Path(point["payload"]["file_path"])
+                    if point.get("payload") and "path" in point["payload"]:
+                        # Path is already absolute in the database
+                        file_path = Path(point["payload"]["path"])
 
                         # Get timestamp from database (try different fields based on git vs filesystem)
                         db_timestamp = None
@@ -318,6 +319,15 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 )
             # If database query fails, do full index
             indexed_files_with_timestamps = {}
+
+        # Debug: Show what was found in database
+        if progress_callback:
+            progress_callback(
+                0,
+                0,
+                Path(""),
+                info=f"Found {len(indexed_files_with_timestamps)} files in database collection '{collection_name}'",
+            )
 
         # Find files that need to be indexed (missing from DB or have newer timestamps)
         files_to_index = []

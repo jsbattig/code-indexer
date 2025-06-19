@@ -29,7 +29,7 @@ class GitAwareMetadataSchema:
 
     # Core metadata fields (required)
     REQUIRED_FIELDS = {
-        "path",  # Relative file path within project
+        "path",  # Absolute file path
         "content",  # Text content of the chunk
         "language",  # Programming language/file extension
         "file_size",  # File size in bytes
@@ -252,7 +252,7 @@ class GitAwareMetadataSchema:
         Create git-aware metadata with full schema support.
 
         Args:
-            path: Relative file path
+            path: Absolute file path
             content: Chunk content
             language: Programming language
             file_size: File size in bytes

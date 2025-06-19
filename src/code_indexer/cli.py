@@ -613,6 +613,8 @@ def index(ctx, clear: bool, reconcile: bool, batch_size: int):
         # Show indexing strategy
         if clear:
             console.print("🧹 Force full reindex requested")
+        elif reconcile:
+            console.print("🔄 Reconciling disk files with database index...")
         else:
             indexing_status = smart_indexer.get_indexing_status()
             if indexing_status["can_resume"]:
@@ -644,7 +646,7 @@ def index(ctx, clear: bool, reconcile: bool, batch_size: int):
             if progress_bar is None:
                 progress_bar = Progress(
                     TextColumn("[bold blue]Indexing", justify="right"),
-                    BarColumn(bar_width=None),
+                    BarColumn(bar_width=25),
                     "•",
                     TaskProgressColumn(),
                     "•",
@@ -654,7 +656,7 @@ def index(ctx, clear: bool, reconcile: bool, batch_size: int):
                     "•",
                     TextColumn(
                         "[cyan]{task.description}",
-                        table_column=Column(min_width=30, max_width=50, no_wrap=True),
+                        table_column=Column(min_width=20, max_width=35, no_wrap=True),
                     ),
                     console=console,
                 )
@@ -675,7 +677,7 @@ def index(ctx, clear: bool, reconcile: bool, batch_size: int):
                     relative_path = file_path.name
 
             # Truncate long paths to fit display (leave room for throughput info)
-            max_path_length = 35 if info else 47
+            max_path_length = 25 if info else 35
             if len(relative_path) > max_path_length:
                 relative_path = "..." + relative_path[-(max_path_length - 3) :]
 
@@ -805,7 +807,7 @@ def watch(ctx, debounce: float, batch_size: int):
             if progress_bar is None and total > 0:
                 progress_bar = Progress(
                     TextColumn("[bold green]Watch Update", justify="right"),
-                    BarColumn(bar_width=None),
+                    BarColumn(bar_width=25),
                     "•",
                     TaskProgressColumn(),
                     "•",
@@ -831,8 +833,8 @@ def watch(ctx, debounce: float, batch_size: int):
                         relative_path = file_path.name
 
                 # Truncate long paths to fit display
-                if len(relative_path) > 47:
-                    relative_path = "..." + relative_path[-44:]
+                if len(relative_path) > 35:
+                    relative_path = "..." + relative_path[-32:]
 
                 progress_bar.update(task_id, advance=1, description=relative_path)
 
@@ -956,7 +958,7 @@ def watch(ctx, debounce: float, batch_size: int):
                 if total_operations > 0:
                     batch_progress = Progress(
                         TextColumn("[bold orange1]Processing", justify="right"),
-                        BarColumn(bar_width=None),
+                        BarColumn(bar_width=25),
                         "•",
                         TaskProgressColumn(),
                         "•",
