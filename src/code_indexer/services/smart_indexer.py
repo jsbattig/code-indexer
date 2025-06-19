@@ -609,7 +609,11 @@ class SmartIndexer(GitAwareDocumentProcessor):
                         info_parts.append("🚀 Full speed")
 
                     info = " | ".join(info_parts) if info_parts else None
-                    progress_callback(i + 1, len(files), file_path, info=info)
+                    result = progress_callback(i + 1, len(files), file_path, info=info)
+                    
+                    # Check if we've been interrupted
+                    if result == "INTERRUPT":
+                        break
 
             except Exception as e:
                 stats.failed_files += 1
@@ -618,7 +622,10 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 update_metadata(file_path, chunks_count=0, failed=True)
 
                 if progress_callback:
-                    progress_callback(i + 1, len(files), file_path, error=str(e))
+                    result = progress_callback(i + 1, len(files), file_path, error=str(e))
+                    # Check if we've been interrupted even on error
+                    if result == "INTERRUPT":
+                        break
 
         # Process remaining points
         if batch_points:

@@ -2,6 +2,7 @@
 
 import os
 import sys
+import signal
 from pathlib import Path
 from typing import Optional
 
@@ -24,6 +25,47 @@ from .services.git_aware_processor import GitAwareDocumentProcessor
 from .services.smart_indexer import SmartIndexer
 from .services.generic_query_service import GenericQueryService
 from . import __version__
+
+
+class GracefulInterruptHandler:
+    """Handler for graceful interruption of long-running operations."""
+    
+    def __init__(self, console: Console, operation_name: str = "Operation"):
+        self.console = console
+        self.operation_name = operation_name
+        self.interrupted = False
+        self.original_sigint_handler = None
+        self.progress_bar = None
+        
+    def __enter__(self):
+        self.original_sigint_handler = signal.signal(signal.SIGINT, self._signal_handler)
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Restore original signal handler
+        signal.signal(signal.SIGINT, self.original_sigint_handler)
+        
+        # If we were interrupted, show final message
+        if self.interrupted:
+            if self.progress_bar:
+                self.progress_bar.stop()
+            self.console.print()  # New line
+            self.console.print(f"🛑 {self.operation_name} interrupted by user", style="yellow")
+            self.console.print("📊 Progress has been saved and can be resumed later", style="cyan")
+            return True  # Suppress the KeyboardInterrupt exception
+            
+    def _signal_handler(self, signum, frame):
+        """Handle SIGINT (Ctrl-C) gracefully."""
+        self.interrupted = True
+        if self.progress_bar:
+            self.progress_bar.stop()
+        self.console.print()  # New line
+        self.console.print(f"🛑 Interrupting {self.operation_name.lower()}...", style="yellow")
+        self.console.print("⏳ Finishing current file and saving progress...", style="cyan")
+        
+    def set_progress_bar(self, progress_bar):
+        """Set the progress bar to stop when interrupted."""
+        self.progress_bar = progress_bar
 
 
 # Global console for rich output
@@ -624,12 +666,18 @@ def index(ctx, clear: bool, reconcile: bool, batch_size: int):
             else:
                 console.print("🆕 No previous index found, performing full index")
 
-        # Create progress tracking
+        # Create progress tracking with graceful interrupt handling
         progress_bar = None
         task_id = None
+        interrupt_handler = None
 
         def progress_callback(current, total, file_path, error=None, info=None):
-            nonlocal progress_bar, task_id
+            nonlocal progress_bar, task_id, interrupt_handler
+
+            # Check if we've been interrupted and signal to stop processing
+            if interrupt_handler and interrupt_handler.interrupted:
+                # Signal to the smart indexer that we should stop
+                return "INTERRUPT"
 
             # Handle info messages (like strategy selection)
             if info and not progress_bar:
@@ -657,6 +705,10 @@ def index(ctx, clear: bool, reconcile: bool, batch_size: int):
                 )
                 progress_bar.start()
                 task_id = progress_bar.add_task("Starting...", total=total)
+                
+                # Register progress bar with interrupt handler
+                if interrupt_handler:
+                    interrupt_handler.set_progress_bar(progress_bar)
 
             task = task_id
 
@@ -687,28 +739,37 @@ def index(ctx, clear: bool, reconcile: bool, batch_size: int):
                         f"❌ Failed to process {file_path}: {error}", style="red"
                     )
 
-        try:
-            # Use smart indexing with progressive metadata saving
-            # Check for conflicting flags
-            if clear and reconcile:
-                console.print(
-                    "❌ Cannot use --clear and --reconcile together", style="red"
-                )
-                sys.exit(1)
-
-            stats = smart_indexer.smart_index(
-                force_full=clear,
-                reconcile_with_database=reconcile,
-                batch_size=batch_size,
-                progress_callback=progress_callback,
-                safety_buffer_seconds=60,  # 1-minute safety buffer
+        # Check for conflicting flags
+        if clear and reconcile:
+            console.print(
+                "❌ Cannot use --clear and --reconcile together", style="red"
             )
+            sys.exit(1)
 
-            # Stop progress bar with completion message
-            if progress_bar and task_id is not None:
-                # Update final status
-                progress_bar.update(task_id, description="✅ Completed")
-                progress_bar.stop()
+        # Use graceful interrupt handling for the indexing operation
+        operation_name = "Indexing"
+        if reconcile:
+            operation_name = "Reconciliation"
+        elif clear:
+            operation_name = "Full reindexing"
+            
+        try:
+            with GracefulInterruptHandler(console, operation_name) as handler:
+                interrupt_handler = handler
+                
+                stats = smart_indexer.smart_index(
+                    force_full=clear,
+                    reconcile_with_database=reconcile,
+                    batch_size=batch_size,
+                    progress_callback=progress_callback,
+                    safety_buffer_seconds=60,  # 1-minute safety buffer
+                )
+
+                # Stop progress bar with completion message (if not interrupted)
+                if progress_bar and task_id is not None and not handler.interrupted:
+                    # Update final status
+                    progress_bar.update(task_id, description="✅ Completed")
+                    progress_bar.stop()
 
         except Exception as e:
             console.print(f"❌ Indexing failed: {e}", style="red")
@@ -1083,13 +1144,15 @@ def watch(ctx, debounce: float, batch_size: int):
         observer.start()
 
         try:
-            while True:
-                time.sleep(1)
+            with GracefulInterruptHandler(console, "File watching") as handler:
+                console.print("👀 Watching for file changes... (Press Ctrl-C to stop)", style="dim")
+                while not handler.interrupted:
+                    time.sleep(1)
         except KeyboardInterrupt:
             console.print("\n👋 Stopping file watcher...")
+        finally:
             observer.stop()
-
-        observer.join()
+            observer.join()
 
     except Exception as e:
         console.print(f"❌ Watch failed: {e}", style="red")
