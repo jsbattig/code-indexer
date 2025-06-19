@@ -11,7 +11,7 @@ Includes incremental updates to keep your index current as code changes.
 - **Semantic Search** - Find code by meaning, not just keywords
 - **Multiple Embedding Providers** - Support for Ollama (local) and VoyageAI (cloud)
 - **Local AI Models** - Uses Ollama for privacy-preserving embeddings
-- **Cloud AI Models** - VoyageAI for high-quality embeddings with 8-parallel processing
+- **Cloud AI Models** - VoyageAI for high-quality embeddings with configurable parallel processing
 - **Vector Search** - Powered by Qdrant vector database
 - **Automated Setup** - Docker container management
 - **Incremental Updates** - Only re-index changed files
@@ -582,7 +582,7 @@ Code Indexer supports multiple embedding providers for generating text embedding
 
 #### VoyageAI (Cloud)
 - **Performance**: High-quality embeddings optimized for code
-- **Speed**: Parallel processing with 8 concurrent requests
+- **Speed**: Configurable parallel processing (default: 8 concurrent requests)
 - **Cost**: Usage-based pricing
 - **Models**: `voyage-code-3` (default), `voyage-large-2-instruct`
 
@@ -669,7 +669,7 @@ VoyageAI includes automatic rate limiting to respect API limits:
 - **Request Rate**: 300 requests per minute (configurable)
 - **Token Rate**: 1M tokens per minute (configurable)
 - **Backoff**: Exponential backoff on rate limit errors
-- **Parallel Processing**: 8 concurrent requests for optimal throughput
+- **Parallel Processing**: Configurable concurrent requests (default: 8) for optimal throughput
 
 ### Switching Providers
 
