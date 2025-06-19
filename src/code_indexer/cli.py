@@ -16,7 +16,6 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
-from rich.table import Column
 from rich.syntax import Syntax
 
 from .config import ConfigManager, Config
@@ -646,18 +645,14 @@ def index(ctx, clear: bool, reconcile: bool, batch_size: int):
             if progress_bar is None:
                 progress_bar = Progress(
                     TextColumn("[bold blue]Indexing", justify="right"),
-                    BarColumn(bar_width=25),
-                    "•",
+                    BarColumn(bar_width=30),
                     TaskProgressColumn(),
                     "•",
                     TimeElapsedColumn(),
                     "•",
                     TimeRemainingColumn(),
                     "•",
-                    TextColumn(
-                        "[cyan]{task.description}",
-                        table_column=Column(min_width=20, max_width=35, no_wrap=True),
-                    ),
+                    TextColumn("[cyan]{task.description}", no_wrap=False),
                     console=console,
                 )
                 progress_bar.start()
@@ -676,14 +671,10 @@ def index(ctx, clear: bool, reconcile: bool, batch_size: int):
                 except ValueError:
                     relative_path = file_path.name
 
-            # Truncate long paths to fit display (leave room for throughput info)
-            max_path_length = 25 if info else 35
-            if len(relative_path) > max_path_length:
-                relative_path = "..." + relative_path[-(max_path_length - 3) :]
-
-            # Create description with throughput info
+            # Create description with file and throughput info
+            # Use two lines: file path on top, metrics below
             if info:
-                description = f"{relative_path} | {info}"
+                description = f"{relative_path}\n{info}"
             else:
                 description = relative_path
 
@@ -807,15 +798,14 @@ def watch(ctx, debounce: float, batch_size: int):
             if progress_bar is None and total > 0:
                 progress_bar = Progress(
                     TextColumn("[bold green]Watch Update", justify="right"),
-                    BarColumn(bar_width=25),
-                    "•",
+                    BarColumn(bar_width=30),
                     TaskProgressColumn(),
                     "•",
                     TimeElapsedColumn(),
                     "•",
                     TimeRemainingColumn(),
                     "•",
-                    TextColumn("[cyan]{task.description}"),
+                    TextColumn("[cyan]{task.description}", no_wrap=False),
                     console=console,
                 )
                 progress_bar.start()
@@ -832,10 +822,7 @@ def watch(ctx, debounce: float, batch_size: int):
                     except ValueError:
                         relative_path = file_path.name
 
-                # Truncate long paths to fit display
-                if len(relative_path) > 35:
-                    relative_path = "..." + relative_path[-32:]
-
+                # No truncation - allow full path display
                 progress_bar.update(task_id, advance=1, description=relative_path)
 
             # Show errors
@@ -958,13 +945,12 @@ def watch(ctx, debounce: float, batch_size: int):
                 if total_operations > 0:
                     batch_progress = Progress(
                         TextColumn("[bold orange1]Processing", justify="right"),
-                        BarColumn(bar_width=25),
-                        "•",
+                        BarColumn(bar_width=30),
                         TaskProgressColumn(),
                         "•",
                         TimeElapsedColumn(),
                         "•",
-                        TextColumn("[cyan]{task.description}"),
+                        TextColumn("[cyan]{task.description}", no_wrap=False),
                         console=console,
                     )
                     batch_progress.start()
@@ -976,14 +962,11 @@ def watch(ctx, debounce: float, batch_size: int):
                 if deleted_files:
                     for deleted_file in deleted_files:
                         if batch_progress and batch_task_id is not None:
-                            # Truncate path for display
-                            display_path = deleted_file
-                            if len(display_path) > 47:
-                                display_path = "..." + display_path[-44:]
+                            # No truncation - allow full path display
                             batch_progress.update(
                                 batch_task_id,
                                 advance=1,
-                                description=f"🗑️ {display_path}",
+                                description=f"🗑️ {deleted_file}",
                             )
 
                         qdrant_client.delete_by_filter(
@@ -1007,13 +990,11 @@ def watch(ctx, debounce: float, batch_size: int):
 
                             # Update progress bar
                             if batch_progress and batch_task_id is not None:
-                                display_path = relative_path
-                                if len(display_path) > 47:
-                                    display_path = "..." + display_path[-44:]
+                                # No truncation - allow full path display
                                 batch_progress.update(
                                     batch_task_id,
                                     advance=1,
-                                    description=f"📝 {display_path}",
+                                    description=f"📝 {relative_path}",
                                 )
 
                             # Delete existing points for this file first
