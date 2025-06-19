@@ -47,7 +47,7 @@ def cli(ctx, config: Optional[str], verbose: bool):
       1. code-indexer setup     # Start services (creates default config if needed)
       2. code-indexer index     # Smart incremental indexing
       3. code-indexer query "search term"  # Search your code
-      
+
       OR for custom configuration (init is optional):
       1. code-indexer init      # OPTIONAL: Initialize with custom settings
       2. code-indexer setup     # Start services (Ollama + Qdrant)
@@ -136,7 +136,7 @@ def init(
 
     \b
     Creates .code-indexer/config.json with project configuration.
-    
+
     \b
     NOTE: This command is optional. If you skip init and run 'setup' directly,
     a default configuration will be created automatically with Ollama provider
@@ -508,16 +508,16 @@ def setup(
     "--clear", "-c", is_flag=True, help="Clear existing index and perform full reindex"
 )
 @click.option(
-    "--resume",
+    "--reconcile",
     "-r",
     is_flag=True,
-    help="Resume a previously interrupted indexing operation",
+    help="Reconcile disk files with database contents and index missing/modified files",
 )
 @click.option(
     "--batch-size", "-b", default=50, help="Batch size for processing (default: 50)"
 )
 @click.pass_context
-def index(ctx, clear: bool, resume: bool, batch_size: int):
+def index(ctx, clear: bool, reconcile: bool, batch_size: int):
     """Index the codebase for semantic search.
 
     \b
@@ -552,17 +552,17 @@ def index(ctx, clear: bool, resume: bool, batch_size: int):
       • Handles provider/model changes intelligently
 
     \b
-    RESUMABILITY:
+    RECONCILIATION:
       • Automatically saves progress during indexing
       • Can resume interrupted operations from where they left off
-      • Use --resume to continue a previously stopped indexing operation
+      • Use --reconcile to compare disk files with database and index missing/modified files
       • Shows remaining files count in status command
 
     \b
     EXAMPLES:
       code-indexer index                 # Smart incremental indexing (default)
       code-indexer index --clear         # Force full reindex (clears existing data)
-      code-indexer index --resume        # Resume interrupted indexing operation
+      code-indexer index --reconcile     # Reconcile disk vs database and index missing/modified files
       code-indexer index -b 100          # Larger batch size for speed
 
     \b
@@ -695,15 +695,15 @@ def index(ctx, clear: bool, resume: bool, batch_size: int):
         try:
             # Use smart indexing with progressive metadata saving
             # Check for conflicting flags
-            if clear and resume:
+            if clear and reconcile:
                 console.print(
-                    "❌ Cannot use --clear and --resume together", style="red"
+                    "❌ Cannot use --clear and --reconcile together", style="red"
                 )
                 sys.exit(1)
 
             stats = smart_indexer.smart_index(
                 force_full=clear,
-                resume_interrupted=resume,
+                reconcile_with_database=reconcile,
                 batch_size=batch_size,
                 progress_callback=progress_callback,
                 safety_buffer_seconds=60,  # 1-minute safety buffer

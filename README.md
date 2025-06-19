@@ -151,12 +151,12 @@ code-indexer index [--clear] [--resume] [--batch-size 50]
 # - Only processes modified files since last index
 # - Handles provider/model changes intelligently
 
-# Resume interrupted indexing:
-code-indexer index --resume  # Continue from where you left off after Ctrl+C
+# Reconcile disk vs database and index missing/modified files:
+code-indexer index --reconcile  # Compare disk files with database, index differences
 
 # Options:
 # --clear: Force full reindex (clears existing data)
-# --resume: Resume a previously interrupted indexing operation
+# --reconcile: Reconcile disk files with database and index missing/modified files
 # --batch-size: Number of files to process in each batch
 ```
 
@@ -240,32 +240,32 @@ code-indexer watch --debounce 5.0
 - Batches changes and waits for a debounce period to avoid excessive processing
 - Automatically detects and removes deleted files from the index
 
-### True Resumability
+### Smart Reconciliation
 
-Code Indexer now supports true resumability, allowing you to interrupt and resume indexing operations seamlessly:
+Code Indexer supports intelligent reconciliation that compares your disk files with the database:
 
 ```bash
 # Start indexing a large codebase
 code-indexer index
 
-# Press Ctrl+C to interrupt (e.g., after processing 500/2000 files)
+# Press Ctrl+C to interrupt at any time
 ^C
 
-# Resume exactly from where you left off
-code-indexer index --resume
-# ✅ Continues from file #501, skipping already processed files
+# Reconcile by comparing disk vs database with timestamp checking
+code-indexer index --reconcile
+# ✅ Scans disk, checks database, indexes missing + modified files
 
-# Check resumable status
-code-indexer status
-# Shows: "Can resume interrupted operation: 1500 files remaining"
+# Example output:
+# "Reconcile: 1500/2000 files up-to-date, indexing 500 missing + 200 modified"
 ```
 
-**How Resumability Works:**
-- **File-by-file tracking**: Metadata saved after each successful file processing
-- **Exact position resumption**: Resumes from the exact file where interrupted
-- **Failed file handling**: Tracks and skips files that failed during processing
-- **Cross-session persistence**: Resume works across different terminal sessions
-- **Automatic detection**: `status` command shows if resumable operation exists
+**How Reconciliation Works:**
+- **Disk vs Database comparison**: Compares files on disk with database contents
+- **Timestamp-based detection**: Finds files that are newer on disk than in database
+- **Missing file detection**: Finds files that exist on disk but aren't in the database
+- **Cross-session persistence**: Works across different terminal sessions and interruptions
+- **No duplicate work**: Only indexes files that are actually missing or modified
+- **Filesystem tolerance**: Uses 1-second tolerance to handle filesystem precision differences
 
 ## Git-Aware Indexing
 

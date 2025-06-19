@@ -3,6 +3,7 @@ Smart incremental indexer that combines index and update functionality.
 """
 
 import time
+import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Callable
 from dataclasses import dataclass
@@ -43,7 +44,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
     def smart_index(
         self,
         force_full: bool = False,
-        resume_interrupted: bool = False,
+        reconcile_with_database: bool = False,
         batch_size: int = 50,
         progress_callback: Optional[Callable] = None,
         safety_buffer_seconds: int = 60,
@@ -53,7 +54,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
 
         Args:
             force_full: Force full reindex (like --clear)
-            resume_interrupted: Resume a previously interrupted indexing operation
+            reconcile_with_database: Reconcile disk files with database contents
             batch_size: Batch size for processing
             progress_callback: Optional progress callback
             safety_buffer_seconds: Safety buffer for incremental indexing
@@ -67,25 +68,15 @@ class SmartIndexer(GitAwareDocumentProcessor):
             provider_name = self.embedding_provider.get_provider_name()
             model_name = self.embedding_provider.get_current_model()
 
-            # Check for resume interrupted operation first
-            if resume_interrupted:
-                if self.progressive_metadata.can_resume_interrupted_operation():
-                    return self._do_resume_interrupted(
-                        batch_size,
-                        progress_callback,
-                        git_status,
-                        provider_name,
-                        model_name,
-                    )
-                else:
-                    if progress_callback:
-                        progress_callback(
-                            0,
-                            0,
-                            Path(""),
-                            info="No interrupted operation to resume, starting fresh",
-                        )
-                    # Fall through to normal indexing logic
+            # Check for reconcile operation first
+            if reconcile_with_database:
+                return self._do_reconcile_with_database(
+                    batch_size,
+                    progress_callback,
+                    git_status,
+                    provider_name,
+                    model_name,
+                )
 
             # Determine indexing strategy
             if force_full:
@@ -235,6 +226,176 @@ class SmartIndexer(GitAwareDocumentProcessor):
 
         return stats
 
+    def _do_reconcile_with_database(
+        self,
+        batch_size: int,
+        progress_callback: Optional[Callable],
+        git_status: Dict[str, Any],
+        provider_name: str,
+        model_name: str,
+    ) -> ProcessingStats:
+        """Reconcile disk files with database contents and index missing/modified files."""
+
+        # Ensure provider-aware collection exists
+        collection_name = self.qdrant_client.ensure_provider_aware_collection(
+            self.config, self.embedding_provider
+        )
+
+        # Get all files that should be indexed (from disk)
+        all_files_to_index = list(self.file_finder.find_files())
+
+        if not all_files_to_index:
+            if progress_callback:
+                progress_callback(0, 0, Path(""), info="No files found to index")
+            return ProcessingStats()
+
+        # Query database to see what files are already indexed with timestamps
+        if progress_callback:
+            progress_callback(
+                0,
+                0,
+                Path(""),
+                info="Checking database for indexed files and timestamps...",
+            )
+
+        # Get all points from the database for this collection with file timestamps
+        indexed_files_with_timestamps: Dict[Path, float] = {}  # file_path -> timestamp
+        try:
+            # Use scroll to get all points in batches
+            offset = None
+            while True:
+                result = self.qdrant_client.client.scroll(
+                    collection_name=collection_name,
+                    limit=1000,  # Process in batches of 1000
+                    offset=offset,
+                    with_payload=True,
+                    with_vectors=False,  # We don't need vectors, just metadata
+                )
+
+                if not result[0]:  # No more points
+                    break
+
+                # Extract file paths and timestamps from points
+                for point in result[0]:
+                    if point.payload and "file_path" in point.payload:
+                        file_path = Path(point.payload["file_path"])
+
+                        # Get timestamp from database (try different fields based on git vs filesystem)
+                        db_timestamp = None
+
+                        # For filesystem-based projects, use filesystem_mtime
+                        if "filesystem_mtime" in point.payload:
+                            db_timestamp = point.payload["filesystem_mtime"]
+                        # For git-based projects, we'll compare using git hash or use indexed_at as fallback
+                        elif "indexed_at" in point.payload:
+                            # Convert indexed_at string back to timestamp for comparison
+                            try:
+                                dt = datetime.datetime.strptime(
+                                    point.payload["indexed_at"], "%Y-%m-%dT%H:%M:%SZ"
+                                )
+                                db_timestamp = dt.timestamp()
+                            except (ValueError, TypeError):
+                                db_timestamp = 0
+
+                        if db_timestamp is not None:
+                            # Keep the most recent timestamp if multiple chunks exist for same file
+                            if (
+                                file_path not in indexed_files_with_timestamps
+                                or db_timestamp
+                                > indexed_files_with_timestamps[file_path]
+                            ):
+                                indexed_files_with_timestamps[file_path] = db_timestamp
+
+                # Update offset for next batch
+                offset = result[1]
+                if offset is None:
+                    break
+
+        except Exception as e:
+            if progress_callback:
+                progress_callback(
+                    0, 0, Path(""), info=f"Database query failed: {e}, doing full index"
+                )
+            # If database query fails, do full index
+            indexed_files_with_timestamps = {}
+
+        # Find files that need to be indexed (missing from DB or have newer timestamps)
+        files_to_index = []
+        modified_files = 0
+        missing_files = 0
+
+        for file_path in all_files_to_index:
+            try:
+                # Get current file modification time
+                disk_mtime = file_path.stat().st_mtime
+
+                if file_path not in indexed_files_with_timestamps:
+                    # File exists on disk but not in database
+                    files_to_index.append(file_path)
+                    missing_files += 1
+                else:
+                    # File exists in both disk and database, compare timestamps
+                    db_timestamp = indexed_files_with_timestamps[file_path]
+
+                    # Add some tolerance (1 second) to account for filesystem precision differences
+                    if disk_mtime > db_timestamp + 1.0:
+                        # File on disk is newer than in database
+                        files_to_index.append(file_path)
+                        modified_files += 1
+
+            except OSError:
+                # File might have been deleted or is not accessible, skip it
+                continue
+
+        if not files_to_index:
+            if progress_callback:
+                progress_callback(
+                    0,
+                    0,
+                    Path(""),
+                    info="All files up-to-date - no reconciliation needed",
+                )
+            return ProcessingStats()
+
+        # Show what we're reconciling
+        if progress_callback:
+            total_files = len(all_files_to_index)
+            already_indexed = len(indexed_files_with_timestamps)
+            to_index = len(files_to_index)
+
+            status_parts = []
+            if missing_files > 0:
+                status_parts.append(f"{missing_files} missing")
+            if modified_files > 0:
+                status_parts.append(f"{modified_files} modified")
+
+            status_str = " + ".join(status_parts) if status_parts else "files"
+            progress_callback(
+                0,
+                0,
+                Path(""),
+                info=f"Reconcile: {already_indexed}/{total_files} files up-to-date, indexing {to_index} {status_str}",
+            )
+
+        # Start/update indexing metadata
+        if self.progressive_metadata.metadata["status"] != "in_progress":
+            self.progressive_metadata.start_indexing(
+                provider_name, model_name, git_status
+            )
+
+        # Store file list for resumability
+        self.progressive_metadata.set_files_to_index(files_to_index)
+
+        # Process missing files with resumable tracking
+        stats = self._process_files_with_metadata(
+            files_to_index, batch_size, progress_callback, resumable=True
+        )
+
+        # Mark as completed
+        self.progressive_metadata.complete_indexing()
+
+        return stats
+
     def _do_resume_interrupted(
         self,
         batch_size: int,
@@ -310,6 +471,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
         throughput_window_chunks = 0
         throughput_window_size = 60.0  # 1 minute window
         last_throttle_check = time.time()
+        current_throughput_stats = ThroughputStats()  # Cache current stats
 
         def update_metadata(file_path: Path, chunks_count=0, failed=False):
             """Update metadata after each file."""
@@ -406,7 +568,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 # Calculate throughput every 30 seconds or every 50 files
                 current_time = time.time()
                 if (current_time - last_throttle_check > 30) or (i % 50 == 0 and i > 0):
-                    throughput_stats = calculate_throughput()
+                    current_throughput_stats = calculate_throughput()
                     last_throttle_check = current_time
 
                     # Reset throughput window if it's been more than window size
@@ -415,23 +577,25 @@ class SmartIndexer(GitAwareDocumentProcessor):
                         throughput_window_files = 0
                         throughput_window_chunks = 0
 
-                # Call progress callback with throughput info
+                # Call progress callback with cached throughput info
                 if progress_callback:
-                    throughput_stats = calculate_throughput()
-
-                    # Create enhanced info string
+                    # Create enhanced info string from cached stats
                     info_parts = []
-                    if throughput_stats.files_per_minute > 0:
+                    if current_throughput_stats.files_per_minute > 0:
                         info_parts.append(
-                            f"{throughput_stats.files_per_minute:.1f} files/min"
+                            f"{current_throughput_stats.files_per_minute:.1f} files/min"
                         )
-                    if throughput_stats.chunks_per_minute > 0:
+                    if current_throughput_stats.chunks_per_minute > 0:
                         info_parts.append(
-                            f"{throughput_stats.chunks_per_minute:.1f} chunks/min"
+                            f"{current_throughput_stats.chunks_per_minute:.1f} chunks/min"
                         )
-                    if throughput_stats.is_throttling:
-                        info_parts.append(f"🐌 {throughput_stats.throttle_reason}")
-                    elif throughput_stats.files_per_minute > 60:  # Fast processing
+                    if current_throughput_stats.is_throttling:
+                        info_parts.append(
+                            f"🐌 {current_throughput_stats.throttle_reason}"
+                        )
+                    elif (
+                        current_throughput_stats.files_per_minute > 60
+                    ):  # Fast processing
                         info_parts.append("🚀 Full speed")
 
                     info = " | ".join(info_parts) if info_parts else None
