@@ -18,6 +18,7 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 from rich.syntax import Syntax
+from rich.table import Column
 
 from .config import ConfigManager, Config
 from .services import QdrantClient, DockerManager, EmbeddingProviderFactory
@@ -29,40 +30,50 @@ from . import __version__
 
 class GracefulInterruptHandler:
     """Handler for graceful interruption of long-running operations."""
-    
+
     def __init__(self, console: Console, operation_name: str = "Operation"):
         self.console = console
         self.operation_name = operation_name
         self.interrupted = False
         self.original_sigint_handler = None
         self.progress_bar = None
-        
+
     def __enter__(self):
-        self.original_sigint_handler = signal.signal(signal.SIGINT, self._signal_handler)
+        self.original_sigint_handler = signal.signal(
+            signal.SIGINT, self._signal_handler
+        )
         return self
-        
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         # Restore original signal handler
         signal.signal(signal.SIGINT, self.original_sigint_handler)
-        
+
         # If we were interrupted, show final message
         if self.interrupted:
             if self.progress_bar:
                 self.progress_bar.stop()
             self.console.print()  # New line
-            self.console.print(f"🛑 {self.operation_name} interrupted by user", style="yellow")
-            self.console.print("📊 Progress has been saved and can be resumed later", style="cyan")
+            self.console.print(
+                f"🛑 {self.operation_name} interrupted by user", style="yellow"
+            )
+            self.console.print(
+                "📊 Progress has been saved and can be resumed later", style="cyan"
+            )
             return True  # Suppress the KeyboardInterrupt exception
-            
+
     def _signal_handler(self, signum, frame):
         """Handle SIGINT (Ctrl-C) gracefully."""
         self.interrupted = True
         if self.progress_bar:
             self.progress_bar.stop()
         self.console.print()  # New line
-        self.console.print(f"🛑 Interrupting {self.operation_name.lower()}...", style="yellow")
-        self.console.print("⏳ Finishing current file and saving progress...", style="cyan")
-        
+        self.console.print(
+            f"🛑 Interrupting {self.operation_name.lower()}...", style="yellow"
+        )
+        self.console.print(
+            "⏳ Finishing current file and saving progress...", style="cyan"
+        )
+
     def set_progress_bar(self, progress_bar):
         """Set the progress bar to stop when interrupted."""
         self.progress_bar = progress_bar
@@ -700,12 +711,15 @@ def index(ctx, clear: bool, reconcile: bool, batch_size: int):
                     "•",
                     TimeRemainingColumn(),
                     "•",
-                    TextColumn("[cyan]{task.description}", no_wrap=False),
+                    TextColumn(
+                        "[cyan]{task.description}",
+                        table_column=Column(no_wrap=False, overflow="fold"),
+                    ),
                     console=console,
                 )
                 progress_bar.start()
                 task_id = progress_bar.add_task("Starting...", total=total)
-                
+
                 # Register progress bar with interrupt handler
                 if interrupt_handler:
                     interrupt_handler.set_progress_bar(progress_bar)
@@ -741,9 +755,7 @@ def index(ctx, clear: bool, reconcile: bool, batch_size: int):
 
         # Check for conflicting flags
         if clear and reconcile:
-            console.print(
-                "❌ Cannot use --clear and --reconcile together", style="red"
-            )
+            console.print("❌ Cannot use --clear and --reconcile together", style="red")
             sys.exit(1)
 
         # Use graceful interrupt handling for the indexing operation
@@ -752,11 +764,11 @@ def index(ctx, clear: bool, reconcile: bool, batch_size: int):
             operation_name = "Reconciliation"
         elif clear:
             operation_name = "Full reindexing"
-            
+
         try:
             with GracefulInterruptHandler(console, operation_name) as handler:
                 interrupt_handler = handler
-                
+
                 stats = smart_indexer.smart_index(
                     force_full=clear,
                     reconcile_with_database=reconcile,
@@ -866,7 +878,10 @@ def watch(ctx, debounce: float, batch_size: int):
                     "•",
                     TimeRemainingColumn(),
                     "•",
-                    TextColumn("[cyan]{task.description}", no_wrap=False),
+                    TextColumn(
+                        "[cyan]{task.description}",
+                        table_column=Column(no_wrap=False, overflow="fold"),
+                    ),
                     console=console,
                 )
                 progress_bar.start()
@@ -1011,7 +1026,10 @@ def watch(ctx, debounce: float, batch_size: int):
                         "•",
                         TimeElapsedColumn(),
                         "•",
-                        TextColumn("[cyan]{task.description}", no_wrap=False),
+                        TextColumn(
+                            "[cyan]{task.description}",
+                            table_column=Column(no_wrap=False, overflow="fold"),
+                        ),
                         console=console,
                     )
                     batch_progress.start()
@@ -1145,7 +1163,10 @@ def watch(ctx, debounce: float, batch_size: int):
 
         try:
             with GracefulInterruptHandler(console, "File watching") as handler:
-                console.print("👀 Watching for file changes... (Press Ctrl-C to stop)", style="dim")
+                console.print(
+                    "👀 Watching for file changes... (Press Ctrl-C to stop)",
+                    style="dim",
+                )
                 while not handler.interrupted:
                     time.sleep(1)
         except KeyboardInterrupt:

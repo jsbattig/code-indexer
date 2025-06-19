@@ -610,7 +610,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
 
                     info = " | ".join(info_parts) if info_parts else None
                     result = progress_callback(i + 1, len(files), file_path, info=info)
-                    
+
                     # Check if we've been interrupted
                     if result == "INTERRUPT":
                         break
@@ -622,7 +622,9 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 update_metadata(file_path, chunks_count=0, failed=True)
 
                 if progress_callback:
-                    result = progress_callback(i + 1, len(files), file_path, error=str(e))
+                    result = progress_callback(
+                        i + 1, len(files), file_path, error=str(e)
+                    )
                     # Check if we've been interrupted even on error
                     if result == "INTERRUPT":
                         break
