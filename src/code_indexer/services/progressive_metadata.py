@@ -5,7 +5,7 @@ Progressive metadata manager for resumable indexing operations.
 import json
 import time
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 
 
@@ -41,6 +41,12 @@ class ProgressiveMetadata:
             "files_processed": 0,
             "chunks_indexed": 0,
             "failed_files": 0,
+            # New fields for true resumability
+            "total_files_to_index": 0,
+            "files_to_index": [],  # List of all files that need indexing
+            "completed_files": [],  # List of files that have been successfully indexed
+            "failed_file_paths": [],  # List of files that failed indexing
+            "current_file_index": 0,  # Index of current file being processed
         }
 
     def _save_metadata(self):
@@ -147,6 +153,17 @@ class ProgressiveMetadata:
 
     def get_stats(self) -> Dict[str, Any]:
         """Get current indexing statistics."""
+        can_resume_interrupted = (
+            self.metadata.get("status") == "in_progress"
+            and len(self.metadata.get("files_to_index", [])) > 0
+            and self.metadata.get("current_file_index", 0)
+            < len(self.metadata.get("files_to_index", []))
+        )
+        can_resume_incremental = (
+            self.metadata.get("status") in ["in_progress", "completed"]
+            and self.metadata.get("last_index_timestamp", 0) > 0
+        )
+
         return {
             "status": self.metadata.get("status", "not_started"),
             "last_indexed": self.metadata.get("indexed_at"),
@@ -157,8 +174,15 @@ class ProgressiveMetadata:
             "embedding_model": self.metadata.get("embedding_model"),
             "project_id": self.metadata.get("project_id"),
             "current_branch": self.metadata.get("current_branch"),
-            "can_resume": self.metadata.get("status") in ["in_progress", "completed"]
-            and self.metadata.get("last_index_timestamp", 0) > 0,
+            "can_resume": can_resume_incremental,
+            "can_resume_interrupted": can_resume_interrupted,
+            "total_files_to_index": self.metadata.get("total_files_to_index", 0),
+            "current_file_index": self.metadata.get("current_file_index", 0),
+            "remaining_files": max(
+                0,
+                self.metadata.get("total_files_to_index", 0)
+                - self.metadata.get("current_file_index", 0),
+            ),
         }
 
     def clear(self):
@@ -176,5 +200,81 @@ class ProgressiveMetadata:
             "files_processed": 0,
             "chunks_indexed": 0,
             "failed_files": 0,
+            # Reset resumability fields
+            "total_files_to_index": 0,
+            "files_to_index": [],
+            "completed_files": [],
+            "failed_file_paths": [],
+            "current_file_index": 0,
         }
         self._save_metadata()
+
+    def set_files_to_index(self, file_paths: list) -> None:
+        """Set the complete list of files to be indexed for resumability."""
+        # Convert Path objects to strings for JSON serialization
+        file_strings = [str(path) for path in file_paths]
+
+        self.metadata["files_to_index"] = file_strings
+        self.metadata["total_files_to_index"] = len(file_strings)
+        self.metadata["current_file_index"] = 0
+        self.metadata["completed_files"] = []
+        self.metadata["failed_file_paths"] = []
+        self._save_metadata()
+
+    def get_remaining_files(self) -> List[str]:
+        """Get the list of files that still need to be processed."""
+        current_index = self.metadata.get("current_file_index", 0)
+        files_to_index = self.metadata.get("files_to_index", [])
+
+        if current_index < len(files_to_index):
+            return list(files_to_index[current_index:])
+        return []
+
+    def mark_file_completed(self, file_path: str, chunks_count: int = 0) -> None:
+        """Mark a file as successfully processed."""
+        completed_files = self.metadata.get("completed_files", [])
+        if str(file_path) not in completed_files:
+            completed_files.append(str(file_path))
+            self.metadata["completed_files"] = completed_files
+
+        # Advance the current file index
+        self.metadata["current_file_index"] = (
+            self.metadata.get("current_file_index", 0) + 1
+        )
+
+        # Update overall progress
+        self.metadata["files_processed"] = len(completed_files)
+        self.metadata["chunks_indexed"] = (
+            self.metadata.get("chunks_indexed", 0) + chunks_count
+        )
+        self.metadata["last_index_timestamp"] = time.time()
+
+        self._save_metadata()
+
+    def mark_file_failed(self, file_path: str, error: str = "") -> None:
+        """Mark a file as failed during processing."""
+        failed_files = self.metadata.get("failed_file_paths", [])
+        file_str = str(file_path)
+
+        if file_str not in failed_files:
+            failed_files.append(file_str)
+            self.metadata["failed_file_paths"] = failed_files
+
+        # Advance the current file index even for failed files
+        self.metadata["current_file_index"] = (
+            self.metadata.get("current_file_index", 0) + 1
+        )
+
+        # Update failed files count
+        self.metadata["failed_files"] = len(failed_files)
+
+        self._save_metadata()
+
+    def can_resume_interrupted_operation(self) -> bool:
+        """Check if there's an interrupted indexing operation that can be resumed."""
+        return (
+            self.metadata.get("status") == "in_progress"
+            and len(self.metadata.get("files_to_index", [])) > 0
+            and self.metadata.get("current_file_index", 0)
+            < len(self.metadata.get("files_to_index", []))
+        )

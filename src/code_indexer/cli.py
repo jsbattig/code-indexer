@@ -498,10 +498,16 @@ def setup(
     "--clear", "-c", is_flag=True, help="Clear existing index and perform full reindex"
 )
 @click.option(
+    "--resume",
+    "-r",
+    is_flag=True,
+    help="Resume a previously interrupted indexing operation",
+)
+@click.option(
     "--batch-size", "-b", default=50, help="Batch size for processing (default: 50)"
 )
 @click.pass_context
-def index(ctx, clear: bool, batch_size: int):
+def index(ctx, clear: bool, resume: bool, batch_size: int):
     """Index the codebase for semantic search.
 
     \b
@@ -536,9 +542,17 @@ def index(ctx, clear: bool, batch_size: int):
       • Handles provider/model changes intelligently
 
     \b
+    RESUMABILITY:
+      • Automatically saves progress during indexing
+      • Can resume interrupted operations from where they left off
+      • Use --resume to continue a previously stopped indexing operation
+      • Shows remaining files count in status command
+
+    \b
     EXAMPLES:
       code-indexer index                 # Smart incremental indexing (default)
       code-indexer index --clear         # Force full reindex (clears existing data)
+      code-indexer index --resume        # Resume interrupted indexing operation
       code-indexer index -b 100          # Larger batch size for speed
 
     \b
@@ -670,8 +684,16 @@ def index(ctx, clear: bool, batch_size: int):
 
         try:
             # Use smart indexing with progressive metadata saving
+            # Check for conflicting flags
+            if clear and resume:
+                console.print(
+                    "❌ Cannot use --clear and --resume together", style="red"
+                )
+                sys.exit(1)
+
             stats = smart_indexer.smart_index(
                 force_full=clear,
+                resume_interrupted=resume,
                 batch_size=batch_size,
                 progress_callback=progress_callback,
                 safety_buffer_seconds=60,  # 1-minute safety buffer
@@ -1410,16 +1432,30 @@ def status(ctx, force_docker: bool):
                     metadata = json.load(f)
                 index_status = "✅ Available"
 
-                # Build enhanced details with git info
+                # Build enhanced details with git info and resume capability
                 last_indexed = metadata.get("indexed_at", "unknown")
                 git_available = metadata.get("git_available", False)
                 project_id = metadata.get("project_id", "unknown")
+
+                # Check resume capability
+                can_resume_interrupted = (
+                    metadata.get("status") == "in_progress"
+                    and len(metadata.get("files_to_index", [])) > 0
+                    and metadata.get("current_file_index", 0)
+                    < len(metadata.get("files_to_index", []))
+                )
 
                 index_details = f"Last indexed: {last_indexed}"
                 if git_available:
                     current_branch = metadata.get("current_branch", "unknown")
                     index_details += f" | Branch: {current_branch}"
                 index_details += f" | Project: {project_id}"
+
+                if can_resume_interrupted:
+                    remaining = len(metadata.get("files_to_index", [])) - metadata.get(
+                        "current_file_index", 0
+                    )
+                    index_details += f" | ⏸️ Resumable ({remaining} files remaining)"
 
             except Exception:
                 index_status = "⚠️  Corrupted"

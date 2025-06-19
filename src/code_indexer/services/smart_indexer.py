@@ -43,6 +43,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
     def smart_index(
         self,
         force_full: bool = False,
+        resume_interrupted: bool = False,
         batch_size: int = 50,
         progress_callback: Optional[Callable] = None,
         safety_buffer_seconds: int = 60,
@@ -52,6 +53,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
 
         Args:
             force_full: Force full reindex (like --clear)
+            resume_interrupted: Resume a previously interrupted indexing operation
             batch_size: Batch size for processing
             progress_callback: Optional progress callback
             safety_buffer_seconds: Safety buffer for incremental indexing
@@ -64,6 +66,26 @@ class SmartIndexer(GitAwareDocumentProcessor):
             git_status = self.get_git_status()
             provider_name = self.embedding_provider.get_provider_name()
             model_name = self.embedding_provider.get_current_model()
+
+            # Check for resume interrupted operation first
+            if resume_interrupted:
+                if self.progressive_metadata.can_resume_interrupted_operation():
+                    return self._do_resume_interrupted(
+                        batch_size,
+                        progress_callback,
+                        git_status,
+                        provider_name,
+                        model_name,
+                    )
+                else:
+                    if progress_callback:
+                        progress_callback(
+                            0,
+                            0,
+                            Path(""),
+                            info="No interrupted operation to resume, starting fresh",
+                        )
+                    # Fall through to normal indexing logic
 
             # Determine indexing strategy
             if force_full:
@@ -127,9 +149,12 @@ class SmartIndexer(GitAwareDocumentProcessor):
             self.progressive_metadata.complete_indexing()
             raise ValueError("No files found to index")
 
+        # Store file list for resumability
+        self.progressive_metadata.set_files_to_index(files_to_index)
+
         # Process files with progressive metadata updates
         stats = self._process_files_with_metadata(
-            files_to_index, batch_size, progress_callback
+            files_to_index, batch_size, progress_callback, resumable=True
         )
 
         # Mark as completed
@@ -197,9 +222,67 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 info=f"Incremental update: {len(files_to_index)} files modified since {safety_time}",
             )
 
+        # Store file list for resumability
+        self.progressive_metadata.set_files_to_index(files_to_index)
+
         # Process modified files with progressive metadata updates
         stats = self._process_files_with_metadata(
-            files_to_index, batch_size, progress_callback
+            files_to_index, batch_size, progress_callback, resumable=True
+        )
+
+        # Mark as completed
+        self.progressive_metadata.complete_indexing()
+
+        return stats
+
+    def _do_resume_interrupted(
+        self,
+        batch_size: int,
+        progress_callback: Optional[Callable],
+        git_status: Dict[str, Any],
+        provider_name: str,
+        model_name: str,
+    ) -> ProcessingStats:
+        """Resume a previously interrupted indexing operation."""
+
+        # Ensure provider-aware collection exists for resuming
+        self.qdrant_client.ensure_provider_aware_collection(
+            self.config, self.embedding_provider
+        )
+
+        # Get remaining files from metadata
+        remaining_file_strings = self.progressive_metadata.get_remaining_files()
+        if not remaining_file_strings:
+            # No files left to process
+            self.progressive_metadata.complete_indexing()
+            return ProcessingStats()
+
+        # Convert strings back to Path objects
+        remaining_files = [Path(f) for f in remaining_file_strings]
+
+        # Filter out files that no longer exist
+        existing_files = [f for f in remaining_files if f.exists()]
+
+        if not existing_files:
+            # All remaining files have been deleted
+            self.progressive_metadata.complete_indexing()
+            return ProcessingStats()
+
+        # Show what we're resuming
+        if progress_callback:
+            metadata_stats = self.progressive_metadata.get_stats()
+            completed = metadata_stats.get("files_processed", 0)
+            total = metadata_stats.get("total_files_to_index", 0)
+            progress_callback(
+                0,
+                0,
+                Path(""),
+                info=f"Resuming interrupted operation: {completed}/{total} files completed, {len(existing_files)} remaining",
+            )
+
+        # Process remaining files with resumable tracking
+        stats = self._process_files_with_metadata(
+            existing_files, batch_size, progress_callback, resumable=True
         )
 
         # Mark as completed
@@ -208,7 +291,11 @@ class SmartIndexer(GitAwareDocumentProcessor):
         return stats
 
     def _process_files_with_metadata(
-        self, files: List[Path], batch_size: int, progress_callback: Optional[Callable]
+        self,
+        files: List[Path],
+        batch_size: int,
+        progress_callback: Optional[Callable],
+        resumable: bool = False,
     ) -> ProcessingStats:
         """Process files with progressive metadata updates and throughput monitoring."""
 
@@ -224,13 +311,23 @@ class SmartIndexer(GitAwareDocumentProcessor):
         throughput_window_size = 60.0  # 1 minute window
         last_throttle_check = time.time()
 
-        def update_metadata(chunks_count=0, failed=False):
+        def update_metadata(file_path: Path, chunks_count=0, failed=False):
             """Update metadata after each file."""
-            self.progressive_metadata.update_progress(
-                files_processed=1,
-                chunks_added=chunks_count,
-                failed_files=1 if failed else 0,
-            )
+            if resumable:
+                # Use resumable tracking
+                if failed:
+                    self.progressive_metadata.mark_file_failed(str(file_path))
+                else:
+                    self.progressive_metadata.mark_file_completed(
+                        str(file_path), chunks_count
+                    )
+            else:
+                # Use legacy tracking
+                self.progressive_metadata.update_progress(
+                    files_processed=1,
+                    chunks_added=chunks_count,
+                    failed_files=1 if failed else 0,
+                )
 
         def calculate_throughput() -> ThroughputStats:
             """Calculate current throughput and detect throttling."""
@@ -304,7 +401,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                     batch_points = []
 
                 # Update metadata after successful processing
-                update_metadata(chunks_count=len(points), failed=False)
+                update_metadata(file_path, chunks_count=len(points), failed=False)
 
                 # Calculate throughput every 30 seconds or every 50 files
                 current_time = time.time()
@@ -344,7 +441,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 stats.failed_files += 1
 
                 # Update metadata even for failed files
-                update_metadata(chunks_count=0, failed=True)
+                update_metadata(file_path, chunks_count=0, failed=True)
 
                 if progress_callback:
                     progress_callback(i + 1, len(files), file_path, error=str(e))
