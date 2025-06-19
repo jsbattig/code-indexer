@@ -44,7 +44,12 @@ def cli(ctx, config: Optional[str], verbose: bool):
 
     \b
     GETTING STARTED:
-      1. code-indexer init      # Initialize project
+      1. code-indexer setup     # Start services (creates default config if needed)
+      2. code-indexer index     # Smart incremental indexing
+      3. code-indexer query "search term"  # Search your code
+      
+      OR for custom configuration (init is optional):
+      1. code-indexer init      # OPTIONAL: Initialize with custom settings
       2. code-indexer setup     # Start services (Ollama + Qdrant)
       3. code-indexer index     # Smart incremental indexing
       4. code-indexer query "search term"  # Search your code
@@ -127,10 +132,15 @@ def init(
     voyage_model: str,
     interactive: bool,
 ):
-    """Initialize code indexing in current directory.
+    """Initialize code indexing in current directory (OPTIONAL).
 
     \b
     Creates .code-indexer/config.json with project configuration.
+    
+    \b
+    NOTE: This command is optional. If you skip init and run 'setup' directly,
+    a default configuration will be created automatically with Ollama provider
+    and standard settings. Only use init if you want to customize settings.
 
     \b
     CONFIGURATION OPTIONS:

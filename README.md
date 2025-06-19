@@ -87,17 +87,16 @@ pipx automatically manages isolated environments for CLI tools, making `code-ind
 # Navigate to your codebase
 cd /path/to/your/project
 
-# Option 1: Local setup with Ollama (privacy-first)
+# Step 1: Initialize configuration (OPTIONAL - setup creates defaults if skipped)
+code-indexer init
+
+# Step 2: Start services (creates default config if init was skipped)
 code-indexer setup
 
-# Option 2: Cloud setup with VoyageAI (high-quality embeddings)
-export VOYAGE_API_KEY="your-api-key"
-code-indexer init --embedding-provider voyage-ai --embedding-model voyage-code-2
-
-# Index your codebase
+# Step 3: Index your codebase
 code-indexer index
 
-# Search your code
+# Step 4: Search your code
 code-indexer query "authentication logic"
 
 # Smart incremental indexing (automatically detects changes)
@@ -105,6 +104,25 @@ code-indexer index
 
 # Watch for changes and auto-update (real-time)
 code-indexer watch
+```
+
+**Alternative flows:**
+
+```bash
+# Quick start (skip init - uses defaults: Ollama + default settings)
+code-indexer setup
+code-indexer index
+code-indexer query "search terms"
+
+# VoyageAI setup (cloud embeddings)
+export VOYAGE_API_KEY="your-api-key"
+code-indexer init --embedding-provider voyage-ai --embedding-model voyage-code-3
+code-indexer setup
+code-indexer index
+
+# Interactive configuration
+code-indexer init --interactive  # Guided setup with prompts
+code-indexer setup
 ```
 
 ## Usage
