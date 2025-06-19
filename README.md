@@ -261,11 +261,13 @@ code-indexer index --reconcile
 
 **How Reconciliation Works:**
 - **Disk vs Database comparison**: Compares files on disk with database contents
-- **Timestamp-based detection**: Finds files that are newer on disk than in database
 - **Missing file detection**: Finds files that exist on disk but aren't in the database
+- **Timestamp-based detection**: For non-git projects, compares file modification times; for git projects, compares against indexing timestamps
 - **Cross-session persistence**: Works across different terminal sessions and interruptions
 - **No duplicate work**: Only indexes files that are actually missing or modified
 - **Filesystem tolerance**: Uses 1-second tolerance to handle filesystem precision differences
+
+**Note**: For git-based projects, reconciliation primarily relies on git hashes for change detection during normal incremental indexing. The `--reconcile` flag is most effective for non-git projects or when you need to ensure database consistency.
 
 ## Git-Aware Indexing
 

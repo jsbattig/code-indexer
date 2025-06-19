@@ -264,7 +264,9 @@ def test_resumability_approaches_explanation():
     2. **Database-Reconciliation** (User-facing --reconcile flag):
        - Used when user runs `code-indexer index --reconcile`
        - Compares files on disk with files in database including timestamps
-       - Indexes missing files AND files with newer timestamps
+       - For non-git: uses filesystem_mtime vs disk mtime comparison
+       - For git: uses indexed_at timestamp as fallback (primarily detects missing files)
+       - Indexes missing files AND files with newer timestamps (when available)
        - Works regardless of how previous indexing ended
        - Tested via test_database_reconciliation_with_timestamps()
 

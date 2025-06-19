@@ -511,7 +511,7 @@ def setup(
     "--reconcile",
     "-r",
     is_flag=True,
-    help="Reconcile disk files with database contents and index missing/modified files",
+    help="Reconcile disk files with database and index missing files + timestamp-based changes",
 )
 @click.option(
     "--batch-size", "-b", default=50, help="Batch size for processing (default: 50)"
@@ -556,6 +556,8 @@ def index(ctx, clear: bool, reconcile: bool, batch_size: int):
       • Automatically saves progress during indexing
       • Can resume interrupted operations from where they left off
       • Use --reconcile to compare disk files with database and index missing/modified files
+      • For non-git projects: compares file modification timestamps
+      • For git projects: primarily detects missing files and uses indexing timestamps as fallback
       • Shows remaining files count in status command
 
     \b
