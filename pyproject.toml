@@ -59,11 +59,15 @@ Issues = "https://github.com/jsbattig/code-indexer/issues"
 
 [project.scripts]
 code-indexer = "code_indexer.cli:main"
+cidx = "code_indexer.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/code_indexer"]
 include = [
     "src/code_indexer/docker/*"
+]
+exclude = [
+    "dist/docker-compose.yml"
 ]
 
 [tool.hatch.version]

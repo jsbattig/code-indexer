@@ -59,7 +59,9 @@ ollama:
             result = runner.invoke(cli, ["clean"])
 
             assert result.exit_code == 0
-            mock_docker_instance.cleanup.assert_called_once_with(remove_data=False)
+            mock_docker_instance.cleanup.assert_called_once_with(
+                remove_data=False, force=False, verbose=False, validate=False
+            )
             assert "Services stopped" in result.output
 
             # Config should still exist
@@ -94,7 +96,9 @@ ollama:
             assert result.exit_code == 0
 
             # Should call cleanup with remove_data=False (project-specific cleanup)
-            mock_docker_instance.cleanup.assert_called_once_with(remove_data=False)
+            mock_docker_instance.cleanup.assert_called_once_with(
+                remove_data=False, force=False, verbose=False, validate=False
+            )
 
             # Should clear the project's collection
             mock_qdrant_instance.clear_collection.assert_called_once()
@@ -122,7 +126,9 @@ ollama:
             assert result.exit_code == 0
 
             # Should call cleanup with remove_data=True (removes all data including volumes)
-            mock_docker_instance.cleanup.assert_called_once_with(remove_data=True)
+            mock_docker_instance.cleanup.assert_called_once_with(
+                remove_data=True, force=False, verbose=False, validate=False
+            )
 
             assert "All project data and configuration removed" in result.output
 

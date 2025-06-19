@@ -8,7 +8,7 @@ from ..config import IndexingConfig
 
 
 class TextChunker:
-    """Handles intelligent chunking of text content."""
+    """Handles chunking of text content."""
 
     def __init__(self, config: IndexingConfig):
         self.config = config

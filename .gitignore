@@ -67,9 +67,11 @@ ehthumbs.db
 Thumbs.db
 
 # Code Indexer specific
-.code-indexer/ollama/        # Exclude Ollama models (environment-specific)
-.code-indexer/metadata.json  # Exclude metadata (regenerated)
-docker-compose.yml
+.code-indexer               # All .code-indexer directories (contain generated configs and data)
+.code-indexer/
+**/.code-indexer/
+**/.code-indexer
+docker-compose.yml           # Generated Docker Compose files
 *.log
 
 # Ollama models and data (large binary files)
@@ -91,8 +93,23 @@ code-indexing-structure.md
 *.temp
 .tmp/
 
-# Test project databases
+# Development and debugging scripts (should not be committed)
+debug_*.py
+test_*_quick.py
+experiment/
+
+# Test and development directories (temporary)
+production-test/
+test_perf/
+test_setup/
+tests/temp_perf_podman/
+tests/temp_setup_manual/
+tests/debug_docker_setup/
+tests/debug_docker_setup2/
+tests/.code-indexer/
+test_clean_debug/
+
+# Test project databases and configs
 tests/projects/*/data/
 tests/projects/*/.code-indexer/
 tests/projects/*/docker-compose.yml
-/tests

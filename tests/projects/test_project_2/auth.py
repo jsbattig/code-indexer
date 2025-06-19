@@ -80,7 +80,7 @@ class AuthManager:
 
         # Update last activity
         session["last_activity"] = current_time
-        return session["username"]
+        return str(session["username"])
 
     def logout(self, session_token: str) -> bool:
         """Logout user and invalidate session."""

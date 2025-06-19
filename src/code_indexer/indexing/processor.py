@@ -141,6 +141,10 @@ class DocumentProcessor:
         if clear_existing:
             self.qdrant_client.clear_collection()
 
+        # Ensure collection exists before indexing
+        if not self.qdrant_client.collection_exists():
+            self.qdrant_client.create_collection()
+
         # Find files to index
         files_to_index = list(self.file_finder.find_files())
 

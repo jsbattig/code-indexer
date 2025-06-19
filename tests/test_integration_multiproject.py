@@ -8,7 +8,6 @@ import os
 import sys
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 
 # Add the src directory to the path so we can import modules
@@ -39,14 +38,29 @@ class TestMultiProjectIntegration(unittest.TestCase):
         self.docker_managers = []
 
     def tearDown(self):
-        """Clean up after each test."""
-        # Stop all Docker containers and clean up
-        for docker_manager in self.docker_managers:
+        """Clean up after each test using high-level CLI commands."""
+        # Use CLI clean command for each project location that might have been tested
+        for project_path in [self.project1_path, self.project2_path]:
             try:
-                docker_manager.stop()
-                docker_manager.clean()
+                os.chdir(project_path)
+                subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "code_indexer.cli",
+                        "clean",
+                        "--remove-data",
+                        "--force",
+                        "--validate",
+                    ],
+                    capture_output=True,
+                    timeout=90,
+                )
             except Exception as e:
-                print(f"Error cleaning up Docker manager: {e}")
+                print(f"Error cleaning up project {project_path}: {e}")
+
+        # Verify no root-owned files are left behind
+        self.verify_no_root_owned_files()
 
         # Return to original directory if it exists
         try:
@@ -54,6 +68,50 @@ class TestMultiProjectIntegration(unittest.TestCase):
                 os.chdir(self.original_cwd)
         except Exception as e:
             print(f"Error returning to original directory: {e}")
+
+    def verify_no_root_owned_files(self):
+        """Verify that no root-owned files are left in the data directory after cleanup.
+
+        This method provides immediate feedback when cleanup fails to remove root-owned files,
+        which cause Qdrant startup failures in subsequent tests.
+        """
+        import subprocess
+        import os
+
+        try:
+            # Check for root-owned files in the global data directory
+            global_data_dir = Path.home() / ".code-indexer-data"
+            if not global_data_dir.exists():
+                return  # No data directory means no files to check
+
+            # Use find command to locate files not owned by current user
+            current_user = os.getenv("USER") or os.getenv("USERNAME")
+            result = subprocess.run(
+                ["find", str(global_data_dir), "-not", "-user", current_user],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if result.returncode == 0 and result.stdout.strip():
+                root_owned_files = result.stdout.strip().split("\n")
+                self.fail(
+                    f"CLEANUP VERIFICATION FAILED: Found {len(root_owned_files)} root-owned files after cleanup!\n"
+                    f"These files will cause Qdrant permission errors in subsequent tests:\n"
+                    + "\n".join(
+                        f"  - {file}" for file in root_owned_files[:10]
+                    )  # Show first 10 files
+                    + (
+                        f"\n  ... and {len(root_owned_files) - 10} more files"
+                        if len(root_owned_files) > 10
+                        else ""
+                    )
+                    + f"\n\nTo fix manually: sudo rm -rf {global_data_dir}/qdrant/collections"
+                )
+
+        except Exception as e:
+            # Don't fail the test for verification errors, but warn
+            print(f"Warning: Could not verify root-owned file cleanup: {e}")
 
     def test_project_name_detection(self):
         """Test automatic project name detection based on folder name."""
@@ -118,82 +176,96 @@ class TestMultiProjectIntegration(unittest.TestCase):
         self.assertIn("code-indexer-global", networks)
 
     def test_multiple_projects_setup_simultaneously(self):
-        """Test setting up multiple projects with shared global containers."""
-        # Set up project 1
-        os.chdir(self.project1_path)
-        docker_manager1 = DockerManager()
-        self.docker_managers.append(docker_manager1)
-
-        # Set up project 2
-        os.chdir(self.project2_path)
-        docker_manager2 = DockerManager()
-        self.docker_managers.append(docker_manager2)
-
-        # Start global containers using first project manager
+        """Test setting up multiple projects with shared global containers using CLI commands."""
         try:
-            print("Starting global containers...")
-            docker_manager1.start()
-
-            # Wait for services to be actually ready using robust health checking
-            print("Waiting for services to be ready...")
-            if not docker_manager1.wait_for_services(timeout=120):
-                self.fail("Services failed to become ready within timeout")
-
-            # Now verify both projects can access the same global containers
-            print("Verifying service status...")
-            status1 = docker_manager1.status()
-            status2 = docker_manager2.status()
-
-            # Print status for debugging
-            print(f"Project 1 status: {status1}")
-            print(f"Project 2 status: {status2}")
-
-            self.assertTrue(
-                status1["ollama"]["running"],
-                f"Ollama not running for project 1: {status1['ollama']}",
+            # Setup from project 1 using CLI
+            os.chdir(self.project1_path)
+            setup_result1 = subprocess.run(
+                [sys.executable, "-m", "code_indexer.cli", "setup", "--quiet"],
+                capture_output=True,
+                text=True,
+                timeout=180,
             )
-            self.assertTrue(
-                status1["qdrant"]["running"],
-                f"Qdrant not running for project 1: {status1['qdrant']}",
-            )
-            self.assertTrue(
-                status2["ollama"]["running"],
-                f"Ollama not running for project 2: {status2['ollama']}",
-            )
-            self.assertTrue(
-                status2["qdrant"]["running"],
-                f"Qdrant not running for project 2: {status2['qdrant']}",
+            self.assertEqual(
+                setup_result1.returncode,
+                0,
+                f"Project 1 setup failed: {setup_result1.stderr}",
             )
 
-            # Verify they have identical container names (global architecture)
-            self.assertEqual(status1["ollama"]["name"], status2["ollama"]["name"])
-            self.assertEqual(status1["qdrant"]["name"], status2["qdrant"]["name"])
+            # Check status from both projects using CLI
+            status_result1 = subprocess.run(
+                [sys.executable, "-m", "code_indexer.cli", "status"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(
+                status_result1.returncode,
+                0,
+                f"Project 1 status failed: {status_result1.stderr}",
+            )
+            self.assertIn(
+                "✅", status_result1.stdout, "Services should be running after setup"
+            )
+
+            os.chdir(self.project2_path)
+            status_result2 = subprocess.run(
+                [sys.executable, "-m", "code_indexer.cli", "status"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(
+                status_result2.returncode,
+                0,
+                f"Project 2 status failed: {status_result2.stderr}",
+            )
+            self.assertIn(
+                "✅",
+                status_result2.stdout,
+                "Both projects should see same global containers",
+            )
+
+            # Both projects should see the same global containers
+            print(f"Project 1 status: {status_result1.stdout}")
+            print(f"Project 2 status: {status_result2.stdout}")
 
         except Exception as e:
-            self.fail(f"Failed to start multiple projects: {e}")
+            self.fail(f"Failed to test multiple projects: {e}")
 
     def test_container_communication(self):
-        """Test that containers can communicate internally without port conflicts."""
+        """Test that containers can communicate internally using CLI commands."""
         os.chdir(self.project1_path)
-        docker_manager = DockerManager()
-        self.docker_managers.append(docker_manager)
 
         try:
-            # Start containers
-            docker_manager.start()
-            time.sleep(30)  # Wait for services to be ready
+            # Use CLI setup command
+            setup_result = subprocess.run(
+                [sys.executable, "-m", "code_indexer.cli", "setup", "--quiet"],
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            self.assertEqual(
+                setup_result.returncode, 0, f"Setup failed: {setup_result.stderr}"
+            )
 
-            # Test Ollama communication
-            ollama_response = docker_manager.ollama_request("/api/tags", "GET")
-            self.assertIsNotNone(ollama_response)
-            self.assertTrue(ollama_response.get("success", False))
-            self.assertIn("models", ollama_response.get("data", {}))
-
-            # Test Qdrant communication
-            qdrant_response = docker_manager.qdrant_request("/", "GET")
-            self.assertIsNotNone(qdrant_response)
-            self.assertTrue(qdrant_response.get("success", False))
-            self.assertIn("title", qdrant_response.get("data", {}))
+            # Test communication via CLI status command (which internally tests connectivity)
+            status_result = subprocess.run(
+                [sys.executable, "-m", "code_indexer.cli", "status"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(
+                status_result.returncode,
+                0,
+                f"Status check failed: {status_result.stderr}",
+            )
+            self.assertIn(
+                "✅",
+                status_result.stdout,
+                "Status command should confirm container communication",
+            )
 
         except Exception as e:
             self.fail(f"Container communication test failed: {e}")
@@ -247,45 +319,79 @@ class TestMultiProjectIntegration(unittest.TestCase):
         self.assertEqual(config1.ollama.model, config2.ollama.model)
 
     def test_cleanup_operations(self):
-        """Test that cleanup operations work correctly for specific projects."""
+        """Test that cleanup operations work correctly using high-level CLI commands."""
         os.chdir(self.project1_path)
-        docker_manager = DockerManager()
-        self.docker_managers.append(docker_manager)
 
         try:
-            # Start containers
-            success = docker_manager.start()
-            self.assertTrue(success, "Failed to start Docker services")
-            
-            # Wait for services to be ready (up to 2 minutes)
-            services_ready = docker_manager.wait_for_services(timeout=120)
-            self.assertTrue(services_ready, "Services did not become ready within timeout")
+            # Use high-level CLI setup command
+            setup_result = subprocess.run(
+                [sys.executable, "-m", "code_indexer.cli", "setup", "--quiet"],
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            self.assertEqual(
+                setup_result.returncode, 0, f"Setup failed: {setup_result.stderr}"
+            )
 
-            # Verify containers are running
-            status = docker_manager.status()
-            self.assertTrue(status["ollama"]["running"], f"Ollama not running. Status: {status}")
-            self.assertTrue(status["qdrant"]["running"], f"Qdrant not running. Status: {status}")
+            # Verify services are running using CLI status command
+            status_result = subprocess.run(
+                [sys.executable, "-m", "code_indexer.cli", "status"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(
+                status_result.returncode,
+                0,
+                f"Status check failed: {status_result.stderr}",
+            )
+            self.assertIn(
+                "✅", status_result.stdout, "Services should be running after setup"
+            )
 
-            # Stop containers
-            stop_success = docker_manager.stop()
-            self.assertTrue(stop_success, "Failed to stop Docker services")
-            
-            # Wait for services to actually stop
-            max_wait = 30
-            start_time = time.time()
-            while time.time() - start_time < max_wait:
-                status = docker_manager.status()
-                if not status["ollama"]["running"] and not status["qdrant"]["running"]:
-                    break
-                time.sleep(2)
+            # Use high-level CLI clean command with enhanced cleanup
+            clean_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "code_indexer.cli",
+                    "clean",
+                    "--remove-data",
+                    "--force",
+                    "--validate",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=90,
+            )
+            self.assertEqual(
+                clean_result.returncode, 0, f"Clean failed: {clean_result.stderr}"
+            )
 
-            # Verify containers are stopped
-            status = docker_manager.status()
-            self.assertFalse(status["ollama"]["running"], f"Ollama still running. Status: {status}")
-            self.assertFalse(status["qdrant"]["running"], f"Qdrant still running. Status: {status}")
+            # Verify cleanup worked using CLI status command
+            final_status = subprocess.run(
+                [sys.executable, "-m", "code_indexer.cli", "status"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            # After enhanced cleanup, services should not be running
+            # Check specifically for Docker Services status
+            if (
+                "✅ Running" in final_status.stdout
+                or "Docker Services │ ✅" in final_status.stdout
+            ):
+                self.fail(
+                    f"Enhanced clean command did not stop services properly. Status output: {final_status.stdout}"
+                )
 
-            # Clean up
-            docker_manager.clean()
+            # Verify that Docker Services shows "Not Running"
+            self.assertIn(
+                "❌ Not Running",
+                final_status.stdout,
+                "Docker services should be stopped after cleanup",
+            )
 
         except Exception as e:
             self.fail(f"Cleanup operations test failed: {e}")

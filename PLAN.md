@@ -82,10 +82,6 @@ This document tracks the implementation of a git-aware vector indexing system th
 - [ ] **Implement database migration logic for existing indexes**
   - Create migration utilities for legacy metadata to git-aware schema
   - Add CLI command for manual migration of existing indexes
-- [ ] **Modify git hooks for global database model**
-  - Update git hooks to work with persistent global database
-  - Remove database shutdown logic from hooks
-  - Implement smart re-indexing on git events
 
 - [ ] **Implement incremental updates based on git hashes**
   - Smart detection of changed files using git diff
@@ -189,15 +185,6 @@ python -m pytest tests/test_end_to_end* -v  # E2E scenarios
 - [ ] Test schema migration with sample data
 - [ ] Update CLI commands to show git-aware metadata
 
-#### Task 4.2: Update Git Hooks for Global Database ⏳
-**Priority: MEDIUM - Feature enhancement**
-
-**Sub-tasks checklist:**
-- [ ] Audit existing git hook implementations
-- [ ] Remove database shutdown logic (use persistent global DB)
-- [ ] Implement smart re-indexing based on git events
-- [ ] Test git hooks with various git operations (commit, checkout, merge)
-- [ ] Ensure hooks work with both git and non-git projects
 
 ### Phase 5 Checklist: Advanced Features
 
@@ -278,7 +265,6 @@ python -m pytest tests/test_end_to_end* -v  # E2E scenarios
    - ✅ Full CLI integration with rich git-aware displays
 4. **Optional Phase 5 Enhancements** available for advanced features:
    - Database migration utilities for legacy indexes
-   - Enhanced git hooks for global database model
    - Advanced incremental updates based on git hashes
 5. **System is Production Ready** - all 60 tests passing, full backward compatibility maintained
 

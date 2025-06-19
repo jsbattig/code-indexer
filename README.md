@@ -1,37 +1,37 @@
 # Code Indexer
 
-🔍 **AI-powered semantic code search with local models**
+AI-powered semantic code search with local models
 
-A Python CLI tool that uses [Ollama](https://ollama.ai/) for embeddings and [Qdrant](https://qdrant.tech/) for vector storage to provide intelligent, semantic code search capabilities across your codebase.
+A Python CLI tool that uses [Ollama](https://ollama.ai/) for embeddings and [Qdrant](https://qdrant.tech/) for vector storage to provide semantic code search capabilities across your codebase.
 
-✨ **Features include incremental updates to keep your index current as code changes.**
+Includes incremental updates to keep your index current as code changes.
 
 ## Features
 
-- 🧠 **Semantic Search** - Find code by meaning, not just keywords
-- 🏠 **Local AI Models** - Uses Ollama for privacy-preserving embeddings
-- 🚀 **Fast Vector Search** - Powered by Qdrant vector database
-- 📦 **Easy Setup** - Automated Docker container management
-- 🔄 **Incremental Updates** - Only re-index changed files
-- 🎯 **Smart Filtering** - Filter by language, path, similarity score
-- 📊 **Rich CLI** - Beautiful terminal interface with progress bars
-- 🔧 **Configurable** - Extensive configuration options
-- 🏢 **Multi-Project Support** - Index multiple projects simultaneously without port conflicts
-- 🎯 **Auto Project Detection** - Automatically derives project names from git repositories or folder names
+- **Semantic Search** - Find code by meaning, not just keywords
+- **Local AI Models** - Uses Ollama for privacy-preserving embeddings
+- **Vector Search** - Powered by Qdrant vector database
+- **Automated Setup** - Docker container management
+- **Incremental Updates** - Only re-index changed files
+- **Filtering** - Filter by language, path, similarity score
+- **CLI Interface** - Terminal interface with progress bars
+- **Configurable** - Configuration options for different use cases
+- **Multi-Project Support** - Index multiple projects simultaneously without port conflicts
+- **Auto Project Detection** - Derives project names from git repositories or folder names
 
 ## Quick Start
 
 ### Installation
 
-**Choose the installation method that works best for your system:**
+Choose an installation method:
 
-#### Option 1: Using pipx (Recommended for CLI tools)
+#### Option 1: Using pipx
 ```bash
 # Install pipx if not already installed (Ubuntu/Debian)
 sudo apt update && sudo apt install pipx
 
 # Install code-indexer using pipx (from latest release)
-pipx install https://github.com/jsbattig/code-indexer/releases/download/v0.0.17.0/code_indexer-0.0.17.0-py3-none-any.whl
+pipx install https://github.com/jsbattig/code-indexer/releases/download/v0.0.18.0/code_indexer-0.0.18.0-py3-none-any.whl
 
 # Or install directly from git (latest development)
 pipx install git+https://github.com/jsbattig/code-indexer.git
@@ -47,7 +47,7 @@ python3 -m venv ~/code-indexer-env
 source ~/code-indexer-env/bin/activate
 
 # Install from GitHub releases
-pip install https://github.com/jsbattig/code-indexer/releases/download/v0.0.17.0/code_indexer-0.0.17.0-py3-none-any.whl
+pip install https://github.com/jsbattig/code-indexer/releases/download/v0.0.18.0/code_indexer-0.0.18.0-py3-none-any.whl
 
 # Or install directly from git (latest development)
 pip install git+https://github.com/jsbattig/code-indexer.git
@@ -73,11 +73,11 @@ pip install -e .
 
 If you encounter the error `externally-managed-environment` on Ubuntu/Debian systems:
 
-- **Recommended**: Use pipx (Option 1 above) - it's designed for CLI applications
-- **Alternative**: Use a virtual environment (Option 2 above)
-- **Not recommended**: Using `--break-system-packages` can damage your system Python
+- Use pipx (Option 1 above) - designed for CLI applications
+- Use a virtual environment (Option 2 above)
+- Avoid using `--break-system-packages` which can damage your system Python
 
-**Why pipx?** It automatically manages isolated environments for CLI tools, making `code-indexer` globally available without affecting your system Python.
+pipx automatically manages isolated environments for CLI tools, making `code-indexer` globally available without affecting your system Python.
 
 ### Initialize and Setup
 
@@ -103,11 +103,18 @@ code-indexer watch
 
 ## Usage
 
+> **🔥 Tip**: Use the short alias `cidx` instead of `code-indexer` for faster typing!  
+> Examples: `cidx setup`, `cidx index`, `cidx query "search terms"`
+
 ### Commands
 
 #### Setup Services
 ```bash
-code-indexer setup [--model MODEL_NAME] [--force-recreate]
+code-indexer setup [--model MODEL_NAME] [--force-recreate] [--parallel-requests N] [--max-models N] [--queue-size N]
+
+# Performance Examples:
+code-indexer setup --parallel-requests 2 --max-models 1  # Higher throughput
+code-indexer setup --queue-size 1024                    # Larger request queue
 ```
 
 #### Index Codebase
@@ -362,16 +369,16 @@ with change_lock:
 
 ### Performance Characteristics
 
-**Efficient resource usage:**
+**Resource usage:**
 - **Memory**: Bounded change buffer prevents memory leaks during high-activity periods
 - **CPU**: Only processes actual changes, not entire codebase
 - **I/O**: Batched database operations reduce network overhead
 - **AI**: Embedding generation only for changed content
 
-**Scalability considerations:**
+**Scalability:**
 - **Large codebases**: Recursive monitoring scales to thousands of files
 - **High activity**: Debouncing handles rapid development cycles
-- **Network resilience**: Batch operations reduce API call frequency
+- **Network**: Batch operations reduce API call frequency
 
 ### Configuration Options
 
@@ -390,13 +397,13 @@ python -m code_indexer.cli watch --batch-size 10   # Smaller batches, more frequ
 
 ### Use Cases & Best Practices
 
-**Ideal for:**
+**Use cases:**
 - **Active development**: Keep search current during coding sessions
 - **Team environments**: Shared codebase with multiple contributors
-- **Large codebases**: Incremental updates much faster than full re-indexing
+- **Large codebases**: Incremental updates faster than full re-indexing
 - **CI/CD integration**: Continuous index updates in development environments
 
-**Best practices:**
+**Usage patterns:**
 - **Development workflow**: Start watcher at beginning of coding session
 - **Resource management**: Stop watcher when doing large refactors/imports
 - **Debounce tuning**: Increase for build-heavy projects, decrease for pure coding
@@ -409,7 +416,7 @@ python -m code_indexer.cli watch --batch-size 10   # Smaller batches, more frequ
 👋 Stopping file watcher...
 ```
 
-The watcher provides a seamless "live sync" experience, ensuring your semantic search index is always current with your latest code changes, making development more efficient and search results more relevant.
+The watcher provides "live sync" functionality, ensuring your semantic search index stays current with code changes.
 
 ## Multi-Project Support
 
@@ -431,13 +438,13 @@ Each project gets its own isolated vector database:
 - **Single Ollama instance**: Shared AI model server for all projects
 - **Single Qdrant instance**: Multiple collections in one database
 - **No port conflicts**: Projects access services via internal communication
-- **Efficient resource usage**: Shared containers reduce memory footprint
+- **Resource usage**: Shared containers reduce memory footprint
 
 ### Benefits
-- **Work on multiple projects**: Index and search different codebases simultaneously
-- **Clean isolation**: Projects can't interfere with each other's data
-- **Zero configuration**: Project names are detected automatically
-- **Resource efficient**: Shared services minimize system resource usage
+- **Multiple projects**: Index and search different codebases simultaneously
+- **Isolation**: Projects cannot interfere with each other's data
+- **Automatic configuration**: Project names are detected automatically
+- **Resource efficiency**: Shared services minimize system resource usage
 
 ## Configuration
 
@@ -463,7 +470,10 @@ Code Indexer creates a `.code-indexer/config.json` file in your project director
   "ollama": {
     "host": "http://localhost:11434",
     "model": "nomic-embed-text",
-    "timeout": 30
+    "timeout": 30,
+    "num_parallel": 1,
+    "max_loaded_models": 1,
+    "max_queue": 512
   },
   "qdrant": {
     "host": "http://localhost:6333",
@@ -481,37 +491,28 @@ Code Indexer creates a `.code-indexer/config.json` file in your project director
 - **chunk_size**: Text chunk size for large files
 - **ollama.model**: Embedding model (e.g., `nomic-embed-text`, `all-MiniLM-L6-v2`)
 
-## Multi-Project Support
+### Performance Settings
 
-Code Indexer automatically supports indexing multiple projects simultaneously without port conflicts:
+Configure Ollama performance through setup command parameters:
 
-### Automatic Project Detection
-- **Git Repository Name**: Uses the git repository name from `git remote get-url origin`
-- **Directory Name**: Falls back to the current directory name if not a git repository
-- **Sanitization**: Converts names to Docker-compatible format (lowercase, hyphens only)
+- **--parallel-requests**: Number of parallel requests Ollama can handle (default: 1)
+  - Config setting: `num_parallel`
+- **--max-models**: Maximum models to keep loaded in memory (default: 1)
+  - Config setting: `max_loaded_models`
+- **--queue-size**: Maximum request queue size (default: 512)
+  - Config setting: `max_queue`
 
-### Isolated Containers
-Each project gets its own isolated containers:
 ```bash
-# Project: my-app
-code-ollama-my-app     # Ollama service for my-app
-code-qdrant-my-app     # Qdrant service for my-app
+# Conservative (low resource usage)
+code-indexer setup --parallel-requests 1 --max-models 1 --queue-size 256
 
-# Project: api-server  
-code-ollama-api-server # Ollama service for api-server
-code-qdrant-api-server # Qdrant service for api-server
+# Balanced (recommended for most users)
+code-indexer setup --parallel-requests 2 --max-models 1 --queue-size 512
+
+# High throughput (powerful machines)
+code-indexer setup --parallel-requests 4 --max-models 1 --queue-size 1024
 ```
 
-### Internal Communication
-- **No Port Conflicts**: Containers don't expose ports to the host
-- **Docker Networks**: Each project uses its own isolated network
-- **Container-to-Container**: Communication happens via `docker exec` commands
-
-### Benefits
-- **Work on Multiple Projects**: Index and search different codebases simultaneously
-- **No Resource Conflicts**: Each project has dedicated AI models and vector databases
-- **Clean Isolation**: Projects can't interfere with each other's data or configuration
-- **Zero Configuration**: Project names are detected automatically
 
 ## Architecture
 
@@ -602,8 +603,8 @@ mypy src/                  # Type checking
 docker ps
 
 # View container logs
-docker logs code-ollama
-docker logs code-qdrant
+docker logs code-indexer-ollama
+docker logs code-indexer-qdrant
 
 # Restart services
 code-indexer clean

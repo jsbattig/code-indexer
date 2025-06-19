@@ -2,6 +2,11 @@
 
 from .ollama import OllamaClient
 from .qdrant import QdrantClient
-from .docker_manager import DockerManager
+from .docker_manager import DockerManager, get_global_compose_file_path
 
-__all__ = ["OllamaClient", "QdrantClient", "DockerManager"]
+__all__ = [
+    "OllamaClient",
+    "QdrantClient",
+    "DockerManager",
+    "get_global_compose_file_path",
+]

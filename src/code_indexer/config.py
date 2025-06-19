@@ -8,11 +8,23 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class OllamaConfig(BaseModel):
-    """Configuration for Ollama service."""
+    """Configuration for Ollama service.
+
+    Environment variable references:
+    - Ollama FAQ: https://github.com/ollama/ollama/blob/main/docs/faq.md#how-do-i-configure-ollama-server
+    """
 
     host: str = Field(default="http://localhost:11434", description="Ollama API host")
     model: str = Field(default="nomic-embed-text", description="Embedding model name")
     timeout: int = Field(default=30, description="Request timeout in seconds")
+    # OLLAMA_NUM_PARALLEL: Default 4 or 1 based on memory
+    num_parallel: int = Field(default=1, description="Number of parallel request slots")
+    # OLLAMA_MAX_LOADED_MODELS: Default 3×GPU count or 3 for CPU
+    max_loaded_models: int = Field(
+        default=1, description="Maximum number of models to keep loaded"
+    )
+    # OLLAMA_MAX_QUEUE: Default 512
+    max_queue: int = Field(default=512, description="Maximum request queue size")
 
 
 class QdrantConfig(BaseModel):
@@ -33,6 +45,39 @@ class IndexingConfig(BaseModel):
     )
     index_comments: bool = Field(
         default=True, description="Include comments in indexing"
+    )
+
+
+class TimeoutsConfig(BaseModel):
+    """Configuration for various timeout settings."""
+
+    service_startup: int = Field(
+        default=180, description="Service startup timeout in seconds"
+    )
+    service_shutdown: int = Field(
+        default=30, description="Service shutdown timeout in seconds"
+    )
+    port_release: int = Field(default=15, description="Port release timeout in seconds")
+    cleanup_validation: int = Field(
+        default=30, description="Cleanup validation timeout in seconds"
+    )
+    health_check: int = Field(default=60, description="Health check timeout in seconds")
+    data_cleaner_startup: int = Field(
+        default=60, description="Data cleaner startup timeout in seconds"
+    )
+
+
+class PollingConfig(BaseModel):
+    """Configuration for condition polling behavior."""
+
+    initial_interval: float = Field(
+        default=0.5, description="Initial polling interval in seconds"
+    )
+    backoff_factor: float = Field(
+        default=1.2, description="Exponential backoff multiplier"
+    )
+    max_interval: float = Field(
+        default=2.0, description="Maximum polling interval in seconds"
     )
 
 
@@ -100,6 +145,8 @@ class Config(BaseModel):
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
     qdrant: QdrantConfig = Field(default_factory=QdrantConfig)
     indexing: IndexingConfig = Field(default_factory=IndexingConfig)
+    timeouts: TimeoutsConfig = Field(default_factory=TimeoutsConfig)
+    polling: PollingConfig = Field(default_factory=PollingConfig)
 
     @field_validator("codebase_dir", mode="before")
     @classmethod
@@ -223,6 +270,51 @@ How text is split for AI processing:
 "chunk_size": 1500  // 1500 characters (default)
 ```
 
+## Performance Configuration
+
+### Ollama Performance Control
+Configure request handling and resource usage for the AI embedding model:
+
+```json
+"ollama": {
+  "host": "http://localhost:11434",
+  "model": "nomic-embed-text",
+  "timeout": 30,
+  "num_parallel": 1,            // Parallel request slots (default: 1)
+  "max_loaded_models": 1,       // Max models in memory (default: 1)
+  "max_queue": 512              // Max request queue size (default: 512)
+}
+```
+
+#### Ollama Server Settings
+Configuration maps to Ollama environment variables. See: https://github.com/ollama/ollama/blob/main/docs/faq.md#how-do-i-configure-ollama-server
+
+- **`num_parallel`** (→ OLLAMA_NUM_PARALLEL): Maximum concurrent requests Ollama server accepts
+  - `1`: Server processes one request at a time
+  - `2-4`: Server can handle multiple simultaneous requests from different clients
+  - **Default in Ollama**: 4 or 1 based on available memory
+  - **Note**: Code-indexer processes files sequentially, so this mainly benefits other clients using the same Ollama instance
+- **`max_loaded_models`** (→ OLLAMA_MAX_LOADED_MODELS): Maximum models Ollama keeps loaded in memory
+  - `1`: Single model (code-indexer uses one embedding model)
+  - `2+`: Multiple models (uses more RAM, not needed for code-indexer)  
+  - **Default in Ollama**: 3×GPU count or 3 for CPU
+- **`max_queue`** (→ OLLAMA_MAX_QUEUE): Maximum requests Ollama queues when busy
+  - `512`: Default queue size
+  - Higher values allow more requests to wait when server is at capacity
+  - **Default in Ollama**: 512
+
+#### Processing Architecture
+Code-indexer processes files sequentially: reads file → chunks text → generates embedding → stores in Qdrant → next file. CPU thread allocation is handled automatically by Ollama and cannot be configured.
+
+#### Configuration Examples
+```json
+// Single-user development (default)
+"ollama": { "num_parallel": 1, "max_queue": 256 }
+
+// Shared Ollama instance (multiple clients)
+"ollama": { "num_parallel": 4, "max_queue": 512 }
+```
+
 ## Additional Exclusions
 
 The system also respects `.gitignore` patterns automatically.
@@ -246,7 +338,7 @@ code-indexer index --clear
 
 - Run `code-indexer --help` for command documentation
 - Run `code-indexer COMMAND --help` for specific command help
-- Check the main documentation for advanced configuration
+- Check the main documentation for additional configuration
 
 """
 

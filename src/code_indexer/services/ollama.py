@@ -1,6 +1,5 @@
 """Ollama API client for embeddings generation."""
 
-import asyncio
 from typing import List, Dict, Any, Optional
 import httpx
 from rich.console import Console
@@ -82,45 +81,6 @@ class OllamaClient:
             if e.response.status_code == 404:
                 raise ValueError(f"Model {model_name} not found. Try pulling it first.")
             raise RuntimeError(f"Ollama API error: {e}")
-
-    async def get_embedding_async(
-        self, text: str, model: Optional[str] = None
-    ) -> List[float]:
-        """Async version of get_embedding."""
-        model_name = model or self.config.model
-
-        async with httpx.AsyncClient(
-            base_url=self.config.host, timeout=self.config.timeout
-        ) as client:
-            try:
-                response = await client.post(
-                    "/api/embeddings", json={"model": model_name, "prompt": text}
-                )
-                response.raise_for_status()
-
-                result = response.json()
-                embedding = result.get("embedding")
-
-                if not embedding:
-                    raise ValueError("No embedding returned from Ollama")
-
-                return list(embedding)
-
-            except httpx.RequestError as e:
-                raise ConnectionError(f"Failed to connect to Ollama: {e}")
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 404:
-                    raise ValueError(
-                        f"Model {model_name} not found. Try pulling it first."
-                    )
-                raise RuntimeError(f"Ollama API error: {e}")
-
-    async def get_embeddings_batch(
-        self, texts: List[str], model: Optional[str] = None
-    ) -> List[List[float]]:
-        """Get embeddings for multiple texts in parallel."""
-        tasks = [self.get_embedding_async(text, model) for text in texts]
-        return await asyncio.gather(*tasks)
 
     def close(self) -> None:
         """Close the HTTP client."""

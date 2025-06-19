@@ -37,7 +37,10 @@ console = Console()
 @click.version_option(version=__version__, prog_name="code-indexer")
 @click.pass_context
 def cli(ctx, config: Optional[str], verbose: bool):
-    """🔍 AI-powered semantic code search with local models.
+    """AI-powered semantic code search with local models.
+
+    \b
+    TIP: Use 'cidx' as a short alias for 'code-indexer' (e.g., 'cidx setup')
 
     \b
     GETTING STARTED:
@@ -183,9 +186,34 @@ def init(
     "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
 )
 @click.option("--quiet", "-q", is_flag=True, help="Suppress output")
+@click.option(
+    "--parallel-requests",
+    type=int,
+    default=1,
+    help="Number of concurrent requests Ollama server accepts (default: 1)",
+)
+@click.option(
+    "--max-models",
+    type=int,
+    default=1,
+    help="Maximum models to keep loaded in memory (default: 1)",
+)
+@click.option(
+    "--queue-size",
+    type=int,
+    default=512,
+    help="Maximum request queue size (default: 512)",
+)
 @click.pass_context
 def setup(
-    ctx, model: Optional[str], force_recreate: bool, force_docker: bool, quiet: bool
+    ctx,
+    model: Optional[str],
+    force_recreate: bool,
+    force_docker: bool,
+    quiet: bool,
+    parallel_requests: int,
+    max_models: int,
+    queue_size: int,
 ):
     """Setup and start required services (Ollama + Qdrant).
 
@@ -217,12 +245,25 @@ def setup(
       • Data: ~/.code-indexer/global/ (persistent storage)
 
     \b
+    PERFORMANCE OPTIONS (Ollama Environment Variables):
+      --parallel-requests N   Number of concurrent requests Ollama server accepts (default: 1)
+                             Maps to OLLAMA_NUM_PARALLEL (Ollama default: 4 or 1 based on memory)
+      --max-models N         Maximum models kept in memory (default: 1)
+                             Maps to OLLAMA_MAX_LOADED_MODELS (Ollama default: 3×GPU count or 3 for CPU)
+      --queue-size N         Maximum request queue size (default: 512)
+                             Maps to OLLAMA_MAX_QUEUE (Ollama default: 512)
+
+    Reference: https://github.com/ollama/ollama/blob/main/docs/faq.md#how-do-i-configure-ollama-server
+
+    \b
     EXAMPLES:
       code-indexer setup                    # Basic setup (prefers Podman)
       code-indexer setup --quiet           # Silent mode
       code-indexer setup --force-recreate  # Reset containers
       code-indexer setup --force-docker    # Force use Docker instead of Podman
       code-indexer setup -m all-minilm-l6-v2  # Different model
+      code-indexer setup --parallel-requests 2 --max-models 1  # Multi-client setup
+      code-indexer setup --queue-size 1024 # Larger request queue
 
     Run this command once per machine, services persist between sessions.
     """
@@ -252,10 +293,19 @@ def setup(
         # Update model if specified
         if model:
             config.ollama.model = model
-            config_manager.save(config)
+
+        # Update performance settings from command line parameters
+        config.ollama.num_parallel = parallel_requests
+        config.ollama.max_loaded_models = max_models
+        config.ollama.max_queue = queue_size
+
+        # Save updated configuration
+        config_manager.save(config)
 
         # Check Docker availability (auto-detect project name)
-        docker_manager = DockerManager(setup_console, force_docker=force_docker)
+        docker_manager = DockerManager(
+            setup_console, force_docker=force_docker, main_config=config.model_dump()
+        )
 
         if not docker_manager.is_docker_available():
             setup_console.print(
@@ -1306,7 +1356,9 @@ def status(ctx, force_docker: bool):
         table.add_column("Details", style="green")
 
         # Check Docker services (auto-detect project name)
-        docker_manager = DockerManager(force_docker=force_docker)
+        docker_manager = DockerManager(
+            force_docker=force_docker, main_config=config.model_dump()
+        )
         service_status = docker_manager.get_service_status()
 
         docker_status = (
@@ -1468,111 +1520,6 @@ def optimize(ctx):
 
 
 @cli.command()
-@click.option("--install", is_flag=True, help="Install Git hooks")
-@click.option("--uninstall", is_flag=True, help="Remove Git hooks")
-@click.pass_context
-def git_hooks(ctx, install: bool, uninstall: bool):
-    """Manage Git hooks for clean database commits."""
-    if not install and not uninstall:
-        console.print("❌ Use --install or --uninstall", style="red")
-        sys.exit(1)
-
-    if install and uninstall:
-        console.print("❌ Cannot use both --install and --uninstall", style="red")
-        sys.exit(1)
-
-    git_dir = Path(".git")
-    if not git_dir.exists():
-        console.print("❌ Not a Git repository", style="red")
-        sys.exit(1)
-
-    hooks_dir = git_dir / "hooks"
-    hooks_dir.mkdir(exist_ok=True)
-
-    hooks = {
-        "pre-commit": """#!/bin/bash
-# Code Indexer: Ensure clean database state before commit
-if [ -f ".code-indexer/config.json" ]; then
-    echo "🔄 Flushing Qdrant database before commit..."
-    code-indexer clean --quiet 2>/dev/null || true
-    sleep 2  # Allow time for graceful shutdown
-    echo "🚀 Restarting Qdrant after flush..."
-    code-indexer setup --quiet 2>/dev/null || true
-fi
-""",
-        "pre-checkout": """#!/bin/bash
-# Code Indexer: Stop Qdrant before branch changes
-if [ -f ".code-indexer/config.json" ]; then
-    echo "🛑 Stopping Qdrant for branch change..."
-    code-indexer clean --quiet 2>/dev/null || true
-fi
-""",
-        "post-checkout": """#!/bin/bash
-# Code Indexer: Restart Qdrant after branch changes
-if [ -f ".code-indexer/config.json" ]; then
-    echo "🚀 Restarting Qdrant after branch change..."
-    code-indexer setup --quiet 2>/dev/null || true
-fi
-""",
-    }
-
-    if install:
-        console.print("📎 Installing Git hooks for Code Indexer...")
-        for hook_name, hook_content in hooks.items():
-            hook_path = hooks_dir / hook_name
-
-            # Backup existing hook if it exists
-            if hook_path.exists():
-                backup_path = hooks_dir / f"{hook_name}.backup"
-                import shutil
-
-                shutil.copy2(hook_path, backup_path)
-                console.print(
-                    f"📦 Backed up existing {hook_name} to {hook_name}.backup"
-                )
-
-            # Write new hook
-            with open(hook_path, "w") as f:
-                f.write(hook_content)
-            hook_path.chmod(0o755)  # Make executable
-
-            console.print(f"✅ Installed {hook_name} hook")
-
-        console.print("🎉 Git hooks installed successfully!")
-        console.print("🔄 Commits will now flush Qdrant database automatically")
-        console.print("🔀 Branch changes will stop/start Qdrant as needed")
-
-    elif uninstall:
-        console.print("🗑️  Removing Code Indexer Git hooks...")
-        for hook_name in hooks.keys():
-            hook_path = hooks_dir / hook_name
-            backup_path = hooks_dir / f"{hook_name}.backup"
-
-            if hook_path.exists():
-                # Check if this is our hook by looking for our signature
-                with open(hook_path, "r") as f:
-                    content = f.read()
-
-                if "Code Indexer:" in content:
-                    hook_path.unlink()
-                    console.print(f"🗑️  Removed {hook_name} hook")
-
-                    # Restore backup if it exists
-                    if backup_path.exists():
-                        import shutil
-
-                        shutil.copy2(backup_path, hook_path)
-                        backup_path.unlink()
-                        console.print(f"📦 Restored {hook_name} from backup")
-                else:
-                    console.print(
-                        f"⚠️  {hook_name} exists but not from Code Indexer, skipping"
-                    )
-
-        console.print("✅ Git hooks removed successfully!")
-
-
-@cli.command()
 @click.option(
     "--remove-data",
     "-d",
@@ -1585,19 +1532,65 @@ fi
     help="Remove data for ALL projects (use with --remove-data)",
 )
 @click.option("--quiet", "-q", is_flag=True, help="Suppress output")
+@click.option("--verbose", "-v", is_flag=True, help="Verbose output for debugging")
+@click.option(
+    "--force",
+    "-f",
+    is_flag=True,
+    help="Force cleanup even if containers are unresponsive",
+)
+@click.option("--validate", is_flag=True, help="Validate cleanup worked properly")
 @click.option(
     "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
 )
 @click.pass_context
-def clean(ctx, remove_data: bool, all_projects: bool, quiet: bool, force_docker: bool):
+def clean(
+    ctx,
+    remove_data: bool,
+    all_projects: bool,
+    quiet: bool,
+    verbose: bool,
+    force: bool,
+    validate: bool,
+    force_docker: bool,
+):
     """Stop services and optionally remove data.
+
+    \b
+    BASIC USAGE:
+      code-indexer clean                        # Stop services
+      code-indexer clean --remove-data          # Stop and remove current project data
+      code-indexer clean --remove-data --all-projects  # Remove all project data
+
+    \b
+    ENHANCED CLEANUP:
+      code-indexer clean --force                # Force stop unresponsive containers
+      code-indexer clean --validate             # Validate cleanup worked
+      code-indexer clean --verbose              # Show detailed cleanup steps
+      code-indexer clean --remove-data --force --validate  # Robust cleanup
+
+    \b
+    TROUBLESHOOTING:
+      If containers are stuck or won't stop properly, use --force
+      If cleanup seems incomplete, use --validate to check
+      For debugging cleanup issues, use --verbose
 
     By default, --remove-data only removes the current project's data.
     Use --all-projects with --remove-data to remove data for all projects.
     """
     try:
-        # Use quiet console if requested
-        clean_console = Console(quiet=quiet) if quiet else console
+        # Handle verbose vs quiet conflict
+        if verbose and quiet:
+            console.print("❌ Cannot use both --verbose and --quiet", style="red")
+            sys.exit(1)
+
+        # Use appropriate console
+        if verbose:
+            clean_console = console  # Always show verbose output
+        elif quiet:
+            clean_console = Console(quiet=True)
+        else:
+            clean_console = console
 
         # Validate options
         if all_projects and not remove_data:
@@ -1606,7 +1599,17 @@ def clean(ctx, remove_data: bool, all_projects: bool, quiet: bool, force_docker:
             )
             sys.exit(1)
 
-        docker_manager = DockerManager(clean_console, force_docker=force_docker)
+        # Load config to get port configuration
+        config_manager = ctx.obj["config_manager"]
+        try:
+            config = config_manager.load()
+            main_config = config.model_dump()
+        except Exception:
+            main_config = None
+
+        docker_manager = DockerManager(
+            clean_console, force_docker=force_docker, main_config=main_config
+        )
 
         if remove_data:
             if all_projects:
@@ -1620,7 +1623,12 @@ def clean(ctx, remove_data: bool, all_projects: bool, quiet: bool, force_docker:
         else:
             clean_console.print("🛑 Stopping services...")
 
-        if docker_manager.cleanup(remove_data=remove_data and all_projects):
+        if docker_manager.cleanup(
+            remove_data=remove_data and all_projects,
+            force=force,
+            verbose=verbose,
+            validate=validate,
+        ):
             if remove_data:
                 config_manager = ctx.obj["config_manager"]
 
