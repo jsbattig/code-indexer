@@ -31,7 +31,7 @@ Choose an installation method:
 sudo apt update && sudo apt install pipx
 
 # Install code-indexer using pipx (from latest release)
-pipx install https://github.com/jsbattig/code-indexer/releases/download/v0.0.18.0/code_indexer-0.0.18.0-py3-none-any.whl
+pipx install https://github.com/jsbattig/code-indexer/releases/download/v0.0.19.0/code_indexer-0.0.19.0-py3-none-any.whl
 
 # Or install directly from git (latest development)
 pipx install git+https://github.com/jsbattig/code-indexer.git
@@ -47,7 +47,7 @@ python3 -m venv ~/code-indexer-env
 source ~/code-indexer-env/bin/activate
 
 # Install from GitHub releases
-pip install https://github.com/jsbattig/code-indexer/releases/download/v0.0.18.0/code_indexer-0.0.18.0-py3-none-any.whl
+pip install https://github.com/jsbattig/code-indexer/releases/download/v0.0.19.0/code_indexer-0.0.19.0-py3-none-any.whl
 
 # Or install directly from git (latest development)
 pip install git+https://github.com/jsbattig/code-indexer.git
