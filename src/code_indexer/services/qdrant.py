@@ -6,6 +6,8 @@ import httpx
 from rich.console import Console
 
 from ..config import QdrantConfig
+from .embedding_provider import EmbeddingProvider
+from .embedding_factory import EmbeddingProviderFactory
 
 
 class QdrantClient:
@@ -15,6 +17,7 @@ class QdrantClient:
         self.config = config
         self.console = console or Console()
         self.client = httpx.Client(base_url=config.host, timeout=30.0)
+        self._current_collection_name: Optional[str] = None
 
     def health_check(self) -> bool:
         """Check if Qdrant service is accessible."""
@@ -26,7 +29,9 @@ class QdrantClient:
 
     def collection_exists(self, collection_name: Optional[str] = None) -> bool:
         """Check if collection exists."""
-        collection = collection_name or self.config.collection
+        collection = (
+            collection_name or self._current_collection_name or self.config.collection
+        )
         try:
             response = self.client.get(f"/collections/{collection}")
             return bool(response.status_code == 200)
@@ -111,7 +116,9 @@ class QdrantClient:
 
     def clear_collection(self, collection_name: Optional[str] = None) -> bool:
         """Clear all points from collection."""
-        collection = collection_name or self.config.collection
+        collection = (
+            collection_name or self._current_collection_name or self.config.collection
+        )
         try:
             response = self.client.delete(
                 f"/collections/{collection}/points", params={"filter": "{}"}
@@ -157,11 +164,93 @@ class QdrantClient:
 
         return self.create_collection(collection, vector_size)
 
+    def resolve_collection_name(
+        self, config, embedding_provider: EmbeddingProvider
+    ) -> str:
+        """Generate collection name based on current provider and model.
+
+        Args:
+            config: Main configuration object containing QdrantConfig
+            embedding_provider: Current embedding provider instance
+
+        Returns:
+            Collection name based on provider and model, or legacy name if configured
+        """
+        qdrant_config = config.qdrant
+
+        # Use legacy naming if requested
+        if qdrant_config.use_legacy_collection_naming:
+            return str(qdrant_config.collection)
+
+        # Use provider-aware naming
+        if qdrant_config.use_provider_aware_collections:
+            provider_name = embedding_provider.get_provider_name()
+            model_name = embedding_provider.get_current_model()
+            base_name = qdrant_config.collection_base_name
+
+            return str(
+                EmbeddingProviderFactory.generate_collection_name(
+                    base_name, provider_name, model_name
+                )
+            )
+
+        # Fallback to legacy collection name
+        return str(qdrant_config.collection)
+
+    def get_vector_size_for_provider(
+        self, embedding_provider: EmbeddingProvider
+    ) -> int:
+        """Get vector dimensions from embedding provider model info.
+
+        Args:
+            embedding_provider: Current embedding provider instance
+
+        Returns:
+            Vector dimensions for the current provider's model
+        """
+        model_info = embedding_provider.get_model_info()
+        return int(model_info["dimensions"])
+
+    def ensure_provider_aware_collection(
+        self, config, embedding_provider: EmbeddingProvider
+    ) -> str:
+        """Create/validate collection with provider-aware naming and sizing.
+
+        Args:
+            config: Main configuration object containing QdrantConfig
+            embedding_provider: Current embedding provider instance
+
+        Returns:
+            Collection name that was created/validated
+        """
+        collection_name = self.resolve_collection_name(config, embedding_provider)
+        vector_size = self.get_vector_size_for_provider(embedding_provider)
+
+        # Create collection with auto-detected vector size
+        success = self.ensure_collection(collection_name, vector_size)
+
+        if not success:
+            raise RuntimeError(
+                f"Failed to create/validate collection: {collection_name}"
+            )
+
+        self.console.print(
+            f"✅ Collection ready: {collection_name} (dimensions: {vector_size})",
+            style="green",
+        )
+
+        # Store current collection name for use in subsequent operations
+        self._current_collection_name = collection_name
+
+        return collection_name
+
     def upsert_points(
         self, points: List[Dict[str, Any]], collection_name: Optional[str] = None
     ) -> bool:
         """Insert or update points in the collection."""
-        collection = collection_name or self.config.collection
+        collection = (
+            collection_name or self._current_collection_name or self.config.collection
+        )
 
         try:
             response = self.client.put(
@@ -219,7 +308,9 @@ class QdrantClient:
         collection_name: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Search for similar vectors."""
-        collection = collection_name or self.config.collection
+        collection = (
+            collection_name or self._current_collection_name or self.config.collection
+        )
 
         search_params = {
             "vector": query_vector,
@@ -247,6 +338,126 @@ class QdrantClient:
             raise ConnectionError(f"Failed to connect to Qdrant: {e}")
         except httpx.HTTPStatusError as e:
             raise RuntimeError(f"Qdrant API error: {e}")
+
+    def create_model_filter(self, embedding_model: str) -> Dict[str, Any]:
+        """Create a filter condition for a specific embedding model.
+
+        Args:
+            embedding_model: Name of the embedding model to filter by
+
+        Returns:
+            Filter condition for Qdrant queries
+        """
+        return {
+            "must": [{"key": "embedding_model", "match": {"value": embedding_model}}]
+        }
+
+    def combine_filters(
+        self,
+        model_filter: Optional[Dict[str, Any]] = None,
+        additional_filters: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Combine model filter with additional filter conditions.
+
+        Args:
+            model_filter: Filter for embedding model
+            additional_filters: Additional filter conditions
+
+        Returns:
+            Combined filter condition, or None if no filters
+        """
+        if not model_filter and not additional_filters:
+            return None
+
+        if not additional_filters:
+            return model_filter
+
+        if not model_filter:
+            return additional_filters
+
+        # Combine filters - merge "must" conditions
+        combined: Dict[str, List[Dict[str, Any]]] = {"must": []}
+
+        # Add model filter conditions
+        if "must" in model_filter:
+            combined["must"].extend(model_filter["must"])
+
+        # Add additional filter conditions
+        if "must" in additional_filters:
+            combined["must"].extend(additional_filters["must"])
+
+        # Handle other filter types (should, must_not)
+        for filter_type in ["should", "must_not"]:
+            conditions = []
+            if filter_type in model_filter:
+                conditions.extend(model_filter[filter_type])
+            if filter_type in additional_filters:
+                conditions.extend(additional_filters[filter_type])
+            if conditions:
+                combined[filter_type] = conditions
+
+        return combined
+
+    def search_with_model_filter(
+        self,
+        query_vector: List[float],
+        embedding_model: str,
+        limit: int = 10,
+        score_threshold: Optional[float] = None,
+        additional_filters: Optional[Dict[str, Any]] = None,
+        collection_name: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Search for similar vectors filtered by embedding model.
+
+        Args:
+            query_vector: Query vector for similarity search
+            embedding_model: Embedding model to filter by
+            limit: Maximum number of results
+            score_threshold: Minimum similarity score
+            additional_filters: Additional filter conditions
+            collection_name: Collection name (optional)
+
+        Returns:
+            List of search results filtered by model
+        """
+        # Create model filter
+        model_filter = self.create_model_filter(embedding_model)
+
+        # Combine with additional filters
+        final_filter = self.combine_filters(model_filter, additional_filters)
+
+        # Use existing search method
+        return self.search(
+            query_vector=query_vector,
+            limit=limit,
+            score_threshold=score_threshold,
+            filter_conditions=final_filter,
+            collection_name=collection_name,
+        )
+
+    def count_points_by_model(
+        self, embedding_model: str, collection_name: Optional[str] = None
+    ) -> int:
+        """Count points for a specific embedding model.
+
+        Args:
+            embedding_model: Embedding model to count
+            collection_name: Collection name (optional)
+
+        Returns:
+            Number of points with the specified embedding model
+        """
+        collection = collection_name or self.config.collection
+        model_filter = self.create_model_filter(embedding_model)
+
+        try:
+            response = self.client.post(
+                f"/collections/{collection}/points/count", json={"filter": model_filter}
+            )
+            response.raise_for_status()
+            return int(response.json()["result"]["count"])
+        except Exception:
+            return 0
 
     def delete_by_filter(
         self, filter_conditions: Dict[str, Any], collection_name: Optional[str] = None
@@ -296,12 +507,29 @@ class QdrantClient:
         point_id: Optional[str] = None,
         vector: Optional[List[float]] = None,
         payload: Optional[Dict[str, Any]] = None,
+        embedding_model: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Create a point object for upserting."""
+        """Create a point object for upserting with embedding model metadata.
+
+        Args:
+            point_id: Unique identifier for the point
+            vector: Embedding vector
+            payload: Metadata payload
+            embedding_model: Name of the embedding model used
+
+        Returns:
+            Point object ready for upserting to Qdrant
+        """
+        final_payload = payload or {}
+
+        # Always add embedding model to payload for filtering
+        if embedding_model:
+            final_payload["embedding_model"] = embedding_model
+
         return {
             "id": point_id or str(uuid.uuid4()),
             "vector": vector or [],
-            "payload": payload or {},
+            "payload": final_payload,
         }
 
     def optimize_collection(self, collection_name: Optional[str] = None) -> bool:

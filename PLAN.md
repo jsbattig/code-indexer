@@ -65,9 +65,9 @@ This document tracks the implementation of a git-aware vector indexing system th
   - Implemented standardized metadata creation and validation
   - Added schema versioning support (Legacy 1.0 → Git-Aware 2.0)
   - Created MetadataValidator for point payload validation
-- [x] **Update CLI to use GitAwareDocumentProcessor**
-  - Modified `index` command to use GitAwareDocumentProcessor with git status display
-  - Updated `update` command to use smart git-aware incremental updates
+- [x] **Update CLI to use GitAwareDocumentProcessor and Smart Indexing**
+  - Modified `index` command to use SmartIndexer with progressive metadata saving
+  - **Removed `update` command** - functionality integrated into smart `index` command
   - Enhanced `query` command with GenericQueryService for branch-aware filtering
   - Updated `status` command to show git repository information and enhanced metadata
 - [x] **Integrate git-aware components with existing system**

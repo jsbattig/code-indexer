@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Callable
 
 from code_indexer.config import Config
-from code_indexer.services import OllamaClient, QdrantClient
+from code_indexer.services import QdrantClient
+from code_indexer.services.embedding_provider import EmbeddingProvider
 from code_indexer.indexing.processor import DocumentProcessor, ProcessingStats
 from code_indexer.services.file_identifier import FileIdentifier
 from code_indexer.services.git_detection import GitDetectionService
@@ -20,9 +21,12 @@ class GitAwareDocumentProcessor(DocumentProcessor):
     """Document processor with git-aware metadata enhancement."""
 
     def __init__(
-        self, config: Config, ollama_client: OllamaClient, qdrant_client: QdrantClient
+        self,
+        config: Config,
+        embedding_provider: EmbeddingProvider,
+        qdrant_client: QdrantClient,
     ):
-        super().__init__(config, ollama_client, qdrant_client)
+        super().__init__(config, embedding_provider, qdrant_client)
         self.file_identifier = FileIdentifier(config.codebase_dir, config)
         self.git_detection = GitDetectionService(config.codebase_dir, config)
 
@@ -40,8 +44,8 @@ class GitAwareDocumentProcessor(DocumentProcessor):
 
             points = []
             for chunk in chunks:
-                # Get embedding
-                embedding = self.ollama_client.get_embedding(chunk["text"])
+                # Get embedding using the configured provider
+                embedding = self.embedding_provider.get_embedding(chunk["text"])
 
                 # Validate embedding dimensions
                 if not self._validate_embedding(embedding):
@@ -103,9 +107,12 @@ class GitAwareDocumentProcessor(DocumentProcessor):
                     file_metadata, chunk["chunk_index"]
                 )
 
-                # Create Qdrant point
+                # Create Qdrant point with embedding model metadata
                 point = self.qdrant_client.create_point(
-                    point_id=point_id, vector=embedding, payload=payload
+                    point_id=point_id,
+                    vector=embedding,
+                    payload=payload,
+                    embedding_model=self.embedding_provider.get_current_model(),
                 )
                 points.append(point)
 

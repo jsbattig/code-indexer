@@ -1,8 +1,7 @@
 """Command line interface for Code Indexer."""
 
-import datetime
+import os
 import sys
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -21,8 +20,9 @@ from rich.table import Column
 from rich.syntax import Syntax
 
 from .config import ConfigManager, Config
-from .services import OllamaClient, QdrantClient, DockerManager
+from .services import QdrantClient, DockerManager, EmbeddingProviderFactory
 from .services.git_aware_processor import GitAwareDocumentProcessor
+from .services.smart_indexer import SmartIndexer
 from .services.generic_query_service import GenericQueryService
 from . import __version__
 
@@ -46,7 +46,7 @@ def cli(ctx, config: Optional[str], verbose: bool):
     GETTING STARTED:
       1. code-indexer init      # Initialize project
       2. code-indexer setup     # Start services (Ollama + Qdrant)
-      3. code-indexer index     # Index your codebase
+      3. code-indexer index     # Smart incremental indexing
       4. code-indexer query "search term"  # Search your code
 
     \b
@@ -98,6 +98,24 @@ def cli(ctx, config: Optional[str], verbose: bool):
 @click.option(
     "--chunk-size", type=int, help="Text chunk size in characters (default: 1000)"
 )
+@click.option(
+    "--embedding-provider",
+    type=click.Choice(["ollama", "voyage-ai"]),
+    default="ollama",
+    help="Embedding provider to use (default: ollama)",
+)
+@click.option(
+    "--voyage-model",
+    type=str,
+    default="voyage-code-3",
+    help="VoyageAI model name (default: voyage-code-3)",
+)
+@click.option(
+    "--interactive",
+    "-i",
+    is_flag=True,
+    help="Interactive configuration prompt",
+)
 @click.pass_context
 def init(
     ctx,
@@ -105,6 +123,9 @@ def init(
     force: bool,
     max_file_size: Optional[int],
     chunk_size: Optional[int],
+    embedding_provider: str,
+    voyage_model: str,
+    interactive: bool,
 ):
     """Initialize code indexing in current directory.
 
@@ -124,13 +145,29 @@ def init(
       .idea, .vscode, .gradle, bin, obj, coverage, .next, .nuxt
 
     \b
+    EMBEDDING PROVIDERS:
+      • ollama: Local AI models (default, no API key required)
+      • voyage-ai: VoyageAI API (requires VOYAGE_API_KEY environment variable)
+
+    \b
     EXAMPLES:
-      code-indexer init                          # Basic setup
-      code-indexer init --max-file-size 2000000 # 2MB file limit
-      code-indexer init --force                 # Overwrite existing config
-      code-indexer init -d /path/to/project     # Index different directory
+      code-indexer init                                    # Basic setup with Ollama
+      code-indexer init --interactive                     # Interactive configuration
+      code-indexer init --embedding-provider voyage-ai    # Use VoyageAI
+      code-indexer init --voyage-model voyage-large-2     # Specify VoyageAI model
+      code-indexer init --max-file-size 2000000          # 2MB file limit
+      code-indexer init --force                          # Overwrite existing config
+
+    \b
+    VOYAGEAI SETUP:
+      To use VoyageAI, set your API key first:
+      export VOYAGE_API_KEY=your_api_key_here
+
+      Then persist it (add to ~/.bashrc, ~/.zshrc, or ~/.profile):
+      echo 'export VOYAGE_API_KEY=your_api_key_here' >> ~/.bashrc
 
     After initialization, edit .code-indexer/config.json to customize:
+    • embedding_provider: "ollama" or "voyage-ai"
     • exclude_dirs: ["node_modules", "dist", "my_temp_folder"]
     • file_extensions: ["py", "js", "ts", "java", "cpp"]
     """
@@ -145,21 +182,84 @@ def init(
         sys.exit(1)
 
     try:
+        # Interactive configuration if requested
+        if interactive:
+            console.print("🔧 Interactive configuration setup")
+            console.print("=" * 50)
+
+            # Provider selection
+            from .services.embedding_factory import EmbeddingProviderFactory
+
+            provider_info = EmbeddingProviderFactory.get_provider_info()
+
+            console.print("\n📡 Available embedding providers:")
+            for provider, info in provider_info.items():
+                console.print(f"  • {provider}: {info['description']}")
+                if info.get("requires_api_key"):
+                    console.print(
+                        f"    Requires API key: {info.get('api_key_env', 'N/A')}"
+                    )
+
+            # Prompt for provider selection
+            if click.confirm(
+                "\nUse VoyageAI instead of local Ollama? (requires VOYAGE_API_KEY)",
+                default=False,
+            ):
+                embedding_provider = "voyage-ai"
+                if not os.getenv("VOYAGE_API_KEY"):
+                    console.print(
+                        "⚠️  Warning: VOYAGE_API_KEY environment variable not set!",
+                        style="yellow",
+                    )
+                    console.print("You'll need to set it before using VoyageAI:")
+                    console.print("export VOYAGE_API_KEY=your_api_key_here")
+
+                # Prompt for VoyageAI model
+                voyage_model = click.prompt("VoyageAI model", default="voyage-code-3")
+            else:
+                embedding_provider = "ollama"
+
         # Create default config
         target_dir = Path(codebase_dir) if codebase_dir else Path.cwd()
         config = Config(codebase_dir=target_dir.resolve())
         config_manager._config = config
 
         # Update config with provided options
+        updates = {}
+
+        # Set embedding provider
+        updates["embedding_provider"] = embedding_provider
+
+        # Provider-specific configuration
+        if embedding_provider == "voyage-ai":
+            voyage_ai_config = config.voyage_ai.model_dump()
+            voyage_ai_config["model"] = voyage_model
+            voyage_ai_config["tokens_per_minute"] = (
+                1000000  # Set default to avoid rate limiting
+            )
+            updates["voyage_ai"] = voyage_ai_config
+
+            # Set correct vector size for VoyageAI (1024 dimensions)
+            qdrant_config = config.qdrant.model_dump()
+            qdrant_config["vector_size"] = 1024
+            updates["qdrant"] = qdrant_config
+        elif embedding_provider == "ollama":
+            # Set correct vector size for Ollama (768 dimensions)
+            qdrant_config = config.qdrant.model_dump()
+            qdrant_config["vector_size"] = 768
+            updates["qdrant"] = qdrant_config
+
+        # Indexing configuration updates
         if max_file_size is not None or chunk_size is not None:
-            updates = {}
+            indexing_config = config.indexing.model_dump()
             if max_file_size is not None:
-                updates["indexing"] = config.indexing.model_dump()
-                updates["indexing"]["max_file_size"] = max_file_size
+                indexing_config["max_file_size"] = max_file_size
             if chunk_size is not None:
-                if "indexing" not in updates:
-                    updates["indexing"] = config.indexing.model_dump()
-                updates["indexing"]["chunk_size"] = chunk_size
+                indexing_config["chunk_size"] = chunk_size
+            updates["indexing"] = indexing_config
+
+        # Apply updates if any
+        if updates:
             config = config_manager.update_config(**updates)
 
         # Save with documentation
@@ -172,6 +272,23 @@ def init(
         console.print(f"📁 Codebase directory: {config.codebase_dir}")
         console.print(f"📏 Max file size: {config.indexing.max_file_size:,} bytes")
         console.print(f"📦 Chunk size: {config.indexing.chunk_size:,} characters")
+
+        # Show configured embedding provider
+        provider_name = config.embedding_provider
+        if provider_name == "voyage-ai":
+            console.print(
+                f"🤖 Embedding provider: VoyageAI (model: {config.voyage_ai.model})"
+            )
+            if not os.getenv("VOYAGE_API_KEY"):
+                console.print(
+                    "⚠️  Remember to set VOYAGE_API_KEY environment variable!",
+                    style="yellow",
+                )
+        else:
+            console.print(
+                f"🤖 Embedding provider: Ollama (model: {config.ollama.model})"
+            )
+
         console.print("🔧 Run 'code-indexer setup' to start services")
 
     except Exception as e:
@@ -331,25 +448,37 @@ def setup(
 
         # Test connections and pull model
         with setup_console.status("Testing service connections..."):
-            ollama_client = OllamaClient(config.ollama, setup_console)
+            embedding_provider = EmbeddingProviderFactory.create(config, setup_console)
             qdrant_client = QdrantClient(config.qdrant, setup_console)
 
-            if not ollama_client.health_check():
-                setup_console.print("❌ Ollama service is not accessible", style="red")
+            if not embedding_provider.health_check():
+                setup_console.print(
+                    f"❌ {embedding_provider.get_provider_name().title()} service is not accessible",
+                    style="red",
+                )
                 sys.exit(1)
 
             if not qdrant_client.health_check():
                 setup_console.print("❌ Qdrant service is not accessible", style="red")
                 sys.exit(1)
 
-        # Pull model if needed
-        setup_console.print(f"🤖 Checking model: {config.ollama.model}")
-        if not ollama_client.model_exists(config.ollama.model):
-            if not ollama_client.pull_model(config.ollama.model):
-                setup_console.print(
-                    f"❌ Failed to pull model {config.ollama.model}", style="red"
-                )
-                sys.exit(1)
+        # Pull model if needed (only for Ollama)
+        if config.embedding_provider == "ollama":
+            setup_console.print(f"🤖 Checking model: {config.ollama.model}")
+            if hasattr(embedding_provider, "model_exists") and hasattr(
+                embedding_provider, "pull_model"
+            ):
+                if not embedding_provider.model_exists(config.ollama.model):
+                    if not embedding_provider.pull_model(config.ollama.model):
+                        setup_console.print(
+                            f"❌ Failed to pull model {config.ollama.model}",
+                            style="red",
+                        )
+                        sys.exit(1)
+        else:
+            setup_console.print(
+                f"🤖 Using {embedding_provider.get_provider_name()} provider with model: {embedding_provider.get_current_model()}"
+            )
 
         # Ensure collection exists
         if not qdrant_client.ensure_collection():
@@ -366,7 +495,7 @@ def setup(
 
 @cli.command()
 @click.option(
-    "--clear", "-c", is_flag=True, help="Clear existing index before indexing"
+    "--clear", "-c", is_flag=True, help="Clear existing index and perform full reindex"
 )
 @click.option(
     "--batch-size", "-b", default=50, help="Batch size for processing (default: 50)"
@@ -400,9 +529,16 @@ def index(ctx, clear: bool, batch_size: int):
       • Error reporting for failed files
 
     \b
+    SMART INDEXING:
+      • Automatically detects previous indexing state
+      • Performs incremental updates for modified files only
+      • Includes 1-minute safety buffer for reliability
+      • Handles provider/model changes intelligently
+
+    \b
     EXAMPLES:
-      code-indexer index                 # Index with existing data
-      code-indexer index --clear         # Fresh start, clear old data
+      code-indexer index                 # Smart incremental indexing (default)
+      code-indexer index --clear         # Force full reindex (clears existing data)
       code-indexer index -b 100          # Larger batch size for speed
 
     \b
@@ -416,13 +552,14 @@ def index(ctx, clear: bool, batch_size: int):
         config = config_manager.load()
 
         # Initialize services
-        ollama_client = OllamaClient(config.ollama, console)
+        embedding_provider = EmbeddingProviderFactory.create(config, console)
         qdrant_client = QdrantClient(config.qdrant, console)
 
         # Health checks
-        if not ollama_client.health_check():
+        if not embedding_provider.health_check():
             console.print(
-                "❌ Ollama service not available. Run 'setup' first.", style="red"
+                f"❌ {embedding_provider.get_provider_name().title()} service not available. Run 'setup' first.",
+                style="red",
             )
             sys.exit(1)
 
@@ -432,16 +569,14 @@ def index(ctx, clear: bool, batch_size: int):
             )
             sys.exit(1)
 
-        # Clear index if requested
-        if clear:
-            console.print("🧹 Clearing existing index...")
-            qdrant_client.clear_collection()
-
-        # Initialize git-aware document processor
-        processor = GitAwareDocumentProcessor(config, ollama_client, qdrant_client)
+        # Initialize smart indexer with progressive metadata
+        metadata_path = config_manager.config_path.parent / "metadata.json"
+        smart_indexer = SmartIndexer(
+            config, embedding_provider, qdrant_client, metadata_path
+        )
 
         # Get git status and display
-        git_status = processor.get_git_status()
+        git_status = smart_indexer.get_git_status()
         if git_status["git_available"]:
             console.print("📂 Git repository detected")
             console.print(f"🌿 Current branch: {git_status['current_branch']}")
@@ -449,15 +584,30 @@ def index(ctx, clear: bool, batch_size: int):
         else:
             console.print(f"📁 Non-git project: {git_status['project_id']}")
 
-        # Index codebase using git-aware processor
-        console.print("🔍 Indexing codebase with git-aware processing...")
+        # Show indexing strategy
+        if clear:
+            console.print("🧹 Force full reindex requested")
+        else:
+            indexing_status = smart_indexer.get_indexing_status()
+            if indexing_status["can_resume"]:
+                console.print("🔄 Resuming incremental indexing...")
+                console.print(
+                    f"📊 Previous progress: {indexing_status['files_processed']} files, {indexing_status['chunks_indexed']} chunks"
+                )
+            else:
+                console.print("🆕 No previous index found, performing full index")
 
         # Create progress tracking
         progress_bar = None
         task_id = None
 
-        def progress_callback(current, total, file_path, error=None):
+        def progress_callback(current, total, file_path, error=None, info=None):
             nonlocal progress_bar, task_id
+
+            # Handle info messages (like strategy selection)
+            if info and not progress_bar:
+                console.print(f"ℹ️  {info}", style="cyan")
+                return
 
             # Initialize progress bar on first call
             if progress_bar is None:
@@ -485,7 +635,6 @@ def index(ctx, clear: bool, batch_size: int):
             # Update progress with current file name
             try:
                 # Try to get path relative to project codebase directory
-                config = ctx.obj["config_manager"].load()
                 relative_path = str(file_path.relative_to(config.codebase_dir))
             except (Exception, ValueError):
                 # Fallback to current directory relative path
@@ -508,10 +657,12 @@ def index(ctx, clear: bool, batch_size: int):
                     )
 
         try:
-            stats = processor.index_codebase(
-                clear_existing=clear,
+            # Use smart indexing with progressive metadata saving
+            stats = smart_indexer.smart_index(
+                force_full=clear,
                 batch_size=batch_size,
                 progress_callback=progress_callback,
+                safety_buffer_seconds=60,  # 1-minute safety buffer
             )
 
             # Stop progress bar with completion message
@@ -519,34 +670,12 @@ def index(ctx, clear: bool, batch_size: int):
                 # Update final status
                 progress_bar.update(task_id, description="✅ Completed")
                 progress_bar.stop()
+
         except Exception as e:
             console.print(f"❌ Indexing failed: {e}", style="red")
             sys.exit(1)
 
-        # Save indexing metadata with git-aware information
-        index_metadata = {
-            "indexed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "files_processed": stats.files_processed,
-            "chunks_indexed": stats.chunks_created,
-            "failed_files": stats.failed_files,
-            "git_available": git_status["git_available"],
-            "project_id": git_status["project_id"],
-        }
-
-        if git_status["git_available"]:
-            index_metadata.update(
-                {
-                    "current_branch": git_status["current_branch"],
-                    "current_commit": git_status["current_commit"],
-                }
-            )
-
-        metadata_path = config_manager.config_path.parent / "metadata.json"
-        with open(metadata_path, "w") as f:
-            import json
-
-            json.dump(index_metadata, f, indent=2)
-
+        # Show completion summary
         console.print("✅ Indexing complete!", style="green")
         console.print(f"📄 Files processed: {stats.files_processed}")
         console.print(f"📦 Chunks indexed: {stats.chunks_created}")
@@ -555,197 +684,15 @@ def index(ctx, clear: bool, batch_size: int):
         if stats.failed_files > 0:
             console.print(f"⚠️  Failed files: {stats.failed_files}", style="yellow")
 
+        # Show final indexing status
+        final_status = smart_indexer.get_indexing_status()
+        if final_status["status"] == "completed":
+            console.print(
+                "💾 Progress saved for future incremental updates", style="dim"
+            )
+
     except Exception as e:
         console.print(f"❌ Indexing failed: {e}", style="red")
-        sys.exit(1)
-
-
-@cli.command()
-@click.option(
-    "--since", type=click.DateTime(), help="Update files modified since this time"
-)
-@click.option("--batch-size", default=50, help="Batch size for processing")
-@click.pass_context
-def update(ctx, since: Optional[datetime.datetime], batch_size: int):
-    """Update the index with modified files."""
-    config_manager = ctx.obj["config_manager"]
-
-    try:
-        config = config_manager.load()
-
-        # Initialize services
-        ollama_client = OllamaClient(config.ollama, console)
-        qdrant_client = QdrantClient(config.qdrant, console)
-
-        # Health checks
-        if not ollama_client.health_check():
-            console.print("❌ Ollama service not available", style="red")
-            sys.exit(1)
-
-        if not qdrant_client.health_check():
-            console.print("❌ Qdrant service not available", style="red")
-            sys.exit(1)
-
-        # Get last index time if not specified
-        if not since:
-            metadata_path = config_manager.config_path.parent / "metadata.json"
-            if metadata_path.exists():
-                import json
-
-                with open(metadata_path, "r") as f:
-                    metadata = json.load(f)
-                    since_str = metadata.get("indexed_at")
-                    if since_str:
-                        import datetime
-
-                        since = datetime.datetime.fromisoformat(
-                            since_str.replace("Z", "+00:00")
-                        )
-
-            if not since:
-                console.print(
-                    "❌ No previous index found. Use 'code-indexer index' first.",
-                    style="red",
-                )
-                sys.exit(1)
-
-        # Initialize git-aware document processor
-        processor = GitAwareDocumentProcessor(config, ollama_client, qdrant_client)
-
-        # Get git status for context
-        git_status = processor.get_git_status()
-        if git_status["git_available"]:
-            console.print(f"📂 Git repository: {git_status['project_id']}")
-            console.print(f"🌿 Current branch: {git_status['current_branch']}")
-        else:
-            console.print(f"📁 Non-git project: {git_status['project_id']}")
-
-        # Use smart update that handles git-aware incremental updates
-        console.print("🔍 Checking for changes with git-aware detection...")
-
-        # Create progress tracking for updates
-        progress_bar = None
-        task_id = None
-
-        def progress_callback(current, total, file_path, error=None):
-            nonlocal progress_bar, task_id
-
-            # Initialize progress bar on first call (only if there are files to process)
-            if progress_bar is None and total > 0:
-                progress_bar = Progress(
-                    TextColumn("[bold green]Updating", justify="right"),
-                    BarColumn(bar_width=None),
-                    "•",
-                    TaskProgressColumn(),
-                    "•",
-                    TimeElapsedColumn(),
-                    "•",
-                    TimeRemainingColumn(),
-                    "•",
-                    TextColumn(
-                        "[cyan]{task.description}",
-                        table_column=Column(min_width=30, max_width=50, no_wrap=True),
-                    ),
-                    console=console,
-                )
-                progress_bar.start()
-                task_id = progress_bar.add_task("Starting...", total=total)
-
-            task = task_id
-
-            # Update progress if we have a progress bar
-            if progress_bar and task_id is not None:
-                # Update with current file name
-                try:
-                    # Try to get path relative to project codebase directory
-                    config = ctx.obj["config_manager"].load()
-                    relative_path = str(file_path.relative_to(config.codebase_dir))
-                except (Exception, ValueError):
-                    # Fallback to current directory relative path
-                    try:
-                        relative_path = str(file_path.relative_to(Path.cwd()))
-                    except ValueError:
-                        relative_path = file_path.name
-
-                # Truncate long paths to fit display
-                if len(relative_path) > 47:
-                    relative_path = "..." + relative_path[-44:]
-
-                progress_bar.update(task, advance=1, description=relative_path)
-
-            # Show errors
-            if error and ctx.obj["verbose"]:
-                if progress_bar:
-                    progress_bar.console.print(
-                        f"❌ Failed to process {file_path}: {error}", style="red"
-                    )
-                else:
-                    console.print(
-                        f"❌ Failed to process {file_path}: {error}", style="red"
-                    )
-
-        try:
-            stats = processor.update_index_smart(
-                batch_size=batch_size, progress_callback=progress_callback
-            )
-
-            # Stop progress bar with completion message
-            if progress_bar and task_id is not None:
-                # Update final status
-                progress_bar.update(task_id, description="✅ Completed")
-                progress_bar.stop()
-        except Exception as e:
-            console.print(f"❌ Update failed: {e}", style="red")
-            sys.exit(1)
-
-        if stats.files_processed == 0:
-            console.print("✅ No changes since last index", style="green")
-            return
-
-        console.print(
-            f"📄 Processing {stats.files_processed} updated files with git-aware metadata..."
-        )
-
-        # Update metadata with git-aware information
-        import json
-
-        update_metadata = {
-            "indexed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "files_updated": stats.files_processed,
-            "chunks_updated": stats.chunks_created,
-            "failed_files": stats.failed_files,
-            "git_available": git_status["git_available"],
-            "project_id": git_status["project_id"],
-        }
-
-        if git_status["git_available"]:
-            update_metadata.update(
-                {
-                    "current_branch": git_status["current_branch"],
-                    "current_commit": git_status["current_commit"],
-                }
-            )
-
-        metadata_path = config_manager.config_path.parent / "metadata.json"
-        if metadata_path.exists():
-            with open(metadata_path, "r") as f:
-                existing_metadata = json.load(f)
-            existing_metadata.update(update_metadata)
-            update_metadata = existing_metadata
-
-        with open(metadata_path, "w") as f:
-            json.dump(update_metadata, f, indent=2)
-
-        console.print("✅ Index update complete!", style="green")
-        console.print(f"📄 Files updated: {stats.files_processed}")
-        console.print(f"📦 Chunks updated: {stats.chunks_created}")
-        console.print(f"⏱️  Duration: {stats.duration:.2f}s")
-
-        if stats.failed_files > 0:
-            console.print(f"⚠️  Failed files: {stats.failed_files}", style="yellow")
-
-    except Exception as e:
-        console.print(f"❌ Update failed: {e}", style="red")
         sys.exit(1)
 
 
@@ -769,12 +716,15 @@ def watch(ctx, debounce: float, batch_size: int):
         config = config_manager.load()
 
         # Initialize services
-        ollama_client = OllamaClient(config.ollama, console)
+        embedding_provider = EmbeddingProviderFactory.create(config, console)
         qdrant_client = QdrantClient(config.qdrant, console)
 
         # Health checks
-        if not ollama_client.health_check():
-            console.print("❌ Ollama service not available", style="red")
+        if not embedding_provider.health_check():
+            console.print(
+                f"❌ {embedding_provider.get_provider_name().title()} service not available",
+                style="red",
+            )
             sys.exit(1)
 
         if not qdrant_client.health_check():
@@ -785,7 +735,7 @@ def watch(ctx, debounce: float, batch_size: int):
         console.print("🔄 Performing initial update to catch up on changes...")
 
         # Initialize git-aware processor for smart updates
-        processor = GitAwareDocumentProcessor(config, ollama_client, qdrant_client)
+        processor = GitAwareDocumentProcessor(config, embedding_provider, qdrant_client)
 
         # Set up progress tracking using Rich Progress (consistent with update/index commands)
         progress_bar = None
@@ -1031,7 +981,9 @@ def watch(ctx, debounce: float, batch_size: int):
                             # Process each chunk
                             for chunk in chunks:
                                 # Get embedding
-                                embedding = ollama_client.get_embedding(chunk["text"])
+                                embedding = embedding_provider.get_embedding(
+                                    chunk["text"]
+                                )
 
                                 # Create point for Qdrant
                                 point = qdrant_client.create_point(
@@ -1169,21 +1121,30 @@ def query(
         config = config_manager.load()
 
         # Initialize services
-        ollama_client = OllamaClient(config.ollama, console)
+        embedding_provider = EmbeddingProviderFactory.create(config, console)
         qdrant_client = QdrantClient(config.qdrant, console)
 
         # Health checks
-        if not ollama_client.health_check():
-            console.print("❌ Ollama service not available", style="red")
+        if not embedding_provider.health_check():
+            console.print(
+                f"❌ {embedding_provider.get_provider_name().title()} service not available",
+                style="red",
+            )
             sys.exit(1)
 
         if not qdrant_client.health_check():
             console.print("❌ Qdrant service not available", style="red")
             sys.exit(1)
 
+        # Ensure provider-aware collection is set for search
+        collection_name = qdrant_client.resolve_collection_name(
+            config, embedding_provider
+        )
+        qdrant_client._current_collection_name = collection_name
+
         # Get query embedding
         with console.status("Generating query embedding..."):
-            query_embedding = ollama_client.get_embedding(query)
+            query_embedding = embedding_provider.get_embedding(query)
 
         # Build filter conditions
         filter_conditions = {}
@@ -1198,6 +1159,12 @@ def query(
 
         # Initialize git-aware query service
         query_service = GenericQueryService(config.codebase_dir, config)
+
+        # Apply embedding provider's model filtering when searching
+        provider_info = embedding_provider.get_model_info()
+        console.print(
+            f"🤖 Using {embedding_provider.get_provider_name()} with model: {provider_info.get('name', 'unknown')}"
+        )
 
         # Get current branch context for git-aware filtering
         branch_context = query_service.get_current_branch_context()
@@ -1217,11 +1184,17 @@ def query(
         if min_score:
             console.print(f"⭐ Min score: {min_score}")
 
-        raw_results = qdrant_client.search(
+        # Get current embedding model for filtering
+        current_model = embedding_provider.get_current_model()
+        console.print(f"🤖 Filtering by model: {current_model}")
+
+        # Use model-specific search to ensure we only get results from the current model
+        raw_results = qdrant_client.search_with_model_filter(
             query_vector=query_embedding,
+            embedding_model=current_model,
             limit=limit * 2,  # Get more results to allow for git filtering
             score_threshold=min_score,
-            filter_conditions=filter_conditions if filter_conditions else None,
+            additional_filters=filter_conditions,
         )
 
         # Apply git-aware filtering
@@ -1370,14 +1343,22 @@ def status(ctx, force_docker: bool):
             f"{len(service_status['services'])} services",
         )
 
-        # Check Ollama
-        ollama_client = OllamaClient(config.ollama)
-        ollama_ok = ollama_client.health_check()
-        ollama_status = "✅ Ready" if ollama_ok else "❌ Not Available"
-        ollama_details = (
-            f"Model: {config.ollama.model}" if ollama_ok else "Service down"
-        )
-        table.add_row("Ollama", ollama_status, ollama_details)
+        # Check embedding provider
+        try:
+            embedding_provider = EmbeddingProviderFactory.create(config, console)
+            provider_ok = embedding_provider.health_check()
+            provider_name = embedding_provider.get_provider_name().title()
+            provider_status = "✅ Ready" if provider_ok else "❌ Not Available"
+            provider_details = (
+                f"Model: {embedding_provider.get_current_model()}"
+                if provider_ok
+                else "Service down"
+            )
+            table.add_row(
+                f"{provider_name} Provider", provider_status, provider_details
+            )
+        except Exception as e:
+            table.add_row("Embedding Provider", "❌ Error", str(e))
 
         # Check Qdrant
         qdrant_client = QdrantClient(config.qdrant)
@@ -1429,7 +1410,9 @@ def status(ctx, force_docker: bool):
             from .services.git_aware_processor import GitAwareDocumentProcessor
 
             processor = GitAwareDocumentProcessor(
-                config, OllamaClient(config.ollama), QdrantClient(config.qdrant)
+                config,
+                EmbeddingProviderFactory.create(config, console),
+                QdrantClient(config.qdrant),
             )
             git_status = processor.get_git_status()
 
@@ -1707,6 +1690,222 @@ def clean(
 
     except Exception as e:
         console.print(f"❌ Cleanup failed: {e}", style="red")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
+)
+@click.pass_context
+def start(ctx, force_docker: bool):
+    """Start code indexing services without recreating containers.
+
+    \b
+    Starts existing Docker containers for Ollama and Qdrant services,
+    preserving all data and configuration. Can be run from any subfolder
+    of an indexed project.
+
+    \b
+    WHAT IT DOES:
+      • Finds project configuration by walking up directory tree
+      • Starts existing Docker containers (Ollama + Qdrant)
+      • Preserves all indexed data and settings
+      • Works from any subfolder within the indexed project
+
+    \b
+    DATA PRESERVATION:
+      • All indexed code vectors remain intact
+      • Project configuration is preserved
+      • Service state and settings are maintained
+      • No re-downloading of models required
+
+    \b
+    REQUIREMENTS:
+      • Services must have been set up previously with 'setup' command
+      • .code-indexer/config.json must exist in project tree
+      • Docker/Podman containers must exist (not deleted)
+
+    \b
+    EXAMPLES:
+      cd /path/to/my/project/src/components
+      code-indexer start                    # Works from any subfolder
+      code-indexer start --force-docker     # Force Docker instead of Podman
+
+    \b
+    USE CASES:
+      • Resume work after machine restart
+      • Start services after manual shutdown
+      • Restart services after system updates
+      • Continue indexing session from any project folder
+
+    This is faster than 'setup' as it doesn't recreate containers or download models.
+    """
+    try:
+        # Find configuration by backtracking up directory tree
+        config_manager = ConfigManager.create_with_backtrack()
+        config_path = config_manager.config_path
+
+        if not config_path or not config_path.exists():
+            console.print(
+                "❌ No .code-indexer/config.json found in current directory tree",
+                style="red",
+            )
+            console.print(
+                "💡 Run 'code-indexer setup' from your project root first",
+                style="yellow",
+            )
+            sys.exit(1)
+
+        # Load configuration
+        config = config_manager.load()
+        console.print(f"📁 Found configuration: {config_path}")
+        console.print(f"🏗️  Project directory: {config.codebase_dir}")
+
+        # Initialize Docker manager
+        docker_manager = DockerManager(
+            console, force_docker=force_docker, main_config=config.model_dump()
+        )
+
+        # Check if services exist
+        status = docker_manager.get_service_status()
+        if status["status"] == "not_configured":
+            console.print(
+                "❌ Services not configured. Run 'code-indexer setup' first",
+                style="red",
+            )
+            sys.exit(1)
+
+        # Start services
+        console.print("🚀 Starting code indexing services...")
+        if docker_manager.start_services(recreate=False):
+            # Wait for services to be ready
+            if docker_manager.wait_for_services():
+                console.print("✅ Services started successfully!", style="green")
+                console.print(f"🔧 Ready to use from: {config.codebase_dir}")
+                console.print(
+                    "💡 Use 'code-indexer query \"search terms\"' to search your code"
+                )
+            else:
+                console.print(
+                    "❌ Services started but are not responding properly", style="red"
+                )
+                sys.exit(1)
+        else:
+            console.print("❌ Failed to start services", style="red")
+            sys.exit(1)
+
+    except Exception as e:
+        console.print(f"❌ Start failed: {e}", style="red")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
+)
+@click.pass_context
+def stop(ctx, force_docker: bool):
+    """Stop code indexing services while preserving all data.
+
+    \b
+    Gracefully stops Docker containers for Ollama and Qdrant services
+    without removing any data or configuration. Can be run from any
+    subfolder of an indexed project.
+
+    \b
+    WHAT IT DOES:
+      • Finds project configuration by walking up directory tree
+      • Gracefully stops Docker containers (Ollama + Qdrant)
+      • Preserves all indexed data and configuration
+      • Works from any subfolder within the indexed project
+
+    \b
+    DATA PRESERVATION:
+      • All indexed code vectors remain intact
+      • Project configuration is preserved
+      • Docker containers remain available for restart
+      • Models and databases are preserved
+
+    \b
+    GRACEFUL SHUTDOWN:
+      • Waits for active operations to complete
+      • Properly closes database connections
+      • Saves any pending data to disk
+      • Releases network ports cleanly
+
+    \b
+    EXAMPLES:
+      cd /path/to/my/project/src/components
+      code-indexer stop                     # Works from any subfolder
+      code-indexer stop --force-docker      # Force Docker instead of Podman
+
+    \b
+    USE CASES:
+      • Free up system resources when not coding
+      • Prepare for machine shutdown or restart
+      • Stop services before system maintenance
+      • Temporarily disable indexing services
+
+    \b
+    RESTARTING:
+      Use 'code-indexer start' to resume services with all data intact.
+      Much faster than running 'setup' again.
+    """
+    try:
+        # Find configuration by backtracking up directory tree
+        config_manager = ConfigManager.create_with_backtrack()
+        config_path = config_manager.config_path
+
+        if not config_path or not config_path.exists():
+            console.print(
+                "❌ No .code-indexer/config.json found in current directory tree",
+                style="red",
+            )
+            console.print(
+                "💡 Services may not be configured for this project", style="yellow"
+            )
+            sys.exit(1)
+
+        # Load configuration
+        config = config_manager.load()
+        console.print(f"📁 Found configuration: {config_path}")
+        console.print(f"🏗️  Project directory: {config.codebase_dir}")
+
+        # Initialize Docker manager
+        docker_manager = DockerManager(
+            console, force_docker=force_docker, main_config=config.model_dump()
+        )
+
+        # Check current status
+        status = docker_manager.get_service_status()
+        if status["status"] == "not_configured":
+            console.print("ℹ️  Services not configured - nothing to stop", style="blue")
+            return
+
+        running_services = [
+            svc
+            for svc in status["services"].values()
+            if svc.get("state", "").lower() == "running"
+        ]
+
+        if not running_services:
+            console.print("ℹ️  No services currently running", style="blue")
+            return
+
+        # Stop services
+        console.print("🛑 Stopping code indexing services...")
+        console.print("💾 All data will be preserved for restart")
+
+        if docker_manager.stop_services():
+            console.print("✅ Services stopped successfully!", style="green")
+            console.print("💡 Use 'code-indexer start' to resume with all data intact")
+        else:
+            console.print("❌ Failed to stop some services", style="red")
+            sys.exit(1)
+
+    except Exception as e:
+        console.print(f"❌ Stop failed: {e}", style="red")
         sys.exit(1)
 
 

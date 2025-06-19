@@ -6,7 +6,8 @@ from typing import List, Dict, Any, Optional, Callable
 from dataclasses import dataclass
 
 from ..config import Config
-from ..services import OllamaClient, QdrantClient
+from ..services import QdrantClient
+from ..services.embedding_provider import EmbeddingProvider
 from .file_finder import FileFinder
 from .chunker import TextChunker
 
@@ -39,10 +40,13 @@ class DocumentProcessor:
     """Processes documents for indexing."""
 
     def __init__(
-        self, config: Config, ollama_client: OllamaClient, qdrant_client: QdrantClient
+        self,
+        config: Config,
+        embedding_provider: EmbeddingProvider,
+        qdrant_client: QdrantClient,
     ):
         self.config = config
-        self.ollama_client = ollama_client
+        self.embedding_provider = embedding_provider
         self.qdrant_client = qdrant_client
         self.file_finder = FileFinder(config)
         self.text_chunker = TextChunker(config.indexing)
@@ -58,10 +62,10 @@ class DocumentProcessor:
 
             points = []
             for chunk in chunks:
-                # Get embedding
-                embedding = self.ollama_client.get_embedding(chunk["text"])
+                # Get embedding using the configured provider
+                embedding = self.embedding_provider.get_embedding(chunk["text"])
 
-                # Create Qdrant point
+                # Create Qdrant point with embedding model metadata
                 point = self.qdrant_client.create_point(
                     vector=embedding,
                     payload={
@@ -75,6 +79,7 @@ class DocumentProcessor:
                             "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
                         ),
                     },
+                    embedding_model=self.embedding_provider.get_current_model(),
                 )
                 points.append(point)
 

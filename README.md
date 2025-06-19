@@ -94,8 +94,8 @@ code-indexer index
 # Search your code
 code-indexer query "authentication logic"
 
-# Keep index updated as code changes
-code-indexer update
+# Smart incremental indexing (automatically detects changes)
+code-indexer index
 
 # Watch for changes and auto-update (real-time)
 code-indexer watch
@@ -120,6 +120,16 @@ code-indexer setup --queue-size 1024                    # Larger request queue
 #### Index Codebase
 ```bash
 code-indexer index [--clear] [--batch-size 50]
+
+# Smart indexing (default):
+# - Automatically detects if full or incremental indexing is needed
+# - Resumes from interruptions using progressive metadata saving
+# - Only processes modified files since last index
+# - Handles provider/model changes intelligently
+
+# Options:
+# --clear: Force full reindex (clears existing data)
+# --batch-size: Number of files to process in each batch
 ```
 
 #### Search Code
@@ -138,10 +148,6 @@ Options:
 code-indexer status
 ```
 
-#### Update Index
-```bash
-code-indexer update [--since DATETIME] [--batch-size INT]
-```
 
 #### Watch for Changes
 ```bash
@@ -172,16 +178,16 @@ code-indexer query "error handling" --min-score 0.8
 code-indexer query "api endpoint" --limit 20
 ```
 
-## Incremental Updates
+## Smart Incremental Indexing
 
-Keep your index current as your codebase evolves:
+The `index` command now provides intelligent incremental indexing that automatically adapts to your codebase changes:
 
 ```bash
-# Manual update - indexes only changed files since last index
-code-indexer update
+# Smart incremental indexing (default) - automatically detects what's needed
+code-indexer index
 
-# Update with custom timestamp
-code-indexer update --since "2024-01-01T00:00:00"
+# Force full reindex when needed
+code-indexer index --clear
 
 # Real-time watching - automatically updates index when files change
 code-indexer watch
@@ -190,12 +196,19 @@ code-indexer watch
 code-indexer watch --debounce 5.0
 ```
 
-**How it works:**
-- `update` uses git hashes and file timestamps to detect changes
-- Automatically detects and removes deleted files from the index
-- Only re-indexes files that have actually changed, making updates fast
-- `watch` mode uses file system events for real-time updates
+**How Smart Indexing Works:**
+- **Automatic Detection**: Determines if full or incremental indexing is needed
+- **Progressive Metadata**: Saves progress after every file for resumability
+- **Change Detection**: Uses git hashes and file timestamps to detect changes
+- **Safety Buffer**: 1-minute buffer ensures reliability during rapid development
+- **Configuration Aware**: Forces full reindex when provider/model changes
+- **Resumable**: Can resume interrupted indexing operations seamlessly
+- **Git Integration**: Handles branch changes and repository state intelligently
+
+**Real-time Updates:**
+- `watch` mode uses file system events for live synchronization
 - Batches changes and waits for a debounce period to avoid excessive processing
+- Automatically detects and removes deleted files from the index
 
 ## Git-Aware Indexing
 
@@ -208,10 +221,13 @@ Code Indexer provides intelligent git-aware indexing that automatically adapts t
 
 ### Smart Re-indexing
 ```bash
-# Re-index only when files have changed
+# Smart indexing automatically detects what's needed:
+# - Full index if no previous data exists
+# - Incremental update if only some files changed
+# - Full reindex if provider/model configuration changed
 code-indexer index
 
-# Force complete re-index
+# Force complete re-index when needed
 code-indexer index --clear
 ```
 
@@ -511,6 +527,140 @@ code-indexer setup --parallel-requests 2 --max-models 1 --queue-size 512
 
 # High throughput (powerful machines)
 code-indexer setup --parallel-requests 4 --max-models 1 --queue-size 1024
+```
+
+## Embedding Providers
+
+Code Indexer supports multiple embedding providers for generating text embeddings. Choose between local processing with Ollama or cloud-based services like VoyageAI.
+
+### Available Providers
+
+#### Ollama (Default - Local)
+- **Privacy**: All processing happens locally
+- **Cost**: Free
+- **Setup**: Requires Docker to run Ollama service
+- **Models**: `nomic-embed-text`, `all-MiniLM-L6-v2`, and others
+
+#### VoyageAI (Cloud)
+- **Performance**: High-quality embeddings optimized for code
+- **Speed**: Parallel processing with 8 concurrent requests
+- **Cost**: Usage-based pricing
+- **Models**: `voyage-code-3` (default), `voyage-large-2-instruct`
+
+### Provider Configuration
+
+#### Using Ollama (Default)
+```bash
+# Initialize with Ollama (default)
+code-indexer init --embedding-provider ollama
+
+# Or use interactive mode
+code-indexer init --interactive
+```
+
+#### Using VoyageAI
+```bash
+# Set your API key (required)
+export VOYAGE_API_KEY="your_api_key_here"
+
+# Initialize with VoyageAI
+code-indexer init --embedding-provider voyage-ai
+
+# Or use interactive mode for guided setup
+code-indexer init --interactive
+```
+
+### Environment Variables
+
+#### VoyageAI API Key Setup
+To use VoyageAI, you need to set up your API key. The key must be available in the `VOYAGE_API_KEY` environment variable.
+
+**Temporary Setup (Current Session Only):**
+```bash
+export VOYAGE_API_KEY="your_api_key_here"
+```
+
+**Permanent Setup (Persistent Across Sessions):**
+
+Add the export command to your shell configuration file:
+
+```bash
+# For bash users
+echo 'export VOYAGE_API_KEY="your_api_key_here"' >> ~/.bashrc
+source ~/.bashrc
+
+# For zsh users  
+echo 'export VOYAGE_API_KEY="your_api_key_here"' >> ~/.zshrc
+source ~/.zshrc
+
+# For fish users
+echo 'set -gx VOYAGE_API_KEY "your_api_key_here"' >> ~/.config/fish/config.fish
+source ~/.config/fish/config.fish
+```
+
+**Verification:**
+```bash
+# Verify the API key is set
+echo $VOYAGE_API_KEY
+
+# Test the connection
+code-indexer init --embedding-provider voyage-ai --interactive
+```
+
+### Provider-Specific Settings
+
+#### VoyageAI Configuration
+```json
+{
+  "embedding_provider": "voyage-ai",
+  "voyage_ai": {
+    "model": "voyage-code-3",
+    "parallel_requests": 8,
+    "batch_size": 64,
+    "requests_per_minute": 300,
+    "tokens_per_minute": 1000000,
+    "retry_delay": 1.0,
+    "max_retries": 3
+  }
+}
+```
+
+#### Rate Limiting
+VoyageAI includes automatic rate limiting to respect API limits:
+- **Request Rate**: 300 requests per minute (configurable)
+- **Token Rate**: 1M tokens per minute (configurable)
+- **Backoff**: Exponential backoff on rate limit errors
+- **Parallel Processing**: 8 concurrent requests for optimal throughput
+
+### Switching Providers
+
+You can switch embedding providers at any time. Note that this will require re-indexing your codebase since different providers generate different embeddings.
+
+```bash
+# Switch to VoyageAI
+code-indexer init --embedding-provider voyage-ai --force
+
+# Switch back to Ollama
+code-indexer init --embedding-provider ollama --force
+
+# Re-index with new provider
+code-indexer index --clear
+```
+
+### Multi-Model Support
+
+Each indexed document includes metadata about which embedding model was used. This allows:
+
+- **Provider Coexistence**: Different projects can use different providers
+- **Model Filtering**: Search results can be filtered by embedding model
+- **Migration**: Gradual migration between providers without losing existing data
+
+```bash
+# Query specific to a model
+code-indexer query "authentication" --model-filter voyage-code-3
+
+# Check which models are in your index
+code-indexer status --show-models
 ```
 
 

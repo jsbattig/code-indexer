@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -27,12 +27,75 @@ class OllamaConfig(BaseModel):
     max_queue: int = Field(default=512, description="Maximum request queue size")
 
 
+class VoyageAIConfig(BaseModel):
+    """Configuration for VoyageAI embedding service.
+
+    VoyageAI provides high-quality embeddings optimized for code and text.
+    API documentation: https://docs.voyageai.com/
+    """
+
+    # API configuration - API key should be set via VOYAGE_API_KEY environment variable
+    api_endpoint: str = Field(
+        default="https://api.voyageai.com/v1/embeddings",
+        description="VoyageAI API endpoint URL",
+    )
+    model: str = Field(
+        default="voyage-code-3",
+        description="VoyageAI embedding model name (e.g., voyage-code-3, voyage-large-2, voyage-2)",
+    )
+    timeout: int = Field(default=30, description="Request timeout in seconds")
+
+    # Parallel processing configuration
+    parallel_requests: int = Field(
+        default=8, description="Number of concurrent requests to VoyageAI API"
+    )
+    batch_size: int = Field(
+        default=128,
+        description="Maximum number of texts to send in a single batch request",
+    )
+
+    # Rate limiting configuration - VoyageAI has TPM (tokens per minute) and RPM (requests per minute) limits
+    # See: https://docs.voyageai.com/docs/rate-limits
+    requests_per_minute: int = Field(
+        default=300, description="Maximum requests per minute (RPM) limit"
+    )
+    tokens_per_minute: Optional[int] = Field(
+        default=None,
+        description="Maximum tokens per minute (TPM) limit - if None, only RPM limiting is used",
+    )
+
+    # Retry configuration for rate limiting and transient errors
+    max_retries: int = Field(
+        default=3, description="Maximum number of retries for failed requests"
+    )
+    retry_delay: float = Field(
+        default=1.0, description="Initial delay between retries in seconds"
+    )
+    exponential_backoff: bool = Field(
+        default=True, description="Use exponential backoff for retries"
+    )
+
+
 class QdrantConfig(BaseModel):
     """Configuration for Qdrant vector database."""
 
     host: str = Field(default="http://localhost:6333", description="Qdrant API host")
-    collection: str = Field(default="code_index", description="Collection name")
-    vector_size: int = Field(default=768, description="Vector dimension size")
+    collection: str = Field(
+        default="code_index", description="Legacy collection name (deprecated)"
+    )
+    collection_base_name: str = Field(
+        default="code_index", description="Base name for provider-aware collections"
+    )
+    vector_size: int = Field(
+        default=768,
+        description="Vector dimension size (deprecated - auto-detected from provider)",
+    )
+    use_provider_aware_collections: bool = Field(
+        default=True, description="Use provider-aware collection naming"
+    )
+    use_legacy_collection_naming: bool = Field(
+        default=False, description="Use legacy static collection naming"
+    )
 
 
 class IndexingConfig(BaseModel):
@@ -142,7 +205,17 @@ class Config(BaseModel):
         description="Directories to exclude from indexing",
     )
 
+    # Embedding provider selection
+    embedding_provider: Literal["ollama", "voyage-ai"] = Field(
+        default="ollama",
+        description="Embedding provider to use: 'ollama' for local Ollama, 'voyage-ai' for VoyageAI API",
+    )
+
+    # Provider-specific configurations
     ollama: OllamaConfig = Field(default_factory=OllamaConfig)
+    voyage_ai: VoyageAIConfig = Field(default_factory=VoyageAIConfig)
+
+    # Other service configurations
     qdrant: QdrantConfig = Field(default_factory=QdrantConfig)
     indexing: IndexingConfig = Field(default_factory=IndexingConfig)
     timeouts: TimeoutsConfig = Field(default_factory=TimeoutsConfig)
@@ -315,6 +388,37 @@ Code-indexer processes files sequentially: reads file → chunks text → genera
 "ollama": { "num_parallel": 4, "max_queue": 512 }
 ```
 
+## Embedding Providers
+
+### Ollama (Local, Default)
+Uses local AI models for privacy and no API costs:
+```json
+"embedding_provider": "ollama",
+"qdrant": { "vector_size": 768 }  // Ollama models use 768 dimensions
+```
+
+### VoyageAI (Cloud)
+Uses VoyageAI API for high-quality code embeddings:
+```json
+"embedding_provider": "voyage-ai",
+"qdrant": { "vector_size": 1024 },  // VoyageAI models use 1024 dimensions
+"voyage_ai": {
+  "model": "voyage-code-3",
+  "parallel_requests": 8,
+  "tokens_per_minute": 1000000  // Set to avoid rate limiting
+}
+```
+
+**IMPORTANT**: When switching embedding providers:
+1. **Vector size must match**: Ollama = 768, VoyageAI = 1024
+2. **Clear existing data**: Run `code-indexer clean --remove-data`
+3. **Re-index**: Run `code-indexer index --clear`
+
+**VoyageAI Setup**:
+1. Get API key from https://www.voyageai.com/
+2. Set environment variable: `export VOYAGE_API_KEY="your_key"`
+3. For persistence, add to ~/.bashrc: `echo 'export VOYAGE_API_KEY="your_key"' >> ~/.bashrc`
+
 ## Additional Exclusions
 
 The system also respects `.gitignore` patterns automatically.
@@ -378,3 +482,36 @@ code-indexer index --clear
         self._config = new_config
         self.save()
         return new_config
+
+    @staticmethod
+    def find_config_path(start_dir: Optional[Path] = None) -> Optional[Path]:
+        """Find .code-indexer/config.json by walking up the directory tree.
+
+        Args:
+            start_dir: Directory to start searching from (default: current directory)
+
+        Returns:
+            Path to config.json if found, None otherwise
+        """
+        current = start_dir or Path.cwd()
+
+        # Walk up the directory tree looking for .code-indexer/config.json
+        for path in [current] + list(current.parents):
+            config_path = path / ".code-indexer" / "config.json"
+            if config_path.exists():
+                return config_path
+
+        return None
+
+    @classmethod
+    def create_with_backtrack(cls, start_dir: Optional[Path] = None) -> "ConfigManager":
+        """Create ConfigManager by finding config through directory backtracking.
+
+        Args:
+            start_dir: Directory to start searching from (default: current directory)
+
+        Returns:
+            ConfigManager instance with found config path or default path
+        """
+        config_path = cls.find_config_path(start_dir)
+        return cls(config_path)

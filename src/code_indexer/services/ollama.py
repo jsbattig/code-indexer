@@ -5,12 +5,14 @@ import httpx
 from rich.console import Console
 
 from ..config import OllamaConfig
+from .embedding_provider import EmbeddingProvider, EmbeddingResult, BatchEmbeddingResult
 
 
-class OllamaClient:
+class OllamaClient(EmbeddingProvider):
     """Client for interacting with Ollama API."""
 
     def __init__(self, config: OllamaConfig, console: Optional[Console] = None):
+        super().__init__(console)
         self.config = config
         self.console = console or Console()
         self.client = httpx.Client(base_url=config.host, timeout=config.timeout)
@@ -81,6 +83,83 @@ class OllamaClient:
             if e.response.status_code == 404:
                 raise ValueError(f"Model {model_name} not found. Try pulling it first.")
             raise RuntimeError(f"Ollama API error: {e}")
+
+    def get_embeddings_batch(
+        self, texts: List[str], model: Optional[str] = None
+    ) -> List[List[float]]:
+        """Generate embeddings for multiple texts in batch.
+
+        Note: Ollama doesn't support native batch processing, so we process sequentially.
+        """
+        embeddings = []
+        for text in texts:
+            embedding = self.get_embedding(text, model)
+            embeddings.append(embedding)
+        return embeddings
+
+    def get_embedding_with_metadata(
+        self, text: str, model: Optional[str] = None
+    ) -> EmbeddingResult:
+        """Generate embedding with metadata."""
+        embedding = self.get_embedding(text, model)
+        model_name = model or self.config.model
+        return EmbeddingResult(
+            embedding=embedding,
+            model=model_name,
+            tokens_used=None,  # Ollama doesn't provide token usage
+            provider="ollama",
+        )
+
+    def get_embeddings_batch_with_metadata(
+        self, texts: List[str], model: Optional[str] = None
+    ) -> BatchEmbeddingResult:
+        """Generate batch embeddings with metadata."""
+        embeddings = self.get_embeddings_batch(texts, model)
+        model_name = model or self.config.model
+        return BatchEmbeddingResult(
+            embeddings=embeddings,
+            model=model_name,
+            total_tokens_used=None,  # Ollama doesn't provide token usage
+            provider="ollama",
+        )
+
+    def get_model_info(self) -> Dict[str, Any]:
+        """Get information about the current model."""
+        model_name = self.config.model
+        # Try to get model info from Ollama
+        try:
+            models = self.list_models()
+            for model in models:
+                if model["name"] == model_name:
+                    return {
+                        "name": model_name,
+                        "provider": "ollama",
+                        "dimensions": 768,  # Default for nomic-embed-text
+                        "max_tokens": None,
+                        "details": model,
+                    }
+        except Exception:
+            pass
+
+        # Fallback info
+        return {
+            "name": model_name,
+            "provider": "ollama",
+            "dimensions": 768,  # Default assumption
+            "max_tokens": None,
+        }
+
+    def get_provider_name(self) -> str:
+        """Get the name of this embedding provider."""
+        return "ollama"
+
+    def get_current_model(self) -> str:
+        """Get the current active model name."""
+        return self.config.model
+
+    def supports_batch_processing(self) -> bool:
+        """Check if provider supports efficient batch processing."""
+        return False  # Ollama processes sequentially
 
     def close(self) -> None:
         """Close the HTTP client."""
