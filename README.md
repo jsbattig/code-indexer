@@ -254,6 +254,9 @@ code-indexer claude "What design patterns are used here?"
 
 # Quiet mode - just the analysis, no headers or metadata
 code-indexer claude "Explain this function" --quiet
+
+# Debug mode - show the prompt that would be sent to Claude (for prompt iteration)
+code-indexer claude "Test question" --dry-run-show-claude-prompt
 ```
 
 ## Claude AI Integration
@@ -314,6 +317,9 @@ code-indexer claude "Perform a complete architecture review" --stream --max-turn
 
 # Disable file exploration for focused answers
 code-indexer claude "What does this function do?" --no-explore --limit 3
+
+# Show the exact prompt that would be sent to Claude (debugging/iteration)
+code-indexer claude "How does this work?" --dry-run-show-claude-prompt
 ```
 
 ## Smart Incremental Indexing

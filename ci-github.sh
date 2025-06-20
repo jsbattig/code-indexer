@@ -99,6 +99,9 @@ if pytest tests/ \
     --ignore=tests/test_service_readiness.py \
     --ignore=tests/test_claude_e2e.py \
     --ignore=tests/test_reconcile_e2e.py \
+    --ignore=tests/test_voyage_ai_e2e.py \
+    --ignore=tests/test_docker_compose_validation.py \
+    --ignore=tests/test_idempotent_setup.py \
     -m "not slow and not e2e and not real_api" \
     --cov=src/code_indexer --cov-report=xml --cov-report=term; then
     print_success "Unit tests passed"
@@ -128,6 +131,9 @@ echo "   • Docker manager tests"
 echo "   • Service health/cleanup tests"
 echo "   • Claude E2E tests (require Claude SDK and services)"
 echo "   • Reconcile E2E tests (require indexing services)"
+echo "   • VoyageAI E2E tests (require Docker and API keys)"
+echo "   • Docker Compose validation tests (require Docker)"
+echo "   • Idempotent setup tests (require Docker services)"
 echo "   • Any tests marked as 'slow', 'e2e', or 'real_api'"
 echo ""
 echo "ℹ️  This matches the GitHub Actions workflow for fast CI execution"

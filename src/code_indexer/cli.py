@@ -523,22 +523,24 @@ def setup(
     max_models: int,
     queue_size: int,
 ):
-    """Setup and start required services (Ollama + Qdrant).
+    """Setup and start required services based on embedding provider.
 
     \b
-    Starts Docker containers for AI-powered code search:
-    • Ollama: Runs embedding models locally
-    • Qdrant: Vector database for similarity search
+    Intelligently starts only the Docker containers needed for your configuration:
+    • Qdrant: Vector database (always required)
+    • Ollama: Local embedding models (only if using ollama provider)
+    • Data Cleaner: Text processing service (always required)
 
     \b
     WHAT HAPPENS:
       1. Creates default configuration (.code-indexer/config.json + README.md)
-      2. Creates Docker Compose configuration
-      3. Pulls required container images
-      4. Starts Ollama and Qdrant services
-      5. Downloads embedding model (nomic-embed-text)
-      6. Waits for services to be ready
-      7. Creates vector database collection
+      2. Detects required services based on embedding provider
+      3. Creates Docker Compose configuration for only required services
+      4. Pulls required container images (idempotent)
+      5. Starts only required services (Qdrant always, Ollama only if needed)
+      6. Downloads embedding model (only for Ollama provider)
+      7. Waits for services to be ready
+      8. Creates vector database collection
 
     \b
     REQUIREMENTS:
@@ -547,9 +549,10 @@ def setup(
       • Network access to download images/models
 
     \b
-    SERVICES:
-      • Ollama: http://localhost:11434 (AI embeddings)
-      • Qdrant: http://localhost:6333 (vector database)
+    SERVICES (provider-dependent):
+      • Qdrant: http://localhost:6333 (vector database, always started)
+      • Ollama: http://localhost:11434 (local AI embeddings, only if provider=ollama)
+      • Data Cleaner: Text processing service (always started)
       • Data: ~/.code-indexer/global/ (persistent storage)
 
     \b
@@ -565,15 +568,15 @@ def setup(
 
     \b
     EXAMPLES:
-      code-indexer setup                    # Basic setup (prefers Podman)
+      code-indexer setup                    # Basic setup (detects required services)
       code-indexer setup --quiet           # Silent mode
       code-indexer setup --force-recreate  # Reset containers
       code-indexer setup --force-docker    # Force use Docker instead of Podman
-      code-indexer setup -m all-minilm-l6-v2  # Different model
-      code-indexer setup --parallel-requests 2 --max-models 1  # Multi-client setup
-      code-indexer setup --queue-size 1024 # Larger request queue
+      code-indexer setup -m all-minilm-l6-v2  # Different Ollama model
+      code-indexer setup --parallel-requests 2 --max-models 1  # Multi-client Ollama setup
+      code-indexer setup --queue-size 1024 # Larger Ollama request queue
 
-    Run this command once per machine, services persist between sessions.
+    The command is idempotent - running it multiple times is safe and will only start missing services.
     """
     config_manager = ctx.obj["config_manager"]
 
@@ -598,14 +601,59 @@ def setup(
         else:
             config = config_manager.load()
 
-        # Update model if specified
-        if model:
-            config.ollama.model = model
+        # Provider-specific configuration and validation
+        if config.embedding_provider == "ollama":
+            # Update model if specified (only valid for Ollama)
+            if model:
+                config.ollama.model = model
 
-        # Update performance settings from command line parameters
-        config.ollama.num_parallel = parallel_requests
-        config.ollama.max_loaded_models = max_models
-        config.ollama.max_queue = queue_size
+            # Update performance settings from command line parameters
+            config.ollama.num_parallel = parallel_requests
+            config.ollama.max_loaded_models = max_models
+            config.ollama.max_queue = queue_size
+
+            setup_console.print(
+                f"🤖 Ollama provider selected with model: {config.ollama.model}"
+            )
+
+        elif config.embedding_provider == "voyage-ai":
+            # Validate API key for VoyageAI
+            import os
+
+            if not os.getenv("VOYAGE_API_KEY"):
+                setup_console.print(
+                    "❌ VoyageAI provider requires VOYAGE_API_KEY environment variable",
+                    style="red",
+                )
+                setup_console.print(
+                    "💡 Get your API key at: https://www.voyageai.com/", style="yellow"
+                )
+                sys.exit(1)
+
+            # Model parameter not applicable for VoyageAI
+            if model:
+                setup_console.print(
+                    "⚠️ --model parameter is ignored for VoyageAI provider",
+                    style="yellow",
+                )
+
+            # Performance parameters not applicable for cloud providers
+            if parallel_requests != 1 or max_models != 1 or queue_size != 512:
+                setup_console.print(
+                    "⚠️ Performance parameters (--parallel-requests, --max-models, --queue-size) are ignored for cloud providers",
+                    style="yellow",
+                )
+
+            setup_console.print(
+                f"🌐 VoyageAI provider selected with model: {config.voyage_ai.model}"
+            )
+
+        else:
+            setup_console.print(
+                f"❌ Unsupported embedding provider: {config.embedding_provider}",
+                style="red",
+            )
+            sys.exit(1)
 
         # Save updated configuration
         config_manager.save(config)
@@ -628,34 +676,71 @@ def setup(
             )
             sys.exit(1)
 
-        # Start services
-        if not docker_manager.start_services(recreate=force_recreate):
-            sys.exit(1)
+        # Check current service states for intelligent startup
+        required_services = docker_manager.get_required_services(config.model_dump())
+        setup_console.print(
+            f"🔍 Checking required services: {', '.join(required_services)}"
+        )
 
-        # Wait for services to be ready
-        if not docker_manager.wait_for_services():
-            setup_console.print("❌ Services failed to start properly", style="red")
-            sys.exit(1)
+        # Get current service states
+        all_healthy = True
+        for service in required_services:
+            state = docker_manager.get_service_state(service)
+            if not (state["running"] and state["healthy"]):
+                all_healthy = False
+                break
 
-        # Test connections and pull model
+        if all_healthy and not force_recreate:
+            setup_console.print(
+                "✅ All required services are already running and healthy"
+            )
+        else:
+            # Start only required services
+            if not docker_manager.start_services(recreate=force_recreate):
+                sys.exit(1)
+
+            # Wait for services to be ready (only required ones)
+            if not docker_manager.wait_for_services():
+                setup_console.print("❌ Services failed to start properly", style="red")
+                sys.exit(1)
+
+        # Test connections and setup based on provider
         with setup_console.status("Testing service connections..."):
             embedding_provider = EmbeddingProviderFactory.create(config, setup_console)
             qdrant_client = QdrantClient(config.qdrant, setup_console)
 
-            if not embedding_provider.health_check():
-                setup_console.print(
-                    f"❌ {embedding_provider.get_provider_name().title()} service is not accessible",
-                    style="red",
-                )
-                sys.exit(1)
+            # Test embedding provider (only if required)
+            if config.embedding_provider == "ollama":
+                if not embedding_provider.health_check():
+                    setup_console.print(
+                        f"❌ {embedding_provider.get_provider_name().title()} service is not accessible",
+                        style="red",
+                    )
+                    sys.exit(1)
+            elif config.embedding_provider == "voyage-ai":
+                # For cloud providers, test connectivity without starting Docker services
+                try:
+                    if not embedding_provider.health_check():
+                        setup_console.print(
+                            f"❌ {embedding_provider.get_provider_name().title()} API is not accessible. Check your API key.",
+                            style="red",
+                        )
+                        sys.exit(1)
+                except Exception as e:
+                    setup_console.print(
+                        f"❌ Failed to connect to {embedding_provider.get_provider_name().title()}: {e}",
+                        style="red",
+                    )
+                    sys.exit(1)
 
+            # Always test Qdrant (required for all providers)
             if not qdrant_client.health_check():
                 setup_console.print("❌ Qdrant service is not accessible", style="red")
                 sys.exit(1)
 
-        # Pull model if needed (only for Ollama)
+        # Provider-specific model setup
         if config.embedding_provider == "ollama":
-            setup_console.print(f"🤖 Checking model: {config.ollama.model}")
+            setup_console.print(f"🤖 Checking Ollama model: {config.ollama.model}")
             if hasattr(embedding_provider, "model_exists") and hasattr(
                 embedding_provider, "pull_model"
             ):
@@ -666,6 +751,13 @@ def setup(
                             style="red",
                         )
                         sys.exit(1)
+        elif config.embedding_provider == "voyage-ai":
+            setup_console.print(
+                f"🤖 Using {embedding_provider.get_provider_name()} with model: {embedding_provider.get_current_model()}"
+            )
+            setup_console.print(
+                "💡 No local model download required for cloud provider"
+            )
         else:
             setup_console.print(
                 f"🤖 Using {embedding_provider.get_provider_name()} provider with model: {embedding_provider.get_current_model()}"

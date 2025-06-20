@@ -142,6 +142,106 @@ class DockerManager:
         )
         return f"http://localhost:{port}"
 
+    def get_required_services(
+        self, config: Optional[Dict[str, Any]] = None
+    ) -> List[str]:
+        """Determine which services are required based on configuration.
+
+        Args:
+            config: Optional configuration dict. If None, uses self.main_config
+
+        Returns:
+            List of required service names
+        """
+        required_services = ["qdrant", "data-cleaner"]  # Always needed
+
+        # Use provided config or fall back to main_config
+        config_to_use = config or self.main_config or {}
+
+        # Check embedding provider
+        embedding_provider = config_to_use.get("embedding_provider", "ollama")
+
+        if embedding_provider == "ollama":
+            required_services.append("ollama")
+
+        return required_services
+
+    def _container_exists(self, service_name: str) -> bool:
+        """Check if a container exists."""
+        self.get_container_name(service_name)
+        compose_cmd = self.get_compose_command()
+
+        try:
+            # Try both container inspection and compose ps
+            cmd = compose_cmd + [
+                "-f",
+                str(self.compose_file),
+                "-p",
+                self.project_name,
+                "ps",
+                "-q",
+                service_name,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            return result.returncode == 0 and bool(result.stdout.strip())
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return False
+
+    def _container_running(self, service_name: str) -> bool:
+        """Check if a container is running."""
+        self.get_container_name(service_name)
+        compose_cmd = self.get_compose_command()
+
+        try:
+            cmd = compose_cmd + [
+                "-f",
+                str(self.compose_file),
+                "-p",
+                self.project_name,
+                "ps",
+                "--filter",
+                "status=running",
+                "-q",
+                service_name,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            return result.returncode == 0 and bool(result.stdout.strip())
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return False
+
+    def _container_healthy(self, service_name: str) -> bool:
+        """Check if a container is healthy."""
+        if not self._container_running(service_name):
+            return False
+
+        # For services with health checks, verify health status
+        if service_name in ["ollama", "qdrant", "data-cleaner"]:
+            return bool(self.health_checker.is_service_healthy(service_name))
+
+        return True
+
+    def _container_up_to_date(self, service_name: str) -> bool:
+        """Check if a container is up to date with current configuration."""
+        # For now, assume containers are up to date if they exist
+        # In the future, this could check image versions, environment variables, etc.
+        return self._container_exists(service_name)
+
+    def get_service_state(self, service_name: str) -> Dict[str, Any]:
+        """Get current state of a specific service."""
+        return {
+            "exists": self._container_exists(service_name),
+            "running": self._container_running(service_name),
+            "healthy": self._container_healthy(service_name),
+            "up_to_date": self._container_up_to_date(service_name),
+        }
+
+    def get_services_state(self) -> Dict[str, Dict[str, Any]]:
+        """Get state of all required services."""
+        required_services = self.get_required_services()
+        return {
+            service: self.get_service_state(service) for service in required_services
+        }
+
     def is_docker_available(self) -> bool:
         """Check if Podman or Docker is available, prioritizing Podman unless force_docker is True."""
 
@@ -348,26 +448,65 @@ class DockerManager:
         return package_dockerfile
 
     def start_services(self, recreate: bool = False) -> bool:
-        """Start Docker services with real-time progress feedback."""
-        # Always regenerate compose file if recreate=True, main_config is available, or if it doesn't exist
-        if recreate or self.main_config is not None or not self.compose_file.exists():
+        """Start Docker services with intelligent state detection and idempotent behavior."""
+        # Determine required services based on configuration
+        required_services = self.get_required_services(self.main_config)
+
+        self.console.print(f"🔍 Required services: {', '.join(required_services)}")
+
+        # Check current state of all required services
+        service_states = {}
+        for service in required_services:
+            service_states[service] = self.get_service_state(service)
+            state = service_states[service]
+
+            if state["running"] and state["healthy"]:
+                self.console.print(f"✅ {service}: already running and healthy")
+            elif state["exists"] and state["running"] and not state["healthy"]:
+                self.console.print(f"⚠️  {service}: running but unhealthy")
+            elif state["exists"] and not state["running"]:
+                self.console.print(f"🔄 {service}: exists but not running")
+            elif not state["exists"]:
+                self.console.print(f"📥 {service}: needs to be created")
+
+        # Determine if we need to regenerate compose config
+        needs_compose_update = (
+            recreate
+            or self.main_config is not None
+            or not self.compose_file.exists()
+            or not all(state["up_to_date"] for state in service_states.values())
+        )
+
+        if needs_compose_update:
+            self.console.print("📝 Updating Docker Compose configuration...")
             compose_config = self.generate_compose_config()
             with open(self.compose_file, "w") as f:
                 yaml.dump(compose_config, f, default_flow_style=False)
 
+        # Check if any services need to be started
+        services_needing_start = [
+            service
+            for service, state in service_states.items()
+            if not (state["running"] and state["healthy"])
+        ]
+
+        if not services_needing_start and not recreate:
+            self.console.print(
+                "✅ All required services are already running and healthy"
+            )
+            return True
+
         compose_cmd = self.get_compose_command()
 
-        # Check if images exist to provide better user feedback
-        containers_exist = self._check_containers_exist()
-        if not containers_exist:
+        # Check if we need to download images
+        any_missing = any(not state["exists"] for state in service_states.values())
+        if any_missing:
             self.console.print(
-                "📥 First-time setup detected. This may take several minutes to download Docker images (~2GB)..."
-            )
-            self.console.print(
-                "💡 Progress will be shown below. Please be patient during image downloads."
+                "📥 Some services need to be created. This may take several minutes to download Docker images..."
             )
 
         try:
+            # Build the command - only start required services
             cmd = compose_cmd + [
                 "-f",
                 str(self.compose_file),
@@ -376,12 +515,18 @@ class DockerManager:
                 "up",
                 "-d",
             ]
+
+            # Add service names to only start required services
+            cmd.extend(required_services)
+
             if recreate:
                 cmd.append("--force-recreate")
 
-            self.console.print(f"🚀 Running: {' '.join(cmd)}")
+            self.console.print(
+                f"🚀 Starting services: {' '.join(services_needing_start)}"
+            )
 
-            # Use Popen to show real-time output
+            # Execute with real-time output
             import time
 
             start_time = time.time()
@@ -395,30 +540,19 @@ class DockerManager:
                 universal_newlines=True,
             )
 
-            # Show real-time output with progress indicators
             output_lines = []
             last_progress_time = time.time()
-
-            self.console.print("📊 Docker Compose Output:")
-            self.console.print("─" * 60)
 
             while True:
                 if process.stdout is None:
                     break
                 line = process.stdout.readline()
                 if line:
-                    # Clean up the line and display it
                     clean_line = line.strip()
                     if clean_line:
-                        # Show progress for long-running operations
                         if any(
                             keyword in clean_line.lower()
-                            for keyword in [
-                                "pulling",
-                                "downloading",
-                                "extracting",
-                                "building",
-                            ]
+                            for keyword in ["pulling", "downloading", "extracting"]
                         ):
                             self.console.print(f"⏳ {clean_line}", style="yellow")
                         elif (
@@ -438,9 +572,8 @@ class DockerManager:
                 elif process.poll() is not None:
                     break
                 else:
-                    # Show periodic time updates for long operations
                     current_time = time.time()
-                    if current_time - last_progress_time > 30:  # Every 30 seconds
+                    if current_time - last_progress_time > 30:
                         elapsed = int(current_time - start_time)
                         self.console.print(
                             f"⏱️  Still working... ({elapsed}s elapsed)", style="blue"
@@ -448,10 +581,7 @@ class DockerManager:
                         last_progress_time = current_time
                     time.sleep(0.1)
 
-            # Wait for process to complete and get return code
-            return_code = process.wait(timeout=600)  # 10 minute timeout
-
-            self.console.print("─" * 60)
+            return_code = process.wait(timeout=600)
             elapsed = int(time.time() - start_time)
 
             if return_code == 0:
@@ -1562,136 +1692,153 @@ class DockerManager:
 
         return success
 
+    def _build_ollama_service(
+        self, local_docker_dir: Path, network_name: str
+    ) -> Dict[str, Any]:
+        """Build Ollama service configuration."""
+        ollama_port = self._get_service_port("ollama", 11434)
+
+        return {
+            "build": {
+                "context": str(local_docker_dir.absolute()),
+                "dockerfile": "Dockerfile.ollama",
+            },
+            "container_name": self.get_container_name("ollama"),
+            "ports": [f"0.0.0.0:{ollama_port}:11434"],
+            "volumes": ["ollama_data:/home/ollama/.ollama"],
+            "restart": "unless-stopped",
+            "networks": [network_name],
+            "environment": self._get_ollama_environment(),
+            "healthcheck": {
+                "test": ["CMD", "curl", "-f", "http://localhost:11434/api/tags"],
+                "interval": "30s",
+                "timeout": "10s",
+                "retries": 3,
+                "start_period": "30s",
+            },
+        }
+
+    def _build_qdrant_service(
+        self, local_docker_dir: Path, network_name: str
+    ) -> Dict[str, Any]:
+        """Build Qdrant service configuration."""
+        qdrant_port = self._get_service_port("qdrant", 6333)
+
+        return {
+            "build": {
+                "context": str(local_docker_dir.absolute()),
+                "dockerfile": "Dockerfile.qdrant",
+            },
+            "container_name": self.get_container_name("qdrant"),
+            "ports": [f"0.0.0.0:{qdrant_port}:6333"],
+            "volumes": ["qdrant_data:/qdrant/storage"],
+            "environment": [
+                "QDRANT_ALLOW_ANONYMOUS_READ=true",
+                "QDRANT_CLUSTER__ENABLED=false",
+            ],
+            "restart": "unless-stopped",
+            "networks": [network_name],
+            "healthcheck": {
+                "test": ["CMD", "curl", "-f", "http://localhost:6333/"],
+                "interval": "30s",
+                "timeout": "10s",
+                "retries": 3,
+                "start_period": "40s",
+            },
+        }
+
+    def _build_cleaner_service(
+        self,
+        local_docker_dir: Path,
+        network_name: str,
+        include_ollama_volumes: bool = True,
+    ) -> Dict[str, Any]:
+        """Build data cleaner service configuration."""
+        volumes = ["qdrant_data:/data/qdrant"]
+        if include_ollama_volumes:
+            volumes.append("ollama_data:/data/ollama")
+
+        return {
+            "build": {
+                "context": str(local_docker_dir.absolute()),
+                "dockerfile": "Dockerfile.cleaner",
+            },
+            "container_name": self.get_container_name("data-cleaner"),
+            "ports": ["0.0.0.0:8091:8091"],
+            "volumes": volumes,
+            "privileged": True,
+            "restart": "unless-stopped",
+            "networks": [network_name],
+            "healthcheck": {
+                "test": ["CMD", "curl", "-f", "http://localhost:8091/"],
+                "interval": "30s",
+                "timeout": "10s",
+                "retries": 3,
+                "start_period": "10s",
+            },
+        }
+
     def generate_compose_config(
         self, data_dir: Path = Path(".code-indexer")
     ) -> Dict[str, Any]:
-        """Generate Docker Compose configuration for single global instances."""
+        """Generate Docker Compose configuration for required services only."""
+        # Determine which services are required
+        required_services = self.get_required_services()
+
         # Single global network for all services
         network_name = "code-indexer-global"
 
-        # Find Dockerfiles (package location first, then project root)
-        ollama_dockerfile = self._find_dockerfile("Dockerfile.ollama")
-        qdrant_dockerfile = self._find_dockerfile("Dockerfile.qdrant")
-        cleaner_dockerfile = self._find_dockerfile("Dockerfile.cleaner")
-
-        # Copy Dockerfiles to .code-indexer directory so Docker can find them
+        # Prepare Dockerfiles
         import shutil
 
-        # Use .code-indexer/docker directory for Dockerfiles
         local_docker_dir = data_dir / "docker"
         local_docker_dir.mkdir(parents=True, exist_ok=True)
 
-        local_ollama_dockerfile = local_docker_dir / "Dockerfile.ollama"
-        local_qdrant_dockerfile = local_docker_dir / "Dockerfile.qdrant"
-        local_cleaner_dockerfile = local_docker_dir / "Dockerfile.cleaner"
+        # Copy required Dockerfiles
+        dockerfile_map = {
+            "ollama": "Dockerfile.ollama",
+            "qdrant": "Dockerfile.qdrant",
+            "data-cleaner": "Dockerfile.cleaner",
+        }
 
-        shutil.copy2(ollama_dockerfile, local_ollama_dockerfile)
-        shutil.copy2(qdrant_dockerfile, local_qdrant_dockerfile)
-        shutil.copy2(cleaner_dockerfile, local_cleaner_dockerfile)
+        for service in required_services:
+            if service in dockerfile_map:
+                source_dockerfile = self._find_dockerfile(dockerfile_map[service])
+                target_dockerfile = local_docker_dir / dockerfile_map[service]
+                shutil.copy2(source_dockerfile, target_dockerfile)
 
         # Copy cleanup script for data cleaner
-        cleanup_script = Path(__file__).parent.parent / "docker" / "cleanup.sh"
-        local_cleanup_script = local_docker_dir / "cleanup.sh"
-        shutil.copy2(cleanup_script, local_cleanup_script)
+        if "data-cleaner" in required_services:
+            cleanup_script = Path(__file__).parent.parent / "docker" / "cleanup.sh"
+            local_cleanup_script = local_docker_dir / "cleanup.sh"
+            shutil.copy2(cleanup_script, local_cleanup_script)
 
-        # No longer need global config directories since we use named volumes
-
-        # Current working directory for project-specific qdrant storage
-        # current_project_dir = Path.cwd()  # Currently unused but may be needed for future features
-
-        # Get configured ports for services
-        default_ports = {"ollama": 11434, "qdrant": 6333}
-        ollama_port = self._get_service_port("ollama", default_ports["ollama"])
-        qdrant_port = self._get_service_port("qdrant", default_ports["qdrant"])
-
+        # Build compose configuration
         compose_config = {
-            "services": {
-                "ollama": {
-                    "build": {
-                        "context": str(local_docker_dir.absolute()),
-                        "dockerfile": str(local_ollama_dockerfile.name),
-                    },
-                    "container_name": self.get_container_name("ollama"),
-                    "ports": [
-                        f"0.0.0.0:{ollama_port}:11434"
-                    ],  # Map external custom port to internal default port, IPv4 only
-                    "volumes": ["ollama_data:/home/ollama/.ollama"],
-                    "restart": "unless-stopped",
-                    "networks": [network_name],
-                    "environment": self._get_ollama_environment(),
-                    "healthcheck": {
-                        "test": [
-                            "CMD",
-                            "curl",
-                            "-f",
-                            "http://localhost:11434/api/tags",
-                        ],
-                        "interval": "30s",
-                        "timeout": "10s",
-                        "retries": 3,
-                        "start_period": "30s",
-                    },
-                },
-                "qdrant": {
-                    "build": {
-                        "context": str(local_docker_dir.absolute()),
-                        "dockerfile": str(local_qdrant_dockerfile.name),
-                    },
-                    "container_name": self.get_container_name("qdrant"),
-                    "ports": [
-                        f"0.0.0.0:{qdrant_port}:6333"
-                    ],  # Map external custom port to internal default port, IPv4 only
-                    "volumes": [
-                        # Use named volume for qdrant storage
-                        "qdrant_data:/qdrant/storage"
-                    ],
-                    "environment": [
-                        "QDRANT_ALLOW_ANONYMOUS_READ=true",
-                        # Enable collection management via API
-                        "QDRANT_CLUSTER__ENABLED=false",
-                    ],
-                    "restart": "unless-stopped",
-                    "networks": [network_name],
-                    "healthcheck": {
-                        "test": ["CMD", "curl", "-f", "http://localhost:6333/"],
-                        "interval": "30s",
-                        "timeout": "10s",
-                        "retries": 3,
-                        "start_period": "40s",
-                    },
-                },
-                "data-cleaner": {
-                    "build": {
-                        "context": str(local_docker_dir.absolute()),
-                        "dockerfile": str(local_cleaner_dockerfile.name),
-                    },
-                    "container_name": self.get_container_name("data-cleaner"),
-                    "ports": [
-                        "0.0.0.0:8091:8091"
-                    ],  # IPv4 only, consistent with other services
-                    "volumes": [
-                        # Mount all the same volumes as the main services so it can clean them
-                        "ollama_data:/data/ollama",
-                        "qdrant_data:/data/qdrant",
-                    ],
-                    "privileged": True,  # Run with root privileges for cleanup
-                    "restart": "unless-stopped",
-                    "networks": [network_name],
-                    "healthcheck": {
-                        "test": ["CMD", "curl", "-f", "http://localhost:8091/"],
-                        "interval": "30s",
-                        "timeout": "10s",
-                        "retries": 3,
-                        "start_period": "10s",
-                    },
-                },
-            },
+            "services": {},
             "networks": {network_name: {"name": network_name}},
-            "volumes": {
-                "ollama_data": {"driver": "local"},
-                "qdrant_data": {"driver": "local"},
-            },
+            "volumes": {"qdrant_data": {"driver": "local"}},
         }
+
+        # Add services based on requirements
+        if "qdrant" in required_services:
+            compose_config["services"]["qdrant"] = self._build_qdrant_service(
+                local_docker_dir, network_name
+            )
+
+        if "ollama" in required_services:
+            compose_config["services"]["ollama"] = self._build_ollama_service(
+                local_docker_dir, network_name
+            )
+            # Only include ollama volumes if ollama is required
+            compose_config["volumes"]["ollama_data"] = {"driver": "local"}
+
+        if "data-cleaner" in required_services:
+            # Include ollama volumes in data-cleaner only if ollama service is required
+            include_ollama_volumes = "ollama" in required_services
+            compose_config["services"]["data-cleaner"] = self._build_cleaner_service(
+                local_docker_dir, network_name, include_ollama_volumes
+            )
 
         return compose_config
 
