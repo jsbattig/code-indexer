@@ -19,13 +19,122 @@ from rich.progress import (
 )
 from rich.syntax import Syntax
 from rich.table import Column
+from rich.markdown import Markdown
 
 from .config import ConfigManager, Config
 from .services import QdrantClient, DockerManager, EmbeddingProviderFactory
 from .services.git_aware_processor import GitAwareDocumentProcessor
 from .services.smart_indexer import SmartIndexer
 from .services.generic_query_service import GenericQueryService
+from .services.claude_integration import (
+    ClaudeIntegrationService,
+    check_claude_sdk_availability,
+)
 from . import __version__
+
+
+def _format_claude_response(response: str) -> str:
+    """Format Claude response for better terminal display."""
+    if not response:
+        return response
+
+    # Check if response contains Claude SDK objects (list format)
+    if response.startswith("[") and "TextBlock" in response:
+        # Parse the structured response from Claude SDK
+        formatted_text = _parse_claude_sdk_response(response)
+        if formatted_text:
+            response = formatted_text
+
+    # Ensure proper line breaks are preserved
+    formatted = response.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Handle multiple consecutive newlines (preserve paragraph breaks)
+    lines = formatted.split("\n")
+    formatted_lines = []
+
+    for line in lines:
+        # Strip only trailing whitespace, preserve indentation
+        formatted_lines.append(line.rstrip())
+
+    # Join with newlines and ensure we don't have excessive empty lines at start/end
+    result = "\n".join(formatted_lines).strip()
+
+    # Ensure the response ends with a newline for better formatting
+    if result and not result.endswith("\n"):
+        result += "\n"
+
+    return result
+
+
+def _parse_claude_sdk_response(response: str) -> str:
+    """Parse Claude SDK structured response to extract text content."""
+    try:
+        import re
+
+        # Extract TextBlock content
+        text_blocks = []
+
+        # Find all TextBlock(text='...') patterns
+        text_pattern = r"TextBlock\(text='(.*?)'\)"
+        matches = re.findall(text_pattern, response, re.DOTALL)
+
+        for match in matches:
+            # Unescape the text content
+            text = match.replace("\\'", "'").replace("\\n", "\n").replace("\\\\", "\\")
+            text_blocks.append(text)
+
+        # Join all text blocks
+        if text_blocks:
+            return "\n\n".join(text_blocks)
+
+        # Fallback: try to extract any text content between quotes
+        fallback_pattern = r"'([^']*(?:\\'[^']*)*)'"
+        fallback_matches = re.findall(fallback_pattern, response)
+
+        # Find the longest match (likely the main content)
+        if fallback_matches:
+            longest_match = max(fallback_matches, key=len)
+            if len(longest_match) > 100:  # Only use if it seems substantial
+                return str(
+                    longest_match.replace("\\'", "'")
+                    .replace("\\n", "\n")
+                    .replace("\\\\", "\\")
+                )
+
+        return response  # Return original if parsing fails
+
+    except Exception as e:
+        console = Console()
+        console.print(f"Warning: Failed to parse Claude response: {e}", style="yellow")
+        return response  # Return original if parsing fails
+
+
+def _is_markdown_content(text: str) -> bool:
+    """Detect if text content is likely markdown."""
+    if not text or len(text.strip()) < 10:
+        return False
+
+    # Check for common markdown patterns
+    markdown_indicators = [
+        "# ",  # Headers
+        "## ",  # Headers
+        "### ",  # Headers
+        "**",  # Bold
+        "*",  # Italic/Bold
+        "`",  # Code
+        "```",  # Code blocks
+        "- ",  # Lists
+        "* ",  # Lists
+        "1. ",  # Numbered lists
+        "[",  # Links
+        "> ",  # Blockquotes
+    ]
+
+    # Count markdown indicators
+    indicator_count = sum(1 for indicator in markdown_indicators if indicator in text)
+
+    # If we have multiple markdown patterns or it looks structured, treat as markdown
+    return indicator_count >= 2 or "```" in text or text.count("#") >= 2
 
 
 class GracefulInterruptHandler:
@@ -86,9 +195,15 @@ console = Console()
 @click.group()
 @click.option("--config", "-c", type=click.Path(exists=False), help="Config file path")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
+@click.option(
+    "--path",
+    "-p",
+    type=click.Path(exists=True),
+    help="Start directory for config discovery (walks up to find .code-indexer/)",
+)
 @click.version_option(version=__version__, prog_name="code-indexer")
 @click.pass_context
-def cli(ctx, config: Optional[str], verbose: bool):
+def cli(ctx, config: Optional[str], verbose: bool, path: Optional[str]):
     """AI-powered semantic code search with local models.
 
     \b
@@ -132,11 +247,24 @@ def cli(ctx, config: Optional[str], verbose: bool):
       code-indexer query "function authentication"
       code-indexer clean --remove-data --all-projects  # Remove all data
 
+      # Using --path to work with different project locations:
+      code-indexer --path /home/user/myproject index
+      code-indexer --path ../other-project query "search term"
+      code-indexer -p ./nested/folder status
+
     For detailed help on any command, use: code-indexer COMMAND --help
     """
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
-    ctx.obj["config_manager"] = ConfigManager(Path(config) if config else None)
+
+    # Use path for config discovery, leveraging existing backtracking logic
+    if path:
+        start_dir = Path(path).resolve()
+        ctx.obj["config_manager"] = ConfigManager.create_with_backtrack(start_dir)
+    elif config:
+        ctx.obj["config_manager"] = ConfigManager(Path(config))
+    else:
+        ctx.obj["config_manager"] = ConfigManager()
 
 
 @cli.command()
@@ -568,8 +696,21 @@ def setup(
 @click.option(
     "--batch-size", "-b", default=50, help="Batch size for processing (default: 50)"
 )
+@click.option(
+    "--files-count-to-process",
+    type=int,
+    default=None,
+    hidden=True,
+    help="Internal: Stop after processing N files (for testing)",
+)
 @click.pass_context
-def index(ctx, clear: bool, reconcile: bool, batch_size: int):
+def index(
+    ctx,
+    clear: bool,
+    reconcile: bool,
+    batch_size: int,
+    files_count_to_process: Optional[int],
+):
     """Index the codebase for semantic search.
 
     \b
@@ -775,6 +916,7 @@ def index(ctx, clear: bool, reconcile: bool, batch_size: int):
                     batch_size=batch_size,
                     progress_callback=progress_callback,
                     safety_buffer_seconds=60,  # 1-minute safety buffer
+                    files_count_to_process=files_count_to_process,
                 )
 
                 # Stop progress bar with completion message (if not interrupted)
@@ -851,20 +993,40 @@ def watch(ctx, debounce: float, batch_size: int):
             console.print("❌ Qdrant service not available", style="red")
             sys.exit(1)
 
-        # Perform initial update to catch up on any missed changes
-        console.print("🔄 Performing initial update to catch up on changes...")
-
         # Initialize git-aware processor for smart updates
-        processor = GitAwareDocumentProcessor(config, embedding_provider, qdrant_client)
+        _ = GitAwareDocumentProcessor(config, embedding_provider, qdrant_client)
 
-        # Set up progress tracking using Rich Progress (consistent with update/index commands)
+        # Perform smart update (will be fast if nothing to do)
+        metadata_path = config_manager.config_path.parent / "metadata.json"
+        smart_indexer = SmartIndexer(
+            config, embedding_provider, qdrant_client, metadata_path
+        )
+
+        console.print("🔄 Checking for changes before starting file watcher...")
+
+        # Run smart indexing to catch up on any changes
+        try:
+            stats = smart_indexer.smart_index(batch_size=batch_size)
+
+            if stats.files_processed > 0:
+                console.print(
+                    f"✅ Updated {stats.files_processed} files before watching"
+                )
+            else:
+                console.print("✅ Index is up to date")
+
+        except Exception as e:
+            console.print(f"⚠️  Initial update failed: {e}", style="yellow")
+            console.print("Continuing with file watching...", style="yellow")
+
+        # Initialize progress bar variables for later use
         progress_bar = None
         task_id = None
 
         def progress_callback(
             current: int, total: int, filename: str, error: Optional[str] = None
         ):
-            """Progress callback for initial update - consistent with update command"""
+            """Progress callback for watch updates"""
             nonlocal progress_bar, task_id
 
             # Initialize progress bar on first call
@@ -911,30 +1073,6 @@ def watch(ctx, debounce: float, batch_size: int):
                     console.print(
                         f"❌ Failed to process {filename}: {error}", style="red"
                     )
-
-        # Run smart update with progress tracking
-        try:
-            stats = processor.update_index_smart(
-                batch_size=batch_size, progress_callback=progress_callback
-            )
-
-            # Stop progress bar with completion message
-            if progress_bar and task_id is not None:
-                progress_bar.update(task_id, description="✅ Completed")
-                progress_bar.stop()
-
-            if stats.files_processed > 0:
-                console.print(
-                    f"✅ Initial update complete: {stats.files_processed} files processed"
-                )
-            else:
-                console.print("✅ Index is up to date - no changes detected")
-
-        except Exception as e:
-            if progress_bar:
-                progress_bar.stop()
-            console.print(f"⚠️  Initial update failed: {e}", style="yellow")
-            console.print("Continuing with file watching...", style="yellow")
 
         console.print(f"\n👀 Now watching {config.codebase_dir} for changes...")
         console.print(f"⏱️  Debounce: {debounce}s")
@@ -1177,6 +1315,9 @@ def watch(ctx, debounce: float, batch_size: int):
 
     except Exception as e:
         console.print(f"❌ Watch failed: {e}", style="red")
+        import traceback
+
+        console.print(traceback.format_exc())
         sys.exit(1)
 
 
@@ -1190,6 +1331,12 @@ def watch(ctx, debounce: float, batch_size: int):
 )
 @click.option("--path", help="Filter by file path pattern (e.g., */tests/*)")
 @click.option("--min-score", type=float, help="Minimum similarity score (0.0-1.0)")
+@click.option(
+    "--quiet",
+    "-q",
+    is_flag=True,
+    help="Quiet mode - only show results, no headers or metadata",
+)
 @click.pass_context
 def query(
     ctx,
@@ -1198,6 +1345,7 @@ def query(
     language: Optional[str],
     path: Optional[str],
     min_score: Optional[float],
+    quiet: bool,
 ):
     """Search the indexed codebase using semantic similarity.
 
@@ -1233,6 +1381,7 @@ def query(
       code-indexer query "database" --language python
       code-indexer query "test" --path */tests/* --limit 5
       code-indexer query "async" --min-score 0.8
+      code-indexer query "function" --quiet  # Just score, path, and content
 
     Results show file paths, matched content, and similarity scores.
     """
@@ -1264,7 +1413,10 @@ def query(
         qdrant_client._current_collection_name = collection_name
 
         # Get query embedding
-        with console.status("Generating query embedding..."):
+        if not quiet:
+            with console.status("Generating query embedding..."):
+                query_embedding = embedding_provider.get_embedding(query)
+        else:
             query_embedding = embedding_provider.get_embedding(query)
 
         # Build filter conditions
@@ -1283,31 +1435,36 @@ def query(
 
         # Apply embedding provider's model filtering when searching
         provider_info = embedding_provider.get_model_info()
-        console.print(
-            f"🤖 Using {embedding_provider.get_provider_name()} with model: {provider_info.get('name', 'unknown')}"
-        )
+        if not quiet:
+            console.print(
+                f"🤖 Using {embedding_provider.get_provider_name()} with model: {provider_info.get('name', 'unknown')}"
+            )
 
-        # Get current branch context for git-aware filtering
-        branch_context = query_service.get_current_branch_context()
-        if branch_context["git_available"]:
-            console.print(f"📂 Git repository: {branch_context['project_id']}")
-            console.print(f"🌿 Current branch: {branch_context['current_branch']}")
+            # Get current branch context for git-aware filtering
+            branch_context = query_service.get_current_branch_context()
+            if branch_context["git_available"]:
+                console.print(f"📂 Git repository: {branch_context['project_id']}")
+                console.print(f"🌿 Current branch: {branch_context['current_branch']}")
+            else:
+                console.print(f"📁 Non-git project: {branch_context['project_id']}")
+
+            # Search
+            console.print(f"🔍 Searching for: '{query}'")
+            if language:
+                console.print(f"🏷️  Language filter: {language}")
+            if path:
+                console.print(f"📁 Path filter: {path}")
+            console.print(f"📊 Limit: {limit}")
+            if min_score:
+                console.print(f"⭐ Min score: {min_score}")
         else:
-            console.print(f"📁 Non-git project: {branch_context['project_id']}")
-
-        # Search
-        console.print(f"🔍 Searching for: '{query}'")
-        if language:
-            console.print(f"🏷️  Language filter: {language}")
-        if path:
-            console.print(f"📁 Path filter: {path}")
-        console.print(f"📊 Limit: {limit}")
-        if min_score:
-            console.print(f"⭐ Min score: {min_score}")
+            # Get current branch context for git-aware filtering
+            branch_context = query_service.get_current_branch_context()
 
         # Get current embedding model for filtering
         current_model = embedding_provider.get_current_model()
-        console.print(f"🤖 Filtering by model: {current_model}")
+        if not quiet:
+            console.print(f"🤖 Filtering by model: {current_model}")
 
         # Use model-specific search to ensure we only get results from the current model
         raw_results = qdrant_client.search_with_model_filter(
@@ -1319,18 +1476,21 @@ def query(
         )
 
         # Apply git-aware filtering
-        console.print("🔍 Applying git-aware filtering...")
+        if not quiet:
+            console.print("🔍 Applying git-aware filtering...")
         results = query_service.filter_results_by_current_branch(raw_results)
 
         # Limit to requested number after filtering
         results = results[:limit]
 
         if not results:
-            console.print("❌ No results found", style="yellow")
+            if not quiet:
+                console.print("❌ No results found", style="yellow")
             return
 
-        console.print(f"\n✅ Found {len(results)} results:")
-        console.print("=" * 80)
+        if not quiet:
+            console.print(f"\n✅ Found {len(results)} results:")
+            console.print("=" * 80)
 
         for i, result in enumerate(results, 1):
             payload = result["payload"]
@@ -1339,61 +1499,389 @@ def query(
             # File info
             file_path = payload.get("path", "unknown")
             language = payload.get("language", "unknown")
-            file_size = payload.get("file_size", 0)
-            indexed_at = payload.get("indexed_at", "unknown")
-
-            # Git-aware metadata
-            git_available = payload.get("git_available", False)
-            project_id = payload.get("project_id", "unknown")
-
-            # Create header with git info
-            header = f"📄 File: {file_path}"
-            if language != "unknown":
-                header += f" | 🏷️  Language: {language}"
-            header += f" | 📊 Score: {score:.3f}"
-
-            console.print(f"\n[bold cyan]{header}[/bold cyan]")
-
-            # Enhanced metadata display
-            metadata_info = f"📏 Size: {file_size} bytes | 🕒 Indexed: {indexed_at}"
-
-            if git_available:
-                git_branch = payload.get("git_branch", "unknown")
-                git_commit = payload.get("git_commit_hash", "unknown")
-                if git_commit != "unknown" and len(git_commit) > 8:
-                    git_commit = git_commit[:8] + "..."
-                metadata_info += f" | 🌿 Branch: {git_branch}"
-                if git_commit != "unknown":
-                    metadata_info += f" | 📦 Commit: {git_commit}"
-
-            metadata_info += f" | 🏗️  Project: {project_id}"
-            console.print(metadata_info)
-
-            # Content preview
             content = payload.get("content", "")
-            if content:
-                console.print("\n📖 Content:")
-                console.print("─" * 50)
 
-                # Syntax highlighting if possible
-                if language and language != "unknown":
-                    try:
-                        syntax = Syntax(
-                            content[:500], language, theme="monokai", line_numbers=False
-                        )
-                        console.print(syntax)
-                    except Exception:
-                        console.print(content[:500])
-                else:
+            if quiet:
+                # Quiet mode - minimal output: score, path, content
+                console.print(f"{score:.3f} {file_path}")
+                if content:
+                    # Show content without syntax highlighting in quiet mode
                     console.print(content[:500])
+                    if len(content) > 500:
+                        console.print("... [truncated]")
+                console.print()  # Empty line between results
+            else:
+                # Normal verbose mode
+                file_size = payload.get("file_size", 0)
+                indexed_at = payload.get("indexed_at", "unknown")
 
-                if len(content) > 500:
-                    console.print("\n... [truncated]")
+                # Git-aware metadata
+                git_available = payload.get("git_available", False)
+                project_id = payload.get("project_id", "unknown")
 
-            console.print("─" * 50)
+                # Create header with git info
+                header = f"📄 File: {file_path}"
+                if language != "unknown":
+                    header += f" | 🏷️  Language: {language}"
+                header += f" | 📊 Score: {score:.3f}"
+
+                console.print(f"\n[bold cyan]{header}[/bold cyan]")
+
+                # Enhanced metadata display
+                metadata_info = f"📏 Size: {file_size} bytes | 🕒 Indexed: {indexed_at}"
+
+                if git_available:
+                    git_branch = payload.get("git_branch", "unknown")
+                    git_commit = payload.get("git_commit_hash", "unknown")
+                    if git_commit != "unknown" and len(git_commit) > 8:
+                        git_commit = git_commit[:8] + "..."
+                    metadata_info += f" | 🌿 Branch: {git_branch}"
+                    if git_commit != "unknown":
+                        metadata_info += f" | 📦 Commit: {git_commit}"
+
+                metadata_info += f" | 🏗️  Project: {project_id}"
+                console.print(metadata_info)
+
+                # Content preview
+                if content:
+                    console.print("\n📖 Content:")
+                    console.print("─" * 50)
+
+                    # Syntax highlighting if possible
+                    if language and language != "unknown":
+                        try:
+                            syntax = Syntax(
+                                content[:500],
+                                language,
+                                theme="monokai",
+                                line_numbers=False,
+                            )
+                            console.print(syntax)
+                        except Exception:
+                            console.print(content[:500])
+                    else:
+                        console.print(content[:500])
+
+                    if len(content) > 500:
+                        console.print("\n... [truncated]")
+
+                console.print("─" * 50)
 
     except Exception as e:
         console.print(f"❌ Search failed: {e}", style="red")
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("question")
+@click.option(
+    "--limit",
+    "-l",
+    default=10,
+    help="Number of semantic search results to include (default: 10)",
+)
+@click.option(
+    "--context-lines",
+    "-c",
+    default=500,
+    help="Lines of context around each match (default: 500)",
+)
+@click.option(
+    "--language", help="Filter by programming language (e.g., python, javascript)"
+)
+@click.option("--path", help="Filter by file path pattern (e.g., */tests/*)")
+@click.option("--min-score", type=float, help="Minimum similarity score (0.0-1.0)")
+@click.option(
+    "--max-turns", default=5, help="Maximum Claude conversation turns (default: 5)"
+)
+@click.option(
+    "--no-explore", is_flag=True, help="Disable file exploration hints in Claude prompt"
+)
+@click.option(
+    "--no-stream", is_flag=True, help="Disable streaming (show results all at once)"
+)
+@click.option(
+    "--quiet",
+    "-q",
+    is_flag=True,
+    help="Quiet mode - only show results, no headers or metadata",
+)
+@click.pass_context
+def claude(
+    ctx,
+    question: str,
+    limit: int,
+    context_lines: int,
+    language: Optional[str],
+    path: Optional[str],
+    min_score: Optional[float],
+    max_turns: int,
+    no_explore: bool,
+    no_stream: bool,
+    quiet: bool,
+):
+    """AI-powered code analysis using Claude with semantic search.
+
+    \b
+    Combines semantic search with Claude AI to provide intelligent analysis
+    of your codebase. Performs RAG (Retrieval-Augmented Generation) by:
+
+    1. Running semantic search to find relevant code
+    2. Extracting context around matches
+    3. Sending context + question to Claude for analysis
+
+    \b
+    CAPABILITIES:
+      • Natural language code questions and explanations
+      • Architecture analysis and recommendations
+      • Code pattern identification and best practices
+      • Debugging assistance and error analysis
+      • Implementation guidance and examples
+      • Cross-file relationship analysis
+
+    \b
+    SEARCH INTEGRATION:
+      Uses your existing semantic search index to find relevant code context.
+      Claude can also perform additional searches during analysis to explore
+      related concepts and provide comprehensive answers.
+
+    \b
+    FILTERING OPTIONS:
+      Same as regular search - filter by language, path, and similarity score
+      to focus Claude's analysis on specific parts of your codebase.
+
+    \b
+    EXAMPLES:
+      code-indexer claude "How does authentication work in this app?"
+      code-indexer claude "Show me the database schema design" --language sql
+      code-indexer claude "Find security vulnerabilities" --min-score 0.8
+      code-indexer claude "Explain the API routing logic" --path */api/*
+      code-indexer claude "How to add a new feature?" --context-lines 300
+      code-indexer claude "Debug this error pattern" --no-stream
+      code-indexer claude "Quick analysis" --quiet  # Just the response, no headers
+
+    \b
+    STREAMING:
+      Use --stream to see Claude's analysis as it's generated, helpful for
+      longer analyses or when you want immediate feedback.
+
+    \b
+    REQUIREMENTS:
+      • Claude Code SDK must be installed: pip install claude-code-sdk
+      • Services must be running: code-indexer setup
+      • Codebase must be indexed: code-indexer index
+
+    Results include Claude's analysis plus metadata about contexts used.
+    """
+    config_manager = ctx.obj["config_manager"]
+
+    try:
+        # Check Claude SDK availability
+        if not check_claude_sdk_availability():
+            console.print(
+                "❌ Claude Code SDK not available. Install it with:", style="red"
+            )
+            console.print("   pip install claude-code-sdk")
+            sys.exit(1)
+
+        config = config_manager.load()
+
+        # Initialize services
+        embedding_provider = EmbeddingProviderFactory.create(config, console)
+        qdrant_client = QdrantClient(config.qdrant, console)
+
+        # Health checks
+        if not embedding_provider.health_check():
+            console.print(
+                f"❌ {embedding_provider.get_provider_name().title()} service not available. Run 'setup' first.",
+                style="red",
+            )
+            sys.exit(1)
+
+        if not qdrant_client.health_check():
+            console.print(
+                "❌ Qdrant service not available. Run 'setup' first.", style="red"
+            )
+            sys.exit(1)
+
+        # Ensure provider-aware collection is set for search
+        collection_name = qdrant_client.resolve_collection_name(
+            config, embedding_provider
+        )
+        qdrant_client._current_collection_name = collection_name
+
+        # Initialize query service for git-aware filtering
+        query_service = GenericQueryService(config.codebase_dir, config)
+
+        # Get project context
+        branch_context = query_service.get_current_branch_context()
+        if not quiet:
+            if branch_context["git_available"]:
+                console.print(f"📂 Git repository: {branch_context['project_id']}")
+                console.print(f"🌿 Current branch: {branch_context['current_branch']}")
+            else:
+                console.print(f"📁 Non-git project: {branch_context['project_id']}")
+
+            # Perform semantic search
+            console.print(f"🔍 Performing semantic search: '{question}'")
+            console.print(f"📊 Limit: {limit} | Context: {context_lines} lines")
+
+        if not quiet:
+            with console.status("Generating query embedding..."):
+                query_embedding = embedding_provider.get_embedding(question)
+        else:
+            query_embedding = embedding_provider.get_embedding(question)
+
+        # Build filter conditions
+        filter_conditions = {}
+        if language:
+            filter_conditions["must"] = [
+                {"key": "language", "match": {"value": language}}
+            ]
+            console.print(f"🏷️  Language filter: {language}")
+        if path:
+            filter_conditions.setdefault("must", []).append(
+                {"key": "path", "match": {"text": path}}
+            )
+            console.print(f"📁 Path filter: {path}")
+        if min_score:
+            console.print(f"⭐ Min score: {min_score}")
+
+        # Get current embedding model for filtering
+        current_model = embedding_provider.get_current_model()
+        if not quiet:
+            console.print(f"🤖 Using model: {current_model}")
+
+        # Perform search with model filtering
+        raw_results = qdrant_client.search_with_model_filter(
+            query_vector=query_embedding,
+            embedding_model=current_model,
+            limit=limit * 2,  # Get more results to allow for git filtering
+            score_threshold=min_score,
+            additional_filters=filter_conditions,
+        )
+
+        # Apply git-aware filtering
+        if not quiet:
+            with console.status("Applying git-aware filtering..."):
+                results = query_service.filter_results_by_current_branch(raw_results)
+        else:
+            results = query_service.filter_results_by_current_branch(raw_results)
+
+        # Limit to requested number after filtering
+        results = results[:limit]
+
+        if not results:
+            if not quiet:
+                console.print("❌ No semantic search results found", style="yellow")
+                console.print("💡 Try a broader search query or adjust filters")
+            sys.exit(1)
+
+        if not quiet:
+            console.print(f"✅ Found {len(results)} relevant code contexts")
+
+        # Initialize Claude integration
+        claude_service = ClaudeIntegrationService(
+            codebase_dir=config.codebase_dir, project_name=branch_context["project_id"]
+        )
+
+        # Stream by default, unless --no-stream is specified
+        use_streaming = not no_stream
+
+        if use_streaming:
+            # Use streaming mode - no status spinner needed
+            analysis_result = claude_service.run_analysis(
+                user_query=question,
+                search_results=results,
+                context_lines=context_lines,
+                max_turns=max_turns,
+                project_info=branch_context,
+                enable_exploration=not no_explore,
+                stream=True,
+                quiet=quiet,
+            )
+        else:
+            # Non-streaming mode with status spinner
+            if not quiet:
+                with console.status("🤖 Analyzing with Claude AI..."):
+                    analysis_result = claude_service.run_analysis(
+                        user_query=question,
+                        search_results=results,
+                        context_lines=context_lines,
+                        max_turns=max_turns,
+                        project_info=branch_context,
+                        enable_exploration=not no_explore,
+                        stream=False,
+                        quiet=quiet,
+                    )
+            else:
+                analysis_result = claude_service.run_analysis(
+                    user_query=question,
+                    search_results=results,
+                    context_lines=context_lines,
+                    max_turns=max_turns,
+                    project_info=branch_context,
+                    enable_exploration=not no_explore,
+                    stream=False,
+                    quiet=quiet,
+                )
+
+        # Handle results (common for both streaming and non-streaming)
+        if not analysis_result.success:
+            if not quiet:
+                console.print(
+                    f"❌ Claude analysis failed: {analysis_result.error}", style="red"
+                )
+            sys.exit(1)
+
+        # For non-streaming mode, show formatted results
+        if not use_streaming:
+            if quiet:
+                # Quiet mode - just show the response content
+                formatted_response = _format_claude_response(analysis_result.response)
+                console.print(formatted_response)
+            else:
+                # Display results with proper formatting
+                console.print("\n🤖 Claude Analysis Results")
+                console.print("─" * 80)
+                console.print()
+
+                # Format the response for better readability
+                formatted_response = _format_claude_response(analysis_result.response)
+
+                # Render as markdown for beautiful formatting
+                if _is_markdown_content(formatted_response):
+                    markdown = Markdown(formatted_response)
+                    console.print(markdown)
+                else:
+                    console.print(formatted_response)
+
+                console.print()
+                console.print("─" * 80)
+
+        # Show metadata (for both modes)
+        if not quiet:
+            console.print("\n📊 Analysis Summary:")
+            console.print(f"   • Code contexts used: {analysis_result.contexts_used}")
+            console.print(
+                f"   • Total context lines: {analysis_result.total_context_lines:,}"
+            )
+
+            if analysis_result.contexts_used > 0:
+                avg_lines = (
+                    analysis_result.total_context_lines // analysis_result.contexts_used
+                )
+                console.print(f"   • Average lines per context: {avg_lines}")
+
+        # Clear cache to free memory
+        claude_service.clear_cache()
+
+    except Exception as e:
+        console.print(f"❌ Claude analysis failed: {e}", style="red")
+        if ctx.obj["verbose"]:
+            import traceback
+
+            console.print(traceback.format_exc())
         sys.exit(1)
 
 
@@ -1887,8 +2375,8 @@ def start(ctx, force_docker: bool):
     This is faster than 'setup' as it doesn't recreate containers or download models.
     """
     try:
-        # Find configuration by backtracking up directory tree
-        config_manager = ConfigManager.create_with_backtrack()
+        # Use configuration from CLI context
+        config_manager = ctx.obj["config_manager"]
         config_path = config_manager.config_path
 
         if not config_path or not config_path.exists():
@@ -1998,8 +2486,8 @@ def stop(ctx, force_docker: bool):
       Much faster than running 'setup' again.
     """
     try:
-        # Find configuration by backtracking up directory tree
-        config_manager = ConfigManager.create_with_backtrack()
+        # Use configuration from CLI context
+        config_manager = ctx.obj["config_manager"]
         config_path = config_manager.config_path
 
         if not config_path or not config_path.exists():

@@ -22,6 +22,11 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
 # PyInstaller
 *.manifest
 *.spec
@@ -113,3 +118,4 @@ test_clean_debug/
 tests/projects/*/data/
 tests/projects/*/.code-indexer/
 tests/projects/*/docker-compose.yml
+=4.0.0

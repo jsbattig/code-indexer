@@ -41,7 +41,7 @@ jobs:
     - name: Run unit tests only (no E2E/integration tests)
       run: |
         # Run only unit tests that don't require external services
-        # Exclude E2E, integration, and service-dependent tests
+        # Exclude E2E, integration, service-dependent, and Claude tests
         pytest tests/ \
           --ignore=tests/test_e2e_embedding_providers.py \
           --ignore=tests/test_start_stop_e2e.py \
@@ -57,6 +57,8 @@ jobs:
           --ignore=tests/test_data_cleaner_health.py \
           --ignore=tests/test_timeout_config.py \
           --ignore=tests/test_service_readiness.py \
+          --ignore=tests/test_claude_e2e.py \
+          --ignore=tests/test_reconcile_e2e.py \
           -m "not slow and not e2e and not real_api" \
           --cov=src/code_indexer --cov-report=xml --cov-report=term
     

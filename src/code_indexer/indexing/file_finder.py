@@ -27,34 +27,76 @@ class FileFinder:
         # Add common patterns
         patterns.extend(
             [
+                # Python bytecode and cache
                 "*.pyc",
                 "*.pyo",
                 "*.pyd",
                 "__pycache__/",
+                ".mypy_cache/",
+                ".pytest_cache/",
+                ".coverage",
+                ".tox/",
+                ".nox/",
+                # Compiled binaries
                 "*.so",
                 "*.dylib",
                 "*.dll",
+                # OS artifacts
                 ".DS_Store",
                 "Thumbs.db",
+                # Temporary files
                 "*.tmp",
                 "*.temp",
                 "*.swp",
                 "*.swo",
                 "*~",
+                # Common build/dist directories
+                "node_modules/",
+                "build/",
+                "dist/",
+                "target/",
+                ".git/",
             ]
         )
 
-        # Check for .gitignore file in codebase directory
-        gitignore_path = self.config.codebase_dir / ".gitignore"
-        if gitignore_path.exists():
-            with open(gitignore_path, "r", encoding="utf-8", errors="ignore") as f:
-                patterns.extend(
-                    line.strip()
-                    for line in f
-                    if line.strip() and not line.startswith("#")
-                )
+        # Check for .gitignore files (root and nested)
+        self._add_gitignore_patterns(self.config.codebase_dir, patterns)
 
         self.exclude_spec = pathspec.PathSpec.from_lines("gitwildmatch", patterns)
+
+    def _add_gitignore_patterns(self, directory: Path, patterns: list) -> None:
+        """Add patterns from .gitignore files recursively."""
+        gitignore_path = directory / ".gitignore"
+        if gitignore_path.exists():
+            try:
+                with open(gitignore_path, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            # For nested .gitignore files, make patterns relative to the directory
+                            if directory != self.config.codebase_dir:
+                                relative_dir = directory.relative_to(
+                                    self.config.codebase_dir
+                                )
+                                if not line.startswith("/"):
+                                    line = f"{relative_dir}/{line}"
+                            patterns.append(line)
+            except (OSError, UnicodeDecodeError):
+                pass  # Skip files that can't be read
+
+        # Recursively check subdirectories for .gitignore files
+        # But only go one level deep to avoid performance issues
+        try:
+            for subdir in directory.iterdir():
+                if (
+                    subdir.is_dir()
+                    and subdir.name
+                    not in {".git", "__pycache__", ".mypy_cache", "node_modules"}
+                    and directory == self.config.codebase_dir
+                ):  # Only check immediate subdirectories
+                    self._add_gitignore_patterns(subdir, patterns)
+        except (OSError, PermissionError):
+            pass
 
     def _is_text_file(self, file_path: Path) -> bool:
         """Check if a file is likely a text file."""

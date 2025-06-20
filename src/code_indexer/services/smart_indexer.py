@@ -26,6 +26,36 @@ class ThroughputStats:
     is_throttling: bool = False
     throttle_reason: str = ""
     average_processing_time_per_file: float = 0.0
+    estimated_time_remaining_seconds: float = 0.0
+
+
+@dataclass
+class RollingAverage:
+    """Maintains a rolling average for more stable time estimates."""
+
+    def __init__(self, window_size: int = 10):
+        self.window_size = window_size
+        self.values: List[float] = []
+        self.sum = 0.0
+
+    def add(self, value: float):
+        """Add a new value to the rolling average."""
+        self.values.append(value)
+        self.sum += value
+
+        # Remove oldest value if window is full
+        if len(self.values) > self.window_size:
+            self.sum -= self.values.pop(0)
+
+    def get_average(self) -> float:
+        """Get the current rolling average."""
+        if not self.values:
+            return 0.0
+        return self.sum / len(self.values)
+
+    def get_count(self) -> int:
+        """Get the number of values in the window."""
+        return len(self.values)
 
 
 class SmartIndexer(GitAwareDocumentProcessor):
@@ -48,6 +78,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
         batch_size: int = 50,
         progress_callback: Optional[Callable] = None,
         safety_buffer_seconds: int = 60,
+        files_count_to_process: Optional[int] = None,
     ) -> ProcessingStats:
         """
         Smart indexing that automatically chooses between full and incremental indexing.
@@ -76,6 +107,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                     git_status,
                     provider_name,
                     model_name,
+                    files_count_to_process,
                 )
 
             # Determine indexing strategy
@@ -233,6 +265,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
         git_status: Dict[str, Any],
         provider_name: str,
         model_name: str,
+        files_count_to_process: Optional[int] = None,
     ) -> ProcessingStats:
         """Reconcile disk files with database contents and index missing/modified files."""
 
@@ -329,6 +362,29 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 info=f"Found {len(indexed_files_with_timestamps)} files in database collection '{collection_name}'",
             )
 
+            # Debug: Show sample database timestamp format
+            if indexed_files_with_timestamps:
+                sample_file, sample_timestamp = next(
+                    iter(indexed_files_with_timestamps.items())
+                )
+                try:
+                    timestamp_str = datetime.datetime.fromtimestamp(
+                        sample_timestamp
+                    ).strftime("%Y-%m-%d %H:%M:%S")
+                    progress_callback(
+                        0,
+                        0,
+                        Path(""),
+                        info=f"DEBUG: Sample DB timestamp for {sample_file.name}: {sample_timestamp} ({timestamp_str})",
+                    )
+                except (ValueError, OSError) as e:
+                    progress_callback(
+                        0,
+                        0,
+                        Path(""),
+                        info=f"DEBUG: Invalid DB timestamp for {sample_file.name}: {sample_timestamp} - {e}",
+                    )
+
         # Find files that need to be indexed (missing from DB or have newer timestamps)
         files_to_index = []
         modified_files = 0
@@ -353,6 +409,22 @@ class SmartIndexer(GitAwareDocumentProcessor):
                         files_to_index.append(file_path)
                         modified_files += 1
 
+                        # Debug: Log first few modified file timestamp comparisons
+                        if modified_files <= 3 and progress_callback:
+                            disk_time_str = datetime.datetime.fromtimestamp(
+                                disk_mtime
+                            ).strftime("%Y-%m-%d %H:%M:%S")
+                            db_time_str = datetime.datetime.fromtimestamp(
+                                db_timestamp
+                            ).strftime("%Y-%m-%d %H:%M:%S")
+                            diff = disk_mtime - db_timestamp
+                            progress_callback(
+                                0,
+                                0,
+                                Path(""),
+                                info=f"DEBUG: {file_path.name} - disk: {disk_time_str}, db: {db_time_str}, diff: {diff:.1f}s",
+                            )
+
             except OSError:
                 # File might have been deleted or is not accessible, skip it
                 continue
@@ -367,11 +439,23 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 )
             return ProcessingStats()
 
+        # Apply files count limit if specified (for testing)
+        if files_count_to_process is not None and files_to_index:
+            original_count = len(files_to_index)
+            files_to_index = files_to_index[:files_count_to_process]
+            if progress_callback and len(files_to_index) < original_count:
+                progress_callback(
+                    0,
+                    0,
+                    Path(""),
+                    info=f"TESTING: Limited processing to {len(files_to_index)} files (of {original_count} total)",
+                )
+
         # Show what we're reconciling
         if progress_callback:
             total_files = len(all_files_to_index)
-            already_indexed = len(indexed_files_with_timestamps)
             to_index = len(files_to_index)
+            already_indexed = total_files - to_index  # Files that are truly up-to-date
 
             status_parts = []
             if missing_files > 0:
@@ -379,13 +463,21 @@ class SmartIndexer(GitAwareDocumentProcessor):
             if modified_files > 0:
                 status_parts.append(f"{modified_files} modified")
 
-            status_str = " + ".join(status_parts) if status_parts else "files"
-            progress_callback(
-                0,
-                0,
-                Path(""),
-                info=f"Reconcile: {already_indexed}/{total_files} files up-to-date, indexing {to_index} {status_str}",
-            )
+            if status_parts:
+                status_str = " + ".join(status_parts)
+                progress_callback(
+                    0,
+                    0,
+                    Path(""),
+                    info=f"Reconcile: {already_indexed}/{total_files} files up-to-date, indexing {status_str}",
+                )
+            else:
+                progress_callback(
+                    0,
+                    0,
+                    Path(""),
+                    info=f"Reconcile: {already_indexed}/{total_files} files up-to-date, indexing {to_index} files",
+                )
 
         # Start/update indexing metadata
         if self.progressive_metadata.metadata["status"] != "in_progress":
@@ -475,13 +567,21 @@ class SmartIndexer(GitAwareDocumentProcessor):
 
         batch_points = []
 
-        # Throughput tracking
+        # Throughput tracking with rolling averages
         throughput_window_start = time.time()
         throughput_window_files = 0
         throughput_window_chunks = 0
         throughput_window_size = 60.0  # 1 minute window
         last_throttle_check = time.time()
         current_throughput_stats = ThroughputStats()  # Cache current stats
+
+        # Rolling averages for stable time estimation
+        files_per_min_rolling = RollingAverage(window_size=10)
+        chunks_per_min_rolling = RollingAverage(window_size=10)
+        processing_time_rolling = RollingAverage(window_size=15)
+
+        # Track processing time per file
+        individual_file_times = []
 
         def update_metadata(file_path: Path, chunks_count=0, failed=False):
             """Update metadata after each file."""
@@ -501,18 +601,34 @@ class SmartIndexer(GitAwareDocumentProcessor):
                     failed_files=1 if failed else 0,
                 )
 
-        def calculate_throughput() -> ThroughputStats:
-            """Calculate current throughput and detect throttling."""
+        def calculate_throughput(files_remaining: int = 0) -> ThroughputStats:
+            """Calculate current throughput and detect throttling with rolling averages."""
             current_time = time.time()
             elapsed = current_time - throughput_window_start
 
             if elapsed <= 0:
                 return ThroughputStats()
 
-            # Calculate rates per minute
-            files_per_min = (throughput_window_files / elapsed) * 60
-            chunks_per_min = (throughput_window_chunks / elapsed) * 60
-            avg_time_per_file = elapsed / max(throughput_window_files, 1)
+            # Calculate current window rates
+            current_files_per_min = (throughput_window_files / elapsed) * 60
+            current_chunks_per_min = (throughput_window_chunks / elapsed) * 60
+            current_avg_time_per_file = elapsed / max(throughput_window_files, 1)
+
+            # Add to rolling averages
+            if throughput_window_files > 0:
+                files_per_min_rolling.add(current_files_per_min)
+                chunks_per_min_rolling.add(current_chunks_per_min)
+                processing_time_rolling.add(current_avg_time_per_file)
+
+            # Use rolling averages for stability
+            stable_files_per_min = files_per_min_rolling.get_average()
+            stable_chunks_per_min = chunks_per_min_rolling.get_average()
+            stable_avg_time_per_file = processing_time_rolling.get_average()
+
+            # Calculate estimated time remaining using rolling average
+            estimated_time_remaining = 0.0
+            if stable_files_per_min > 0 and files_remaining > 0:
+                estimated_time_remaining = (files_remaining / stable_files_per_min) * 60
 
             # Detect throttling by checking embedding provider
             is_throttling = False
@@ -534,24 +650,26 @@ class SmartIndexer(GitAwareDocumentProcessor):
 
             # Detect slow processing (could indicate network issues or service slowdown)
             if (
-                avg_time_per_file > 5.0 and not is_throttling
+                stable_avg_time_per_file > 5.0 and not is_throttling
             ):  # More than 5 seconds per file
                 is_throttling = True
                 throttle_reason = (
-                    f"Slow processing detected ({avg_time_per_file:.1f}s/file)"
+                    f"Slow processing detected ({stable_avg_time_per_file:.1f}s/file)"
                 )
 
             return ThroughputStats(
-                files_per_minute=files_per_min,
-                chunks_per_minute=chunks_per_min,
-                embedding_requests_per_minute=chunks_per_min,  # Assuming 1 request per chunk
+                files_per_minute=stable_files_per_min,
+                chunks_per_minute=stable_chunks_per_min,
+                embedding_requests_per_minute=stable_chunks_per_min,  # Assuming 1 request per chunk
                 is_throttling=is_throttling,
                 throttle_reason=throttle_reason,
-                average_processing_time_per_file=avg_time_per_file,
+                average_processing_time_per_file=stable_avg_time_per_file,
+                estimated_time_remaining_seconds=estimated_time_remaining,
             )
 
         for i, file_path in enumerate(files):
             points = []
+            file_start_time = time.time()
 
             try:
                 # Process file
@@ -566,6 +684,10 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 stats.total_size += file_path.stat().st_size
                 throughput_window_files += 1
 
+                # Track individual file processing time
+                file_processing_time = time.time() - file_start_time
+                individual_file_times.append(file_processing_time)
+
                 # Process batch if full
                 if len(batch_points) >= batch_size:
                     if not self.qdrant_client.upsert_points(batch_points):
@@ -575,10 +697,20 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 # Update metadata after successful processing
                 update_metadata(file_path, chunks_count=len(points), failed=False)
 
-                # Calculate throughput every 30 seconds or every 50 files
+                # Calculate throughput: initially after first 5 files, then every 30 seconds or every 50 files
                 current_time = time.time()
-                if (current_time - last_throttle_check > 30) or (i % 50 == 0 and i > 0):
-                    current_throughput_stats = calculate_throughput()
+                should_calculate = False
+
+                if (
+                    i < 5
+                ):  # First 5 files - calculate more frequently for early estimates
+                    should_calculate = (i > 0) and (i % 2 == 0)
+                elif (current_time - last_throttle_check > 30) or (i % 50 == 0):
+                    should_calculate = True
+
+                if should_calculate:
+                    files_remaining = len(files) - (i + 1)
+                    current_throughput_stats = calculate_throughput(files_remaining)
                     last_throttle_check = current_time
 
                     # Reset throughput window if it's been more than window size
@@ -587,7 +719,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                         throughput_window_files = 0
                         throughput_window_chunks = 0
 
-                # Call progress callback with cached throughput info
+                # Call progress callback with enhanced info including time estimate
                 if progress_callback:
                     # Create enhanced info string from cached stats
                     info_parts = []
@@ -599,6 +731,24 @@ class SmartIndexer(GitAwareDocumentProcessor):
                         info_parts.append(
                             f"{current_throughput_stats.chunks_per_minute:.1f} chunks/min"
                         )
+
+                    # Add estimated time remaining
+                    if current_throughput_stats.estimated_time_remaining_seconds > 0:
+                        remaining_minutes = (
+                            current_throughput_stats.estimated_time_remaining_seconds
+                            / 60
+                        )
+                        if remaining_minutes >= 60:
+                            hours = int(remaining_minutes // 60)
+                            mins = int(remaining_minutes % 60)
+                            info_parts.append(f"⏱️ {hours}h{mins}m left")
+                        elif remaining_minutes >= 1:
+                            info_parts.append(f"⏱️ {remaining_minutes:.0f}m left")
+                        else:
+                            info_parts.append(
+                                f"⏱️ {current_throughput_stats.estimated_time_remaining_seconds:.0f}s left"
+                            )
+
                     if current_throughput_stats.is_throttling:
                         info_parts.append(
                             f"🐌 {current_throughput_stats.throttle_reason}"
@@ -617,6 +767,10 @@ class SmartIndexer(GitAwareDocumentProcessor):
 
             except Exception as e:
                 stats.failed_files += 1
+
+                # Track failed file processing time too
+                file_processing_time = time.time() - file_start_time
+                individual_file_times.append(file_processing_time)
 
                 # Update metadata even for failed files
                 update_metadata(file_path, chunks_count=0, failed=True)

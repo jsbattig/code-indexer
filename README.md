@@ -20,6 +20,7 @@ Includes incremental updates to keep your index current as code changes.
 - **Configurable** - Configuration options for different use cases
 - **Multi-Project Support** - Index multiple projects simultaneously without port conflicts
 - **Auto Project Detection** - Derives project names from git repositories or folder names
+- **AI-Powered Analysis** - Integrates with Claude Code SDK for intelligent code analysis using RAG
 
 ## Quick Start
 
@@ -33,7 +34,7 @@ Choose an installation method:
 sudo apt update && sudo apt install pipx
 
 # Install code-indexer using pipx (from latest release)
-pipx install https://github.com/jsbattig/code-indexer/releases/download/v0.0.25.0/code_indexer-0.0.25.0-py3-none-any.whl
+pipx install https://github.com/jsbattig/code-indexer/releases/download/v0.0.27.0/code_indexer-0.0.27.0-py3-none-any.whl
 
 # Or install directly from git (latest development)
 pipx install git+https://github.com/jsbattig/code-indexer.git
@@ -49,7 +50,7 @@ python3 -m venv ~/code-indexer-env
 source ~/code-indexer-env/bin/activate
 
 # Install from GitHub releases
-pip install https://github.com/jsbattig/code-indexer/releases/download/v0.0.25.0/code_indexer-0.0.25.0-py3-none-any.whl
+pip install https://github.com/jsbattig/code-indexer/releases/download/v0.0.27.0/code_indexer-0.0.27.0-py3-none-any.whl
 
 # Or install directly from git (latest development)
 pip install git+https://github.com/jsbattig/code-indexer.git
@@ -98,6 +99,10 @@ code-indexer index
 
 # Step 4: Search your code
 code-indexer query "authentication logic"
+
+# Step 5: AI-powered code analysis (requires Claude Code SDK)
+pip install claude-code-sdk
+code-indexer claude "How does authentication work in this app?"
 
 # Smart incremental indexing (automatically detects changes)
 code-indexer index
@@ -169,6 +174,23 @@ Options:
   --language TEXT         Filter by programming language
   --path TEXT            Filter by file path pattern
   --min-score FLOAT      Minimum similarity score (0.0-1.0)
+  --quiet, -q             Quiet mode - only show results, no headers
+```
+
+#### AI-Powered Code Analysis
+```bash
+code-indexer claude "your question about the code" [OPTIONS]
+
+Options:
+  --limit, -l INTEGER          Number of semantic search results (default: 10)
+  --context-lines, -c INTEGER  Lines of context around matches (default: 500)
+  --language TEXT              Filter by programming language
+  --path TEXT                  Filter by file path pattern
+  --min-score FLOAT            Minimum similarity score (0.0-1.0)
+  --max-turns INTEGER          Maximum Claude conversation turns (default: 5)
+  --no-explore                 Disable file exploration in Claude prompt
+  --no-stream                  Disable streaming (show results all at once)
+  --quiet, -q                  Quiet mode - only show results, no headers
 ```
 
 #### Check Status
@@ -204,6 +226,94 @@ code-indexer query "error handling" --min-score 0.8
 
 # Get more results
 code-indexer query "api endpoint" --limit 20
+
+# Quiet mode - just score, path, and content
+code-indexer query "function definition" --quiet
+```
+
+### Claude AI Analysis Examples
+
+```bash
+# Ask about code architecture
+code-indexer claude "How does authentication work in this application?"
+
+# Get implementation guidance
+code-indexer claude "How do I add a new API endpoint?" --language python
+
+# Debug issues
+code-indexer claude "Why might this error handling pattern fail?" --stream
+
+# Analyze specific areas
+code-indexer claude "Explain the database schema design" --path */models/*
+
+# Security analysis
+code-indexer claude "Find potential security vulnerabilities" --min-score 0.8
+
+# Code patterns and best practices
+code-indexer claude "What design patterns are used here?"
+
+# Quiet mode - just the analysis, no headers or metadata
+code-indexer claude "Explain this function" --quiet
+```
+
+## Claude AI Integration
+
+Code Indexer integrates with Claude Code SDK to provide AI-powered code analysis using RAG (Retrieval-Augmented Generation). This combines semantic search with Claude's advanced reasoning to answer complex questions about your codebase.
+
+### Setup Claude Integration
+
+```bash
+# Install Claude Code SDK
+pip install claude-code-sdk
+
+# Ensure your codebase is indexed
+code-indexer setup
+code-indexer index
+
+# Start asking questions about your code
+code-indexer claude "How does this application handle user authentication?"
+```
+
+### How It Works
+
+1. **Semantic Search**: Your question is converted to a vector embedding and searched against your indexed codebase
+2. **Context Extraction**: Relevant code sections are extracted with configurable context (default: 500 lines around each match)
+3. **RAG Analysis**: The context and your question are sent to Claude for intelligent analysis
+4. **Enhanced Exploration**: Claude can perform additional semantic searches to explore related concepts
+
+### Features
+
+- **Natural Language Queries**: Ask questions in plain English about your code
+- **Code-Aware Responses**: Claude understands code structure, patterns, and relationships
+- **Streaming Support**: Get responses as they're generated with `--stream`
+- **Smart Context**: Automatically extracts relevant code with proper context
+- **File Exploration**: Claude can explore referenced files for comprehensive analysis
+- **Git-Aware**: Respects your current branch and project context
+
+### Claude Analysis Capabilities
+
+- **Architecture Understanding**: "How is this application structured?"
+- **Implementation Guidance**: "How do I add a new feature to the user management system?"
+- **Code Review**: "What are potential issues with this error handling approach?"
+- **Security Analysis**: "Find potential security vulnerabilities in authentication"
+- **Best Practices**: "What design patterns are used and how can they be improved?"
+- **Debugging Help**: "Why might this code be causing memory leaks?"
+- **Cross-file Analysis**: "How do these components interact across the codebase?"
+
+### Advanced Options
+
+```bash
+# Focus on specific areas
+code-indexer claude "Explain the API design" --path */api/* --language python
+
+# High-precision analysis
+code-indexer claude "Find security issues" --min-score 0.9 --context-lines 800
+
+# Stream responses for long analysis
+code-indexer claude "Perform a complete architecture review" --stream --max-turns 10
+
+# Disable file exploration for focused answers
+code-indexer claude "What does this function do?" --no-explore --limit 3
 ```
 
 ## Smart Incremental Indexing

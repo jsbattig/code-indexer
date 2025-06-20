@@ -97,6 +97,8 @@ if pytest tests/ \
     --ignore=tests/test_data_cleaner_health.py \
     --ignore=tests/test_timeout_config.py \
     --ignore=tests/test_service_readiness.py \
+    --ignore=tests/test_claude_e2e.py \
+    --ignore=tests/test_reconcile_e2e.py \
     -m "not slow and not e2e and not real_api" \
     --cov=src/code_indexer --cov-report=xml --cov-report=term; then
     print_success "Unit tests passed"
@@ -124,6 +126,8 @@ echo "   • Dual engine tests"
 echo "   • Integration multiproject tests"
 echo "   • Docker manager tests"
 echo "   • Service health/cleanup tests"
+echo "   • Claude E2E tests (require Claude SDK and services)"
+echo "   • Reconcile E2E tests (require indexing services)"
 echo "   • Any tests marked as 'slow', 'e2e', or 'real_api'"
 echo ""
 echo "ℹ️  This matches the GitHub Actions workflow for fast CI execution"
