@@ -34,7 +34,7 @@ This directory contains the E2E testing framework for Code Indexer's embedding p
 # Check environment and run all available tests
 python tests/e2e_test_setup.py
 
-# Show setup guide only
+# Show configuration guide only
 python tests/e2e_test_setup.py guide
 
 # Check environment only

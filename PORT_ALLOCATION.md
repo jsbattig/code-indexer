@@ -1,8 +1,8 @@
 # Port Allocation Guide
 
-## Production Ports (code-indexer setup)
+## Production Ports (code-indexer start)
 
-When users run `code-indexer setup` in production, the following **fixed ports** are used:
+When users run `code-indexer start` in production, the following **fixed ports** are used:
 
 ### Standard Production Ports
 - **Ollama**: `11434` 
@@ -59,9 +59,9 @@ Where `offset = int(time.time()) % 1000` (0-999 based on current time)
 
 ## Examples
 
-### Production Setup Example
+### Production Start Example
 ```bash
-$ code-indexer setup
+$ code-indexer start
 # Creates containers:
 # - code-indexer-ollama (localhost:11434)
 # - code-indexer-qdrant (localhost:6333)

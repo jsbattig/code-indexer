@@ -238,7 +238,7 @@ class TestMultiProjectIntegration(unittest.TestCase):
         os.chdir(self.project1_path)
 
         try:
-            # Use CLI setup command
+            # Use CLI start command
             setup_result = subprocess.run(
                 [sys.executable, "-m", "code_indexer.cli", "setup", "--quiet"],
                 capture_output=True,
@@ -323,7 +323,7 @@ class TestMultiProjectIntegration(unittest.TestCase):
         os.chdir(self.project1_path)
 
         try:
-            # Use high-level CLI setup command
+            # Use high-level CLI start command
             setup_result = subprocess.run(
                 [sys.executable, "-m", "code_indexer.cli", "setup", "--quiet"],
                 capture_output=True,

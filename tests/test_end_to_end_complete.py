@@ -65,7 +65,7 @@ class TestEndToEndComplete:
             return False
 
     def setup_services(self):
-        """Set up services using code-indexer setup command"""
+        """Set up services using code-indexer start command"""
         try:
             # Go to a persistent setup directory for global services
             test_setup_dir = Path(__file__).parent / "global_setup"
@@ -75,10 +75,10 @@ class TestEndToEndComplete:
             try:
                 os.chdir(test_setup_dir)
 
-                # Run setup command to start global services
-                result = self.run_cli_command(["setup", "--quiet"], timeout=300)
+                # Run start command to start global services
+                result = self.run_cli_command(["start", "--quiet"], timeout=300)
                 if result.returncode != 0:
-                    raise RuntimeError(f"Setup failed: {result.stderr}")
+                    raise RuntimeError(f"Start failed: {result.stderr}")
 
                 # Wait for services to be ready using adaptive timeout
                 adaptive_timeout = self.docker_manager.get_adaptive_timeout(120)
@@ -95,7 +95,7 @@ class TestEndToEndComplete:
                 os.chdir(original_cwd)
 
         except Exception as e:
-            raise RuntimeError(f"Failed to setup services for e2e tests: {e}")
+            raise RuntimeError(f"Failed to start services for e2e tests: {e}")
 
     def cleanup_services(self):
         """Clean up services that we set up using high-level CLI commands"""
@@ -271,8 +271,8 @@ class TestEndToEndComplete:
             self.cleanup_all_data()
 
             # 1. Setup services for this test project
-            setup_result = self.run_cli_command(["setup", "--quiet"])
-            assert setup_result.returncode == 0, f"Setup failed: {setup_result.stderr}"
+            setup_result = self.run_cli_command(["start", "--quiet"])
+            assert setup_result.returncode == 0, f"Start failed: {setup_result.stderr}"
 
             # 2. Index the project
             result = self.run_cli_command(["index"])
@@ -370,7 +370,7 @@ class TestEndToEndComplete:
 
             # Setup and index project 1
             os.chdir(project1_path)
-            setup1_result = self.run_cli_command(["setup", "--quiet"])
+            setup1_result = self.run_cli_command(["start", "--quiet"])
             assert (
                 setup1_result.returncode == 0
             ), f"Project 1 setup failed: {setup1_result.stderr}"
@@ -383,7 +383,7 @@ class TestEndToEndComplete:
 
             # Setup and index project 2
             os.chdir(project2_path)
-            setup2_result = self.run_cli_command(["setup", "--quiet"])
+            setup2_result = self.run_cli_command(["start", "--quiet"])
             assert (
                 setup2_result.returncode == 0
             ), f"Project 2 setup failed: {setup2_result.stderr}"
@@ -524,8 +524,8 @@ class TestEndToEndComplete:
             ), "Clean should succeed even without containers"
 
             # Test index with setup first, then clean, then operations should fail
-            setup_result = self.run_cli_command(["setup", "--quiet"])
-            assert setup_result.returncode == 0, f"Setup failed: {setup_result.stderr}"
+            setup_result = self.run_cli_command(["start", "--quiet"])
+            assert setup_result.returncode == 0, f"Start failed: {setup_result.stderr}"
 
             result = self.run_cli_command(["index"])
             assert result.returncode == 0, f"Index failed: {result.stderr}"
@@ -551,7 +551,7 @@ class TestEndToEndComplete:
             # Setup and index both projects sequentially (concurrency testing should test application-level concurrency, not process-level)
             # Project 1
             os.chdir(project1_path)
-            setup1_result = self.run_cli_command(["setup", "--quiet"])
+            setup1_result = self.run_cli_command(["start", "--quiet"])
             assert (
                 setup1_result.returncode == 0
             ), f"Project 1 setup failed: {setup1_result.stderr}"

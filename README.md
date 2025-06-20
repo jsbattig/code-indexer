@@ -88,11 +88,11 @@ pipx automatically manages isolated environments for CLI tools, making `code-ind
 # Navigate to your codebase
 cd /path/to/your/project
 
-# Step 1: Initialize configuration (OPTIONAL - setup creates defaults if skipped)
+# Step 1: Initialize configuration (OPTIONAL - start creates defaults if skipped)
 code-indexer init
 
 # Step 2: Start services (creates default config if init was skipped)
-code-indexer setup
+code-indexer start
 
 # Step 3: Index your codebase
 code-indexer index
@@ -115,35 +115,35 @@ code-indexer watch
 
 ```bash
 # Quick start (skip init - uses defaults: Ollama + default settings)
-code-indexer setup
+code-indexer start
 code-indexer index
 code-indexer query "search terms"
 
-# VoyageAI setup (cloud embeddings)
+# VoyageAI configuration (cloud embeddings)
 export VOYAGE_API_KEY="your-api-key"
 code-indexer init --embedding-provider voyage-ai --embedding-model voyage-code-3
-code-indexer setup
+code-indexer start
 code-indexer index
 
 # Interactive configuration
-code-indexer init --interactive  # Guided setup with prompts
-code-indexer setup
+code-indexer init --interactive  # Guided configuration with prompts
+code-indexer start
 ```
 
 ## Usage
 
 > **🔥 Tip**: Use the short alias `cidx` instead of `code-indexer` for faster typing!  
-> Examples: `cidx setup`, `cidx index`, `cidx query "search terms"`
+> Examples: `cidx start`, `cidx index`, `cidx query "search terms"`
 
 ### Commands
 
-#### Setup Services
+#### Start Services
 ```bash
-code-indexer setup [--model MODEL_NAME] [--force-recreate] [--parallel-requests N] [--max-models N] [--queue-size N]
+code-indexer start [--model MODEL_NAME] [--force-recreate] [--parallel-requests N] [--max-models N] [--queue-size N]
 
 # Performance Examples:
-code-indexer setup --parallel-requests 2 --max-models 1  # Higher throughput
-code-indexer setup --queue-size 1024                    # Larger request queue
+code-indexer start --parallel-requests 2 --max-models 1  # Higher throughput
+code-indexer start --queue-size 1024                    # Larger request queue
 ```
 
 #### Index Codebase
@@ -270,7 +270,7 @@ Code Indexer integrates with Claude CLI to provide AI-powered code analysis usin
 # Follow instructions at: https://docs.anthropic.com/en/docs/claude-code
 
 # Ensure your codebase is indexed
-code-indexer setup
+code-indexer start
 code-indexer index
 
 # Start asking questions about your code
@@ -684,7 +684,7 @@ Code Indexer creates a `.code-indexer/config.json` file in your project director
 
 ### Performance Settings
 
-Configure Ollama performance through setup command parameters:
+Configure Ollama performance through start command parameters:
 
 - **--parallel-requests**: Number of parallel requests Ollama can handle (default: 1)
   - Config setting: `num_parallel`
@@ -695,13 +695,13 @@ Configure Ollama performance through setup command parameters:
 
 ```bash
 # Conservative (low resource usage)
-code-indexer setup --parallel-requests 1 --max-models 1 --queue-size 256
+code-indexer start --parallel-requests 1 --max-models 1 --queue-size 256
 
 # Balanced (recommended for most users)
-code-indexer setup --parallel-requests 2 --max-models 1 --queue-size 512
+code-indexer start --parallel-requests 2 --max-models 1 --queue-size 512
 
 # High throughput (powerful machines)
-code-indexer setup --parallel-requests 4 --max-models 1 --queue-size 1024
+code-indexer start --parallel-requests 4 --max-models 1 --queue-size 1024
 ```
 
 ## Embedding Providers
@@ -741,7 +741,7 @@ export VOYAGE_API_KEY="your_api_key_here"
 # Initialize with VoyageAI
 code-indexer init --embedding-provider voyage-ai
 
-# Or use interactive mode for guided setup
+# Or use interactive mode for guided configuration
 code-indexer init --interactive
 ```
 
@@ -933,7 +933,7 @@ docker logs code-indexer-qdrant
 
 # Restart services
 code-indexer clean
-code-indexer setup
+code-indexer start
 ```
 
 ### Search Not Working

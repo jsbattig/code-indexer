@@ -311,8 +311,8 @@ This is a test project for VoyageAI E2E testing.
             assert "build" in cleaner_config
             assert "cleaner" in cleaner_config["build"]["dockerfile"]
 
-    def test_voyage_ai_idempotent_setup(self):
-        """Test that setup command is idempotent for VoyageAI provider."""
+    def test_voyage_ai_idempotent_start(self):
+        """Test that start command is idempotent for VoyageAI provider."""
         # Set up VoyageAI API key
         os.environ["VOYAGE_API_KEY"] = "test_api_key_for_testing"
 

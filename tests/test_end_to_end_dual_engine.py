@@ -205,7 +205,7 @@ class TestAuthentication(unittest.TestCase):
         assert config_file.exists(), "init should create config file"
 
         # Step 2: User starts services
-        setup_args = ["setup", "--quiet"]
+        setup_args = ["start", "--quiet"]
         if force_docker:
             setup_args.append("--force-docker")
         self.run_cli_command(setup_args, timeout=180)
@@ -242,7 +242,7 @@ class TestAuthentication(unittest.TestCase):
         print(f"\n=== Testing clean command effectiveness with {engine_name} ===")
 
         # User starts services
-        setup_args = ["setup", "--quiet"]
+        setup_args = ["start", "--quiet"]
         if force_docker:
             setup_args.append("--force-docker")
         self.run_cli_command(setup_args, timeout=180)
@@ -288,7 +288,7 @@ class TestAuthentication(unittest.TestCase):
             pytest.skip(f"{engine_name} not available")
 
         # User starts services with specific engine
-        setup_args = ["setup", "--quiet"]
+        setup_args = ["start", "--quiet"]
         if force_docker:
             setup_args.append("--force-docker")
         self.run_cli_command(setup_args, timeout=180)
@@ -366,7 +366,7 @@ class TestAuthentication(unittest.TestCase):
 
         # Test Podman first
         print("Testing Podman...")
-        self.run_cli_command(["setup", "--quiet"], timeout=180)
+        self.run_cli_command(["start", "--quiet"], timeout=180)
         podman_status = self.run_cli_command(["status"])
         assert "✅" in podman_status.stdout, "Podman setup should work"
 
@@ -375,7 +375,7 @@ class TestAuthentication(unittest.TestCase):
 
         # Test Docker second
         print("Testing Docker...")
-        self.run_cli_command(["setup", "--force-docker", "--quiet"], timeout=180)
+        self.run_cli_command(["start", "--force-docker", "--quiet"], timeout=180)
         docker_status = self.run_cli_command(["status", "--force-docker"])
         assert "✅" in docker_status.stdout, "Docker setup should work"
 

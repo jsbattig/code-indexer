@@ -64,8 +64,13 @@ class ClaudeIntegrationService:
         Returns:
             Formatted prompt string for Claude
         """
+        # Determine exploration depth based on user query
+        exploration_depth = self._determine_exploration_depth(user_query)
+
         # Build semantic search tool instruction
-        tool_instruction = self._create_tool_instruction(enable_exploration)
+        tool_instruction = self._create_tool_instruction(
+            enable_exploration, exploration_depth
+        )
 
         # Build project context
         project_context = self._create_project_context(project_info)
@@ -80,6 +85,11 @@ class ClaudeIntegrationService:
         else:
             formatted_contexts = "No specific code contexts found for this query."
 
+        # Build exploration instructions based on depth
+        exploration_instructions = self._create_exploration_instructions(
+            exploration_depth
+        )
+
         # Build the complete prompt
         prompt = f"""You are an expert code analyst working with the {self.project_name or 'this'} codebase. You have access to semantic search capabilities and can explore files as needed.
 
@@ -93,45 +103,156 @@ USER QUESTION:
 SEMANTIC SEARCH RESULTS:
 {formatted_contexts}
 
-ANALYSIS INSTRUCTIONS:
-1. **Primary Analysis**: Base your answer on the provided semantic search results above - this should be your main source
-2. **Code References**: Include specific file paths and line numbers when referencing code
-3. **Limited Exploration**: Only explore files if directly referenced in the search results (imports, includes, etc.)
-4. **Stay Focused**: Keep exploration to ONE LEVEL DEEP - avoid broad codebase traversal
-5. **Quick Response**: Prioritize answering from provided context over extensive exploration
-6. **Examples**: Include concrete code examples from the search results when relevant
+{exploration_instructions}
 
-Focus on providing accurate, actionable insights based primarily on the provided search results. Use minimal, targeted exploration only when necessary to clarify the provided context."""
+Focus on providing accurate, actionable insights based primarily on the provided search results. Use exploration judiciously based on the analysis depth required."""
 
         return prompt
 
-    def _create_tool_instruction(self, enable_exploration: bool) -> str:
+    def _determine_exploration_depth(self, user_query: str) -> str:
+        """Determine exploration depth based on user query language.
+
+        Returns:
+            'none' - No exploration, use only provided context
+            'shallow' - One level deep exploration
+            'deep' - No limits on exploration depth
+        """
+        query_lower = user_query.lower()
+
+        # Quick response indicators
+        quick_indicators = ["quick", "fast", "brief", "summary", "simple"]
+        if any(indicator in query_lower for indicator in quick_indicators):
+            return "none"
+
+        # Deep analysis indicators
+        deep_indicators = [
+            "deep",
+            "detailed",
+            "accurate",
+            "precise",
+            "thorough",
+            "comprehensive",
+            "complete",
+            "exhaustive",
+            "in-depth",
+        ]
+        if any(indicator in query_lower for indicator in deep_indicators):
+            return "deep"
+
+        # Default to shallow exploration
+        return "shallow"
+
+    def _create_tool_instruction(
+        self, enable_exploration: bool, exploration_depth: str = "shallow"
+    ) -> str:
         """Create the semantic search tool instruction."""
-        if not enable_exploration:
+        if not enable_exploration or exploration_depth == "none":
             return ""
 
-        return """AVAILABLE TOOLS FOR LIMITED CODEBASE EXPLORATION:
+        base_tools = """AVAILABLE TOOLS FOR CODEBASE EXPLORATION:
+
+BUILT-IN SEMANTIC SEARCH TOOL:
+You have access to a powerful semantic search tool that can find related code:
+- `cidx query "search terms"` - Find semantically similar code throughout the codebase
+- `cidx query "search terms" --limit N` - Limit results to N matches (default: 10)
+- `cidx query "search terms" --language python` - Filter by specific language
+- `cidx query "search terms" --file-pattern "*.py"` - Filter by file pattern
+- `cidx query "search terms" --include-test` - Include test files in results
+- `cidx query "search terms" --exclude-dir node_modules` - Exclude specific directories
+
+QUERY TOOL RESULTS FORMAT:
+The cidx query tool returns results with:
+- **Relevance Score**: Similarity score (0.0-1.0, higher is more relevant)
+- **File Path**: Full path to the file containing the match
+- **Line Numbers**: Specific line range where the match was found
+- **Content**: The actual code/text that matched your search
+- **Context**: Surrounding code lines for better understanding
 
 READ-ONLY FILE SYSTEM TOOLS:
-You have access to these tools for exploring files referenced in the search results:
-- Read: Read any file mentioned in the search results or their imports
-- Glob: Find related files using specific patterns (e.g., "dirname/*.py")
+- Read: Read any file in the codebase
+- Glob: Find files using patterns (e.g., "src/**/*.py")  
 - Grep: Search for specific patterns in files
-- LS: List contents of directories containing the search result files
+- LS: List directory contents
+- Task: Delegate complex file searches
 
-EXPLORATION GUIDELINES (STAY FOCUSED):
-- Focus primarily on the provided search results context
-- Only explore files that are directly referenced in the search results (imports, includes, etc.)
-- Limit exploration to ONE LEVEL DEEP from the initial results
-- Read files that help clarify the search results, but avoid broad exploration
-- You cannot modify, edit, or execute any files (read-only access)
+NOTE: You cannot modify, edit, or execute any files (read-only access)"""
 
-FOCUSED EXPLORATION PATTERN:
-1. Analyze the provided search results first
-2. If needed, read files that are imported/referenced in those results
-3. Use Glob only for files in the same directory as search results
-4. Avoid deep directory traversal or broad searches
-5. Answer based primarily on provided context + minimal targeted exploration"""
+        if exploration_depth == "shallow":
+            return (
+                base_tools
+                + """
+
+EXPLORATION GUIDELINES (LIMITED DEPTH):
+- **Primary Focus**: Base analysis on provided semantic search results
+- **Smart Exploration**: Use your judgment to decide how deep to explore based on the user's question
+- **Prefer cidx**: When you need more code context, prioritize `cidx query` over other file exploration tools
+- **Be Selective**: Explore only what's necessary to provide a complete answer
+
+TOOL PREFERENCE ORDER (use in this priority):
+1. **cidx query** - PREFERRED for finding related code, implementations, and examples
+2. **Read** - For examining specific files identified by cidx or mentioned in search results  
+3. **Glob** - Only when you need to find files by patterns that cidx might miss
+4. **Grep** - Only for very specific text pattern searches within known files
+5. **LS** - Only when you need to understand directory structure
+6. **Task** - Only for complex multi-step file discovery that other tools can't handle
+
+EXPLORATION APPROACH:
+Use cidx query as your primary exploration tool. Other Claude Code tools (Read, Glob, Grep, LS, Task) are available but cidx query is specifically designed for semantic code discovery and should be your first choice for finding related code, implementations, patterns, and examples."""
+            )
+
+        else:  # exploration_depth == 'deep'
+            return (
+                base_tools
+                + """
+
+EXPLORATION GUIDELINES (UNLIMITED DEPTH):
+- **Comprehensive Analysis**: Explore thoroughly to provide detailed, accurate answers
+- **Smart Exploration**: Use your judgment to determine how extensively to explore based on the user's question
+- **Prefer cidx**: Leverage `cidx query` extensively as your primary exploration tool
+- **No Limits**: Explore as deeply as needed to provide complete insights
+
+TOOL PREFERENCE ORDER (use in this priority):
+1. **cidx query** - PREFERRED for finding all related code, implementations, patterns, and examples
+2. **Read** - For examining specific files identified by cidx or for detailed code analysis
+3. **Glob** - When you need to find files by patterns that semantic search might miss  
+4. **Grep** - For specific text pattern searches within files
+5. **LS** - When you need to understand directory structure and organization
+6. **Task** - For complex multi-step file discovery or analysis workflows
+
+EXPLORATION APPROACH:
+Use cidx query extensively as your primary exploration tool to discover related code throughout the codebase. Other Claude Code tools (Read, Glob, Grep, LS, Task) are available for specific needs, but cidx query's semantic search capabilities make it the most powerful tool for code discovery and should be your go-to choice."""
+            )
+
+    def _create_exploration_instructions(self, exploration_depth: str) -> str:
+        """Create analysis instructions based on exploration depth."""
+        if exploration_depth == "none":
+            return """ANALYSIS INSTRUCTIONS:
+1. **Provided Context Only**: Base your entire answer on the semantic search results provided above
+2. **No Exploration**: Do not use any file exploration tools (Read, Glob, Grep, cidx query)
+3. **Code References**: Include specific file paths and line numbers from the provided results
+4. **Quick Response**: Provide a direct answer based solely on the given context
+5. **Acknowledge Limitations**: If the provided context is insufficient, state what additional information would be needed"""
+
+        elif exploration_depth == "shallow":
+            return """ANALYSIS INSTRUCTIONS:
+1. **Primary Analysis**: Base your answer on the provided semantic search results above - this should be your main source
+2. **Code References**: Include specific file paths and line numbers when referencing code
+3. **Limited Exploration**: Only explore files directly referenced in the search results (imports, includes, etc.)
+4. **One Level Deep**: Keep exploration to ONE LEVEL DEEP - avoid broad codebase traversal
+5. **Targeted cidx**: Use `cidx query` sparingly for clarifying specific concepts only
+6. **Focused Response**: Prioritize answering from provided context over extensive exploration
+7. **Examples**: Include concrete code examples from the search results when relevant"""
+
+        else:  # exploration_depth == 'deep'
+            return """ANALYSIS INSTRUCTIONS:
+1. **Comprehensive Analysis**: Explore the codebase thoroughly to provide detailed, accurate insights
+2. **Multi-Source**: Use provided search results as starting point, then explore extensively
+3. **Deep Exploration**: Follow all references, dependencies, and related code without depth limits
+4. **Extensive cidx Usage**: Use `cidx query` to find all related implementations, patterns, and usages
+5. **Cross-Reference**: Look for relationships between different parts of the codebase
+6. **Complete Context**: Read relevant files, tests, documentation, and examples
+7. **Detailed Examples**: Provide comprehensive code examples and explanations
+8. **Thorough Documentation**: Include file paths, line numbers, and full context for all references"""
 
     def _create_project_context(self, project_info: Optional[Dict[str, Any]]) -> str:
         """Create project context information."""
@@ -196,18 +317,6 @@ FOCUSED EXPLORATION PATTERN:
                 project_info=project_info,
                 enable_exploration=enable_exploration,
             )
-
-            # Enhance with cidx tool capability
-            prompt += """
-
-ADDITIONAL SEMANTIC SEARCH CAPABILITY:
-This codebase includes a built-in semantic search tool accessible via Bash:
-- `cidx query "search terms"` - Find semantically similar code
-- `cidx query "search terms" --limit 5` - Limit results  
-- `cidx query "search terms" --language python` - Filter by language
-- `cidx --help` - See all available commands
-
-Use this when you need to find related code that might not be in the initial context."""
 
             try:
                 # Run Claude CLI directly with prompt as stdin
@@ -301,18 +410,6 @@ Use this when you need to find related code that might not be in the initial con
                 project_info=project_info,
                 enable_exploration=enable_exploration,
             )
-
-            # Enhance with cidx tool capability
-            prompt += """
-
-ADDITIONAL SEMANTIC SEARCH CAPABILITY:
-This codebase includes a built-in semantic search tool accessible via Bash:
-- `cidx query "search terms"` - Find semantically similar code
-- `cidx query "search terms" --limit 5` - Limit results  
-- `cidx query "search terms" --language python` - Filter by language
-- `cidx --help` - See all available commands
-
-Use this when you need to find related code that might not be in the initial context."""
 
             # Run Claude CLI with streaming JSON output
             cmd = [

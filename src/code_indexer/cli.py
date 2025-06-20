@@ -207,17 +207,17 @@ def cli(ctx, config: Optional[str], verbose: bool, path: Optional[str]):
     """AI-powered semantic code search with local models.
 
     \b
-    TIP: Use 'cidx' as a short alias for 'code-indexer' (e.g., 'cidx setup')
+    TIP: Use 'cidx' as a short alias for 'code-indexer' (e.g., 'cidx start')
 
     \b
     GETTING STARTED:
-      1. code-indexer setup     # Start services (creates default config if needed)
+      1. code-indexer start     # Start services (creates default config if needed)
       2. code-indexer index     # Smart incremental indexing
       3. code-indexer query "search term"  # Search your code
 
       OR for custom configuration (init is optional):
       1. code-indexer init      # OPTIONAL: Initialize with custom settings
-      2. code-indexer setup     # Start services (Ollama + Qdrant)
+      2. code-indexer start     # Start services (Ollama + Qdrant)
       3. code-indexer index     # Smart incremental indexing
       4. code-indexer query "search term"  # Search your code
 
@@ -319,7 +319,7 @@ def init(
     Creates .code-indexer/config.json with project configuration.
 
     \b
-    NOTE: This command is optional. If you skip init and run 'setup' directly,
+    NOTE: This command is optional. If you skip init and run 'start' directly,
     a default configuration will be created automatically with Ollama provider
     and standard settings. Only use init if you want to customize settings.
 
@@ -342,7 +342,7 @@ def init(
 
     \b
     EXAMPLES:
-      code-indexer init                                    # Basic setup with Ollama
+      code-indexer init                                    # Basic initialization with Ollama
       code-indexer init --interactive                     # Interactive configuration
       code-indexer init --embedding-provider voyage-ai    # Use VoyageAI
       code-indexer init --voyage-model voyage-large-2     # Specify VoyageAI model
@@ -480,7 +480,7 @@ def init(
                 f"🤖 Embedding provider: Ollama (model: {config.ollama.model})"
             )
 
-        console.print("🔧 Run 'code-indexer setup' to start services")
+        console.print("🔧 Run 'code-indexer start' to start services")
 
     except Exception as e:
         console.print(f"❌ Failed to initialize: {e}", style="red")
@@ -513,7 +513,7 @@ def init(
     help="Maximum request queue size (default: 512)",
 )
 @click.pass_context
-def setup(
+def start(
     ctx,
     model: Optional[str],
     force_recreate: bool,
@@ -523,16 +523,22 @@ def setup(
     max_models: int,
     queue_size: int,
 ):
-    """Setup and start required services based on embedding provider.
+    """Intelligently start required services, performing setup if needed.
 
     \b
-    Intelligently starts only the Docker containers needed for your configuration:
+    SMART BEHAVIOR - automatically handles different scenarios:
+    • If containers don't exist: performs full setup + start
+    • If containers exist but stopped: starts existing containers
+    • If containers already running: verifies health and reports status
+
+    \b
+    SERVICES (started based on embedding provider):
     • Qdrant: Vector database (always required)
     • Ollama: Local embedding models (only if using ollama provider)
     • Data Cleaner: Text processing service (always required)
 
     \b
-    WHAT HAPPENS:
+    WHAT HAPPENS (when full setup is needed):
       1. Creates default configuration (.code-indexer/config.json + README.md)
       2. Detects required services based on embedding provider
       3. Creates Docker Compose configuration for only required services
@@ -549,7 +555,7 @@ def setup(
       • Network access to download images/models
 
     \b
-    SERVICES (provider-dependent):
+    SERVICE ENDPOINTS (provider-dependent):
       • Qdrant: http://localhost:6333 (vector database, always started)
       • Ollama: http://localhost:11434 (local AI embeddings, only if provider=ollama)
       • Data Cleaner: Text processing service (always started)
@@ -568,15 +574,17 @@ def setup(
 
     \b
     EXAMPLES:
-      code-indexer setup                    # Basic setup (detects required services)
-      code-indexer setup --quiet           # Silent mode
-      code-indexer setup --force-recreate  # Reset containers
-      code-indexer setup --force-docker    # Force use Docker instead of Podman
-      code-indexer setup -m all-minilm-l6-v2  # Different Ollama model
-      code-indexer setup --parallel-requests 2 --max-models 1  # Multi-client Ollama setup
-      code-indexer setup --queue-size 1024 # Larger Ollama request queue
+      code-indexer start                     # Smart start (detects what's needed)
+      code-indexer start --quiet            # Silent mode
+      code-indexer start --force-recreate   # Force recreate containers
+      code-indexer start --force-docker     # Force use Docker instead of Podman
+      code-indexer start -m all-minilm-l6-v2  # Different Ollama model
+      code-indexer start --parallel-requests 2 --max-models 1  # Multi-client Ollama setup
+      code-indexer start --queue-size 1024  # Larger Ollama request queue
 
-    The command is idempotent - running it multiple times is safe and will only start missing services.
+    \b
+    The command is fully idempotent - running it multiple times is safe and will only
+    start missing services or perform setup if needed.
     """
     config_manager = ctx.obj["config_manager"]
 
@@ -768,11 +776,11 @@ def setup(
             setup_console.print("❌ Failed to create Qdrant collection", style="red")
             sys.exit(1)
 
-        setup_console.print("✅ Setup completed successfully!", style="green")
+        setup_console.print("✅ Services started successfully!", style="green")
         setup_console.print(f"🔧 Ready to index codebase at: {config.codebase_dir}")
 
     except Exception as e:
-        setup_console.print(f"❌ Setup failed: {e}", style="red")
+        setup_console.print(f"❌ Start failed: {e}", style="red")
         sys.exit(1)
 
 
@@ -870,14 +878,14 @@ def index(
         # Health checks
         if not embedding_provider.health_check():
             console.print(
-                f"❌ {embedding_provider.get_provider_name().title()} service not available. Run 'setup' first.",
+                f"❌ {embedding_provider.get_provider_name().title()} service not available. Run 'start' first.",
                 style="red",
             )
             sys.exit(1)
 
         if not qdrant_client.health_check():
             console.print(
-                "❌ Qdrant service not available. Run 'setup' first.", style="red"
+                "❌ Qdrant service not available. Run 'start' first.", style="red"
             )
             sys.exit(1)
 
@@ -1777,7 +1785,7 @@ def claude(
     \b
     REQUIREMENTS:
       • Claude CLI must be installed: https://docs.anthropic.com/en/docs/claude-code
-      • Services must be running: code-indexer setup
+      • Services must be running: code-indexer start
       • Codebase must be indexed: code-indexer index
 
     Results include Claude's analysis plus metadata about contexts used.
@@ -1804,14 +1812,14 @@ def claude(
         # Health checks
         if not embedding_provider.health_check():
             console.print(
-                f"❌ {embedding_provider.get_provider_name().title()} service not available. Run 'setup' first.",
+                f"❌ {embedding_provider.get_provider_name().title()} service not available. Run 'start' first.",
                 style="red",
             )
             sys.exit(1)
 
         if not qdrant_client.health_check():
             console.print(
-                "❌ Qdrant service not available. Run 'setup' first.", style="red"
+                "❌ Qdrant service not available. Run 'start' first.", style="red"
             )
             sys.exit(1)
 
@@ -2078,7 +2086,7 @@ def status(ctx, force_docker: bool):
     """Show status of services and index.
 
     \b
-    Displays comprehensive information about your code-indexer setup:
+    Displays comprehensive information about your code-indexer installation:
 
     \b
     SERVICE STATUS:
@@ -2108,7 +2116,7 @@ def status(ctx, force_docker: bool):
       📊 Index: 1,234 files, 5,678 chunks
       💾 Storage: 45.2MB, optimized
 
-    Use this command to verify your setup and troubleshoot issues.
+    Use this command to verify your installation and troubleshoot issues.
     """
     config_manager = ctx.obj["config_manager"]
 
@@ -2515,113 +2523,6 @@ def clean(
     "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
 )
 @click.pass_context
-def start(ctx, force_docker: bool):
-    """Start code indexing services without recreating containers.
-
-    \b
-    Starts existing Docker containers for Ollama and Qdrant services,
-    preserving all data and configuration. Can be run from any subfolder
-    of an indexed project.
-
-    \b
-    WHAT IT DOES:
-      • Finds project configuration by walking up directory tree
-      • Starts existing Docker containers (Ollama + Qdrant)
-      • Preserves all indexed data and settings
-      • Works from any subfolder within the indexed project
-
-    \b
-    DATA PRESERVATION:
-      • All indexed code vectors remain intact
-      • Project configuration is preserved
-      • Service state and settings are maintained
-      • No re-downloading of models required
-
-    \b
-    REQUIREMENTS:
-      • Services must have been set up previously with 'setup' command
-      • .code-indexer/config.json must exist in project tree
-      • Docker/Podman containers must exist (not deleted)
-
-    \b
-    EXAMPLES:
-      cd /path/to/my/project/src/components
-      code-indexer start                    # Works from any subfolder
-      code-indexer start --force-docker     # Force Docker instead of Podman
-
-    \b
-    USE CASES:
-      • Resume work after machine restart
-      • Start services after manual shutdown
-      • Restart services after system updates
-      • Continue indexing session from any project folder
-
-    This is faster than 'setup' as it doesn't recreate containers or download models.
-    """
-    try:
-        # Use configuration from CLI context
-        config_manager = ctx.obj["config_manager"]
-        config_path = config_manager.config_path
-
-        if not config_path or not config_path.exists():
-            console.print(
-                "❌ No .code-indexer/config.json found in current directory tree",
-                style="red",
-            )
-            console.print(
-                "💡 Run 'code-indexer setup' from your project root first",
-                style="yellow",
-            )
-            sys.exit(1)
-
-        # Load configuration
-        config = config_manager.load()
-        console.print(f"📁 Found configuration: {config_path}")
-        console.print(f"🏗️  Project directory: {config.codebase_dir}")
-
-        # Initialize Docker manager
-        docker_manager = DockerManager(
-            console, force_docker=force_docker, main_config=config.model_dump()
-        )
-
-        # Check if services exist
-        status = docker_manager.get_service_status()
-        if status["status"] == "not_configured":
-            console.print(
-                "❌ Services not configured. Run 'code-indexer setup' first",
-                style="red",
-            )
-            sys.exit(1)
-
-        # Start services
-        console.print("🚀 Starting code indexing services...")
-        if docker_manager.start_services(recreate=False):
-            # Wait for services to be ready
-            if docker_manager.wait_for_services():
-                console.print("✅ Services started successfully!", style="green")
-                console.print(f"🔧 Ready to use from: {config.codebase_dir}")
-                console.print(
-                    "💡 Use 'code-indexer query \"search terms\"' to search your code"
-                )
-            else:
-                console.print(
-                    "❌ Services started but are not responding properly", style="red"
-                )
-                sys.exit(1)
-        else:
-            console.print("❌ Failed to start services", style="red")
-            sys.exit(1)
-
-    except Exception as e:
-        console.print(f"❌ Start failed: {e}", style="red")
-        sys.exit(1)
-
-
-@cli.command()
-@click.option(
-    "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
-)
-@click.pass_context
 def stop(ctx, force_docker: bool):
     """Stop code indexing services while preserving all data.
 
@@ -2667,7 +2568,7 @@ def stop(ctx, force_docker: bool):
     \b
     RESTARTING:
       Use 'code-indexer start' to resume services with all data intact.
-      Much faster than running 'setup' again.
+      Much faster than running 'start' again.
     """
     try:
         # Use configuration from CLI context

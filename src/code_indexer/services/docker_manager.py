@@ -167,45 +167,53 @@ class DockerManager:
         return required_services
 
     def _container_exists(self, service_name: str) -> bool:
-        """Check if a container exists."""
-        self.get_container_name(service_name)
-        compose_cmd = self.get_compose_command()
+        """Check if a container exists using direct container engine commands."""
+        container_name = self.get_container_name(service_name)
+        container_engine = "docker" if self.force_docker else "podman"
 
         try:
-            # Try both container inspection and compose ps
-            cmd = compose_cmd + [
-                "-f",
-                str(self.compose_file),
-                "-p",
-                self.project_name,
-                "ps",
-                "-q",
-                service_name,
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            return result.returncode == 0 and bool(result.stdout.strip())
+            # Use direct container engine command to check existence
+            result = subprocess.run(
+                [
+                    container_engine,
+                    "ps",
+                    "-a",
+                    "--filter",
+                    f"name={container_name}",
+                    "--format",
+                    "{{.Names}}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            return result.returncode == 0 and container_name in result.stdout
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
 
     def _container_running(self, service_name: str) -> bool:
-        """Check if a container is running."""
-        self.get_container_name(service_name)
-        compose_cmd = self.get_compose_command()
+        """Check if a container is running using direct container engine commands."""
+        container_name = self.get_container_name(service_name)
+        container_engine = "docker" if self.force_docker else "podman"
 
         try:
-            cmd = compose_cmd + [
-                "-f",
-                str(self.compose_file),
-                "-p",
-                self.project_name,
-                "ps",
-                "--filter",
-                "status=running",
-                "-q",
-                service_name,
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            return result.returncode == 0 and bool(result.stdout.strip())
+            # Use direct container engine command to check if running
+            result = subprocess.run(
+                [
+                    container_engine,
+                    "ps",
+                    "--filter",
+                    f"name={container_name}",
+                    "--filter",
+                    "status=running",
+                    "--format",
+                    "{{.Names}}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            return result.returncode == 0 and container_name in result.stdout
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
 
@@ -506,107 +514,179 @@ class DockerManager:
             )
 
         try:
-            # Build the command - only start required services
-            cmd = compose_cmd + [
-                "-f",
-                str(self.compose_file),
-                "-p",
-                self.project_name,
-                "up",
-                "-d",
+            # Determine which services need to be created vs started
+            services_to_create = [
+                service
+                for service, state in service_states.items()
+                if not state["exists"] and service in services_needing_start
+            ]
+            services_to_start = [
+                service
+                for service, state in service_states.items()
+                if state["exists"]
+                and not state["running"]
+                and service in services_needing_start
             ]
 
-            # Add service names to only start required services
-            cmd.extend(required_services)
-
+            # If force recreate, treat all required services as needing creation
             if recreate:
-                cmd.append("--force-recreate")
+                services_to_create = list(required_services)
+                services_to_start = []
 
-            self.console.print(
-                f"🚀 Starting services: {' '.join(services_needing_start)}"
-            )
+            services_to_show = required_services if recreate else services_needing_start
+            self.console.print(f"🚀 Starting services: {' '.join(services_to_show)}")
 
-            # Execute with real-time output
+            # First, start existing stopped containers
+            if services_to_start:
+                start_cmd = (
+                    compose_cmd
+                    + ["-f", str(self.compose_file), "-p", self.project_name, "start"]
+                    + services_to_start
+                )
+
+                self.console.print(
+                    f"🔄 Starting existing containers: {' '.join(services_to_start)}"
+                )
+                start_result = subprocess.run(
+                    start_cmd, capture_output=True, text=True, timeout=300
+                )
+                if start_result.returncode != 0:
+                    self.console.print(
+                        f"❌ Failed to start existing services: {start_result.stderr}",
+                        style="red",
+                    )
+                    if start_result.stdout:
+                        self.console.print(
+                            f"stdout: {start_result.stdout}", style="dim"
+                        )
+                    return False
+                else:
+                    self.console.print(
+                        f"✅ Started existing containers: {' '.join(services_to_start)}"
+                    )
+                    if start_result.stdout.strip():
+                        self.console.print(
+                            f"Output: {start_result.stdout.strip()}", style="dim"
+                        )
+
+            # Then, create new containers if needed
+            if services_to_create:
+                cmd = (
+                    compose_cmd
+                    + [
+                        "-f",
+                        str(self.compose_file),
+                        "-p",
+                        self.project_name,
+                        "up",
+                        "-d",
+                    ]
+                    + services_to_create
+                )
+
+                if recreate:
+                    cmd.append("--force-recreate")
+            else:
+                # No services to create, we're done
+                if services_to_start:
+                    self.console.print("✅ Services started successfully in 0s")
+                    return True
+                cmd = None
+
+            # Execute with real-time output (only if we have containers to create)
             import time
 
             start_time = time.time()
 
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                universal_newlines=True,
-            )
+            if cmd is not None:
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    universal_newlines=True,
+                )
+            else:
+                process = None
 
-            output_lines = []
-            last_progress_time = time.time()
+            if process is not None:
+                output_lines = []
+                last_progress_time = time.time()
 
-            while True:
-                if process.stdout is None:
-                    break
-                line = process.stdout.readline()
-                if line:
-                    clean_line = line.strip()
-                    if clean_line:
-                        if any(
-                            keyword in clean_line.lower()
-                            for keyword in ["pulling", "downloading", "extracting"]
-                        ):
-                            self.console.print(f"⏳ {clean_line}", style="yellow")
-                        elif (
-                            "done" in clean_line.lower()
-                            or "complete" in clean_line.lower()
-                        ):
-                            self.console.print(f"✅ {clean_line}", style="green")
-                        elif (
-                            "error" in clean_line.lower()
-                            or "failed" in clean_line.lower()
-                        ):
-                            self.console.print(f"❌ {clean_line}", style="red")
-                        else:
-                            self.console.print(f"📋 {clean_line}")
-                        output_lines.append(clean_line)
-                    last_progress_time = time.time()
-                elif process.poll() is not None:
-                    break
+                while True:
+                    if process.stdout is None:
+                        break
+                    line = process.stdout.readline()
+                    if line:
+                        clean_line = line.strip()
+                        if clean_line:
+                            if any(
+                                keyword in clean_line.lower()
+                                for keyword in ["pulling", "downloading", "extracting"]
+                            ):
+                                self.console.print(f"⏳ {clean_line}", style="yellow")
+                            elif (
+                                "done" in clean_line.lower()
+                                or "complete" in clean_line.lower()
+                            ):
+                                self.console.print(f"✅ {clean_line}", style="green")
+                            elif (
+                                "error" in clean_line.lower()
+                                or "failed" in clean_line.lower()
+                            ):
+                                self.console.print(f"❌ {clean_line}", style="red")
+                            else:
+                                self.console.print(f"📋 {clean_line}")
+                            output_lines.append(clean_line)
+                        last_progress_time = time.time()
+                    elif process.poll() is not None:
+                        break
+                    else:
+                        current_time = time.time()
+                        if current_time - last_progress_time > 30:
+                            elapsed = int(current_time - start_time)
+                            self.console.print(
+                                f"⏱️  Still working... ({elapsed}s elapsed)",
+                                style="blue",
+                            )
+                            last_progress_time = current_time
+                        time.sleep(0.1)
+
+                return_code = process.wait(timeout=600)
+                elapsed = int(time.time() - start_time)
+
+                if return_code == 0:
+                    self.console.print(
+                        f"✅ Services started successfully in {elapsed}s", style="green"
+                    )
+                    return True
                 else:
-                    current_time = time.time()
-                    if current_time - last_progress_time > 30:
-                        elapsed = int(current_time - start_time)
-                        self.console.print(
-                            f"⏱️  Still working... ({elapsed}s elapsed)", style="blue"
-                        )
-                        last_progress_time = current_time
-                    time.sleep(0.1)
-
-            return_code = process.wait(timeout=600)
-            elapsed = int(time.time() - start_time)
-
-            if return_code == 0:
+                    self.console.print(
+                        f"❌ Failed to start services (exit code: {return_code})",
+                        style="red",
+                    )
+                    if output_lines:
+                        self.console.print("Last few lines of output:", style="yellow")
+                        for line in output_lines[-5:]:
+                            self.console.print(f"  {line}", style="dim")
+                    return False
+            else:
+                # No containers to create, just started existing ones
+                elapsed = int(time.time() - start_time)
                 self.console.print(
                     f"✅ Services started successfully in {elapsed}s", style="green"
                 )
                 return True
-            else:
-                self.console.print(
-                    f"❌ Failed to start services (exit code: {return_code})",
-                    style="red",
-                )
-                if output_lines:
-                    self.console.print("Last few lines of output:", style="yellow")
-                    for line in output_lines[-5:]:
-                        self.console.print(f"  {line}", style="dim")
-                return False
 
         except subprocess.TimeoutExpired:
             self.console.print("❌ Timeout starting services (10 minutes)", style="red")
-            try:
-                process.terminate()
-                process.wait(timeout=10)
-            except Exception:
-                process.kill()
+            if process is not None:
+                try:
+                    process.terminate()
+                    process.wait(timeout=10)
+                except Exception:
+                    process.kill()
             return False
         except Exception as e:
             self.console.print(f"❌ Error starting services: {e}", style="red")
@@ -878,6 +958,9 @@ class DockerManager:
         """Wait for services to be healthy using retry logic with exponential backoff."""
         import requests  # type: ignore
 
+        # Get list of required services dynamically
+        required_services = self.get_required_services()
+
         # Use adaptive timeout if default timeout is requested
         if timeout == 120:  # Default timeout
             timeout = self.get_adaptive_timeout(timeout)
@@ -888,55 +971,81 @@ class DockerManager:
 
         start_time = time.time()
         attempt = 1
-        last_status = {"ollama": "unknown", "qdrant": "unknown"}
+        last_status = {service: "unknown" for service in required_services}
 
         while time.time() - start_time < timeout:
-            ollama_healthy = False
-            qdrant_healthy = False
             current_status = {}
+            services_healthy = {}
 
-            # Check ollama service with detailed error reporting
-            try:
-                ollama_url = self._get_service_url("ollama")
-                response = requests.get(f"{ollama_url}/api/tags", timeout=5)
-                if response.status_code == 200:
-                    ollama_healthy = True
-                    current_status["ollama"] = "ready"
-                else:
-                    current_status["ollama"] = f"http_{response.status_code}"
-            except requests.exceptions.ConnectionError:
-                current_status["ollama"] = "connection_refused"
-            except requests.exceptions.Timeout:
-                current_status["ollama"] = "timeout"
-            except Exception as e:
-                current_status["ollama"] = f"error_{type(e).__name__}"
+            # Check each required service
+            for service_name in required_services:
+                services_healthy[service_name] = False
 
-            # Check qdrant service with detailed error reporting
-            try:
-                qdrant_url = self._get_service_url("qdrant")
-                response = requests.get(f"{qdrant_url}/", timeout=5)
-                if response.status_code == 200:
-                    qdrant_healthy = True
-                    current_status["qdrant"] = "ready"
-                else:
-                    current_status["qdrant"] = f"http_{response.status_code}"
-            except requests.exceptions.ConnectionError:
-                current_status["qdrant"] = "connection_refused"
-            except requests.exceptions.Timeout:
-                current_status["qdrant"] = "timeout"
-            except Exception as e:
-                current_status["qdrant"] = f"error_{type(e).__name__}"
+                if service_name == "ollama":
+                    # Check ollama service with detailed error reporting
+                    try:
+                        ollama_url = self._get_service_url("ollama")
+                        response = requests.get(f"{ollama_url}/api/tags", timeout=5)
+                        if response.status_code == 200:
+                            services_healthy[service_name] = True
+                            current_status[service_name] = "ready"
+                        else:
+                            current_status[service_name] = (
+                                f"http_{response.status_code}"
+                            )
+                    except requests.exceptions.ConnectionError:
+                        current_status[service_name] = "connection_refused"
+                    except requests.exceptions.Timeout:
+                        current_status[service_name] = "timeout"
+                    except Exception as e:
+                        current_status[service_name] = f"error_{type(e).__name__}"
+
+                elif service_name == "qdrant":
+                    # Check qdrant service with detailed error reporting
+                    try:
+                        qdrant_url = self._get_service_url("qdrant")
+                        response = requests.get(f"{qdrant_url}/", timeout=5)
+                        if response.status_code == 200:
+                            services_healthy[service_name] = True
+                            current_status[service_name] = "ready"
+                        else:
+                            current_status[service_name] = (
+                                f"http_{response.status_code}"
+                            )
+                    except requests.exceptions.ConnectionError:
+                        current_status[service_name] = "connection_refused"
+                    except requests.exceptions.Timeout:
+                        current_status[service_name] = "timeout"
+                    except Exception as e:
+                        current_status[service_name] = f"error_{type(e).__name__}"
+
+                elif service_name == "data-cleaner":
+                    # For data-cleaner, just check if container is running since it doesn't have HTTP endpoint
+                    try:
+                        if self._container_exists(
+                            service_name
+                        ) and self._container_running(service_name):
+                            services_healthy[service_name] = True
+                            current_status[service_name] = "ready"
+                        else:
+                            current_status[service_name] = "not_running"
+                    except Exception as e:
+                        current_status[service_name] = f"error_{type(e).__name__}"
 
             # Log status changes for debugging
             if current_status != last_status:
                 elapsed = int(time.time() - start_time)
+                status_parts = [
+                    f"{service}={status}" for service, status in current_status.items()
+                ]
                 self.console.print(
-                    f"[{elapsed:3d}s] Attempt {attempt:2d}: ollama={current_status['ollama']}, qdrant={current_status['qdrant']}",
+                    f"[{elapsed:3d}s] Attempt {attempt:2d}: {', '.join(status_parts)}",
                     style="dim",
                 )
                 last_status = current_status.copy()
 
-            if ollama_healthy and qdrant_healthy:
+            # Check if all required services are healthy
+            if all(services_healthy.values()):
                 elapsed = int(time.time() - start_time)
                 self.console.print(
                     f"✅ All services ready after {elapsed}s ({attempt} attempts)",
@@ -954,13 +1063,19 @@ class DockerManager:
             f"❌ Services did not become ready within {elapsed}s timeout (after {attempt} attempts)",
             style="red",
         )
+
+        # Show final status for all required services
+        final_status_parts = [
+            f"{service}={current_status.get(service, 'unknown')}"
+            for service in required_services
+        ]
         self.console.print(
-            f"Final status: ollama={current_status.get('ollama', 'unknown')}, qdrant={current_status.get('qdrant', 'unknown')}",
+            f"Final status: {', '.join(final_status_parts)}",
             style="red",
         )
 
         # Show container logs for debugging
-        for service in ["ollama", "qdrant"]:
+        for service in required_services:
             if current_status.get(service) != "ready":
                 logs = self.get_container_logs(service, lines=10)
                 if logs.strip():
