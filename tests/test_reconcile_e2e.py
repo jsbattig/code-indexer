@@ -9,12 +9,14 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import pytest
 
 
-def run_command(cmd: list, cwd: Path = None, timeout: int = 120) -> Dict[str, Any]:
+def run_command(
+    cmd: list, cwd: Optional[Path] = None, timeout: int = 120
+) -> Dict[str, Any]:
     """Run a command and return the result."""
     try:
         result = subprocess.run(

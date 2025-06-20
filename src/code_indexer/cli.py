@@ -38,9 +38,9 @@ def _format_claude_response(response: str) -> str:
     if not response:
         return response
 
-    # Check if response contains Claude SDK objects (list format)
+    # Check if response contains Claude structured objects (list format)
     if response.startswith("[") and "TextBlock" in response:
-        # Parse the structured response from Claude SDK
+        # Parse the structured response from Claude
         formatted_text = _parse_claude_sdk_response(response)
         if formatted_text:
             response = formatted_text
@@ -67,7 +67,7 @@ def _format_claude_response(response: str) -> str:
 
 
 def _parse_claude_sdk_response(response: str) -> str:
-    """Parse Claude SDK structured response to extract text content."""
+    """Parse Claude structured response to extract text content."""
     try:
         import re
 
@@ -264,7 +264,8 @@ def cli(ctx, config: Optional[str], verbose: bool, path: Optional[str]):
     elif config:
         ctx.obj["config_manager"] = ConfigManager(Path(config))
     else:
-        ctx.obj["config_manager"] = ConfigManager()
+        # Always use backtracking by default to find config in parent directories
+        ctx.obj["config_manager"] = ConfigManager.create_with_backtrack()
 
 
 @cli.command()
@@ -1606,6 +1607,11 @@ def query(
     is_flag=True,
     help="Quiet mode - only show results, no headers or metadata",
 )
+@click.option(
+    "--dry-run-show-claude-prompt",
+    is_flag=True,
+    help="Show the prompt that would be sent to Claude instead of executing the query",
+)
 @click.pass_context
 def claude(
     ctx,
@@ -1619,6 +1625,7 @@ def claude(
     no_explore: bool,
     no_stream: bool,
     quiet: bool,
+    dry_run_show_claude_prompt: bool,
 ):
     """AI-powered code analysis using Claude with semantic search.
 
@@ -1659,6 +1666,7 @@ def claude(
       code-indexer claude "How to add a new feature?" --context-lines 300
       code-indexer claude "Debug this error pattern" --no-stream
       code-indexer claude "Quick analysis" --quiet  # Just the response, no headers
+      code-indexer claude "Test prompt" --dry-run-show-claude-prompt  # Show prompt without executing
 
     \b
     STREAMING:
@@ -1666,8 +1674,17 @@ def claude(
       longer analyses or when you want immediate feedback.
 
     \b
+    PROMPT DEBUGGING:
+      Use --dry-run-show-claude-prompt to see the exact prompt that would be
+      sent to Claude without actually executing the query. This is helpful for:
+      • Iterating on prompt improvements
+      • Understanding what context is being provided
+      • Debugging issues with prompt generation
+      • Optimizing context size and relevance
+
+    \b
     REQUIREMENTS:
-      • Claude Code SDK must be installed: pip install claude-code-sdk
+      • Claude CLI must be installed: https://docs.anthropic.com/en/docs/claude-code
       • Services must be running: code-indexer setup
       • Codebase must be indexed: code-indexer index
 
@@ -1676,12 +1693,14 @@ def claude(
     config_manager = ctx.obj["config_manager"]
 
     try:
-        # Check Claude SDK availability
-        if not check_claude_sdk_availability():
+        # Check Claude CLI availability
+        if (
+            not check_claude_sdk_availability()
+        ):  # This function now checks CLI availability
             console.print(
-                "❌ Claude Code SDK not available. Install it with:", style="red"
+                "❌ Claude CLI not available. Install it following:", style="red"
             )
-            console.print("   pip install claude-code-sdk")
+            console.print("   https://docs.anthropic.com/en/docs/claude-code")
             sys.exit(1)
 
         config = config_manager.load()
@@ -1784,6 +1803,79 @@ def claude(
         claude_service = ClaudeIntegrationService(
             codebase_dir=config.codebase_dir, project_name=branch_context["project_id"]
         )
+
+        # Handle dry-run mode - show prompt instead of executing
+        if dry_run_show_claude_prompt:
+            if not quiet:
+                console.print("🔍 Dry Run Mode: Generating Claude prompt...")
+                console.print("=" * 80)
+
+            # Extract contexts from search results (same as would be done in analysis)
+            contexts = claude_service.context_extractor.extract_context_from_results(
+                results,
+                context_lines=context_lines,
+                ensure_all_files=True,
+            )
+
+            # Create the analysis prompt (same as would be sent to Claude)
+            prompt = claude_service.create_analysis_prompt(
+                user_query=question,
+                contexts=contexts,
+                project_info=branch_context,
+                enable_exploration=not no_explore,
+            )
+
+            # Add the cidx tool capability enhancement (same as in actual analysis)
+            prompt += """
+
+ADDITIONAL SEMANTIC SEARCH CAPABILITY:
+This codebase includes a built-in semantic search tool accessible via Bash:
+- `cidx query "search terms"` - Find semantically similar code
+- `cidx query "search terms" --limit 5` - Limit results  
+- `cidx query "search terms" --language python` - Filter by language
+- `cidx --help` - See all available commands
+
+Use this when you need to find related code that might not be in the initial context."""
+
+            if not quiet:
+                console.print("\n📋 Claude Prompt Preview:")
+                console.print("=" * 80)
+                console.print(f"📊 Prompt length: {len(prompt):,} characters")
+                console.print(f"📄 Contexts used: {len(contexts)}")
+                console.print(
+                    f"📏 Total context lines: {sum(ctx.line_end - ctx.line_start + 1 for ctx in contexts):,}"
+                )
+                console.print("=" * 80)
+                console.print()
+
+            # Display the actual prompt that would be sent to Claude
+            # Use syntax highlighting to make it more readable
+            from rich.syntax import Syntax
+
+            try:
+                syntax = Syntax(
+                    prompt,
+                    "markdown",
+                    theme="monokai",
+                    line_numbers=True,
+                    word_wrap=True,
+                )
+                console.print(syntax)
+            except Exception:
+                # Fallback to plain text if syntax highlighting fails
+                console.print(prompt)
+
+            if not quiet:
+                console.print()
+                console.print("=" * 80)
+                console.print(
+                    "🎯 This is the exact prompt that would be sent to Claude Code CLI"
+                )
+                console.print(
+                    "💡 Use this to iterate on prompt improvements before actual execution"
+                )
+
+            return  # Exit early without running Claude analysis
 
         # Stream by default, unless --no-stream is specified
         use_streaming = not no_stream

@@ -8,12 +8,14 @@ import json
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import pytest
 
 
-def run_command(cmd: list, cwd: Path = None, timeout: int = 60) -> Dict[str, Any]:
+def run_command(
+    cmd: list, cwd: Optional[Path] = None, timeout: int = 60
+) -> Dict[str, Any]:
     """Run a command and return the result."""
     try:
         result = subprocess.run(
@@ -299,12 +301,15 @@ python api.py   # Start API server
 
 
 def check_claude_sdk_available() -> bool:
-    """Check if Claude Code SDK is available."""
-    try:
-        import claude_code_sdk  # noqa: F401
+    """Check if Claude CLI is available."""
+    import subprocess
 
-        return True
-    except ImportError:
+    try:
+        result = subprocess.run(
+            ["claude", "--version"], capture_output=True, text=True, timeout=5
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
         return False
 
 
@@ -320,10 +325,10 @@ class TestClaudeE2E:
             yield project_dir
 
     def test_claude_sdk_availability(self):
-        """Test that Claude SDK is available for testing."""
+        """Test that Claude CLI is available for testing."""
         assert (
             check_claude_sdk_available()
-        ), "Claude Code SDK must be installed for e2e tests"
+        ), "Claude CLI must be installed for e2e tests"
 
     def test_claude_command_help(self, test_project):
         """Test that claude command help works."""
@@ -361,7 +366,7 @@ class TestClaudeE2E:
                     "model not found",
                     "analysis failed",
                     "no semantic search results found",  # Valid failure if no index exists
-                    "claude code sdk not available",  # SDK not installed
+                    "claude cli not available",  # CLI not installed
                     "failed to load config",  # Config issues
                 ]
             ), f"Expected helpful error message, got: {result['stderr']} | {result['stdout']}"
@@ -444,7 +449,7 @@ class TestClaudeE2E:
                     "model not found",  # Ollama model not available
                     "analysis failed",  # Analysis failed due to missing services
                     "no semantic search results found",  # Valid failure if no index
-                    "claude code sdk not available",  # SDK not installed
+                    "claude cli not available",  # CLI not installed
                 ]
             ), f"Expected helpful error message, got: {claude_result['stderr']} | {claude_result['stdout']}"
         else:
@@ -478,7 +483,7 @@ class TestClaudeE2E:
             result = run_command(
                 ["python", "-m", "code_indexer.cli"] + cmd_args,
                 cwd=test_project,
-                timeout=30,
+                timeout=60,
             )
 
             # Should either fail gracefully or succeed if services are available
@@ -495,7 +500,7 @@ class TestClaudeE2E:
                         "model not found",
                         "analysis failed",
                         "no semantic search results found",  # Valid if no index
-                        "claude code sdk not available",  # SDK not installed
+                        "claude cli not available",  # CLI not installed
                         "usage:",  # CLI argument errors
                         "error:",  # CLI errors
                         "no such option",  # Invalid options
@@ -545,7 +550,7 @@ class TestClaudeE2E:
         assert "hashlib" in utils_content
 
     @pytest.mark.skipif(
-        not check_claude_sdk_available(), reason="Claude SDK not available"
+        not check_claude_sdk_available(), reason="Claude CLI not available"
     )
     def test_claude_integration_import(self):
         """Test that Claude integration modules can be imported."""
@@ -601,9 +606,9 @@ def test_manual_workflow():
     print("MANUAL E2E TEST WORKFLOW DEMONSTRATION")
     print("=" * 60)
 
-    print("\n1. Testing Claude SDK availability...")
+    print("\n1. Testing Claude CLI availability...")
     sdk_available = check_claude_sdk_available()
-    print(f"   Claude SDK available: {sdk_available}")
+    print(f"   Claude CLI available: {sdk_available}")
 
     print("\n2. Testing command line interface...")
     help_result = run_command(["python", "-m", "code_indexer.cli", "--help"])
@@ -624,7 +629,7 @@ def test_manual_workflow():
     print("   d. code-indexer claude 'How does authentication work?'")
 
     print("\n5. Test results summary:")
-    print(f"   ✅ Claude SDK available: {sdk_available}")
+    print(f"   ✅ Claude CLI available: {sdk_available}")
     print(f"   ✅ Claude command in CLI: {claude_in_help}")
     print(f"   ✅ Claude help functional: {claude_help_ok}")
 

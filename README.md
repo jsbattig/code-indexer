@@ -20,7 +20,7 @@ Includes incremental updates to keep your index current as code changes.
 - **Configurable** - Configuration options for different use cases
 - **Multi-Project Support** - Index multiple projects simultaneously without port conflicts
 - **Auto Project Detection** - Derives project names from git repositories or folder names
-- **AI-Powered Analysis** - Integrates with Claude Code SDK for intelligent code analysis using RAG
+- **AI-Powered Analysis** - Integrates with Claude CLI for intelligent code analysis using RAG
 
 ## Quick Start
 
@@ -100,8 +100,8 @@ code-indexer index
 # Step 4: Search your code
 code-indexer query "authentication logic"
 
-# Step 5: AI-powered code analysis (requires Claude Code SDK)
-pip install claude-code-sdk
+# Step 5: AI-powered code analysis (requires Claude CLI)
+# Install Claude CLI: https://docs.anthropic.com/en/docs/claude-code
 code-indexer claude "How does authentication work in this app?"
 
 # Smart incremental indexing (automatically detects changes)
@@ -258,13 +258,13 @@ code-indexer claude "Explain this function" --quiet
 
 ## Claude AI Integration
 
-Code Indexer integrates with Claude Code SDK to provide AI-powered code analysis using RAG (Retrieval-Augmented Generation). This combines semantic search with Claude's advanced reasoning to answer complex questions about your codebase.
+Code Indexer integrates with Claude CLI to provide AI-powered code analysis using RAG (Retrieval-Augmented Generation). This combines semantic search with Claude's advanced reasoning to answer complex questions about your codebase.
 
 ### Setup Claude Integration
 
 ```bash
-# Install Claude Code SDK
-pip install claude-code-sdk
+# Install Claude CLI
+# Follow instructions at: https://docs.anthropic.com/en/docs/claude-code
 
 # Ensure your codebase is indexed
 code-indexer setup

@@ -279,6 +279,69 @@ class PerformanceOptimizedGitOperations:
    - Add configuration documentation
    - Update examples and usage patterns
 
+5. **Comprehensive Branch Topology E2E Test**
+   - Create new test file: `test_branch_topology_e2e.py`
+   - Test complete branch switching workflow with incremental indexing
+   - Validate only changed files are reprocessed
+   - Verify branch isolation and cleanup
+
+### Branch Topology E2E Test Specification
+
+```python
+def test_complete_branch_topology_workflow(test_git_project):
+    """
+    Comprehensive E2E test for branch topology smart indexing.
+    
+    Test Steps:
+    1. Initialize project and setup services
+    2. Index master branch (baseline)
+    3. Create new branch 'feature/test-branch'
+    4. Add new file 'feature.py' in new branch
+    5. Run indexing logic - verify only new file was processed
+    6. Query for new file 'feature.py' - should be visible
+    7. Query for existing master branch file - should also be visible (topology awareness)
+    8. Switch back to master branch
+    9. Remove test branch (git branch -D feature/test-branch)
+    10. Query again for 'feature.py' - should return no results
+    11. Cleanup: remove the added record for the test branch from Qdrant
+    
+    Validation Points:
+    - Only changed files indexed on branch switch (incremental behavior)
+    - Branch topology awareness (parent branch visibility from feature branch)
+    - Proper cleanup of branch-specific data after branch deletion
+    - Working directory file support (staged/unstaged)
+    - Performance: O(δ) not O(n) indexing behavior
+    - Complete environment cleanup after test
+    """
+```
+
+**Key Test Scenarios:**
+1. **Branch Creation & File Addition**
+   - Create feature branch from master
+   - Add unique file to feature branch
+   - Verify incremental indexing (only new file processed)
+
+2. **Branch Topology Search**
+   - Query from feature branch should see:
+     - New feature branch files
+     - Parent branch (master) files via topology
+   - Validate branch ancestry in search results
+
+3. **Working Directory Support**
+   - Test staged files indexing
+   - Test unstaged files indexing
+   - Verify working directory status metadata
+
+4. **Branch Switching Performance**
+   - Measure time for branch switch indexing
+   - Verify O(δ) complexity (changed files only)
+   - Compare with current O(n) implementation
+
+5. **Cleanup & Isolation**
+   - Branch deletion removes branch-specific vectors
+   - Queries after branch deletion return no results
+   - Master branch queries unaffected by cleanup
+
 ### 6. Expected Performance Improvements
 
 **Current Performance (Branch Switch):**

@@ -6,17 +6,13 @@ Provides intelligent code analysis using semantic search results and Claude AI.
 
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional, AsyncIterator
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
-try:
-    from claude_code_sdk import query, ClaudeCodeOptions
-
-    CLAUDE_SDK_AVAILABLE = True
-except ImportError:
-    CLAUDE_SDK_AVAILABLE = False
-
 from .rag_context_extractor import RAGContextExtractor, CodeContext
+
+# Claude CLI integration - no SDK required
+CLAUDE_SDK_AVAILABLE = False  # We use CLI instead of SDK
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +39,8 @@ class ClaudeIntegrationService:
             codebase_dir: Root directory of the codebase
             project_name: Name of the project for context
         """
-        if not CLAUDE_SDK_AVAILABLE:
-            raise ImportError(
-                "Claude Code SDK not available. Install with: pip install claude-code-sdk"
-            )
+        # Claude CLI integration - no SDK required
+        pass
 
         self.codebase_dir = Path(codebase_dir)
         self.project_name = project_name
@@ -159,172 +153,6 @@ FOCUSED EXPLORATION PATTERN:
             context_parts.append(f"GIT COMMIT: {commit}")
 
         return "\n".join(context_parts) + "\n"
-
-    async def analyze_with_claude(
-        self,
-        user_query: str,
-        search_results: List[Dict[str, Any]],
-        context_lines: int = 500,
-        max_turns: int = 5,
-        project_info: Optional[Dict[str, Any]] = None,
-        enable_exploration: bool = True,
-        claude_options: Optional[ClaudeCodeOptions] = None,
-    ) -> ClaudeAnalysisResult:
-        """Analyze code using Claude with RAG context.
-
-        Args:
-            user_query: The user's question
-            search_results: Results from semantic search
-            context_lines: Lines of context around each match
-            max_turns: Maximum conversation turns
-            project_info: Project metadata
-            enable_exploration: Whether to enable file exploration
-            claude_options: Custom Claude options
-
-        Returns:
-            ClaudeAnalysisResult with analysis
-        """
-        try:
-            # Extract contexts from search results
-            # Ensure all file references are included by adjusting context size if needed
-            contexts = self.context_extractor.extract_context_from_results(
-                search_results,
-                context_lines=context_lines,
-                ensure_all_files=True,  # Prioritize including all files over context size
-            )
-
-            # Create analysis prompt
-            prompt = self.create_analysis_prompt(
-                user_query=user_query,
-                contexts=contexts,
-                project_info=project_info,
-                enable_exploration=enable_exploration,
-            )
-
-            # TEMPORARY: Use simple prompt to avoid JSON issues
-            prompt = f"You are a code analyst. Answer this question about the codebase: {user_query}\n\nProvided context:\n{self.context_extractor.format_contexts_for_prompt(contexts, include_line_numbers=True, max_context_length=10000) if contexts else 'No specific context found.'}"
-
-            # Configure Claude options
-            if claude_options is None:
-                claude_options = ClaudeCodeOptions(
-                    max_turns=1,
-                    cwd=str(self.codebase_dir),
-                    system_prompt="You are a code analyst. Analyze the code and answer the question.",
-                )
-
-            # Query Claude
-            logger.info(f"Starting Claude analysis for query: {user_query[:100]}...")
-            logger.debug(f"Prompt length: {len(prompt)} characters")
-            logger.debug(f"Prompt preview: {prompt[:500]}...")
-
-            response_parts = []
-            message_count = 0
-
-            async for message in query(prompt=prompt, options=claude_options):
-                if hasattr(message, "content") and message.content:
-                    # Extract text content from Claude SDK message
-                    text_content = self._extract_text_from_message(message.content)
-                    if text_content:
-                        response_parts.append(text_content)
-                        message_count += 1
-
-                        # Log progress
-                        if message_count % 2 == 0:
-                            logger.info(
-                                f"Received {message_count} messages from Claude..."
-                            )
-
-            # Combine response
-            full_response = (
-                "\n".join(response_parts)
-                if response_parts
-                else "No response received from Claude."
-            )
-
-            # Calculate stats
-            total_lines = sum(
-                context.line_end - context.line_start + 1 for context in contexts
-            )
-
-            logger.info(
-                f"Claude analysis complete. Used {len(contexts)} contexts with {total_lines} total lines."
-            )
-
-            return ClaudeAnalysisResult(
-                response=full_response,
-                contexts_used=len(contexts),
-                total_context_lines=total_lines,
-                search_query=user_query,
-                success=True,
-            )
-
-        except Exception as e:
-            logger.error(f"Claude analysis failed: {e}")
-            import traceback
-
-            logger.error(f"Full traceback: {traceback.format_exc()}")
-            return ClaudeAnalysisResult(
-                response="",
-                contexts_used=0,
-                total_context_lines=0,
-                search_query=user_query,
-                success=False,
-                error=str(e),
-            )
-
-    def _extract_text_from_message(self, content) -> str:
-        """Extract text content from Claude SDK message content."""
-        try:
-            # Handle different content types from Claude SDK
-            if isinstance(content, str):
-                return content
-
-            # If content is a list of blocks
-            if isinstance(content, (list, tuple)):
-                text_parts = []
-                for block in content:
-                    if hasattr(block, "text"):
-                        text_parts.append(str(block.text))
-                    elif (
-                        hasattr(block, "type")
-                        and block.type == "text"
-                        and hasattr(block, "content")
-                    ):
-                        text_parts.append(str(block.content))
-                    elif isinstance(block, dict) and "text" in block:
-                        text_parts.append(str(block["text"]))
-                return "\n".join(text_parts)
-
-            # If content has a text attribute
-            if hasattr(content, "text"):
-                return str(content.text)
-
-            # If content is a dict with text
-            if isinstance(content, dict) and "text" in content:
-                return str(content["text"])
-
-            # Fallback: convert to string and try to parse
-            content_str = str(content)
-            if "TextBlock" in content_str:
-                import re
-
-                # Extract text from TextBlock patterns
-                text_pattern = r"text='([^']*(?:\\'[^']*)*)'"
-                matches = re.findall(text_pattern, content_str, re.DOTALL)
-                if matches:
-                    # Join all text matches and unescape
-                    text = "\n".join(matches)
-                    return (
-                        text.replace("\\'", "'")
-                        .replace("\\n", "\n")
-                        .replace("\\\\", "\\")
-                    )
-
-            return content_str
-
-        except Exception as e:
-            logger.warning(f"Failed to extract text from message content: {e}")
-            return str(content)
 
     def run_analysis(
         self, user_query: str, search_results: List[Dict[str, Any]], **kwargs
@@ -686,74 +514,6 @@ Use this when you need to find related code that might not be in the initial con
                 error=f"Streaming setup error: {str(e)}",
             )
 
-    async def stream_analysis(
-        self,
-        user_query: str,
-        search_results: List[Dict[str, Any]],
-        context_lines: int = 500,
-        max_turns: int = 5,
-        project_info: Optional[Dict[str, Any]] = None,
-        enable_exploration: bool = True,
-        claude_options: Optional[ClaudeCodeOptions] = None,
-    ) -> AsyncIterator[str]:
-        """Stream Claude analysis results as they arrive.
-
-        Args:
-            user_query: The user's question
-            search_results: Results from semantic search
-            context_lines: Lines of context around each match
-            max_turns: Maximum conversation turns
-            project_info: Project metadata
-            enable_exploration: Whether to enable file exploration
-            claude_options: Custom Claude options
-
-        Yields:
-            String chunks of the analysis response
-        """
-        try:
-            # Extract contexts from search results
-            # Ensure all file references are included by adjusting context size if needed
-            contexts = self.context_extractor.extract_context_from_results(
-                search_results,
-                context_lines=context_lines,
-                ensure_all_files=True,  # Prioritize including all files over context size
-            )
-
-            # Create analysis prompt
-            prompt = self.create_analysis_prompt(
-                user_query=user_query,
-                contexts=contexts,
-                project_info=project_info,
-                enable_exploration=enable_exploration,
-            )
-
-            # TEMPORARY: Use simple prompt to avoid JSON issues
-            prompt = f"You are a code analyst. Answer this question about the codebase: {user_query}\n\nProvided context:\n{self.context_extractor.format_contexts_for_prompt(contexts, include_line_numbers=True, max_context_length=10000) if contexts else 'No specific context found.'}"
-
-            # Configure Claude options
-            if claude_options is None:
-                claude_options = ClaudeCodeOptions(
-                    max_turns=1,
-                    cwd=str(self.codebase_dir),
-                    system_prompt="You are a code analyst. Analyze the code and answer the question.",
-                )
-
-            # Stream Claude responses
-            logger.info(
-                f"Starting Claude streaming analysis for query: {user_query[:100]}..."
-            )
-
-            async for message in query(prompt=prompt, options=claude_options):
-                if hasattr(message, "content") and message.content:
-                    # Extract text content from Claude SDK message
-                    text_content = self._extract_text_from_message(message.content)
-                    if text_content:
-                        yield text_content
-
-        except Exception as e:
-            logger.error(f"Claude streaming analysis failed: {e}")
-            yield f"Error during analysis: {str(e)}"
-
     def _validate_and_debug_prompt(self, prompt: str, user_query: str) -> str:
         """Validate prompt for JSON serialization and provide debugging info."""
         import json
@@ -937,5 +697,13 @@ Use this when you need to find related code that might not be in the initial con
 
 
 def check_claude_sdk_availability() -> bool:
-    """Check if Claude Code SDK is available."""
-    return CLAUDE_SDK_AVAILABLE
+    """Check if Claude CLI is available."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["claude", "--version"], capture_output=True, text=True, timeout=5
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
+        return False
