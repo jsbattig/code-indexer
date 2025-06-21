@@ -17,7 +17,11 @@ class TestIdempotentStart:
         """Setup test environment for each test."""
         # Create temporary directory for test
         self.test_dir = Path(tempfile.mkdtemp())
-        self.original_cwd = os.getcwd()
+        try:
+            self.original_cwd = os.getcwd()
+        except (FileNotFoundError, OSError):
+            # If current directory doesn't exist, use a safe default
+            self.original_cwd = Path.home()
         os.chdir(self.test_dir)
 
         # Store original environment
@@ -26,7 +30,11 @@ class TestIdempotentStart:
         yield
 
         # Cleanup
-        os.chdir(self.original_cwd)
+        try:
+            os.chdir(self.original_cwd)
+        except (FileNotFoundError, OSError):
+            # If original directory doesn't exist, go to home
+            os.chdir(Path.home())
         if self.test_dir.exists():
             shutil.rmtree(self.test_dir)
 
@@ -82,7 +90,6 @@ class TestIdempotentStart:
         ) as mock_run, patch(
             "code_indexer.services.docker_manager.subprocess.Popen"
         ) as mock_popen:
-
             mock_run.return_value.returncode = 0
             mock_run.return_value.stdout = "Docker is available"
 
@@ -125,7 +132,6 @@ class TestIdempotentStart:
         with patch("code_indexer.cli.DockerManager") as mock_docker_class, patch(
             "code_indexer.cli.EmbeddingProviderFactory"
         ) as mock_factory, patch("code_indexer.cli.QdrantClient") as mock_qdrant_class:
-
             # Setup mocks
             mock_docker = MagicMock()
             mock_docker.is_docker_available.return_value = True
@@ -181,7 +187,6 @@ class TestIdempotentStart:
         with patch("code_indexer.cli.DockerManager") as mock_docker_class, patch(
             "code_indexer.cli.EmbeddingProviderFactory"
         ) as mock_factory, patch("code_indexer.cli.QdrantClient") as mock_qdrant_class:
-
             # Setup mocks
             mock_docker = MagicMock()
             mock_docker.is_docker_available.return_value = True
@@ -240,7 +245,6 @@ class TestIdempotentStart:
         ) as mock_run, patch(
             "code_indexer.services.docker_manager.subprocess.Popen"
         ) as mock_popen:
-
             mock_run.return_value.returncode = 0
 
             # Mock Popen for Docker Compose up

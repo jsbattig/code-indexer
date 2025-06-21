@@ -10,7 +10,6 @@ from code_indexer.services.metadata_schema import (
 
 
 class TestGitAwareMetadataSchema:
-
     def test_validate_valid_git_metadata(self):
         """Test validation of valid git-aware metadata."""
         metadata = {
@@ -297,7 +296,6 @@ class TestGitAwareMetadataSchema:
 
 
 class TestMetadataValidator:
-
     def test_validate_point_payload_valid(self):
         """Test validation of valid point payload."""
         payload = {

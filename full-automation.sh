@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Local CI script that emulates GitHub Actions workflow
+# Full automation script for linting, testing, building, and compiling
 # Runs all checks and builds without publishing
 
 set -e  # Exit on any error
 
-echo "🚀 Starting local CI/CD pipeline..."
+echo "🚀 Starting full automation pipeline..."
 echo "================================="
 
 # Colors for output
@@ -37,6 +37,13 @@ if [[ ! -f "pyproject.toml" ]]; then
     exit 1
 fi
 
+# Check for VoyageAI API key (required for E2E tests)
+if [[ -z "${VOYAGE_API_KEY:-}" ]]; then
+    print_warning "VOYAGE_API_KEY environment variable not set"
+    print_warning "E2E tests will be skipped (they require VoyageAI API access)"
+    print_warning "To run E2E tests: export VOYAGE_API_KEY=your_api_key"
+fi
+
 # 1. Install dependencies
 print_step "Installing dependencies"
 python -m pip install --upgrade pip
@@ -62,7 +69,7 @@ else
     exit 1
 fi
 
-# 4. Type check with mypy (strict mode like GitHub Actions)
+# 4. Type check with mypy (strict mode)
 print_step "Running mypy type checking"
 if mypy src/; then
     print_success "MyPy type checking passed"
@@ -120,7 +127,7 @@ rm -f .coverage .coverage.*
 print_success "Coverage files cleaned up"
 
 # Summary
-echo -e "\n${GREEN}🎉 Local CI pipeline completed successfully!${NC}"
+echo -e "\n${GREEN}🎉 Full automation pipeline completed successfully!${NC}"
 echo "================================="
 echo "✅ Linting passed"
 echo "✅ Formatting checked"
@@ -131,5 +138,8 @@ if command -v docker &> /dev/null; then
     echo "✅ Docker service files validated"
 fi
 echo "✅ Temporary files cleaned up"
+echo ""
+echo "📌 Note: E2E tests require VOYAGE_API_KEY environment variable"
+echo "📌 Long-running E2E tests now use VoyageAI instead of Ollama for better stability"
 echo ""
 echo "Ready to push to GitHub! 🚀"

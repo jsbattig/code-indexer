@@ -14,7 +14,6 @@ from code_indexer.services.git_aware_processor import GitAwareDocumentProcessor
 
 
 class TestGitAwareDocumentProcessor:
-
     @pytest.fixture
     def temp_dir(self):
         temp_dir = Path(tempfile.mkdtemp())

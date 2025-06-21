@@ -304,11 +304,18 @@ class RAGContextExtractor:
 
         # Add relevance score explanation for prompt engineering
         relevance_explanation = (
-            "\n**RELEVANCE SCORES GUIDE**: Each code context includes a semantic similarity score (0.0-1.0). "
+            "\n🔬 **EVIDENCE CITATION GUIDE**: Each code context below MUST be used for evidence-backed assertions. "
+            "Every statement you make about the code requires a citation in this format: [description](file_path:line_number). "
+            "\n\n**RELEVANCE SCORES**: Each context includes a semantic similarity score (0.0-1.0). "
             "Higher scores (>0.8) indicate strong relevance to your query. "
             "Medium scores (0.5-0.8) suggest related concepts. "
             "Lower scores (<0.5) may provide peripheral context. "
-            "Use these scores to prioritize which contexts most directly answer your question.\n"
+            "\n\n**CITATION REQUIREMENTS**: "
+            "- Use exact file paths and line numbers shown below "
+            "- Format as markdown links: [UserService class](src/services/user.py:45) "
+            "- For ranges: [authentication logic](auth/login.py:123-145) "
+            "- Every technical claim needs a source citation "
+            "- Treat this like scientific research - no assertion without evidence\n"
         )
         formatted_parts.append(relevance_explanation)
         total_length += len(relevance_explanation)

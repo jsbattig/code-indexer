@@ -2,6 +2,7 @@
 Smart incremental indexer that combines index and update functionality.
 """
 
+import logging
 import time
 import datetime
 from pathlib import Path
@@ -14,6 +15,11 @@ from ..services.embedding_provider import EmbeddingProvider
 from ..services.git_aware_processor import GitAwareDocumentProcessor
 from ..indexing.processor import ProcessingStats
 from .progressive_metadata import ProgressiveMetadata
+from .git_topology_service import GitTopologyService
+from .smart_branch_indexer import SmartBranchIndexer
+from .branch_aware_indexer import BranchAwareIndexer
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -71,6 +77,17 @@ class SmartIndexer(GitAwareDocumentProcessor):
         super().__init__(config, embedding_provider, qdrant_client)
         self.progressive_metadata = ProgressiveMetadata(metadata_path)
 
+        # Initialize branch topology services
+        self.git_topology_service = GitTopologyService(config.codebase_dir)
+        self.smart_branch_indexer = SmartBranchIndexer(
+            config, embedding_provider, qdrant_client, self.git_topology_service
+        )
+
+        # Initialize new branch-aware indexer with graph optimization
+        self.branch_aware_indexer = BranchAwareIndexer(
+            qdrant_client, embedding_provider, self.text_chunker, config
+        )
+
     def smart_index(
         self,
         force_full: bool = False,
@@ -79,6 +96,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
         progress_callback: Optional[Callable] = None,
         safety_buffer_seconds: int = 60,
         files_count_to_process: Optional[int] = None,
+        quiet: bool = False,
     ) -> ProcessingStats:
         """
         Smart indexing that automatically chooses between full and incremental indexing.
@@ -99,6 +117,87 @@ class SmartIndexer(GitAwareDocumentProcessor):
             provider_name = self.embedding_provider.get_provider_name()
             model_name = self.embedding_provider.get_current_model()
 
+            # Check for branch topology optimization (only if not forcing full and collection exists)
+            if not force_full:
+                # Invalidate cache to get fresh branch info
+                self.git_topology_service.invalidate_cache()
+                current_branch = self.git_topology_service.get_current_branch()
+                collection_name = self.qdrant_client.resolve_collection_name(
+                    self.config, self.embedding_provider
+                )
+
+                # Check for branch change by comparing stored branch with current branch
+                stored_branch = self.progressive_metadata.metadata.get("current_branch")
+                logger.info(
+                    f"Branch change detection: stored_branch={stored_branch}, current_branch={current_branch}"
+                )
+
+                if (
+                    current_branch
+                    and stored_branch
+                    and stored_branch != current_branch
+                    and self.qdrant_client.collection_exists(collection_name)
+                ):
+                    # Branch change detected - use graph-optimized branch indexing
+                    old_branch = stored_branch
+                    if progress_callback:
+                        progress_callback(
+                            0,
+                            0,
+                            Path(""),
+                            info=f"Branch change detected: {old_branch} -> {current_branch}, using graph-optimized indexing",
+                        )
+
+                    try:
+                        # Analyze branch change to determine what needs indexing
+                        analysis = self.git_topology_service.analyze_branch_change(
+                            old_branch, current_branch
+                        )
+
+                        # Use the new branch-aware indexer
+                        branch_result = self.branch_aware_indexer.index_branch_changes(
+                            old_branch=old_branch,
+                            new_branch=current_branch,
+                            changed_files=analysis.files_to_reindex,
+                            unchanged_files=analysis.files_to_update_metadata,
+                            collection_name=collection_name,
+                        )
+
+                        # Convert to ProcessingStats format
+                        stats = ProcessingStats()
+                        stats.files_processed = branch_result.files_processed
+                        stats.chunks_created = branch_result.content_points_created
+                        stats.failed_files = 0  # BranchAwareIndexer doesn't track failures in the same way
+                        stats.start_time = time.time() - branch_result.processing_time
+                        stats.end_time = time.time()
+
+                        # Update progressive metadata with new git status
+                        updated_git_status = git_status.copy()
+                        updated_git_status["branch"] = current_branch
+                        self.progressive_metadata.start_indexing(
+                            provider_name, model_name, updated_git_status
+                        )
+                        self.progressive_metadata.complete_indexing()
+
+                        logger.info(
+                            f"Graph-optimized branch indexing completed: "
+                            f"{branch_result.content_points_created} content points, "
+                            f"{branch_result.visibility_points_created} visibility points, "
+                            f"{branch_result.content_points_reused} content points reused"
+                        )
+
+                        return stats
+
+                    except Exception as e:
+                        if progress_callback:
+                            progress_callback(
+                                0,
+                                0,
+                                Path(""),
+                                info=f"Graph-optimized branch indexing failed: {e}, falling back to standard indexing",
+                            )
+                        # Fall through to standard indexing on error
+
             # Check for reconcile operation first
             if reconcile_with_database:
                 return self._do_reconcile_with_database(
@@ -108,12 +207,18 @@ class SmartIndexer(GitAwareDocumentProcessor):
                     provider_name,
                     model_name,
                     files_count_to_process,
+                    quiet,
                 )
 
             # Determine indexing strategy
             if force_full:
                 return self._do_full_index(
-                    batch_size, progress_callback, git_status, provider_name, model_name
+                    batch_size,
+                    progress_callback,
+                    git_status,
+                    provider_name,
+                    model_name,
+                    quiet,
                 )
 
             # Check if we need to force full index due to configuration changes
@@ -128,7 +233,12 @@ class SmartIndexer(GitAwareDocumentProcessor):
                         info="Configuration changed, performing full index",
                     )
                 return self._do_full_index(
-                    batch_size, progress_callback, git_status, provider_name, model_name
+                    batch_size,
+                    progress_callback,
+                    git_status,
+                    provider_name,
+                    model_name,
+                    quiet,
                 )
 
             # Try incremental indexing
@@ -139,6 +249,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 provider_name,
                 model_name,
                 safety_buffer_seconds,
+                quiet,
             )
 
         except Exception as e:
@@ -152,12 +263,13 @@ class SmartIndexer(GitAwareDocumentProcessor):
         git_status: Dict[str, Any],
         provider_name: str,
         model_name: str,
+        quiet: bool = False,
     ) -> ProcessingStats:
         """Perform full indexing."""
 
         # Ensure provider-aware collection exists and clear it
         collection_name = self.qdrant_client.ensure_provider_aware_collection(
-            self.config, self.embedding_provider
+            self.config, self.embedding_provider, quiet
         )
         self.qdrant_client.clear_collection(collection_name)
         self.progressive_metadata.clear()
@@ -175,10 +287,50 @@ class SmartIndexer(GitAwareDocumentProcessor):
         # Store file list for resumability
         self.progressive_metadata.set_files_to_index(files_to_index)
 
-        # Process files with progressive metadata updates
-        stats = self._process_files_with_metadata(
-            files_to_index, batch_size, progress_callback, resumable=True
-        )
+        # Get current branch for indexing
+        current_branch = self.git_topology_service.get_current_branch() or "master"
+
+        # Use BranchAwareIndexer for consistent architecture
+        try:
+            # Convert absolute paths to relative paths for BranchAwareIndexer
+            relative_files = []
+            for f in files_to_index:
+                try:
+                    # If path is absolute and within codebase_dir, make it relative
+                    if f.is_absolute():
+                        relative_files.append(
+                            str(f.relative_to(self.config.codebase_dir))
+                        )
+                    else:
+                        # Already relative, use as-is
+                        relative_files.append(str(f))
+                except ValueError:
+                    # Path is not within codebase_dir, use as-is (shouldn't happen in normal usage)
+                    relative_files.append(str(f))
+            branch_result = self.branch_aware_indexer.index_branch_changes(
+                old_branch="",  # No old branch for full index
+                new_branch=current_branch,
+                changed_files=relative_files,
+                unchanged_files=[],
+                collection_name=collection_name,
+            )
+
+            # Convert BranchIndexingResult to ProcessingStats
+            stats = ProcessingStats()
+            stats.files_processed = branch_result.files_processed
+            stats.chunks_created = branch_result.content_points_created
+            stats.failed_files = 0
+            stats.start_time = time.time() - branch_result.processing_time
+            stats.end_time = time.time()
+
+        except Exception as e:
+            logger.warning(
+                f"BranchAwareIndexer failed, falling back to standard indexing: {e}"
+            )
+            # Fallback to standard processing
+            stats = self._process_files_with_metadata(
+                files_to_index, batch_size, progress_callback, resumable=True
+            )
 
         # Mark as completed
         self.progressive_metadata.complete_indexing()
@@ -193,6 +345,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
         provider_name: str,
         model_name: str,
         safety_buffer_seconds: int,
+        quiet: bool = False,
     ) -> ProcessingStats:
         """Perform incremental indexing."""
 
@@ -211,12 +364,17 @@ class SmartIndexer(GitAwareDocumentProcessor):
                     info="No previous index found, performing full index",
                 )
             return self._do_full_index(
-                batch_size, progress_callback, git_status, provider_name, model_name
+                batch_size,
+                progress_callback,
+                git_status,
+                provider_name,
+                model_name,
+                quiet,
             )
 
         # Ensure provider-aware collection exists for incremental indexing
         self.qdrant_client.ensure_provider_aware_collection(
-            self.config, self.embedding_provider
+            self.config, self.embedding_provider, quiet
         )
 
         # Start/resume indexing
@@ -266,12 +424,13 @@ class SmartIndexer(GitAwareDocumentProcessor):
         provider_name: str,
         model_name: str,
         files_count_to_process: Optional[int] = None,
+        quiet: bool = False,
     ) -> ProcessingStats:
         """Reconcile disk files with database contents and index missing/modified files."""
 
         # Ensure provider-aware collection exists
         collection_name = self.qdrant_client.ensure_provider_aware_collection(
-            self.config, self.embedding_provider
+            self.config, self.embedding_provider, quiet
         )
 
         # Get all files that should be indexed (from disk)
@@ -505,12 +664,13 @@ class SmartIndexer(GitAwareDocumentProcessor):
         git_status: Dict[str, Any],
         provider_name: str,
         model_name: str,
+        quiet: bool = False,
     ) -> ProcessingStats:
         """Resume a previously interrupted indexing operation."""
 
         # Ensure provider-aware collection exists for resuming
         self.qdrant_client.ensure_provider_aware_collection(
-            self.config, self.embedding_provider
+            self.config, self.embedding_provider, quiet
         )
 
         # Get remaining files from metadata
@@ -804,3 +964,112 @@ class SmartIndexer(GitAwareDocumentProcessor):
     def clear_progress(self):
         """Clear progress metadata (for fresh start)."""
         self.progressive_metadata.clear()
+
+    def cleanup_branch_data(self, branch: str) -> bool:
+        """
+        Clean up branch data using the graph-optimized approach.
+
+        This delegates to the new BranchAwareIndexer for proper cleanup.
+        """
+        try:
+            collection_name = self.qdrant_client.resolve_collection_name(
+                self.config, self.embedding_provider
+            )
+
+            cleanup_result = self.branch_aware_indexer.cleanup_branch(
+                branch, collection_name
+            )
+
+            logger.info(
+                f"Branch cleanup completed for {branch}: "
+                f"{cleanup_result['visibility_points_hidden']} visibility points hidden"
+            )
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to cleanup branch {branch}: {e}")
+            return False
+
+    def process_files_incrementally(
+        self, file_paths: List[str], force_reprocess: bool = False, quiet: bool = False
+    ) -> ProcessingStats:
+        """Process specific files incrementally using git-aware indexing.
+
+        Args:
+            file_paths: List of relative file paths to process
+            force_reprocess: Force reprocessing even if files seem up to date
+            quiet: Suppress progress output
+
+        Returns:
+            ProcessingStats with processing results
+        """
+        stats = ProcessingStats()
+        stats.start_time = time.time()
+
+        try:
+            # Convert relative paths to absolute paths
+            absolute_paths = []
+            for file_path in file_paths:
+                abs_path = self.config.codebase_dir / file_path
+                if abs_path.exists():
+                    absolute_paths.append(abs_path)
+                else:
+                    # File was deleted - handle it
+                    collection_name = self.qdrant_client.resolve_collection_name(
+                        self.config, self.embedding_provider
+                    )
+                    self.qdrant_client.delete_by_filter(
+                        {"must": [{"key": "path", "match": {"value": file_path}}]}
+                    )
+                    if not quiet:
+                        logger.info(f"Deleted vectors for removed file: {file_path}")
+
+            if not absolute_paths:
+                stats.end_time = time.time()
+                return stats
+
+            # Get current git state using git topology service
+            git_state = self.git_topology_service.get_current_state()
+            current_branch = git_state.get("current_branch", "unknown")
+
+            # Use BranchAwareIndexer for git-aware processing
+            collection_name = self.qdrant_client.resolve_collection_name(
+                self.config, self.embedding_provider
+            )
+
+            # Convert to relative paths for indexer
+            relative_files = []
+            for abs_path in absolute_paths:
+                try:
+                    relative_files.append(
+                        str(abs_path.relative_to(self.config.codebase_dir))
+                    )
+                except ValueError:
+                    continue
+
+            if relative_files:
+                branch_result = self.branch_aware_indexer.index_branch_changes(
+                    old_branch="",  # No old branch for incremental processing
+                    new_branch=current_branch,
+                    changed_files=relative_files,
+                    unchanged_files=[],
+                    collection_name=collection_name,
+                )
+
+                # Convert BranchIndexingResult to ProcessingStats
+                stats.files_processed = branch_result.files_processed
+                stats.chunks_created = branch_result.content_points_created
+                stats.failed_files = 0
+
+                if not quiet:
+                    logger.info(
+                        f"Processed {stats.files_processed} files incrementally"
+                    )
+
+        except Exception as e:
+            logger.error(f"Incremental processing failed: {e}")
+            stats.failed_files = len(file_paths)
+
+        stats.end_time = time.time()
+        return stats

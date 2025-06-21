@@ -223,8 +223,14 @@ class DockerManager:
             return False
 
         # For services with health checks, verify health status
-        if service_name in ["ollama", "qdrant", "data-cleaner"]:
-            return bool(self.health_checker.is_service_healthy(service_name))
+        if service_name == "ollama":
+            return bool(
+                self.health_checker.is_service_healthy("http://localhost:11434")
+            )
+        elif service_name == "qdrant":
+            return bool(self.health_checker.is_service_healthy("http://localhost:6333"))
+        elif service_name == "data-cleaner":
+            return bool(self.health_checker.is_service_healthy("http://localhost:8091"))
 
         return True
 
@@ -693,7 +699,7 @@ class DockerManager:
             return False
 
     def stop_services(self) -> bool:
-        """Stop Docker services."""
+        """Stop Docker services (containers remain for fast restart)."""
         if not self.compose_file.exists():
             return True
 
@@ -703,7 +709,7 @@ class DockerManager:
             with self.console.status("Stopping services..."):
                 result = subprocess.run(
                     compose_cmd
-                    + ["-f", str(self.compose_file), "-p", self.project_name, "down"],
+                    + ["-f", str(self.compose_file), "-p", self.project_name, "stop"],
                     capture_output=True,
                     text=True,
                     timeout=60,
@@ -723,6 +729,117 @@ class DockerManager:
             return False
         except Exception as e:
             self.console.print(f"❌ Error stopping services: {e}", style="red")
+            return False
+
+    def remove_containers(self, remove_volumes: bool = False) -> bool:
+        """Remove Docker containers and optionally volumes."""
+        if not self.compose_file.exists():
+            return True
+
+        compose_cmd = self.get_compose_command()
+        cmd_args = compose_cmd + [
+            "-f",
+            str(self.compose_file),
+            "-p",
+            self.project_name,
+            "down",
+        ]
+
+        if remove_volumes:
+            cmd_args.append("-v")
+
+        try:
+            action = (
+                "Removing containers and volumes"
+                if remove_volumes
+                else "Removing containers"
+            )
+            with self.console.status(f"{action}..."):
+                result = subprocess.run(
+                    cmd_args,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+
+            if result.returncode == 0:
+                self.console.print(f"✅ {action} completed successfully", style="green")
+                return True
+            else:
+                self.console.print(
+                    f"❌ Failed to remove containers: {result.stderr}", style="red"
+                )
+                return False
+
+        except subprocess.TimeoutExpired:
+            self.console.print("❌ Timeout removing containers", style="red")
+            return False
+        except Exception as e:
+            self.console.print(f"❌ Error removing containers: {e}", style="red")
+            return False
+
+    def clean_data_only(self, all_projects: bool = False) -> bool:
+        """Clean project data without stopping containers."""
+        try:
+            from ..config import ConfigManager
+
+            config_manager = ConfigManager.create_with_backtrack()
+            config = config_manager.load()
+
+            # Initialize QdrantClient to clean collections
+            from .qdrant import QdrantClient
+
+            qdrant_client = QdrantClient(config.qdrant, self.console)
+
+            # Try to clear collections, but don't fail if services aren't running
+            try:
+                if all_projects:
+                    # Clear all collections
+                    if (
+                        qdrant_client.health_check()
+                        and qdrant_client.clear_all_collections()
+                    ):
+                        self.console.print("✅ All project data cleared", style="green")
+                    else:
+                        self.console.print(
+                            "⚠️  Qdrant not accessible, skipping collection cleanup",
+                            style="yellow",
+                        )
+                else:
+                    # Clear current project collection only
+                    from .embedding_factory import EmbeddingProviderFactory
+
+                    embedding_provider = EmbeddingProviderFactory.create(config)
+                    collection_name = qdrant_client.resolve_collection_name(
+                        config, embedding_provider
+                    )
+
+                    if qdrant_client.health_check() and qdrant_client.clear_collection(
+                        collection_name
+                    ):
+                        self.console.print(
+                            f"✅ Project data cleared (collection: {collection_name})",
+                            style="green",
+                        )
+                    else:
+                        self.console.print(
+                            "⚠️  Qdrant not accessible, skipping collection cleanup",
+                            style="yellow",
+                        )
+            except Exception as e:
+                self.console.print(
+                    f"⚠️  Could not clear collections: {e}", style="yellow"
+                )
+
+            # NOTE: clean-data should NOT remove local config directory
+            # The config directory contains the configuration needed to stop services
+            # Only `uninstall` should remove the config directory for complete cleanup
+            # This ensures users can still run `stop` after `clean-data`
+
+            return True
+
+        except Exception as e:
+            self.console.print(f"❌ Error cleaning data: {e}", style="red")
             return False
 
     def restart_services(self) -> bool:
@@ -1020,15 +1137,20 @@ class DockerManager:
                         current_status[service_name] = f"error_{type(e).__name__}"
 
                 elif service_name == "data-cleaner":
-                    # For data-cleaner, just check if container is running since it doesn't have HTTP endpoint
+                    # Check data-cleaner service with HTTP health check on port 8091
                     try:
-                        if self._container_exists(
-                            service_name
-                        ) and self._container_running(service_name):
+                        response = requests.get("http://localhost:8091/", timeout=5)
+                        if response.status_code == 200:
                             services_healthy[service_name] = True
                             current_status[service_name] = "ready"
                         else:
-                            current_status[service_name] = "not_running"
+                            current_status[service_name] = (
+                                f"http_{response.status_code}"
+                            )
+                    except requests.exceptions.ConnectionError:
+                        current_status[service_name] = "connection_refused"
+                    except requests.exceptions.Timeout:
+                        current_status[service_name] = "timeout"
                     except Exception as e:
                         current_status[service_name] = f"error_{type(e).__name__}"
 
@@ -1169,7 +1291,7 @@ class DockerManager:
 
     def clean(self) -> bool:
         """Clean up all resources without removing data."""
-        return self.cleanup(remove_data=False)
+        return self.remove_containers(remove_volumes=False)
 
     def cleanup(
         self,
@@ -1298,44 +1420,54 @@ class DockerManager:
                 if verbose:
                     self.console.print("🔍 Validating cleanup...")
 
-                # Wait for containers to stop and ports to be released
-                container_engine = (
-                    "docker"
-                    if self.force_docker
-                    else (
-                        "podman"
-                        if subprocess.run(
-                            ["which", "podman"], capture_output=True
-                        ).returncode
-                        == 0
-                        else "docker"
-                    )
-                )
-
-                container_names = [
-                    f"{self.project_name}-ollama",
-                    f"{self.project_name}-qdrant",
-                    f"{self.project_name}-data-cleaner",
-                ]
-                required_ports = [6333, 11434, 8091]  # Qdrant, Ollama, DataCleaner
-
-                # Wait for complete cleanup with intelligent timeout
-                validation_success = self.health_checker.wait_for_cleanup_complete(
-                    container_names=container_names,
-                    ports=required_ports,
-                    container_engine=container_engine,
-                    timeout=None,  # Use engine-optimized timeout
-                )
-
-                if not validation_success and verbose:
-                    self.console.print(
-                        "⚠️  Cleanup validation timed out, continuing anyway...",
-                        style="yellow",
+                # Only validate if we actually had something to clean up
+                if not self.compose_file.exists():
+                    if verbose:
+                        self.console.print(
+                            "✅ No compose file exists, nothing to validate"
+                        )
+                    validation_success = True
+                else:
+                    # Wait for containers to stop and ports to be released
+                    container_engine = (
+                        "docker"
+                        if self.force_docker
+                        else (
+                            "podman"
+                            if subprocess.run(
+                                ["which", "podman"], capture_output=True
+                            ).returncode
+                            == 0
+                            else "docker"
+                        )
                     )
 
-                # Additional validation check for legacy compatibility
-                legacy_validation_success = self._validate_cleanup(verbose)
-                validation_success = validation_success and legacy_validation_success
+                    container_names = [
+                        self.get_container_name("ollama"),
+                        self.get_container_name("qdrant"),
+                        self.get_container_name("data-cleaner"),
+                    ]
+                    required_ports = [6333, 11434, 8091]  # Qdrant, Ollama, DataCleaner
+
+                    # Wait for complete cleanup with intelligent timeout
+                    validation_success = self.health_checker.wait_for_cleanup_complete(
+                        container_names=container_names,
+                        ports=required_ports,
+                        container_engine=container_engine,
+                        timeout=None,  # Use engine-optimized timeout
+                    )
+
+                    if not validation_success and verbose:
+                        self.console.print(
+                            "⚠️  Cleanup validation timed out, continuing anyway...",
+                            style="yellow",
+                        )
+
+                    # Additional validation check for legacy compatibility
+                    legacy_validation_success = self._validate_cleanup(verbose)
+                    validation_success = (
+                        validation_success and legacy_validation_success
+                    )
 
                 cleanup_success &= validation_success
 
@@ -1485,7 +1617,8 @@ class DockerManager:
 
         # Use HealthChecker for intelligent port availability checking
         ports_available = self.health_checker.wait_for_ports_available(
-            ports_to_check, timeout=10  # Shorter timeout for validation
+            ports_to_check,
+            timeout=10,  # Shorter timeout for validation
         )
 
         if ports_available:

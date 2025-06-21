@@ -280,7 +280,6 @@ class TextChunker:
         for i, chunk_text in enumerate(final_chunks):
             chunk_text = chunk_text.strip()
             if chunk_text:  # Skip empty chunks
-
                 # Add file context to chunk if it's not too long
                 contextual_chunk = chunk_text
                 if file_path and len(chunk_text) < self.chunk_size - 100:

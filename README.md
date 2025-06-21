@@ -15,6 +15,8 @@ Includes incremental updates to keep your index current as code changes.
 - **Vector Search** - Powered by Qdrant vector database
 - **Automated Setup** - Docker container management
 - **Incremental Updates** - Only re-index changed files
+- **Branch Topology Aware** - Smart incremental indexing across git branches with O(δ) complexity
+- **Working Directory Support** - Index staged and unstaged files for comprehensive coverage
 - **Filtering** - Filter by language, path, similarity score
 - **CLI Interface** - Terminal interface with progress bars
 - **Configurable** - Configuration options for different use cases
@@ -347,9 +349,82 @@ code-indexer watch --debounce 5.0
 - **Safety Buffer**: 1-minute buffer ensures reliability during rapid development
 - **Configuration Aware**: Forces full reindex when provider/model changes
 - **Resumable**: Can resume interrupted indexing operations seamlessly
-- **Git Integration**: Handles branch changes and repository state intelligently
-- **Throughput Monitoring**: Real-time performance metrics with throttling detection
-- **Smart Throttling**: Automatically detects and displays rate limiting status
+
+## Branch Topology-Aware Indexing
+
+Code Indexer now features advanced branch topology understanding for efficient incremental indexing across git branches. This enables O(δ) complexity indexing that only processes changed files when switching branches.
+
+### How It Works
+
+When you switch between git branches, Code Indexer automatically:
+
+1. **Analyzes Branch Changes**: Compares the current branch with the previous branch to identify:
+   - Files that changed between branches (require full reindexing)
+   - Files that are unchanged but need branch metadata updates
+   - Staged files (uncommitted changes in the index)
+   - Unstaged files (working directory modifications)
+
+2. **Smart Incremental Processing**: 
+   - **Reindexes only changed files** between branches for content updates
+   - **Batch updates metadata** for unchanged files (fast operation)
+   - **Indexes working directory files** with special status tracking
+   - **Maintains branch ancestry** for topology-aware queries
+
+3. **Performance Optimization**:
+   - Uses git merge-base analysis for efficient change detection
+   - Leverages Qdrant payload indexes for fast branch filtering
+   - Implements batch git operations to reduce subprocess overhead
+   - Achieves O(δ) complexity instead of O(n) for branch switches
+
+### Branch-Aware Querying
+
+Searches automatically include branch topology context:
+
+```bash
+# Search includes current branch + ancestry + working directory
+code-indexer query "authentication logic"
+
+# Claude analysis respects branch context
+code-indexer claude "How does auth work in this feature branch?"
+```
+
+### Working Directory Support
+
+The indexer now tracks and indexes:
+
+- **Staged files**: Changes added to git index but not committed
+- **Unstaged files**: Working directory modifications not yet staged
+- **File change types**: Added, modified, deleted, renamed
+
+### Branch Lifecycle Management
+
+```bash
+# Create feature branch and add files
+git checkout -b feature/new-auth
+echo "def new_auth(): pass" > new_auth.py
+git add new_auth.py && git commit -m "Add new auth"
+
+# Smart indexing only processes the new file
+code-indexer index
+
+# Query sees both main branch code and new feature code
+code-indexer query "authentication"
+
+# Switch back to main
+git checkout main
+code-indexer index  # Smart metadata updates only
+
+# Delete feature branch - associated data is cleaned up
+git branch -D feature/new-auth
+```
+
+### Advanced Features
+
+- **Branch Ancestry Tracking**: Maintains parent-child relationships for topology queries
+- **Working Directory Indexing**: Searches work-in-progress code before committing
+- **Metadata Schema Evolution**: Backwards-compatible schema versioning
+- **Performance Monitoring**: Detailed statistics on indexing operations
+- **Batch Operations**: Optimized git operations for large codebases
 
 **Real-time Updates:**
 - `watch` mode uses file system events for live synchronization
@@ -592,7 +667,7 @@ python -m code_indexer.cli watch --batch-size 10   # Smaller batches, more frequ
 - **Active development**: Keep search current during coding sessions
 - **Team environments**: Shared codebase with multiple contributors
 - **Large codebases**: Incremental updates faster than full re-indexing
-- **CI/CD integration**: Continuous index updates in development environments
+- **Automated integration**: Continuous index updates in development environments
 
 **Usage patterns:**
 - **Development workflow**: Start watcher at beginning of coding session

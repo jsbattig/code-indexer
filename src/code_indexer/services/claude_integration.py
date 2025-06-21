@@ -91,7 +91,17 @@ class ClaudeIntegrationService:
         )
 
         # Build the complete prompt
-        prompt = f"""You are an expert code analyst working with the {self.project_name or 'this'} codebase. You have access to semantic search capabilities and can explore files as needed.
+        prompt = f"""You are an expert code analyst working with the {self.project_name or "this"} codebase. You have access to semantic search capabilities and can explore files as needed.
+
+🔬 SCIENTIFIC EVIDENCE REQUIREMENT:
+Treat this analysis like a scientific paper - ALL assertions must be backed by specific evidence from the source code. Every claim you make MUST include markdown links to exact source files and line numbers. No assertion is valid without proper citation to the codebase.
+
+REQUIRED CITATION FORMAT:
+- Use markdown links: [description](file_path:line_number) or [description](file_path:line_start-line_end)
+- Examples: [UserService class](src/services/user.py:45), [authentication logic](auth/login.py:123-145)
+- When referencing multiple files: cite ALL relevant files
+- When explaining flows: cite EVERY step with specific file/line references
+- When creating diagrams: include file/line citations in diagram elements
 
 {tool_instruction}
 
@@ -105,7 +115,7 @@ SEMANTIC SEARCH RESULTS:
 
 {exploration_instructions}
 
-Focus on providing accurate, actionable insights based primarily on the provided search results. Use exploration judiciously based on the analysis depth required."""
+Focus on providing accurate, actionable insights with MANDATORY evidence citations. Every technical statement requires a source code reference. No exceptions."""
 
         return prompt
 
@@ -175,7 +185,15 @@ READ-ONLY FILE SYSTEM TOOLS:
 - LS: List directory contents
 - Task: Delegate complex file searches
 
-NOTE: You cannot modify, edit, or execute any files (read-only access)"""
+NOTE: You cannot modify, edit, or execute any files (read-only access)
+
+🔬 EVIDENCE CITATION REQUIREMENTS:
+- When using any tool, immediately cite findings with [description](file_path:line_number)
+- Never make claims about code without providing the exact source location
+- Include file/line references in all explanations, diagrams, and flow descriptions
+- Format citations as markdown links: [UserService.authenticate](src/services/user.py:123)
+- For ranges: [authentication flow](auth/handlers.py:45-78)
+- Treat every statement like a scientific paper - evidence required"""
 
         if exploration_depth == "shallow":
             return (
@@ -229,30 +247,40 @@ Use cidx query extensively as your primary exploration tool to discover related 
             return """ANALYSIS INSTRUCTIONS:
 1. **Provided Context Only**: Base your entire answer on the semantic search results provided above
 2. **No Exploration**: Do not use any file exploration tools (Read, Glob, Grep, cidx query)
-3. **Code References**: Include specific file paths and line numbers from the provided results
-4. **Quick Response**: Provide a direct answer based solely on the given context
-5. **Acknowledge Limitations**: If the provided context is insufficient, state what additional information would be needed"""
+3. **MANDATORY Citations**: Every single assertion MUST include markdown links [description](file_path:line_number)
+4. **Evidence-Based Claims**: No statement about code behavior, structure, or functionality without citing exact source location
+5. **Scientific Rigor**: Treat every claim like a scientific paper citation - provide the evidence reference
+6. **Quick Response**: Provide a direct answer based solely on the given context, but with full citations
+7. **Acknowledge Limitations**: If the provided context is insufficient, state what additional information would be needed"""
 
         elif exploration_depth == "shallow":
             return """ANALYSIS INSTRUCTIONS:
 1. **Primary Analysis**: Base your answer on the provided semantic search results above - this should be your main source
-2. **Code References**: Include specific file paths and line numbers when referencing code
-3. **Limited Exploration**: Only explore files directly referenced in the search results (imports, includes, etc.)
-4. **One Level Deep**: Keep exploration to ONE LEVEL DEEP - avoid broad codebase traversal
-5. **Targeted cidx**: Use `cidx query` sparingly for clarifying specific concepts only
-6. **Focused Response**: Prioritize answering from provided context over extensive exploration
-7. **Examples**: Include concrete code examples from the search results when relevant"""
+2. **MANDATORY Evidence Citations**: Every assertion requires [description](file_path:line_number) markdown links
+3. **Scientific Standards**: Each claim about code behavior, structure, or relationships MUST cite exact source location
+4. **Limited Exploration**: Only explore files directly referenced in the search results (imports, includes, etc.)
+5. **Citation-Driven Exploration**: When exploring, immediately cite what you find with file/line references
+6. **One Level Deep**: Keep exploration to ONE LEVEL DEEP - avoid broad codebase traversal
+7. **Targeted cidx**: Use `cidx query` sparingly for clarifying specific concepts, always citing results
+8. **Evidence-Based Examples**: Include concrete code examples with mandatory citations to source files/lines
+9. **No Unsupported Claims**: If you cannot cite a source location, do not make the claim
+10. **Git-Aware Analysis**: If exploring git repositories, use git diff/log commands to understand code changes and evolution"""
 
         else:  # exploration_depth == 'deep'
             return """ANALYSIS INSTRUCTIONS:
 1. **Comprehensive Analysis**: Explore the codebase thoroughly to provide detailed, accurate insights
-2. **Multi-Source**: Use provided search results as starting point, then explore extensively
-3. **Deep Exploration**: Follow all references, dependencies, and related code without depth limits
-4. **Extensive cidx Usage**: Use `cidx query` to find all related implementations, patterns, and usages
-5. **Cross-Reference**: Look for relationships between different parts of the codebase
-6. **Complete Context**: Read relevant files, tests, documentation, and examples
-7. **Detailed Examples**: Provide comprehensive code examples and explanations
-8. **Thorough Documentation**: Include file paths, line numbers, and full context for all references"""
+2. **SCIENTIFIC RIGOR**: Every single assertion MUST include [description](file_path:line_number) citations
+3. **Multi-Source Evidence**: Use provided search results as starting point, cite ALL sources extensively
+4. **Deep Exploration with Citations**: Follow all references, dependencies, and related code, citing each discovery
+5. **Extensive cidx Usage**: Use `cidx query` to find all related implementations, patterns, and usages - cite every finding
+6. **Cross-Reference Documentation**: Look for relationships between different parts of the codebase, cite ALL connections
+7. **Complete Context with Evidence**: Read relevant files, tests, documentation, and examples - cite every reference
+8. **Evidence-Rich Examples**: Provide comprehensive code examples with mandatory source file/line citations
+9. **Research Paper Standards**: Treat this like academic research - no claim without evidence citation
+10. **Citation Completeness**: Include file paths, line numbers, and full context for EVERY single reference
+11. **Flow Documentation**: When explaining processes or flows, cite each step with specific file/line references
+12. **Git Repository Exploration**: Leverage git commands extensively for change analysis, history exploration, and branch comparisons
+13. **Historical Context**: When analyzing code evolution, use git log/blame to understand development timeline and decision context"""
 
     def _create_project_context(self, project_info: Optional[Dict[str, Any]]) -> str:
         """Create project context information."""
@@ -272,6 +300,55 @@ Use cidx query extensively as your primary exploration tool to discover related 
             if commit != "unknown" and len(commit) > 8:
                 commit = commit[:8] + "..."
             context_parts.append(f"GIT COMMIT: {commit}")
+
+        # Add git-aware capabilities section if git is available
+        if project_info.get("git_available"):
+            context_parts.append("")
+            context_parts.append("🔧 GIT-AWARE ANALYSIS CAPABILITIES:")
+            context_parts.append(
+                "You are running on a Git repository and have access to advanced git tools:"
+            )
+            context_parts.append(
+                "- `git diff [commit1]..[commit2]` - Compare code changes between commits/branches/tags"
+            )
+            context_parts.append(
+                "- `git diff [commit]` - Show changes in working directory vs specific commit"
+            )
+            context_parts.append(
+                "- `git log --oneline [file]` - View commit history for specific files"
+            )
+            context_parts.append(
+                "- `git show [commit]:[file]` - View file content at specific commit"
+            )
+            context_parts.append(
+                "- `git blame [file]` - Show line-by-line authorship and commit info"
+            )
+            context_parts.append(
+                "- `git diff --name-only [commit1]..[commit2]` - List changed files between commits"
+            )
+            context_parts.append(
+                "- `git merge-base [branch1] [branch2]` - Find common ancestor commit"
+            )
+            context_parts.append(
+                "- `git branch --contains [commit]` - Find branches containing a commit"
+            )
+            context_parts.append("")
+            context_parts.append("🎯 SUGGESTED GIT ANALYSIS WORKFLOWS:")
+            context_parts.append(
+                "1. **Change Impact Analysis**: Use `git diff --name-only` + `git diff` to analyze scope and impact"
+            )
+            context_parts.append(
+                "2. **Branch Comparison**: Use `git merge-base` + `git diff` to compare branch divergence"
+            )
+            context_parts.append(
+                "3. **Historical Analysis**: Use `git log` + `git show` to understand code evolution"
+            )
+            context_parts.append(
+                "4. **File Evolution**: Use `git log --follow` + `git blame` to trace file history"
+            )
+            context_parts.append(
+                "5. **Working Directory Analysis**: Use `git status` + `git diff` for uncommitted changes"
+            )
 
         return "\n".join(context_parts) + "\n"
 
@@ -505,7 +582,6 @@ Use cidx query extensively as your primary exploration tool to discover related 
                                 and "message" in data
                                 and "content" in data["message"]
                             ):
-
                                 content_blocks = data["message"]["content"]
                                 for block in content_blocks:
                                     # Look for text content blocks
@@ -525,7 +601,6 @@ Use cidx query extensively as your primary exploration tool to discover related 
                                                 or text_buffer.endswith("\n---\n")
                                                 or len(text_buffer) > 500
                                             ):
-
                                                 _flush_buffer_with_formatting(
                                                     text_buffer, console
                                                 )

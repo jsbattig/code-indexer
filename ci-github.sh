@@ -102,6 +102,10 @@ if pytest tests/ \
     --ignore=tests/test_voyage_ai_e2e.py \
     --ignore=tests/test_docker_compose_validation.py \
     --ignore=tests/test_idempotent_setup.py \
+    --ignore=tests/test_branch_topology_e2e.py \
+    --ignore=tests/test_schema_migration_e2e.py \
+    --ignore=tests/test_optimized_example.py \
+    --ignore=tests/test_comprehensive_git_workflow.py \
     -m "not slow and not e2e and not real_api" \
     --cov=src/code_indexer --cov-report=xml --cov-report=term; then
     print_success "Unit tests passed"
@@ -134,8 +138,12 @@ echo "   • Reconcile E2E tests (require indexing services)"
 echo "   • VoyageAI E2E tests (require Docker and API keys)"
 echo "   • Docker Compose validation tests (require Docker)"
 echo "   • Idempotent setup tests (require Docker services)"
+echo "   • Branch topology E2E tests (require Git and indexing services)"
+echo "   • Schema migration E2E tests (require Qdrant and embedding services)"
+echo "   • Optimized example tests (require Docker and VoyageAI API)"
+echo "   • Comprehensive git workflow tests (require full service stack)"
 echo "   • Any tests marked as 'slow', 'e2e', or 'real_api'"
 echo ""
 echo "ℹ️  This matches the GitHub Actions workflow for fast CI execution"
-echo "ℹ️  Run 'ci-local.sh' for full local testing including E2E tests"
+echo "ℹ️  Run 'full-automation.sh' for full local testing including E2E tests"
 echo "Ready to push to GitHub! 🚀"

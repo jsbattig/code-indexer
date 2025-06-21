@@ -244,9 +244,22 @@ class TestRealWorldPatterns:
         # New: wait_for_cleanup_complete()
 
         start_time = time.time()
+        # Use ports that are guaranteed to be available for testing
+        import socket
+
+        # Find available ports for testing
+        def find_free_port():
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("", 0))
+                s.listen(1)
+                port = s.getsockname()[1]
+            return port
+
+        test_ports = [find_free_port(), find_free_port()]
+
         result = self.health_checker.wait_for_cleanup_complete(
-            container_names=["test-container"],
-            ports=[6333, 11434],
+            container_names=["test-container-that-never-existed"],
+            ports=test_ports,
             container_engine="podman",
             timeout=10,
         )

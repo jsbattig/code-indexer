@@ -14,7 +14,6 @@ from code_indexer.services.generic_query_service import GenericQueryService
 
 
 class TestGenericQueryService:
-
     @pytest.fixture
     def temp_dir(self):
         temp_dir = Path(tempfile.mkdtemp())

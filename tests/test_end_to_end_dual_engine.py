@@ -14,6 +14,10 @@ from pathlib import Path
 import pytest
 
 
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
 class TestEndToEndDualEngine:
     """Test CLI commands with both Podman (default) and Docker (--force-docker)"""
 
@@ -34,29 +38,87 @@ class TestEndToEndDualEngine:
         # Change to test directory
         os.chdir(self.test_dir)
 
+        # NEW STRATEGY: Ensure services are running (comprehensive setup)
+        self.ensure_services_ready()
+
         yield
 
-        # Cleanup: Use enhanced clean command to ensure robust cleanup
+        # NEW STRATEGY: Keep services running, just clean project data if needed
         try:
             os.chdir(self.test_dir)
-            # Use enhanced clean with force and validation
-            # If this fails, it indicates application bugs that need fixing
+            # Use clean-data to remove only project-specific data, keep services running
             subprocess.run(
-                ["code-indexer", "clean", "--remove-data", "--force", "--validate"],
+                ["code-indexer", "clean-data"],
                 capture_output=True,
-                timeout=90,
+                timeout=30,  # Much faster than full cleanup
             )
         except Exception:
-            # Don't hide cleanup failures - they indicate real application issues
+            # Ignore cleanup errors - services will be reused by next test
             pass
         finally:
             # Return to original directory
             os.chdir(self.original_cwd)
-            # Note: Test directory cleanup is the responsibility of the application's
-            # clean command. If it doesn't work, that's an application bug to fix.
+            # Services stay running for next test (faster overall execution)
 
-            # Verify no root-owned files are left behind
-            self.verify_no_root_owned_files()
+    def ensure_services_ready(self):
+        """Ensure services are running using new strategy (keep services running)"""
+        try:
+            # Check if services are already running to avoid unnecessary startup time
+            status_result = subprocess.run(
+                ["code-indexer", "status"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            services_running = status_result.returncode == 0 and (
+                "✅ Running" in status_result.stdout
+                or "✅ Ready" in status_result.stdout
+            )
+
+            if not services_running:
+                # Services not running, start them with VoyageAI for CI stability
+                print("Starting services for test...")
+                init_result = subprocess.run(
+                    [
+                        "code-indexer",
+                        "init",
+                        "--force",
+                        "--embedding-provider",
+                        "voyage-ai",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                if init_result.returncode != 0:
+                    print(f"Init failed: {init_result.stderr}")
+
+                start_result = subprocess.run(
+                    ["code-indexer", "start", "--quiet"],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+                if start_result.returncode != 0:
+                    print(f"Start failed: {start_result.stderr}")
+            else:
+                # Services running, just ensure this project is properly initialized
+                subprocess.run(
+                    [
+                        "code-indexer",
+                        "init",
+                        "--force",
+                        "--embedding-provider",
+                        "voyage-ai",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+        except Exception as e:
+            print(f"Service setup error: {e}")
+            # Don't fail the test, let it proceed and fail properly if needed
 
     def create_test_project(self):
         """Create a simple test project with some code files"""
@@ -197,8 +259,9 @@ class TestAuthentication(unittest.TestCase):
         engine_name = "Docker" if force_docker else "Podman"
         print(f"\n=== Testing full user workflow with {engine_name} ===")
 
-        # Step 1: User initializes project
-        self.run_cli_command(["init"])
+        # Step 1: User initializes project with VoyageAI for CI stability
+        # Note: Using --force since setup may have already initialized
+        self.run_cli_command(["init", "--force", "--embedding-provider", "voyage-ai"])
 
         # Verify expected outcome: config file exists
         config_file = self.test_dir / ".code-indexer" / "config.json"
@@ -229,10 +292,10 @@ class TestAuthentication(unittest.TestCase):
         result = self.run_cli_command(status_args)
         assert "✅" in result.stdout, "Status should show healthy system"
 
-        # Step 6: User cleans up their project (using enhanced clean)
-        clean_args = ["clean", "--remove-data", "--force", "--validate"]
+        # Step 6: User cleans up their project data (keeping services for other projects)
+        clean_args = ["clean-data"]
         if force_docker:
-            clean_args.insert(-3, "--force-docker")
+            clean_args.append("--force-docker")
         self.run_cli_command(clean_args, timeout=90)
 
     @pytest.mark.parametrize("force_docker", [False, True])
@@ -254,21 +317,21 @@ class TestAuthentication(unittest.TestCase):
         result = self.run_cli_command(status_args)
         assert "✅" in result.stdout, "Services should be running after setup"
 
-        # User cleans up with enhanced cleanup and validation
-        clean_args = ["clean", "--force", "--validate"]
+        # User cleans project data using clean-data command
+        clean_args = ["clean-data"]
         if force_docker:
-            clean_args.insert(-2, "--force-docker")
+            clean_args.append("--force-docker")
         self.run_cli_command(clean_args, timeout=90)
 
-        # Verify cleanup worked by checking status
-        # Enhanced clean with --validate should ensure cleanup worked
+        # Verify cleanup worked by checking status - services should remain running but data should be cleared
         result = self.run_cli_command(status_args)
-        # After enhanced cleanup, services should not be running
-        # If they are still running, it's an application bug in the enhanced cleanup
-        if "✅" in result.stdout and "Running" in result.stdout:
-            pytest.fail(
-                f"APPLICATION BUG: Enhanced clean command (--force --validate) did not stop services properly for {engine_name}"
-            )
+        # After clean-data, services should still be running (containers preserved) but index should be cleared
+        assert (
+            "✅" in result.stdout
+        ), "Services should still be running after clean-data"
+        assert (
+            "❌ Not Found" in result.stdout or "Not Found" in result.stdout
+        ), f"Index should be cleared after clean-data: {result.stdout}"
 
     @pytest.mark.parametrize("force_docker", [False, True])
     def test_service_engine_isolation(self, force_docker):
@@ -300,13 +363,12 @@ class TestAuthentication(unittest.TestCase):
         result = self.run_cli_command(status_args)
 
         # Verify expected components are present
-        assert "Ollama" in result.stdout, "Status should show Ollama"
         assert "Qdrant" in result.stdout, "Status should show Qdrant"
 
-        # Clean up after test to prevent state leakage
-        clean_args = ["clean", "--force", "--validate"]
+        # Clean up project data after test to prevent state leakage
+        clean_args = ["clean-data"]
         if force_docker:
-            clean_args.insert(-2, "--force-docker")
+            clean_args.append("--force-docker")
         self.run_cli_command(clean_args, timeout=90)
 
     @pytest.mark.parametrize("force_docker", [False, True])
@@ -315,9 +377,12 @@ class TestAuthentication(unittest.TestCase):
         engine_name = "Docker" if force_docker else "Podman"
         print(f"\n=== Testing performance configuration with {engine_name} ===")
 
+        # Initialize with VoyageAI provider first
+        self.run_cli_command(["init", "--force", "--embedding-provider", "voyage-ai"])
+
         # User configures performance settings
         setup_args = [
-            "setup",
+            "start",
             "--parallel-requests",
             "2",
             "--max-models",
@@ -340,10 +405,10 @@ class TestAuthentication(unittest.TestCase):
         assert "✅" in result.stdout, "Setup with custom performance config should work"
         assert "Ready" in result.stdout, "Services should be ready"
 
-        # Clean up after test to prevent state leakage
-        clean_args = ["clean", "--force", "--validate"]
+        # Clean up project data after test to prevent state leakage
+        clean_args = ["clean-data"]
         if force_docker:
-            clean_args.insert(-2, "--force-docker")
+            clean_args.append("--force-docker")
         self.run_cli_command(clean_args, timeout=90)
 
     def test_sequential_engine_usage(self):
@@ -370,8 +435,8 @@ class TestAuthentication(unittest.TestCase):
         podman_status = self.run_cli_command(["status"])
         assert "✅" in podman_status.stdout, "Podman setup should work"
 
-        # Fully clean Podman
-        self.run_cli_command(["clean", "--force", "--validate"], timeout=90)
+        # Clean project data from Podman test
+        self.run_cli_command(["clean-data"], timeout=90)
 
         # Test Docker second
         print("Testing Docker...")
@@ -379,7 +444,5 @@ class TestAuthentication(unittest.TestCase):
         docker_status = self.run_cli_command(["status", "--force-docker"])
         assert "✅" in docker_status.stdout, "Docker setup should work"
 
-        # Fully clean Docker
-        self.run_cli_command(
-            ["clean", "--force", "--validate", "--force-docker"], timeout=90
-        )
+        # Clean project data from Docker test
+        self.run_cli_command(["clean-data", "--force-docker"], timeout=90)

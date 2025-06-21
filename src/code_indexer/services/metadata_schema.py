@@ -15,8 +15,9 @@ class MetadataSchemaVersion:
 
     LEGACY = "1.0"  # Original file-based metadata
     GIT_AWARE = "2.0"  # Git-aware metadata with branch/commit info
+    BRANCH_TOPOLOGY = "3.0"  # Branch topology with working directory support
 
-    CURRENT = GIT_AWARE
+    CURRENT = BRANCH_TOPOLOGY
 
 
 class GitAwareMetadataSchema:
@@ -47,6 +48,15 @@ class GitAwareMetadataSchema:
         "git_commit_hash",  # Full git commit hash
         "git_branch",  # Git branch name
         "git_blob_hash",  # Git blob hash for file content
+        "git_merge_base",  # Merge base commit for topology
+        "branch_ancestry",  # Parent commits for topology filtering
+    }
+
+    # Working directory fields (optional, for staged/unstaged files)
+    WORKING_DIR_FIELDS = {
+        "working_directory_status",  # staged, unstaged, committed
+        "file_change_type",  # added, modified, deleted
+        "staged_at",  # Timestamp when file was staged (if applicable)
     }
 
     # Filesystem fallback fields (optional, when git_available=False)
@@ -56,7 +66,7 @@ class GitAwareMetadataSchema:
     }
 
     # All possible fields
-    ALL_FIELDS = REQUIRED_FIELDS | GIT_FIELDS | FILESYSTEM_FIELDS
+    ALL_FIELDS = REQUIRED_FIELDS | GIT_FIELDS | WORKING_DIR_FIELDS | FILESYSTEM_FIELDS
 
     @classmethod
     def validate_metadata(cls, metadata: Dict[str, Any]) -> Dict[str, List[str]]:
@@ -93,6 +103,9 @@ class GitAwareMetadataSchema:
                     cls._validate_git_metadata(metadata, errors, warnings)
                 else:
                     cls._validate_filesystem_metadata(metadata, errors, warnings)
+
+        # Validate working directory fields if present
+        cls._validate_working_dir_metadata(metadata, errors, warnings)
 
         if "chunk_index" in metadata:
             if (
@@ -165,6 +178,32 @@ class GitAwareMetadataSchema:
             size = metadata["filesystem_size"]
             if size and not isinstance(size, int):
                 errors.append("Field 'filesystem_size' must be integer")
+
+    @classmethod
+    def _validate_working_dir_metadata(
+        cls, metadata: Dict[str, Any], errors: List[str], warnings: List[str]
+    ):
+        """Validate working directory metadata fields."""
+        if "working_directory_status" in metadata:
+            status = metadata["working_directory_status"]
+            valid_statuses = {"staged", "unstaged", "committed"}
+            if status and status not in valid_statuses:
+                errors.append(
+                    f"Field 'working_directory_status' must be one of: {', '.join(valid_statuses)}"
+                )
+
+        if "file_change_type" in metadata:
+            change_type = metadata["file_change_type"]
+            valid_types = {"added", "modified", "deleted", "renamed"}
+            if change_type and change_type not in valid_types:
+                errors.append(
+                    f"Field 'file_change_type' must be one of: {', '.join(valid_types)}"
+                )
+
+        if "staged_at" in metadata:
+            staged_at = metadata["staged_at"]
+            if staged_at and not cls._is_valid_iso_timestamp(staged_at):
+                errors.append("Field 'staged_at' must be valid ISO timestamp")
 
     @classmethod
     def _is_valid_iso_timestamp(cls, timestamp: str) -> bool:
@@ -291,6 +330,76 @@ class GitAwareMetadataSchema:
             # Add filesystem fallback fields if available
             # Note: In this case git_metadata is None, so no filesystem metadata to add
             pass
+
+        return metadata
+
+    @classmethod
+    def create_branch_topology_metadata(
+        cls,
+        path: str,
+        content: str,
+        language: str,
+        file_size: int,
+        chunk_index: int,
+        total_chunks: int,
+        project_id: str,
+        file_hash: str,
+        git_metadata: Optional[Dict[str, Any]] = None,
+        working_dir_metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Create branch topology metadata with working directory support.
+
+        Args:
+            path: Absolute file path
+            content: Chunk content
+            language: Programming language
+            file_size: File size in bytes
+            chunk_index: Chunk index
+            total_chunks: Total chunks in file
+            project_id: Project identifier
+            file_hash: File content hash
+            git_metadata: Optional git-specific metadata including topology
+            working_dir_metadata: Optional working directory metadata
+
+        Returns:
+            Branch topology metadata dictionary
+        """
+        metadata = {
+            "path": path,
+            "content": content,
+            "language": language,
+            "file_size": file_size,
+            "chunk_index": chunk_index,
+            "total_chunks": total_chunks,
+            "indexed_at": datetime.utcnow().isoformat() + "Z",
+            "project_id": project_id,
+            "file_hash": file_hash,
+            "git_available": git_metadata is not None,
+            "schema_version": MetadataSchemaVersion.BRANCH_TOPOLOGY,
+        }
+
+        if git_metadata:
+            # Add git-specific fields including topology
+            if "commit_hash" in git_metadata:
+                metadata["git_commit_hash"] = git_metadata["commit_hash"]
+            if "branch" in git_metadata:
+                metadata["git_branch"] = git_metadata["branch"]
+            if "git_hash" in git_metadata:
+                metadata["git_blob_hash"] = git_metadata["git_hash"]
+            if "merge_base" in git_metadata:
+                metadata["git_merge_base"] = git_metadata["merge_base"]
+            if "branch_ancestry" in git_metadata:
+                metadata["branch_ancestry"] = git_metadata["branch_ancestry"]
+
+        if working_dir_metadata:
+            # Add working directory fields
+            if "status" in working_dir_metadata:
+                metadata["working_directory_status"] = working_dir_metadata["status"]
+            if "change_type" in working_dir_metadata:
+                metadata["file_change_type"] = working_dir_metadata["change_type"]
+            if "staged_at" in working_dir_metadata:
+                metadata["staged_at"] = working_dir_metadata["staged_at"]
 
         return metadata
 

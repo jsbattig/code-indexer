@@ -253,7 +253,6 @@ class TestDockerComposeValidation:
             ) as mock_healthy, patch.object(
                 docker_manager, "_container_up_to_date"
             ) as mock_up_to_date:
-
                 # Test different scenarios
                 test_cases = [
                     # exists, running, healthy, up_to_date

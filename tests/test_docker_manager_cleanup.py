@@ -102,7 +102,6 @@ class TestDockerManagerCleanup:
         ) as mock_rmtree, patch.object(
             docker_manager, "_cleanup_global_directories"
         ) as mock_global_cleanup:
-
             mock_exists.return_value = True
             mock_global_cleanup.return_value = True
 
@@ -119,7 +118,6 @@ class TestDockerManagerCleanup:
         ) as mock_rmtree, patch.object(
             docker_manager, "_cleanup_global_directories"
         ) as mock_global_cleanup:
-
             mock_exists.return_value = True
             mock_rmtree.side_effect = PermissionError("Access denied")
             mock_global_cleanup.return_value = False
@@ -171,7 +169,6 @@ class TestDockerManagerCleanup:
         ) as mock_rmtree, patch.object(
             docker_manager, "_fix_directory_permissions"
         ) as mock_fix_perms:
-
             mock_exists.return_value = True
 
             result = docker_manager._cleanup_global_directories(
@@ -189,7 +186,6 @@ class TestDockerManagerCleanup:
         with patch.dict(os.environ, {}, clear=True), patch(
             "pathlib.Path.exists"
         ) as mock_exists, patch("shutil.rmtree") as mock_rmtree:
-
             mock_exists.return_value = True
 
             result = docker_manager._cleanup_global_directories(
@@ -212,7 +208,6 @@ class TestDockerManagerCleanup:
         ) as mock_cleanup_data, patch.object(
             docker_manager, "_validate_cleanup"
         ) as mock_validate:
-
             # Setup mocks
             mock_compose_cmd.return_value = ["podman-compose"]
             mock_compose_file.exists.return_value = True
@@ -248,7 +243,6 @@ class TestDockerManagerCleanup:
         ) as mock_clean_data, patch.object(
             docker_manager, "stop_data_cleaner"
         ) as mock_stop_cleaner:
-
             # Setup mocks for failure scenarios
             mock_compose_cmd.return_value = ["podman-compose"]
             mock_compose_file.exists.return_value = True
@@ -325,7 +319,6 @@ class TestCleanupErrorHandling:
         with patch("pathlib.Path.exists") as mock_exists, patch(
             "shutil.rmtree"
         ) as mock_rmtree:
-
             mock_exists.return_value = True
             mock_rmtree.side_effect = PermissionError("Access denied")
 

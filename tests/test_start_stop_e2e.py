@@ -11,6 +11,9 @@ import time
 import pytest
 from pathlib import Path
 
+# Import new test infrastructure
+from .test_infrastructure import create_fast_e2e_setup
+
 
 @pytest.mark.skipif(
     os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
@@ -76,46 +79,24 @@ def error_handler(func):
             original_cwd = Path.cwd()
             os.chdir(project_dir)
 
-            # Step 1: Setup services and index the project
-            print("🔧 Setting up services...")
-            setup_result = subprocess.run(
-                ["python", "-m", "code_indexer.cli", "setup", "--quiet"],
-                capture_output=True,
-                text=True,
-                timeout=300,  # 5 minutes for setup
+            # Step 1: Use new test infrastructure for service setup
+            service_manager, cli_helper, dir_manager = create_fast_e2e_setup()
+
+            # Ensure services are ready using new infrastructure
+            services_ready = service_manager.ensure_services_ready(
+                working_dir=project_dir
             )
-            assert setup_result.returncode == 0, f"Setup failed: {setup_result.stderr}"
+            assert services_ready, "Failed to ensure services are ready for test"
 
             print("📚 Indexing project...")
-            index_result = subprocess.run(
-                ["python", "-m", "code_indexer.cli", "index"],
-                capture_output=True,
-                text=True,
-                timeout=120,  # 2 minutes for indexing
-            )
-            assert (
-                index_result.returncode == 0
-            ), f"Indexing failed: {index_result.stderr}"
+            # Use CLI helper for consistent command execution
+            cli_helper.run_cli_command(["index"], cwd=project_dir, timeout=120)
 
-            # Step 2: Query to verify data exists
+            # Step 2: Query to verify data exists using test infrastructure
             print("🔍 Verifying initial data...")
-            query_result = subprocess.run(
-                [
-                    "python",
-                    "-m",
-                    "code_indexer.cli",
-                    "query",
-                    "authentication",
-                    "--limit",
-                    "3",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
+            query_result = cli_helper.run_cli_command(
+                ["query", "authentication", "--limit", "3"], cwd=project_dir, timeout=30
             )
-            assert (
-                query_result.returncode == 0
-            ), f"Initial query failed: {query_result.stderr}"
 
             # Verify we found authentication-related content
             output = query_result.stdout
@@ -131,20 +112,15 @@ def error_handler(func):
 
             # Step 3: Stop services from subfolder (test backtracking)
             print("🛑 Stopping services from subfolder...")
-            os.chdir(subfolder)  # Change to subfolder to test backtracking
 
-            stop_result = subprocess.run(
-                ["python", "-m", "code_indexer.cli", "stop"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            assert stop_result.returncode == 0, f"Stop failed: {stop_result.stderr}"
-            # Services might already be stopped, so check for either success or "no services running"
-            assert (
-                "Services stopped successfully!" in stop_result.stdout
-                or "No services currently running" in stop_result.stdout
-            )
+            # Use directory manager for safe directory changes
+            with dir_manager.safe_chdir(subfolder):
+                stop_result = cli_helper.run_cli_command(["stop"], timeout=60)
+                # Services might already be stopped, so check for either success or "no services running"
+                assert (
+                    "Services stopped successfully!" in stop_result.stdout
+                    or "No services currently running" in stop_result.stdout
+                )
 
             # Verify services are actually stopped
             time.sleep(2)  # Brief wait for shutdown
@@ -158,14 +134,9 @@ def error_handler(func):
 
             # Step 4: Start services again from subfolder
             print("🚀 Starting services from subfolder...")
-            start_result = subprocess.run(
-                ["python", "-m", "code_indexer.cli", "start"],
-                capture_output=True,
-                text=True,
-                timeout=180,  # 3 minutes for restart
-            )
-            assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
-            assert "Services started successfully!" in start_result.stdout
+            with dir_manager.safe_chdir(subfolder):
+                start_result = cli_helper.run_cli_command(["start"], timeout=180)
+                assert "Services started successfully!" in start_result.stdout
 
             # Step 5: Query again to verify data preservation
             print("🔍 Verifying data preservation...")
@@ -277,14 +248,62 @@ def error_handler(func):
             original_cwd = Path.cwd()
             os.chdir(project_dir)
 
-            # Setup from root
-            setup_result = subprocess.run(
-                ["python", "-m", "code_indexer.cli", "setup", "--quiet"],
+            # Setup from root (use faster strategy)
+            # Check if services are already running
+            status_result = subprocess.run(
+                ["python", "-m", "code_indexer.cli", "status"],
                 capture_output=True,
                 text=True,
-                timeout=180,
+                timeout=30,
             )
-            assert setup_result.returncode == 0, f"Setup failed: {setup_result.stderr}"
+
+            services_running = status_result.returncode == 0 and (
+                "✅ Running" in status_result.stdout
+                or "✅ Ready" in status_result.stdout
+            )
+
+            if not services_running:
+                init_result = subprocess.run(
+                    [
+                        "python",
+                        "-m",
+                        "code_indexer.cli",
+                        "init",
+                        "--force",
+                        "--embedding-provider",
+                        "voyage-ai",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
+
+                setup_result = subprocess.run(
+                    ["python", "-m", "code_indexer.cli", "start", "--quiet"],
+                    capture_output=True,
+                    text=True,
+                    timeout=180,
+                )
+                assert (
+                    setup_result.returncode == 0
+                ), f"Setup failed: {setup_result.stderr}"
+            else:
+                init_result = subprocess.run(
+                    [
+                        "python",
+                        "-m",
+                        "code_indexer.cli",
+                        "init",
+                        "--force",
+                        "--embedding-provider",
+                        "voyage-ai",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
             # Test stop from deep subfolder
             os.chdir(deep_folder)
@@ -335,7 +354,7 @@ def error_handler(func):
                 os.chdir(original_cwd)
 
     def test_start_without_prior_setup(self, tmp_path):
-        """Test start command behavior when no services are configured."""
+        """Test start command behavior when no services are configured - should create default config and succeed."""
         project_dir = tmp_path / "no_setup_project"
         project_dir.mkdir()
 
@@ -343,22 +362,24 @@ def error_handler(func):
             original_cwd = Path.cwd()
             os.chdir(project_dir)
 
-            # Try to start without setup
+            # Try to start without setup - should auto-create config and succeed
             start_result = subprocess.run(
                 ["python", "-m", "code_indexer.cli", "start"],
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=180,  # Increased timeout for service startup
             )
 
-            # Should fail gracefully
-            assert start_result.returncode != 0
+            # Should succeed by creating default configuration
             assert (
-                "No .code-indexer/config.json found in current directory tree"
-                in start_result.stdout  # Error message is in stdout, not stderr
-            )
+                start_result.returncode == 0
+            ), f"Start should succeed with auto-config: {start_result.stderr}"
+            assert (
+                "Creating default configuration" in start_result.stdout
+                or "Configuration created" in start_result.stdout
+            ), f"Should indicate config creation: {start_result.stdout}"
 
-            print("✅ Start command fails gracefully without setup")
+            print("✅ Start command creates default config and succeeds")
 
         finally:
             os.chdir(original_cwd)

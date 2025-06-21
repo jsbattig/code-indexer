@@ -131,12 +131,36 @@ class VoyageAIClient(EmbeddingProvider):
         # Thread pool for parallel processing
         self.executor = ThreadPoolExecutor(max_workers=config.parallel_requests)
 
-    def health_check(self) -> bool:
-        """Check if VoyageAI service is accessible."""
+    def health_check(self, test_api: bool = False) -> bool:
+        """Check if VoyageAI service is configured correctly.
+
+        Args:
+            test_api: If True, make an actual API call to test connectivity.
+                     If False, only check configuration validity.
+        """
         try:
-            # Use a simple embedding request as health check
-            result = self._make_sync_request(["test"], model=self.config.model)
-            return bool(result and "data" in result)
+            # First check configuration validity
+            config_valid = bool(
+                self.api_key  # API key is available
+                and self.config.model  # Model is configured
+                and self.config.api_endpoint  # Endpoint is configured
+            )
+
+            if not config_valid:
+                return False
+
+            # If API testing is requested, make a simple API call
+            if test_api:
+                try:
+                    # Make a minimal API call with a single character
+                    self._make_sync_request(["test"])
+                    return True
+                except Exception:
+                    return False
+
+            # For normal health checks, only verify configuration
+            # Making actual API calls during startup causes hanging due to rate limits/timeouts
+            return True
         except Exception:
             return False
 

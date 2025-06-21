@@ -102,6 +102,7 @@ code-indexing-structure.md
 debug_*.py
 test_*_quick.py
 experiment/
+experiments/
 
 # Test and development directories (temporary)
 production-test/

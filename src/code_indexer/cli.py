@@ -23,7 +23,6 @@ from rich.markdown import Markdown
 
 from .config import ConfigManager, Config
 from .services import QdrantClient, DockerManager, EmbeddingProviderFactory
-from .services.git_aware_processor import GitAwareDocumentProcessor
 from .services.smart_indexer import SmartIndexer
 from .services.generic_query_service import GenericQueryService
 from .services.claude_integration import (
@@ -238,14 +237,14 @@ def cli(ctx, config: Optional[str], verbose: bool, path: Optional[str]):
       • Git-aware: Tracks branches, commits, and file changes
       • Project isolation: Each project gets its own collection
       • Storage: Vector data stored in ~/.code-indexer/global/qdrant/
-      • Cleanup: Use 'clean --remove-data' for current project only
+      • Cleanup: Use 'clean-data' (fast) or 'uninstall' (complete removal)
 
     \b
     EXAMPLES:
       code-indexer init --max-file-size 2000000  # 2MB limit
       code-indexer index --clear                 # Fresh index
       code-indexer query "function authentication"
-      code-indexer clean --remove-data --all-projects  # Remove all data
+      code-indexer clean-data --all-projects  # Clear all project data
 
       # Using --path to work with different project locations:
       code-indexer --path /home/user/myproject index
@@ -1064,21 +1063,23 @@ def index(
     "--debounce", default=2.0, help="Seconds to wait before processing changes"
 )
 @click.option("--batch-size", default=50, help="Batch size for processing")
+@click.option("--initial-sync", is_flag=True, help="Perform full sync before watching")
 @click.pass_context
-def watch(ctx, debounce: float, batch_size: int):
-    """Watch for file changes and update index automatically."""
+def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
+    """Git-aware watch for file changes with branch support."""
     config_manager = ctx.obj["config_manager"]
 
     try:
-        import threading
-        import time
         from watchdog.observers import Observer
-        from watchdog.events import FileSystemEventHandler
-        from pathlib import Path
+
+        # Import git-aware components
+        from .services.git_topology_service import GitTopologyService
+        from .services.watch_metadata import WatchMetadata
+        from .services.git_aware_watch_handler import GitAwareWatchHandler
 
         config = config_manager.load()
 
-        # Initialize services
+        # Initialize services (same as index command)
         embedding_provider = EmbeddingProviderFactory.create(config, console)
         qdrant_client = QdrantClient(config.qdrant, console)
 
@@ -1094,328 +1095,120 @@ def watch(ctx, debounce: float, batch_size: int):
             console.print("❌ Qdrant service not available", style="red")
             sys.exit(1)
 
-        # Initialize git-aware processor for smart updates
-        _ = GitAwareDocumentProcessor(config, embedding_provider, qdrant_client)
-
-        # Perform smart update (will be fast if nothing to do)
+        # Initialize SmartIndexer (same as index command)
         metadata_path = config_manager.config_path.parent / "metadata.json"
         smart_indexer = SmartIndexer(
             config, embedding_provider, qdrant_client, metadata_path
         )
 
-        console.print("🔄 Checking for changes before starting file watcher...")
+        # Initialize git topology service
+        git_topology_service = GitTopologyService(config.codebase_dir)
 
-        # Run smart indexing to catch up on any changes
-        try:
-            stats = smart_indexer.smart_index(batch_size=batch_size)
+        # Initialize watch metadata
+        watch_metadata_path = config_manager.config_path.parent / "watch_metadata.json"
+        watch_metadata = WatchMetadata.load_from_disk(watch_metadata_path)
 
-            if stats.files_processed > 0:
+        # Get git state for metadata
+        git_state = (
+            git_topology_service.get_current_state()
+            if git_topology_service.is_git_available()
+            else {
+                "git_available": False,
+                "current_branch": None,
+                "current_commit": None,
+            }
+        )
+
+        # Start watch session
+        collection_name = qdrant_client.resolve_collection_name(
+            config, embedding_provider
+        )
+        watch_metadata.start_watch_session(
+            provider_name=embedding_provider.get_provider_name(),
+            model_name=embedding_provider.get_current_model(),
+            git_status=git_state,
+            collection_name=collection_name,
+        )
+
+        # Perform initial sync if requested or if first run
+        if initial_sync or watch_metadata.last_sync_timestamp == 0:
+            console.print("🔄 Performing initial git-aware sync...")
+            try:
+                stats = smart_indexer.smart_index(batch_size=batch_size, quiet=True)
                 console.print(
-                    f"✅ Updated {stats.files_processed} files before watching"
+                    f"✅ Initial sync complete: {stats.files_processed} files processed"
                 )
-            else:
-                console.print("✅ Index is up to date")
-
-        except Exception as e:
-            console.print(f"⚠️  Initial update failed: {e}", style="yellow")
-            console.print("Continuing with file watching...", style="yellow")
-
-        # Initialize progress bar variables for later use
-        progress_bar = None
-        task_id = None
-
-        def progress_callback(
-            current: int, total: int, filename: str, error: Optional[str] = None
-        ):
-            """Progress callback for watch updates"""
-            nonlocal progress_bar, task_id
-
-            # Initialize progress bar on first call
-            if progress_bar is None and total > 0:
-                progress_bar = Progress(
-                    TextColumn("[bold green]Watch Update", justify="right"),
-                    BarColumn(bar_width=30),
-                    TaskProgressColumn(),
-                    "•",
-                    TimeElapsedColumn(),
-                    "•",
-                    TimeRemainingColumn(),
-                    "•",
-                    TextColumn(
-                        "[cyan]{task.description}",
-                        table_column=Column(no_wrap=False, overflow="fold"),
-                    ),
-                    console=console,
+                watch_metadata.update_after_sync_cycle(
+                    files_processed=stats.files_processed
                 )
-                progress_bar.start()
-                task_id = progress_bar.add_task("Starting...", total=total)
+            except Exception as e:
+                console.print(f"⚠️  Initial sync failed: {e}", style="yellow")
+                console.print("Continuing with file watching...", style="yellow")
 
-            if progress_bar and task_id is not None and total > 0:
-                # Get relative path for display
-                file_path = Path(filename)
-                try:
-                    relative_path = str(file_path.relative_to(config.codebase_dir))
-                except (Exception, ValueError):
-                    try:
-                        relative_path = str(file_path.relative_to(Path.cwd()))
-                    except ValueError:
-                        relative_path = file_path.name
+        # Initialize git-aware watch handler
+        git_aware_handler = GitAwareWatchHandler(
+            config=config,
+            smart_indexer=smart_indexer,
+            git_topology_service=git_topology_service,
+            watch_metadata=watch_metadata,
+            debounce_seconds=debounce,
+        )
 
-                # No truncation - allow full path display
-                progress_bar.update(task_id, advance=1, description=relative_path)
-
-            # Show errors
-            if error and ctx.obj["verbose"]:
-                if progress_bar:
-                    progress_bar.console.print(
-                        f"❌ Failed to process {filename}: {error}", style="red"
-                    )
-                else:
-                    console.print(
-                        f"❌ Failed to process {filename}: {error}", style="red"
-                    )
-
-        console.print(f"\n👀 Now watching {config.codebase_dir} for changes...")
+        console.print(f"\n👀 Starting git-aware watch on {config.codebase_dir}")
         console.print(f"⏱️  Debounce: {debounce}s")
+        if git_topology_service.is_git_available():
+            console.print(
+                f"🌿 Git branch: {git_state.get('current_branch', 'unknown')}"
+            )
         console.print("Press Ctrl+C to stop")
 
-        # Track pending changes
-        pending_changes = set()
-        change_lock = threading.Lock()
+        # Start git-aware file watching
+        git_aware_handler.start_watching()
 
-        class CodeChangeHandler(FileSystemEventHandler):
-            def on_modified(self, event):
-                if event.is_directory:
-                    return
-
-                file_path = Path(event.src_path)
-
-                # Check if file should be indexed
-                from .indexing import FileFinder
-
-                file_finder = FileFinder(config)
-
-                try:
-                    if file_finder._should_include_file(file_path):
-                        with change_lock:
-                            pending_changes.add(file_path)
-                except ValueError:
-                    # File outside codebase directory
-                    pass
-
-            def on_deleted(self, event):
-                if event.is_directory:
-                    return
-
-                file_path = Path(event.src_path)
-
-                try:
-                    with change_lock:
-                        pending_changes.add(file_path)
-                except ValueError:
-                    pass
-
-        def process_changes():
-            """Process pending changes after debounce period."""
-            while True:
-                time.sleep(debounce)
-
-                with change_lock:
-                    if not pending_changes:
-                        continue
-
-                    changes_to_process = pending_changes.copy()
-                    pending_changes.clear()
-
-                # Start progress tracking for this batch using Rich Progress
-                total_files = len(changes_to_process)
-                console.print(f"\n📁 Processing {total_files} changed files...")
-
-                # Import here to avoid circular imports
-                from .indexing import TextChunker
-
-                text_chunker = TextChunker(config.indexing)
-
-                modified_files = []
-                deleted_files = []
-
-                for file_path in changes_to_process:
-                    if file_path.exists():
-                        modified_files.append(file_path)
-                    else:
-                        # File was deleted
-                        try:
-                            relative_path = str(
-                                file_path.relative_to(config.codebase_dir)
-                            )
-                            deleted_files.append(relative_path)
-                        except ValueError:
-                            continue
-
-                # Create progress bar for batch processing
-                total_operations = len(deleted_files) + len(modified_files)
-                batch_progress = None
-                batch_task_id = None
-
-                if total_operations > 0:
-                    batch_progress = Progress(
-                        TextColumn("[bold orange1]Processing", justify="right"),
-                        BarColumn(bar_width=30),
-                        TaskProgressColumn(),
-                        "•",
-                        TimeElapsedColumn(),
-                        "•",
-                        TextColumn(
-                            "[cyan]{task.description}",
-                            table_column=Column(no_wrap=False, overflow="fold"),
-                        ),
-                        console=console,
-                    )
-                    batch_progress.start()
-                    batch_task_id = batch_progress.add_task(
-                        "Starting batch...", total=total_operations
-                    )
-
-                # Process deletions
-                if deleted_files:
-                    for deleted_file in deleted_files:
-                        if batch_progress and batch_task_id is not None:
-                            # No truncation - allow full path display
-                            batch_progress.update(
-                                batch_task_id,
-                                advance=1,
-                                description=f"🗑️ {deleted_file}",
-                            )
-
-                        qdrant_client.delete_by_filter(
-                            {
-                                "must": [
-                                    {"key": "path", "match": {"value": deleted_file}}
-                                ]
-                            }
-                        )
-
-                # Process modifications with progress tracking
-                if modified_files:
-                    batch_points = []
-                    total_chunks = 0
-
-                    for file_path in modified_files:
-                        try:
-                            relative_path = str(
-                                file_path.relative_to(config.codebase_dir)
-                            )
-
-                            # Update progress bar
-                            if batch_progress and batch_task_id is not None:
-                                # No truncation - allow full path display
-                                batch_progress.update(
-                                    batch_task_id,
-                                    advance=1,
-                                    description=f"📝 {relative_path}",
-                                )
-
-                            # Delete existing points for this file first
-                            qdrant_client.delete_by_filter(
-                                {
-                                    "must": [
-                                        {
-                                            "key": "path",
-                                            "match": {"value": relative_path},
-                                        }
-                                    ]
-                                }
-                            )
-
-                            # Read and chunk file
-                            chunks = text_chunker.chunk_file(file_path)
-
-                            if not chunks:
-                                continue
-
-                            # Process each chunk
-                            for chunk in chunks:
-                                # Get embedding
-                                embedding = embedding_provider.get_embedding(
-                                    chunk["text"]
-                                )
-
-                                # Create point for Qdrant
-                                point = qdrant_client.create_point(
-                                    vector=embedding,
-                                    payload={
-                                        "path": relative_path,
-                                        "content": chunk["text"],
-                                        "language": chunk["file_extension"],
-                                        "file_size": file_path.stat().st_size,
-                                        "chunk_index": chunk["chunk_index"],
-                                        "total_chunks": chunk["total_chunks"],
-                                        "indexed_at": time.strftime(
-                                            "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
-                                        ),
-                                    },
-                                )
-
-                                batch_points.append(point)
-                                total_chunks += 1
-
-                                # Process batch when full
-                                if len(batch_points) >= batch_size:
-                                    qdrant_client.upsert_points(batch_points)
-                                    batch_points = []
-
-                        except Exception as e:
-                            if ctx.obj["verbose"]:
-                                console.print(
-                                    f"\n❌ Failed to process {file_path}: {e}",
-                                    style="red",
-                                )
-
-                    # Process remaining points
-                    if batch_points:
-                        qdrant_client.upsert_points(batch_points)
-
-                # Stop progress bar and show completion
-                if batch_progress and batch_task_id is not None:
-                    batch_progress.update(
-                        batch_task_id, description="✅ Batch completed"
-                    )
-                    batch_progress.stop()
-
-                # Final status update
-                if modified_files or deleted_files:
-                    console.print(
-                        f"✅ Batch complete: {len(modified_files)} modified, {len(deleted_files)} deleted",
-                        style="green",
-                    )
-                    console.print("👀 Watching for new changes...", style="dim")
-
-        # Start the change processor thread
-        processor_thread = threading.Thread(target=process_changes, daemon=True)
-        processor_thread.start()
-
-        # Setup file system watching
-        event_handler = CodeChangeHandler()
+        # Setup watchdog observer
         observer = Observer()
-        observer.schedule(event_handler, str(config.codebase_dir), recursive=True)
+        observer.schedule(git_aware_handler, str(config.codebase_dir), recursive=True)
         observer.start()
+        console.print(f"🔍 Watchdog observer started monitoring: {config.codebase_dir}")
 
         try:
-            with GracefulInterruptHandler(console, "File watching") as handler:
+            with GracefulInterruptHandler(
+                console, "Git-aware file watching"
+            ) as handler:
                 console.print(
-                    "👀 Watching for file changes... (Press Ctrl-C to stop)",
+                    "👀 Watching for file changes and git operations... (Press Ctrl-C to stop)",
                     style="dim",
                 )
                 while not handler.interrupted:
+                    import time
+
                     time.sleep(1)
         except KeyboardInterrupt:
-            console.print("\n👋 Stopping file watcher...")
+            console.print("\n👋 Stopping git-aware file watcher...")
         finally:
+            git_aware_handler.stop_watching()
             observer.stop()
             observer.join()
 
+            # Save final metadata
+            watch_metadata.save_to_disk(watch_metadata_path)
+
+            # Show final statistics
+            watch_stats = git_aware_handler.get_statistics()
+            console.print("\n📊 Watch session complete:")
+            console.print(
+                f"   • Files processed: {watch_stats['handler_files_processed']}"
+            )
+            console.print(
+                f"   • Indexing cycles: {watch_stats['handler_indexing_cycles']}"
+            )
+            if watch_stats["total_branch_changes"] > 0:
+                console.print(
+                    f"   • Branch changes handled: {watch_stats['total_branch_changes']}"
+                )
+
     except Exception as e:
-        console.print(f"❌ Watch failed: {e}", style="red")
+        console.print(f"❌ Git-aware watch failed: {e}", style="red")
         import traceback
 
         console.print(traceback.format_exc())
@@ -2327,195 +2120,35 @@ def optimize(ctx):
         sys.exit(1)
 
 
-@cli.command()
-@click.option(
-    "--remove-data",
-    "-d",
-    is_flag=True,
-    help="Remove current project's data and configuration",
-)
-@click.option(
-    "--all-projects",
-    is_flag=True,
-    help="Remove data for ALL projects (use with --remove-data)",
-)
-@click.option("--quiet", "-q", is_flag=True, help="Suppress output")
-@click.option("--verbose", "-v", is_flag=True, help="Verbose output for debugging")
-@click.option(
-    "--force",
-    "-f",
-    is_flag=True,
-    help="Force cleanup even if containers are unresponsive",
-)
-@click.option("--validate", is_flag=True, help="Validate cleanup worked properly")
-@click.option(
-    "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
-)
-@click.pass_context
-def clean(
-    ctx,
-    remove_data: bool,
-    all_projects: bool,
-    quiet: bool,
-    verbose: bool,
-    force: bool,
-    validate: bool,
-    force_docker: bool,
-):
-    """Stop services and optionally remove data.
-
-    \b
-    BASIC USAGE:
-      code-indexer clean                        # Stop services
-      code-indexer clean --remove-data          # Stop and remove current project data
-      code-indexer clean --remove-data --all-projects  # Remove all project data
-
-    \b
-    ENHANCED CLEANUP:
-      code-indexer clean --force                # Force stop unresponsive containers
-      code-indexer clean --validate             # Validate cleanup worked
-      code-indexer clean --verbose              # Show detailed cleanup steps
-      code-indexer clean --remove-data --force --validate  # Robust cleanup
-
-    \b
-    TROUBLESHOOTING:
-      If containers are stuck or won't stop properly, use --force
-      If cleanup seems incomplete, use --validate to check
-      For debugging cleanup issues, use --verbose
-
-    By default, --remove-data only removes the current project's data.
-    Use --all-projects with --remove-data to remove data for all projects.
-    """
-    try:
-        # Handle verbose vs quiet conflict
-        if verbose and quiet:
-            console.print("❌ Cannot use both --verbose and --quiet", style="red")
-            sys.exit(1)
-
-        # Use appropriate console
-        if verbose:
-            clean_console = console  # Always show verbose output
-        elif quiet:
-            clean_console = Console(quiet=True)
-        else:
-            clean_console = console
-
-        # Validate options
-        if all_projects and not remove_data:
-            clean_console.print(
-                "❌ --all-projects can only be used with --remove-data", style="red"
-            )
-            sys.exit(1)
-
-        # Load config to get port configuration
-        config_manager = ctx.obj["config_manager"]
-        try:
-            config = config_manager.load()
-            main_config = config.model_dump()
-        except Exception:
-            main_config = None
-
-        docker_manager = DockerManager(
-            clean_console, force_docker=force_docker, main_config=main_config
-        )
-
-        if remove_data:
-            if all_projects:
-                clean_console.print(
-                    "🧹 Cleaning up services and removing ALL project data..."
-                )
-            else:
-                clean_console.print(
-                    "🧹 Cleaning up services and removing current project data..."
-                )
-        else:
-            clean_console.print("🛑 Stopping services...")
-
-        if docker_manager.cleanup(
-            remove_data=remove_data and all_projects,
-            force=force,
-            verbose=verbose,
-            validate=validate,
-        ):
-            if remove_data:
-                config_manager = ctx.obj["config_manager"]
-
-                if all_projects:
-                    # Remove all project data (old behavior)
-                    if config_manager.config_path.exists():
-                        config_manager.config_path.unlink()
-
-                    config_dir = config_manager.config_path.parent
-                    if config_dir.exists() and config_dir.name == ".code-indexer":
-                        import shutil
-
-                        shutil.rmtree(config_dir)
-
-                    clean_console.print(
-                        "✅ All project data and configuration removed", style="green"
-                    )
-                else:
-                    # Remove only current project data (new default behavior)
-                    try:
-                        # Load config to get project info
-                        config = config_manager.load()
-
-                        # Initialize services to clear project-specific data
-                        qdrant_client = QdrantClient(config.qdrant, clean_console)
-
-                        # Clear the current project's collection from Qdrant
-                        if (
-                            qdrant_client.health_check()
-                            and qdrant_client.collection_exists()
-                        ):
-                            clean_console.print(
-                                f"🗑️  Clearing collection: {config.qdrant.collection}"
-                            )
-                            qdrant_client.clear_collection()
-
-                        # Remove local project config
-                        if config_manager.config_path.exists():
-                            config_manager.config_path.unlink()
-
-                        config_dir = config_manager.config_path.parent
-                        if config_dir.exists() and config_dir.name == ".code-indexer":
-                            import shutil
-
-                            shutil.rmtree(config_dir)
-
-                        clean_console.print(
-                            "✅ Current project data and configuration removed",
-                            style="green",
-                        )
-
-                    except Exception as e:
-                        # If we can't load config, fall back to basic cleanup
-                        clean_console.print(
-                            f"⚠️  Could not clear project collection: {e}",
-                            style="yellow",
-                        )
-
-                        # Still remove local config files
-                        if config_manager.config_path.exists():
-                            config_manager.config_path.unlink()
-
-                        config_dir = config_manager.config_path.parent
-                        if config_dir.exists() and config_dir.name == ".code-indexer":
-                            import shutil
-
-                            shutil.rmtree(config_dir)
-
-                        clean_console.print(
-                            "✅ Local configuration removed", style="green"
-                        )
-            else:
-                clean_console.print("✅ Services stopped", style="green")
-        else:
-            sys.exit(1)
-
-    except Exception as e:
-        console.print(f"❌ Cleanup failed: {e}", style="red")
-        sys.exit(1)
+# DEPRECATED: The 'clean' command was removed because it was semantically confusing.
+#
+# DO NOT RE-ADD THE 'clean' COMMAND - it created confusion between:
+# - clean (stop services + optionally remove data)
+# - clean-data (remove data, keep services running)
+# - stop (stop services, keep data)
+# - uninstall (remove everything)
+#
+# Instead, use these specific commands:
+# - Use 'stop' to stop services while preserving data
+# - Use 'clean-data' to clear data while keeping containers running (fast for tests)
+# - Use 'uninstall' to completely remove everything
+#
+# The old 'clean' command functionality is now split between 'stop' and 'uninstall'
+# to provide clearer semantics and avoid user confusion.
+#
+# DEPRECATED: The 'setup' command was also removed for similar clarity reasons.
+#
+# DO NOT RE-ADD THE 'setup' COMMAND - it was replaced by the combination of:
+# - 'init' (optional configuration initialization)
+# - 'start' (intelligent service startup with auto-configuration)
+#
+# The 'start' command now handles all setup functionality intelligently:
+# - Creates default config if none exists
+# - Starts only required services for the chosen embedding provider
+# - Handles model downloads and service health checks
+# - Works from any directory (walks up to find .code-indexer)
+#
+# This provides clearer separation of concerns and better user experience.
 
 
 @cli.command()
@@ -2527,14 +2160,14 @@ def stop(ctx, force_docker: bool):
     """Stop code indexing services while preserving all data.
 
     \b
-    Gracefully stops Docker containers for Ollama and Qdrant services
-    without removing any data or configuration. Can be run from any
-    subfolder of an indexed project.
+    Stops Docker containers for Ollama and Qdrant services without
+    removing any data or configuration. Can be run from any subfolder
+    of an indexed project.
 
     \b
     WHAT IT DOES:
       • Finds project configuration by walking up directory tree
-      • Gracefully stops Docker containers (Ollama + Qdrant)
+      • Stops Docker containers (Ollama + Qdrant)
       • Preserves all indexed data and configuration
       • Works from any subfolder within the indexed project
 
@@ -2542,15 +2175,15 @@ def stop(ctx, force_docker: bool):
     DATA PRESERVATION:
       • All indexed code vectors remain intact
       • Project configuration is preserved
-      • Docker containers remain available for restart
+      • Docker volumes and networks are preserved
       • Models and databases are preserved
 
     \b
-    GRACEFUL SHUTDOWN:
-      • Waits for active operations to complete
-      • Properly closes database connections
-      • Saves any pending data to disk
-      • Releases network ports cleanly
+    PERFORMANCE:
+      • Containers are stopped, not removed
+      • Fast restart with 'start' command (5-10 seconds)
+      • Much faster than 'uninstall' followed by 'start'
+      • Ideal for freeing resources without full cleanup
 
     \b
     EXAMPLES:
@@ -2624,6 +2257,214 @@ def stop(ctx, force_docker: bool):
 
     except Exception as e:
         console.print(f"❌ Stop failed: {e}", style="red")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option("--migrate", is_flag=True, help="Perform migration if needed")
+@click.option("--quiet", "-q", is_flag=True, help="Suppress output")
+@click.pass_context
+def schema(ctx, migrate: bool, quiet: bool):
+    """Check and manage database schema version.
+
+    \b
+    Shows information about the current database schema and can
+    perform automatic migration from legacy to new architecture.
+
+    \b
+    Legacy architecture:
+      • Single points with git_branch field
+      • Content directly stored in search points
+
+    \b
+    New architecture:
+      • Content points (immutable, type: content)
+      • Visibility points (mutable, type: visibility)
+      • Separation of content storage from branch visibility
+
+    \b
+    Examples:
+      code-indexer schema                # Check schema info
+      code-indexer schema --migrate      # Migrate if needed
+      code-indexer schema --migrate -q   # Migrate quietly
+    """
+    console = Console(quiet=quiet)
+
+    try:
+        config_manager = ctx.obj["config_manager"]
+        config = config_manager.load()
+
+        # Initialize services
+        embedding_provider = EmbeddingProviderFactory.create(config, console)
+        qdrant_client = QdrantClient(config.qdrant, console)
+
+        # Health checks
+        if not qdrant_client.health_check():
+            console.print(
+                "❌ Qdrant service not available. Run 'start' first.", style="red"
+            )
+            sys.exit(1)
+
+        # Get collection name
+        collection_name = qdrant_client.resolve_collection_name(
+            config, embedding_provider
+        )
+
+        if not qdrant_client.collection_exists(collection_name):
+            if not quiet:
+                console.print(
+                    f"📄 Collection {collection_name} does not exist", style="yellow"
+                )
+            return
+
+        # Get schema information
+        schema_info = qdrant_client.get_schema_info(collection_name)
+
+        if not quiet:
+            console.print(
+                f"📄 Schema Information for {collection_name}", style="bold blue"
+            )
+            console.print(f"   Version: {schema_info['schema_version']}")
+            console.print(f"   Description: {schema_info['schema_description']}")
+            console.print(f"   Total Points: {schema_info['total_points']:,}")
+
+            if schema_info["legacy_points"] > 0:
+                console.print(
+                    f"   Legacy Points: {schema_info['legacy_points']:,}",
+                    style="yellow",
+                )
+                console.print(f"   Branches: {schema_info['branches']}", style="yellow")
+
+                if schema_info["branch_counts"]:
+                    console.print("   Branch breakdown:", style="yellow")
+                    for branch, count in schema_info["branch_counts"].items():
+                        console.print(
+                            f"     {branch}: {count:,} points", style="yellow"
+                        )
+            else:
+                console.print("   ✅ No legacy points found", style="green")
+
+        # Perform migration if requested
+        if migrate and schema_info["migration_needed"]:
+            if not quiet:
+                console.print(
+                    f"\n🔄 Starting migration for {collection_name}...", style="blue"
+                )
+
+            success = qdrant_client.check_and_migrate_if_needed(collection_name, quiet)
+
+            if success:
+                if not quiet:
+                    console.print("✅ Migration completed successfully", style="green")
+            else:
+                console.print("❌ Migration failed", style="red")
+                sys.exit(1)
+
+        elif migrate and not schema_info["migration_needed"]:
+            if not quiet:
+                console.print("✅ No migration needed", style="green")
+        elif schema_info["migration_needed"] and not quiet:
+            console.print(
+                "\n💡 Migration available - use --migrate flag to perform migration",
+                style="blue",
+            )
+
+    except Exception as e:
+        console.print(f"❌ Schema check failed: {e}", style="red")
+        sys.exit(1)
+
+
+@cli.command("clean-data")
+@click.option(
+    "--all-projects",
+    is_flag=True,
+    help="Clear data for all projects, not just current project",
+)
+@click.option(
+    "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
+)
+@click.pass_context
+def clean_data(ctx, all_projects: bool, force_docker: bool):
+    """Clear project data without stopping containers.
+
+    \b
+    Removes indexed data and configuration while keeping Docker containers
+    running for fast restart. Use this between tests or when switching projects.
+
+    \b
+    WHAT IT DOES:
+      • Clears Qdrant collections (current project or all projects)
+      • Removes local .code-indexer directory
+      • Keeps Docker containers running for fast restart
+      • Preserves container state and networks
+
+    \b
+    OPTIONS:
+      --all-projects     Clear data for all projects
+      (default)          Clear only current project data
+
+    \b
+    PERFORMANCE:
+      This is much faster than 'uninstall' since containers stay running.
+      Perfect for test cleanup and project switching.
+    """
+    try:
+        docker_manager = DockerManager(force_docker=force_docker)
+
+        if not docker_manager.clean_data_only(all_projects=all_projects):
+            sys.exit(1)
+
+    except Exception as e:
+        console.print(f"❌ Data cleanup failed: {e}", style="red")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
+)
+@click.pass_context
+def uninstall(ctx, force_docker: bool):
+    """Completely remove all containers and data.
+
+    \b
+    Performs complete cleanup by removing Docker containers, volumes,
+    and all project data. Use this for complete uninstallation.
+
+    \b
+    WHAT IT DOES:
+      • Stops and removes all Docker containers
+      • Removes Docker volumes and networks
+      • Clears all project data and configurations
+      • Complete cleanup for fresh start
+
+    \b
+    WARNING:
+      This removes everything! You'll need to run 'start' to recreate
+      containers and 'index' to rebuild your search index.
+
+    \b
+    USE CASES:
+      • Complete uninstallation
+      • Fixing corrupted Docker state
+      • Switching between Docker/Podman
+      • Clean slate for development
+    """
+    try:
+        docker_manager = DockerManager(force_docker=force_docker)
+
+        # Remove containers and volumes completely
+        if not docker_manager.remove_containers(remove_volumes=True):
+            sys.exit(1)
+
+        # Also clean data
+        docker_manager.clean_data_only(all_projects=True)
+
+        console.print("✅ Complete uninstallation finished", style="green")
+        console.print("💡 Run 'code-indexer start' to reinstall", style="blue")
+
+    except Exception as e:
+        console.print(f"❌ Uninstall failed: {e}", style="red")
         sys.exit(1)
 
 

@@ -42,26 +42,57 @@ class EmbeddingProviderFactory:
 
     @staticmethod
     def generate_collection_name(
-        base_name: str, provider_name: str, model_name: str
+        base_name: str,
+        provider_name: str,
+        model_name: str,
+        project_id: Optional[str] = None,
     ) -> str:
-        """Generate collection name based on provider and model.
+        """Generate collection name based on provider, model, and project.
 
         Args:
             base_name: Base collection name (e.g., 'code_index')
             provider_name: Name of the embedding provider
             model_name: Name of the model
+            project_id: Optional project identifier for isolation
 
         Returns:
-            Full collection name for the provider and model
+            Full collection name for the provider, model, and project
 
         Examples:
             generate_collection_name('code_index', 'ollama', 'nomic-embed-text')
             -> 'code_index_ollama_nomic_embed_text'
+
+            generate_collection_name('code_index', 'voyage-ai', 'voyage-code-3', 'abc123')
+            -> 'code_index_abc123_voyage_code_3'
         """
         model_slug = EmbeddingProviderFactory.generate_model_slug(
             provider_name, model_name
         )
-        return f"{base_name}_{model_slug}"
+
+        if project_id:
+            return f"{base_name}_{project_id}_{model_slug}"
+        else:
+            return f"{base_name}_{model_slug}"
+
+    @staticmethod
+    def generate_project_id(codebase_dir: str) -> str:
+        """Generate a project identifier from codebase directory.
+
+        Args:
+            codebase_dir: Path to the codebase directory
+
+        Returns:
+            Short hash-based project identifier for collection naming
+        """
+        import hashlib
+        from pathlib import Path
+
+        # Use absolute path for consistent hashing
+        abs_path = str(Path(codebase_dir).resolve())
+
+        # Generate short hash (8 characters should be sufficient for project isolation)
+        hash_obj = hashlib.sha256(abs_path.encode())
+        return hash_obj.hexdigest()[:8]
 
     @staticmethod
     def get_provider_model_info(config: Config) -> Dict[str, Any]:

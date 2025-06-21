@@ -182,7 +182,7 @@ class TestVoyageAIClient:
         """Test failed health check."""
         mock_request.side_effect = Exception("API error")
 
-        assert voyage_client.health_check() is False
+        assert voyage_client.health_check(test_api=True) is False
 
     @patch("code_indexer.services.voyage_ai.VoyageAIClient._make_sync_request")
     def test_get_embedding_success(self, mock_request, voyage_client):
@@ -427,7 +427,6 @@ class TestEmbeddingProviderIntegration:
         with patch("httpx.Client.get") as mock_get, patch(
             "httpx.Client.post"
         ) as mock_post:
-
             # Mock health check
             mock_get.return_value.status_code = 200
 
@@ -460,7 +459,6 @@ class TestEmbeddingProviderIntegration:
         with patch.dict(os.environ, {"VOYAGE_API_KEY": "test_key"}), patch(
             "code_indexer.services.voyage_ai.VoyageAIClient._make_sync_request"
         ) as mock_request:
-
             # Mock API responses
             mock_request.return_value = {
                 "data": [{"embedding": [0.1, 0.2, 0.3, 0.4]}],

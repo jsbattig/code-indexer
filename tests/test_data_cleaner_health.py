@@ -28,7 +28,6 @@ class TestDataCleanerHealth:
         ) as mock_start, patch(
             "code_indexer.services.docker_manager.subprocess.run"
         ) as mock_run:
-
             mock_start.return_value = True
             mock_run.return_value.returncode = 0
             mock_run.return_value.stdout = ""  # Data cleaner not running initially
@@ -54,7 +53,6 @@ class TestDataCleanerHealth:
         ) as mock_start, patch(
             "code_indexer.services.docker_manager.subprocess.run"
         ) as mock_run:
-
             mock_start.return_value = True
             mock_run.return_value.returncode = 0
             mock_run.return_value.stdout = ""  # Data cleaner not running initially
@@ -103,7 +101,6 @@ class TestDataCleanerHealth:
         ) as mock_start, patch(
             "code_indexer.services.docker_manager.subprocess.run"
         ) as mock_run:
-
             mock_start.return_value = True
             mock_run.return_value.returncode = 0
             mock_run.return_value.stdout = ""  # Data cleaner not running initially
@@ -112,7 +109,8 @@ class TestDataCleanerHealth:
 
             assert result is True
             mock_wait_service.assert_called_once_with(
-                "http://localhost:8091", timeout=120  # Custom timeout should be used
+                "http://localhost:8091",
+                timeout=120,  # Custom timeout should be used
             )
 
     @patch.object(HealthChecker, "wait_for_service_ready")
@@ -124,7 +122,6 @@ class TestDataCleanerHealth:
         ) as mock_start, patch(
             "code_indexer.services.docker_manager.subprocess.run"
         ) as mock_run:
-
             mock_start.return_value = False  # Start failed
             mock_run.return_value.returncode = 0
             mock_run.return_value.stdout = ""  # Data cleaner not running initially
@@ -141,7 +138,8 @@ class TestDataCleanerHealth:
 
         # Test with a URL that should not be reachable (timeout quickly)
         result = health_checker.wait_for_service_ready(
-            "http://localhost:65432", timeout=1  # High port unlikely to be in use
+            "http://localhost:65432",
+            timeout=1,  # High port unlikely to be in use
         )
 
         assert result is False  # Should timeout quickly
@@ -204,7 +202,6 @@ class TestDataCleanerIntegration:
         ) as mock_health, patch(
             "code_indexer.services.docker_manager.subprocess.run"
         ) as mock_run:
-
             # Setup mocks for successful workflow
             mock_start.return_value = True
             mock_health.return_value = True
@@ -233,7 +230,6 @@ class TestDataCleanerIntegration:
         ) as mock_health, patch(
             "code_indexer.services.docker_manager.subprocess.run"
         ) as mock_run:
-
             mock_start.return_value = True
             mock_health.return_value = False  # Health check fails
             mock_run.return_value = Mock(returncode=0, stdout="")
