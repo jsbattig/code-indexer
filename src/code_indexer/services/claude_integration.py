@@ -10,6 +10,13 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
 from .rag_context_extractor import RAGContextExtractor, CodeContext
+from .claude_tool_tracking import (
+    ToolUsageTracker,
+    StatusLineManager,
+    CommandClassifier,
+    ClaudePlanSummary,
+    process_tool_use_event,
+)
 
 # Claude CLI integration - no SDK required
 CLAUDE_SDK_AVAILABLE = False  # We use CLI instead of SDK
@@ -27,6 +34,8 @@ class ClaudeAnalysisResult:
     search_query: str
     success: bool = True
     error: Optional[str] = None
+    tool_usage_summary: Optional[str] = None
+    tool_usage_stats: Optional[Dict[str, Any]] = None
 
 
 class ClaudeIntegrationService:
@@ -479,6 +488,19 @@ Use cidx query extensively as your primary exploration tool to discover related 
             project_info = kwargs.get("project_info", {})
             enable_exploration = kwargs.get("enable_exploration", True)
             quiet = kwargs.get("quiet", False)
+            show_claude_plan = kwargs.get("show_claude_plan", False)
+
+            # Initialize tool tracking if requested
+            tool_usage_tracker = None
+            status_line_manager = None
+            command_classifier = None
+
+            if show_claude_plan:
+                tool_usage_tracker = ToolUsageTracker()
+                status_line_manager = StatusLineManager()
+                command_classifier = CommandClassifier()
+                if not quiet:
+                    status_line_manager.start_display()
 
             # Create the full rich prompt
             prompt = self.create_analysis_prompt(
@@ -576,6 +598,35 @@ Use cidx query extensively as your primary exploration tool to discover related 
                             # Parse streaming JSON
                             data = json.loads(line)
 
+                            # Handle tool usage events (when tracking enabled)
+                            if (
+                                show_claude_plan
+                                and tool_usage_tracker
+                                and command_classifier
+                            ):
+                                if data.get("type") == "tool_use":
+                                    try:
+                                        tool_event = process_tool_use_event(
+                                            data, command_classifier
+                                        )
+                                        tool_usage_tracker.track_tool_start(tool_event)
+                                        if status_line_manager and not quiet:
+                                            status_line_manager.update_activity(
+                                                tool_event
+                                            )
+                                    except Exception as e:
+                                        logger.warning(
+                                            f"Failed to process tool_use event: {e}"
+                                        )
+
+                                elif data.get("type") == "tool_result":
+                                    try:
+                                        tool_usage_tracker.track_tool_completion(data)
+                                    except Exception as e:
+                                        logger.warning(
+                                            f"Failed to process tool_result event: {e}"
+                                        )
+
                             # Handle assistant messages with text content
                             if (
                                 data.get("type") == "assistant"
@@ -642,6 +693,34 @@ Use cidx query extensively as your primary exploration tool to discover related 
                         console.print("\n")
                         console.print("─" * 80)
 
+                    # Generate tool usage summary if tracking was enabled
+                    tool_summary = None
+                    tool_stats = None
+                    if show_claude_plan and tool_usage_tracker:
+                        try:
+                            # Stop status line display
+                            if status_line_manager and not quiet:
+                                status_line_manager.stop_display()
+
+                            # Generate summary
+                            summary_generator = ClaudePlanSummary()
+                            all_events = tool_usage_tracker.get_all_events()
+                            tool_summary = summary_generator.generate_complete_summary(
+                                all_events
+                            )
+                            tool_stats = tool_usage_tracker.get_summary_stats()
+
+                            # Display summary if not quiet
+                            if not quiet and tool_summary:
+                                console.print("\n🤖 Claude's Problem-Solving Approach")
+                                console.print("─" * 80)
+                                console.print(tool_summary)
+
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to generate tool usage summary: {e}"
+                            )
+
                     return ClaudeAnalysisResult(
                         response=final_result or accumulated_text,
                         contexts_used=len(contexts),
@@ -650,6 +729,8 @@ Use cidx query extensively as your primary exploration tool to discover related 
                         ),
                         search_query=user_query,
                         success=True,
+                        tool_usage_summary=tool_summary,
+                        tool_usage_stats=tool_stats,
                     )
                 else:
                     stderr_output = process.stderr.read() if process.stderr else ""
@@ -666,6 +747,14 @@ Use cidx query extensively as your primary exploration tool to discover related 
             except Exception as e:
                 process.terminate()
                 logger.error(f"Streaming processing error: {e}")
+
+                # Cleanup status line manager
+                if show_claude_plan and status_line_manager:
+                    try:
+                        status_line_manager.stop_display()
+                    except Exception:
+                        pass
+
                 return ClaudeAnalysisResult(
                     response="",
                     contexts_used=0,
@@ -677,6 +766,14 @@ Use cidx query extensively as your primary exploration tool to discover related 
 
         except Exception as e:
             logger.error(f"Claude CLI streaming setup failed: {e}")
+
+            # Cleanup status line manager
+            if show_claude_plan and status_line_manager:
+                try:
+                    status_line_manager.stop_display()
+                except Exception:
+                    pass
+
             return ClaudeAnalysisResult(
                 response="",
                 contexts_used=0,

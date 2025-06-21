@@ -192,6 +192,7 @@ Options:
   --max-turns INTEGER          Maximum Claude conversation turns (default: 5)
   --no-explore                 Disable file exploration in Claude prompt
   --no-stream                  Disable streaming (show results all at once)
+  --show-claude-plan           Show real-time tool usage and generate summary of Claude's problem-solving approach
   --quiet, -q                  Quiet mode - only show results, no headers
 ```
 
@@ -259,6 +260,9 @@ code-indexer claude "Explain this function" --quiet
 
 # Debug mode - show the prompt that would be sent to Claude (for prompt iteration)
 code-indexer claude "Test question" --dry-run-show-claude-prompt
+
+# Show Claude's problem-solving approach with tool usage tracking
+code-indexer claude "How does authentication work?" --show-claude-plan --stream
 ```
 
 ## Claude AI Integration
@@ -305,6 +309,48 @@ code-indexer claude "How does this application handle user authentication?"
 - **Debugging Help**: "Why might this code be causing memory leaks?"
 - **Cross-file Analysis**: "How do these components interact across the codebase?"
 
+### Claude Problem-Solving Insights
+
+Code Indexer now includes real-time tool usage tracking to show how Claude approaches your code analysis:
+
+```bash
+# Enable real-time tool tracking and summary generation
+code-indexer claude "How does authentication work?" --show-claude-plan --stream
+```
+
+**What You'll See:**
+- **Real-time Status Line**: Live updates showing Claude's current activity
+- **Visual Cues**: 🔍✨ for semantic search (cidx), 😞 for text search (grep)  
+- **Tool Usage Counters**: Running count of different search methods used
+- **Comprehensive Summary**: Detailed analysis of Claude's problem-solving approach
+
+**Example Output:**
+```
+🔍✨ Semantic search: 'authentication' | 📖 Reading: src/auth.py | 🔍✨ 3 😞 1
+
+🤖 Claude's Problem-Solving Approach
+────────────────────────────────────────────────────────────────────────────────
+
+✅ **Preferred Approach**: Used semantic search (3x) with `cidx` for intelligent code discovery
+   • Semantic search: 'authentication logic'
+   • Semantic search: 'user login flow'
+   • Semantic search: 'session management'
+
+📖 **Code Exploration**: Accessed 5 files for detailed analysis
+
+⏱️ **Performance**: Average tool execution time 1.2s
+
+## 📊 Tool Usage Statistics
+• **Total Operations**: 8
+• **Tools Used**: Bash, Read, Grep
+• **Completed Successfully**: 8
+• **Average Duration**: 1.20s
+
+**Operation Breakdown**:
+• 🔍✨ cidx_semantic_search: 3
+• 📄 file_operation: 5
+```
+
 ### Advanced Options
 
 ```bash
@@ -314,8 +360,8 @@ code-indexer claude "Explain the API design" --path */api/* --language python
 # High-precision analysis
 code-indexer claude "Find security issues" --min-score 0.9 --context-lines 800
 
-# Stream responses for long analysis
-code-indexer claude "Perform a complete architecture review" --stream --max-turns 10
+# Stream responses for long analysis with tool tracking
+code-indexer claude "Perform a complete architecture review" --stream --show-claude-plan --max-turns 10
 
 # Disable file exploration for focused answers
 code-indexer claude "What does this function do?" --no-explore --limit 3

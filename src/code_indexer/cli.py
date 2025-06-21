@@ -1505,6 +1505,11 @@ def query(
     is_flag=True,
     help="Show the prompt that would be sent to Claude instead of executing the query",
 )
+@click.option(
+    "--show-claude-plan",
+    is_flag=True,
+    help="Show real-time tool usage and generate summary of Claude's problem-solving approach",
+)
 @click.pass_context
 def claude(
     ctx,
@@ -1519,6 +1524,7 @@ def claude(
     no_stream: bool,
     quiet: bool,
     dry_run_show_claude_prompt: bool,
+    show_claude_plan: bool,
 ):
     """AI-powered code analysis using Claude with semantic search.
 
@@ -1560,6 +1566,7 @@ def claude(
       code-indexer claude "Debug this error pattern" --no-stream
       code-indexer claude "Quick analysis" --quiet  # Just the response, no headers
       code-indexer claude "Test prompt" --dry-run-show-claude-prompt  # Show prompt without executing
+      code-indexer claude "Analyze the codebase" --show-claude-plan  # Real-time tool usage tracking
 
     \b
     STREAMING:
@@ -1574,6 +1581,16 @@ def claude(
       • Understanding what context is being provided
       • Debugging issues with prompt generation
       • Optimizing context size and relevance
+
+    \b
+    TOOL USAGE TRACKING:
+      Use --show-claude-plan to see real-time feedback on Claude's tool usage
+      and get a comprehensive summary of the problem-solving approach:
+      • 🔍✨ Visual cues for semantic search (cidx) usage (preferred)
+      • 😞 Visual cues for text-based search (grep) usage (discouraged)
+      • 📖 File reading and exploration activities
+      • Real-time status line showing current tool activity
+      • Final summary narrative of Claude's approach and statistics
 
     \b
     REQUIREMENTS:
@@ -1784,6 +1801,7 @@ Use this when you need to find related code that might not be in the initial con
                 enable_exploration=not no_explore,
                 stream=True,
                 quiet=quiet,
+                show_claude_plan=show_claude_plan,
             )
         else:
             # Non-streaming mode with status spinner
@@ -1798,6 +1816,7 @@ Use this when you need to find related code that might not be in the initial con
                         enable_exploration=not no_explore,
                         stream=False,
                         quiet=quiet,
+                        show_claude_plan=show_claude_plan,
                     )
             else:
                 analysis_result = claude_service.run_analysis(
@@ -1809,6 +1828,7 @@ Use this when you need to find related code that might not be in the initial con
                     enable_exploration=not no_explore,
                     stream=False,
                     quiet=quiet,
+                    show_claude_plan=show_claude_plan,
                 )
 
         # Handle results (common for both streaming and non-streaming)
