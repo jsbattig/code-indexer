@@ -98,12 +98,14 @@ class WatchSubprocessManager:
             return
 
         def read_stdout():
-            for line in iter(self.process.stdout.readline, ""):
-                self.stdout_lines.append(line.strip())
+            if self.process and self.process.stdout:
+                for line in iter(self.process.stdout.readline, ""):
+                    self.stdout_lines.append(line.strip())
 
         def read_stderr():
-            for line in iter(self.process.stderr.readline, ""):
-                self.stderr_lines.append(line.strip())
+            if self.process and self.process.stderr:
+                for line in iter(self.process.stderr.readline, ""):
+                    self.stderr_lines.append(line.strip())
 
         threading.Thread(target=read_stdout, daemon=True).start()
         threading.Thread(target=read_stderr, daemon=True).start()

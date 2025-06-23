@@ -128,8 +128,9 @@ class QdrantClient:
             collection_name or self._current_collection_name or self.config.collection
         )
         try:
-            response = self.client.delete(
-                f"/collections/{collection}/points", params={"filter": "{}"}
+            # Use the correct Qdrant API endpoint and method
+            response = self.client.post(
+                f"/collections/{collection}/points/delete", json={"filter": {}}
             )
             return bool(response.status_code == 200)
         except Exception as e:

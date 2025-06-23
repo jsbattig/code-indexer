@@ -291,12 +291,12 @@ class TestRealWorldPatterns:
         # Original: time.sleep(10) in tests
         # New: condition polling with status checks
 
-        def mock_service_check():
+        def mock_service_check() -> bool:
             # Simulate service becoming ready after a few checks
             if not hasattr(mock_service_check, "call_count"):
-                mock_service_check.call_count = 0
-            mock_service_check.call_count += 1
-            return mock_service_check.call_count >= 3
+                mock_service_check.call_count = 0  # type: ignore[attr-defined]
+            mock_service_check.call_count += 1  # type: ignore[attr-defined]
+            return mock_service_check.call_count >= 3  # type: ignore[attr-defined]
 
         start_time = time.time()
         result = self.health_checker.wait_for_condition(
@@ -310,4 +310,4 @@ class TestRealWorldPatterns:
         # Should be much faster than 10s sleep
         assert result is True
         assert elapsed < 5.0
-        assert mock_service_check.call_count == 3
+        assert mock_service_check.call_count == 3  # type: ignore[attr-defined]

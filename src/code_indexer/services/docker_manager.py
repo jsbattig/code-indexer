@@ -930,11 +930,13 @@ class DockerManager:
         ]
 
         # Check both runtimes to find where containers are actually running
-        runtimes_to_check = ["docker", "podman"] if not self.force_docker else ["docker"]
-        
+        runtimes_to_check = (
+            ["docker", "podman"] if not self.force_docker else ["docker"]
+        )
+
         for container_name in expected_containers:
             container_found = False
-            
+
             for runtime in runtimes_to_check:
                 try:
                     result = subprocess.run(
@@ -966,10 +968,10 @@ class DockerManager:
                         }
                         container_found = True
                         break  # Found container, don't check other runtimes
-                
+
                 except Exception:
                     continue  # Try next runtime
-            
+
             # If container not found in any runtime, mark as not found
             if not container_found:
                 services[container_name] = {
