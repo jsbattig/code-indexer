@@ -406,10 +406,56 @@ class SmartIndexer(GitAwareDocumentProcessor):
         # Store file list for resumability
         self.progressive_metadata.set_files_to_index(files_to_index)
 
-        # Process modified files with progressive metadata updates
-        stats = self._process_files_with_metadata(
-            files_to_index, batch_size, progress_callback, resumable=True
+        # Get current branch for indexing
+        current_branch = self.git_topology_service.get_current_branch() or "master"
+
+        # Get collection name (already ensured above)
+        collection_name = self.qdrant_client.resolve_collection_name(
+            self.config, self.embedding_provider
         )
+
+        # Use BranchAwareIndexer for consistent architecture
+        try:
+            # Convert absolute paths to relative paths for BranchAwareIndexer
+            relative_files = []
+            for f in files_to_index:
+                try:
+                    # If path is absolute and within codebase_dir, make it relative
+                    if f.is_absolute():
+                        relative_files.append(
+                            str(f.relative_to(self.config.codebase_dir))
+                        )
+                    else:
+                        # Already relative, use as-is
+                        relative_files.append(str(f))
+                except ValueError:
+                    # Path is not within codebase_dir, use as-is (shouldn't happen in normal usage)
+                    relative_files.append(str(f))
+
+            branch_result = self.branch_aware_indexer.index_branch_changes(
+                old_branch="",  # No old branch for incremental
+                new_branch=current_branch,
+                changed_files=relative_files,
+                unchanged_files=[],
+                collection_name=collection_name,
+            )
+
+            # Convert BranchIndexingResult to ProcessingStats
+            stats = ProcessingStats()
+            stats.files_processed = branch_result.files_processed
+            stats.chunks_created = branch_result.content_points_created
+            stats.failed_files = 0
+            stats.start_time = time.time() - branch_result.processing_time
+            stats.end_time = time.time()
+
+        except Exception as e:
+            logger.warning(
+                f"BranchAwareIndexer failed during incremental index, falling back to standard indexing: {e}"
+            )
+            # Fallback to standard processing
+            stats = self._process_files_with_metadata(
+                files_to_index, batch_size, progress_callback, resumable=True
+            )
 
         # Mark as completed
         self.progressive_metadata.complete_indexing()
@@ -470,16 +516,29 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 # Extract file paths and timestamps from points
                 for point in points:
                     if point.get("payload") and "path" in point["payload"]:
-                        # Path is already absolute in the database
-                        file_path = Path(point["payload"]["path"])
+                        # Path in database might be relative, need to normalize for comparison
+                        path_from_db = point["payload"]["path"]
 
-                        # Get timestamp from database (try different fields based on git vs filesystem)
+                        # Convert to absolute path for consistent comparison
+                        if Path(path_from_db).is_absolute():
+                            file_path = Path(path_from_db)
+                        else:
+                            # Relative path from database, make it absolute
+                            file_path = self.config.codebase_dir / path_from_db
+
+                        # Get timestamp from database (priority order for accuracy)
                         db_timestamp = None
 
-                        # For filesystem-based projects, use filesystem_mtime
-                        if "filesystem_mtime" in point["payload"]:
+                        # Priority 1: file_mtime from new architecture (most accurate)
+                        if "file_mtime" in point["payload"]:
+                            db_timestamp = point["payload"]["file_mtime"]
+                        # Priority 2: filesystem_mtime from legacy architecture
+                        elif "filesystem_mtime" in point["payload"]:
                             db_timestamp = point["payload"]["filesystem_mtime"]
-                        # For git-based projects, we'll compare using git hash or use indexed_at as fallback
+                        # Priority 3: created_at (indexing time, less accurate for file changes)
+                        elif "created_at" in point["payload"]:
+                            db_timestamp = point["payload"]["created_at"]
+                        # Priority 4: indexed_at as last resort
                         elif "indexed_at" in point["payload"]:
                             # Convert indexed_at string back to timestamp for comparison
                             try:
@@ -647,10 +706,56 @@ class SmartIndexer(GitAwareDocumentProcessor):
         # Store file list for resumability
         self.progressive_metadata.set_files_to_index(files_to_index)
 
-        # Process missing files with resumable tracking
-        stats = self._process_files_with_metadata(
-            files_to_index, batch_size, progress_callback, resumable=True
+        # Get current branch for indexing
+        current_branch = self.git_topology_service.get_current_branch() or "master"
+
+        # Get collection name (already ensured above)
+        collection_name = self.qdrant_client.resolve_collection_name(
+            self.config, self.embedding_provider
         )
+
+        # Use BranchAwareIndexer for consistent architecture
+        try:
+            # Convert absolute paths to relative paths for BranchAwareIndexer
+            relative_files = []
+            for f in files_to_index:
+                try:
+                    # If path is absolute and within codebase_dir, make it relative
+                    if f.is_absolute():
+                        relative_files.append(
+                            str(f.relative_to(self.config.codebase_dir))
+                        )
+                    else:
+                        # Already relative, use as-is
+                        relative_files.append(str(f))
+                except ValueError:
+                    # Path is not within codebase_dir, use as-is (shouldn't happen in normal usage)
+                    relative_files.append(str(f))
+
+            branch_result = self.branch_aware_indexer.index_branch_changes(
+                old_branch="",  # No old branch for reconcile
+                new_branch=current_branch,
+                changed_files=relative_files,
+                unchanged_files=[],
+                collection_name=collection_name,
+            )
+
+            # Convert BranchIndexingResult to ProcessingStats
+            stats = ProcessingStats()
+            stats.files_processed = branch_result.files_processed
+            stats.chunks_created = branch_result.content_points_created
+            stats.failed_files = 0
+            stats.start_time = time.time() - branch_result.processing_time
+            stats.end_time = time.time()
+
+        except Exception as e:
+            logger.warning(
+                f"BranchAwareIndexer failed during reconcile, falling back to standard indexing: {e}"
+            )
+            # Fallback to standard processing
+            stats = self._process_files_with_metadata(
+                files_to_index, batch_size, progress_callback, resumable=True
+            )
 
         # Mark as completed
         self.progressive_metadata.complete_indexing()
@@ -703,10 +808,56 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 info=f"Resuming interrupted operation: {completed}/{total} files completed, {len(existing_files)} remaining",
             )
 
-        # Process remaining files with resumable tracking
-        stats = self._process_files_with_metadata(
-            existing_files, batch_size, progress_callback, resumable=True
+        # Get current branch for indexing
+        current_branch = self.git_topology_service.get_current_branch() or "master"
+
+        # Get collection name (already ensured above)
+        collection_name = self.qdrant_client.resolve_collection_name(
+            self.config, self.embedding_provider
         )
+
+        # Use BranchAwareIndexer for consistent architecture
+        try:
+            # Convert absolute paths to relative paths for BranchAwareIndexer
+            relative_files = []
+            for f in existing_files:
+                try:
+                    # If path is absolute and within codebase_dir, make it relative
+                    if f.is_absolute():
+                        relative_files.append(
+                            str(f.relative_to(self.config.codebase_dir))
+                        )
+                    else:
+                        # Already relative, use as-is
+                        relative_files.append(str(f))
+                except ValueError:
+                    # Path is not within codebase_dir, use as-is (shouldn't happen in normal usage)
+                    relative_files.append(str(f))
+
+            branch_result = self.branch_aware_indexer.index_branch_changes(
+                old_branch="",  # No old branch for resume
+                new_branch=current_branch,
+                changed_files=relative_files,
+                unchanged_files=[],
+                collection_name=collection_name,
+            )
+
+            # Convert BranchIndexingResult to ProcessingStats
+            stats = ProcessingStats()
+            stats.files_processed = branch_result.files_processed
+            stats.chunks_created = branch_result.content_points_created
+            stats.failed_files = 0
+            stats.start_time = time.time() - branch_result.processing_time
+            stats.end_time = time.time()
+
+        except Exception as e:
+            logger.warning(
+                f"BranchAwareIndexer failed during resume, falling back to standard indexing: {e}"
+            )
+            # Fallback to standard processing
+            stats = self._process_files_with_metadata(
+                existing_files, batch_size, progress_callback, resumable=True
+            )
 
         # Mark as completed
         self.progressive_metadata.complete_indexing()

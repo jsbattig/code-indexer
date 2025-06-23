@@ -36,7 +36,7 @@ Choose an installation method:
 sudo apt update && sudo apt install pipx
 
 # Install code-indexer using pipx (from latest release)
-pipx install https://github.com/jsbattig/code-indexer/releases/download/v0.0.27.0/code_indexer-0.0.27.0-py3-none-any.whl
+pipx install https://github.com/jsbattig/code-indexer/releases/download/v0.1.0.0/code_indexer-0.1.0.0-py3-none-any.whl
 
 # Or install directly from git (latest development)
 pipx install git+https://github.com/jsbattig/code-indexer.git
@@ -52,7 +52,7 @@ python3 -m venv ~/code-indexer-env
 source ~/code-indexer-env/bin/activate
 
 # Install from GitHub releases
-pip install https://github.com/jsbattig/code-indexer/releases/download/v0.0.27.0/code_indexer-0.0.27.0-py3-none-any.whl
+pip install https://github.com/jsbattig/code-indexer/releases/download/v0.1.0.0/code_indexer-0.1.0.0-py3-none-any.whl
 
 # Or install directly from git (latest development)
 pip install git+https://github.com/jsbattig/code-indexer.git
@@ -146,11 +146,12 @@ code-indexer start [--model MODEL_NAME] [--force-recreate] [--parallel-requests 
 # Performance Examples:
 code-indexer start --parallel-requests 2 --max-models 1  # Higher throughput
 code-indexer start --queue-size 1024                    # Larger request queue
+code-indexer start --force-docker                       # Force Docker instead of Podman
 ```
 
 #### Index Codebase
 ```bash
-code-indexer index [--clear] [--resume] [--batch-size 50]
+code-indexer index [--clear] [--reconcile] [--batch-size 50]
 
 # Smart indexing (default):
 # - Automatically detects if full or incremental indexing is needed
@@ -198,18 +199,27 @@ Options:
 
 #### Check Status
 ```bash
-code-indexer status
+code-indexer status [--force-docker]
 ```
 
 
 #### Watch for Changes
 ```bash
-code-indexer watch [--debounce FLOAT] [--batch-size INT]
+code-indexer watch [--debounce FLOAT] [--batch-size INT] [--initial-sync]
+```
+
+#### Database Management
+```bash
+code-indexer optimize    # Optimize vector database storage and performance
+code-indexer schema      # Check and manage database schema version
+code-indexer schema --migrate  # Perform schema migration if needed
 ```
 
 #### Cleanup
 ```bash
-code-indexer clean [--remove-data] [--all-projects]
+code-indexer clean-data [--all-projects]  # Clear project data without stopping containers
+code-indexer stop                         # Stop services while preserving data  
+code-indexer uninstall                    # Complete removal of containers and data
 ```
 
 ### Search Examples
@@ -219,10 +229,10 @@ code-indexer clean [--remove-data] [--all-projects]
 code-indexer query "user authentication login"
 
 # Find React components
-code-indexer query "component props state" --language tsx
+code-indexer query "component props state" --language typescript
 
 # Find server-side database code
-code-indexer query "database query" --path server
+code-indexer query "database query" --path "*/server/*"
 
 # High-precision search
 code-indexer query "error handling" --min-score 0.8
@@ -244,7 +254,7 @@ code-indexer claude "How does authentication work in this application?"
 code-indexer claude "How do I add a new API endpoint?" --language python
 
 # Debug issues
-code-indexer claude "Why might this error handling pattern fail?" --stream
+code-indexer claude "Why might this error handling pattern fail?"
 
 # Analyze specific areas
 code-indexer claude "Explain the database schema design" --path */models/*
@@ -262,7 +272,7 @@ code-indexer claude "Explain this function" --quiet
 code-indexer claude "Test question" --dry-run-show-claude-prompt
 
 # Show Claude's problem-solving approach with tool usage tracking
-code-indexer claude "How does authentication work?" --show-claude-plan --stream
+code-indexer claude "How does authentication work?" --show-claude-plan
 ```
 
 ## Claude AI Integration
@@ -294,7 +304,7 @@ code-indexer claude "How does this application handle user authentication?"
 
 - **Natural Language Queries**: Ask questions in plain English about your code
 - **Code-Aware Responses**: Claude understands code structure, patterns, and relationships
-- **Streaming Support**: Get responses as they're generated with `--stream`
+- **Streaming Support**: Responses stream by default (use `--no-stream` to disable)
 - **Smart Context**: Automatically extracts relevant code with proper context
 - **File Exploration**: Claude can explore referenced files for comprehensive analysis
 - **Git-Aware**: Respects your current branch and project context
@@ -315,7 +325,7 @@ Code Indexer now includes real-time tool usage tracking to show how Claude appro
 
 ```bash
 # Enable real-time tool tracking and summary generation
-code-indexer claude "How does authentication work?" --show-claude-plan --stream
+code-indexer claude "How does authentication work?" --show-claude-plan
 ```
 
 **What You'll See:**
@@ -360,8 +370,8 @@ code-indexer claude "Explain the API design" --path */api/* --language python
 # High-precision analysis
 code-indexer claude "Find security issues" --min-score 0.9 --context-lines 800
 
-# Stream responses for long analysis with tool tracking
-code-indexer claude "Perform a complete architecture review" --stream --show-claude-plan --max-turns 10
+# Long analysis with tool tracking (streaming by default)
+code-indexer claude "Perform a complete architecture review" --show-claude-plan --max-turns 10
 
 # Disable file exploration for focused answers
 code-indexer claude "What does this function do?" --no-explore --limit 3
@@ -766,12 +776,14 @@ Code Indexer creates a `.code-indexer/config.json` file in your project director
 {
   "codebase_dir": ".",
   "file_extensions": [
-    "py", "js", "ts", "tsx", "java", "c", "cpp", "go", "rs", "rb",
-    "php", "sh", "bash", "html", "css", "md", "json", "yaml", "yml"
+    "py", "js", "ts", "tsx", "java", "c", "cpp", "h", "hpp", "go", "rs", "rb",
+    "php", "sh", "bash", "html", "css", "md", "json", "yaml", "yml", "toml",
+    "sql", "swift", "kt", "scala", "dart", "vue", "jsx"
   ],
   "exclude_dirs": [
     "node_modules", "venv", "__pycache__", ".git", "dist", "build",
-    "target", ".idea", ".vscode", ".gradle", "bin", "obj", "coverage"
+    "target", ".idea", ".vscode", ".gradle", "bin", "obj", "coverage",
+    ".next", ".nuxt", "dist-*", ".code-indexer"
   ],
   "indexing": {
     "chunk_size": 1500,
@@ -779,6 +791,7 @@ Code Indexer creates a `.code-indexer/config.json` file in your project director
     "max_file_size": 1048576,
     "index_comments": true
   },
+  "embedding_provider": "ollama",
   "ollama": {
     "host": "http://localhost:11434",
     "model": "nomic-embed-text",
@@ -786,6 +799,15 @@ Code Indexer creates a `.code-indexer/config.json` file in your project director
     "num_parallel": 1,
     "max_loaded_models": 1,
     "max_queue": 512
+  },
+  "voyage_ai": {
+    "model": "voyage-code-3",
+    "parallel_requests": 8,
+    "batch_size": 128,
+    "requests_per_minute": 300,
+    "tokens_per_minute": null,
+    "max_retries": 3,
+    "retry_delay": 1.0
   },
   "qdrant": {
     "host": "http://localhost:6333",
@@ -948,15 +970,15 @@ code-indexer index --clear
 Each indexed document includes metadata about which embedding model was used. This allows:
 
 - **Provider Coexistence**: Different projects can use different providers
-- **Model Filtering**: Search results can be filtered by embedding model
+- **Model Tracking**: Search results include embedding model metadata
 - **Migration**: Gradual migration between providers without losing existing data
 
 ```bash
-# Query specific to a model
-code-indexer query "authentication" --model-filter voyage-code-3
+# Different projects can use different providers and models
+# Provider/model information is automatically tracked in metadata
 
-# Check which models are in your index
-code-indexer status --show-models
+# Check current project's model configuration
+code-indexer status
 ```
 
 
@@ -976,13 +998,16 @@ code-indexer status --show-models
 ```
 your-project/
 ├── .code-indexer/
-│   ├── config.json          # Configuration
-│   ├── metadata.json        # Index metadata
-│   ├── ollama/              # Ollama data
-│   ├── qdrant/              # Vector database
-│   └── logs/                # Operation logs
+│   ├── config.json          # Project configuration
+│   ├── README.md            # Configuration documentation
+│   └── metadata.json        # Index metadata (optional)
 ├── .gitignore              # Add .code-indexer/ to ignore
 └── (your project files)
+
+~/.code-indexer/global/      # Global shared data directory
+├── qdrant/                  # Vector database storage
+├── ollama/                  # Ollama model data
+└── logs/                    # Operation logs
 ```
 
 ## AI Models
@@ -1053,7 +1078,7 @@ docker logs code-indexer-ollama
 docker logs code-indexer-qdrant
 
 # Restart services
-code-indexer clean
+code-indexer clean-data
 code-indexer start
 ```
 
@@ -1074,14 +1099,22 @@ code-indexer index --clear
 
 ## Security and Privacy
 
+**Local Processing (Ollama):**
 - All processing happens locally
 - No code sent to external services
-- Embeddings stored locally in Qdrant
 - Models run in isolated containers
+
+**Cloud Processing (VoyageAI - Optional):**
+- Code sent to VoyageAI API for embedding generation
+- Follow VoyageAI's privacy policy and terms of service
+
+**Both Providers:**
+- Embeddings stored locally in Qdrant
+- No persistent storage of code on external services
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT License
 
 ## Contributing
 

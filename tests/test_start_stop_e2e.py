@@ -82,6 +82,14 @@ def error_handler(func):
             # Step 1: Use new test infrastructure for service setup
             service_manager, cli_helper, dir_manager = create_fast_e2e_setup()
 
+            # Initialize project configuration first (required for backtracking test)
+            print("🔧 Initializing project configuration...")
+            cli_helper.run_cli_command(
+                ["init", "--force", "--embedding-provider", "voyage-ai"],
+                cwd=project_dir,
+                timeout=60,
+            )
+
             # Ensure services are ready using new infrastructure
             services_ready = service_manager.ensure_services_ready(
                 working_dir=project_dir
@@ -115,7 +123,9 @@ def error_handler(func):
 
             # Use directory manager for safe directory changes
             with dir_manager.safe_chdir(subfolder):
-                stop_result = cli_helper.run_cli_command(["stop"], timeout=60)
+                stop_result = cli_helper.run_cli_command(
+                    ["stop"], cwd=subfolder, timeout=60
+                )
                 # Services might already be stopped, so check for either success or "no services running"
                 assert (
                     "Services stopped successfully!" in stop_result.stdout

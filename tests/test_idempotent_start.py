@@ -21,7 +21,7 @@ class TestIdempotentStart:
             self.original_cwd = os.getcwd()
         except (FileNotFoundError, OSError):
             # If current directory doesn't exist, use a safe default
-            self.original_cwd = Path.home()
+            self.original_cwd = str(Path.home())
         os.chdir(self.test_dir)
 
         # Store original environment

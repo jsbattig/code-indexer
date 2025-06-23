@@ -175,7 +175,10 @@ This is a test project for VoyageAI E2E testing.
             ), f"VoyageAI should be in status: {result.stdout}"
             assert "ollama" not in status_output
 
-            # Step 4: Real indexing with VoyageAI
+            # Step 4: Ensure services are started, then do real indexing with VoyageAI
+            self.cli_helper.run_cli_command(
+                ["start"], timeout=60, expect_success=False
+            )  # May already be running
             self.cli_helper.run_cli_command(["index"], timeout=120)
 
             # Step 5: Test query functionality with real VoyageAI

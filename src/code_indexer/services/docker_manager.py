@@ -4,7 +4,7 @@ import os
 import subprocess
 import re
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 import yaml  # type: ignore
 
 from rich.console import Console
@@ -358,6 +358,34 @@ class DockerManager:
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
 
+    def _get_preferred_runtime(self) -> str:
+        """Get the preferred container runtime, matching compose command selection logic."""
+        if self.force_docker:
+            return "docker"
+
+        # Same priority as get_compose_command: Podman first unless forced
+        try:
+            result = subprocess.run(
+                ["podman", "version"], capture_output=True, timeout=5
+            )
+            if result.returncode == 0:
+                return "podman"
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        # Fall back to docker
+        try:
+            result = subprocess.run(
+                ["docker", "version"], capture_output=True, timeout=5
+            )
+            if result.returncode == 0:
+                return "docker"
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        # Default fallback
+        return "docker"
+
     def get_compose_command(self) -> List[str]:
         """Get the appropriate compose command, prioritizing Podman unless force_docker is True."""
 
@@ -542,33 +570,58 @@ class DockerManager:
             services_to_show = required_services if recreate else services_needing_start
             self.console.print(f"🚀 Starting services: {' '.join(services_to_show)}")
 
-            # First, start existing stopped containers
+            # First, start existing stopped containers using direct container commands
             if services_to_start:
-                start_cmd = (
-                    compose_cmd
-                    + ["-f", str(self.compose_file), "-p", self.project_name, "start"]
-                    + services_to_start
-                )
+                # Determine runtime
+                runtime = "docker"
+                try:
+                    subprocess.run(
+                        ["docker", "version"],
+                        capture_output=True,
+                        timeout=5,
+                        check=True,
+                    )
+                except (
+                    subprocess.TimeoutExpired,
+                    FileNotFoundError,
+                    subprocess.CalledProcessError,
+                ):
+                    runtime = "podman"
 
                 self.console.print(
                     f"🔄 Starting existing containers: {' '.join(services_to_start)}"
                 )
-                start_result = subprocess.run(
-                    start_cmd, capture_output=True, text=True, timeout=300
-                )
-                if start_result.returncode != 0:
+
+                started_containers = []
+                failed_containers = []
+
+                for service in services_to_start:
+                    container_name = f"code-indexer-{service}"
+                    try:
+                        start_result = subprocess.run(
+                            [runtime, "start", container_name],
+                            capture_output=True,
+                            text=True,
+                            timeout=30,
+                        )
+                        if start_result.returncode == 0:
+                            started_containers.append(service)
+                        else:
+                            failed_containers.append(
+                                f"{service}: {start_result.stderr}"
+                            )
+                    except Exception as e:
+                        failed_containers.append(f"{service}: {str(e)}")
+
+                if failed_containers:
                     self.console.print(
-                        f"❌ Failed to start existing services: {start_result.stderr}",
+                        f"❌ Failed to start some containers: {'; '.join(failed_containers)}",
                         style="red",
                     )
-                    if start_result.stdout:
-                        self.console.print(
-                            f"stdout: {start_result.stdout}", style="dim"
-                        )
                     return False
                 else:
                     self.console.print(
-                        f"✅ Started existing containers: {' '.join(services_to_start)}"
+                        f"✅ Started existing containers: {' '.join(started_containers)}"
                     )
                     if start_result.stdout.strip():
                         self.console.print(
@@ -699,34 +752,54 @@ class DockerManager:
             return False
 
     def stop_services(self) -> bool:
-        """Stop Docker services (containers remain for fast restart)."""
-        if not self.compose_file.exists():
-            return True
+        """Stop Docker services using deterministic container names."""
+        expected_containers = [
+            "code-indexer-qdrant",
+            "code-indexer-ollama",
+            "code-indexer-data-cleaner",
+        ]
 
-        compose_cmd = self.get_compose_command()
+        # Determine runtime: use same logic as compose command selection
+        runtime = self._get_preferred_runtime()
+
+        stopped_count = 0
+        errors = []
 
         try:
             with self.console.status("Stopping services..."):
-                result = subprocess.run(
-                    compose_cmd
-                    + ["-f", str(self.compose_file), "-p", self.project_name, "stop"],
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
+                for container_name in expected_containers:
+                    try:
+                        result = subprocess.run(
+                            [runtime, "stop", container_name],
+                            capture_output=True,
+                            text=True,
+                            timeout=30,
+                        )
 
-            if result.returncode == 0:
+                        if result.returncode == 0:
+                            stopped_count += 1
+                        else:
+                            # Check if container doesn't exist (not an error in this context)
+                            if "no such container" in result.stderr.lower():
+                                stopped_count += 1  # Consider it "stopped"
+                            else:
+                                errors.append(f"{container_name}: {result.stderr}")
+
+                    except subprocess.TimeoutExpired:
+                        errors.append(f"{container_name}: timeout")
+                    except Exception as e:
+                        errors.append(f"{container_name}: {str(e)}")
+
+            if stopped_count == len(expected_containers):
                 self.console.print("✅ Services stopped successfully", style="green")
                 return True
             else:
+                error_msg = "; ".join(errors) if errors else "Unknown error"
                 self.console.print(
-                    f"❌ Failed to stop services: {result.stderr}", style="red"
+                    f"❌ Failed to stop some services: {error_msg}", style="red"
                 )
                 return False
 
-        except subprocess.TimeoutExpired:
-            self.console.print("❌ Timeout stopping services", style="red")
-            return False
         except Exception as e:
             self.console.print(f"❌ Error stopping services: {e}", style="red")
             return False
@@ -848,76 +921,68 @@ class DockerManager:
         return self.stop_services() and self.start_services()
 
     def get_service_status(self) -> Dict[str, Any]:
-        """Get status of all services."""
-        if not self.compose_file.exists():
-            return {"status": "not_configured", "services": {}}
+        """Get status of required services using deterministic container names."""
+        services = {}
+        # Only check required services based on current configuration
+        required_services = self.get_required_services(self.main_config)
+        expected_containers = [
+            f"code-indexer-{service}" for service in required_services
+        ]
 
-        compose_cmd = self.get_compose_command()
+        # Determine runtime: use same logic as compose command selection
+        runtime = self._get_preferred_runtime()
 
         try:
-            result = subprocess.run(
-                compose_cmd
-                + [
-                    "-f",
-                    str(self.compose_file),
-                    "-p",
-                    self.project_name,
-                    "ps",
-                    "--format",
-                    "json",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
+            for container_name in expected_containers:
+                result = subprocess.run(
+                    [
+                        runtime,
+                        "inspect",
+                        container_name,
+                        "--format",
+                        "{{.State.Status}}|{{.State.Health.Status}}",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
 
-            if result.returncode == 0:
-                # Parse JSON output (varies by compose version)
-                import json
+                if result.returncode == 0:
+                    output = result.stdout.strip()
+                    parts = output.split("|")
+                    state = parts[0] if len(parts) > 0 else "unknown"
+                    health = (
+                        parts[1]
+                        if len(parts) > 1 and parts[1] != "<no value>"
+                        else "unknown"
+                    )
 
-                try:
-                    # Handle both single JSON object and multiple JSON objects (one per line)
-                    stdout = result.stdout.strip()
-                    if not stdout:
-                        services = []
-                    elif stdout.startswith("["):
-                        # JSON array format
-                        services = json.loads(stdout)
-                    else:
-                        # Multiple JSON objects, one per line (Docker compose format)
-                        services = []
-                        for line in stdout.split("\n"):
-                            if line.strip():
-                                services.append(json.loads(line.strip()))
-
-                    status: Dict[str, Any] = {
-                        "status": "running" if services else "stopped",
-                        "services": {},
+                    services[container_name] = {
+                        "state": state,
+                        "health": health,
                     }
-
-                    for service in services:
-                        # Handle both "Names" (array) and "Name"/"name" (string) fields
-                        names = service.get("Names", [])
-                        if names and isinstance(names, list) and len(names) > 0:
-                            name = names[0]  # Take first name from array
-                        else:
-                            name = service.get("Name", service.get("name", "unknown"))
-
-                        state = service.get("State", service.get("state", "unknown"))
-                        status["services"][name] = {
-                            "state": state,
-                            "health": service.get("Health", "unknown"),
-                        }
-
-                    return status
-                except json.JSONDecodeError:
-                    # Fallback for older compose versions
-                    return {"status": "unknown", "services": {}}
-            else:
-                return {"status": "error", "services": {}}
 
         except Exception:
             return {"status": "unavailable", "services": {}}
+
+        # Determine overall status based on container states
+        if not services:
+            overall_status = "stopped"
+        else:
+            running_count = sum(
+                1 for service in services.values() if service["state"] == "running"
+            )
+            if running_count == len(services):
+                overall_status = "running"
+            elif running_count == 0:
+                overall_status = "stopped"
+            else:
+                overall_status = "partial"
+
+        return {
+            "status": overall_status,
+            "services": services,
+        }
 
     def ollama_request(
         self, endpoint: str, method: str = "GET", data: Optional[Dict] = None
@@ -1071,8 +1136,107 @@ class DockerManager:
 
         return False
 
+    def _monitor_qdrant_recovery(self) -> Dict[str, Any]:
+        """Monitor Qdrant's collection recovery progress by parsing logs."""
+        try:
+            result = subprocess.run(
+                ["docker", "logs", "--tail", "50", "code-indexer-qdrant"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            if result.returncode != 0:
+                return {"status": "log_error", "progress": None}
+
+            logs = result.stdout
+
+            # Parse recovery progress from logs
+            loading_collections = []
+            recovered_collections = []
+            current_operation = None
+
+            for line in logs.split("\n"):
+                if "Loading collection:" in line:
+                    # Extract collection name from log line
+                    collection_name = line.split("Loading collection:")[-1].strip()
+                    loading_collections.append(collection_name)
+                    current_operation = f"Loading {collection_name}"
+                elif "Recovered collection" in line and "100%" in line:
+                    # Extract collection name from log line
+                    collection_name = (
+                        line.split("Recovered collection")[-1].split(":")[0].strip()
+                    )
+                    recovered_collections.append(collection_name)
+                elif "Qdrant HTTP listening on" in line:
+                    current_operation = "HTTP server ready"
+                elif "starting service:" in line and "actix-web-service" in line:
+                    current_operation = "Starting HTTP service"
+
+            # Determine status based on log analysis
+            if "Qdrant HTTP listening on" in logs:
+                status = "ready"
+                progress = {
+                    "loading": len(loading_collections),
+                    "recovered": len(recovered_collections),
+                }
+            elif loading_collections:
+                status = "recovering"
+                progress = {
+                    "loading": len(loading_collections),
+                    "recovered": len(recovered_collections),
+                }
+            else:
+                status = "starting"
+                progress = None
+
+            return {
+                "status": status,
+                "progress": progress,
+                "current_operation": current_operation,
+                "loading_collections": (
+                    loading_collections[-3:] if loading_collections else []
+                ),  # Last 3
+                "recovered_count": len(recovered_collections),
+            }
+
+        except Exception as e:
+            return {"status": "monitor_error", "error": str(e), "progress": None}
+
+    def _check_qdrant_with_recovery_monitoring(self) -> Tuple[bool, str]:
+        """Check Qdrant status with intelligent recovery monitoring."""
+        import requests  # type: ignore
+
+        # First try direct HTTP connection
+        try:
+            qdrant_url = self._get_service_url("qdrant")
+            response = requests.get(f"{qdrant_url}/", timeout=2)
+            if response.status_code == 200:
+                return True, "ready"
+        except requests.exceptions.ConnectionError:
+            pass
+        except Exception:
+            pass
+
+        # If HTTP fails, check recovery progress
+        recovery_info = self._monitor_qdrant_recovery()
+
+        if recovery_info["status"] == "ready":
+            return True, "ready"
+        elif recovery_info["status"] == "recovering":
+            if recovery_info["progress"]:
+                recovered = recovery_info["recovered_count"]
+                current_op = recovery_info.get("current_operation", "unknown")
+                return False, f"recovering_collections_{recovered}|{current_op}"
+            else:
+                return False, "recovering_unknown"
+        elif recovery_info["status"] == "starting":
+            return False, "starting_up"
+        else:
+            return False, f"connection_refused_{recovery_info['status']}"
+
     def wait_for_services(self, timeout: int = 120, retry_interval: int = 2) -> bool:
-        """Wait for services to be healthy using retry logic with exponential backoff."""
+        """Wait for services to be healthy using retry logic with exponential backoff and intelligent Qdrant monitoring."""
         import requests  # type: ignore
 
         # Get list of required services dynamically
@@ -1089,8 +1253,17 @@ class DockerManager:
         start_time = time.time()
         attempt = 1
         last_status = {service: "unknown" for service in required_services}
+        last_qdrant_progress = {
+            "recovered": 0,
+            "last_check": start_time,
+            "last_operation": None,
+        }
+        stuck_threshold = 120  # Consider stuck if no progress for 2 minutes
 
-        while time.time() - start_time < timeout:
+        # Dynamic timeout extension for recovery scenarios
+        effective_timeout: float = float(timeout)
+
+        while time.time() - start_time < effective_timeout:
             current_status = {}
             services_healthy = {}
 
@@ -1118,23 +1291,12 @@ class DockerManager:
                         current_status[service_name] = f"error_{type(e).__name__}"
 
                 elif service_name == "qdrant":
-                    # Check qdrant service with detailed error reporting
-                    try:
-                        qdrant_url = self._get_service_url("qdrant")
-                        response = requests.get(f"{qdrant_url}/", timeout=5)
-                        if response.status_code == 200:
-                            services_healthy[service_name] = True
-                            current_status[service_name] = "ready"
-                        else:
-                            current_status[service_name] = (
-                                f"http_{response.status_code}"
-                            )
-                    except requests.exceptions.ConnectionError:
-                        current_status[service_name] = "connection_refused"
-                    except requests.exceptions.Timeout:
-                        current_status[service_name] = "timeout"
-                    except Exception as e:
-                        current_status[service_name] = f"error_{type(e).__name__}"
+                    # Check qdrant service with intelligent recovery monitoring
+                    is_healthy, status_detail = (
+                        self._check_qdrant_with_recovery_monitoring()
+                    )
+                    services_healthy[service_name] = is_healthy
+                    current_status[service_name] = status_detail
 
                 elif service_name == "data-cleaner":
                     # Check data-cleaner service with HTTP health check on port 8091
@@ -1154,12 +1316,79 @@ class DockerManager:
                     except Exception as e:
                         current_status[service_name] = f"error_{type(e).__name__}"
 
-            # Log status changes for debugging
+            # Log status changes with enhanced Qdrant feedback
             if current_status != last_status:
                 elapsed = int(time.time() - start_time)
-                status_parts = [
-                    f"{service}={status}" for service, status in current_status.items()
-                ]
+                status_parts = []
+
+                for service, status in current_status.items():
+                    if service == "qdrant" and "recovering_collections_" in status:
+                        # Parse Qdrant recovery info for user-friendly display
+                        parts = status.split("|")
+                        recovered_info = parts[0].replace("recovering_collections_", "")
+
+                        # Get additional progress info and track progress
+                        recovery_info = self._monitor_qdrant_recovery()
+                        if recovery_info.get("progress"):
+                            loaded = recovery_info["progress"].get("loading", 0)
+                            recovered_count = recovery_info.get("recovered_count", 0)
+
+                            # Track progress to detect stuck situations and extend timeout
+                            current_time = time.time()
+
+                            # Check for progress in recovered count OR current operation change
+                            if recovered_count > last_qdrant_progress[
+                                "recovered"
+                            ] or recovery_info.get(
+                                "current_operation"
+                            ) != last_qdrant_progress.get(
+                                "last_operation"
+                            ):
+                                last_qdrant_progress["recovered"] = recovered_count
+                                last_qdrant_progress["last_check"] = current_time
+                                last_qdrant_progress["last_operation"] = (
+                                    recovery_info.get("current_operation")
+                                )
+                                # Progress made - reset timeout extension
+
+                                # Extend timeout if making progress and many collections remain
+                                if loaded > 50:  # Lots of collections to recover
+                                    new_timeout = max(
+                                        effective_timeout,
+                                        current_time - start_time + 180,
+                                    )  # Add 3 minutes
+                                    if new_timeout > effective_timeout:
+                                        effective_timeout = new_timeout
+                                        self.console.print(
+                                            f"⏱️  Extended timeout to {int(effective_timeout - (current_time - start_time))}s due to collection recovery progress",
+                                            style="blue",
+                                        )
+
+                            # Check if stuck (no progress for too long)
+                            last_check_time = last_qdrant_progress["last_check"]
+                            assert isinstance(
+                                last_check_time, (int, float)
+                            ), "last_check should be numeric"
+                            time_since_progress = current_time - last_check_time
+                            if time_since_progress > stuck_threshold:
+                                self.console.print(
+                                    f"⚠️  Qdrant appears stuck: no progress for {int(time_since_progress)}s",
+                                    style="red",
+                                )
+                            else:
+                                self.console.print(
+                                    f"🔄 Qdrant recovering collections: {recovered_count} recovered, {loaded} total found",
+                                    style="yellow",
+                                )
+                                if recovery_info.get("current_operation"):
+                                    self.console.print(
+                                        f"   Current: {recovery_info['current_operation']}",
+                                        style="dim yellow",
+                                    )
+                        status_parts.append(f"{service}=recovering({recovered_info})")
+                    else:
+                        status_parts.append(f"{service}={status}")
+
                 self.console.print(
                     f"[{elapsed:3d}s] Attempt {attempt:2d}: {', '.join(status_parts)}",
                     style="dim",

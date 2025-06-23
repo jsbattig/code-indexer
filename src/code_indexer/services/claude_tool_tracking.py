@@ -9,10 +9,8 @@ problem-solving approach.
 import re
 from datetime import datetime
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from rich.console import Console
-from rich.live import Live
-from rich.text import Text
 
 
 @dataclass
@@ -81,7 +79,7 @@ class CommandClassifier:
                 "type": "git_operation",
                 "visual_cue": "🌿",
                 "priority": "medium",
-                "command_summary": f"Git: {command[:40]}...",
+                "command_summary": f"Git: {command}",
             }
 
         # Other bash commands
@@ -90,24 +88,37 @@ class CommandClassifier:
                 "type": "bash_command",
                 "visual_cue": "⚡",
                 "priority": "low",
-                "command_summary": f"Bash: {command[:30]}...",
+                "command_summary": f"Bash: {command}",
             }
 
     def _extract_cidx_operation(self, command: str) -> str:
         """Extract meaningful description from cidx command."""
         # Parse common cidx patterns
         if "cidx query" in command:
-            # Extract the search term using regex
-            match = re.search(r'cidx query [\'"]([^\'"]+)[\'"]', command)
+            # Extract the search term and any additional parameters
+            match = re.search(r'cidx query [\'"]([^\'"]+)[\'"](.*)$', command)
             if match:
                 query = match.group(1)
-                return f"Semantic search: '{query}'"
-            else:
-                # Try without quotes
-                match = re.search(r"cidx query ([^\s]+)", command)
-                if match:
-                    query = match.group(1)
+                additional_params = match.group(2).strip()
+                if additional_params:
+                    return f"Semantic search: '{query}' {additional_params}"
+                else:
                     return f"Semantic search: '{query}'"
+            else:
+                # Try without quotes - capture everything after 'cidx query'
+                match = re.search(r"cidx query (.+)$", command)
+                if match:
+                    query_and_params = match.group(1).strip()
+                    # Check if there are additional parameters after the first word/phrase
+                    parts = query_and_params.split()
+                    if len(parts) > 1 and any(
+                        part.startswith("--") for part in parts[1:]
+                    ):
+                        query = parts[0]
+                        params = " ".join(parts[1:])
+                        return f"Semantic search: '{query}' {params}"
+                    else:
+                        return f"Semantic search: '{query_and_params}'"
                 else:
                     return "Semantic search"
 
@@ -118,7 +129,7 @@ class CommandClassifier:
             return "Indexing codebase"
 
         else:
-            return f"cidx: {command[5:35]}..."  # First 30 chars after 'cidx '
+            return f"cidx: {command[5:]}"  # After 'cidx '
 
     def _extract_grep_operation(self, command: str) -> str:
         """Extract meaningful description from grep command."""
@@ -136,7 +147,7 @@ class CommandClassifier:
                 search_term = match.group(1)
                 return f"Text search: '{search_term}'"
 
-        return f"Text search: {command[:30]}..."
+        return f"Text search: {command}"
 
     def _extract_file_operation(self, command: str) -> str:
         """Extract meaningful description from file operation command."""
@@ -162,16 +173,16 @@ class CommandClassifier:
             return f"{cmd.title()} of file"
 
         elif cmd == "find":
-            return f"Finding files: {command[5:30]}..."
+            return f"Finding files: {command[5:]}"
 
         else:
-            return f"File ops: {command[:25]}..."
+            return f"File ops: {command}"
 
 
 class ToolUsageTracker:
     """Tracks tool usage events throughout a Claude analysis session."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the tool usage tracker."""
         self.events: List[ToolUsageEvent] = []
         self.active_events: Dict[str, ToolUsageEvent] = {}  # tool_use_id -> event
@@ -274,33 +285,158 @@ class ToolUsageTracker:
 
 
 class StatusLineManager:
-    """Manages the real-time status line display during Claude analysis."""
+    """Manages the real-time status line display during Claude analysis using common framework."""
 
-    def __init__(self, console: Optional[Console] = None):
+    def __init__(
+        self, console: Optional[Console] = None, use_split_display: bool = False
+    ) -> None:
         """Initialize the status line manager."""
-        self.console = console or Console()
-        self.live_display: Optional[Live] = None
-        self.current_activities: List[str] = []
+        from ..utils.status_display import (
+            StatusDisplayManager,
+            StatusDisplayMode,
+            VisualCues,
+        )
+
+        # Choose display mode based on requirements
+        if use_split_display:
+            # Use TEXTUAL_STREAM for proper 3-region display
+            # We'll capture Claude CLI output and route it through Textual instead of mixing modes
+            display_mode = StatusDisplayMode.FREE_SCROLL_STREAM
+        else:
+            display_mode = StatusDisplayMode.ACTIVITY_LOG
+
+        self.status_manager = StatusDisplayManager(
+            mode=display_mode,
+            console=console,
+            handle_interrupts=False,  # Let parent handle interrupts
+        )
         self.cidx_usage_count = 0
         self.grep_usage_count = 0
-        self.max_activities = 3  # Show up to 3 recent activities
+        self.visual_cues = VisualCues
+        self.use_split_display = use_split_display
+        self.session_start_time = datetime.now()
 
     def start_display(self) -> None:
-        """Start the live status line display."""
-        if not self.live_display:
-            self.live_display = Live(
-                Text("🤖 Claude analysis starting..."),
-                console=self.console,
-                auto_refresh=True,
-                refresh_per_second=2,
-            )
-            self.live_display.start()
+        """Start the status line display."""
+        self.session_start_time = datetime.now()
+        self.status_manager.start("Claude analysis")
+
+        # Initialize status bar
+        if self.use_split_display:
+            self._update_status_bar()
 
     def stop_display(self) -> None:
-        """Stop the live status line display."""
-        if self.live_display:
-            self.live_display.stop()
-            self.live_display = None
+        """Stop the status line display."""
+        self.status_manager.stop()
+
+    def update_content(self, text: str) -> None:
+        """Update main content area (for split displays)."""
+        if self.use_split_display and hasattr(self.status_manager, "update_content"):
+            # TEXTUAL_STREAM mode supports content updates through proper framework
+            self.status_manager.update_content(text)
+        # For non-split displays, content is handled by the caller
+
+    def show_final_summary(self, summary_text: str) -> None:
+        """Show final summary and transition from streaming to final view."""
+        if self.use_split_display and hasattr(
+            self.status_manager, "show_final_summary"
+        ):
+            # Use the display manager's final summary method for split displays
+            self.status_manager.show_final_summary(summary_text)
+        else:
+            # Use regular summary formatting for non-split displays
+            try:
+                # Try to format summary, fallback to simple print if needed
+                if hasattr(self.status_manager, "format_summary"):
+                    self.status_manager.format_summary(
+                        summary_text, title="Claude's Problem-Solving Approach"
+                    )
+                else:
+                    # Fallback: print summary directly to console
+                    if self.status_manager.console:
+                        self.status_manager.console.print(
+                            "\n🤖 Claude's Problem-Solving Approach"
+                        )
+                        self.status_manager.console.print("─" * 60)
+
+                        # Split summary into narrative and statistics sections
+                        lines = summary_text.split("\n")
+                        in_stats_section = False
+
+                        for line in lines:
+                            stripped_line = line.strip()
+
+                            # Check if we're entering the statistics section
+                            if "📊 Tool Usage Statistics" in stripped_line:
+                                in_stats_section = True
+                                self.status_manager.console.print(
+                                    "\n" + stripped_line, style="bold cyan"
+                                )
+                                continue
+
+                            # Handle statistics section specially
+                            if in_stats_section and stripped_line:
+                                if "Operation Breakdown:" in stripped_line:
+                                    self.status_manager.console.print(
+                                        "\n" + stripped_line, style="bold"
+                                    )
+                                elif any(
+                                    emoji in stripped_line
+                                    for emoji in ["🔍✨", "😞", "📄"]
+                                ):
+                                    # Operation breakdown items
+                                    self.status_manager.console.print(
+                                        "  " + stripped_line
+                                    )
+                                elif stripped_line and not stripped_line.startswith(
+                                    "##"
+                                ):
+                                    # Regular statistics lines
+                                    self.status_manager.console.print(
+                                        "  " + stripped_line
+                                    )
+                                else:
+                                    self.status_manager.console.print("")
+                            elif stripped_line:
+                                # Regular narrative content
+                                self.status_manager.console.print(line)
+                            else:
+                                self.status_manager.console.print("")
+            except Exception:
+                # Last resort: print to regular console
+                from rich.console import Console
+
+                console = Console()
+                console.print("\n🤖 Claude's Problem-Solving Approach")
+                console.print("─" * 60)
+
+                # Split and format each line separately
+                lines = summary_text.split("\n")
+                in_stats_section = False
+
+                for line in lines:
+                    stripped_line = line.strip()
+
+                    if "📊 Tool Usage Statistics" in stripped_line:
+                        in_stats_section = True
+                        console.print("\n" + stripped_line, style="bold cyan")
+                        continue
+
+                    if in_stats_section and stripped_line:
+                        if "Operation Breakdown:" in stripped_line:
+                            console.print("\n" + stripped_line, style="bold")
+                        elif any(
+                            emoji in stripped_line for emoji in ["🔍✨", "😞", "📄"]
+                        ):
+                            console.print("  " + stripped_line)
+                        elif stripped_line and not stripped_line.startswith("##"):
+                            console.print("  " + stripped_line)
+                        else:
+                            console.print("")
+                    elif stripped_line:
+                        console.print(line)
+                    else:
+                        console.print("")
 
     def update_activity(self, event: ToolUsageEvent) -> None:
         """Update the status line with a new tool activity."""
@@ -310,81 +446,128 @@ class StatusLineManager:
         elif event.operation_type == "grep_search":
             self.grep_usage_count += 1
 
-        # Format the activity text
-        activity_text = self._format_activity_text(event)
+        # Format the activity text and visual cue
+        activity_text, visual_cue = self._format_activity_display(event)
 
-        # Add to activities list and keep only recent ones
-        self.current_activities.append(activity_text)
-        if len(self.current_activities) > self.max_activities:
-            self.current_activities.pop(0)
+        # Calculate appropriate truncation width for status panel
+        try:
+            import shutil
 
-        # Update the live display
-        if self.live_display:
-            status_display = self._create_status_display()
-            self.live_display.update(status_display)
+            terminal_width = shutil.get_terminal_size().columns
+            # Reserve space for visual cue, borders, padding
+            truncate_width = max(30, terminal_width - 15)
+        except (OSError, AttributeError, ImportError):
+            truncate_width = 60  # Safe fallback
 
-    def _format_activity_text(self, event: ToolUsageEvent) -> str:
-        """Format a single tool event for display."""
+        # Update using common framework with smart truncation
+        self.status_manager.update(
+            message=activity_text,
+            visual_cue=visual_cue,
+            style="dim",
+            event_type="tool_activity",  # Mark as tool activity for split display
+            truncate_width=truncate_width,
+            operation_type=event.operation_type,  # Pass operation type for statistics
+        )
+
+        # Auto-update status bar with elapsed time and stats
+        self._update_status_bar()
+
+    def _format_activity_display(self, event: ToolUsageEvent) -> Tuple[str, str]:
+        """Format a single tool event for display, returning (message, visual_cue)."""
+        visual_cue = event.visual_cue
+
         # Special formatting for different operation types
         if event.operation_type == "cidx_semantic_search":
-            return f"{event.visual_cue} {event.command_detail}"
+            return event.command_detail, self.visual_cues.SEMANTIC_SEARCH
         elif event.operation_type == "grep_search":
-            return f"{event.visual_cue} {event.command_detail}"
+            return event.command_detail, self.visual_cues.TEXT_SEARCH
         elif event.tool_name == "Read":
-            # Shorten file paths for display
-            file_path = event.target
-            if len(file_path) > 30:
-                file_path = "..." + file_path[-27:]
-            return f"{event.visual_cue} Reading: {file_path}"
+            # File paths will be truncated by display framework
+            return f"Reading: {event.target}", self.visual_cues.FILE_READ
         elif event.tool_name == "Write":
-            file_path = event.target
-            if len(file_path) > 30:
-                file_path = "..." + file_path[-27:]
-            return f"{event.visual_cue} Writing: {file_path}"
+            # File paths will be truncated by display framework
+            return f"Writing: {event.target}", self.visual_cues.FILE_WRITE
         else:
-            return f"{event.visual_cue} {event.command_detail}"
+            return event.command_detail, visual_cue
 
-    def _create_status_display(self) -> Text:
-        """Create the complete status display."""
-        text = Text()
+    def update_status_info(self, info_lines: List[str]) -> None:
+        """Update the dynamic status info band.
 
-        # Add current activities
-        if self.current_activities:
-            activities_text = " • ".join(self.current_activities)
-            text.append(activities_text)
+        Args:
+            info_lines: List of strings to display in the status band.
+                       Examples: running clock, progress info, stats, etc.
+        """
+        if self.use_split_display and hasattr(
+            self.status_manager, "update_status_info"
+        ):
+            # TEXTUAL_STREAM mode supports status info updates through Textual framework
+            self.status_manager.update_status_info(info_lines)
+
+    def get_session_elapsed_time(self) -> float:
+        """Get elapsed time since session start in seconds."""
+        return (datetime.now() - self.session_start_time).total_seconds()
+
+    def get_tool_usage_stats(self) -> Dict[str, int]:
+        """Get current tool usage statistics."""
+        return {
+            "cidx_count": self.cidx_usage_count,
+            "grep_count": self.grep_usage_count,
+            "total_count": self.cidx_usage_count + self.grep_usage_count,
+        }
+
+    def _update_status_bar(self) -> None:
+        """Update the persistent status bar with elapsed time and tool stats."""
+        if not self.use_split_display:
+            return
+
+        # Throttle status updates to avoid spam
+        current_time = datetime.now()
+        if hasattr(self, "_last_status_update"):
+            time_since_last = (current_time - self._last_status_update).total_seconds()
+            if time_since_last < 2.0:  # Don't update more than every 2 seconds
+                return
+        self._last_status_update: datetime = current_time
+
+        # Calculate elapsed time
+        elapsed = self.get_session_elapsed_time()
+        elapsed_str = self._format_elapsed_time(elapsed)
+
+        # Get tool usage stats
+        stats = self.get_tool_usage_stats()
+
+        # Format status line
+        status_line = f"⏱️ Query running: {elapsed_str} | Tools used: cidx({stats['cidx_count']}) grep({stats['grep_count']})"
+
+        # Add second line with more details if there are tools used
+        if stats["total_count"] > 0:
+            status_lines = [
+                status_line,
+                f"📊 Total operations: {stats['total_count']} | Performance tracking active",
+            ]
         else:
-            text.append("🤖 Analyzing...")
+            status_lines = [status_line]
 
-        # Add usage counters if any
-        if self.cidx_usage_count > 0 or self.grep_usage_count > 0:
-            counters = []
-            if self.cidx_usage_count > 0:
-                counters.append(f"🔍✨ {self.cidx_usage_count}")
-            if self.grep_usage_count > 0:
-                counters.append(f"😞 {self.grep_usage_count}")
+        # Update status info
+        self.update_status_info(status_lines)
 
-            text.append(" | ")
-            text.append(" ".join(counters), style="dim")
-
-        return text
-
-    def _format_status_line(self, event: ToolUsageEvent) -> Text:
-        """Format a single tool event for status line display."""
-        text = Text()
-        text.append(event.visual_cue + " ")
-        text.append(event.command_detail)
-        return text
-
-    def _render_status_line(self, status_text: str) -> None:
-        """Render the status line with given text."""
-        if self.live_display:
-            self.live_display.update(Text(status_text))
+    def _format_elapsed_time(self, seconds: float) -> str:
+        """Format elapsed time in a human-readable format."""
+        if seconds < 60:
+            return f"{seconds:.1f}s"
+        elif seconds < 3600:
+            minutes = int(seconds // 60)
+            secs = int(seconds % 60)
+            return f"{minutes}m {secs}s"
+        else:
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            return f"{hours}h {minutes}m"
 
 
 class ClaudePlanSummary:
     """Generates comprehensive summaries of Claude's problem-solving approach."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the plan summary generator."""
         pass
 
@@ -400,30 +583,37 @@ class ClaudePlanSummary:
 
         # Opening summary
         narrative_parts.append(f"Claude used {len(events)} tools during analysis:")
+        narrative_parts.append("")  # Add blank line after opening
 
         # Search strategy analysis
         if categories["semantic_search"]:
             cidx_count = len(categories["semantic_search"])
             narrative_parts.append(
-                f"✅ **Preferred Approach**: Used semantic search ({cidx_count}x) with `cidx` for intelligent code discovery"
+                f"- ✅ **Preferred Approach**: Used semantic search ({cidx_count}x) with `cidx` for intelligent code discovery"
             )
 
             # Show examples of semantic searches
             for event in categories["semantic_search"][:3]:  # Show first 3
-                narrative_parts.append(f"   • {event.command_detail}")
+                narrative_parts.append(f"  - {event.command_detail}")
+
+            # Add spacing after examples
+            if categories["semantic_search"]:
+                narrative_parts.append("")
 
         if categories["text_search"]:
             grep_count = len(categories["text_search"])
             narrative_parts.append(
-                f"⚠️ **Text-Based Search**: Used grep/text search ({grep_count}x) - consider using `cidx` for better semantic results"
+                f"- ⚠️ **Text-Based Search**: Used grep/text search ({grep_count}x) - consider using `cidx` for better semantic results"
             )
+            narrative_parts.append("")
 
         # File exploration
         if categories["file_operations"]:
             file_count = len(categories["file_operations"])
             narrative_parts.append(
-                f"📖 **Code Exploration**: Accessed {file_count} files for detailed analysis"
+                f"- 📖 **Code Exploration**: Accessed {file_count} files for detailed analysis"
             )
+            narrative_parts.append("")
 
         # Performance insights
         completed_events = [e for e in events if e.duration is not None]
@@ -432,7 +622,7 @@ class ClaudePlanSummary:
                 e.duration for e in completed_events if e.duration is not None
             ) / len(completed_events)
             narrative_parts.append(
-                f"⏱️ **Performance**: Average tool execution time {avg_duration:.2f}s"
+                f"- ⏱️ **Performance**: Average tool execution time {avg_duration:.2f}s"
             )
 
         return "\n".join(narrative_parts)
@@ -459,27 +649,33 @@ class ClaudePlanSummary:
                 total_duration += event.duration
                 completed_count += 1
 
-        stats_parts.append("## 📊 Tool Usage Statistics")
-        stats_parts.append(f"• **Total Operations**: {len(events)}")
-        stats_parts.append(f"• **Tools Used**: {', '.join(sorted(tools_used))}")
-        stats_parts.append(f"• **Completed Successfully**: {completed_count}")
+        stats_parts.append("📊 Tool Usage Statistics")
+        stats_parts.append("")  # Add blank line after heading
+        stats_parts.append(f"Total Operations: {len(events)}")
+        stats_parts.append(f"Tools Used: {', '.join(sorted(tools_used))}")
+        stats_parts.append(f"Completed Successfully: {completed_count}")
 
         if total_duration > 0:
-            stats_parts.append(f"• **Total Execution Time**: {total_duration:.2f}s")
+            stats_parts.append(f"Total Execution Time: {total_duration:.2f}s")
             stats_parts.append(
-                f"• **Average Duration**: {total_duration/completed_count:.2f}s"
+                f"Average Duration: {total_duration/completed_count:.2f}s"
             )
+
+        # Add blank line before operation breakdown
+        stats_parts.append("")
 
         # Operation breakdown
         if operation_counts:
-            stats_parts.append("\n**Operation Breakdown**:")
+            stats_parts.append("")  # Add blank line before breakdown
+            stats_parts.append("Operation Breakdown:")
+            stats_parts.append("")  # Add blank line after heading
             for op_type, count in sorted(operation_counts.items()):
                 emoji = (
                     "🔍✨"
                     if op_type == "cidx_semantic_search"
                     else "😞" if op_type == "grep_search" else "📄"
                 )
-                stats_parts.append(f"• {emoji} {op_type}: {count}")
+                stats_parts.append(f"{emoji} {op_type}: {count}")
 
         return "\n".join(stats_parts)
 
@@ -577,20 +773,44 @@ def process_tool_use_event(
         ToolUsageEvent instance representing the tool usage
     """
     tool_name = tool_data.get("name", "Unknown")
-    tool_use_id = tool_data.get("tool_use_id")
+    tool_use_id = tool_data.get("id")  # Claude CLI uses "id" not "tool_use_id"
     tool_input = tool_data.get("input", {})
+
+    def _format_parameters(
+        params: Dict[str, Any], exclude_keys: Optional[List[str]] = None
+    ) -> str:
+        """Format tool parameters for display."""
+        if not params:
+            return ""
+
+        exclude_keys = exclude_keys or []
+        relevant_params = {k: v for k, v in params.items() if k not in exclude_keys}
+
+        if not relevant_params:
+            return ""
+
+        # Format parameters as key=value pairs
+        param_strs = []
+        for key, value in relevant_params.items():
+            # Truncate long values
+            if isinstance(value, str) and len(value) > 50:
+                value = value[:47] + "..."
+            param_strs.append(f"{key}={value}")
+
+        return f" ({', '.join(param_strs)})" if param_strs else ""
 
     # Handle different tool types
     if tool_name == "Bash":
         command = tool_input.get("command", "")
         classification = classifier.classify_bash_command(command)
+        params_str = _format_parameters(tool_input, exclude_keys=["command"])
 
         return ToolUsageEvent(
             tool_name=tool_name,
             operation_type=classification["type"],
             visual_cue=classification["visual_cue"],
-            target=command[:50] + "..." if len(command) > 50 else command,
-            command_detail=classification["command_summary"],
+            target=command,  # Let display framework handle truncation
+            command_detail=f"{classification['command_summary']}{params_str}",
             timestamp=datetime.now(),
             status="started",
             tool_use_id=tool_use_id,
@@ -598,12 +818,13 @@ def process_tool_use_event(
 
     elif tool_name == "Read":
         file_path = tool_input.get("file_path", "unknown")
+        params_str = _format_parameters(tool_input, exclude_keys=["file_path"])
         return ToolUsageEvent(
             tool_name=tool_name,
             operation_type="file_operation",
             visual_cue="📖",
             target=file_path,
-            command_detail=f"Reading: {file_path}",
+            command_detail=f"Reading: {file_path}{params_str}",
             timestamp=datetime.now(),
             status="started",
             tool_use_id=tool_use_id,
@@ -611,12 +832,15 @@ def process_tool_use_event(
 
     elif tool_name == "Write":
         file_path = tool_input.get("file_path", "unknown")
+        params_str = _format_parameters(
+            tool_input, exclude_keys=["file_path", "content"]
+        )
         return ToolUsageEvent(
             tool_name=tool_name,
             operation_type="file_operation",
             visual_cue="📝",
             target=file_path,
-            command_detail=f"Writing: {file_path}",
+            command_detail=f"Writing: {file_path}{params_str}",
             timestamp=datetime.now(),
             status="started",
             tool_use_id=tool_use_id,
@@ -624,12 +848,13 @@ def process_tool_use_event(
 
     elif tool_name == "Grep":
         pattern = tool_input.get("pattern", "unknown")
+        params_str = _format_parameters(tool_input, exclude_keys=["pattern"])
         return ToolUsageEvent(
             tool_name=tool_name,
             operation_type="grep_search",
             visual_cue="😞",  # Sad face for text-based search
             target=pattern,
-            command_detail=f"Text search: '{pattern}'",
+            command_detail=f"Text search: '{pattern}'{params_str}",
             timestamp=datetime.now(),
             status="started",
             tool_use_id=tool_use_id,
@@ -637,12 +862,13 @@ def process_tool_use_event(
 
     elif tool_name == "Glob":
         pattern = tool_input.get("pattern", "unknown")
+        params_str = _format_parameters(tool_input, exclude_keys=["pattern"])
         return ToolUsageEvent(
             tool_name=tool_name,
             operation_type="file_search",
             visual_cue="🔍",
             target=pattern,
-            command_detail=f"File pattern: '{pattern}'",
+            command_detail=f"File pattern: '{pattern}'{params_str}",
             timestamp=datetime.now(),
             status="started",
             tool_use_id=tool_use_id,
@@ -650,12 +876,13 @@ def process_tool_use_event(
 
     elif tool_name == "LS":
         path = tool_input.get("path", ".")
+        params_str = _format_parameters(tool_input, exclude_keys=["path"])
         return ToolUsageEvent(
             tool_name=tool_name,
             operation_type="file_operation",
             visual_cue="🗂️",
             target=path,
-            command_detail=f"Listing: {path}",
+            command_detail=f"Listing: {path}{params_str}",
             timestamp=datetime.now(),
             status="started",
             tool_use_id=tool_use_id,
@@ -663,12 +890,40 @@ def process_tool_use_event(
 
     # Generic tool handling
     else:
+        # Format tool input more intelligently
+        if isinstance(tool_input, dict):
+            # Extract meaningful info from tool input
+            if "description" in tool_input:
+                target = tool_input["description"]
+                params_str = _format_parameters(
+                    tool_input, exclude_keys=["description"]
+                )
+                detail = f"{tool_name}: {tool_input['description']}{params_str}"
+            elif "path" in tool_input:
+                target = tool_input["path"]
+                params_str = _format_parameters(tool_input, exclude_keys=["path"])
+                detail = f"{tool_name}: {tool_input['path']}{params_str}"
+            elif "pattern" in tool_input:
+                target = tool_input["pattern"]
+                params_str = _format_parameters(tool_input, exclude_keys=["pattern"])
+                detail = f"{tool_name}: {tool_input['pattern']}{params_str}"
+            else:
+                # Get the first key-value pair that looks meaningful
+                first_key = next(iter(tool_input.keys())) if tool_input else "unknown"
+                first_value = tool_input.get(first_key, "unknown")
+                target = str(first_value)
+                params_str = _format_parameters(tool_input, exclude_keys=[first_key])
+                detail = f"{tool_name}: {first_key}={str(first_value)}{params_str}"
+        else:
+            target = str(tool_input)
+            detail = f"{tool_name}: {str(tool_input)}"
+
         return ToolUsageEvent(
             tool_name=tool_name,
             operation_type="tool_operation",
             visual_cue="🔧",
-            target=str(tool_input),
-            command_detail=f"{tool_name}: {str(tool_input)[:40]}...",
+            target=target,
+            command_detail=detail,
             timestamp=datetime.now(),
             status="started",
             tool_use_id=tool_use_id,

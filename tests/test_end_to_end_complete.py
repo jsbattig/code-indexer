@@ -41,7 +41,7 @@ class TestEndToEndComplete:
         try:
             self.original_cwd = os.getcwd()
         except FileNotFoundError:
-            self.original_cwd = Path(__file__).parent.absolute()
+            self.original_cwd = str(Path(__file__).parent.absolute())
 
         # NEW STRATEGY: Ensure services ready, then clean data only
         services_ready = self.service_manager.ensure_services_ready()
@@ -198,7 +198,9 @@ class TestEndToEndComplete:
             result = self.cli_helper.run_cli_command(["status"])
             # Check that index is available and has documents
             assert "Available" in result.stdout
-            assert "Documents:" in result.stdout or "Points:" in result.stdout
+            assert (
+                "docs" in result.stdout
+            )  # Should show "Project: X docs | Total: Y docs"
 
             # 4. Clean project data (keeping services running - NEW STRATEGY)
             self.cli_helper.run_cli_command(["clean-data"])
@@ -301,8 +303,8 @@ class TestEndToEndComplete:
                     "✅ Available" in result.stdout
                 ), "Project 1 should show index as available"
                 assert (
-                    "Documents:" in result.stdout or "Points:" in result.stdout
-                ), "Should show document/point count"
+                    "docs" in result.stdout
+                ), "Should show document count (Project: X docs | Total: Y docs)"
 
             with self.dir_manager.safe_chdir(project2_path):
                 result = self.cli_helper.run_cli_command(["status"])
@@ -310,8 +312,8 @@ class TestEndToEndComplete:
                     "✅ Available" in result.stdout
                 ), "Project 2 should show index as available"
                 assert (
-                    "Documents:" in result.stdout or "Points:" in result.stdout
-                ), "Should show document/point count"
+                    "docs" in result.stdout
+                ), "Should show document count (Project: X docs | Total: Y docs)"
 
             # Clean project data from project1 (keeping services running for other projects)
             with self.dir_manager.safe_chdir(project1_path):

@@ -352,36 +352,40 @@ class TestStatusLineManager:
     def test_manager_initialization(self):
         """Test manager initialization."""
         manager = StatusLineManager()
-        assert manager.live_display is None
-        assert manager.current_activities == []
+        assert manager.status_manager is not None
         assert manager.cidx_usage_count == 0
         assert manager.grep_usage_count == 0
-        assert manager.max_activities == 3
+        assert hasattr(manager, "visual_cues")
 
     def test_manager_initialization_with_console(self):
         """Test manager initialization with custom console."""
         console = Mock(spec=Console)
         manager = StatusLineManager(console=console)
-        assert manager.console == console
+        # The console is passed to the internal status manager
+        assert manager.status_manager.console == console
 
     def test_start_display(self):
-        """Test starting the live display."""
+        """Test starting the display."""
         manager = StatusLineManager()
         manager.start_display()
 
-        assert manager.live_display is not None
+        # Check that internal display is active
+        assert manager.status_manager.display is not None
+        assert manager.status_manager.display.is_active is True
 
         # Cleanup
         manager.stop_display()
 
     def test_stop_display(self):
-        """Test stopping the live display."""
+        """Test stopping the display."""
         manager = StatusLineManager()
         manager.start_display()
-        assert manager.live_display is not None
+        assert manager.status_manager.display is not None
+        assert manager.status_manager.display.is_active is True
 
         manager.stop_display()
-        assert manager.live_display is None
+        # After stopping, the display should be cleaned up
+        assert manager.status_manager.display is None
 
     def test_update_activity(self):
         """Test updating activity display."""
@@ -403,8 +407,6 @@ class TestStatusLineManager:
 
         assert manager.cidx_usage_count == 1
         assert manager.grep_usage_count == 0
-        assert len(manager.current_activities) == 1
-        assert "🔍✨" in manager.current_activities[0]
 
         # Create a grep event
         grep_event = ToolUsageEvent(
@@ -422,7 +424,6 @@ class TestStatusLineManager:
 
         assert manager.cidx_usage_count == 1
         assert manager.grep_usage_count == 1
-        assert len(manager.current_activities) == 2
 
 
 class TestClaudePlanSummary:
@@ -498,7 +499,7 @@ class TestClaudePlanSummary:
 
         stats = summary.format_statistics(events)
         assert "Tool Usage Statistics" in stats
-        assert "**Total Operations**: 1" in stats
+        assert "Total Operations: 1" in stats
         assert "Bash" in stats
 
     def test_generate_complete_summary(self):
@@ -535,7 +536,7 @@ class TestProcessToolUseEvent:
         """Test processing a bash tool use event."""
         tool_data = {
             "type": "tool_use",
-            "tool_use_id": "toolu_123",
+            "id": "toolu_123",
             "name": "Bash",
             "input": {"command": "cidx query 'authentication' --language python"},
         }
@@ -561,7 +562,7 @@ class TestProcessToolUseEvent:
         """Test processing a read tool use event."""
         tool_data = {
             "type": "tool_use",
-            "tool_use_id": "toolu_456",
+            "id": "toolu_456",
             "name": "Read",
             "input": {"file_path": "src/auth.py"},
         }
@@ -581,7 +582,7 @@ class TestProcessToolUseEvent:
         """Test processing a grep tool use event."""
         tool_data = {
             "type": "tool_use",
-            "tool_use_id": "toolu_789",
+            "id": "toolu_789",
             "name": "Grep",
             "input": {"pattern": "authentication", "include": "*.py"},
         }
@@ -595,7 +596,7 @@ class TestProcessToolUseEvent:
         assert event.tool_use_id == "toolu_789"
         assert event.status == "started"
         assert event.target == "authentication"
-        assert event.command_detail == "Text search: 'authentication'"
+        assert event.command_detail == "Text search: 'authentication' (include=*.py)"
 
 
 # Mock data for testing
@@ -656,7 +657,7 @@ def mock_tool_data_bash_cidx():
     """Mock tool_use JSON data for bash cidx command."""
     return {
         "type": "tool_use",
-        "tool_use_id": "toolu_123abc",
+        "id": "toolu_123abc",
         "name": "Bash",
         "input": {
             "command": "cidx query 'database connection' --language python --limit 5"
@@ -669,7 +670,7 @@ def mock_tool_data_bash_grep():
     """Mock tool_use JSON data for bash grep command."""
     return {
         "type": "tool_use",
-        "tool_use_id": "toolu_456def",
+        "id": "toolu_456def",
         "name": "Bash",
         "input": {"command": "grep -rn 'TODO' src/ --include='*.py'"},
     }

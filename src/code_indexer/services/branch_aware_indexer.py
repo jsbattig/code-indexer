@@ -38,6 +38,7 @@ class ContentMetadata:
     language: str
     created_at: float
     working_directory_status: str
+    file_mtime: float  # File modification time for reconcile comparisons
 
 
 @dataclass
@@ -277,6 +278,14 @@ class BranchAwareIndexer:
         # Determine working directory status
         working_dir_status = self._determine_working_dir_status(file_path)
 
+        # Get file modification time for reconcile comparisons
+        try:
+            absolute_file_path = self.codebase_dir / file_path
+            file_mtime = absolute_file_path.stat().st_mtime
+        except (OSError, FileNotFoundError):
+            # If file doesn't exist or can't be accessed, use current time
+            file_mtime = time.time()
+
         # Create content metadata
         metadata = ContentMetadata(
             path=file_path,
@@ -288,6 +297,7 @@ class BranchAwareIndexer:
             language=self._detect_language(file_path),
             created_at=time.time(),
             working_directory_status=working_dir_status,
+            file_mtime=file_mtime,
         )
 
         # Generate deterministic content ID
@@ -519,10 +529,33 @@ class BranchAwareIndexer:
             ".py": "python",
             ".js": "javascript",
             ".ts": "typescript",
+            ".tsx": "typescript",
             ".java": "java",
             ".cpp": "cpp",
             ".c": "c",
+            ".h": "c",
+            ".hpp": "cpp",
+            ".cs": "csharp",
+            ".go": "go",
+            ".rs": "rust",
+            ".rb": "ruby",
+            ".php": "php",
+            ".sh": "shell",
+            ".bash": "shell",
+            ".html": "html",
+            ".css": "css",
+            ".sql": "sql",
+            ".swift": "swift",
+            ".kt": "kotlin",
+            ".scala": "scala",
+            ".dart": "dart",
+            ".vue": "vue",
+            ".jsx": "javascript",
             ".md": "markdown",
+            ".json": "json",
+            ".yaml": "yaml",
+            ".yml": "yaml",
+            ".toml": "toml",
             ".txt": "text",
         }
         return language_map.get(suffix, "unknown")

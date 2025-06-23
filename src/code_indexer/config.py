@@ -390,14 +390,14 @@ Code-indexer processes files sequentially: reads file → chunks text → genera
 
 ## Embedding Providers
 
-### Ollama (Local, Default)
+### Ollama (Local)
 Uses local AI models for privacy and no API costs:
 ```json
 "embedding_provider": "ollama",
 "qdrant": { "vector_size": 768 }  // Ollama models use 768 dimensions
 ```
 
-### VoyageAI (Cloud)
+### VoyageAI (Cloud, Default)
 Uses VoyageAI API for high-quality code embeddings:
 ```json
 "embedding_provider": "voyage-ai",
@@ -514,4 +514,8 @@ code-indexer index --clear
             ConfigManager instance with found config path or default path
         """
         config_path = cls.find_config_path(start_dir)
+        if config_path is None:
+            # If no config found, use default path from the start directory
+            start = start_dir or Path.cwd()
+            config_path = start / ".code-indexer" / "config.json"
         return cls(config_path)

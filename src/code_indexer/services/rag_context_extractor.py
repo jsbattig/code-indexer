@@ -305,15 +305,14 @@ class RAGContextExtractor:
         # Add relevance score explanation for prompt engineering
         relevance_explanation = (
             "\n🔬 **EVIDENCE CITATION GUIDE**: Each code context below MUST be used for evidence-backed assertions. "
-            "Every statement you make about the code requires a citation in this format: [description](file_path:line_number). "
+            "Every statement requires citations with line info in description, not URL. "
             "\n\n**RELEVANCE SCORES**: Each context includes a semantic similarity score (0.0-1.0). "
             "Higher scores (>0.8) indicate strong relevance to your query. "
             "Medium scores (0.5-0.8) suggest related concepts. "
             "Lower scores (<0.5) may provide peripheral context. "
             "\n\n**CITATION REQUIREMENTS**: "
-            "- Use exact file paths and line numbers shown below "
-            "- Format as markdown links: [UserService class](src/services/user.py:45) "
-            "- For ranges: [authentication logic](auth/login.py:123-145) "
+            "- Use exact file paths from contexts below "
+            "- Put line numbers in description text only "
             "- Every technical claim needs a source citation "
             "- Treat this like scientific research - no assertion without evidence\n"
         )
@@ -321,8 +320,27 @@ class RAGContextExtractor:
         total_length += len(relevance_explanation)
 
         for i, context in enumerate(contexts, 1):
-            # Format header with enhanced relevance score information
-            header = f"\n## Context {i}: {context.file_path}"
+            # Format header with enhanced relevance score information - ensure full path is shown
+            # If file_path doesn't start with known prefixes, it might be relative to codebase_dir
+            display_path = context.file_path
+            if not display_path.startswith(("src/", "tests/", "/")):
+                # Handle cases where file_path might be just a filename
+                # Try to construct full path if needed
+                if display_path.endswith(".py") and "/" not in display_path:
+                    # This looks like a bare filename, let's check common locations
+                    potential_paths = [
+                        f"src/code_indexer/services/{display_path}",
+                        f"src/code_indexer/{display_path}",
+                        f"tests/{display_path}",
+                        display_path,  # fallback to original
+                    ]
+                    # Use the first existing path or fall back to original
+                    for potential_path in potential_paths:
+                        if (self.codebase_dir / potential_path).exists():
+                            display_path = potential_path
+                            break
+
+            header = f"\n## Context {i}: {display_path}"
             if context.language != "unknown":
                 header += f" ({context.language})"
 

@@ -4,7 +4,7 @@ import os
 import sys
 import signal
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union, Callable
 
 import click
 from rich.console import Console
@@ -29,6 +29,7 @@ from .services.claude_integration import (
     ClaudeIntegrationService,
     check_claude_sdk_availability,
 )
+from .utils.status_display import _process_markdown_for_readability
 from . import __version__
 
 
@@ -143,7 +144,7 @@ class GracefulInterruptHandler:
         self.console = console
         self.operation_name = operation_name
         self.interrupted = False
-        self.original_sigint_handler = None
+        self.original_sigint_handler: Optional[Union[Callable, int]] = None
         self.progress_bar = None
 
     def __enter__(self):
@@ -228,7 +229,7 @@ def cli(ctx, config: Optional[str], verbose: bool, path: Optional[str]):
       • exclude_dirs: Folders to skip (e.g., ["node_modules", "dist"])
       • file_extensions: File types to index (e.g., ["py", "js", "ts"])
       • max_file_size: Maximum file size in bytes (default: 1MB)
-      • chunk_size: Text chunk size for processing (default: 1000)
+      • chunk_size: Text chunk size for processing (default: 1500)
 
       Exclusions also respect .gitignore patterns automatically.
 
@@ -281,7 +282,7 @@ def cli(ctx, config: Optional[str], verbose: bool, path: Optional[str]):
     help="Maximum file size to index (bytes, default: 1048576)",
 )
 @click.option(
-    "--chunk-size", type=int, help="Text chunk size in characters (default: 1000)"
+    "--chunk-size", type=int, help="Text chunk size in characters (default: 1500)"
 )
 @click.option(
     "--embedding-provider",
@@ -1856,8 +1857,22 @@ Use this when you need to find related code that might not be in the initial con
 
                 # Render as markdown for beautiful formatting
                 if _is_markdown_content(formatted_response):
-                    markdown = Markdown(formatted_response)
-                    console.print(markdown)
+                    # Process markdown to improve link readability
+                    processed_response = _process_markdown_for_readability(
+                        formatted_response
+                    )
+
+                    # Create markdown with better link colors
+                    from rich.theme import Theme
+
+                    link_theme = Theme(
+                        {"markdown.link": "bright_cyan", "markdown.link_url": "cyan"}
+                    )
+
+                    # Create a temporary console with better link colors
+                    temp_console = Console(theme=link_theme)
+                    markdown = Markdown(processed_response)
+                    temp_console.print(markdown)
                 else:
                     console.print(formatted_response)
 
@@ -1866,17 +1881,28 @@ Use this when you need to find related code that might not be in the initial con
 
         # Show metadata (for both modes)
         if not quiet:
-            console.print("\n📊 Analysis Summary:")
-            console.print(f"   • Code contexts used: {analysis_result.contexts_used}")
-            console.print(
-                f"   • Total context lines: {analysis_result.total_context_lines:,}"
+            # Format analysis summary
+            summary_lines = []
+            summary_lines.append(f"Code contexts used: {analysis_result.contexts_used}")
+            summary_lines.append(
+                f"Total context lines: {analysis_result.total_context_lines:,}"
             )
 
             if analysis_result.contexts_used > 0:
                 avg_lines = (
                     analysis_result.total_context_lines // analysis_result.contexts_used
                 )
-                console.print(f"   • Average lines per context: {avg_lines}")
+                summary_lines.append(f"Average lines per context: {avg_lines}")
+
+            # If status display framework is active, integrate with it
+            if show_claude_plan and use_streaming:
+                # Don't print directly - the summary will be shown in the final display
+                pass  # Status display framework will handle final output
+            else:
+                # Non-streaming mode or no status display - print directly
+                console.print("\n📊 Analysis Summary:")
+                for line in summary_lines:
+                    console.print(f"   • {line}")
 
         # Clear cache to free memory
         claude_service.clear_cache()
@@ -1974,6 +2000,16 @@ def status(ctx, force_docker: bool):
         except Exception as e:
             table.add_row("Embedding Provider", "❌ Error", str(e))
 
+        # Check Ollama status specifically
+        if config.embedding_provider == "ollama":
+            # Ollama is required, status already shown above
+            pass
+        else:
+            # Ollama is not needed with this configuration
+            table.add_row(
+                "Ollama", "✅ Not needed", f"Using {config.embedding_provider}"
+            )
+
         # Check Qdrant
         qdrant_client = QdrantClient(config.qdrant)
         qdrant_ok = qdrant_client.health_check()
@@ -1986,8 +2022,31 @@ def status(ctx, force_docker: bool):
                 collection_name = qdrant_client.resolve_collection_name(
                     config, embedding_provider
                 )
-                count = qdrant_client.count_points(collection_name)
-                qdrant_details = f"Documents: {count}"
+                project_count = qdrant_client.count_points(collection_name)
+
+                # Get total documents across all collections for context
+                try:
+                    import requests  # type: ignore
+
+                    response = requests.get(
+                        f"{config.qdrant.host}/collections", timeout=5
+                    )
+                    if response.status_code == 200:
+                        collections_data = response.json()
+                        total_count = 0
+                        for collection_info in collections_data.get("result", {}).get(
+                            "collections", []
+                        ):
+                            coll_name = collection_info["name"]
+                            coll_count = qdrant_client.count_points(coll_name)
+                            total_count += coll_count
+                        qdrant_details = (
+                            f"Project: {project_count} docs | Total: {total_count} docs"
+                        )
+                    else:
+                        qdrant_details = f"Documents: {project_count}"
+                except Exception:
+                    qdrant_details = f"Documents: {project_count}"
             except Exception:
                 qdrant_details = "Collection ready"
         else:

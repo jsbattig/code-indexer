@@ -78,7 +78,16 @@ else
     exit 1
 fi
 
-# 5. Run tests with coverage
+# 5. Setup test environment (cleanup dangling test collections)
+print_step "Setting up test environment"
+export FULL_AUTOMATION=1  # Enable test collection cleanup
+if python tests/test_suite_setup.py; then
+    print_success "Test environment setup completed"
+else
+    print_warning "Test environment setup had issues (continuing anyway)"
+fi
+
+# 6. Run tests with coverage
 print_step "Running tests with coverage"
 if pytest tests/ --cov=src/code_indexer --cov-report=xml --cov-report=term; then
     print_success "All tests passed"
@@ -87,7 +96,7 @@ else
     exit 1
 fi
 
-# 6. Build package
+# 7. Build package
 print_step "Building package"
 pip install build twine
 if python -m build; then
@@ -97,7 +106,7 @@ else
     exit 1
 fi
 
-# 7. Check package
+# 8. Check package
 print_step "Checking package integrity"
 if twine check dist/*.whl dist/*.tar.gz; then
     print_success "Package check passed"
@@ -106,7 +115,7 @@ else
     exit 1
 fi
 
-# 8. Validate Docker service files (no main app Dockerfile needed)
+# 9. Validate Docker service files (no main app Dockerfile needed)
 print_step "Validating Docker service files"
 if command -v docker &> /dev/null; then
     # Check that service Dockerfiles exist and are valid

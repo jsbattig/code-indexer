@@ -10,13 +10,6 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
 from .rag_context_extractor import RAGContextExtractor, CodeContext
-from .claude_tool_tracking import (
-    ToolUsageTracker,
-    StatusLineManager,
-    CommandClassifier,
-    ClaudePlanSummary,
-    process_tool_use_event,
-)
 
 # Claude CLI integration - no SDK required
 CLAUDE_SDK_AVAILABLE = False  # We use CLI instead of SDK
@@ -105,12 +98,22 @@ class ClaudeIntegrationService:
 🔬 SCIENTIFIC EVIDENCE REQUIREMENT:
 Treat this analysis like a scientific paper - ALL assertions must be backed by specific evidence from the source code. Every claim you make MUST include markdown links to exact source files and line numbers. No assertion is valid without proper citation to the codebase.
 
-REQUIRED CITATION FORMAT:
-- Use markdown links: [description](file_path:line_number) or [description](file_path:line_start-line_end)
-- Examples: [UserService class](src/services/user.py:45), [authentication logic](auth/login.py:123-145)
-- When referencing multiple files: cite ALL relevant files
-- When explaining flows: cite EVERY step with specific file/line references
-- When creating diagrams: include file/line citations in diagram elements
+EVIDENCE AND CITATION REQUIREMENTS:
+File paths in contexts are FACTUAL EVIDENCE. Use them exactly for citations.
+
+MANDATORY CITATION FORMAT WITH EXAMPLES:
+
+WRONG (breaks clickability):
+❌ [method definition](file://{self.codebase_dir}/src/services/auth.py:45)
+❌ [user class](file://{self.codebase_dir}/tests/test_user.py:123-145)
+❌ [config setup](file://{self.codebase_dir}/config.py:67)
+
+CORRECT (clickable URLs):
+✅ [method definition line 45](file://{self.codebase_dir}/src/services/auth.py)
+✅ [user class lines 123-145](file://{self.codebase_dir}/tests/test_user.py)
+✅ [config setup line 67](file://{self.codebase_dir}/config.py)
+
+RULE: Line numbers go in the DESCRIPTION text, never in the URL path!
 
 {tool_instruction}
 
@@ -124,7 +127,11 @@ SEMANTIC SEARCH RESULTS:
 
 {exploration_instructions}
 
-Focus on providing accurate, actionable insights with MANDATORY evidence citations. Every technical statement requires a source code reference. No exceptions."""
+Focus on providing accurate, actionable insights with MANDATORY evidence citations. Every technical statement requires a source code reference. No exceptions.
+
+REMINDER: When creating links, NEVER put :line_numbers in the URL. Example:
+WRONG: file:///.../file.py:123
+RIGHT: [description line 123](file:///.../file.py)"""
 
         return prompt
 
@@ -168,63 +175,98 @@ Focus on providing accurate, actionable insights with MANDATORY evidence citatio
         if not enable_exploration or exploration_depth == "none":
             return ""
 
-        base_tools = """AVAILABLE TOOLS FOR CODEBASE EXPLORATION:
+        base_tools = """🎯 MANDATORY WORKFLOW FOR CODE DISCOVERY:
 
-BUILT-IN SEMANTIC SEARCH TOOL:
-You have access to a powerful semantic search tool that can find related code:
-- `cidx query "search terms"` - Find semantically similar code throughout the codebase
-- `cidx query "search terms" --limit N` - Limit results to N matches (default: 10)
-- `cidx query "search terms" --language python` - Filter by specific language
-- `cidx query "search terms" --file-pattern "*.py"` - Filter by file pattern
-- `cidx query "search terms" --include-test` - Include test files in results
-- `cidx query "search terms" --exclude-dir node_modules` - Exclude specific directories
+1. **ALWAYS START WITH SEMANTIC SEARCH**: Use `cidx query` first for any code discovery
+2. **READ SPECIFIC FILES**: Use Read for files identified by cidx  
+3. **FALLBACK ONLY**: Use text search only if cidx returns no relevant results
 
-QUERY TOOL RESULTS FORMAT:
-The cidx query tool returns results with:
-- **Relevance Score**: Similarity score (0.0-1.0, higher is more relevant)
-- **File Path**: Full path to the file containing the match
-- **Line Numbers**: Specific line range where the match was found
-- **Content**: The actual code/text that matched your search
-- **Context**: Surrounding code lines for better understanding
+🔍✨ PRIMARY TOOL - SEMANTIC SEARCH:
+`cidx query "search terms"` - Your go-to tool for intelligent code discovery
+- Understands semantic relationships and context (not just text matching)
+- Finds related code even when variable names or exact terms differ
+- Returns relevance scores (0.0-1.0, higher = more relevant)
 
-READ-ONLY FILE SYSTEM TOOLS:
-- Read: Read any file in the codebase
-- Glob: Find files using patterns (e.g., "src/**/*.py")  
-- Grep: Search for specific patterns in files
-- LS: List directory contents
-- Task: Delegate complex file searches
+**CIDX OPTIONS FOR PRECISE CONTROL**:
+- `--limit N` - Control number of results (default: 10, use `--limit 5` for focused results, `--limit 20` for comprehensive)
+- `--language LANG` - Filter by programming language (use full language names)
+- `--path "*/tests/*"` - Filter by file path patterns (e.g., "*/api/*", "*.py")
+- `--min-score 0.8` - Minimum similarity score (0.0-1.0, higher = more relevant matches only)
 
-NOTE: You cannot modify, edit, or execute any files (read-only access)
+**SUPPORTED LANGUAGES** (use exact names):
+- `python` (.py files) | `javascript` (.js, .jsx files) | `typescript` (.ts, .tsx files)
+- `java` (.java files) | `csharp` (.cs files) | `cpp` (.cpp, .hpp files) | `c` (.c, .h files)
+- `go` (.go files) | `rust` (.rs files) | `ruby` (.rb files) | `php` (.php files)
+- `swift` (.swift files) | `kotlin` (.kt files) | `scala` (.scala files) | `dart` (.dart files)
+- `shell` (.sh, .bash files) | `html` (.html files) | `css` (.css files) | `sql` (.sql files)
+- `vue` (.vue files) | `json` (.json files) | `yaml` (.yaml, .yml files) | `toml` (.toml files)
+- `markdown` (.md files) | `text` (.txt files)
+
+**USAGE EXAMPLES**:
+- `cidx query "authentication" --limit 10` - Get top 10 auth-related results
+- `cidx query "database setup" --limit 3 --language python` - Focused Python DB setup search
+- `cidx query "async functions" --language javascript --min-score 0.8` - High-quality JS async code
+- `cidx query "dependency injection" --language csharp` - C# dependency injection patterns
+- `cidx query "SQL joins" --language sql --limit 5` - Find SQL join examples
+- `cidx query "shell script" --language shell --path "*/scripts/*"` - Shell scripts in scripts directory
+- `cidx query "styling components" --language css --min-score 0.7` - CSS styling patterns
+- `cidx query "test setup" --path "*/tests/*" --limit 5` - Find test setup in test files only
+
+EXAMPLES - SEMANTIC vs TEXT SEARCH:
+✅ GOOD: `cidx query "authentication system"` - finds auth-related code semantically
+❌ AVOID: `grep -r "auth"` - finds all text containing "auth" without context
+✅ GOOD: `cidx query "database connection setup"` - understands the concept  
+❌ AVOID: `grep -r "database"` - misses DB, db, connection logic
+
+📖 CORE SUPPORT TOOLS:
+- **Read**: Examine specific files found by cidx
+- **Task**: Complex multi-step searches when cidx needs assistance
+
+⚠️ FALLBACK TOOLS (USE SPARINGLY):
+- **Glob**: File pattern matching when cidx can't find files by name patterns
+- **Grep**: Text search ONLY when cidx fails AND you need exact literal matches
+- **LS**: Directory structure exploration
+
+⚠️ AVOID TEXT-BASED SEARCH: Grep/text search should be used ONLY as a last resort when cidx fails to find results. Text search misses semantic relationships and context that make your analysis less accurate.
+
+🎯 SUCCESS CRITERIA: Prefer semantic search over text search. Your analysis will be more accurate and comprehensive when using cidx for code discovery.
 
 🔬 EVIDENCE CITATION REQUIREMENTS:
-- When using any tool, immediately cite findings with [description](file_path:line_number)
+- When using any tool, immediately cite findings with FULL file:// URLs
 - Never make claims about code without providing the exact source location
 - Include file/line references in all explanations, diagrams, and flow descriptions
-- Format citations as markdown links: [UserService.authenticate](src/services/user.py:123)
-- For ranges: [authentication flow](auth/handlers.py:45-78)
-- Treat every statement like a scientific paper - evidence required"""
+- Format citations as markdown links: [UserService.authenticate](file://{self.codebase_dir}/src/services/user.py:123)
+- For ranges: [authentication flow](file://{self.codebase_dir}/auth/handlers.py:45-78)
+- REMEMBER: Always use file://{self.codebase_dir}/ prefix for ALL file references
+- Treat every statement like a scientific paper - evidence required
+
+NOTE: You have read-only access and cannot modify, edit, or execute files."""
 
         if exploration_depth == "shallow":
             return (
                 base_tools
                 + """
 
-EXPLORATION GUIDELINES (LIMITED DEPTH):
-- **Primary Focus**: Base analysis on provided semantic search results
-- **Smart Exploration**: Use your judgment to decide how deep to explore based on the user's question
-- **Prefer cidx**: When you need more code context, prioritize `cidx query` over other file exploration tools
-- **Be Selective**: Explore only what's necessary to provide a complete answer
+🔍 EXPLORATION GUIDELINES (LIMITED DEPTH):
+**MANDATORY APPROACH**: Start with semantic search, then targeted file reading
 
-TOOL PREFERENCE ORDER (use in this priority):
-1. **cidx query** - PREFERRED for finding related code, implementations, and examples
-2. **Read** - For examining specific files identified by cidx or mentioned in search results  
-3. **Glob** - Only when you need to find files by patterns that cidx might miss
-4. **Grep** - Only for very specific text pattern searches within known files
-5. **LS** - Only when you need to understand directory structure
-6. **Task** - Only for complex multi-step file discovery that other tools can't handle
+**STEP-BY-STEP WORKFLOW**:
+1. **cidx query first**: Always begin with semantic search for your topic
+2. **Read key files**: Examine the most relevant files found by cidx  
+3. **cidx query again**: Use additional semantic searches if you need more context
+4. **Avoid text search**: Only use grep if cidx completely fails to find anything
 
-EXPLORATION APPROACH:
-Use cidx query as your primary exploration tool. Other Claude Code tools (Read, Glob, Grep, LS, Task) are available but cidx query is specifically designed for semantic code discovery and should be your first choice for finding related code, implementations, patterns, and examples."""
+**SMART EXPLORATION RULES**:
+- Base analysis on provided semantic search results PLUS targeted cidx queries
+- Be selective - explore only what's necessary for a complete answer
+- If cidx returns good results, DO NOT use grep for the same concept
+
+**TOOL USAGE PRIORITY**:
+🥇 **cidx query** - Your primary tool for ALL code discovery
+🥈 **Read** - For examining files identified by cidx
+🥉 **Task** - For complex workflows involving multiple semantic searches
+
+**REMEMBER**: Text search (grep) finds literal matches but misses semantic relationships. Semantic search (cidx) understands concepts and finds related code even with different terminology."""
             )
 
         else:  # exploration_depth == 'deep'
@@ -232,22 +274,31 @@ Use cidx query as your primary exploration tool. Other Claude Code tools (Read, 
                 base_tools
                 + """
 
-EXPLORATION GUIDELINES (UNLIMITED DEPTH):
-- **Comprehensive Analysis**: Explore thoroughly to provide detailed, accurate answers
-- **Smart Exploration**: Use your judgment to determine how extensively to explore based on the user's question
-- **Prefer cidx**: Leverage `cidx query` extensively as your primary exploration tool
-- **No Limits**: Explore as deeply as needed to provide complete insights
+🎯 EXPLORATION GUIDELINES (UNLIMITED DEPTH):
+**COMPREHENSIVE SEMANTIC-FIRST APPROACH**: Use extensive semantic searches for thorough analysis
 
-TOOL PREFERENCE ORDER (use in this priority):
-1. **cidx query** - PREFERRED for finding all related code, implementations, patterns, and examples
-2. **Read** - For examining specific files identified by cidx or for detailed code analysis
-3. **Glob** - When you need to find files by patterns that semantic search might miss  
-4. **Grep** - For specific text pattern searches within files
-5. **LS** - When you need to understand directory structure and organization
-6. **Task** - For complex multi-step file discovery or analysis workflows
+**DEEP EXPLORATION WORKFLOW**:
+1. **Multiple cidx queries**: Start with broad semantic searches, then narrow down
+2. **Systematic file reading**: Read all relevant files found by semantic search
+3. **Follow semantic trails**: Use cidx to explore related concepts and dependencies  
+4. **Cross-reference findings**: Use additional cidx queries to validate and expand understanding
+5. **Text search only if needed**: Use grep only for exact string matches that cidx cannot find
 
-EXPLORATION APPROACH:
-Use cidx query extensively as your primary exploration tool to discover related code throughout the codebase. Other Claude Code tools (Read, Glob, Grep, LS, Task) are available for specific needs, but cidx query's semantic search capabilities make it the most powerful tool for code discovery and should be your go-to choice."""
+**COMPREHENSIVE ANALYSIS RULES**:
+- Explore thoroughly using semantic search as your primary discovery method
+- Use multiple cidx queries with different search terms to find all related code
+- Read extensively from files identified by semantic search
+- No limits on exploration depth, but prioritize semantic understanding over text matching
+- Build a complete picture through intelligent code discovery, not brute-force text searching
+
+**TOOL USAGE FOR DEEP ANALYSIS**:
+🥇 **cidx query** - Use extensively for comprehensive code discovery  
+🥈 **Read** - Deep examination of all files found by semantic search
+🥉 **Task** - Complex multi-step semantic search workflows
+🏅 **Additional cidx queries** - Follow up searches for related concepts
+
+**DEEP ANALYSIS STRATEGY**: 
+Think like a code archaeologist - use semantic search to understand the conceptual landscape of the codebase, then dive deep into the most relevant areas. Avoid getting lost in literal text matches that miss the bigger picture."""
             )
 
     def _create_exploration_instructions(self, exploration_depth: str) -> str:
@@ -256,40 +307,43 @@ Use cidx query extensively as your primary exploration tool to discover related 
             return """ANALYSIS INSTRUCTIONS:
 1. **Provided Context Only**: Base your entire answer on the semantic search results provided above
 2. **No Exploration**: Do not use any file exploration tools (Read, Glob, Grep, cidx query)
-3. **MANDATORY Citations**: Every single assertion MUST include markdown links [description](file_path:line_number)
+3. **MANDATORY Citations**: Every single assertion MUST include markdown links [description](file://{self.codebase_dir}/file_path:line_number)
 4. **Evidence-Based Claims**: No statement about code behavior, structure, or functionality without citing exact source location
 5. **Scientific Rigor**: Treat every claim like a scientific paper citation - provide the evidence reference
 6. **Quick Response**: Provide a direct answer based solely on the given context, but with full citations
 7. **Acknowledge Limitations**: If the provided context is insufficient, state what additional information would be needed"""
 
         elif exploration_depth == "shallow":
-            return """ANALYSIS INSTRUCTIONS:
-1. **Primary Analysis**: Base your answer on the provided semantic search results above - this should be your main source
-2. **MANDATORY Evidence Citations**: Every assertion requires [description](file_path:line_number) markdown links
+            return """🔍 SEMANTIC-FIRST ANALYSIS INSTRUCTIONS:
+1. **Semantic Foundation**: Base analysis on provided semantic search results + targeted cidx queries
+2. **MANDATORY Evidence Citations**: Every assertion requires [description](file://{self.codebase_dir}/file_path:line_number) markdown links
 3. **Scientific Standards**: Each claim about code behavior, structure, or relationships MUST cite exact source location
-4. **Limited Exploration**: Only explore files directly referenced in the search results (imports, includes, etc.)
-5. **Citation-Driven Exploration**: When exploring, immediately cite what you find with file/line references
-6. **One Level Deep**: Keep exploration to ONE LEVEL DEEP - avoid broad codebase traversal
-7. **Targeted cidx**: Use `cidx query` sparingly for clarifying specific concepts, always citing results
-8. **Evidence-Based Examples**: Include concrete code examples with mandatory citations to source files/lines
-9. **No Unsupported Claims**: If you cannot cite a source location, do not make the claim
-10. **Git-Aware Analysis**: If exploring git repositories, use git diff/log commands to understand code changes and evolution"""
+4. **Smart Semantic Exploration**: Use additional `cidx query` searches to clarify concepts from initial results
+5. **AVOID Text Search**: Do NOT use grep unless cidx fails completely for your search needs
+6. **Citation-Driven Discovery**: When using cidx, immediately cite findings with file/line references
+7. **Semantic Depth Control**: Keep to ONE LEVEL of semantic exploration - avoid endless rabbit holes
+8. **File Reading Strategy**: Read files identified by semantic search, not random text-based discoveries
+9. **Evidence-Based Examples**: Include concrete code examples with mandatory citations to source files/lines
+10. **No Unsupported Claims**: If you cannot cite a source location, do not make the claim
+11. **Semantic Validation**: If you need to verify findings, use additional cidx queries, not text searches
+12. **Git-Aware Analysis**: Use git commands for change analysis when relevant to semantic understanding"""
 
         else:  # exploration_depth == 'deep'
-            return """ANALYSIS INSTRUCTIONS:
-1. **Comprehensive Analysis**: Explore the codebase thoroughly to provide detailed, accurate insights
+            return """🎯 COMPREHENSIVE SEMANTIC ANALYSIS INSTRUCTIONS:
+1. **Semantic-Driven Exploration**: Use extensive cidx queries as your primary discovery method for thorough analysis
 2. **SCIENTIFIC RIGOR**: Every single assertion MUST include [description](file_path:line_number) citations
-3. **Multi-Source Evidence**: Use provided search results as starting point, cite ALL sources extensively
-4. **Deep Exploration with Citations**: Follow all references, dependencies, and related code, citing each discovery
-5. **Extensive cidx Usage**: Use `cidx query` to find all related implementations, patterns, and usages - cite every finding
-6. **Cross-Reference Documentation**: Look for relationships between different parts of the codebase, cite ALL connections
-7. **Complete Context with Evidence**: Read relevant files, tests, documentation, and examples - cite every reference
+3. **Multi-Semantic Evidence**: Start with provided results, then use multiple cidx searches with different terms
+4. **Deep Semantic Trails**: Follow conceptual relationships discovered through semantic search, citing each discovery
+5. **Extensive cidx Strategy**: Use cidx query extensively with varied search terms to find ALL related code patterns
+6. **Semantic Cross-Reference**: Use cidx to find relationships between different codebase areas, cite ALL connections
+7. **Complete Semantic Context**: Read files discovered through semantic search, including tests and documentation
 8. **Evidence-Rich Examples**: Provide comprehensive code examples with mandatory source file/line citations
-9. **Research Paper Standards**: Treat this like academic research - no claim without evidence citation
-10. **Citation Completeness**: Include file paths, line numbers, and full context for EVERY single reference
-11. **Flow Documentation**: When explaining processes or flows, cite each step with specific file/line references
-12. **Git Repository Exploration**: Leverage git commands extensively for change analysis, history exploration, and branch comparisons
-13. **Historical Context**: When analyzing code evolution, use git log/blame to understand development timeline and decision context"""
+9. **Research Paper Standards**: Treat this like academic research - no claim without evidence citation from semantic discovery
+10. **Citation Completeness**: Include file paths, line numbers, and full context for EVERY semantic search finding
+11. **Semantic Flow Documentation**: When explaining processes, use cidx to find each step, cite with specific file/line references
+12. **Text Search as Last Resort**: Only use grep when cidx cannot find specific literal strings you need
+13. **Git Repository + Semantic Analysis**: Combine git commands with semantic search for comprehensive code evolution understanding
+14. **Semantic Validation**: Cross-check findings with additional cidx queries to ensure comprehensive coverage"""
 
     def _create_project_context(self, project_info: Optional[Dict[str, Any]]) -> str:
         """Create project context information."""
@@ -482,6 +536,11 @@ Use cidx query extensively as your primary exploration tool to discover related 
         import json
         from rich.console import Console
         from rich.markdown import Markdown
+        from .claude_tool_tracking import (
+            ToolUsageTracker,
+            CommandClassifier,
+            process_tool_use_event,
+        )
 
         try:
             # Get project info for context
@@ -492,15 +551,10 @@ Use cidx query extensively as your primary exploration tool to discover related 
 
             # Initialize tool tracking if requested
             tool_usage_tracker = None
-            status_line_manager = None
             command_classifier = None
-
             if show_claude_plan:
                 tool_usage_tracker = ToolUsageTracker()
-                status_line_manager = StatusLineManager()
                 command_classifier = CommandClassifier()
-                if not quiet:
-                    status_line_manager.start_display()
 
             # Create the full rich prompt
             prompt = self.create_analysis_prompt(
@@ -542,10 +596,11 @@ Use cidx query extensively as your primary exploration tool to discover related 
             # Set up console and live display with markdown buffer
             from rich.markdown import Markdown
 
-            console = Console()
+            console = Console(force_terminal=True, legacy_windows=False)
             accumulated_text = ""
             final_result = ""
             text_buffer = ""
+            last_output_was_text = False  # Track if we just printed text content
 
             if not quiet:
                 console.print("\n🤖 Claude Analysis Results")
@@ -566,6 +621,7 @@ Use cidx query extensively as your primary exploration tool to discover related 
 
             def _flush_buffer_with_formatting(buffer: str, console: Console) -> None:
                 """Flush text buffer with appropriate formatting."""
+                nonlocal last_output_was_text
                 if not buffer:
                     return
 
@@ -574,17 +630,22 @@ Use cidx query extensively as your primary exploration tool to discover related 
                 has_markdown = any(_is_markdown_line(line) for line in lines)
 
                 if has_markdown and len(buffer.strip()) > 20:
-                    # Try to render as markdown
+                    # Handle file:// links specially, then process markdown
                     try:
-                        markdown = Markdown(buffer)
-                        console.print(markdown)
-                        return
+                        # Split content into parts and handle file:// links separately
+                        processed_content = self._render_content_with_file_links(
+                            buffer, console
+                        )
+                        if processed_content:
+                            last_output_was_text = True
+                            return
                     except Exception:
                         # Fall back to plain text if markdown rendering fails
                         pass
 
                 # Plain text with basic markup enabled
                 console.print(buffer, end="")
+                last_output_was_text = True
 
             # Process streaming output
             try:
@@ -598,36 +659,7 @@ Use cidx query extensively as your primary exploration tool to discover related 
                             # Parse streaming JSON
                             data = json.loads(line)
 
-                            # Handle tool usage events (when tracking enabled)
-                            if (
-                                show_claude_plan
-                                and tool_usage_tracker
-                                and command_classifier
-                            ):
-                                if data.get("type") == "tool_use":
-                                    try:
-                                        tool_event = process_tool_use_event(
-                                            data, command_classifier
-                                        )
-                                        tool_usage_tracker.track_tool_start(tool_event)
-                                        if status_line_manager and not quiet:
-                                            status_line_manager.update_activity(
-                                                tool_event
-                                            )
-                                    except Exception as e:
-                                        logger.warning(
-                                            f"Failed to process tool_use event: {e}"
-                                        )
-
-                                elif data.get("type") == "tool_result":
-                                    try:
-                                        tool_usage_tracker.track_tool_completion(data)
-                                    except Exception as e:
-                                        logger.warning(
-                                            f"Failed to process tool_result event: {e}"
-                                        )
-
-                            # Handle assistant messages with text content
+                            # Handle assistant messages with text content and tool usage
                             if (
                                 data.get("type") == "assistant"
                                 and "message" in data
@@ -635,7 +667,7 @@ Use cidx query extensively as your primary exploration tool to discover related 
                             ):
                                 content_blocks = data["message"]["content"]
                                 for block in content_blocks:
-                                    # Look for text content blocks
+                                    # Handle text content blocks
                                     if (
                                         isinstance(block, dict)
                                         and block.get("type") == "text"
@@ -663,9 +695,87 @@ Use cidx query extensively as your primary exploration tool to discover related 
                                                     for c in ["#", "*", "`", ">"]
                                                 ):
                                                     console.print(text_chunk, end="")
+                                                    last_output_was_text = True
                                                     text_buffer = text_buffer[
                                                         : -len(text_chunk)
                                                     ]  # Remove from buffer since printed
+
+                                    # Handle tool usage blocks
+                                    elif (
+                                        isinstance(block, dict)
+                                        and block.get("type") == "tool_use"
+                                        and show_claude_plan
+                                        and tool_usage_tracker
+                                        and command_classifier
+                                    ):
+                                        try:
+                                            # Check if we need a newline (pending text OR recent text output)
+                                            needs_newline = (
+                                                bool(text_buffer.strip())
+                                                or last_output_was_text
+                                            )
+
+                                            # Flush any pending text first
+                                            if text_buffer:
+                                                _flush_buffer_with_formatting(
+                                                    text_buffer, console
+                                                )
+                                                text_buffer = ""
+
+                                            # Process tool usage event
+                                            tool_event = process_tool_use_event(
+                                                block, command_classifier
+                                            )
+                                            tool_usage_tracker.track_tool_start(
+                                                tool_event
+                                            )
+
+                                            # Display tool usage (add newline if we had recent text output)
+                                            if not quiet:
+                                                prefix = "\n" if needs_newline else ""
+                                                console.print(
+                                                    f"{prefix}{tool_event.visual_cue} {tool_event.command_detail}",
+                                                    style="cyan",
+                                                )
+                                                last_output_was_text = False  # Reset flag after tool output
+
+                                        except Exception as e:
+                                            logger.warning(
+                                                f"Failed to process tool_use event: {e}"
+                                            )
+
+                            # Handle user messages with tool results (track but don't display inline)
+                            elif (
+                                data.get("type") == "user"
+                                and "message" in data
+                                and "content" in data["message"]
+                                and show_claude_plan
+                                and tool_usage_tracker
+                            ):
+                                content_blocks = data["message"]["content"]
+                                for block in content_blocks:
+                                    if (
+                                        isinstance(block, dict)
+                                        and block.get("type") == "tool_result"
+                                    ):
+                                        try:
+                                            # Process tool completion for tracking/summary only
+                                            tool_result_data = {
+                                                "tool_use_id": block.get("tool_use_id"),
+                                                "is_error": block.get(
+                                                    "is_error", False
+                                                ),
+                                                "content": block.get("content", ""),
+                                            }
+                                            tool_usage_tracker.track_tool_completion(
+                                                tool_result_data
+                                            )
+                                            # No inline display - completion info will be in final summary
+
+                                        except Exception as e:
+                                            logger.warning(
+                                                f"Failed to process tool_result event: {e}"
+                                            )
 
                             # Handle final result (if format provides it)
                             elif data.get("type") == "result":
@@ -689,20 +799,13 @@ Use cidx query extensively as your primary exploration tool to discover related 
                 process.wait()
 
                 if process.returncode == 0:
-                    if not quiet:
-                        console.print("\n")
-                        console.print("─" * 80)
-
                     # Generate tool usage summary if tracking was enabled
                     tool_summary = None
                     tool_stats = None
                     if show_claude_plan and tool_usage_tracker:
                         try:
-                            # Stop status line display
-                            if status_line_manager and not quiet:
-                                status_line_manager.stop_display()
+                            from .claude_tool_tracking import ClaudePlanSummary
 
-                            # Generate summary
                             summary_generator = ClaudePlanSummary()
                             all_events = tool_usage_tracker.get_all_events()
                             tool_summary = summary_generator.generate_complete_summary(
@@ -710,16 +813,109 @@ Use cidx query extensively as your primary exploration tool to discover related 
                             )
                             tool_stats = tool_usage_tracker.get_summary_stats()
 
-                            # Display summary if not quiet
+                            # Display final tool usage summary with proper formatting
                             if not quiet and tool_summary:
-                                console.print("\n🤖 Claude's Problem-Solving Approach")
+                                console.print("\n")
                                 console.print("─" * 80)
-                                console.print(tool_summary)
+                                console.print(
+                                    "🤖 Claude's Problem-Solving Approach",
+                                    style="bold cyan",
+                                )
+                                console.print("─" * 80)
+                                try:
+                                    # Special handling for tool usage statistics to ensure proper line breaks
+                                    if "📊 Tool Usage Statistics" in tool_summary:
+                                        lines = tool_summary.split("\n")
+                                        in_stats_section = False
 
+                                        for line in lines:
+                                            stripped_line = line.strip()
+
+                                            if (
+                                                "📊 Tool Usage Statistics"
+                                                in stripped_line
+                                            ):
+                                                in_stats_section = True
+                                                console.print(
+                                                    "\n" + stripped_line,
+                                                    style="bold cyan",
+                                                )
+                                                continue
+
+                                            if in_stats_section and stripped_line:
+                                                if (
+                                                    "Operation Breakdown:"
+                                                    in stripped_line
+                                                ):
+                                                    console.print(
+                                                        "\n" + stripped_line,
+                                                        style="bold",
+                                                    )
+                                                elif any(
+                                                    emoji in stripped_line
+                                                    for emoji in ["🔍✨", "😞", "📄"]
+                                                ):
+                                                    # Operation breakdown items
+                                                    console.print("  " + stripped_line)
+                                                elif (
+                                                    stripped_line
+                                                    and not stripped_line.startswith(
+                                                        "##"
+                                                    )
+                                                ):
+                                                    # Regular statistics lines
+                                                    console.print("  " + stripped_line)
+                                                else:
+                                                    console.print("")
+                                            elif stripped_line:
+                                                # Regular narrative content - use markdown for this part
+                                                from rich.markdown import Markdown
+
+                                                if any(
+                                                    md_char in line
+                                                    for md_char in [
+                                                        "**",
+                                                        "_",
+                                                        "#",
+                                                        "`",
+                                                        "*",
+                                                    ]
+                                                ):
+                                                    # Process line to improve link readability
+                                                    processed_line = self._process_markdown_for_readability(
+                                                        line
+                                                    )
+                                                    console.print(
+                                                        Markdown(processed_line)
+                                                    )
+                                                else:
+                                                    console.print(line)
+                                            else:
+                                                console.print("")
+                                    else:
+                                        # Regular markdown processing for non-statistics content
+                                        from rich.markdown import Markdown
+
+                                        # Process for better readability
+                                        processed_summary = (
+                                            self._process_markdown_for_readability(
+                                                tool_summary
+                                            )
+                                        )
+                                        markdown = Markdown(processed_summary)
+                                        console.print(markdown)
+                                except Exception as e:
+                                    # Fallback to plain text if markdown rendering fails
+                                    logger.warning(f"Markdown rendering failed: {e}")
+                                    console.print(tool_summary)
                         except Exception as e:
                             logger.warning(
                                 f"Failed to generate tool usage summary: {e}"
                             )
+
+                    if not quiet and not (show_claude_plan and tool_summary):
+                        console.print("\n")
+                        console.print("─" * 80)
 
                     return ClaudeAnalysisResult(
                         response=final_result or accumulated_text,
@@ -747,14 +943,6 @@ Use cidx query extensively as your primary exploration tool to discover related 
             except Exception as e:
                 process.terminate()
                 logger.error(f"Streaming processing error: {e}")
-
-                # Cleanup status line manager
-                if show_claude_plan and status_line_manager:
-                    try:
-                        status_line_manager.stop_display()
-                    except Exception:
-                        pass
-
                 return ClaudeAnalysisResult(
                     response="",
                     contexts_used=0,
@@ -766,14 +954,6 @@ Use cidx query extensively as your primary exploration tool to discover related 
 
         except Exception as e:
             logger.error(f"Claude CLI streaming setup failed: {e}")
-
-            # Cleanup status line manager
-            if show_claude_plan and status_line_manager:
-                try:
-                    status_line_manager.stop_display()
-                except Exception:
-                    pass
-
             return ClaudeAnalysisResult(
                 response="",
                 contexts_used=0,
@@ -959,6 +1139,154 @@ Use cidx query extensively as your primary exploration tool to discover related 
 
         logger.debug(f"Cleaned prompt length: {len(cleaned)} characters")
         return cleaned
+
+    def _process_markdown_for_readability(self, line: str) -> str:
+        """Process markdown line to improve link readability while preserving file path links."""
+        import re
+
+        # Convert markdown links [text](url) for better readability
+        def replace_link(match):
+            text = match.group(1)
+            url = match.group(2)
+
+            # For file:// URLs, use a more terminal-friendly format
+            if url.startswith("file://"):
+                # Extract the actual file path from file:// URL
+                file_path = url[7:]  # Remove 'file://' prefix
+                # Format as colored clickable link with a clear visual indicator
+                return f"📁 {text} [dim cyan]({file_path})[/dim cyan]"
+            elif url.startswith(("src/", "/", "./")):
+                # For relative/absolute paths, make them visually distinct
+                return f"📄 {text} [dim cyan]({url})[/dim cyan]"
+            elif ":" in url and not url.startswith(("http", "https", "ftp")):
+                # For other path-like URLs
+                return f"📄 {text} [dim cyan]({url})[/dim cyan]"
+            else:
+                # For external URLs, remove the link to avoid dark colors but show URL
+                return f"{text} ({url})"
+
+        # Replace markdown links with more readable format
+        processed = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", replace_link, line)
+
+        return processed
+
+    def _process_file_links_for_display(self, text: str) -> str:
+        """Process file:// links to make them more readable in terminal output."""
+        import re
+
+        # Pattern to match [text](file://path) format
+        def replace_file_link(match):
+            text_part = match.group(1)
+            url = match.group(2)
+
+            if url.startswith("file://"):
+                # Extract actual file path
+                file_path = url[7:]  # Remove 'file://' prefix
+                # Create a simple, readable format without complex markup
+                # Show the description as clickable text with file path in parentheses
+                return f"[bright_blue]{text_part}[/bright_blue] [dim cyan]({file_path})[/dim cyan]"
+            else:
+                # Keep other URLs as-is
+                return f"[{text_part}]({url})"
+
+        # Replace file:// links
+        processed = re.sub(r"\[([^\]]+)\]\((file://[^)]+)\)", replace_file_link, text)
+
+        return processed
+
+    def _preprocess_file_links(self, text: str) -> str:
+        """Pre-process file:// links to keep them clickable but display better."""
+        import re
+
+        def replace_file_link(match):
+            text_part = match.group(1)
+            url = match.group(2)
+
+            if url.startswith("file://"):
+                # Keep the file:// URL for clickability but improve the display
+                # Use HTML-style link that Rich can handle better
+                return f'<a href="{url}">{text_part}</a>'
+            else:
+                # Keep other URLs as regular markdown links
+                return f"[{text_part}]({url})"
+
+        # Replace file:// links with HTML links that Rich can render
+        processed = re.sub(r"\[([^\]]+)\]\((file://[^)]+)\)", replace_file_link, text)
+
+        return processed
+
+    def _render_content_with_file_links(self, content: str, console) -> bool:
+        """Render content with special handling for file:// links."""
+        import re
+        from rich.markdown import Markdown
+        from rich.text import Text
+
+        # Find all file:// links in the content
+        file_link_pattern = r"\[([^\]]+)\]\((file://[^)]+)\)"
+        links = list(re.finditer(file_link_pattern, content))
+
+        if not links:
+            # No file links, just render as normal markdown
+            markdown = Markdown(content)
+            console.print(markdown)
+            return True
+
+        # Process content in chunks, handling file links specially
+        last_end = 0
+
+        for match in links:
+            # Print content before this link as markdown
+            before_content = content[last_end : match.start()]
+            if before_content.strip():
+                markdown = Markdown(before_content)
+                console.print(markdown, end="")
+
+            # Handle the file link specially
+            text_part = match.group(1)
+            url = match.group(2)
+            file_path = url[7:]  # Remove 'file://' prefix
+
+            # Create a clickable link using Rich's link functionality
+            link_text = Text()
+            link_text.append(text_part, style=f"bright_blue link {url}")
+            link_text.append(f" ({file_path})", style="dim cyan")
+            console.print(link_text, end="")
+
+            last_end = match.end()
+
+        # Print any remaining content after the last link
+        remaining_content = content[last_end:]
+        if remaining_content.strip():
+            markdown = Markdown(remaining_content)
+            console.print(markdown, end="")
+
+        return True
+
+    def _post_process_rendered_links(self, rendered_text: str) -> str:
+        """Post-process rendered markdown to improve file:// link display."""
+        import re
+
+        # Pattern to find file:// URLs in rendered text
+        # This will match patterns like [text](file://path) that markdown didn't process
+        def replace_file_link(match):
+            text_part = match.group(1)
+            url = match.group(2)
+
+            if url.startswith("file://"):
+                # Extract actual file path
+                file_path = url[7:]  # Remove 'file://' prefix
+                # Create a simple, readable format
+                return f"\033[94m{text_part}\033[0m \033[2;36m({file_path})\033[0m"
+            else:
+                # Keep other URLs as-is
+                return f"{text_part} ({url})"
+
+        # Replace remaining file:// links that weren't processed by markdown
+        processed = re.sub(
+            r"\[([^\]]+)\]\((file://[^)]+)\)", replace_file_link, rendered_text
+        )
+
+        return processed
 
     def clear_cache(self):
         """Clear any internal caches."""

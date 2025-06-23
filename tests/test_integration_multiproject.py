@@ -82,7 +82,7 @@ class TestMultiProjectIntegration:
                 return  # No data directory means no files to check
 
             # Use find command to locate files not owned by current user
-            current_user = os.getenv("USER") or os.getenv("USERNAME")
+            current_user = os.getenv("USER") or os.getenv("USERNAME") or "unknown"
             result = subprocess.run(
                 ["find", str(global_data_dir), "-not", "-user", current_user],
                 capture_output=True,

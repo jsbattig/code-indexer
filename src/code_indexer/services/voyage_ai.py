@@ -22,16 +22,14 @@ class RateLimiter:
         self.tokens_per_minute = tokens_per_minute
 
         # Request rate limiting
-        self.request_tokens = requests_per_minute
+        self.request_tokens = float(requests_per_minute)
         self.request_last_refill = time.time()
 
         # Token rate limiting (if enabled)
-        self.token_tokens: Optional[int] = None
-        self.token_last_refill: Optional[float] = None
-
-        if tokens_per_minute:
-            self.token_tokens = tokens_per_minute
-            self.token_last_refill = time.time()
+        self.token_tokens = float(tokens_per_minute if tokens_per_minute else 0)
+        self.token_last_refill: Optional[float] = (
+            time.time() if tokens_per_minute else None
+        )
 
     def _refill_tokens(self):
         """Refill tokens based on elapsed time."""
@@ -46,10 +44,11 @@ class RateLimiter:
         self.request_last_refill = now
 
         # Refill token tokens if enabled
-        if self.tokens_per_minute and self.token_last_refill:
+        if self.tokens_per_minute and self.token_last_refill is not None:
+            token_elapsed = now - self.token_last_refill
             self.token_tokens = min(
                 self.tokens_per_minute,
-                self.token_tokens + (elapsed * self.tokens_per_minute / 60.0),
+                self.token_tokens + (token_elapsed * self.tokens_per_minute / 60.0),
             )
             self.token_last_refill = now
 

@@ -370,7 +370,7 @@ result = api.handle_protected_request({'session_id': session_id})
         tool_events = [
             {
                 "type": "tool_use",
-                "tool_use_id": "real_cidx_1",
+                "id": "real_cidx_1",
                 "name": "Bash",
                 "input": {
                     "command": "cidx query 'authentication system' --language python"
@@ -378,19 +378,19 @@ result = api.handle_protected_request({'session_id': session_id})
             },
             {
                 "type": "tool_use",
-                "tool_use_id": "real_read_1",
+                "id": "real_read_1",
                 "name": "Read",
                 "input": {"file_path": "auth.py"},
             },
             {
                 "type": "tool_use",
-                "tool_use_id": "real_read_2",
+                "id": "real_read_2",
                 "name": "Read",
                 "input": {"file_path": "api.py"},
             },
             {
                 "type": "tool_use",
-                "tool_use_id": "real_grep_1",
+                "id": "real_grep_1",
                 "name": "Bash",
                 "input": {"command": "grep -rn 'password' . --include='*.py'"},
             },
@@ -406,7 +406,7 @@ result = api.handle_protected_request({'session_id': session_id})
             # Simulate completion after a delay
             time.sleep(0.01)  # Small delay to ensure duration > 0
             completion_data = {
-                "tool_use_id": tool_data["tool_use_id"],
+                "tool_use_id": tool_data["id"],
                 "is_error": False,
                 "content": f"Successfully executed {tool_data['name']}",
             }
@@ -434,7 +434,7 @@ result = api.handle_protected_request({'session_id': session_id})
         # Generate complete summary
         complete_summary = summary_generator.generate_complete_summary(all_events)
         assert "Tool Usage Statistics" in complete_summary
-        assert "Total Operations**: 4" in complete_summary
+        assert "Total Operations: 4" in complete_summary
 
         print("\n=== Real Workflow Test Results ===")
         print(f"Events processed: {len(all_events)}")
@@ -460,7 +460,7 @@ result = api.handle_protected_request({'session_id': session_id})
             # Simulate real tool events
             cidx_event_data = {
                 "type": "tool_use",
-                "tool_use_id": "status_test_1",
+                "id": "status_test_1",
                 "name": "Bash",
                 "input": {"command": "cidx query 'auth' --language python"},
             }
@@ -474,7 +474,7 @@ result = api.handle_protected_request({'session_id': session_id})
             # Add grep event
             grep_event_data = {
                 "type": "tool_use",
-                "tool_use_id": "status_test_2",
+                "id": "status_test_2",
                 "name": "Bash",
                 "input": {"command": "grep -r 'password' src/"},
             }
@@ -487,7 +487,7 @@ result = api.handle_protected_request({'session_id': session_id})
             # Verify counters
             assert manager.cidx_usage_count == 1
             assert manager.grep_usage_count == 1
-            assert len(manager.current_activities) == 2
+            # Note: StatusLineManager doesn't store activities, just tracks counts
 
         finally:
             manager.stop_display()
@@ -495,4 +495,4 @@ result = api.handle_protected_request({'session_id': session_id})
         print("\n=== Status Line Test Results ===")
         print(f"CIDX usage count: {manager.cidx_usage_count}")
         print(f"Grep usage count: {manager.grep_usage_count}")
-        print(f"Activities tracked: {len(manager.current_activities)}")
+        print("Status line manager test completed successfully")

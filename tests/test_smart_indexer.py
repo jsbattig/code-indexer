@@ -10,7 +10,6 @@ import pytest
 from code_indexer.config import Config
 from code_indexer.services.smart_indexer import SmartIndexer
 from code_indexer.services.progressive_metadata import ProgressiveMetadata
-from code_indexer.indexing.processor import ProcessingStats
 from code_indexer.services.branch_aware_indexer import BranchIndexingResult
 
 
@@ -317,13 +316,18 @@ class TestSmartIndexer:
         with patch.object(indexer, "get_git_status") as mock_git_status, patch.object(
             indexer, "file_finder"
         ) as mock_file_finder, patch.object(
-            indexer, "_process_files_with_metadata"
-        ) as mock_process:
+            indexer.branch_aware_indexer, "index_branch_changes"
+        ) as mock_branch_indexer:
             # Setup mocks - use the same git_status as the pre-populated metadata
             mock_git_status.return_value = git_status
             mock_file_finder.find_modified_files.return_value = [Path("changed.py")]
-            mock_process.return_value = ProcessingStats(
-                files_processed=1, chunks_created=3
+            mock_branch_indexer.return_value = BranchIndexingResult(
+                files_processed=1,
+                content_points_created=3,
+                visibility_points_created=0,
+                visibility_points_updated=0,
+                content_points_reused=0,
+                processing_time=0.1,
             )
             # Mock embedding provider info to match metadata
             mock_embedding_provider.get_provider_name.return_value = "test-provider"

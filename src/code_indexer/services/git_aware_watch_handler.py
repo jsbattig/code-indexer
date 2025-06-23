@@ -9,7 +9,7 @@ import logging
 import time
 import threading
 from pathlib import Path
-from typing import Set, Dict, Any
+from typing import Set, Dict, Any, Optional
 from watchdog.events import FileSystemEventHandler
 
 from .watch_metadata import WatchMetadata, GitStateMonitor
@@ -56,7 +56,7 @@ class GitAwareWatchHandler(FileSystemEventHandler):
 
         # Processing state
         self.processing_in_progress = False
-        self.processing_thread = None
+        self.processing_thread: Optional[threading.Thread] = None
 
         # Statistics
         self.files_processed_count = 0
@@ -78,7 +78,8 @@ class GitAwareWatchHandler(FileSystemEventHandler):
         self.processing_thread = threading.Thread(
             target=self._process_changes_loop, daemon=True
         )
-        self.processing_thread.start()
+        if self.processing_thread:
+            self.processing_thread.start()
 
         logger.info("Git-aware watch handler started successfully")
 

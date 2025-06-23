@@ -1,0 +1,291 @@
+"""
+Comprehensive test for the complete start/stop/status cycle.
+
+This test verifies the entire lifecycle of Docker services:
+1. Start services
+2. Verify status shows running
+3. Stop services
+4. Verify status shows stopped
+5. Start services again
+6. Verify status shows running again
+
+This test is marked as 'slow' and will only run in full-automation.sh
+"""
+
+import pytest
+import time
+import subprocess
+from typing import Dict, Any
+
+from src.code_indexer.config import Config
+from src.code_indexer.services.docker_manager import DockerManager
+
+
+class TestStartStopStatusCycle:
+    """Test the complete start/stop/status cycle end-to-end."""
+
+    def setup_method(self):
+        """Set up test environment."""
+        self.config = Config()
+        # Use VoyageAI config to avoid Ollama port conflicts in tests
+        voyage_config = {"embedding_provider": "voyage-ai"}
+        self.docker_manager = DockerManager(
+            force_docker=True, main_config=voyage_config
+        )
+
+        # Expected container names (VoyageAI config - no Ollama needed)
+        self.expected_containers = [
+            "code-indexer-qdrant",
+            "code-indexer-data-cleaner",
+        ]
+
+    def teardown_method(self):
+        """Clean up after test."""
+        # Ensure services are stopped after test
+        try:
+            self.docker_manager.stop_services()
+        except Exception:
+            pass
+
+    def _get_container_status_direct(self, container_name: str) -> str:
+        """Get container status directly using docker inspect."""
+        try:
+            result = subprocess.run(
+                ["docker", "inspect", container_name, "--format", "{{.State.Status}}"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+            else:
+                return "not_found"
+        except Exception:
+            return "error"
+
+    def _wait_for_containers_state(
+        self, expected_state: str, timeout: int = 60
+    ) -> bool:
+        """Wait for all containers to reach expected state."""
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            all_match = True
+
+            for container_name in self.expected_containers:
+                status = self._get_container_status_direct(container_name)
+
+                if expected_state == "running":
+                    if status != "running":
+                        all_match = False
+                        break
+                elif expected_state == "stopped":
+                    if status not in ["exited", "not_found"]:
+                        all_match = False
+                        break
+
+            if all_match:
+                return True
+
+            time.sleep(2)
+
+        return False
+
+    def _verify_docker_manager_status(self, expected_running: bool) -> Dict[str, Any]:
+        """Verify DockerManager status matches expected state."""
+        status: Dict[str, Any] = self.docker_manager.get_service_status()
+
+        if expected_running:
+            assert (
+                status["status"] == "running"
+            ), f"Expected running status, got: {status}"
+            assert len(status["services"]) == len(
+                self.expected_containers
+            ), f"Expected {len(self.expected_containers)} services, got: {len(status['services'])}"
+
+            # Verify all expected containers are present and running
+            for container_name in self.expected_containers:
+                assert (
+                    container_name in status["services"]
+                ), f"Container {container_name} not found in status"
+                container_status = status["services"][container_name]
+                assert (
+                    container_status["state"] == "running"
+                ), f"Container {container_name} not running: {container_status}"
+        else:
+            # When stopped, we expect either "stopped" status or services in non-running state
+            if status["status"] == "stopped":
+                # If status is "stopped", services can still be returned if they exist in exited state
+                for container_name, container_status in status["services"].items():
+                    assert container_status["state"] in [
+                        "exited",
+                        "created",
+                    ], f"Container {container_name} should be exited/created when stopped, got: {container_status}"
+            else:
+                # If services are returned, they should not be in running state
+                for container_name, container_status in status["services"].items():
+                    assert (
+                        container_status["state"] != "running"
+                    ), f"Container {container_name} still running when should be stopped"
+
+        return status
+
+    @pytest.mark.slow
+    def test_complete_start_stop_status_cycle(self):
+        """Test the complete start/stop/status cycle."""
+
+        print("\n=== Starting Complete Start/Stop/Status Cycle Test ===")
+
+        # Phase 1: Ensure clean state by stopping any existing services
+        print("\n1. Cleaning up any existing services...")
+        try:
+            self.docker_manager.stop_services()
+            # Wait for containers to stop
+            self._wait_for_containers_state("stopped", timeout=30)
+        except Exception as e:
+            print(f"Cleanup warning: {e}")
+
+        # Verify clean state
+        initial_status = self.docker_manager.get_service_status()
+        print(f"Initial status: {initial_status}")
+
+        # Phase 2: Start services
+        print("\n2. Starting services...")
+        start_result = self.docker_manager.start_services()
+        assert start_result, "Failed to start services"
+
+        # Wait for services to fully start
+        print("   Waiting for containers to start...")
+        containers_started = self._wait_for_containers_state("running", timeout=120)
+        assert containers_started, "Containers did not start within timeout"
+
+        # Verify status after start
+        print("\n3. Checking status after start...")
+        status_after_start = self._verify_docker_manager_status(expected_running=True)
+        print(f"Status after start: {status_after_start}")
+
+        # Give services extra time to be fully ready
+        print("   Waiting for services to be fully ready...")
+        time.sleep(10)
+
+        # Phase 3: Stop services
+        print("\n4. Stopping services...")
+        stop_result = self.docker_manager.stop_services()
+        print(f"Stop result: {stop_result}")
+
+        # Wait for services to stop
+        print("   Waiting for containers to stop...")
+        containers_stopped = self._wait_for_containers_state("stopped", timeout=60)
+
+        if not containers_stopped:
+            # Debug: Check what state each container is in
+            print("   DEBUG: Containers did not stop as expected. Current states:")
+            for container_name in self.expected_containers:
+                status = self._get_container_status_direct(container_name)
+                print(f"     {container_name}: {status}")
+
+        assert containers_stopped, "Containers did not stop within timeout"
+
+        # Verify status after stop
+        print("\n5. Checking status after stop...")
+        status_after_stop = self._verify_docker_manager_status(expected_running=False)
+        print(f"Status after stop: {status_after_stop}")
+
+        # Phase 4: Start services again
+        print("\n6. Starting services again...")
+        start_again_result = self.docker_manager.start_services()
+        assert start_again_result, "Failed to start services again"
+
+        # Wait for services to start again
+        print("   Waiting for containers to start again...")
+        containers_started_again = self._wait_for_containers_state(
+            "running", timeout=120
+        )
+        assert containers_started_again, "Containers did not start again within timeout"
+
+        # Verify status after second start
+        print("\n7. Checking status after second start...")
+        status_after_restart = self._verify_docker_manager_status(expected_running=True)
+        print(f"Status after restart: {status_after_restart}")
+
+        print("\n=== Test Completed Successfully ===")
+
+    @pytest.mark.slow
+    def test_stop_service_debugging(self):
+        """Dedicated test to debug stop functionality."""
+
+        print("\n=== Stop Service Debugging Test ===")
+
+        # Ensure services are running first
+        print("\n1. Ensuring services are running...")
+        start_result = self.docker_manager.start_services()
+        assert start_result, "Failed to start services for debugging"
+
+        # Wait for services to be running
+        containers_started = self._wait_for_containers_state("running", timeout=120)
+        assert containers_started, "Services not running before stop test"
+
+        # Get status before stop
+        print("\n2. Status before stop:")
+        status_before = self.docker_manager.get_service_status()
+        print(f"   {status_before}")
+
+        # Check containers directly before stop
+        print("\n3. Direct container status before stop:")
+        for container_name in self.expected_containers:
+            status = self._get_container_status_direct(container_name)
+            print(f"   {container_name}: {status}")
+
+        # Attempt to stop services with detailed logging
+        print("\n4. Attempting to stop services...")
+
+        # Let's check what stop_services actually does
+        try:
+            # Check if compose file exists
+            print(
+                f"   Compose file exists: {self.docker_manager.compose_file.exists()}"
+            )
+            print(f"   Compose file path: {self.docker_manager.compose_file}")
+
+            # Try to get the compose command
+            try:
+                compose_cmd = self.docker_manager.get_compose_command()
+                print(f"   Compose command: {compose_cmd}")
+            except Exception as e:
+                print(f"   Error getting compose command: {e}")
+
+            # Now try the actual stop
+            stop_result = self.docker_manager.stop_services()
+            print(f"   Stop result: {stop_result}")
+
+        except Exception as e:
+            print(f"   Exception during stop: {e}")
+            import traceback
+
+            traceback.print_exc()
+
+        # Check status immediately after stop attempt
+        print("\n5. Status immediately after stop attempt:")
+        status_after = self.docker_manager.get_service_status()
+        print(f"   {status_after}")
+
+        # Check containers directly after stop attempt
+        print("\n6. Direct container status after stop attempt:")
+        for container_name in self.expected_containers:
+            status = self._get_container_status_direct(container_name)
+            print(f"   {container_name}: {status}")
+
+        # Wait a bit and check again
+        print("\n7. Waiting 10 seconds and checking again...")
+        time.sleep(10)
+
+        print("   Status after waiting:")
+        status_after_wait = self.docker_manager.get_service_status()
+        print(f"   {status_after_wait}")
+
+        print("   Direct container status after waiting:")
+        for container_name in self.expected_containers:
+            status = self._get_container_status_direct(container_name)
+            print(f"   {container_name}: {status}")
+
+        print("\n=== Stop Debugging Test Completed ===")
