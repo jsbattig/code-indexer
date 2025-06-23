@@ -19,7 +19,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Callable
 import subprocess
 
 logger = logging.getLogger(__name__)
@@ -88,6 +88,7 @@ class BranchAwareIndexer:
         changed_files: List[str],
         unchanged_files: List[str],
         collection_name: str,
+        progress_callback: Optional[Callable] = None,
     ) -> BranchIndexingResult:
         """
         Index changes when switching branches using graph-optimized approach.
@@ -98,6 +99,7 @@ class BranchAwareIndexer:
             changed_files: Files that differ between branches
             unchanged_files: Files that are identical between branches
             collection_name: Qdrant collection name
+            progress_callback: Optional callback for progress updates
 
         Returns:
             BranchIndexingResult with operation statistics
@@ -121,7 +123,7 @@ class BranchAwareIndexer:
             # 1. Process changed files - create new content points
             if changed_files:
                 content_result = self._index_changed_files(
-                    changed_files, new_branch, collection_name
+                    changed_files, new_branch, collection_name, progress_callback
                 )
                 result.content_points_created += content_result.content_points_created
                 result.visibility_points_created += (
@@ -154,11 +156,19 @@ class BranchAwareIndexer:
         return result if result is not None else {}
 
     def _index_changed_files(
-        self, file_paths: List[str], branch: str, collection_name: str
+        self,
+        file_paths: List[str],
+        branch: str,
+        collection_name: str,
+        progress_callback: Optional[Callable] = None,
     ) -> BranchIndexingResult:
         """Create content and visibility points for changed files."""
         result = BranchIndexingResult(0, 0, 0, 0, 0, 0)
         batch_points = []
+
+        # Progress tracking
+        total_files = len(file_paths)
+        current_file_index = 0
 
         for file_path in file_paths:
             try:
@@ -166,6 +176,18 @@ class BranchAwareIndexer:
                 if not full_path.exists():
                     # File was deleted - update visibility to hidden
                     self._hide_file_in_branch(file_path, branch, collection_name)
+
+                    # Call progress callback for deleted file if provided
+                    if progress_callback:
+                        callback_result = progress_callback(
+                            current_file_index + 1,
+                            total_files,
+                            full_path,
+                            info="File deleted",
+                        )
+                        if callback_result == "INTERRUPT":
+                            break
+                    current_file_index += 1
                     continue
 
                 # Get current commit for this file
@@ -181,11 +203,34 @@ class BranchAwareIndexer:
                     batch_points.append(visibility_point)
                     result.content_points_reused += 1
                     result.visibility_points_created += 1
+
+                    # Call progress callback for content reuse if provided
+                    if progress_callback:
+                        callback_result = progress_callback(
+                            current_file_index + 1,
+                            total_files,
+                            full_path,
+                            info="Content reused",
+                        )
+                        if callback_result == "INTERRUPT":
+                            break
+                    current_file_index += 1
                     continue
 
                 # Content doesn't exist - create content + visibility points
                 chunks = self.text_chunker.chunk_file(full_path)
                 if not chunks:
+                    # Call progress callback for empty file if provided
+                    if progress_callback:
+                        callback_result = progress_callback(
+                            current_file_index + 1,
+                            total_files,
+                            full_path,
+                            info="No content to index",
+                        )
+                        if callback_result == "INTERRUPT":
+                            break
+                    current_file_index += 1
                     continue
 
                 for chunk in chunks:
@@ -205,6 +250,17 @@ class BranchAwareIndexer:
 
                 result.files_processed += 1
 
+                # Call progress callback if provided
+                if progress_callback:
+                    # Check for interrupt signal
+                    callback_result = progress_callback(
+                        current_file_index + 1, total_files, full_path
+                    )
+                    if callback_result == "INTERRUPT":
+                        break
+
+                current_file_index += 1
+
                 # Process batch when full
                 if len(batch_points) >= 50:
                     self.qdrant_client.upsert_points(batch_points, collection_name)
@@ -212,6 +268,13 @@ class BranchAwareIndexer:
 
             except Exception as e:
                 logger.error(f"Failed to index changed file {file_path}: {e}")
+
+                # Call progress callback for failed file if provided
+                if progress_callback:
+                    progress_callback(
+                        current_file_index + 1, total_files, full_path, error=str(e)
+                    )
+                current_file_index += 1
 
         # Process remaining points
         if batch_points:

@@ -161,6 +161,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                             changed_files=analysis.files_to_reindex,
                             unchanged_files=analysis.files_to_update_metadata,
                             collection_name=collection_name,
+                            progress_callback=progress_callback,
                         )
 
                         # Convert to ProcessingStats format
@@ -314,6 +315,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 changed_files=relative_files,
                 unchanged_files=[],
                 collection_name=collection_name,
+                progress_callback=progress_callback,
             )
 
             # Convert BranchIndexingResult to ProcessingStats
@@ -439,6 +441,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 changed_files=relative_files,
                 unchanged_files=[],
                 collection_name=collection_name,
+                progress_callback=progress_callback,
             )
 
             # Convert BranchIndexingResult to ProcessingStats
@@ -739,6 +742,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 changed_files=relative_files,
                 unchanged_files=[],
                 collection_name=collection_name,
+                progress_callback=progress_callback,
             )
 
             # Convert BranchIndexingResult to ProcessingStats
@@ -841,6 +845,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 changed_files=relative_files,
                 unchanged_files=[],
                 collection_name=collection_name,
+                progress_callback=progress_callback,
             )
 
             # Convert BranchIndexingResult to ProcessingStats
@@ -1207,6 +1212,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                     changed_files=relative_files,
                     unchanged_files=[],
                     collection_name=collection_name,
+                    progress_callback=None,  # No progress callback for incremental processing
                 )
 
                 # Convert BranchIndexingResult to ProcessingStats
