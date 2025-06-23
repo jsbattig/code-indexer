@@ -121,3 +121,5 @@ tests/projects/*/data/
 tests/projects/*/.code-indexer/
 tests/projects/*/docker-compose.yml
 =4.0.0
+/test_backtrack
+/test_index

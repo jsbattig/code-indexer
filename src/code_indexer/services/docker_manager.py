@@ -929,41 +929,53 @@ class DockerManager:
             f"code-indexer-{service}" for service in required_services
         ]
 
-        # Determine runtime: use same logic as compose command selection
-        runtime = self._get_preferred_runtime()
-
-        try:
-            for container_name in expected_containers:
-                result = subprocess.run(
-                    [
-                        runtime,
-                        "inspect",
-                        container_name,
-                        "--format",
-                        "{{.State.Status}}|{{.State.Health.Status}}",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-
-                if result.returncode == 0:
-                    output = result.stdout.strip()
-                    parts = output.split("|")
-                    state = parts[0] if len(parts) > 0 else "unknown"
-                    health = (
-                        parts[1]
-                        if len(parts) > 1 and parts[1] != "<no value>"
-                        else "unknown"
+        # Check both runtimes to find where containers are actually running
+        runtimes_to_check = ["docker", "podman"] if not self.force_docker else ["docker"]
+        
+        for container_name in expected_containers:
+            container_found = False
+            
+            for runtime in runtimes_to_check:
+                try:
+                    result = subprocess.run(
+                        [
+                            runtime,
+                            "inspect",
+                            container_name,
+                            "--format",
+                            "{{.State.Status}}|{{.State.Health.Status}}",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
                     )
 
-                    services[container_name] = {
-                        "state": state,
-                        "health": health,
-                    }
+                    if result.returncode == 0:
+                        output = result.stdout.strip()
+                        parts = output.split("|")
+                        state = parts[0] if len(parts) > 0 else "unknown"
+                        health = (
+                            parts[1]
+                            if len(parts) > 1 and parts[1] != "<no value>"
+                            else "unknown"
+                        )
 
-        except Exception:
-            return {"status": "unavailable", "services": {}}
+                        services[container_name] = {
+                            "state": state,
+                            "health": health,
+                        }
+                        container_found = True
+                        break  # Found container, don't check other runtimes
+                
+                except Exception:
+                    continue  # Try next runtime
+            
+            # If container not found in any runtime, mark as not found
+            if not container_found:
+                services[container_name] = {
+                    "state": "not_found",
+                    "health": "unknown",
+                }
 
         # Determine overall status based on container states
         if not services:

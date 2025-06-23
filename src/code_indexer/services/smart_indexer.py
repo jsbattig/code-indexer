@@ -290,47 +290,12 @@ class SmartIndexer(GitAwareDocumentProcessor):
         # Get current branch for indexing
         current_branch = self.git_topology_service.get_current_branch() or "master"
 
-        # Use BranchAwareIndexer for consistent architecture
-        try:
-            # Convert absolute paths to relative paths for BranchAwareIndexer
-            relative_files = []
-            for f in files_to_index:
-                try:
-                    # If path is absolute and within codebase_dir, make it relative
-                    if f.is_absolute():
-                        relative_files.append(
-                            str(f.relative_to(self.config.codebase_dir))
-                        )
-                    else:
-                        # Already relative, use as-is
-                        relative_files.append(str(f))
-                except ValueError:
-                    # Path is not within codebase_dir, use as-is (shouldn't happen in normal usage)
-                    relative_files.append(str(f))
-            branch_result = self.branch_aware_indexer.index_branch_changes(
-                old_branch="",  # No old branch for full index
-                new_branch=current_branch,
-                changed_files=relative_files,
-                unchanged_files=[],
-                collection_name=collection_name,
-            )
-
-            # Convert BranchIndexingResult to ProcessingStats
-            stats = ProcessingStats()
-            stats.files_processed = branch_result.files_processed
-            stats.chunks_created = branch_result.content_points_created
-            stats.failed_files = 0
-            stats.start_time = time.time() - branch_result.processing_time
-            stats.end_time = time.time()
-
-        except Exception as e:
-            logger.warning(
-                f"BranchAwareIndexer failed, falling back to standard indexing: {e}"
-            )
-            # Fallback to standard processing
-            stats = self._process_files_with_metadata(
-                files_to_index, batch_size, progress_callback, resumable=True
-            )
+        # Use standard processing with progress callback support
+        # Note: BranchAwareIndexer doesn't support progress callbacks yet,
+        # so we use the standard processing method for proper progress display
+        stats = self._process_files_with_metadata(
+            files_to_index, batch_size, progress_callback, resumable=True
+        )
 
         # Mark as completed
         self.progressive_metadata.complete_indexing()
