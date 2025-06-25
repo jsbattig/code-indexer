@@ -38,7 +38,7 @@ class TestDataCleanerHealth:
             assert result is True
             mock_wait_service.assert_called_once_with(
                 "http://localhost:8091",
-                timeout=60,  # Default data_cleaner_startup timeout
+                timeout=120,  # Default data_cleaner_startup timeout
             )
 
     @patch.object(HealthChecker, "wait_for_service_ready")
@@ -78,10 +78,14 @@ class TestDataCleanerHealth:
                 "test-project-data-cleaner"  # Already running
             )
 
-            self.docker_manager.clean_with_data_cleaner(["/data/test"])
+            result = self.docker_manager.clean_with_data_cleaner(["/data/test"])
 
-            # Should succeed without health check (already running)
-            mock_wait_service.assert_not_called()
+            # Should succeed and perform health check even when already running (for reliability)
+            assert result is True
+            mock_wait_service.assert_called_once_with(
+                "http://localhost:8091",
+                timeout=120,  # Default data_cleaner_startup timeout
+            )
 
     @patch.object(HealthChecker, "get_timeouts")
     @patch.object(HealthChecker, "wait_for_service_ready")
@@ -218,7 +222,7 @@ class TestDataCleanerIntegration:
 
             assert result is True
             mock_start.assert_called_once()
-            mock_health.assert_called_once_with("http://localhost:8091", timeout=60)
+            mock_health.assert_called_once_with("http://localhost:8091", timeout=120)
 
     def test_data_cleaner_error_propagation(self):
         """Test that data cleaner errors are properly propagated."""
