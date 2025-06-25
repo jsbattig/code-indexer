@@ -166,8 +166,10 @@ class TestClass_{i}:
         assert stats.failed_files == 0
 
         # Verify Qdrant was called with batches (either standard or atomic upsert)
-        assert (self.mock_qdrant.upsert_points.called or 
-                self.mock_qdrant.upsert_points_atomic.called)
+        assert (
+            self.mock_qdrant.upsert_points.called
+            or self.mock_qdrant.upsert_points_atomic.called
+        )
 
         # Check that embeddings were generated for all chunks
         total_embeddings = provider.call_count
