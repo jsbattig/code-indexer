@@ -79,6 +79,7 @@ class TestHighThroughputProcessorCancellation:
         self.embedding_provider = MockEmbeddingProvider(delay=0.1)
         self.qdrant_client = Mock(spec=QdrantClient)
         self.qdrant_client.upsert_points.return_value = True
+        self.qdrant_client.upsert_points_atomic.return_value = True
         self.qdrant_client.create_point.return_value = {
             "id": "test",
             "vector": [1.0] * 768,
@@ -422,7 +423,11 @@ class TestHighThroughputProcessorCancellation:
 
             # Qdrant should have been called for any completed work
             if stats.chunks_created > 0:
-                assert self.qdrant_client.upsert_points.called
+                # Check for either upsert_points or upsert_points_atomic calls
+                assert (
+                    self.qdrant_client.upsert_points.called
+                    or self.qdrant_client.upsert_points_atomic.called
+                )
 
     @patch("code_indexer.services.git_aware_processor.FileIdentifier")
     @patch("code_indexer.services.git_aware_processor.GitDetectionService")

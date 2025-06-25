@@ -38,6 +38,10 @@ class MockQdrantClient:
             self.points_by_file[file_path].append(point)
         return True
 
+    def upsert_points_atomic(self, points, collection_name=None, max_batch_size=100):
+        """Mock atomic upsert that delegates to regular upsert for testing."""
+        return self.upsert_points(points)
+
     def create_point(self, point_id, vector, payload, embedding_model=None):
         """Mock point creation."""
         return {"id": point_id, "vector": vector, "payload": payload}

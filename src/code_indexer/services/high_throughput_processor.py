@@ -176,7 +176,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                         logger.info(
                             f"Committing {len(completed_file_chunks)} chunks from {len(completed_files)} completed files due to cancellation"
                         )
-                        if not self.qdrant_client.upsert_points(completed_file_chunks):
+                        if not self.qdrant_client.upsert_points_atomic(
+                            completed_file_chunks
+                        ):
                             logger.error(
                                 "Failed to commit completed files during cancellation"
                             )
@@ -224,9 +226,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                             f"File {current_file} completed - added {len(file_chunks[current_file])} chunks to batch"
                         )
 
-                    # Process batch if full
+                    # Process batch if full with enhanced atomicity
                     if len(batch_points) >= batch_size:
-                        if not self.qdrant_client.upsert_points(batch_points):
+                        if not self.qdrant_client.upsert_points_atomic(batch_points):
                             raise RuntimeError("Failed to upload batch to Qdrant")
                         batch_points = []
 
@@ -306,9 +308,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                     logger.error(f"Failed to process chunk result: {e}")
                     continue
 
-            # Process remaining points
+            # Process remaining points with enhanced atomicity
             if batch_points:
-                if not self.qdrant_client.upsert_points(batch_points):
+                if not self.qdrant_client.upsert_points_atomic(batch_points):
                     raise RuntimeError("Failed to upload final batch to Qdrant")
 
         stats.end_time = time.time()

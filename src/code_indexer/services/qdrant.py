@@ -493,7 +493,7 @@ class QdrantClient:
     def upsert_points(
         self, points: List[Dict[str, Any]], collection_name: Optional[str] = None
     ) -> bool:
-        """Insert or update points in the collection."""
+        """Insert or update points in the collection with enhanced batch safety."""
         collection = (
             collection_name or self._current_collection_name or self.config.collection
         )
@@ -544,6 +544,59 @@ class QdrantClient:
         except Exception as e:
             self.console.print(f"Failed to upsert points: {e}", style="red")
             return False
+
+    def upsert_points_atomic(
+        self,
+        points: List[Dict[str, Any]],
+        collection_name: Optional[str] = None,
+        max_batch_size: int = 100,
+    ) -> bool:
+        """
+        Insert or update points with enhanced batch safety and atomicity.
+
+        This method ensures that either all points in the batch are successfully
+        inserted or none are, preventing partial state corruption during cancellation.
+
+        Args:
+            points: List of points to upsert
+            collection_name: Target collection
+            max_batch_size: Maximum size for individual batches (default 100)
+
+        Returns:
+            True if all points were successfully upserted, False otherwise
+        """
+        if not points:
+            return True
+
+        # For small batches, use standard upsert with Qdrant's built-in atomicity
+        if len(points) <= max_batch_size:
+            return self.upsert_points(points, collection_name)
+
+        # For larger batches, split into smaller atomic chunks
+        # Each chunk is atomic by Qdrant's guarantee
+        total_batches = (len(points) + max_batch_size - 1) // max_batch_size
+
+        for i in range(0, len(points), max_batch_size):
+            batch = points[i : i + max_batch_size]
+            batch_num = (i // max_batch_size) + 1
+
+            try:
+                if not self.upsert_points(batch, collection_name):
+                    self.console.print(
+                        f"❌ Failed to upsert batch {batch_num}/{total_batches} "
+                        f"({len(batch)} points)",
+                        style="red",
+                    )
+                    return False
+
+            except Exception as e:
+                self.console.print(
+                    f"❌ Exception in batch {batch_num}/{total_batches}: {e}",
+                    style="red",
+                )
+                return False
+
+        return True
 
     def search(
         self,

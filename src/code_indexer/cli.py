@@ -137,12 +137,20 @@ def _is_markdown_content(text: str) -> bool:
 
 
 class GracefulInterruptHandler:
-    """Handler for graceful interruption of long-running operations."""
+    """Handler for graceful interruption of long-running operations with timeout protection."""
 
-    def __init__(self, console: Console, operation_name: str = "Operation"):
+    def __init__(
+        self,
+        console: Console,
+        operation_name: str = "Operation",
+        cancellation_timeout: float = 30.0,
+    ):
         self.console = console
         self.operation_name = operation_name
         self.interrupted = False
+        self.force_quit = False
+        self.cancellation_timeout = cancellation_timeout
+        self.interrupt_time: Optional[float] = None
         self.original_sigint_handler: Optional[Union[Callable, int]] = None
         self.progress_bar = None
 
@@ -170,21 +178,89 @@ class GracefulInterruptHandler:
             return True  # Suppress the KeyboardInterrupt exception
 
     def _signal_handler(self, signum, frame):
-        """Handle SIGINT (Ctrl-C) gracefully."""
-        self.interrupted = True
-        if self.progress_bar:
-            self.progress_bar.stop()
-        self.console.print()  # New line
-        self.console.print(
-            f"🛑 Interrupting {self.operation_name.lower()}...", style="yellow"
-        )
-        self.console.print(
-            "⏳ Finishing current file and saving progress...", style="cyan"
-        )
+        """Handle SIGINT (Ctrl-C) gracefully with immediate feedback and timeout protection."""
+        import time
+
+        current_time = time.time()
+
+        # First interrupt - graceful cancellation
+        if not self.interrupted:
+            self.interrupted = True
+            self.interrupt_time = current_time
+
+            # Provide immediate visual feedback
+            if self.progress_bar:
+                self.progress_bar.stop()
+
+            # Clear line and show immediate cancellation notice
+            self.console.print()  # New line
+            self.console.print(
+                f"🛑 CANCELLATION REQUESTED - Interrupting {self.operation_name.lower()}...",
+                style="bold yellow",
+            )
+            self.console.print(
+                "⏳ Safely finishing current operations and saving progress...",
+                style="cyan",
+            )
+            self.console.print(
+                f"💡 Press Ctrl-C again within {self.cancellation_timeout}s to force quit (may lose progress)",
+                style="dim yellow",
+            )
+
+        # Second interrupt - check timeout
+        elif (
+            self.interrupt_time
+            and (current_time - self.interrupt_time) < self.cancellation_timeout
+        ):
+            self.force_quit = True
+            self.console.print()  # New line
+            self.console.print(
+                "🚨 FORCE QUIT REQUESTED - Terminating immediately...", style="bold red"
+            )
+            self.console.print("⚠️  Progress may be lost!", style="red")
+            # Force exit immediately
+            import sys
+
+            sys.exit(1)
+
+        # Timeout exceeded - force quit automatically
+        elif (
+            self.interrupt_time
+            and (current_time - self.interrupt_time) >= self.cancellation_timeout
+        ):
+            self.force_quit = True
+            self.console.print()  # New line
+            self.console.print(
+                f"⏰ CANCELLATION TIMEOUT ({self.cancellation_timeout}s) - Force quitting...",
+                style="bold red",
+            )
+            self.console.print("⚠️  Progress may be lost due to timeout!", style="red")
+            # Force exit due to timeout
+            import sys
+
+            sys.exit(2)
 
     def set_progress_bar(self, progress_bar):
         """Set the progress bar to stop when interrupted."""
         self.progress_bar = progress_bar
+
+    def is_cancellation_overdue(self) -> bool:
+        """Check if cancellation has timed out and should be forced."""
+        if not self.interrupted or not self.interrupt_time:
+            return False
+
+        import time
+
+        return (time.time() - self.interrupt_time) >= self.cancellation_timeout
+
+    def get_time_since_cancellation(self) -> float:
+        """Get seconds since cancellation was requested."""
+        if not self.interrupt_time:
+            return 0.0
+
+        import time
+
+        return time.time() - self.interrupt_time
 
 
 # Global console for rich output
@@ -1016,9 +1092,15 @@ def index(
                 show_setup_message(info)
                 return
 
-            # Handle file progress (total>0)
+            # Handle file progress (total>0) with cancellation status
             if total > 0 and info:
-                update_file_progress(current, total, info)
+                # Add cancellation indicator to progress info if interrupted
+                if interrupt_handler and interrupt_handler.interrupted:
+                    # Modify info to show cancellation status
+                    cancellation_info = f"🛑 CANCELLING - {info}"
+                    update_file_progress(current, total, cancellation_info)
+                else:
+                    update_file_progress(current, total, info)
                 return
 
             # Show errors
