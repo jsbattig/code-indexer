@@ -150,7 +150,7 @@ class GitDetectionService:
             )
             git_state["commit_hash"] = result.stdout.strip()
         except subprocess.CalledProcessError:
-            git_state["commit_hash"] = None
+            git_state["commit_hash"] = "unknown"
 
         try:
             # Current branch
@@ -179,7 +179,18 @@ class GitDetectionService:
 
             git_state["branch"] = branch
         except subprocess.CalledProcessError:
-            git_state["branch"] = None
+            # Fallback to HEAD for detached HEAD state
+            try:
+                result = subprocess.run(
+                    ["git", "rev-parse", "--short", "HEAD"],
+                    cwd=self.project_dir,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                git_state["branch"] = f"detached-{result.stdout.strip()}"
+            except subprocess.CalledProcessError:
+                git_state["branch"] = "unknown"
 
         try:
             # Repository root

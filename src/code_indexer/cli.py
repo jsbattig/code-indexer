@@ -19,7 +19,6 @@ from rich.progress import (
 )
 from rich.syntax import Syntax
 from rich.table import Column
-from rich.markdown import Markdown
 
 from .config import ConfigManager, Config
 from .services import QdrantClient, DockerManager, EmbeddingProviderFactory
@@ -29,7 +28,7 @@ from .services.claude_integration import (
     ClaudeIntegrationService,
     check_claude_sdk_availability,
 )
-from .utils.status_display import _process_markdown_for_readability
+from .services.vector_calculation_manager import get_default_thread_count
 from . import __version__
 
 
@@ -804,6 +803,12 @@ def start(
     hidden=True,
     help="Internal: Stop after processing N files (for testing)",
 )
+@click.option(
+    "--parallel-vector-worker-thread-count",
+    "-p",
+    type=int,
+    help="Number of parallel threads for vector calculations (default: 8 for VoyageAI, 1 for Ollama)",
+)
 @click.pass_context
 def index(
     ctx,
@@ -811,6 +816,7 @@ def index(
     reconcile: bool,
     batch_size: int,
     files_count_to_process: Optional[int],
+    parallel_vector_worker_thread_count: Optional[int],
 ):
     """Index the codebase for semantic search.
 
@@ -855,11 +861,20 @@ def index(
       • Shows remaining files count in status command
 
     \b
+    PERFORMANCE TUNING:
+      • Vector calculations can be parallelized for faster indexing
+      • VoyageAI default: 8 threads (API supports parallel requests)
+      • Ollama default: 1 thread (local model, avoid resource contention)
+      • Use -p/--parallel-vector-worker-thread-count to customize
+
+    \b
     EXAMPLES:
       code-indexer index                 # Smart incremental indexing (default)
       code-indexer index --clear         # Force full reindex (clears existing data)
       code-indexer index --reconcile     # Reconcile disk vs database and index missing/modified files
       code-indexer index -b 100          # Larger batch size for speed
+      code-indexer index -p 4           # Use 4 parallel threads for vector calculations
+      code-indexer index -p 1           # Force single-threaded for debugging
 
     \b
     STORAGE:
@@ -904,6 +919,18 @@ def index(
         else:
             console.print(f"📁 Non-git project: {git_status['project_id']}")
 
+        # Determine and display thread count for vector calculations
+        if parallel_vector_worker_thread_count is None:
+            thread_count = get_default_thread_count(embedding_provider)
+            console.print(
+                f"🧵 Vector calculation threads: {thread_count} (auto-detected for {embedding_provider.get_provider_name()})"
+            )
+        else:
+            thread_count = parallel_vector_worker_thread_count
+            console.print(
+                f"🧵 Vector calculation threads: {thread_count} (user specified)"
+            )
+
         # Show indexing strategy
         if clear:
             console.print("🧹 Force full reindex requested")
@@ -924,23 +951,25 @@ def index(
         task_id = None
         interrupt_handler = None
 
-        def progress_callback(current, total, file_path, error=None, info=None):
-            nonlocal progress_bar, task_id, interrupt_handler
+        def show_setup_message(message: str):
+            """Display setup/informational messages as scrolling cyan text."""
+            console.print(f"ℹ️  {message}", style="cyan")
 
-            # Check if we've been interrupted and signal to stop processing
-            if interrupt_handler and interrupt_handler.interrupted:
-                # Signal to the smart indexer that we should stop
-                return "INTERRUPT"
+        def show_error_message(file_path, error_msg: str):
+            """Display error messages appropriately based on context."""
+            if ctx.obj["verbose"]:
+                if progress_bar is not None:
+                    progress_bar.console.print(
+                        f"❌ Failed to process {file_path}: {error_msg}", style="red"
+                    )
+                else:
+                    console.print(
+                        f"❌ Failed to process {file_path}: {error_msg}", style="red"
+                    )
 
-            # Handle info messages (like strategy selection)
-            if info and not progress_bar:
-                console.print(f"ℹ️  {info}", style="cyan")
-                return
-
-            # Handle info-only updates (for status messages during processing)
-            if file_path == Path("") and info and progress_bar:
-                progress_bar.update(task_id, description=f"ℹ️  {info}")
-                return
+        def update_file_progress(current: int, total: int, info: str):
+            """Update file processing progress bar with current status."""
+            nonlocal progress_bar, task_id
 
             # Initialize progress bar on first call
             if progress_bar is None:
@@ -966,34 +995,49 @@ def index(
                 if interrupt_handler:
                     interrupt_handler.set_progress_bar(progress_bar)
 
-            task = task_id
+            # Update progress bar with current info
+            progress_bar.update(task_id, completed=current, description=info)
 
-            # Update progress with current file name
-            try:
-                # Try to get path relative to project codebase directory
-                relative_path = str(file_path.relative_to(config.codebase_dir))
-            except (Exception, ValueError):
-                # Fallback to current directory relative path
-                try:
-                    relative_path = str(file_path.relative_to(Path.cwd()))
-                except ValueError:
-                    relative_path = file_path.name
+        def check_for_interruption():
+            """Check if operation was interrupted and return signal."""
+            if interrupt_handler and interrupt_handler.interrupted:
+                return "INTERRUPT"
+            return None
 
-            # Create description with file and throughput info
-            # Use two lines: file path on top, metrics below
-            if info:
-                description = f"{relative_path}\n{info}"
-            else:
-                description = relative_path
+        def progress_callback(current, total, file_path, error=None, info=None):
+            """Legacy progress callback - delegates to appropriate method based on parameters."""
+            # Check for interruption first
+            interrupt_result = check_for_interruption()
+            if interrupt_result:
+                return interrupt_result
 
-            progress_bar.update(task, advance=1, description=description)
+            # Handle setup messages (total=0)
+            if info and total == 0:
+                show_setup_message(info)
+                return
+
+            # Handle file progress (total>0)
+            if total > 0 and info:
+                update_file_progress(current, total, info)
+                return
 
             # Show errors
             if error:
-                if ctx.obj["verbose"]:
-                    progress_bar.console.print(
-                        f"❌ Failed to process {file_path}: {error}", style="red"
-                    )
+                show_error_message(file_path, error)
+                return
+
+            # Fallback: if somehow no progress bar exists, just print info (should rarely happen)
+            if info:
+                show_setup_message(info)
+
+        # Clean API for components to use directly (no magic parameters!)
+        # Note: mypy doesn't like adding attributes to functions, but this works at runtime
+        progress_callback.show_setup_message = show_setup_message  # type: ignore
+        progress_callback.update_file_progress = lambda current, total, info: (  # type: ignore
+            check_for_interruption() or update_file_progress(current, total, info)
+        )
+        progress_callback.show_error_message = show_error_message  # type: ignore
+        progress_callback.check_for_interruption = check_for_interruption  # type: ignore
 
         # Check for conflicting flags
         if clear and reconcile:
@@ -1018,6 +1062,7 @@ def index(
                     progress_callback=progress_callback,
                     safety_buffer_seconds=60,  # 1-minute safety buffer
                     files_count_to_process=files_count_to_process,
+                    vector_thread_count=thread_count,
                 )
 
                 # Stop progress bar with completion message (if not interrupted)
@@ -1227,6 +1272,12 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
 @click.option("--path", help="Filter by file path pattern (e.g., */tests/*)")
 @click.option("--min-score", type=float, help="Minimum similarity score (0.0-1.0)")
 @click.option(
+    "--accuracy",
+    type=click.Choice(["fast", "balanced", "high"]),
+    default="balanced",
+    help="Search accuracy profile: fast (lower accuracy, faster), balanced (default), high (higher accuracy, slower)",
+)
+@click.option(
     "--quiet",
     "-q",
     is_flag=True,
@@ -1240,6 +1291,7 @@ def query(
     language: Optional[str],
     path: Optional[str],
     min_score: Optional[float],
+    accuracy: str,
     quiet: bool,
 ):
     """Search the indexed codebase using semantic similarity.
@@ -1261,6 +1313,7 @@ def query(
       • Path: --path */tests/* (searches only test directories)
       • Score: --min-score 0.8 (only high-confidence matches)
       • Limit: --limit 20 (more results)
+      • Accuracy: --accuracy high (higher accuracy, slower search)
 
     \b
     QUERY EXAMPLES:
@@ -1356,6 +1409,27 @@ def query(
             # Get current branch context for git-aware filtering
             branch_context = query_service.get_current_branch_context()
 
+        # Get current branch for display
+        current_display_branch = "unknown"
+        try:
+            if (
+                hasattr(query_service, "file_identifier")
+                and query_service.file_identifier.git_available
+            ):
+                import subprocess
+
+                git_result = subprocess.run(
+                    ["git", "symbolic-ref", "--short", "HEAD"],
+                    cwd=config.codebase_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if git_result.returncode == 0:
+                    current_display_branch = git_result.stdout.strip()
+        except Exception:
+            pass
+
         # Get current embedding model for filtering
         current_model = embedding_provider.get_current_model()
         if not quiet:
@@ -1368,6 +1442,7 @@ def query(
             limit=limit * 2,  # Get more results to allow for git filtering
             score_threshold=min_score,
             additional_filters=filter_conditions,
+            accuracy=accuracy,
         )
 
         # Apply git-aware filtering
@@ -1426,7 +1501,8 @@ def query(
                 metadata_info = f"📏 Size: {file_size} bytes | 🕒 Indexed: {indexed_at}"
 
                 if git_available:
-                    git_branch = payload.get("git_branch", "unknown")
+                    # Use current branch for display (content points are branch-agnostic)
+                    git_branch = current_display_branch
                     git_commit = payload.get("git_commit_hash", "unknown")
                     if git_commit != "unknown" and len(git_commit) > 8:
                         git_commit = git_commit[:8] + "..."
@@ -1473,43 +1549,67 @@ def query(
     "--limit",
     "-l",
     default=10,
-    help="Number of semantic search results to include (default: 10)",
+    help="[RAG-first only] Number of semantic search results to include in initial prompt (default: 10)",
 )
 @click.option(
     "--context-lines",
     "-c",
     default=500,
-    help="Lines of context around each match (default: 500)",
+    help="[RAG-first only] Lines of context around each match in initial prompt (default: 500)",
 )
 @click.option(
-    "--language", help="Filter by programming language (e.g., python, javascript)"
-)
-@click.option("--path", help="Filter by file path pattern (e.g., */tests/*)")
-@click.option("--min-score", type=float, help="Minimum similarity score (0.0-1.0)")
-@click.option(
-    "--max-turns", default=5, help="Maximum Claude conversation turns (default: 5)"
+    "--language",
+    help="[RAG-first only] Filter initial search by programming language (e.g., python, javascript)",
 )
 @click.option(
-    "--no-explore", is_flag=True, help="Disable file exploration hints in Claude prompt"
+    "--path",
+    help="[RAG-first only] Filter initial search by file path pattern (e.g., */tests/*)",
 )
 @click.option(
-    "--no-stream", is_flag=True, help="Disable streaming (show results all at once)"
+    "--min-score",
+    type=float,
+    help="[RAG-first only] Minimum similarity score for initial search (0.0-1.0)",
+)
+@click.option(
+    "--max-turns",
+    default=5,
+    help="Maximum Claude conversation turns for multi-turn analysis (default: 5)",
+)
+@click.option(
+    "--no-explore",
+    is_flag=True,
+    help="Disable file exploration hints in Claude prompt (limits Claude's search capabilities)",
+)
+@click.option(
+    "--no-stream",
+    is_flag=True,
+    help="Disable streaming output - show complete results at once",
 )
 @click.option(
     "--quiet",
     "-q",
     is_flag=True,
-    help="Quiet mode - only show results, no headers or metadata",
+    help="Quiet mode - minimal output, only show Claude's analysis results",
 )
 @click.option(
     "--dry-run-show-claude-prompt",
     is_flag=True,
-    help="Show the prompt that would be sent to Claude instead of executing the query",
+    help="Debug mode: show the full prompt sent to Claude without executing analysis",
 )
 @click.option(
     "--show-claude-plan",
     is_flag=True,
-    help="Show real-time tool usage and generate summary of Claude's problem-solving approach",
+    help="Show real-time tool usage tracking and generate summary of Claude's analysis strategy",
+)
+@click.option(
+    "--rag-first",
+    is_flag=True,
+    help="Use legacy RAG-first approach: run semantic search upfront, then send all results to Claude. Default is claude-first: Claude uses search on-demand.",
+)
+@click.option(
+    "--include-file-list",
+    is_flag=True,
+    help="Include full project directory listing in Claude prompt for better project understanding (increases prompt size)",
 )
 @click.pass_context
 def claude(
@@ -1526,16 +1626,23 @@ def claude(
     quiet: bool,
     dry_run_show_claude_prompt: bool,
     show_claude_plan: bool,
+    rag_first: bool,
+    include_file_list: bool,
 ):
     """AI-powered code analysis using Claude with semantic search.
 
     \b
-    Combines semantic search with Claude AI to provide intelligent analysis
-    of your codebase. Performs RAG (Retrieval-Augmented Generation) by:
+    Two analysis approaches available:
 
-    1. Running semantic search to find relevant code
-    2. Extracting context around matches
-    3. Sending context + question to Claude for analysis
+    DEFAULT (Claude-First):
+    1. Send question directly to Claude with project context
+    2. Claude uses semantic search on-demand via cidx query tool
+    3. More interactive, adaptive analysis
+
+    LEGACY (--rag-first):
+    1. Run semantic search to find relevant code upfront
+    2. Extract context around matches
+    3. Send all context + question to Claude for analysis
 
     \b
     CAPABILITIES:
@@ -1652,257 +1759,186 @@ def claude(
             else:
                 console.print(f"📁 Non-git project: {branch_context['project_id']}")
 
-            # Perform semantic search
-            console.print(f"🔍 Performing semantic search: '{question}'")
-            console.print(f"📊 Limit: {limit} | Context: {context_lines} lines")
+        # Initialize Claude integration service (needed for both approaches)
+        claude_service = ClaudeIntegrationService(
+            codebase_dir=config.codebase_dir,
+            project_name=branch_context["project_id"],
+        )
 
-        if not quiet:
-            with console.status("Generating query embedding..."):
-                query_embedding = embedding_provider.get_embedding(question)
-        else:
+        # Branch based on approach: claude-first (default) or RAG-first (legacy)
+        if rag_first:
+            # LEGACY RAG-FIRST APPROACH
+            if not quiet:
+                console.print("🔄 Using legacy RAG-first approach")
+                console.print(f"🔍 Performing semantic search: '{question}'")
+                console.print(
+                    f"📊 Limit: {limit}  < /dev/null |  Context: {context_lines} lines"
+                )
+
+            if not quiet:
+                with console.status("Generating query embedding..."):
+                    embedding_provider.get_embedding(question)
+            else:
+                embedding_provider.get_embedding(question)
+
+            # Get query embedding
             query_embedding = embedding_provider.get_embedding(question)
 
-        # Build filter conditions
-        filter_conditions = {}
-        if language:
-            filter_conditions["must"] = [
-                {"key": "language", "match": {"value": language}}
-            ]
-            console.print(f"🏷️  Language filter: {language}")
-        if path:
-            filter_conditions.setdefault("must", []).append(
-                {"key": "path", "match": {"text": path}}
-            )
-            console.print(f"📁 Path filter: {path}")
-        if min_score:
-            console.print(f"⭐ Min score: {min_score}")
+            # Build filter conditions
+            filter_conditions = {}
+            if language:
+                filter_conditions["must"] = [
+                    {"key": "language", "match": {"value": language}}
+                ]
+            if path:
+                filter_conditions.setdefault("must", []).append(
+                    {"key": "path", "match": {"text": path}}
+                )
 
-        # Get current embedding model for filtering
-        current_model = embedding_provider.get_current_model()
-        if not quiet:
-            console.print(f"🤖 Using model: {current_model}")
+            # Get current embedding model for filtering
+            current_model = embedding_provider.get_current_model()
 
-        # Perform search with model filtering
-        raw_results = qdrant_client.search_with_model_filter(
-            query_vector=query_embedding,
-            embedding_model=current_model,
-            limit=limit * 2,  # Get more results to allow for git filtering
-            score_threshold=min_score,
-            additional_filters=filter_conditions,
-        )
-
-        # Apply git-aware filtering
-        if not quiet:
-            with console.status("Applying git-aware filtering..."):
-                results = query_service.filter_results_by_current_branch(raw_results)
-        else:
-            results = query_service.filter_results_by_current_branch(raw_results)
-
-        # Limit to requested number after filtering
-        results = results[:limit]
-
-        if not results:
-            if not quiet:
-                console.print("❌ No semantic search results found", style="yellow")
-                console.print("💡 Try a broader search query or adjust filters")
-            sys.exit(1)
-
-        if not quiet:
-            console.print(f"✅ Found {len(results)} relevant code contexts")
-
-        # Initialize Claude integration
-        claude_service = ClaudeIntegrationService(
-            codebase_dir=config.codebase_dir, project_name=branch_context["project_id"]
-        )
-
-        # Handle dry-run mode - show prompt instead of executing
-        if dry_run_show_claude_prompt:
-            if not quiet:
-                console.print("🔍 Dry Run Mode: Generating Claude prompt...")
-                console.print("=" * 80)
-
-            # Extract contexts from search results (same as would be done in analysis)
-            contexts = claude_service.context_extractor.extract_context_from_results(
-                results,
-                context_lines=context_lines,
-                ensure_all_files=True,
+            # Perform semantic search using model-specific filter
+            raw_results = qdrant_client.search_with_model_filter(
+                query_vector=query_embedding,
+                embedding_model=current_model,
+                limit=limit * 2,  # Get more results to allow for git filtering
+                score_threshold=min_score,
+                additional_filters=filter_conditions,
             )
 
-            # Create the analysis prompt (same as would be sent to Claude)
-            prompt = claude_service.create_analysis_prompt(
-                user_query=question,
-                contexts=contexts,
-                project_info=branch_context,
-                enable_exploration=not no_explore,
-            )
+            # Apply git-aware filtering
+            search_results = query_service.filter_results_by_current_branch(raw_results)
 
-            # Add the cidx tool capability enhancement (same as in actual analysis)
-            prompt += """
+            # Limit to requested number after filtering
+            search_results = search_results[:limit]
 
-ADDITIONAL SEMANTIC SEARCH CAPABILITY:
-This codebase includes a built-in semantic search tool accessible via Bash:
-- `cidx query "search terms"` - Find semantically similar code
-- `cidx query "search terms" --limit 5` - Limit results  
-- `cidx query "search terms" --language python` - Filter by language
-- `cidx --help` - See all available commands
+            # Handle dry-run mode for RAG-first: show the prompt that would be sent to Claude
+            if dry_run_show_claude_prompt:
+                if not quiet:
+                    console.print("🔍 Generating RAG-first Claude prompt...")
 
-Use this when you need to find related code that might not be in the initial context."""
-
-            if not quiet:
-                console.print("\n📋 Claude Prompt Preview:")
-                console.print("=" * 80)
-                console.print(f"📊 Prompt length: {len(prompt):,} characters")
-                console.print(f"📄 Contexts used: {len(contexts)}")
-                console.print(
-                    f"📏 Total context lines: {sum(ctx.line_end - ctx.line_start + 1 for ctx in contexts):,}"
-                )
-                console.print("=" * 80)
-                console.print()
-
-            # Display the actual prompt that would be sent to Claude
-            # Use syntax highlighting to make it more readable
-            from rich.syntax import Syntax
-
-            try:
-                syntax = Syntax(
-                    prompt,
-                    "markdown",
-                    theme="monokai",
-                    line_numbers=True,
-                    word_wrap=True,
-                )
-                console.print(syntax)
-            except Exception:
-                # Fallback to plain text if syntax highlighting fails
-                console.print(prompt)
-
-            if not quiet:
-                console.print()
-                console.print("=" * 80)
-                console.print(
-                    "🎯 This is the exact prompt that would be sent to Claude Code CLI"
-                )
-                console.print(
-                    "💡 Use this to iterate on prompt improvements before actual execution"
+                # Extract contexts from search results for prompt generation
+                contexts = (
+                    claude_service.context_extractor.extract_context_from_results(
+                        search_results, context_lines
+                    )
                 )
 
-            return  # Exit early without running Claude analysis
+                # Generate the prompt that would be sent to Claude
+                prompt = claude_service.create_analysis_prompt(
+                    user_query=question,
+                    contexts=contexts,
+                    project_info=branch_context,
+                    enable_exploration=not no_explore,
+                )
 
-        # Stream by default, unless --no-stream is specified
-        use_streaming = not no_stream
+                if not quiet:
+                    console.print("\n📄 Generated Claude Prompt (RAG-first):")
+                    console.print("-" * 80)
 
-        if use_streaming:
-            # Use streaming mode - no status spinner needed
+                # Display the prompt without Rich formatting to preserve exact line breaks
+                print(prompt, end="")
+
+                if not quiet:
+                    console.print("\n" + "-" * 80)
+                    console.print(
+                        "💡 This is the RAG-first prompt that would be sent to Claude."
+                    )
+                    console.print(f"   Based on {len(search_results)} search results.")
+                    console.print(
+                        "   Use without --dry-run-show-claude-prompt to execute the analysis."
+                    )
+
+                return  # Exit early without running Claude
+
+            # Run RAG-based analysis
             analysis_result = claude_service.run_analysis(
                 user_query=question,
-                search_results=results,
+                search_results=search_results,
                 context_lines=context_lines,
-                max_turns=max_turns,
                 project_info=branch_context,
                 enable_exploration=not no_explore,
-                stream=True,
+                stream=not no_stream,
                 quiet=quiet,
                 show_claude_plan=show_claude_plan,
             )
+
+            # Handle results
+            if not analysis_result.success:
+                if not quiet:
+                    console.print(
+                        f"❌ Claude analysis failed: {analysis_result.error}",
+                        style="red",
+                    )
+                sys.exit(1)
+
         else:
-            # Non-streaming mode with status spinner
+            # NEW CLAUDE-FIRST APPROACH
             if not quiet:
-                with console.status("🤖 Analyzing with Claude AI..."):
-                    analysis_result = claude_service.run_analysis(
-                        user_query=question,
-                        search_results=results,
-                        context_lines=context_lines,
-                        max_turns=max_turns,
-                        project_info=branch_context,
-                        enable_exploration=not no_explore,
-                        stream=False,
-                        quiet=quiet,
-                        show_claude_plan=show_claude_plan,
-                    )
-            else:
-                analysis_result = claude_service.run_analysis(
+                console.print("✨ Using new claude-first approach")
+                console.print("🧠 Claude will use semantic search on-demand")
+
+            # Handle dry-run mode: just show the prompt without executing
+            if dry_run_show_claude_prompt:
+                if not quiet:
+                    console.print("🔍 Generating Claude prompt...")
+
+                # Generate the prompt that would be sent to Claude
+                prompt = claude_service.create_claude_first_prompt(
                     user_query=question,
-                    search_results=results,
-                    context_lines=context_lines,
-                    max_turns=max_turns,
                     project_info=branch_context,
-                    enable_exploration=not no_explore,
-                    stream=False,
-                    quiet=quiet,
-                    show_claude_plan=show_claude_plan,
+                    include_project_structure=include_file_list,
                 )
 
-        # Handle results (common for both streaming and non-streaming)
-        if not analysis_result.success:
-            if not quiet:
-                console.print(
-                    f"❌ Claude analysis failed: {analysis_result.error}", style="red"
-                )
-            sys.exit(1)
+                if not quiet:
+                    console.print("\n📄 Generated Claude Prompt:")
+                    console.print("-" * 80)
 
-        # For non-streaming mode, show formatted results
-        if not use_streaming:
-            if quiet:
-                # Quiet mode - just show the response content
-                formatted_response = _format_claude_response(analysis_result.response)
-                console.print(formatted_response)
-            else:
-                # Display results with proper formatting
-                console.print("\n🤖 Claude Analysis Results")
-                console.print("─" * 80)
-                console.print()
+                # Display the prompt without Rich formatting to preserve exact line breaks
+                print(prompt, end="")
 
-                # Format the response for better readability
-                formatted_response = _format_claude_response(analysis_result.response)
-
-                # Render as markdown for beautiful formatting
-                if _is_markdown_content(formatted_response):
-                    # Process markdown to improve link readability
-                    processed_response = _process_markdown_for_readability(
-                        formatted_response
+                if not quiet:
+                    console.print("\n" + "-" * 80)
+                    console.print("💡 This is the prompt that would be sent to Claude.")
+                    console.print(
+                        "   Use without --dry-run-show-claude-prompt to execute the analysis."
                     )
 
-                    # Create markdown with better link colors
-                    from rich.theme import Theme
+                return  # Exit early without running Claude
 
-                    link_theme = Theme(
-                        {"markdown.link": "bright_cyan", "markdown.link_url": "cyan"}
-                    )
+            # Run claude-first analysis directly
+            use_streaming = not no_stream
 
-                    # Create a temporary console with better link colors
-                    temp_console = Console(theme=link_theme)
-                    markdown = Markdown(processed_response)
-                    temp_console.print(markdown)
-                else:
-                    console.print(formatted_response)
-
-                console.print()
-                console.print("─" * 80)
-
-        # Show metadata (for both modes)
-        if not quiet:
-            # Format analysis summary
-            summary_lines = []
-            summary_lines.append(f"Code contexts used: {analysis_result.contexts_used}")
-            summary_lines.append(
-                f"Total context lines: {analysis_result.total_context_lines:,}"
+            analysis_result = claude_service.run_claude_first_analysis(
+                user_query=question,
+                project_info=branch_context,
+                max_turns=max_turns,
+                stream=use_streaming,
+                quiet=quiet,
+                show_claude_plan=show_claude_plan,
+                include_project_structure=include_file_list,
             )
 
-            if analysis_result.contexts_used > 0:
-                avg_lines = (
-                    analysis_result.total_context_lines // analysis_result.contexts_used
-                )
-                summary_lines.append(f"Average lines per context: {avg_lines}")
+            # Handle results
+            if not analysis_result.success:
+                if not quiet:
+                    console.print(
+                        f"❌ Claude analysis failed: {analysis_result.error}",
+                        style="red",
+                    )
+                sys.exit(1)
 
-            # If status display framework is active, integrate with it
-            if show_claude_plan and use_streaming:
-                # Don't print directly - the summary will be shown in the final display
-                pass  # Status display framework will handle final output
-            else:
-                # Non-streaming mode or no status display - print directly
+            # Show results (simplified for claude-first)
+            if not use_streaming and not quiet:
+                console.print("\n🤖 Claude Analysis Results")
+                console.print("─" * 80)
+
+            # Show metadata
+            if not quiet and not (show_claude_plan and use_streaming):
                 console.print("\n📊 Analysis Summary:")
-                for line in summary_lines:
-                    console.print(f"   • {line}")
+                console.print("   • Claude-first approach used (no upfront RAG)")
+                console.print("   • Semantic search performed on-demand by Claude")
 
         # Clear cache to free memory
         claude_service.clear_cache()

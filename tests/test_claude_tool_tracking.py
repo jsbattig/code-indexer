@@ -337,8 +337,18 @@ class TestToolUsageTracker:
         assert len(events) == 1
         assert events[0] == event
 
-        # Ensure it's a copy
-        events.append("fake_event")
+        # Ensure it's a copy - create a fake event properly
+        fake_event = ToolUsageEvent(
+            tool_name="fake",
+            operation_type="test",
+            visual_cue="🔍",
+            target="test target",
+            command_detail="fake command",
+            timestamp=datetime.now(),
+            status="success",
+            error_message=None,
+        )
+        events.append(fake_event)
         assert len(self.tracker.get_all_events()) == 1
 
 

@@ -97,6 +97,22 @@ class QdrantConfig(BaseModel):
         default=False, description="Use legacy static collection naming"
     )
 
+    # HNSW search parameters - Phase 1: Search-time optimization
+    hnsw_ef: int = Field(
+        default=64,
+        description="HNSW search parameter for accuracy vs speed tradeoff (higher = more accurate, slower)",
+    )
+
+    # HNSW collection parameters - Phase 2: Collection-time optimization
+    hnsw_ef_construct: int = Field(
+        default=200,
+        description="HNSW index construction parameter (higher = better index quality, slower indexing)",
+    )
+    hnsw_m: int = Field(
+        default=32,
+        description="HNSW connectivity parameter (higher = better connectivity for large datasets, more memory)",
+    )
+
 
 class IndexingConfig(BaseModel):
     """Configuration for indexing behavior."""
@@ -124,9 +140,11 @@ class TimeoutsConfig(BaseModel):
     cleanup_validation: int = Field(
         default=30, description="Cleanup validation timeout in seconds"
     )
-    health_check: int = Field(default=60, description="Health check timeout in seconds")
+    health_check: int = Field(
+        default=120, description="Health check timeout in seconds"
+    )
     data_cleaner_startup: int = Field(
-        default=60, description="Data cleaner startup timeout in seconds"
+        default=120, description="Data cleaner startup timeout in seconds"
     )
 
 
@@ -163,6 +181,11 @@ class Config(BaseModel):
             "rs",
             "rb",
             "php",
+            "pl",
+            "pm",
+            "pod",
+            "t",
+            "psgi",
             "sh",
             "bash",
             "html",
@@ -493,7 +516,17 @@ code-indexer index --clear
         Returns:
             Path to config.json if found, None otherwise
         """
-        current = start_dir or Path.cwd()
+        # Safely get current working directory with fallback
+        if start_dir:
+            current = start_dir
+        else:
+            try:
+                current = Path.cwd()
+            except (FileNotFoundError, OSError):
+                # Working directory deleted - use temp directory as fallback
+                import tempfile
+
+                current = Path(tempfile.gettempdir())
 
         # Walk up the directory tree looking for .code-indexer/config.json
         for path in [current] + list(current.parents):
@@ -516,6 +549,15 @@ code-indexer index --clear
         config_path = cls.find_config_path(start_dir)
         if config_path is None:
             # If no config found, use default path from the start directory
-            start = start_dir or Path.cwd()
+            if start_dir:
+                start = start_dir
+            else:
+                try:
+                    start = Path.cwd()
+                except (FileNotFoundError, OSError):
+                    # Working directory deleted - use temp directory as fallback
+                    import tempfile
+
+                    start = Path(tempfile.gettempdir())
             config_path = start / ".code-indexer" / "config.json"
         return cls(config_path)

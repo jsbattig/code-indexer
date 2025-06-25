@@ -942,6 +942,7 @@ class InventoryManager:
 '''
 
         # Create inventory module
+        assert self.workflow_test.test_repo_dir is not None
         (
             self.workflow_test.test_repo_dir / "src" / "inventory" / "manager.py"
         ).write_text(inventory_code)
@@ -1121,6 +1122,7 @@ class RecurringPaymentManager:
 '''
 
         # Add payment v2 module
+        assert self.workflow_test.test_repo_dir is not None
         (
             self.workflow_test.test_repo_dir / "src" / "payment" / "gateway_v2.py"
         ).write_text(payment_v2_code)
@@ -1153,6 +1155,7 @@ class RecurringPaymentManager:
         assert watch_started, "Watch mode should start successfully"
 
         # Simulate continued development while watch is running
+        assert self.workflow_test.test_repo_dir is not None
         additional_feature_file = (
             self.workflow_test.test_repo_dir / "src" / "payment" / "analytics.py"
         )
@@ -1250,6 +1253,7 @@ def is_password_compromised(password: str) -> bool:
 '''
 
         # Add security functions to login.py
+        assert self.workflow_test.test_repo_dir is not None
         login_file = self.workflow_test.test_repo_dir / "src" / "auth" / "login.py"
         current_content = login_file.read_text()
         updated_content = current_content + "\n\n" + security_fix
@@ -1354,8 +1358,10 @@ def is_password_compromised(password: str) -> bool:
         print("✅ Phase 4 complete - Branch isolation validated")
         print(f"Branch results: {validation_results}")
 
-        # Store validation results
-        self.workflow_test.query_results["branch_validation"] = validation_results
+        # Store validation results (convert to expected type)
+        self.workflow_test.query_results["branch_validation"] = {
+            "validation": [validation_results]  # Wrap in list to match expected type
+        }
 
 
 # Helper functions for test validation

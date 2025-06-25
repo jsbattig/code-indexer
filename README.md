@@ -177,6 +177,7 @@ Options:
   --language TEXT         Filter by programming language
   --path TEXT            Filter by file path pattern
   --min-score FLOAT      Minimum similarity score (0.0-1.0)
+  --accuracy TEXT        Search accuracy profile: fast, balanced (default), high
   --quiet, -q             Quiet mode - only show results, no headers
 ```
 
@@ -190,6 +191,7 @@ Options:
   --language TEXT              Filter by programming language
   --path TEXT                  Filter by file path pattern
   --min-score FLOAT            Minimum similarity score (0.0-1.0)
+  --accuracy TEXT              Search accuracy profile: fast, balanced (default), high
   --max-turns INTEGER          Maximum Claude conversation turns (default: 5)
   --no-explore                 Disable file exploration in Claude prompt
   --no-stream                  Disable streaming (show results all at once)
@@ -242,6 +244,12 @@ code-indexer query "api endpoint" --limit 20
 
 # Quiet mode - just score, path, and content
 code-indexer query "function definition" --quiet
+
+# Fast search for quick exploration
+code-indexer query "caching mechanisms" --accuracy fast --limit 30
+
+# High-accuracy search for precise analysis
+code-indexer query "security vulnerability" --accuracy high --min-score 0.8
 ```
 
 ### Claude AI Analysis Examples
@@ -267,6 +275,9 @@ code-indexer claude "What design patterns are used here?"
 
 # Quiet mode - just the analysis, no headers or metadata
 code-indexer claude "Explain this function" --quiet
+
+# High-accuracy analysis for complex code
+code-indexer claude "Analyze optimization opportunities" --accuracy high --language cpp
 
 # Debug mode - show the prompt that would be sent to Claude (for prompt iteration)
 code-indexer claude "Test question" --dry-run-show-claude-prompt
@@ -1044,11 +1055,27 @@ cd code-indexer
 python -m venv venv
 source venv/bin/activate  # or `venv\Scripts\activate` on Windows
 
-# Install in development mode
+# Option 1: Modern approach (recommended)
 pip install -e ".[dev]"
+
+# Option 2: Traditional requirements.txt approach
+pip install -r requirements-dev.txt
+pip install -e .
 
 # Install pre-commit hooks
 pre-commit install
+```
+
+#### Quick Development Setup
+
+For a faster setup with traditional requirements files:
+
+```bash
+# Install all development dependencies
+pip install -r requirements-dev.txt
+
+# Install the package in editable mode
+pip install -e .
 ```
 
 ### Run Tests
@@ -1061,6 +1088,10 @@ pytest --cov=code_indexer  # With coverage
 ### Code Quality
 
 ```bash
+# Run all linting checks (recommended)
+./lint.sh
+
+# Or run individual tools
 black src/                 # Format code
 ruff src/                  # Lint code
 mypy src/                  # Type checking

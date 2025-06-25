@@ -1,0 +1,27 @@
+# Production dependencies for code-indexer
+# Install with: pip install -r requirements.txt
+
+# Core CLI and interface
+click>=8.0.0
+rich>=13.0.0
+
+# HTTP client for API calls
+httpx>=0.24.0
+
+# Data validation and settings
+pydantic>=2.0.0
+
+# Docker management
+docker>=6.0.0
+
+# Configuration parsing
+pyyaml>=6.0
+
+# File pattern matching (.gitignore support)
+pathspec>=0.11.0
+
+# File system monitoring
+watchdog>=3.0.0
+
+# JSON schema validation
+jsonschema>=4.0.0

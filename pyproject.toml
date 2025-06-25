@@ -109,6 +109,8 @@ markers = [
     "qdrant: Tests requiring Qdrant service",
     "real_api: Tests that make real API calls",
     "slow: Tests that take longer to run",
+    "integration: Integration tests requiring multiple services",
+    "unit: Unit tests with mocked dependencies",
 ]
 
 [tool.coverage.run]

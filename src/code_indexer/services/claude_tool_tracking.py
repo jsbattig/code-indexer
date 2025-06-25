@@ -649,33 +649,30 @@ class ClaudePlanSummary:
                 total_duration += event.duration
                 completed_count += 1
 
+        # Use simpler formatting that looks good in plain text
         stats_parts.append("📊 Tool Usage Statistics")
-        stats_parts.append("")  # Add blank line after heading
-        stats_parts.append(f"Total Operations: {len(events)}")
-        stats_parts.append(f"Tools Used: {', '.join(sorted(tools_used))}")
-        stats_parts.append(f"Completed Successfully: {completed_count}")
+        stats_parts.append("")
+        stats_parts.append(f"• Total Operations: {len(events)}")
+        stats_parts.append(f"• Tools Used: {', '.join(sorted(tools_used))}")
+        stats_parts.append(f"• Completed Successfully: {completed_count}")
 
         if total_duration > 0:
-            stats_parts.append(f"Total Execution Time: {total_duration:.2f}s")
+            stats_parts.append(f"• Total Execution Time: {total_duration:.2f}s")
             stats_parts.append(
-                f"Average Duration: {total_duration/completed_count:.2f}s"
+                f"• Average Duration: {total_duration/completed_count:.2f}s"
             )
 
-        # Add blank line before operation breakdown
-        stats_parts.append("")
-
-        # Operation breakdown
+        # Operation breakdown with cleaner formatting
         if operation_counts:
-            stats_parts.append("")  # Add blank line before breakdown
+            stats_parts.append("")
             stats_parts.append("Operation Breakdown:")
-            stats_parts.append("")  # Add blank line after heading
             for op_type, count in sorted(operation_counts.items()):
                 emoji = (
                     "🔍✨"
                     if op_type == "cidx_semantic_search"
                     else "😞" if op_type == "grep_search" else "📄"
                 )
-                stats_parts.append(f"{emoji} {op_type}: {count}")
+                stats_parts.append(f"  {emoji} {op_type}: {count}")
 
         return "\n".join(stats_parts)
 

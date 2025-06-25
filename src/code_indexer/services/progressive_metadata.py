@@ -4,6 +4,7 @@ Progressive metadata manager for resumable indexing operations.
 
 import json
 import time
+import fcntl
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
@@ -96,6 +97,8 @@ class ProgressiveMetadata:
         """Mark indexing as completed."""
         self.metadata["status"] = "completed"
         self.metadata["indexed_at"] = datetime.now(timezone.utc).isoformat()
+        # Update last_index_timestamp to current time for incremental indexing
+        self.metadata["last_index_timestamp"] = time.time()
         self._save_metadata()
 
     def fail_indexing(self, error_message: Optional[str] = None):
@@ -278,3 +281,70 @@ class ProgressiveMetadata:
             and self.metadata.get("current_file_index", 0)
             < len(self.metadata.get("files_to_index", []))
         )
+
+    def get_current_branch(self) -> str:
+        """Get the current branch from metadata."""
+        branch = self.metadata.get("current_branch", "unknown")
+        return str(branch) if branch is not None else "unknown"
+
+    def update_current_branch(self, branch_name: str) -> None:
+        """Update the current branch safely with file locking."""
+        # Use file locking for safe concurrent updates
+        try:
+            # Ensure parent directory exists
+            self.metadata_path.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(self.metadata_path, "r+") as f:
+                # Acquire exclusive lock
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+
+                # Read current metadata
+                f.seek(0)
+                try:
+                    current_data = json.load(f)
+                except (json.JSONDecodeError, EOFError):
+                    # If file is corrupted, use current in-memory state
+                    current_data = self.metadata
+
+                # Update branch
+                current_data["current_branch"] = branch_name
+
+                # Write back
+                f.seek(0)
+                f.truncate()
+                json.dump(current_data, f, indent=2)
+
+                # Update in-memory state
+                self.metadata["current_branch"] = branch_name
+
+        except FileNotFoundError:
+            # File doesn't exist yet, just update in-memory state
+            self.metadata["current_branch"] = branch_name
+            self._save_metadata()
+
+    def get_current_branch_with_retry(
+        self, fallback: str = "unknown", max_retries: int = 1
+    ) -> str:
+        """Get current branch with retry logic for file locking scenarios."""
+        for attempt in range(max_retries + 1):
+            try:
+                if not self.metadata_path.exists():
+                    return fallback
+
+                with open(self.metadata_path, "r") as f:
+                    # Try to acquire shared lock (non-blocking)
+                    fcntl.flock(f.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
+                    data = json.load(f)
+                    branch = data.get("current_branch", fallback)
+                    return str(branch) if branch is not None else fallback
+
+            except (OSError, IOError, json.JSONDecodeError):
+                if attempt < max_retries:
+                    # Wait a bit and retry
+                    time.sleep(0.1)
+                    continue
+                else:
+                    # Max retries exceeded, return fallback
+                    return fallback
+
+        return fallback

@@ -491,6 +491,10 @@ class DockerManager:
 
     def start_services(self, recreate: bool = False) -> bool:
         """Start Docker services with intelligent state detection and idempotent behavior."""
+        # Force remove any problematic containers before starting
+        if recreate:
+            self._force_remove_problematic_containers()
+
         # Determine required services based on configuration
         required_services = self.get_required_services(self.main_config)
 
@@ -752,7 +756,7 @@ class DockerManager:
             return False
 
     def stop_services(self) -> bool:
-        """Stop Docker services using deterministic container names."""
+        """Stop Docker services using deterministic container names with enhanced timeout handling."""
         expected_containers = [
             "code-indexer-qdrant",
             "code-indexer-ollama",
@@ -768,27 +772,10 @@ class DockerManager:
         try:
             with self.console.status("Stopping services..."):
                 for container_name in expected_containers:
-                    try:
-                        result = subprocess.run(
-                            [runtime, "stop", container_name],
-                            capture_output=True,
-                            text=True,
-                            timeout=30,
-                        )
-
-                        if result.returncode == 0:
-                            stopped_count += 1
-                        else:
-                            # Check if container doesn't exist (not an error in this context)
-                            if "no such container" in result.stderr.lower():
-                                stopped_count += 1  # Consider it "stopped"
-                            else:
-                                errors.append(f"{container_name}: {result.stderr}")
-
-                    except subprocess.TimeoutExpired:
-                        errors.append(f"{container_name}: timeout")
-                    except Exception as e:
-                        errors.append(f"{container_name}: {str(e)}")
+                    if self._smart_stop_container(runtime, container_name):
+                        stopped_count += 1
+                    else:
+                        errors.append(f"{container_name}: failed to stop gracefully")
 
             if stopped_count == len(expected_containers):
                 self.console.print("✅ Services stopped successfully", style="green")
@@ -803,6 +790,265 @@ class DockerManager:
         except Exception as e:
             self.console.print(f"❌ Error stopping services: {e}", style="red")
             return False
+
+    def _smart_stop_container(self, runtime: str, container_name: str) -> bool:
+        """Smart container stop with progressive timeout handling and forced removal.
+
+        Args:
+            runtime: Docker/Podman runtime command
+            container_name: Name of container to stop
+
+        Returns:
+            True if container was stopped successfully
+        """
+        import time
+
+        try:
+            # Check if container exists and is running
+            inspect_result = subprocess.run(
+                [runtime, "inspect", container_name],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if inspect_result.returncode != 0:
+                # Container doesn't exist - consider it stopped
+                return True
+
+            # Try graceful stop first (30 seconds)
+            try:
+                result = subprocess.run(
+                    [runtime, "stop", container_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+
+                if result.returncode == 0:
+                    return True
+
+                # Check if it's already stopped
+                if "no such container" in result.stderr.lower():
+                    return True
+
+            except subprocess.TimeoutExpired:
+                pass  # Continue to force kill
+
+            # For Qdrant specifically, check if it's doing background work
+            if "qdrant" in container_name:
+                if self._wait_for_qdrant_idle(runtime, container_name, max_wait=30):
+                    # Try graceful stop again after Qdrant is idle
+                    try:
+                        result = subprocess.run(
+                            [runtime, "stop", container_name],
+                            capture_output=True,
+                            text=True,
+                            timeout=15,
+                        )
+                        if result.returncode == 0:
+                            return True
+                    except subprocess.TimeoutExpired:
+                        pass
+
+            # Force kill if graceful stop failed
+            try:
+                result = subprocess.run(
+                    [runtime, "kill", container_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+
+                if (
+                    result.returncode == 0
+                    or "no such container" in result.stderr.lower()
+                ):
+                    # Wait a moment for cleanup
+                    time.sleep(1)
+                    return True
+
+            except subprocess.TimeoutExpired:
+                pass
+
+            # Force remove if kill failed
+            try:
+                result = subprocess.run(
+                    [runtime, "rm", "-f", container_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+
+                if (
+                    result.returncode == 0
+                    or "no such container" in result.stderr.lower()
+                ):
+                    return True
+
+            except subprocess.TimeoutExpired:
+                pass
+
+            return False
+
+        except Exception:
+            # Last resort: try force remove
+            try:
+                subprocess.run(
+                    [runtime, "rm", "-f", container_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                return True
+            except Exception:
+                return False
+
+    def _wait_for_qdrant_idle(
+        self, runtime: str, container_name: str, max_wait: int = 30
+    ) -> bool:
+        """Wait for Qdrant to finish background operations before stopping.
+
+        Args:
+            runtime: Docker/Podman runtime command
+            container_name: Qdrant container name
+            max_wait: Maximum time to wait in seconds
+
+        Returns:
+            True if Qdrant appears idle or max_wait exceeded
+        """
+        import time
+
+        start_time = time.time()
+
+        while time.time() - start_time < max_wait:
+            try:
+                # Check container logs for activity indicators
+                result = subprocess.run(
+                    [runtime, "logs", "--tail", "10", container_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+
+                if result.returncode == 0:
+                    recent_logs = result.stdout.lower()
+
+                    # Look for signs Qdrant is busy
+                    busy_indicators = [
+                        "indexing",
+                        "optimization",
+                        "writing",
+                        "syncing",
+                        "compacting",
+                        "processing",
+                    ]
+
+                    if not any(
+                        indicator in recent_logs for indicator in busy_indicators
+                    ):
+                        return True
+
+                time.sleep(2)
+
+            except subprocess.TimeoutExpired:
+                break
+            except Exception:
+                break
+
+        return True  # Return True after max_wait to proceed with stop
+
+    def _force_remove_problematic_containers(self) -> None:
+        """Force remove any problematic containers that might interfere with startup."""
+        expected_containers = [
+            "code-indexer-qdrant",
+            "code-indexer-ollama",
+            "code-indexer-data-cleaner",
+        ]
+
+        runtime = self._get_preferred_runtime()
+
+        for container_name in expected_containers:
+            try:
+                # Check if container exists
+                inspect_result = subprocess.run(
+                    [runtime, "inspect", container_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+
+                if inspect_result.returncode == 0:
+                    # Container exists, check if it's in a problematic state
+                    try:
+                        # Try to get container status
+                        ps_result = subprocess.run(
+                            [
+                                runtime,
+                                "ps",
+                                "-a",
+                                "--filter",
+                                f"name={container_name}",
+                                "--format",
+                                "{{{{.Status}}}}",
+                            ],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                        )
+
+                        if ps_result.returncode == 0:
+                            status = ps_result.stdout.strip().lower()
+
+                            # Check for problematic states
+                            problematic_states = [
+                                "restarting",
+                                "dead",
+                                "removing",
+                                "oomkilled",
+                                "exited (",  # Any exit status
+                            ]
+
+                            is_problematic = any(
+                                state in status for state in problematic_states
+                            )
+
+                            if is_problematic:
+                                self.console.print(
+                                    f"🧹 Removing problematic container {container_name} (status: {status})"
+                                )
+
+                                # Force remove
+                                subprocess.run(
+                                    [runtime, "rm", "-f", container_name],
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=10,
+                                )
+
+                    except subprocess.TimeoutExpired:
+                        # If we can't check status, remove it to be safe
+                        self.console.print(
+                            f"🧹 Removing unresponsive container {container_name}"
+                        )
+                        subprocess.run(
+                            [runtime, "rm", "-f", container_name],
+                            capture_output=True,
+                            text=True,
+                            timeout=10,
+                        )
+
+            except Exception:
+                # If anything fails, try to remove anyway
+                try:
+                    subprocess.run(
+                        [runtime, "rm", "-f", container_name],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                except Exception:
+                    pass  # Ignore final cleanup failures
 
     def remove_containers(self, remove_volumes: bool = False) -> bool:
         """Remove Docker containers and optionally volumes."""
@@ -935,8 +1181,9 @@ class DockerManager:
         )
 
         for container_name in expected_containers:
-            container_found = False
+            best_status = None
 
+            # Check all runtimes and pick the best status (prioritize running containers)
             for runtime in runtimes_to_check:
                 try:
                     result = subprocess.run(
@@ -955,25 +1202,37 @@ class DockerManager:
                     if result.returncode == 0:
                         output = result.stdout.strip()
                         parts = output.split("|")
-                        state = parts[0] if len(parts) > 0 else "unknown"
+                        # Clean up state - podman sometimes includes extra text like "< /dev/null"
+                        raw_state = parts[0].strip() if len(parts) > 0 else "unknown"
+                        state = (
+                            raw_state.split()[0] if raw_state else "unknown"
+                        )  # Take first word only
+                        # Clean up health status
+                        raw_health = parts[1].strip() if len(parts) > 1 else "unknown"
                         health = (
-                            parts[1]
-                            if len(parts) > 1 and parts[1] != "<no value>"
+                            raw_health.split()[0]
+                            if raw_health and raw_health != "<no value>"
                             else "unknown"
                         )
 
-                        services[container_name] = {
+                        current_status = {
                             "state": state,
                             "health": health,
                         }
-                        container_found = True
-                        break  # Found container, don't check other runtimes
+
+                        # Prioritize running containers over stopped ones
+                        if best_status is None or (
+                            state == "running" and best_status["state"] != "running"
+                        ):
+                            best_status = current_status
 
                 except Exception:
                     continue  # Try next runtime
 
-            # If container not found in any runtime, mark as not found
-            if not container_found:
+            # Use best status found, or mark as not found
+            if best_status is not None:
+                services[container_name] = best_status
+            else:
                 services[container_name] = {
                     "state": "not_found",
                     "health": "unknown",

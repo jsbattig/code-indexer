@@ -39,7 +39,15 @@ class TestVoyageAIE2E:
             working_dir=self.test_dir
         )
         if not services_ready:
-            pytest.skip("Could not start required services for VoyageAI E2E testing")
+            # Try force recreation as last resort
+            print("Initial service setup failed, attempting force recreation...")
+            services_ready = self.service_manager.ensure_services_ready(
+                working_dir=self.test_dir,
+                force_recreate=True,
+            )
+            assert (
+                services_ready
+            ), "Failed to ensure services are ready for VoyageAI E2E testing even after force recreation"
 
         # Change to test directory safely and create test code files
         with self.dir_manager.safe_chdir(self.test_dir):
@@ -155,10 +163,12 @@ This is a test project for VoyageAI E2E testing.
             # Verify provider configuration using test infrastructure
             status_result = self.cli_helper.run_cli_command(["status"])
 
-            # Verify Voyage-AI provider is shown and Ollama is not mentioned
-            assert (
-                "ollama" not in status_result.stdout.lower()
-            ), f"Ollama should not be in status: {status_result.stdout}"
+            # Verify Voyage-AI provider is shown and Ollama shows "Not needed"
+            status_lower = status_result.stdout.lower()
+            if "ollama" in status_lower:
+                assert (
+                    "not needed" in status_lower
+                ), f"Ollama should show 'Not needed' status: {status_result.stdout}"
             assert (
                 "voyage" in status_result.stdout.lower()
                 or "voyage-ai" in status_result.stdout.lower()
@@ -167,13 +177,17 @@ This is a test project for VoyageAI E2E testing.
             # Step 3: Check status (should show only required services)
             result = self.cli_helper.run_cli_command(["status"])
 
-            # Should show Qdrant and VoyageAI, but not Ollama
+            # Should show Qdrant and VoyageAI, Ollama should show "Not needed"
             status_output = result.stdout.lower()
             assert "qdrant" in status_output
             assert (
                 "voyage" in status_output
             ), f"VoyageAI should be in status: {result.stdout}"
-            assert "ollama" not in status_output
+            # Check Ollama shows as "Not needed" for VoyageAI configuration
+            if "ollama" in status_output:
+                assert (
+                    "not needed" in status_output
+                ), f"Ollama should show 'Not needed' status: {result.stdout}"
 
             # Step 4: Ensure services are started, then do real indexing with VoyageAI
             self.cli_helper.run_cli_command(

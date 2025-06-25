@@ -313,33 +313,60 @@ class TestSmartIndexer:
             mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
         )
 
-        with patch.object(indexer, "get_git_status") as mock_git_status, patch.object(
-            indexer, "file_finder"
-        ) as mock_file_finder, patch.object(
-            indexer.branch_aware_indexer, "index_branch_changes"
-        ) as mock_branch_indexer:
-            # Setup mocks - use the same git_status as the pre-populated metadata
-            mock_git_status.return_value = git_status
-            mock_file_finder.find_modified_files.return_value = [Path("changed.py")]
-            mock_branch_indexer.return_value = BranchIndexingResult(
-                files_processed=1,
-                content_points_created=3,
-                visibility_points_created=0,
-                visibility_points_updated=0,
-                content_points_reused=0,
-                processing_time=0.1,
-            )
-            # Mock embedding provider info to match metadata
-            mock_embedding_provider.get_provider_name.return_value = "test-provider"
-            mock_embedding_provider.get_current_model.return_value = "test-model"
+        # Create a temporary file for the test
+        with tempfile.NamedTemporaryFile(suffix=".py", delete=False) as temp_file:
+            temp_file.write(b"# Test file content\nprint('hello')\n")
+            temp_file_path = Path(temp_file.name)
 
-            stats = indexer.smart_index(force_full=False)
+        try:
+            with patch.object(
+                indexer, "get_git_status"
+            ) as mock_git_status, patch.object(
+                indexer, "file_finder"
+            ) as mock_file_finder, patch.object(
+                indexer.branch_aware_indexer, "index_branch_changes"
+            ) as mock_branch_indexer:
+                # Setup mocks - use the same git_status as the pre-populated metadata
+                mock_git_status.return_value = git_status
+                mock_file_finder.find_modified_files.return_value = [temp_file_path]
 
-            # Should do incremental update
-            mock_qdrant_client.ensure_provider_aware_collection.assert_called_once()
-            mock_qdrant_client.clear_collection.assert_not_called()
-            assert stats.files_processed == 1
-            assert stats.chunks_created == 3
+                # Mock BranchAwareIndexer result (now the primary processing path)
+                from src.code_indexer.services.branch_aware_indexer import (
+                    BranchIndexingResult,
+                )
+
+                mock_branch_result = BranchIndexingResult(
+                    content_points_created=3,
+                    visibility_points_created=3,
+                    visibility_points_updated=0,
+                    content_points_reused=0,
+                    processing_time=0.1,
+                    files_processed=1,
+                )
+                mock_branch_indexer.return_value = mock_branch_result
+
+                # Mock other required methods
+                mock_embedding_provider.get_provider_name.return_value = "test-provider"
+                mock_embedding_provider.get_current_model.return_value = "test-model"
+                mock_qdrant_client.resolve_collection_name.return_value = (
+                    "test_collection"
+                )
+                indexer.git_topology_service.get_current_branch = Mock(
+                    return_value="master"
+                )
+
+                stats = indexer.smart_index(force_full=False)
+
+                # Should do incremental update using BranchAwareIndexer
+                mock_qdrant_client.ensure_provider_aware_collection.assert_called_once()
+                mock_qdrant_client.clear_collection.assert_not_called()
+                mock_branch_indexer.assert_called_once()
+                assert stats.files_processed == 1
+                assert stats.chunks_created == 3
+        finally:
+            # Clean up the temporary file
+            if temp_file_path.exists():
+                temp_file_path.unlink()
 
     def test_smart_index_no_files_to_index(
         self,

@@ -181,66 +181,131 @@ RIGHT: [description line 123](file:///.../file.py)"""
 2. **READ SPECIFIC FILES**: Use Read for files identified by cidx  
 3. **FALLBACK ONLY**: Use text search only if cidx returns no relevant results
 
-🔍✨ PRIMARY TOOL - SEMANTIC SEARCH:
-`cidx query "search terms"` - Your go-to tool for intelligent code discovery
-- Understands semantic relationships and context (not just text matching)
-- Finds related code even when variable names or exact terms differ
-- Returns relevance scores (0.0-1.0, higher = more relevant)
+🔍✨ PRIMARY TOOL - SEMANTIC SEARCH (`cidx query`):
+The `cidx query` command is your most powerful tool for intelligent code discovery. Unlike simple text search, it uses advanced semantic understanding to find related code concepts, patterns, and implementations.
 
-**CIDX OPTIONS FOR PRECISE CONTROL**:
-- `--limit N` - Control number of results (default: 10, use `--limit 5` for focused results, `--limit 20` for comprehensive)
-- `--language LANG` - Filter by programming language (use full language names)
-- `--path "*/tests/*"` - Filter by file path patterns (e.g., "*/api/*", "*.py")
-- `--min-score 0.8` - Minimum similarity score (0.0-1.0, higher = more relevant matches only)
+**🧠 WHAT MAKES CIDX QUERY UNIQUE**:
+- **Semantic Understanding**: Finds code related to concepts even when exact words don't match
+- **Context Awareness**: Understands relationships between functions, classes, and modules
+- **Relevance Scoring**: Returns results ranked by semantic similarity (0.0-1.0 scale)
+- **Cross-Language Intelligence**: Finds similar patterns across different programming languages
+- **Vector-Based Search**: Uses machine learning embeddings to understand code meaning, not just syntax
 
-**SUPPORTED LANGUAGES** (use exact names):
-- `python` (.py files) | `javascript` (.js, .jsx files) | `typescript` (.ts, .tsx files)
-- `java` (.java files) | `csharp` (.cs files) | `cpp` (.cpp, .hpp files) | `c` (.c, .h files)
-- `go` (.go files) | `rust` (.rs files) | `ruby` (.rb files) | `php` (.php files)
-- `swift` (.swift files) | `kotlin` (.kt files) | `scala` (.scala files) | `dart` (.dart files)
-- `shell` (.sh, .bash files) | `html` (.html files) | `css` (.css files) | `sql` (.sql files)
-- `vue` (.vue files) | `json` (.json files) | `yaml` (.yaml, .yml files) | `toml` (.toml files)
-- `markdown` (.md files) | `text` (.txt files)
+**⭐ CORE CAPABILITIES**:
+- Find functions/classes that serve similar purposes with different names
+- Locate implementation patterns (e.g., "error handling", "data validation", "async processing")
+- Discover related code across the entire codebase (tests, configs, documentation)
+- Identify architectural patterns and design choices
+- Find usage examples and integration points
 
-**USAGE EXAMPLES**:
-- `cidx query "authentication" --limit 10` - Get top 10 auth-related results
-- `cidx query "database setup" --limit 3 --language python` - Focused Python DB setup search
-- `cidx query "async functions" --language javascript --min-score 0.8` - High-quality JS async code
-- `cidx query "dependency injection" --language csharp` - C# dependency injection patterns
-- `cidx query "SQL joins" --language sql --limit 5` - Find SQL join examples
-- `cidx query "shell script" --language shell --path "*/scripts/*"` - Shell scripts in scripts directory
-- `cidx query "styling components" --language css --min-score 0.7` - CSS styling patterns
-- `cidx query "test setup" --path "*/tests/*" --limit 5` - Find test setup in test files only
+**🎛️ COMMAND OPTIONS FOR PRECISE CONTROL**:
+- `--limit N` - Control number of results (default: 10)
+  • Use `--limit 5` for focused, high-quality results
+  • Use `--limit 20` for comprehensive exploration
+  • Use `--limit 50` for exhaustive discovery
+- `--language LANG` - Filter by programming language (improves accuracy)
+- `--path "pattern"` - Filter by file path patterns (e.g., "*/tests/*", "*/api/*")
+- `--min-score 0.X` - Minimum similarity threshold (0.0-1.0)
+  • Use `--min-score 0.8` for highly relevant matches only
+  • Use `--min-score 0.6` for broader exploration
+  • Use `--min-score 0.4` for discovery of loosely related concepts
+- `--accuracy PROFILE` - Search accuracy vs speed tradeoff (default: balanced)
+  • Use `--accuracy fast` for quicker results with lower precision
+  • Use `--accuracy balanced` for optimal speed/accuracy balance (default)
+  • Use `--accuracy high` for maximum precision with slower search
 
-EXAMPLES - SEMANTIC vs TEXT SEARCH:
-✅ GOOD: `cidx query "authentication system"` - finds auth-related code semantically
-❌ AVOID: `grep -r "auth"` - finds all text containing "auth" without context
-✅ GOOD: `cidx query "database connection setup"` - understands the concept  
-❌ AVOID: `grep -r "database"` - misses DB, db, connection logic
+**🎯 SUPPORTED LANGUAGES** (use exact names for --language filter):
+- **Backend**: `python`, `java`, `csharp`, `cpp`, `c`, `go`, `rust`, `php`
+- **Frontend**: `javascript`, `typescript`, `html`, `css`, `vue`
+- **Mobile**: `swift`, `kotlin`, `dart`
+- **Functional**: `scala`, `ruby`
+- **Scripts**: `shell`, `sql`
+- **Config**: `json`, `yaml`, `toml`
+- **Docs**: `markdown`, `text`
 
-📖 CORE SUPPORT TOOLS:
-- **Read**: Examine specific files found by cidx
-- **Task**: Complex multi-step searches when cidx needs assistance
+**💡 STRATEGIC USAGE PATTERNS**:
 
-⚠️ FALLBACK TOOLS (USE SPARINGLY):
-- **Glob**: File pattern matching when cidx can't find files by name patterns
-- **Grep**: Text search ONLY when cidx fails AND you need exact literal matches
-- **LS**: Directory structure exploration
+*Concept Discovery*:
+- `cidx query "authentication mechanisms"` - Find all auth-related code
+- `cidx query "error handling patterns"` - Discover error management approaches
+- `cidx query "data validation logic"` - Locate input validation implementations
 
-⚠️ AVOID TEXT-BASED SEARCH: Grep/text search should be used ONLY as a last resort when cidx fails to find results. Text search misses semantic relationships and context that make your analysis less accurate.
+*Implementation Finding*:
+- `cidx query "API endpoint handlers" --language python` - Find Python API code
+- `cidx query "database queries" --language sql --limit 15` - SQL query patterns
+- `cidx query "async operations" --min-score 0.7` - High-quality async code
+- `cidx query "complex algorithms" --accuracy high` - Maximum precision for intricate code
 
-🎯 SUCCESS CRITERIA: Prefer semantic search over text search. Your analysis will be more accurate and comprehensive when using cidx for code discovery.
+*Architecture Exploration*:
+- `cidx query "dependency injection setup"` - Find DI configuration
+- `cidx query "microservice communication"` - Discover service integration
+- `cidx query "configuration management"` - Locate config handling
 
-🔬 EVIDENCE CITATION REQUIREMENTS:
-- When using any tool, immediately cite findings with FULL file:// URLs
-- Never make claims about code without providing the exact source location
-- Include file/line references in all explanations, diagrams, and flow descriptions
-- Format citations as markdown links: [UserService.authenticate](file://{self.codebase_dir}/src/services/user.py:123)
-- For ranges: [authentication flow](file://{self.codebase_dir}/auth/handlers.py:45-78)
-- REMEMBER: Always use file://{self.codebase_dir}/ prefix for ALL file references
-- Treat every statement like a scientific paper - evidence required
+*Testing & Quality*:
+- `cidx query "unit test examples" --path "*/tests/*"` - Find test patterns
+- `cidx query "mock data creation" --limit 10` - Discover test data setup
+- `cidx query "integration test setup"` - Find E2E test patterns
+- `cidx query "performance optimization" --accuracy fast --limit 30` - Quick broad search
 
-NOTE: You have read-only access and cannot modify, edit, or execute files."""
+**🚀 ADVANCED SEARCH STRATEGIES**:
+
+*Multi-Step Discovery*:
+1. Broad concept search: `cidx query "user management"`
+2. Narrow down: `cidx query "user authentication" --min-score 0.8`
+3. Find related: `cidx query "user permissions" --limit 5`
+
+*Cross-Reference Analysis*:
+1. Find implementations: `cidx query "payment processing"`
+2. Find tests: `cidx query "payment processing" --path "*/tests/*"`
+3. Find config: `cidx query "payment configuration"`
+
+*Language-Specific Exploration*:
+1. Backend: `cidx query "REST API design" --language python`
+2. Frontend: `cidx query "API consumption" --language javascript`
+3. Database: `cidx query "data persistence" --language sql`
+
+*Accuracy-Driven Discovery*:
+1. Quick exploration: `cidx query "caching mechanisms" --accuracy fast --limit 20`
+2. Precise analysis: `cidx query "security vulnerabilities" --accuracy high --min-score 0.8`
+3. Balanced research: `cidx query "design patterns" --accuracy balanced` (default)
+
+**📊 UNDERSTANDING RESULTS**:
+- **Score 0.9-1.0**: Highly relevant, exact concept matches
+- **Score 0.7-0.8**: Very relevant, closely related implementations  
+- **Score 0.5-0.6**: Moderately relevant, similar patterns
+- **Score 0.3-0.4**: Loosely related, might provide context
+- **Score < 0.3**: Minimal relevance, usually not useful
+
+**✅ SEMANTIC SEARCH vs ❌ TEXT SEARCH COMPARISON**:
+✅ `cidx query "user authentication"` → Finds login, auth, security, credentials, sessions
+❌ `grep "auth"` → Only finds literal "auth" text, misses related concepts
+
+✅ `cidx query "error handling"` → Finds exceptions, try-catch, error responses, logging
+❌ `grep "error"` → Only finds "error" text, misses exception handling patterns
+
+✅ `cidx query "async operations"` → Finds promises, await, callbacks, threading, futures
+❌ `grep "async"` → Only finds "async" keyword, misses async patterns
+
+**📖 COMPLEMENTARY TOOLS**:
+- **Read**: Examine specific files discovered by cidx query
+- **Task**: Complex multi-step workflows when cidx needs systematic exploration
+
+**⚠️ FALLBACK TOOLS** (use only when cidx fails):
+- **Glob**: File pattern matching for specific filenames
+- **Grep**: Exact literal string matching (last resort only)
+- **LS**: Basic directory structure exploration
+
+**🎯 SUCCESS CRITERIA**: 
+Always start with semantic search. Your analysis will be more accurate, comprehensive, and insightful when using cidx query for code discovery instead of primitive text matching.
+
+**🔬 EVIDENCE CITATION REQUIREMENTS**:
+- Immediately cite ALL cidx query findings with file:// URLs
+- Format: [description with line info](file://{self.codebase_dir}/path/to/file.py)
+- Include relevance scores in citations when useful
+- Never make claims about code without exact source citations
+- Every technical assertion requires semantic search evidence
+
+**🛡️ IMPORTANT**: You have read-only access. You cannot modify, edit, or execute files."""
 
         if exploration_depth == "shallow":
             return (
@@ -535,7 +600,6 @@ Think like a code archaeologist - use semantic search to understand the conceptu
         import subprocess
         import json
         from rich.console import Console
-        from rich.markdown import Markdown
         from .claude_tool_tracking import (
             ToolUsageTracker,
             CommandClassifier,
@@ -594,7 +658,6 @@ Think like a code archaeologist - use semantic search to understand the conceptu
                 process.stdin.close()
 
             # Set up console and live display with markdown buffer
-            from rich.markdown import Markdown
 
             console = Console(force_terminal=True, legacy_windows=False)
             accumulated_text = ""
@@ -869,7 +932,6 @@ Think like a code archaeologist - use semantic search to understand the conceptu
                                                     console.print("")
                                             elif stripped_line:
                                                 # Regular narrative content - use markdown for this part
-                                                from rich.markdown import Markdown
 
                                                 if any(
                                                     md_char in line
@@ -885,16 +947,13 @@ Think like a code archaeologist - use semantic search to understand the conceptu
                                                     processed_line = self._process_markdown_for_readability(
                                                         line
                                                     )
-                                                    console.print(
-                                                        Markdown(processed_line)
-                                                    )
+                                                    console.print(processed_line)
                                                 else:
                                                     console.print(line)
                                             else:
                                                 console.print("")
                                     else:
                                         # Regular markdown processing for non-statistics content
-                                        from rich.markdown import Markdown
 
                                         # Process for better readability
                                         processed_summary = (
@@ -902,8 +961,7 @@ Think like a code archaeologist - use semantic search to understand the conceptu
                                                 tool_summary
                                             )
                                         )
-                                        markdown = Markdown(processed_summary)
-                                        console.print(markdown)
+                                        console.print(processed_summary)
                                 except Exception as e:
                                     # Fallback to plain text if markdown rendering fails
                                     logger.warning(f"Markdown rendering failed: {e}")
@@ -1218,7 +1276,6 @@ Think like a code archaeologist - use semantic search to understand the conceptu
     def _render_content_with_file_links(self, content: str, console) -> bool:
         """Render content with special handling for file:// links."""
         import re
-        from rich.markdown import Markdown
         from rich.text import Text
 
         # Find all file:// links in the content
@@ -1226,39 +1283,48 @@ Think like a code archaeologist - use semantic search to understand the conceptu
         links = list(re.finditer(file_link_pattern, content))
 
         if not links:
-            # No file links, just render as normal markdown
-            markdown = Markdown(content)
-            console.print(markdown)
+            # No file links, process with Claude Code-style formatting
+            self._print_claude_code_style(content, console)
             return True
 
-        # Process content in chunks, handling file links specially
+        # When we have file links, we need to process the content carefully
+        # Split content by file links and apply Claude Code formatting to each part
+        from typing import Union, Tuple, List
+
         last_end = 0
+        content_parts: List[Union[Tuple[str, str], Tuple[str, str, str, str]]] = []
 
         for match in links:
-            # Print content before this link as markdown
+            # Get content before this link
             before_content = content[last_end : match.start()]
             if before_content.strip():
-                markdown = Markdown(before_content)
-                console.print(markdown, end="")
+                content_parts.append(("text", before_content))
 
-            # Handle the file link specially
+            # Add the file link as a special part
             text_part = match.group(1)
             url = match.group(2)
             file_path = url[7:]  # Remove 'file://' prefix
-
-            # Create a clickable link using Rich's link functionality
-            link_text = Text()
-            link_text.append(text_part, style=f"bright_blue link {url}")
-            link_text.append(f" ({file_path})", style="dim cyan")
-            console.print(link_text, end="")
+            content_parts.append(("link", text_part, url, file_path))
 
             last_end = match.end()
 
-        # Print any remaining content after the last link
+        # Add any remaining content after the last link
         remaining_content = content[last_end:]
         if remaining_content.strip():
-            markdown = Markdown(remaining_content)
-            console.print(markdown, end="")
+            content_parts.append(("text", remaining_content))
+
+        # Now render each part appropriately
+        for part in content_parts:
+            if part[0] == "text" and len(part) == 2:
+                # Apply Claude Code formatting to text content
+                self._print_claude_code_style(part[1], console)
+            elif part[0] == "link" and len(part) == 4:
+                # Render the file link specially
+                text_part, url, file_path = part[1], part[2], part[3]
+                link_text = Text()
+                link_text.append(text_part, style=f"bright_blue link {url}")
+                link_text.append(f" ({file_path})", style="dim cyan")
+                console.print(link_text)
 
         return True
 
@@ -1287,6 +1353,377 @@ Think like a code archaeologist - use semantic search to understand the conceptu
         )
 
         return processed
+
+    def _print_claude_code_style(self, content: str, console) -> None:
+        """Print content with Claude Code-style formatting (left-aligned, readable)."""
+        lines = content.split("\n")
+
+        for line in lines:
+            stripped = line.strip()
+
+            # Handle headers (## ###) - make them stand out but left-aligned
+            if stripped.startswith("### "):
+                header_text = stripped[4:].strip()
+                console.print(f"\n{header_text}", style="bold cyan")
+            elif stripped.startswith("## "):
+                header_text = stripped[3:].strip()
+                console.print(f"\n{header_text}", style="bold bright_cyan")
+            elif stripped.startswith("# "):
+                header_text = stripped[2:].strip()
+                console.print(f"\n{header_text}", style="bold bright_white")
+
+            # Handle code blocks
+            elif stripped.startswith("```"):
+                if stripped == "```":
+                    console.print(line)  # Just print the fence
+                else:
+                    # Code block with language
+                    lang = stripped[3:].strip()
+                    console.print(f"```{lang}", style="dim")
+
+            # Handle list items
+            elif stripped.startswith("- ") or stripped.startswith("* "):
+                bullet_content = stripped[2:].strip()
+                # Process inline formatting in bullet content
+                formatted_content = self._process_inline_formatting(bullet_content)
+                console.print(f"  • {formatted_content}")
+
+            # Handle numbered lists
+            elif stripped and stripped[0].isdigit() and ". " in stripped:
+                list_content = (
+                    stripped.split(". ", 1)[1] if ". " in stripped else stripped
+                )
+                formatted_content = self._process_inline_formatting(list_content)
+                console.print(f"  {stripped.split('.')[0]}. {formatted_content}")
+
+            # Handle regular text with inline formatting
+            elif stripped:
+                formatted_content = self._process_inline_formatting(stripped)
+                console.print(formatted_content)
+
+            # Handle empty lines
+            else:
+                console.print()
+
+    def _process_inline_formatting(self, text: str) -> str:
+        """Process inline markdown formatting like **bold** and *italic* in Claude Code style."""
+        import re
+
+        # Handle bold **text**
+        text = re.sub(r"\*\*([^*]+)\*\*", r"[bold]\1[/bold]", text)
+
+        # Handle italic *text*
+        text = re.sub(r"\*([^*]+)\*", r"[italic]\1[/italic]", text)
+
+        # Handle inline code `text`
+        text = re.sub(r"`([^`]+)`", r"[cyan]`\1`[/cyan]", text)
+
+        return text
+
+    def _matches_gitignore_pattern(
+        self, path: Path, rel_path_str: str, pattern: str
+    ) -> bool:
+        """Check if a path matches a gitignore pattern."""
+        import fnmatch
+
+        # Handle directory patterns (ending with /)
+        if pattern.endswith("/"):
+            if path.is_dir():
+                dir_pattern = pattern[:-1]
+                if fnmatch.fnmatch(path.name, dir_pattern) or fnmatch.fnmatch(
+                    rel_path_str, dir_pattern
+                ):
+                    return True
+        else:
+            # Handle file patterns
+            if fnmatch.fnmatch(path.name, pattern) or fnmatch.fnmatch(
+                rel_path_str, pattern
+            ):
+                return True
+
+            # Handle path-based patterns
+            if "/" in pattern:
+                if fnmatch.fnmatch(rel_path_str, pattern):
+                    return True
+
+        return False
+
+    def get_project_structure(self, max_files: int = 1000) -> str:
+        """Get full project structure as a tree-like listing.
+
+        Args:
+            max_files: Maximum number of files to include
+
+        Returns:
+            Formatted project structure string
+        """
+        from pathlib import Path
+
+        structure_lines = []
+        file_count = 0
+
+        # Common ignore patterns (always applied)
+        common_ignore_patterns = {
+            ".git",
+            ".qdrant_data",
+            ".pytest_cache",
+            ".mypy_cache",
+            ".ruff_cache",
+            ".coverage",
+            "htmlcov",
+            "experiments",
+        }
+
+        # Check if this is a git repository and load .gitignore
+        gitignore_patterns = []
+        is_git_repo = (self.codebase_dir / ".git").exists()
+
+        if is_git_repo:
+            gitignore_file = self.codebase_dir / ".gitignore"
+            if gitignore_file.exists():
+                try:
+                    gitignore_content = gitignore_file.read_text(encoding="utf-8")
+                    for line in gitignore_content.split("\n"):
+                        line = line.strip()
+                        # Skip empty lines and comments
+                        if line and not line.startswith("#"):
+                            gitignore_patterns.append(line)
+                except Exception as e:
+                    logger.warning(f"Failed to read .gitignore: {e}")
+
+        def should_ignore(path: Path) -> bool:
+            """Check if path should be ignored."""
+            # Always ignore common patterns (these take precedence)
+            for pattern in common_ignore_patterns:
+                if pattern.startswith("*."):
+                    if path.name.endswith(pattern[1:]):
+                        return True
+                elif pattern in str(path):
+                    return True
+
+            # If git-aware, check .gitignore patterns
+            if is_git_repo and gitignore_patterns:
+                # Get relative path from project root
+                try:
+                    rel_path = path.relative_to(self.codebase_dir)
+                    rel_path_str = str(rel_path)
+
+                    # Process gitignore patterns in order
+                    is_ignored = False
+
+                    for pattern in gitignore_patterns:
+                        # Handle negation patterns (starting with !)
+                        if pattern.startswith("!"):
+                            # This is a negation pattern - if it matches, unignore the file
+                            neg_pattern = pattern[1:]
+                            if self._matches_gitignore_pattern(
+                                path, rel_path_str, neg_pattern
+                            ):
+                                is_ignored = False
+                        else:
+                            # Regular ignore pattern
+                            if self._matches_gitignore_pattern(
+                                path, rel_path_str, pattern
+                            ):
+                                is_ignored = True
+
+                    return is_ignored
+                except ValueError:
+                    # Path is not relative to codebase_dir, skip gitignore check
+                    pass
+
+            return False
+
+        def add_directory(dir_path: Path, prefix: str = "", is_last: bool = True):
+            """Recursively add directory structure."""
+            nonlocal file_count
+
+            if file_count >= max_files:
+                return
+
+            if should_ignore(dir_path):
+                return
+
+            try:
+                items = sorted(
+                    dir_path.iterdir(), key=lambda x: (x.is_file(), x.name.lower())
+                )
+
+                for i, item in enumerate(items):
+                    if file_count >= max_files:
+                        structure_lines.append(
+                            f"{prefix}├── ... (truncated at {max_files} files)"
+                        )
+                        break
+
+                    if should_ignore(item):
+                        continue
+
+                    is_last_item = i == len(items) - 1
+                    connector = "└── " if is_last_item else "├── "
+
+                    if item.is_file():
+                        structure_lines.append(f"{prefix}{connector}{item.name}")
+                        file_count += 1
+                    else:
+                        structure_lines.append(f"{prefix}{connector}{item.name}/")
+                        extension = "    " if is_last_item else "│   "
+                        add_directory(item, prefix + extension, is_last_item)
+
+            except PermissionError:
+                structure_lines.append(f"{prefix}├── [Permission Denied]")
+
+        # Start with project root
+        project_name = self.codebase_dir.name
+        structure_lines.append(f"{project_name}/")
+        add_directory(self.codebase_dir, "")
+
+        return "\n".join(structure_lines)
+
+    def create_claude_first_prompt(
+        self,
+        user_query: str,
+        project_info: Optional[Dict[str, Any]] = None,
+        include_project_structure: bool = True,
+    ) -> str:
+        """Create a prompt for claude-first approach (no RAG upfront).
+
+        Args:
+            user_query: The user's question about the code
+            project_info: Optional project metadata (git info, etc.)
+            include_project_structure: Whether to include full project structure
+
+        Returns:
+            Formatted prompt string for Claude
+        """
+        # Build project context
+        project_context = self._create_project_context(project_info)
+
+        # Get project structure if requested
+        project_structure = ""
+        if include_project_structure:
+            try:
+                structure = self.get_project_structure()
+                project_structure = f"""## PROJECT STRUCTURE
+Here's the complete file structure of the codebase:
+
+```
+{structure}
+```
+"""
+            except Exception as e:
+                logger.warning(f"Failed to generate project structure: {e}")
+                project_structure = (
+                    "\n## PROJECT STRUCTURE\n(Unable to generate project structure)\n"
+                )
+
+        # Build the complete prompt
+        prompt = f"""You are an expert code analyst working with the {self.project_name or "this"} codebase.
+
+🔬 SCIENTIFIC EVIDENCE REQUIREMENT:
+Treat this analysis like a scientific paper - ALL assertions must be backed by specific evidence from the source code. Every claim you make MUST include markdown links to exact source files and line numbers. No assertion is valid without proper citation to the codebase.
+
+🎯 SEARCH STRATEGY:
+You have access to powerful semantic search capabilities. Use them liberally:
+
+CRITICAL: You have access to a powerful semantic search tool `cidx query` that can find relevant code across the entire codebase. Use it liberally - it's much more effective than guessing or making assumptions.
+
+WHEN TO SEARCH:
+✅ "Where is X implemented?" → Search immediately with `cidx query "X implementation"`
+✅ "How does Y work?" → Search for Y-related code first: `cidx query "Y functionality"`  
+✅ "What files contain Z?" → Use semantic search: `cidx query "Z"`
+✅ "Show me examples of..." → Search for examples: `cidx query "examples of..."`
+✅ "Is there any code that..." → Search to verify: `cidx query "code that..."`
+❌ "What is dependency injection?" → Can answer directly (general concept)
+
+SEARCH BEST PRACTICES:
+- Use natural language queries that match developer intent
+- Try multiple search terms if first search doesn't yield results
+- Search for both implementation AND usage patterns
+- Use specific technical terms from the domain/framework
+- Search for error messages, function names, class names, etc.
+
+EXAMPLES:
+- Instead of: "authentication"  
+- Try: "login user authentication", "auth middleware", "token validation"
+
+EVIDENCE REQUIREMENTS:
+- ALL claims about code must be backed by specific file:line citations
+- Use semantic search results to provide concrete examples
+- If you can't find evidence through search, explicitly state "I couldn't find evidence of..."
+- Prefer showing actual code snippets over descriptions
+
+{project_context}{project_structure}
+SEMANTIC SEARCH TOOL USAGE:
+Use the `cidx query` command to find relevant code:
+- `cidx query "search terms"` - Find semantically similar code
+- `cidx query "search terms" --limit 5` - Limit results  
+- `cidx query "search terms" --language python` - Filter by language
+- `cidx query "search terms" --path "*/tests/*"` - Filter by path pattern
+- `cidx --help` - See all available commands
+
+Remember: Start with semantic search to find relevant code, then provide evidence-based analysis.
+
+## USER QUESTION
+{user_query}
+
+Please analyze this question and use semantic search to find relevant code before providing your answer. Provide specific file and line citations for all claims."""
+
+        return prompt
+
+    def run_claude_first_analysis(
+        self,
+        user_query: str,
+        project_info: Optional[Dict[str, Any]] = None,
+        max_turns: int = 5,
+        stream: bool = True,
+        quiet: bool = False,
+        show_claude_plan: bool = False,
+        include_project_structure: bool = True,
+    ) -> ClaudeAnalysisResult:
+        """Run Claude analysis using claude-first approach (no RAG upfront).
+
+        Args:
+            user_query: The user's question about the code
+            project_info: Optional project metadata (git info, etc.)
+            max_turns: Maximum conversation turns
+            stream: Whether to stream the response
+            quiet: Whether to run in quiet mode
+            show_claude_plan: Whether to show tool usage tracking
+            include_project_structure: Whether to include full project structure
+
+        Returns:
+            ClaudeAnalysisResult with analysis
+        """
+        try:
+            # Create claude-first prompt
+            prompt = self.create_claude_first_prompt(
+                user_query=user_query,
+                project_info=project_info,
+                include_project_structure=include_project_structure,
+            )
+
+            # Run Claude CLI analysis with empty contexts for claude-first approach
+            return self._run_claude_cli_analysis(
+                user_query=user_query,
+                contexts=[],  # Empty contexts for claude-first approach
+                prompt=prompt,
+                max_turns=max_turns,
+                stream=stream,
+                quiet=quiet,
+                show_claude_plan=show_claude_plan,
+            )
+
+        except Exception as e:
+            logger.error(f"Claude first analysis failed: {e}")
+            return ClaudeAnalysisResult(
+                response="",
+                contexts_used=0,
+                total_context_lines=0,
+                search_query=user_query,
+                success=False,
+                error=str(e),
+            )
 
     def clear_cache(self):
         """Clear any internal caches."""

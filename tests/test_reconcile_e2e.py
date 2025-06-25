@@ -125,12 +125,29 @@ class TestReconcileE2E:
                 expect_success=False,
             )
 
-            # Check if services are available
+            # Check if services are available and ensure they're running if needed
             if index_result.returncode != 0:
-                # If services not available, skip the test
                 error_output = index_result.stderr + index_result.stdout
                 if "service not available" in error_output.lower():
-                    pytest.skip("Services not available for e2e test")
+                    # Try to start services and retry indexing
+                    print("Services not available, attempting to start them...")
+                    start_result = self.cli_helper.run_cli_command(
+                        ["start"], expect_success=False
+                    )
+                    if start_result.returncode == 0:
+                        # Retry indexing after starting services
+                        index_result = self.cli_helper.run_cli_command(
+                            ["index", "--clear"],
+                            timeout=180,
+                            expect_success=False,
+                        )
+                        assert (
+                            index_result.returncode == 0
+                        ), f"Index failed even after starting services: {index_result.stderr}"
+                    else:
+                        pytest.fail(
+                            f"Could not start services for e2e test: {start_result.stderr}"
+                        )
                 else:
                     pytest.fail(f"Index failed: {index_result.stderr}")
 
@@ -244,7 +261,25 @@ class TestReconcileE2E:
             if index_result.returncode != 0:
                 error_output = index_result.stderr + index_result.stdout
                 if "service not available" in error_output.lower():
-                    pytest.skip("Services not available for e2e test")
+                    # Try to start services and retry indexing
+                    print("Services not available, attempting to start them...")
+                    start_result = self.cli_helper.run_cli_command(
+                        ["start"], expect_success=False
+                    )
+                    if start_result.returncode == 0:
+                        # Retry indexing after starting services
+                        index_result = self.cli_helper.run_cli_command(
+                            ["index", "--clear", "--files-count-to-process", "2"],
+                            timeout=180,
+                            expect_success=False,
+                        )
+                        assert (
+                            index_result.returncode == 0
+                        ), f"Index failed even after starting services: {index_result.stderr}"
+                    else:
+                        pytest.fail(
+                            f"Could not start services for e2e test: {start_result.stderr}"
+                        )
                 else:
                     pytest.fail(f"Index failed: {index_result.stderr}")
 

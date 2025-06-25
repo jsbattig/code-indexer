@@ -1,5 +1,10 @@
 """
 Smart incremental indexer that combines index and update functionality.
+
+⚠️  CRITICAL PROGRESS REPORTING WARNING:
+This module calls progress_callback with setup messages using total=0.
+These MUST use total=0 to show as ℹ️ messages in CLI, not progress bar.
+See BranchAwareIndexer for file progress patterns (total>0).
 """
 
 import logging
@@ -12,12 +17,16 @@ from dataclasses import dataclass
 from ..config import Config
 from ..services import QdrantClient
 from ..services.embedding_provider import EmbeddingProvider
-from ..services.git_aware_processor import GitAwareDocumentProcessor
 from ..indexing.processor import ProcessingStats
 from .progressive_metadata import ProgressiveMetadata
 from .git_topology_service import GitTopologyService
-from .smart_branch_indexer import SmartBranchIndexer
+
+# Removed: SmartBranchIndexer (abandoned code)
 from .branch_aware_indexer import BranchAwareIndexer
+from .indexing_lock import IndexingLockError, create_indexing_lock
+from .high_throughput_processor import HighThroughputProcessor
+from .vector_calculation_manager import get_default_thread_count
+from .git_hook_manager import GitHookManager
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +73,8 @@ class RollingAverage:
         return len(self.values)
 
 
-class SmartIndexer(GitAwareDocumentProcessor):
-    """Smart indexer with progressive metadata and resumability."""
+class SmartIndexer(HighThroughputProcessor):
+    """Smart indexer with progressive metadata and resumability using high-throughput queue-based processing."""
 
     def __init__(
         self,
@@ -79,14 +88,18 @@ class SmartIndexer(GitAwareDocumentProcessor):
 
         # Initialize branch topology services
         self.git_topology_service = GitTopologyService(config.codebase_dir)
-        self.smart_branch_indexer = SmartBranchIndexer(
-            config, embedding_provider, qdrant_client, self.git_topology_service
-        )
+        # Removed: SmartBranchIndexer initialization (abandoned code)
 
         # Initialize new branch-aware indexer with graph optimization
         self.branch_aware_indexer = BranchAwareIndexer(
             qdrant_client, embedding_provider, self.text_chunker, config
         )
+
+        # Configure branch tracking
+        self.branch_aware_indexer.metadata_file = metadata_path
+
+        # Initialize git hook manager for branch change detection
+        self.git_hook_manager = GitHookManager(config.codebase_dir, metadata_path)
 
     def smart_index(
         self,
@@ -97,6 +110,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
         safety_buffer_seconds: int = 60,
         files_count_to_process: Optional[int] = None,
         quiet: bool = False,
+        vector_thread_count: Optional[int] = None,
     ) -> ProcessingStats:
         """
         Smart indexing that automatically chooses between full and incremental indexing.
@@ -111,11 +125,28 @@ class SmartIndexer(GitAwareDocumentProcessor):
         Returns:
             ProcessingStats with operation results
         """
+        # Create indexing lock to prevent concurrent operations
+        metadata_dir = self.progressive_metadata.metadata_path.parent
+        indexing_lock = create_indexing_lock(metadata_dir)
+
+        try:
+            # Acquire lock before starting indexing
+            indexing_lock.acquire(str(self.config.codebase_dir))
+        except IndexingLockError as e:
+            raise RuntimeError(str(e))
+
         try:
             # Get current git status
             git_status = self.get_git_status()
             provider_name = self.embedding_provider.get_provider_name()
             model_name = self.embedding_provider.get_current_model()
+
+            # Ensure git hook is installed for branch change detection
+            try:
+                self.git_hook_manager.ensure_hook_installed()
+            except Exception as e:
+                logger.warning(f"Failed to install git hook for branch tracking: {e}")
+                # Continue without hook - branch tracking will fall back to git subprocess
 
             # Check for branch topology optimization (only if not forcing full and collection exists)
             if not force_full:
@@ -162,6 +193,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                             unchanged_files=analysis.files_to_update_metadata,
                             collection_name=collection_name,
                             progress_callback=progress_callback,
+                            vector_thread_count=vector_thread_count,
                         )
 
                         # Convert to ProcessingStats format
@@ -199,7 +231,36 @@ class SmartIndexer(GitAwareDocumentProcessor):
                             )
                         # Fall through to standard indexing on error
 
-            # Check for reconcile operation first
+            # Check for interrupted operations first - highest priority (unless forcing full)
+            if (
+                not force_full
+                and self.progressive_metadata.can_resume_interrupted_operation()
+            ):
+                if progress_callback:
+                    # Get preview stats for initial feedback
+                    metadata_stats = self.progressive_metadata.get_stats()
+                    completed = metadata_stats.get("files_processed", 0)
+                    total = metadata_stats.get("total_files_to_index", 0)
+                    remaining = metadata_stats.get("remaining_files", 0)
+                    chunks_so_far = metadata_stats.get("chunks_indexed", 0)
+
+                    progress_callback(
+                        0,
+                        0,
+                        Path(""),
+                        info=f"🔄 Resuming interrupted operation: {completed}/{total} files completed ({chunks_so_far} chunks), {remaining} files remaining",
+                    )
+                return self._do_resume_interrupted(
+                    batch_size,
+                    progress_callback,
+                    git_status,
+                    provider_name,
+                    model_name,
+                    quiet,
+                    vector_thread_count,
+                )
+
+            # Check for reconcile operation
             if reconcile_with_database:
                 return self._do_reconcile_with_database(
                     batch_size,
@@ -209,6 +270,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                     model_name,
                     files_count_to_process,
                     quiet,
+                    vector_thread_count,
                 )
 
             # Determine indexing strategy
@@ -220,6 +282,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                     provider_name,
                     model_name,
                     quiet,
+                    vector_thread_count,
                 )
 
             # Check if we need to force full index due to configuration changes
@@ -240,6 +303,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                     provider_name,
                     model_name,
                     quiet,
+                    vector_thread_count,
                 )
 
             # Try incremental indexing
@@ -251,11 +315,19 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 model_name,
                 safety_buffer_seconds,
                 quiet,
+                vector_thread_count,
             )
 
+        except KeyboardInterrupt:
+            # User cancellation should NOT mark as failed - leave in resumable state
+            logger.info("Indexing operation was cancelled by user - can be resumed")
+            raise
         except Exception as e:
             self.progressive_metadata.fail_indexing(str(e))
             raise
+        finally:
+            # Always release the lock, even on exception
+            indexing_lock.release()
 
     def _do_full_index(
         self,
@@ -265,14 +337,39 @@ class SmartIndexer(GitAwareDocumentProcessor):
         provider_name: str,
         model_name: str,
         quiet: bool = False,
+        vector_thread_count: Optional[int] = None,
     ) -> ProcessingStats:
         """Perform full indexing."""
 
-        # Ensure provider-aware collection exists and clear it
+        # Ensure provider-aware collection exists and get info before clearing
         collection_name = self.qdrant_client.ensure_provider_aware_collection(
             self.config, self.embedding_provider, quiet
         )
+
+        # Get collection info before clearing for meaningful feedback
+        try:
+            collection_info = self.qdrant_client.get_collection_info(collection_name)
+            points_before_clear = collection_info.get("points_count", 0)
+        except Exception:
+            points_before_clear = 0
+
+        # Clear collection and provide meaningful feedback
         self.qdrant_client.clear_collection(collection_name)
+        if progress_callback and points_before_clear > 0:
+            progress_callback(
+                0,
+                0,
+                Path(""),
+                info=f"🗑️  Cleared collection '{collection_name}' ({points_before_clear} documents removed)",
+            )
+        elif progress_callback:
+            progress_callback(
+                0,
+                0,
+                Path(""),
+                info=f"🗑️  Cleared collection '{collection_name}' (collection was empty)",
+            )
+
         self.progressive_metadata.clear()
 
         # Start indexing
@@ -291,7 +388,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
         # Get current branch for indexing
         current_branch = self.git_topology_service.get_current_branch() or "master"
 
-        # Use BranchAwareIndexer for consistent architecture
+        # Use BranchAwareIndexer for git-aware processing with parallel embeddings
         try:
             # Convert absolute paths to relative paths for BranchAwareIndexer
             relative_files = []
@@ -316,6 +413,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 unchanged_files=[],
                 collection_name=collection_name,
                 progress_callback=progress_callback,
+                vector_thread_count=vector_thread_count,
             )
 
             # Convert BranchIndexingResult to ProcessingStats
@@ -332,7 +430,11 @@ class SmartIndexer(GitAwareDocumentProcessor):
             )
             # Fallback to standard processing
             stats = self._process_files_with_metadata(
-                files_to_index, batch_size, progress_callback, resumable=True
+                files_to_index,
+                batch_size,
+                progress_callback,
+                resumable=True,
+                vector_thread_count=vector_thread_count,
             )
 
         # Mark as completed
@@ -349,6 +451,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
         model_name: str,
         safety_buffer_seconds: int,
         quiet: bool = False,
+        vector_thread_count: Optional[int] = None,
     ) -> ProcessingStats:
         """Perform incremental indexing."""
 
@@ -391,14 +494,23 @@ class SmartIndexer(GitAwareDocumentProcessor):
 
         if not files_to_index:
             # No files to update
+            if progress_callback:
+                progress_callback(
+                    0,
+                    0,
+                    Path(""),
+                    info="No files modified since last index - nothing to do",
+                )
             self.progressive_metadata.complete_indexing()
             return ProcessingStats()
 
+        # ⚠️  CRITICAL: Setup message MUST use total=0 to show as ℹ️ message, not progress bar
         # Show what we're doing
         if progress_callback:
             safety_time = time.strftime(
                 "%Y-%m-%d %H:%M:%S", time.localtime(resume_timestamp)
             )
+            # ⚠️  CRITICAL: total=0 makes this show as ℹ️ message in CLI
             progress_callback(
                 0,
                 0,
@@ -409,15 +521,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
         # Store file list for resumability
         self.progressive_metadata.set_files_to_index(files_to_index)
 
-        # Get current branch for indexing
-        current_branch = self.git_topology_service.get_current_branch() or "master"
-
-        # Get collection name (already ensured above)
-        collection_name = self.qdrant_client.resolve_collection_name(
-            self.config, self.embedding_provider
-        )
-
-        # Use BranchAwareIndexer for consistent architecture
+        # Use BranchAwareIndexer for git-aware processing with parallel embeddings (SINGLE PROCESSING PATH)
         try:
             # Convert absolute paths to relative paths for BranchAwareIndexer
             relative_files = []
@@ -435,6 +539,14 @@ class SmartIndexer(GitAwareDocumentProcessor):
                     # Path is not within codebase_dir, use as-is (shouldn't happen in normal usage)
                     relative_files.append(str(f))
 
+            # Get current branch for indexing
+            current_branch = self.git_topology_service.get_current_branch() or "master"
+
+            # Ensure collection exists
+            collection_name = self.qdrant_client.resolve_collection_name(
+                self.config, self.embedding_provider
+            )
+
             branch_result = self.branch_aware_indexer.index_branch_changes(
                 old_branch="",  # No old branch for incremental
                 new_branch=current_branch,
@@ -442,6 +554,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 unchanged_files=[],
                 collection_name=collection_name,
                 progress_callback=progress_callback,
+                vector_thread_count=vector_thread_count,
             )
 
             # Convert BranchIndexingResult to ProcessingStats
@@ -454,11 +567,15 @@ class SmartIndexer(GitAwareDocumentProcessor):
 
         except Exception as e:
             logger.warning(
-                f"BranchAwareIndexer failed during incremental index, falling back to standard indexing: {e}"
+                f"BranchAwareIndexer failed during incremental indexing, falling back to standard indexing: {e}"
             )
             # Fallback to standard processing
             stats = self._process_files_with_metadata(
-                files_to_index, batch_size, progress_callback, resumable=True
+                files_to_index,
+                batch_size,
+                progress_callback,
+                resumable=True,
+                vector_thread_count=vector_thread_count,
             )
 
         # Mark as completed
@@ -475,6 +592,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
         model_name: str,
         files_count_to_process: Optional[int] = None,
         quiet: bool = False,
+        vector_thread_count: Optional[int] = None,
     ) -> ProcessingStats:
         """Reconcile disk files with database contents and index missing/modified files."""
 
@@ -488,6 +606,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
 
         if not all_files_to_index:
             if progress_callback:
+                # ⚠️  CRITICAL: total=0 makes this show as ℹ️ message in CLI
                 progress_callback(0, 0, Path(""), info="No files found to index")
             return ProcessingStats()
 
@@ -569,19 +688,20 @@ class SmartIndexer(GitAwareDocumentProcessor):
 
         except Exception as e:
             if progress_callback:
+                # ⚠️  CRITICAL: total=0 makes this show as ℹ️ message in CLI
                 progress_callback(
                     0, 0, Path(""), info=f"Database query failed: {e}, doing full index"
                 )
             # If database query fails, do full index
             indexed_files_with_timestamps = {}
 
-        # Debug: Show what was found in database
+        # Show what was found in database with meaningful reconcile feedback
         if progress_callback:
             progress_callback(
                 0,
                 0,
                 Path(""),
-                info=f"Found {len(indexed_files_with_timestamps)} files in database collection '{collection_name}'",
+                info=f"📊 Found {len(indexed_files_with_timestamps)} files in database collection '{collection_name}', {len(all_files_to_index)} files on disk",
             )
 
             # Debug: Show sample database timestamp format
@@ -657,7 +777,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                     0,
                     0,
                     Path(""),
-                    info="All files up-to-date - no reconciliation needed",
+                    info=f"✅ All {len(all_files_to_index)} files up-to-date - no reconciliation needed",
                 )
             return ProcessingStats()
 
@@ -691,14 +811,14 @@ class SmartIndexer(GitAwareDocumentProcessor):
                     0,
                     0,
                     Path(""),
-                    info=f"Reconcile: {already_indexed}/{total_files} files up-to-date, indexing {status_str}",
+                    info=f"🔍 Reconcile: {already_indexed}/{total_files} files up-to-date, indexing {to_index} files ({status_str})",
                 )
             else:
                 progress_callback(
                     0,
                     0,
                     Path(""),
-                    info=f"Reconcile: {already_indexed}/{total_files} files up-to-date, indexing {to_index} files",
+                    info=f"🔍 Reconcile: {already_indexed}/{total_files} files up-to-date, indexing {to_index} files",
                 )
 
         # Start/update indexing metadata
@@ -710,15 +830,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
         # Store file list for resumability
         self.progressive_metadata.set_files_to_index(files_to_index)
 
-        # Get current branch for indexing
-        current_branch = self.git_topology_service.get_current_branch() or "master"
-
-        # Get collection name (already ensured above)
-        collection_name = self.qdrant_client.resolve_collection_name(
-            self.config, self.embedding_provider
-        )
-
-        # Use BranchAwareIndexer for consistent architecture
+        # Use BranchAwareIndexer for git-aware processing with parallel embeddings (SINGLE PROCESSING PATH)
         try:
             # Convert absolute paths to relative paths for BranchAwareIndexer
             relative_files = []
@@ -736,6 +848,9 @@ class SmartIndexer(GitAwareDocumentProcessor):
                     # Path is not within codebase_dir, use as-is (shouldn't happen in normal usage)
                     relative_files.append(str(f))
 
+            # Get current branch for indexing
+            current_branch = self.git_topology_service.get_current_branch() or "master"
+
             branch_result = self.branch_aware_indexer.index_branch_changes(
                 old_branch="",  # No old branch for reconcile
                 new_branch=current_branch,
@@ -743,6 +858,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 unchanged_files=[],
                 collection_name=collection_name,
                 progress_callback=progress_callback,
+                vector_thread_count=vector_thread_count,
             )
 
             # Convert BranchIndexingResult to ProcessingStats
@@ -759,7 +875,11 @@ class SmartIndexer(GitAwareDocumentProcessor):
             )
             # Fallback to standard processing
             stats = self._process_files_with_metadata(
-                files_to_index, batch_size, progress_callback, resumable=True
+                files_to_index,
+                batch_size,
+                progress_callback,
+                resumable=True,
+                vector_thread_count=vector_thread_count,
             )
 
         # Mark as completed
@@ -775,6 +895,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
         provider_name: str,
         model_name: str,
         quiet: bool = False,
+        vector_thread_count: Optional[int] = None,
     ) -> ProcessingStats:
         """Resume a previously interrupted indexing operation."""
 
@@ -801,27 +922,21 @@ class SmartIndexer(GitAwareDocumentProcessor):
             self.progressive_metadata.complete_indexing()
             return ProcessingStats()
 
-        # Show what we're resuming
+        # Show what we're resuming with detailed feedback
         if progress_callback:
             metadata_stats = self.progressive_metadata.get_stats()
             completed = metadata_stats.get("files_processed", 0)
             total = metadata_stats.get("total_files_to_index", 0)
+            chunks_so_far = metadata_stats.get("chunks_indexed", 0)
+
             progress_callback(
                 0,
                 0,
                 Path(""),
-                info=f"Resuming interrupted operation: {completed}/{total} files completed, {len(existing_files)} remaining",
+                info=f"🔄 Resuming interrupted operation: {completed}/{total} files completed ({chunks_so_far} chunks), {len(existing_files)} files remaining",
             )
 
-        # Get current branch for indexing
-        current_branch = self.git_topology_service.get_current_branch() or "master"
-
-        # Get collection name (already ensured above)
-        collection_name = self.qdrant_client.resolve_collection_name(
-            self.config, self.embedding_provider
-        )
-
-        # Use BranchAwareIndexer for consistent architecture
+        # Use BranchAwareIndexer for git-aware processing with parallel embeddings (SINGLE PROCESSING PATH)
         try:
             # Convert absolute paths to relative paths for BranchAwareIndexer
             relative_files = []
@@ -839,6 +954,14 @@ class SmartIndexer(GitAwareDocumentProcessor):
                     # Path is not within codebase_dir, use as-is (shouldn't happen in normal usage)
                     relative_files.append(str(f))
 
+            # Get current branch for indexing
+            current_branch = self.git_topology_service.get_current_branch() or "master"
+
+            # Ensure collection exists
+            collection_name = self.qdrant_client.resolve_collection_name(
+                self.config, self.embedding_provider
+            )
+
             branch_result = self.branch_aware_indexer.index_branch_changes(
                 old_branch="",  # No old branch for resume
                 new_branch=current_branch,
@@ -846,6 +969,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 unchanged_files=[],
                 collection_name=collection_name,
                 progress_callback=progress_callback,
+                vector_thread_count=vector_thread_count,
             )
 
             # Convert BranchIndexingResult to ProcessingStats
@@ -862,7 +986,11 @@ class SmartIndexer(GitAwareDocumentProcessor):
             )
             # Fallback to standard processing
             stats = self._process_files_with_metadata(
-                existing_files, batch_size, progress_callback, resumable=True
+                existing_files,
+                batch_size,
+                progress_callback,
+                resumable=True,
+                vector_thread_count=vector_thread_count,
             )
 
         # Mark as completed
@@ -876,29 +1004,12 @@ class SmartIndexer(GitAwareDocumentProcessor):
         batch_size: int,
         progress_callback: Optional[Callable],
         resumable: bool = False,
+        vector_thread_count: Optional[int] = None,
     ) -> ProcessingStats:
         """Process files with progressive metadata updates and throughput monitoring."""
 
         stats = ProcessingStats()
         stats.start_time = time.time()
-
-        batch_points = []
-
-        # Throughput tracking with rolling averages
-        throughput_window_start = time.time()
-        throughput_window_files = 0
-        throughput_window_chunks = 0
-        throughput_window_size = 60.0  # 1 minute window
-        last_throttle_check = time.time()
-        current_throughput_stats = ThroughputStats()  # Cache current stats
-
-        # Rolling averages for stable time estimation
-        files_per_min_rolling = RollingAverage(window_size=10)
-        chunks_per_min_rolling = RollingAverage(window_size=10)
-        processing_time_rolling = RollingAverage(window_size=15)
-
-        # Track processing time per file
-        individual_file_times = []
 
         def update_metadata(file_path: Path, chunks_count=0, failed=False):
             """Update metadata after each file."""
@@ -918,192 +1029,41 @@ class SmartIndexer(GitAwareDocumentProcessor):
                     failed_files=1 if failed else 0,
                 )
 
-        def calculate_throughput(files_remaining: int = 0) -> ThroughputStats:
-            """Calculate current throughput and detect throttling with rolling averages."""
-            current_time = time.time()
-            elapsed = current_time - throughput_window_start
+        # Use queue-based high-throughput processing for all code paths
+        if vector_thread_count is None:
+            vector_thread_count = get_default_thread_count(self.embedding_provider)
 
-            if elapsed <= 0:
-                return ThroughputStats()
+        # Process all files using queue-based high-throughput approach
+        high_throughput_stats = self.process_files_high_throughput(
+            files,
+            vector_thread_count=vector_thread_count,
+            batch_size=batch_size,
+            progress_callback=progress_callback,
+        )
 
-            # Calculate current window rates
-            current_files_per_min = (throughput_window_files / elapsed) * 60
-            current_chunks_per_min = (throughput_window_chunks / elapsed) * 60
-            current_avg_time_per_file = elapsed / max(throughput_window_files, 1)
+        # Update metadata for all files based on success/failure
+        successful_files = high_throughput_stats.files_processed
 
-            # Add to rolling averages
-            if throughput_window_files > 0:
-                files_per_min_rolling.add(current_files_per_min)
-                chunks_per_min_rolling.add(current_chunks_per_min)
-                processing_time_rolling.add(current_avg_time_per_file)
-
-            # Use rolling averages for stability
-            stable_files_per_min = files_per_min_rolling.get_average()
-            stable_chunks_per_min = chunks_per_min_rolling.get_average()
-            stable_avg_time_per_file = processing_time_rolling.get_average()
-
-            # Calculate estimated time remaining using rolling average
-            estimated_time_remaining = 0.0
-            if stable_files_per_min > 0 and files_remaining > 0:
-                estimated_time_remaining = (files_remaining / stable_files_per_min) * 60
-
-            # Detect throttling by checking embedding provider
-            is_throttling = False
-            throttle_reason = ""
-
-            # Check if we're using VoyageAI and detect rate limiting
-            provider_name = self.embedding_provider.get_provider_name()
-            if provider_name == "voyage-ai":
-                # Check if rate limiter indicates throttling
-                if hasattr(self.embedding_provider, "rate_limiter"):
-                    rate_limiter = self.embedding_provider.rate_limiter
-                    wait_time = rate_limiter.wait_time(100)  # Estimate for 100 tokens
-                    if wait_time > 0.5:  # If we need to wait more than 0.5 seconds
-                        is_throttling = True
-                        throttle_reason = f"API rate limiting (wait: {wait_time:.1f}s)"
-                    elif rate_limiter.request_tokens < 10:  # Low on request tokens
-                        is_throttling = True
-                        throttle_reason = "API request quota running low"
-
-            # Detect slow processing (could indicate network issues or service slowdown)
-            if (
-                stable_avg_time_per_file > 5.0 and not is_throttling
-            ):  # More than 5 seconds per file
-                is_throttling = True
-                throttle_reason = (
-                    f"Slow processing detected ({stable_avg_time_per_file:.1f}s/file)"
-                )
-
-            return ThroughputStats(
-                files_per_minute=stable_files_per_min,
-                chunks_per_minute=stable_chunks_per_min,
-                embedding_requests_per_minute=stable_chunks_per_min,  # Assuming 1 request per chunk
-                is_throttling=is_throttling,
-                throttle_reason=throttle_reason,
-                average_processing_time_per_file=stable_avg_time_per_file,
-                estimated_time_remaining_seconds=estimated_time_remaining,
-            )
+        # For successful files, estimate chunks per file
+        chunks_per_file = (
+            high_throughput_stats.chunks_created // successful_files
+            if successful_files > 0
+            else 0
+        )
 
         for i, file_path in enumerate(files):
-            points = []
-            file_start_time = time.time()
-
-            try:
-                # Process file
-                points = self.process_file(file_path)
-
-                if points:
-                    batch_points.extend(points)
-                    stats.chunks_created += len(points)
-                    throughput_window_chunks += len(points)
-
-                stats.files_processed += 1
+            if i < successful_files:
+                # File was processed successfully
+                update_metadata(file_path, chunks_count=chunks_per_file, failed=False)
                 stats.total_size += file_path.stat().st_size
-                throughput_window_files += 1
-
-                # Track individual file processing time
-                file_processing_time = time.time() - file_start_time
-                individual_file_times.append(file_processing_time)
-
-                # Process batch if full
-                if len(batch_points) >= batch_size:
-                    if not self.qdrant_client.upsert_points(batch_points):
-                        raise RuntimeError("Failed to upload batch to Qdrant")
-                    batch_points = []
-
-                # Update metadata after successful processing
-                update_metadata(file_path, chunks_count=len(points), failed=False)
-
-                # Calculate throughput: initially after first 5 files, then every 30 seconds or every 50 files
-                current_time = time.time()
-                should_calculate = False
-
-                if (
-                    i < 5
-                ):  # First 5 files - calculate more frequently for early estimates
-                    should_calculate = (i > 0) and (i % 2 == 0)
-                elif (current_time - last_throttle_check > 30) or (i % 50 == 0):
-                    should_calculate = True
-
-                if should_calculate:
-                    files_remaining = len(files) - (i + 1)
-                    current_throughput_stats = calculate_throughput(files_remaining)
-                    last_throttle_check = current_time
-
-                    # Reset throughput window if it's been more than window size
-                    if current_time - throughput_window_start > throughput_window_size:
-                        throughput_window_start = current_time
-                        throughput_window_files = 0
-                        throughput_window_chunks = 0
-
-                # Call progress callback with enhanced info including time estimate
-                if progress_callback:
-                    # Create enhanced info string from cached stats
-                    info_parts = []
-                    if current_throughput_stats.files_per_minute > 0:
-                        info_parts.append(
-                            f"{current_throughput_stats.files_per_minute:.1f} files/min"
-                        )
-                    if current_throughput_stats.chunks_per_minute > 0:
-                        info_parts.append(
-                            f"{current_throughput_stats.chunks_per_minute:.1f} chunks/min"
-                        )
-
-                    # Add estimated time remaining
-                    if current_throughput_stats.estimated_time_remaining_seconds > 0:
-                        remaining_minutes = (
-                            current_throughput_stats.estimated_time_remaining_seconds
-                            / 60
-                        )
-                        if remaining_minutes >= 60:
-                            hours = int(remaining_minutes // 60)
-                            mins = int(remaining_minutes % 60)
-                            info_parts.append(f"⏱️ {hours}h{mins}m left")
-                        elif remaining_minutes >= 1:
-                            info_parts.append(f"⏱️ {remaining_minutes:.0f}m left")
-                        else:
-                            info_parts.append(
-                                f"⏱️ {current_throughput_stats.estimated_time_remaining_seconds:.0f}s left"
-                            )
-
-                    if current_throughput_stats.is_throttling:
-                        info_parts.append(
-                            f"🐌 {current_throughput_stats.throttle_reason}"
-                        )
-                    elif (
-                        current_throughput_stats.files_per_minute > 60
-                    ):  # Fast processing
-                        info_parts.append("🚀 Full speed")
-
-                    info = " | ".join(info_parts) if info_parts else None
-                    result = progress_callback(i + 1, len(files), file_path, info=info)
-
-                    # Check if we've been interrupted
-                    if result == "INTERRUPT":
-                        break
-
-            except Exception as e:
-                stats.failed_files += 1
-
-                # Track failed file processing time too
-                file_processing_time = time.time() - file_start_time
-                individual_file_times.append(file_processing_time)
-
-                # Update metadata even for failed files
+            else:
+                # File was not processed successfully
                 update_metadata(file_path, chunks_count=0, failed=True)
 
-                if progress_callback:
-                    result = progress_callback(
-                        i + 1, len(files), file_path, error=str(e)
-                    )
-                    # Check if we've been interrupted even on error
-                    if result == "INTERRUPT":
-                        break
-
-        # Process remaining points
-        if batch_points:
-            if not self.qdrant_client.upsert_points(batch_points):
-                raise RuntimeError("Failed to upload final batch to Qdrant")
+        # Convert high-throughput stats to processing stats format
+        stats.files_processed = high_throughput_stats.files_processed
+        stats.chunks_created = high_throughput_stats.chunks_created
+        stats.failed_files = high_throughput_stats.failed_files
 
         stats.end_time = time.time()
         return stats
@@ -1114,9 +1074,14 @@ class SmartIndexer(GitAwareDocumentProcessor):
 
     def can_resume(self) -> bool:
         """Check if indexing can be resumed."""
+        # Check both interrupted operations and general incremental resume capability
         stats = self.progressive_metadata.get_stats()
-        can_resume = stats.get("can_resume", False)
-        return bool(can_resume)
+        can_resume_incremental = stats.get("can_resume", False)
+        can_resume_interrupted = (
+            self.progressive_metadata.can_resume_interrupted_operation()
+        )
+
+        return can_resume_incremental or can_resume_interrupted
 
     def clear_progress(self):
         """Clear progress metadata (for fresh start)."""
@@ -1149,7 +1114,11 @@ class SmartIndexer(GitAwareDocumentProcessor):
             return False
 
     def process_files_incrementally(
-        self, file_paths: List[str], force_reprocess: bool = False, quiet: bool = False
+        self,
+        file_paths: List[str],
+        force_reprocess: bool = False,
+        quiet: bool = False,
+        vector_thread_count: Optional[int] = None,
     ) -> ProcessingStats:
         """Process specific files incrementally using git-aware indexing.
 
@@ -1172,10 +1141,7 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 if abs_path.exists():
                     absolute_paths.append(abs_path)
                 else:
-                    # File was deleted - handle it
-                    collection_name = self.qdrant_client.resolve_collection_name(
-                        self.config, self.embedding_provider
-                    )
+                    # File was deleted - handle cleanup
                     self.qdrant_client.delete_by_filter(
                         {"must": [{"key": "path", "match": {"value": file_path}}]}
                     )
@@ -1185,15 +1151,6 @@ class SmartIndexer(GitAwareDocumentProcessor):
             if not absolute_paths:
                 stats.end_time = time.time()
                 return stats
-
-            # Get current git state using git topology service
-            git_state = self.git_topology_service.get_current_state()
-            current_branch = git_state.get("current_branch", "unknown")
-
-            # Use BranchAwareIndexer for git-aware processing
-            collection_name = self.qdrant_client.resolve_collection_name(
-                self.config, self.embedding_provider
-            )
 
             # Convert to relative paths for indexer
             relative_files = []
@@ -1205,20 +1162,54 @@ class SmartIndexer(GitAwareDocumentProcessor):
                 except ValueError:
                     continue
 
-            if relative_files:
-                branch_result = self.branch_aware_indexer.index_branch_changes(
-                    old_branch="",  # No old branch for incremental processing
-                    new_branch=current_branch,
-                    changed_files=relative_files,
-                    unchanged_files=[],
-                    collection_name=collection_name,
-                    progress_callback=None,  # No progress callback for incremental processing
-                )
+            if absolute_paths:
+                # Use BranchAwareIndexer for git-aware processing with parallel embeddings (SINGLE PROCESSING PATH)
+                try:
+                    # Get current branch for indexing
+                    current_branch = (
+                        self.git_topology_service.get_current_branch() or "master"
+                    )
 
-                # Convert BranchIndexingResult to ProcessingStats
-                stats.files_processed = branch_result.files_processed
-                stats.chunks_created = branch_result.content_points_created
-                stats.failed_files = 0
+                    # Ensure collection exists
+                    collection_name = self.qdrant_client.resolve_collection_name(
+                        self.config, self.embedding_provider
+                    )
+
+                    branch_result = self.branch_aware_indexer.index_branch_changes(
+                        old_branch="",  # No old branch for process files incrementally
+                        new_branch=current_branch,
+                        changed_files=relative_files,
+                        unchanged_files=[],
+                        collection_name=collection_name,
+                        progress_callback=None,  # No progress callback for incremental processing
+                        vector_thread_count=vector_thread_count,
+                    )
+
+                    # Convert BranchIndexingResult to ProcessingStats
+                    stats.files_processed = branch_result.files_processed
+                    stats.chunks_created = branch_result.content_points_created
+                    stats.failed_files = 0
+
+                except Exception as e:
+                    logger.warning(
+                        f"BranchAwareIndexer failed during process_files_incrementally, falling back to standard indexing: {e}"
+                    )
+                    # Fallback to HighThroughputProcessor
+                    thread_count = vector_thread_count or get_default_thread_count(
+                        self.embedding_provider
+                    )
+
+                    high_throughput_stats = self.process_files_high_throughput(
+                        absolute_paths,
+                        vector_thread_count=thread_count,
+                        batch_size=50,  # Default batch size
+                        progress_callback=None,  # No progress callback for incremental processing
+                    )
+
+                    # Convert to ProcessingStats format
+                    stats.files_processed = high_throughput_stats.files_processed
+                    stats.chunks_created = high_throughput_stats.chunks_created
+                    stats.failed_files = high_throughput_stats.failed_files
 
                 if not quiet:
                     logger.info(

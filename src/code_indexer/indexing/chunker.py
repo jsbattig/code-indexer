@@ -20,12 +20,15 @@ class TextChunker:
         language_splitters = {
             # Programming languages
             "py": [
-                r"\n\ndef ",
-                r"\nclass ",
-                r"\nasync def ",
-                r"\n# ",
-                r'\n"""',
-                r"\n'''",
+                # Use more complete patterns to avoid tiny fragments
+                r"\n\ndef [a-zA-Z_][a-zA-Z0-9_]*",  # Complete function definitions (including underscores)
+                r"\n\nclass [a-zA-Z_][a-zA-Z0-9_]*",  # Complete class definitions (including underscores)
+                r"\n\nasync def [a-zA-Z_][a-zA-Z0-9_]*",  # Complete async function definitions
+                r"\n# [A-Z][^\\n]{10,}",  # Substantial comment sections (10+ chars, starting with capital)
+                r"\nif __name__",  # Main execution blocks
+                # Remove docstring splitters that create fragments
+                # r'\n"""',  # REMOVED - creates tiny fragments
+                # r"\n'''",  # REMOVED - creates tiny fragments
             ],
             "js": [
                 r"\nfunction ",
@@ -275,30 +278,97 @@ class TextChunker:
             else:
                 final_chunks.extend(self._fallback_split(chunk))
 
-        # Create chunk metadata
-        result = []
+        # Filter out tiny chunks and merge them with adjacent chunks
+        MIN_CHUNK_SIZE = 100  # Minimum meaningful chunk size
+        filtered_chunks: List[str] = []
+
         for i, chunk_text in enumerate(final_chunks):
             chunk_text = chunk_text.strip()
-            if chunk_text:  # Skip empty chunks
-                # Add file context to chunk if it's not too long
-                contextual_chunk = chunk_text
-                if file_path and len(chunk_text) < self.chunk_size - 100:
-                    file_info = f"// File: {file_path.name}\n"
-                    if len(file_info + chunk_text) <= self.chunk_size:
-                        contextual_chunk = file_info + chunk_text
+            if not chunk_text:  # Skip empty chunks
+                continue
 
-                result.append(
-                    {
-                        "text": contextual_chunk,
-                        "chunk_index": i,
-                        "total_chunks": len(final_chunks),
-                        "size": len(contextual_chunk),
-                        "file_path": str(file_path) if file_path else None,
-                        "file_extension": file_extension,
-                    }
-                )
+            # Check if this chunk is too small and might be a fragment
+            if len(chunk_text) < MIN_CHUNK_SIZE:
+                # Try to merge with the previous chunk if it exists and won't exceed chunk_size
+                if (
+                    filtered_chunks
+                    and len(filtered_chunks[-1] + "\n" + chunk_text) <= self.chunk_size
+                ):
+                    filtered_chunks[-1] = filtered_chunks[-1] + "\n" + chunk_text
+                    continue
+                # Try to merge with next chunk if available
+                elif (
+                    i + 1 < len(final_chunks)
+                    and len(chunk_text + "\n" + final_chunks[i + 1].strip())
+                    <= self.chunk_size
+                ):
+                    # Merge with next chunk by skipping this one and merging into next iteration
+                    final_chunks[i + 1] = chunk_text + "\n" + final_chunks[i + 1]
+                    continue
+                # If we can't merge, only keep it if it has substantial content
+                elif not self._is_fragment(chunk_text):
+                    filtered_chunks.append(chunk_text)
+                # Otherwise drop the tiny fragment
+            else:
+                filtered_chunks.append(chunk_text)
+
+        # Create chunk metadata
+        result = []
+        for i, chunk_text in enumerate(filtered_chunks):
+            # Add file context to chunk if it's not too long
+            contextual_chunk = chunk_text
+            if file_path and len(chunk_text) < self.chunk_size - 100:
+                file_info = f"// File: {file_path.name}\n"
+                if len(file_info + chunk_text) <= self.chunk_size:
+                    contextual_chunk = file_info + chunk_text
+
+            result.append(
+                {
+                    "text": contextual_chunk,
+                    "chunk_index": i,
+                    "total_chunks": len(filtered_chunks),
+                    "size": len(contextual_chunk),
+                    "file_path": str(file_path) if file_path else None,
+                    "file_extension": file_extension,
+                }
+            )
 
         return result
+
+    def _is_fragment(self, text: str) -> bool:
+        """Check if text is likely a meaningless fragment that should be dropped."""
+        text = text.strip()
+
+        # Remove file header for checking
+        if text.startswith("// File:"):
+            lines = text.split("\n", 1)
+            if len(lines) > 1:
+                text = lines[1].strip()
+            else:
+                return True  # Only file header, definitely a fragment
+
+        # Check for common fragment patterns
+        fragment_patterns = [
+            r'^"""$',  # Just docstring delimiter
+            r"^'''$",  # Just docstring delimiter
+            r"^def$",  # Just 'def' keyword
+            r"^class$",  # Just 'class' keyword
+            r"^async def$",  # Just 'async def' keywords
+            r"^def \w+$",  # Just function name without signature
+            r"^class \w+$",  # Just class name without body
+        ]
+
+        for pattern in fragment_patterns:
+            if re.match(pattern, text):
+                return True
+
+        # If it's very short and doesn't contain meaningful content, it's likely a fragment
+        if len(text) < 20 and not any(
+            char in text for char in ["{", "}", "(", ")", "=", ":", ";"]
+        ):
+            return True
+
+        return False
 
     def chunk_file(self, file_path: Path) -> List[Dict[str, Any]]:
         """Read and chunk a file."""

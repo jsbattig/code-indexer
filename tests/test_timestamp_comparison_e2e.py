@@ -59,6 +59,9 @@ def test_config(temp_project_dir):
     config.indexing.chunk_size = 200
     config.indexing.max_file_size = 10000
 
+    # Configure a reliable embedding provider for E2E tests
+    config.embedding_provider = "voyage-ai"
+
     config_manager = ConfigManager(config_dir / "config.json")
     config_manager.save(config)
 
@@ -70,18 +73,85 @@ def smart_indexer(test_config):
     """Create SmartIndexer with test configuration."""
     config = test_config.load()
 
-    # Initialize services
+    # Initialize services using test infrastructure
     from rich.console import Console
+    from .test_infrastructure import ServiceManager, EmbeddingProvider
 
     console = Console(quiet=True)
+
+    # Use ServiceManager to ensure services are running with proper setup
+    service_manager = ServiceManager()
+
+    # Ensure services are ready for E2E test - no skipping allowed
+    services_ready = service_manager.ensure_services_ready(
+        embedding_provider=EmbeddingProvider.VOYAGE_AI, working_dir=config.codebase_dir
+    )
+
+    if not services_ready:
+        # Try force recreation if first attempt failed
+        print("First attempt failed, trying force recreation...")
+        services_ready = service_manager.ensure_services_ready(
+            embedding_provider=EmbeddingProvider.VOYAGE_AI,
+            working_dir=config.codebase_dir,
+            force_recreate=True,
+        )
+
+    assert (
+        services_ready
+    ), "Failed to ensure services are ready for E2E test after all attempts"
+
     embedding_provider = EmbeddingProviderFactory.create(config, console)
     qdrant_client = QdrantClient(config.qdrant, console)
 
-    # Health checks
+    # Wait a moment for services to be fully ready
+    import time
+
+    time.sleep(2)
+
+    # Verify services are actually running after ServiceManager setup
     if not embedding_provider.health_check():
-        pytest.skip("Embedding provider not available")
+        # Try one more time after a brief wait
+        time.sleep(3)
+        if not embedding_provider.health_check():
+            # Try force recreation as last resort
+            print(
+                "Embedding provider health check failed, attempting force recreation..."
+            )
+            services_ready = service_manager.ensure_services_ready(
+                embedding_provider=EmbeddingProvider.VOYAGE_AI,
+                working_dir=config.codebase_dir,
+                force_recreate=True,
+            )
+            assert (
+                services_ready
+            ), "Failed to ensure embedding provider is ready even after force recreation"
+
+            # Reinitialize the embedding provider after force recreation
+            embedding_provider = EmbeddingProviderFactory.create(config, console)
+            assert (
+                embedding_provider.health_check()
+            ), "Embedding provider still not healthy after force recreation"
+
     if not qdrant_client.health_check():
-        pytest.skip("Qdrant service not available")
+        # Try one more time after a brief wait
+        time.sleep(3)
+        if not qdrant_client.health_check():
+            # Try force recreation as last resort
+            print("Qdrant health check failed, attempting force recreation...")
+            services_ready = service_manager.ensure_services_ready(
+                embedding_provider=EmbeddingProvider.VOYAGE_AI,
+                working_dir=config.codebase_dir,
+                force_recreate=True,
+            )
+            assert (
+                services_ready
+            ), "Failed to ensure Qdrant is ready even after force recreation"
+
+            # Reinitialize the qdrant client after force recreation
+            qdrant_client = QdrantClient(config.qdrant, console)
+            assert (
+                qdrant_client.health_check()
+            ), "Qdrant still not healthy after force recreation"
 
     metadata_path = test_config.config_path.parent / "metadata.json"
     indexer = SmartIndexer(config, embedding_provider, qdrant_client, metadata_path)

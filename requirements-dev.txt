@@ -1,0 +1,21 @@
+# Development dependencies for code-indexer
+# Install with: pip install -r requirements-dev.txt
+
+# Include production dependencies
+-r requirements.txt
+
+# Testing framework and plugins
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.0.0
+
+# Type checking
+mypy>=1.0.0
+types-PyYAML>=6.0.0
+
+# Code formatting and linting
+black>=23.0.0
+ruff>=0.0.280
+
+# Git hooks for code quality
+pre-commit>=3.0.0

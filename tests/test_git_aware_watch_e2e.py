@@ -157,7 +157,15 @@ class TestGitAwareWatchE2E:
             working_dir=self.temp_dir
         )
         if not services_ready:
-            pytest.skip("Could not start required services for watch testing")
+            # Try force recreation as last resort
+            print("Initial service setup failed, attempting force recreation...")
+            services_ready = self.service_manager.ensure_services_ready(
+                working_dir=self.temp_dir,
+                force_recreate=True,
+            )
+            assert (
+                services_ready
+            ), "Failed to ensure services are ready for watch testing even after force recreation"
 
         yield
 
@@ -268,8 +276,10 @@ This is a test project for git-aware watch functionality.
             watch_manager.start_watch(timeout=15)
 
             # Verify watch is running
+            assert watch_manager.process is not None, "Watch process should exist"
             assert (
-                watch_manager.process.poll() is None
+                watch_manager.process is not None
+                and watch_manager.process.poll() is None
             ), "Watch process should be running"
 
             # Check for successful startup in output
@@ -328,7 +338,8 @@ if __name__ == "__main__":
 
             # Verify watch is still running (main success criteria)
             assert (
-                watch_manager.process.poll() is None
+                watch_manager.process is not None
+                and watch_manager.process.poll() is None
             ), "Watch process should still be running"
 
             # Check that watch started successfully (look for startup messages)
@@ -370,7 +381,8 @@ class NewClass:
 
             # Verify watch is still running after file creation
             assert (
-                watch_manager.process.poll() is None
+                watch_manager.process is not None
+                and watch_manager.process.poll() is None
             ), "Watch should continue running after file creation"
 
             # Verify file was actually created
@@ -398,7 +410,8 @@ class NewClass:
 
             # Verify watch is still running after file deletion
             assert (
-                watch_manager.process.poll() is None
+                watch_manager.process is not None
+                and watch_manager.process.poll() is None
             ), "Watch should continue running after file deletion"
 
             # Verify file was actually deleted
@@ -435,7 +448,8 @@ def feature_function():
 
             # Verify watch is still running after branch change
             assert (
-                watch_manager.process.poll() is None
+                watch_manager.process is not None
+                and watch_manager.process.poll() is None
             ), "Watch should continue running after branch change"
 
             # Switch back to master (initial branch)
@@ -446,7 +460,8 @@ def feature_function():
 
             # Verify watch handled branch switch correctly
             assert (
-                watch_manager.process.poll() is None
+                watch_manager.process is not None
+                and watch_manager.process.poll() is None
             ), "Watch should continue running after branch switch back"
 
         finally:
@@ -515,11 +530,14 @@ def timestamp_test():
             ), "Timestamp should be updated in second session"
 
         finally:
-            if watch_manager.process and watch_manager.process.poll() is None:
+            if (
+                watch_manager.process is not None
+                and watch_manager.process.poll() is None
+            ):
                 watch_manager.stop_watch()
             if (
                 "watch_manager2" in locals()
-                and watch_manager2.process
+                and watch_manager2.process is not None
                 and watch_manager2.process.poll() is None
             ):
                 watch_manager2.stop_watch()
@@ -579,7 +597,8 @@ def main_feature():
 
             # Verify watch is still running after rapid changes
             assert (
-                watch_manager.process.poll() is None
+                watch_manager.process is not None
+                and watch_manager.process.poll() is None
             ), "Watch should handle rapid branch changes without crashing"
 
             # Verify master file was created (feature files are on other branches)
@@ -976,7 +995,8 @@ class PerfTestClass{i}:
 
             # Verify watch is still running after many file operations
             assert (
-                watch_manager.process.poll() is None
+                watch_manager.process is not None
+                and watch_manager.process.poll() is None
             ), "Watch should handle many file changes without crashing"
 
             # Verify all files were created
@@ -1033,7 +1053,8 @@ def memory_test_function_{cycle}_{i}_updated():
 
             # Verify watch is still running after extended operation
             assert (
-                watch_manager.process.poll() is None
+                watch_manager.process is not None
+                and watch_manager.process.poll() is None
             ), "Watch should handle extended operation without memory issues"
 
         finally:

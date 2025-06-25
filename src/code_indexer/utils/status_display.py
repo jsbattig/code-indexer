@@ -547,28 +547,13 @@ class FreeScrollStreamDisplay(BaseStatusDisplay):
             if not text.strip():
                 return
 
-            # Check if content contains markdown and render appropriately
-            if self._has_markdown_patterns(text):
-                try:
-                    # For markdown, use Rich rendering with readable links and better colors
-                    processed_text = _process_markdown_for_readability(text)
-
-                    # Create markdown with better link colors
-                    from rich.theme import Theme
-
-                    link_theme = Theme(
-                        {"markdown.link": "bright_cyan", "markdown.link_url": "cyan"}
-                    )
-
-                    # Create a temporary console with better link colors
-                    temp_console = Console(theme=link_theme, file=self.console.file)
-                    markdown = Markdown(processed_text)
-                    temp_console.print(markdown)
-                except Exception:
-                    # Fall back to plain text
-                    self.console.print(text)
-            else:
-                # For plain text, print normally
+            # Use Claude Code-style formatting: simple, left-aligned text with minimal processing
+            try:
+                # Process file links for better readability but avoid Rich markdown rendering
+                processed_text = self._process_text_for_claude_code_style(text)
+                self.console.print(processed_text, end="")
+            except Exception:
+                # Fall back to plain text
                 self.console.print(text, end="")
 
             self.console.file.flush()
@@ -657,6 +642,24 @@ class FreeScrollStreamDisplay(BaseStatusDisplay):
             any(indicator(line) for indicator in markdown_indicators)
             for line in lines[:10]  # Check first 10 lines
         )
+
+    def _process_text_for_claude_code_style(self, text: str) -> str:
+        """Process text to match Claude Code's clean, left-aligned presentation style."""
+        if not text or not text.strip():
+            return text
+
+        # Apply minimal processing to improve readability without heavy markdown rendering
+        processed_text = _process_markdown_for_readability(text)
+
+        # Remove excessive line spacing that might cause centering artifacts
+        lines = processed_text.split("\n")
+        cleaned_lines = []
+
+        for line in lines:
+            # Keep original line structure but ensure consistent formatting
+            cleaned_lines.append(line.rstrip())  # Remove trailing whitespace
+
+        return "\n".join(cleaned_lines)
 
     def update_status_info(self, info_lines: List[str]) -> None:
         """Update status info band with dynamic content.
@@ -848,24 +851,11 @@ class FreeScrollStreamDisplay(BaseStatusDisplay):
         self.console.print("🤖 Claude's Problem-Solving Approach")
         self.console.print("─" * 80)
 
-        # Render summary with markdown if applicable
-        if self._has_markdown_patterns(summary_text):
-            try:
-                processed_summary = _process_markdown_for_readability(summary_text)
-
-                # Create markdown with better link colors
-                from rich.theme import Theme
-
-                link_theme = Theme(
-                    {"markdown.link": "bright_cyan", "markdown.link_url": "cyan"}
-                )
-
-                # Create a temporary console with better link colors
-                temp_console = Console(theme=link_theme, file=self.console.file)
-                temp_console.print(Markdown(processed_summary))
-            except Exception:
-                self.console.print(summary_text)
-        else:
+        # Use Claude Code-style summary formatting: clean and left-aligned
+        try:
+            processed_summary = self._process_text_for_claude_code_style(summary_text)
+            self.console.print(processed_summary)
+        except Exception:
             self.console.print(summary_text)
 
     def stop(self) -> None:
@@ -1060,23 +1050,21 @@ class StatusDisplayManager:
                     else:
                         self.console.print("")
                 elif stripped_line:
-                    # Regular narrative content - use markdown for this part
+                    # Regular narrative content - use simple text processing
                     if render_markdown and any(
                         md_char in line for md_char in ["**", "_", "#", "`", "*"]
                     ):
                         processed_line = self._process_markdown_for_readability(line)
-                        self.console.print(Markdown(processed_line))
+                        self.console.print(processed_line)
                     else:
                         self.console.print(line)
                 else:
                     self.console.print("")
         else:
-            # Regular markdown processing for non-statistics content
-            if render_markdown and any(
-                md_char in summary_text for md_char in ["**", "_", "#", "`", "*"]
-            ):
+            # Use simple text processing instead of Rich markdown to avoid centering
+            if render_markdown:
                 processed_summary = self._process_markdown_for_readability(summary_text)
-                self.console.print(Markdown(processed_summary))
+                self.console.print(processed_summary)
             else:
                 self.console.print(summary_text)
 
@@ -1086,7 +1074,7 @@ class StatusDisplayManager:
 
 
 def _process_markdown_for_readability(text: str) -> str:
-    """Process markdown text to improve link readability while preserving file path links."""
+    """Process markdown text to improve readability while preserving structure."""
     import re
 
     # Convert markdown links [text](url) for better readability
@@ -1107,6 +1095,15 @@ def _process_markdown_for_readability(text: str) -> str:
 
     # Replace markdown links with more readable format
     processed = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", replace_link, text)
+
+    # Convert markdown bold to simple text (to avoid Rich rendering issues)
+    processed = re.sub(r"\*\*([^*]+)\*\*", r"\1", processed)
+    processed = re.sub(r"__([^_]+)__", r"\1", processed)
+
+    # Convert markdown headers to simple text with prefix
+    processed = re.sub(r"^### (.+)$", r"   \1", processed, flags=re.MULTILINE)
+    processed = re.sub(r"^## (.+)$", r"  \1", processed, flags=re.MULTILINE)
+    processed = re.sub(r"^# (.+)$", r" \1", processed, flags=re.MULTILINE)
 
     return processed
 

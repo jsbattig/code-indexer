@@ -106,6 +106,23 @@ if pytest tests/ \
     --ignore=tests/test_schema_migration_e2e.py \
     --ignore=tests/test_optimized_example.py \
     --ignore=tests/test_comprehensive_git_workflow.py \
+    --ignore=tests/test_claude_plan_e2e.py \
+    --ignore=tests/test_dry_run_claude_prompt.py \
+    --ignore=tests/test_dry_run_integration.py \
+    --ignore=tests/test_rag_first_claude_service_bug.py \
+    --ignore=tests/test_claude_response_formatting_regression.py \
+    --ignore=tests/test_real_claude_response_formatting.py \
+    --ignore=tests/test_claude_result_formatting.py \
+    --ignore=tests/test_git_aware_watch_e2e.py \
+    --ignore=tests/test_indexing_consistency_e2e.py \
+    --ignore=tests/test_timestamp_comparison_e2e.py \
+    --ignore=tests/test_concurrent_indexing_prevention.py \
+    --ignore=tests/test_resume_and_incremental_bugs.py \
+    --ignore=tests/test_actual_file_chunking.py \
+    --ignore=tests/test_reproduce_tiny_chunks.py \
+    --ignore=tests/test_chunker_docstring_fix.py \
+    --ignore=tests/test_prompt_formatting_issues.py \
+    --ignore=tests/test_parallel_voyage_performance.py \
     -m "not slow and not e2e and not real_api" \
     --cov=src/code_indexer --cov-report=xml --cov-report=term; then
     print_success "Unit tests passed"
@@ -134,6 +151,9 @@ echo "   • Integration multiproject tests"
 echo "   • Docker manager tests"
 echo "   • Service health/cleanup tests"
 echo "   • Claude E2E tests (require Claude SDK and services)"
+echo "   • Claude CLI dependent tests (require Claude Code installation)"
+echo "   • Claude formatting/response tests (require Claude API)"
+echo "   • Dry-run Claude integration tests (require Claude CLI)"
 echo "   • Reconcile E2E tests (require indexing services)"
 echo "   • VoyageAI E2E tests (require Docker and API keys)"
 echo "   • Docker Compose validation tests (require Docker)"
@@ -142,6 +162,9 @@ echo "   • Branch topology E2E tests (require Git and indexing services)"
 echo "   • Schema migration E2E tests (require Qdrant and embedding services)"
 echo "   • Optimized example tests (require Docker and VoyageAI API)"
 echo "   • Comprehensive git workflow tests (require full service stack)"
+echo "   • Git-aware watch E2E tests (require service dependencies)"
+echo "   • Indexing consistency/timestamp E2E tests (require services)"
+echo "   • Concurrent indexing and file chunking tests (require services)"
 echo "   • Any tests marked as 'slow', 'e2e', or 'real_api'"
 echo ""
 echo "ℹ️  This matches the GitHub Actions workflow for fast CI execution"

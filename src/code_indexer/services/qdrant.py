@@ -63,10 +63,9 @@ class QdrantClient:
             },
             # Optimize indexing parameters for storage and performance
             "hnsw_config": {
-                # Lower M value reduces memory usage but slightly affects recall
-                "m": 16,  # Default is 16, can go as low as 4
-                # Higher ef_construct improves index quality but takes more time
-                "ef_construct": 100,  # Default is 100
+                # Use configured HNSW parameters for optimal performance
+                "m": self.config.hnsw_m,  # From config - better connectivity for large datasets
+                "ef_construct": self.config.hnsw_ef_construct,  # From config - better index quality
                 # Store vectors on disk to save memory
                 "on_disk": True,
             },
@@ -112,6 +111,120 @@ class QdrantClient:
                 return True
             except Exception:
                 return False
+
+    def create_collection_with_profile(
+        self,
+        profile: str,
+        collection_name: Optional[str] = None,
+        vector_size: Optional[int] = None,
+    ) -> bool:
+        """Create a collection with predefined HNSW profiles for different use cases.
+
+        Args:
+            profile: Profile name - "small_codebase", "large_codebase"
+            collection_name: Optional collection name
+            vector_size: Optional vector size
+
+        Returns:
+            True if collection created successfully
+        """
+        collection = collection_name or self.config.collection
+        size = vector_size or self.config.vector_size
+
+        # Define HNSW profiles for different codebase sizes
+        profiles = {
+            "small_codebase": {
+                "m": 16,
+                "ef_construct": 100,
+                "description": "Optimized for small codebases (<1M lines) - memory efficient",
+            },
+            "large_codebase": {
+                "m": 32,
+                "ef_construct": 200,
+                "description": "Optimized for large codebases (>5M lines) - better accuracy",
+            },
+            "default": {
+                "m": self.config.hnsw_m,
+                "ef_construct": self.config.hnsw_ef_construct,
+                "description": "Uses configuration defaults",
+            },
+        }
+
+        profile_config = profiles.get(profile, profiles["default"])
+
+        # Create collection config with profile-specific HNSW settings
+        collection_config = {
+            "vectors": {
+                "size": size,
+                "distance": "Cosine",
+                "on_disk": True,
+            },
+            "hnsw_config": {
+                "m": profile_config["m"],
+                "ef_construct": profile_config["ef_construct"],
+                "on_disk": True,
+            },
+            "optimizers_config": {
+                "memmap_threshold": 20000,
+                "indexing_threshold": 10000,
+            },
+            "quantization_config": {
+                "scalar": {
+                    "type": "int8",
+                    "quantile": 0.99,
+                    "always_ram": False,
+                }
+            },
+        }
+
+        try:
+            response = self.client.put(
+                f"/collections/{collection}",
+                json=collection_config,
+            )
+            response.raise_for_status()
+            self.console.print(
+                f"✅ Created collection '{collection}' with {profile} profile: {profile_config['description']}",
+                style="green",
+            )
+            return True
+        except Exception as e:
+            self.console.print(f"❌ Failed to create collection: {e}", style="red")
+            return False
+
+    def recreate_collection_with_hnsw_optimization(
+        self,
+        preserve_data: bool = False,
+        collection_name: Optional[str] = None,
+        profile: str = "large_codebase",
+    ) -> bool:
+        """Recreate collection with optimized HNSW settings.
+
+        Args:
+            preserve_data: Whether to backup and restore data (not implemented yet)
+            collection_name: Collection to recreate
+            profile: HNSW profile to use
+
+        Returns:
+            True if recreation successful
+        """
+        collection = collection_name or self.config.collection
+
+        if preserve_data:
+            self.console.print(
+                "⚠️  Data preservation not yet implemented", style="yellow"
+            )
+            return False
+
+        # Delete existing collection
+        if not self.delete_collection(collection):
+            self.console.print(
+                f"❌ Failed to delete existing collection '{collection}'", style="red"
+            )
+            return False
+
+        # Create with new profile
+        return self.create_collection_with_profile(profile, collection)
 
     def delete_collection(self, collection_name: Optional[str] = None) -> bool:
         """Delete a collection."""
@@ -439,8 +552,9 @@ class QdrantClient:
         score_threshold: Optional[float] = None,
         filter_conditions: Optional[Dict[str, Any]] = None,
         collection_name: Optional[str] = None,
+        hnsw_ef: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
-        """Search for similar vectors."""
+        """Search for similar vectors with HNSW optimization."""
         collection = (
             collection_name or self._current_collection_name or self.config.collection
         )
@@ -458,6 +572,13 @@ class QdrantClient:
         if filter_conditions:
             search_params["filter"] = filter_conditions
 
+        # Add HNSW search parameters for accuracy optimization
+        hnsw_ef_value = hnsw_ef if hnsw_ef is not None else self.config.hnsw_ef
+        search_params["params"] = {
+            "hnsw_ef": hnsw_ef_value,
+            "exact": False,  # Use approximate search with HNSW
+        }
+
         try:
             response = self.client.post(
                 f"/collections/{collection}/points/search", json=search_params
@@ -471,6 +592,46 @@ class QdrantClient:
             raise ConnectionError(f"Failed to connect to Qdrant: {e}")
         except httpx.HTTPStatusError as e:
             raise RuntimeError(f"Qdrant API error: {e}")
+
+    def search_with_accuracy(
+        self,
+        query_vector: List[float],
+        limit: int = 10,
+        accuracy: str = "balanced",
+        score_threshold: Optional[float] = None,
+        filter_conditions: Optional[Dict[str, Any]] = None,
+        collection_name: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Search with predefined accuracy profiles.
+
+        Args:
+            query_vector: Vector to search for
+            limit: Maximum number of results
+            accuracy: Accuracy profile - "fast", "balanced", or "high"
+            score_threshold: Minimum score threshold
+            filter_conditions: Additional filter conditions
+            collection_name: Collection to search in
+
+        Returns:
+            List of search results
+        """
+        # Map accuracy profiles to hnsw_ef values
+        accuracy_profiles = {
+            "fast": 32,  # Fast search, lower accuracy
+            "balanced": self.config.hnsw_ef,  # Use configured default
+            "high": 128,  # High accuracy, slower search
+        }
+
+        hnsw_ef = accuracy_profiles.get(accuracy, self.config.hnsw_ef)
+
+        return self.search(
+            query_vector=query_vector,
+            limit=limit,
+            score_threshold=score_threshold,
+            filter_conditions=filter_conditions,
+            collection_name=collection_name,
+            hnsw_ef=hnsw_ef,
+        )
 
     def create_model_filter(self, embedding_model: str) -> Dict[str, Any]:
         """Create a filter condition for a specific embedding model.
@@ -539,6 +700,7 @@ class QdrantClient:
         score_threshold: Optional[float] = None,
         additional_filters: Optional[Dict[str, Any]] = None,
         collection_name: Optional[str] = None,
+        accuracy: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Search for similar vectors filtered by embedding model.
 
@@ -549,6 +711,7 @@ class QdrantClient:
             score_threshold: Minimum similarity score
             additional_filters: Additional filter conditions
             collection_name: Collection name (optional)
+            accuracy: Accuracy profile - "fast", "balanced", or "high"
 
         Returns:
             List of search results filtered by model
@@ -559,14 +722,24 @@ class QdrantClient:
         # Combine with additional filters
         final_filter = self.combine_filters(model_filter, additional_filters)
 
-        # Use existing search method
-        return self.search(
-            query_vector=query_vector,
-            limit=limit,
-            score_threshold=score_threshold,
-            filter_conditions=final_filter,
-            collection_name=collection_name,
-        )
+        # Use search with accuracy if specified, otherwise use regular search
+        if accuracy:
+            return self.search_with_accuracy(
+                query_vector=query_vector,
+                limit=limit,
+                accuracy=accuracy,
+                score_threshold=score_threshold,
+                filter_conditions=final_filter,
+                collection_name=collection_name,
+            )
+        else:
+            return self.search(
+                query_vector=query_vector,
+                limit=limit,
+                score_threshold=score_threshold,
+                filter_conditions=final_filter,
+                collection_name=collection_name,
+            )
 
     def count_points_by_model(
         self, embedding_model: str, collection_name: Optional[str] = None

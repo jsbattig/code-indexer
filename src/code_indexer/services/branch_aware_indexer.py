@@ -11,6 +11,14 @@ Architecture:
 1. Content Points: Immutable, one per unique (file, commit) pair
 2. Visibility Points: Mutable mapping from (branch, file) to content
 3. Branch ancestry resolution for complex git topologies
+
+✅ CLEAN PROGRESS REPORTING API ✅
+
+This module uses clean, well-named methods for progress reporting:
+- _update_file_progress(): Updates progress bar with file processing status
+- _report_file_error(): Reports file processing errors with progress update
+
+The old magic-parameter approach has been refactored into clear method names.
 """
 
 import hashlib
@@ -21,6 +29,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Callable
 import subprocess
+from .vector_calculation_manager import (
+    get_default_thread_count,
+    VectorCalculationManager,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +93,75 @@ class BranchAwareIndexer:
         self.config = config
         self.codebase_dir = Path(config.codebase_dir)
 
+        # Will be set by smart indexer to point to metadata file
+        self.metadata_file = None
+
+    def _update_file_progress(
+        self, progress_callback, current: int, total: int, info_msg: str
+    ):
+        """Clean helper to update file progress using appropriate API."""
+        if not progress_callback:
+            return None
+
+        # Use specialized method if available (CLI adds this dynamically)
+        if hasattr(progress_callback, "update_file_progress"):
+            return progress_callback.update_file_progress(current, total, info_msg)
+        else:
+            # Use standard function signature - "." indicates no specific file
+            return progress_callback(current, total, ".", info=info_msg)
+
+    def _report_file_error(
+        self, progress_callback, current: int, total: int, info_msg: str, error_msg: str
+    ):
+        """Clean helper to report file processing errors."""
+        if not progress_callback:
+            return None
+
+        # Use specialized method if available (CLI adds this dynamically)
+        if hasattr(progress_callback, "show_error_message"):
+            progress_callback.show_error_message(".", error_msg)
+            return self._update_file_progress(
+                progress_callback, current, total, info_msg
+            )
+        else:
+            # Use standard function signature - "." indicates no specific file
+            return progress_callback(
+                current, total, ".", info=info_msg, error=error_msg
+            )
+
+    def get_current_branch_from_file(self) -> str:
+        """Get current branch from metadata file with retry logic."""
+        if not self.metadata_file:
+            # Fallback to git subprocess if no metadata file configured
+            return self._get_current_branch_from_git()
+
+        # Import here to avoid circular imports
+        from .progressive_metadata import ProgressiveMetadata
+
+        try:
+            metadata = ProgressiveMetadata(self.metadata_file)
+            return metadata.get_current_branch_with_retry(fallback="unknown")
+        except Exception:
+            # Fallback to git subprocess on any error
+            return self._get_current_branch_from_git()
+
+    def _get_current_branch_from_git(self) -> str:
+        """Fallback method to get current branch from git subprocess."""
+        try:
+            result = subprocess.run(
+                ["git", "symbolic-ref", "--short", "HEAD"],
+                cwd=self.codebase_dir,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except Exception:
+            pass
+
+        return "unknown"
+
     def index_branch_changes(
         self,
         old_branch: str,
@@ -89,9 +170,12 @@ class BranchAwareIndexer:
         unchanged_files: List[str],
         collection_name: str,
         progress_callback: Optional[Callable] = None,
+        vector_thread_count: Optional[int] = None,
     ) -> BranchIndexingResult:
         """
         Index changes when switching branches using graph-optimized approach.
+
+        Progress reporting is handled by clean helper methods (_update_file_progress, _report_file_error).
 
         Args:
             old_branch: Previous branch name
@@ -123,7 +207,11 @@ class BranchAwareIndexer:
             # 1. Process changed files - create new content points
             if changed_files:
                 content_result = self._index_changed_files(
-                    changed_files, new_branch, collection_name, progress_callback
+                    changed_files,
+                    new_branch,
+                    collection_name,
+                    progress_callback,
+                    vector_thread_count,
                 )
                 result.content_points_created += content_result.content_points_created
                 result.visibility_points_created += (
@@ -161,120 +249,270 @@ class BranchAwareIndexer:
         branch: str,
         collection_name: str,
         progress_callback: Optional[Callable] = None,
+        vector_thread_count: Optional[int] = None,
     ) -> BranchIndexingResult:
         """Create content and visibility points for changed files."""
         result = BranchIndexingResult(0, 0, 0, 0, 0, 0)
         batch_points = []
 
+        # Determine thread count for vector calculation
+        if vector_thread_count is None:
+            vector_thread_count = get_default_thread_count(self.embedding_provider)
+
         # Progress tracking
         total_files = len(file_paths)
         current_file_index = 0
 
-        for file_path in file_paths:
-            try:
-                full_path = self.codebase_dir / file_path
-                if not full_path.exists():
-                    # File was deleted - update visibility to hidden
-                    self._hide_file_in_branch(file_path, branch, collection_name)
+        # Use VectorCalculationManager for parallel embedding processing
+        with VectorCalculationManager(
+            self.embedding_provider, vector_thread_count
+        ) as vector_manager:
+            for file_path in file_paths:
+                try:
+                    full_path = self.codebase_dir / file_path
+                    if not full_path.exists():
+                        # File was deleted - update visibility to hidden
+                        self._hide_file_in_branch(file_path, branch, collection_name)
 
-                    # Call progress callback for deleted file if provided
+                        # Report progress for deleted file
+                        # Call progress callback for deleted file if provided
+                        if progress_callback:
+                            files_completed = current_file_index + 1
+                            file_progress_pct = (
+                                (files_completed / total_files) * 100
+                                if total_files > 0
+                                else 0
+                            )
+                            display_file = Path(file_path)
+
+                            info_msg = (
+                                f"{files_completed}/{total_files} files ({file_progress_pct:.0f}%) | "
+                                f"-- emb/s | "
+                                f"1 threads | "
+                                f"{display_file.name} (deleted)"
+                            )
+
+                            # Use clean helper method
+                            callback_result = self._update_file_progress(
+                                progress_callback,
+                                files_completed,
+                                total_files,
+                                info_msg,
+                            )
+                            if callback_result == "INTERRUPT":
+                                break
+                        current_file_index += 1
+                        continue
+
+                    # Get current commit for this file
+                    current_commit = self._get_file_commit(file_path)
+
+                    # Check if content already exists for this file+commit
+                    content_id = self._generate_content_id(file_path, current_commit)
+                    if self._content_exists(content_id, collection_name):
+                        # Content exists - just create visibility point
+                        visibility_point = self._create_visibility_point(
+                            branch, file_path, 0, content_id
+                        )
+                        batch_points.append(visibility_point)
+                        result.content_points_reused += 1
+                        result.visibility_points_created += 1
+
+                        # Call progress callback for content reuse with proper format
+                        if progress_callback:
+                            files_completed = current_file_index + 1
+                            file_progress_pct = (
+                                (files_completed / total_files) * 100
+                                if total_files > 0
+                                else 0
+                            )
+                            display_file = Path(file_path)
+
+                            # Format progress message
+                            # Create comprehensive info message for content reuse
+                            emb_speed = "-- emb/s"  # Default for content reuse (no new embeddings)
+                            if vector_manager and hasattr(vector_manager, "get_stats"):
+                                stats = vector_manager.get_stats()
+                                if hasattr(stats, "embeddings_per_second"):
+                                    emb_speed = (
+                                        f"{stats.embeddings_per_second:.1f} emb/s"
+                                    )
+
+                            info_msg = (
+                                f"{files_completed}/{total_files} files ({file_progress_pct:.0f}%) | "
+                                f"{emb_speed} | "
+                                f"{vector_manager.thread_count if vector_manager else 1} threads | "
+                                f"{display_file.name} ✓"
+                            )
+
+                            # ⚠️  CRITICAL: total_files > 0 triggers CLI progress bar
+                            # Report error with progress update
+                            callback_result = self._update_file_progress(
+                                progress_callback,
+                                files_completed,
+                                total_files,
+                                info_msg,
+                            )
+                            if callback_result == "INTERRUPT":
+                                break
+                        current_file_index += 1
+                        continue
+
+                    # Content doesn't exist - create content + visibility points
+                    chunks = self.text_chunker.chunk_file(full_path)
+                    if not chunks:
+                        # Call progress callback for empty file if provided
+                        if progress_callback:
+                            files_completed = current_file_index + 1
+                            file_progress_pct = (
+                                (files_completed / total_files) * 100
+                                if total_files > 0
+                                else 0
+                            )
+                            display_file = Path(file_path)
+
+                            info_msg = (
+                                f"{files_completed}/{total_files} files ({file_progress_pct:.0f}%) | "
+                                f"-- emb/s | "
+                                f"1 threads | "
+                                f"{display_file.name} (empty)"
+                            )
+
+                            # Report error with progress update
+                            callback_result = self._update_file_progress(
+                                progress_callback,
+                                files_completed,
+                                total_files,
+                                info_msg,
+                            )
+                            if callback_result == "INTERRUPT":
+                                break
+                        current_file_index += 1
+                        continue
+
+                    # CRITICAL FIX: Submit ALL chunks for parallel processing, then collect results
+                    chunk_futures = []
+                    chunk_data = []
+
+                    # Always use parallel processing - no fallbacks needed
+                    for chunk_idx, chunk in enumerate(chunks):
+                        # Submit chunk for parallel processing (don't wait for result yet)
+                        future = vector_manager.submit_chunk(
+                            chunk["text"],
+                            {"file_path": file_path, "chunk_index": chunk_idx},
+                        )
+                        chunk_futures.append(future)
+                        chunk_data.append((chunk, current_commit))
+
+                    # Collect parallel results
+                    for idx, future in enumerate(chunk_futures):
+                        try:
+                            vector_result = future.result()
+                            if vector_result.error:
+                                logger.error(
+                                    f"Vector calculation failed: {vector_result.error}"
+                                )
+                                continue
+
+                            chunk, commit = chunk_data[idx]
+
+                            # Create content point with precomputed embedding
+                            content_point = self._create_content_point(
+                                file_path,
+                                chunk,
+                                commit,
+                                vector_result.embedding,
+                                branch,
+                            )
+                            batch_points.append(content_point)
+                            result.content_points_created += 1
+
+                            # Create visibility point linking branch to content
+                            visibility_point = self._create_visibility_point(
+                                branch,
+                                file_path,
+                                chunk["chunk_index"],
+                                content_point["id"],
+                            )
+                            batch_points.append(visibility_point)
+                            result.visibility_points_created += 1
+
+                        except Exception as e:
+                            logger.error(f"Failed to process chunk result: {e}")
+                            continue
+
+                    result.files_processed += 1
+
+                    # Call main progress callback for file completion with proper format
                     if progress_callback:
-                        callback_result = progress_callback(
-                            current_file_index + 1,
+                        files_completed = current_file_index + 1
+                        file_progress_pct = (
+                            (files_completed / total_files) * 100
+                            if total_files > 0
+                            else 0
+                        )
+                        display_file = Path(file_path)
+
+                        # Create comprehensive progress message matching HighThroughputProcessor format
+                        emb_speed = "-- emb/s"  # Default when no stats available
+                        if vector_manager and hasattr(vector_manager, "get_stats"):
+                            stats = vector_manager.get_stats()
+                            if hasattr(stats, "embeddings_per_second"):
+                                emb_speed = f"{stats.embeddings_per_second:.1f} emb/s"
+
+                        info_msg = (
+                            f"{files_completed}/{total_files} files ({file_progress_pct:.0f}%) | "
+                            f"{emb_speed} | "
+                            f"{vector_manager.thread_count if vector_manager else 1} threads | "
+                            f"{display_file.name} ✓"
+                        )
+
+                        # Update file progress using clean helper method
+                        callback_result = self._update_file_progress(
+                            progress_callback,
+                            files_completed,
                             total_files,
-                            full_path,
-                            info="File deleted",
+                            info_msg,
                         )
                         if callback_result == "INTERRUPT":
                             break
+
                     current_file_index += 1
-                    continue
 
-                # Get current commit for this file
-                current_commit = self._get_file_commit(file_path)
+                    # Process batch when full
+                    if len(batch_points) >= 50:
+                        self.qdrant_client.upsert_points(batch_points, collection_name)
+                        batch_points = []
 
-                # Check if content already exists for this file+commit
-                content_id = self._generate_content_id(file_path, current_commit)
-                if self._content_exists(content_id, collection_name):
-                    # Content exists - just create visibility point
-                    visibility_point = self._create_visibility_point(
-                        branch, file_path, 0, content_id
-                    )
-                    batch_points.append(visibility_point)
-                    result.content_points_reused += 1
-                    result.visibility_points_created += 1
+                except Exception as e:
+                    logger.error(f"Failed to index changed file {file_path}: {e}")
 
-                    # Call progress callback for content reuse if provided
+                    # Call progress callback for failed file if provided
                     if progress_callback:
-                        callback_result = progress_callback(
-                            current_file_index + 1,
-                            total_files,
-                            full_path,
-                            info="Content reused",
+                        files_completed = current_file_index + 1
+                        file_progress_pct = (
+                            (files_completed / total_files) * 100
+                            if total_files > 0
+                            else 0
                         )
-                        if callback_result == "INTERRUPT":
-                            break
-                    current_file_index += 1
-                    continue
+                        display_file = Path(file_path)
 
-                # Content doesn't exist - create content + visibility points
-                chunks = self.text_chunker.chunk_file(full_path)
-                if not chunks:
-                    # Call progress callback for empty file if provided
-                    if progress_callback:
-                        callback_result = progress_callback(
-                            current_file_index + 1,
-                            total_files,
-                            full_path,
-                            info="No content to index",
+                        info_msg = (
+                            f"{files_completed}/{total_files} files ({file_progress_pct:.0f}%) | "
+                            f"-- emb/s | "
+                            f"1 threads | "
+                            f"{display_file.name} (error: {str(e)[:50]}...)"
                         )
-                        if callback_result == "INTERRUPT":
-                            break
+
+                        # Report error with progress update
+                        self._report_file_error(
+                            progress_callback,
+                            files_completed,
+                            total_files,
+                            info_msg,
+                            str(e),
+                        )
                     current_file_index += 1
-                    continue
-
-                for chunk in chunks:
-                    # Create immutable content point
-                    content_point = self._create_content_point(
-                        file_path, chunk, current_commit
-                    )
-                    batch_points.append(content_point)
-                    result.content_points_created += 1
-
-                    # Create visibility point linking branch to content
-                    visibility_point = self._create_visibility_point(
-                        branch, file_path, chunk["chunk_index"], content_point["id"]
-                    )
-                    batch_points.append(visibility_point)
-                    result.visibility_points_created += 1
-
-                result.files_processed += 1
-
-                # Call progress callback if provided
-                if progress_callback:
-                    # Check for interrupt signal
-                    callback_result = progress_callback(
-                        current_file_index + 1, total_files, full_path
-                    )
-                    if callback_result == "INTERRUPT":
-                        break
-
-                current_file_index += 1
-
-                # Process batch when full
-                if len(batch_points) >= 50:
-                    self.qdrant_client.upsert_points(batch_points, collection_name)
-                    batch_points = []
-
-            except Exception as e:
-                logger.error(f"Failed to index changed file {file_path}: {e}")
-
-                # Call progress callback for failed file if provided
-                if progress_callback:
-                    progress_callback(
-                        current_file_index + 1, total_files, full_path, error=str(e)
-                    )
-                current_file_index += 1
 
         # Process remaining points
         if batch_points:
@@ -328,15 +566,17 @@ class BranchAwareIndexer:
         return result if result is not None else {}
 
     def _create_content_point(
-        self, file_path: str, chunk: Dict[str, Any], commit: str
+        self,
+        file_path: str,
+        chunk: Dict[str, Any],
+        commit: str,
+        embedding: List[float],
+        branch: str,
     ) -> Dict[str, Any]:
-        """Create immutable content point."""
+        """Create immutable content point with precomputed embedding and branch context."""
         # Generate content hash
         content_text = chunk["text"]
         content_hash = hashlib.sha256(content_text.encode()).hexdigest()
-
-        # Get embedding
-        embedding = self.embedding_provider.get_embedding(content_text)
 
         # Determine working directory status
         working_dir_status = self._determine_working_dir_status(file_path)
@@ -366,12 +606,18 @@ class BranchAwareIndexer:
         # Generate deterministic content ID
         content_id = self._generate_content_id(file_path, commit, chunk["chunk_index"])
 
+        # Get git context for compatibility fields
+        # Always use provided branch - no fallbacks needed
+        project_id = self.codebase_dir.name
+
         # Create payload with compatibility fields for GenericQueryService
+        # NOTE: Content points are IMMUTABLE and should NOT contain branch info
+        # Branch info belongs in visibility points only
         payload = {
             "type": "content",
             # Original fields from ContentMetadata
             **metadata.__dict__,
-            # Compatibility fields for GenericQueryService
+            # Compatibility fields for GenericQueryService (branch-agnostic)
             "git_available": True,
             "file_path": file_path,  # Alias for 'path'
             "git_commit_hash": commit,  # Alias for 'git_commit'
@@ -379,6 +625,8 @@ class BranchAwareIndexer:
             "indexed_at": time.strftime(
                 "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
             ),  # ISO format for consistency
+            # Project info (but NOT branch - that's in visibility points)
+            "project_id": project_id,  # Project identifier
         }
 
         # Get embedding model name for metadata

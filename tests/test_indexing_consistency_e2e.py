@@ -63,6 +63,9 @@ def test_config(temp_project_dir):
     config.indexing.chunk_size = 200
     config.indexing.max_file_size = 10000
 
+    # Configure a reliable embedding provider for E2E tests
+    config.embedding_provider = "voyage-ai"
+
     config_manager = ConfigManager(config_dir / "config.json")
     config_manager.save(config)
 
@@ -81,11 +84,21 @@ def smart_indexer(test_config):
     embedding_provider = EmbeddingProviderFactory.create(config, console)
     qdrant_client = QdrantClient(config.qdrant, console)
 
-    # Health checks
+    # For E2E tests, services should be running from test setup
+    # If they're not available, that's a test infrastructure issue
     if not embedding_provider.health_check():
-        pytest.skip("Embedding provider not available")
+        pytest.fail(
+            "Embedding provider not available for E2E test. "
+            "Ensure services are running before running E2E tests. "
+            "Check test setup or run: code-indexer start"
+        )
+
     if not qdrant_client.health_check():
-        pytest.skip("Qdrant service not available")
+        pytest.fail(
+            "Qdrant service not available for E2E test. "
+            "Ensure services are running before running E2E tests. "
+            "Check test setup or run: code-indexer start"
+        )
 
     metadata_path = test_config.config_path.parent / "metadata.json"
     indexer = SmartIndexer(config, embedding_provider, qdrant_client, metadata_path)

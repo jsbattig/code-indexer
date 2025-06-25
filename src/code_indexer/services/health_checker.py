@@ -19,8 +19,8 @@ class HealthChecker:
             "service_shutdown": 30,
             "port_release": 15,
             "cleanup_validation": 30,
-            "health_check": 60,
-            "data_cleaner_startup": 60,
+            "health_check": 120,
+            "data_cleaner_startup": 120,
         }
         self.default_polling = {
             "initial_interval": 0.5,
@@ -97,7 +97,7 @@ class HealthChecker:
         timeouts = self.get_timeouts()
 
         # Use provided values or defaults
-        timeout = timeout or timeouts.get("health_check", 60)
+        timeout = timeout or timeouts.get("health_check", 120)
         interval = interval or polling_config["initial_interval"]
         backoff = backoff or polling_config["backoff_factor"]
         max_interval = max_interval or polling_config["max_interval"]
