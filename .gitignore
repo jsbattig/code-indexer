@@ -123,3 +123,4 @@ tests/projects/*/docker-compose.yml
 =4.0.0
 /test_backtrack
 /test_index
+PRODUCTIVITY_ANALYSIS.md

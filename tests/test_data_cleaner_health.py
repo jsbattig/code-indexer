@@ -70,14 +70,32 @@ class TestDataCleanerHealth:
 
     @patch.object(HealthChecker, "wait_for_service_ready")
     def test_data_cleaner_already_running_no_health_check(self, mock_wait_service):
-        """Test that health check is skipped when data cleaner is already running."""
-        # Mock data cleaner already running
-        with patch("code_indexer.services.docker_manager.subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
-            mock_run.return_value.stdout = (
-                "test-project-data-cleaner"  # Already running
-            )
+        """Test that health check is performed when data cleaner is already running (for reliability)."""
+        # Mock health check to return success
+        mock_wait_service.return_value = True
 
+        # Mock multiple subprocess calls that clean_with_data_cleaner makes
+        def mock_subprocess_calls(*args, **kwargs):
+            mock_result = Mock()
+            mock_result.returncode = 0
+
+            # Handle different subprocess calls
+            if args[0][0] == "which":
+                mock_result.stdout = ""  # No podman, use docker
+            elif "ps" in args[0]:
+                mock_result.stdout = (
+                    "test-project-data-cleaner"  # Container already running
+                )
+            else:
+                mock_result.stdout = ""  # Other calls succeed
+                mock_result.stderr = ""
+
+            return mock_result
+
+        with patch(
+            "code_indexer.services.docker_manager.subprocess.run",
+            side_effect=mock_subprocess_calls,
+        ):
             result = self.docker_manager.clean_with_data_cleaner(["/data/test"])
 
             # Should succeed and perform health check even when already running (for reliability)

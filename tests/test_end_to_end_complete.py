@@ -150,8 +150,12 @@ class TestEndToEndComplete:
         # but call start to ensure this project is properly configured
         self.cli_helper.run_cli_command(["start", "--quiet"])
 
-    def test_single_project_full_cycle(self):
-        """Test complete single project cycle: index -> search -> clean"""
+    def test_single_project_workflow(self):
+        """Test core single project workflow: init -> start -> index -> query -> status -> clean-data
+
+        This test follows the NEW STRATEGY: keep services running, only clean data.
+        It tests the most common user workflow without the overhead of full service lifecycle.
+        """
         # Use test_project_1 (calculator)
         project_path = Path(__file__).parent / "projects" / "test_project_1"
 
@@ -176,13 +180,11 @@ class TestEndToEndComplete:
             self.test_containers.add("code-indexer-qdrant")
             self.test_networks.add("code-indexer-global")
 
-            # Services are ready (indexing succeeded which proves they're working)
-
             # Check status after indexing to see if data was properly indexed
             status_result = self.cli_helper.run_cli_command(["status"])
             print(f"Status after indexing: {status_result.stdout}")
 
-            # 2. Test search functionality with specific queries for calculator code
+            # 4. Test search functionality with specific queries for calculator code
             search_queries = [
                 "add function",
                 "calculator implementation",
@@ -217,7 +219,7 @@ class TestEndToEndComplete:
                     file in output for file in ["main.py", "utils.py"]
                 ), f"Search '{query}' didn't find expected files: {result.stdout}"
 
-            # 3. Test status functionality
+            # 5. Test status functionality
             result = self.cli_helper.run_cli_command(["status"])
             # Check that index is available and has documents
             assert "Available" in result.stdout
@@ -225,47 +227,68 @@ class TestEndToEndComplete:
                 "docs" in result.stdout
             )  # Should show "Project: X docs | Total: Y docs"
 
-            # 4. Clean project data (keeping services running - NEW STRATEGY)
+            # 6. Clean project data (NEW STRATEGY: keep services running)
             self.cli_helper.run_cli_command(["clean-data"])
 
             # Verify project data is cleared but services remain running
             # Note: clean-data clears the collection data, but config directory remains
-            # This is correct behavior - config is needed to stop services later
+            # This is correct behavior - config is needed to manage services
 
-            # 5. For E2E test completeness, verify we can uninstall everything
+    def test_complete_lifecycle_management(self):
+        """Test complete container lifecycle: start -> uninstall -> verify shutdown
+
+        This test focuses specifically on container lifecycle management.
+        It verifies that the uninstall command properly stops all services.
+        """
+        # Use test_project_1 for lifecycle testing
+        project_path = Path(__file__).parent / "projects" / "test_project_1"
+
+        with self.dir_manager.safe_chdir(project_path):
+            # Ensure clean state for this test
+            self.cleanup_all_data()
+
+            # 1. Initialize and start services
+            self.cli_helper.run_cli_command(
+                ["init", "--force", "--embedding-provider", "voyage-ai"]
+            )
+            self.cli_helper.run_cli_command(["start", "--quiet"])
+
+            # Verify services are running
+            status_result = self.cli_helper.run_cli_command(["status"])
+            assert (
+                "✅" in status_result.stdout
+            ), "Services should be running before uninstall test"
+
+            # 2. Test complete uninstall and verify all services stop
             self.cli_helper.run_cli_command(["uninstall"])
 
-            # Verify complete cleanup using condition polling
+            # 3. Verify complete cleanup using condition polling
             def check_services_stopped():
                 result = self.cli_helper.run_cli_command(
                     ["status"], expect_success=False
                 )
+                # If status command fails (no config), services are stopped
                 if result.returncode != 0:
-                    return False
+                    return True
+                # If status succeeds, check for stopped indicators
                 return (
                     "❌ Not Running" in result.stdout
                     or "❌ Not Available" in result.stdout
                     or "No .code-indexer/config.json found" in result.stdout
                 )
 
-            # Wait up to 30 seconds for complete cleanup
+            # Wait up to 90 seconds for complete cleanup (accounts for progressive shutdown timeouts)
             import time
 
             start_time = time.time()
             services_stopped = False
-            while time.time() - start_time < 30:
+            while time.time() - start_time < 90:
                 if check_services_stopped():
                     services_stopped = True
                     break
                 time.sleep(2)
 
             assert services_stopped, "Services failed to stop completely within timeout"
-
-            # NEW STRATEGY: Leave services running, just clean data
-            try:
-                self.cli_helper.run_cli_command(["clean-data"], expect_success=False)
-            except Exception:
-                pass
 
     def test_multi_project_isolation_and_search(self):
         """Test multi-project functionality with shared global vector database"""

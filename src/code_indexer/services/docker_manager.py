@@ -2682,19 +2682,19 @@ class DockerManager:
                 if not self.start_data_cleaner():
                     return False
 
-                # Wait for the data cleaner service to be ready
-                data_cleaner_ready = self.health_checker.wait_for_service_ready(
-                    "http://localhost:8091",  # Data cleaner root endpoint
-                    timeout=self.health_checker.get_timeouts().get(
-                        "data_cleaner_startup", 60
-                    ),
-                )
+            # Always wait for the data cleaner service to be ready (for reliability)
+            data_cleaner_ready = self.health_checker.wait_for_service_ready(
+                "http://localhost:8091",  # Data cleaner root endpoint
+                timeout=self.health_checker.get_timeouts().get(
+                    "data_cleaner_startup", 60
+                ),
+            )
 
-                if not data_cleaner_ready:
-                    self.console.print(
-                        "❌ Data cleaner failed to become ready", style="red"
-                    )
-                    return False
+            if not data_cleaner_ready:
+                self.console.print(
+                    "❌ Data cleaner failed to become ready", style="red"
+                )
+                return False
 
             # Use container exec to run cleanup commands with shell expansion
             for path in paths:
