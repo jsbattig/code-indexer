@@ -126,7 +126,7 @@ class VectorCalculationManager:
 
     def submit_chunk(
         self, chunk_text: str, metadata: Dict[str, Any]
-    ) -> Future[VectorResult]:
+    ) -> "Future[VectorResult]":
         """
         Submit a text chunk for vector calculation.
 

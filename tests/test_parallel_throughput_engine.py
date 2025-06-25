@@ -79,6 +79,7 @@ class TestClass_{i}:
         self.mock_qdrant = Mock()
         self.mock_qdrant.create_point.return_value = {"id": "test-point"}
         self.mock_qdrant.upsert_points.return_value = True
+        self.mock_qdrant.upsert_points_atomic.return_value = True
 
     def test_throughput_comparison_demonstrates_improvement(self):
         """Test that queue-based approach is significantly faster than sequential."""
@@ -164,8 +165,9 @@ class TestClass_{i}:
         assert stats.chunks_created > 0
         assert stats.failed_files == 0
 
-        # Verify Qdrant was called with batches
-        assert self.mock_qdrant.upsert_points.called
+        # Verify Qdrant was called with batches (either standard or atomic upsert)
+        assert (self.mock_qdrant.upsert_points.called or 
+                self.mock_qdrant.upsert_points_atomic.called)
 
         # Check that embeddings were generated for all chunks
         total_embeddings = provider.call_count
