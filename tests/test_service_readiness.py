@@ -296,7 +296,7 @@ class TestRealWorldPatterns:
             if not hasattr(mock_service_check, "call_count"):
                 mock_service_check.call_count = 0  # type: ignore[attr-defined]
             mock_service_check.call_count += 1  # type: ignore[attr-defined]
-            return mock_service_check.call_count >= 3  # type: ignore[attr-defined]
+            return mock_service_check.call_count >= 3  # type: ignore[attr-defined,no-any-return]
 
         start_time = time.time()
         result = self.health_checker.wait_for_condition(

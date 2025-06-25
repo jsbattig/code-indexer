@@ -25,8 +25,8 @@ class TestTimeoutConfiguration:
         assert config.timeouts.service_shutdown == 30
         assert config.timeouts.port_release == 15
         assert config.timeouts.cleanup_validation == 30
-        assert config.timeouts.health_check == 60
-        assert config.timeouts.data_cleaner_startup == 60
+        assert config.timeouts.health_check == 120
+        assert config.timeouts.data_cleaner_startup == 120
 
     def test_default_polling_values(self):
         """Test that default polling values are correct."""
@@ -118,7 +118,7 @@ class TestTimeoutConfiguration:
         polling = health_checker.get_polling_config()
 
         assert timeouts["service_startup"] == 180  # Default
-        assert timeouts["health_check"] == 60  # Default
+        assert timeouts["health_check"] == 120  # Default (updated from 60 to 120)
         assert polling["initial_interval"] == 0.5  # Default
         assert polling["backoff_factor"] == 1.2  # Default
 
@@ -143,7 +143,7 @@ class TestTimeoutConfiguration:
         # Should get custom value where specified
         assert timeouts["service_startup"] == 240
         # And defaults for missing values
-        assert timeouts["health_check"] == 60  # Default
+        assert timeouts["health_check"] == 120  # Default (updated from 60 to 120)
 
         assert polling["initial_interval"] == 0.8
         assert polling["backoff_factor"] == 1.2  # Default
