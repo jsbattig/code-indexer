@@ -355,13 +355,6 @@ Remember: You have read-only access. You cannot modify, edit, or execute files."
 
         # Check if streaming is requested
         stream_mode = kwargs.get("stream", False)
-        if stream_mode:
-            # TEMPORARY FIX: Disable streaming due to Claude CLI --verbose + stream-json hang
-            # TODO: Fix the streaming implementation to avoid the hang
-            logger.warning(
-                "Streaming mode temporarily disabled due to Claude CLI hang issue"
-            )
-            # Fall through to non-streaming mode
 
         try:
             # Use the rich prompt system with enhanced tool guidance
@@ -370,31 +363,27 @@ Remember: You have read-only access. You cannot modify, edit, or execute files."
             enable_exploration = kwargs.get("enable_exploration", True)
 
             # Create the full rich prompt
-            print("🔧 DEBUG: About to create analysis prompt...")
             prompt = self.create_analysis_prompt(
                 user_query=user_query,
                 contexts=contexts,
                 project_info=project_info,
                 enable_exploration=enable_exploration,
             )
-            print("🔧 DEBUG: Analysis prompt created successfully")
 
+            if stream_mode:
+                # Use streaming mode implementation
+                return self._run_claude_cli_streaming(user_query, contexts, **kwargs)
+            
             try:
-                # Run Claude CLI directly with prompt as stdin
+                # Non-streaming mode
                 cmd = [
                     "claude",
                     "--print",  # Non-interactive mode
-                    # TEMPORARY FIX: Remove --add-dir to avoid timeout issues
-                    # TODO: Investigate why --add-dir causes timeouts and restore it
-                    # "--add-dir",
-                    # str(self.codebase_dir),  # Allow access to codebase
+                    "--add-dir",
+                    str(self.codebase_dir),  # Allow access to codebase
                 ]
 
                 logger.debug(f"Running Claude CLI: {' '.join(cmd)}")
-                print(
-                    f"🔧 DEBUG: About to run Claude CLI with prompt length: {len(prompt)}"
-                )
-                print(f"🔧 DEBUG: Prompt preview: {prompt[:200]}...")
 
                 result = subprocess.run(
                     cmd,
@@ -1601,13 +1590,11 @@ Please analyze this question and use semantic search to find relevant code befor
         """
         try:
             # Create claude-first prompt
-            print("🔧 DEBUG: About to create claude-first prompt...")
             prompt = self.create_claude_first_prompt(
                 user_query=user_query,
                 project_info=project_info,
                 include_project_structure=include_project_structure,
             )
-            print("🔧 DEBUG: Claude-first prompt created, calling CLI analysis...")
 
             # Run Claude CLI analysis with empty contexts for claude-first approach
             return self._run_claude_cli_analysis(
