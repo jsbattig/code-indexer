@@ -349,10 +349,27 @@ class SmartIndexer(HighThroughputProcessor):
     ) -> ProcessingStats:
         """Perform full indexing."""
 
-        # Ensure provider-aware collection exists and get info before clearing
-        collection_name = self.qdrant_client.ensure_provider_aware_collection(
-            self.config, self.embedding_provider, quiet
+        # For full index (clear), we can skip migration since we'll clear all data anyway
+        # This avoids potential timeouts from scroll operations on large collections
+        collection_name = self.qdrant_client.resolve_collection_name(
+            self.config, self.embedding_provider
         )
+        vector_size = self.qdrant_client.get_vector_size_for_provider(
+            self.embedding_provider
+        )
+
+        # Create collection without migration check (since we're clearing anyway)
+        if not self.qdrant_client.ensure_collection(collection_name, vector_size):
+            raise RuntimeError(f"Failed to create collection: {collection_name}")
+
+        if not quiet:
+            self.qdrant_client.console.print(
+                f"✅ Collection ready: {collection_name} (dimensions: {vector_size})",
+                style="green",
+            )
+
+        # Store current collection name for use in subsequent operations
+        self.qdrant_client._current_collection_name = collection_name
 
         # Get collection info before clearing for meaningful feedback
         try:

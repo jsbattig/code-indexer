@@ -21,7 +21,7 @@ class QdrantClient:
     def __init__(self, config: QdrantConfig, console: Optional[Console] = None):
         self.config = config
         self.console = console or Console()
-        self.client = httpx.Client(base_url=config.host, timeout=5.0)
+        self.client = httpx.Client(base_url=config.host, timeout=30.0)
         self._current_collection_name: Optional[str] = None
         self._migrator: Optional["QdrantMigrator"] = (
             None  # Lazy initialization to avoid circular imports
