@@ -67,22 +67,42 @@ class RateLimiter:
         return True
 
     def consume_tokens(self, actual_tokens: int = 1):
-        """Consume tokens after making a request."""
+        """Consume tokens after making a request.
+
+        Applies bounds checking to prevent extreme negative values that could
+        cause unreasonably long wait times and stuck throttling states.
+        """
         self.request_tokens -= 1
         if self.token_tokens is not None:
             self.token_tokens -= actual_tokens
 
+        # Apply bounds checking to prevent extreme negative values
+        # This prevents wait times from becoming unreasonably long (days instead of seconds)
+        min_request_tokens = (
+            -self.requests_per_minute
+        )  # Allow going negative by at most 1 minute worth
+        min_token_tokens = -self.tokens_per_minute if self.tokens_per_minute else 0
+
+        self.request_tokens = max(self.request_tokens, min_request_tokens)
+        if self.token_tokens is not None:
+            self.token_tokens = max(self.token_tokens, min_token_tokens)
+
     def wait_time(self, estimated_tokens: int = 1) -> float:
-        """Calculate how long to wait before making a request."""
+        """Calculate how long to wait before making a request.
+
+        Includes overflow protection to ensure wait times remain reasonable
+        even in edge cases where token counts might be unexpectedly low.
+        """
         self._refill_tokens()
 
         wait_times = []
 
         # Request wait time
         if self.request_tokens < 1:
-            wait_times.append(
-                (1 - self.request_tokens) * 60.0 / self.requests_per_minute
-            )
+            request_wait = (1 - self.request_tokens) * 60.0 / self.requests_per_minute
+            # Overflow protection: cap request wait time to 2 minutes maximum
+            request_wait = min(request_wait, 120.0)
+            wait_times.append(request_wait)
 
         # Token wait time if enabled
         if (
@@ -91,7 +111,10 @@ class RateLimiter:
             and self.token_tokens < estimated_tokens
         ):
             needed_tokens = estimated_tokens - self.token_tokens
-            wait_times.append(needed_tokens * 60.0 / self.tokens_per_minute)
+            token_wait = needed_tokens * 60.0 / self.tokens_per_minute
+            # Overflow protection: cap token wait time to 2 minutes maximum
+            token_wait = min(token_wait, 120.0)
+            wait_times.append(token_wait)
 
         return max(wait_times) if wait_times else 0.0
 
