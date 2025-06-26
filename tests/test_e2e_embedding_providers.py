@@ -54,7 +54,6 @@ class TestVoyageAIRealAPI:
         config.embedding_provider = "voyage-ai"
         config.voyage_ai.model = "voyage-code-3"
         config.voyage_ai.parallel_requests = 2  # Conservative for testing
-        config.voyage_ai.requests_per_minute = 60  # Lower rate for testing
 
         config_manager.save(config)
         return config
@@ -144,21 +143,6 @@ class TestVoyageAIRealAPI:
         assert result.provider == "voyage-ai"
         assert result.total_tokens_used is not None
         assert result.total_tokens_used > 0
-
-    def test_voyage_ai_rate_limiting_behavior(
-        self, api_key_available, voyage_config, console
-    ):
-        """Test that rate limiting works correctly with real API."""
-        # Set very low rate limits for testing
-        voyage_config.voyage_ai.requests_per_minute = 10
-        voyage_config.voyage_ai.tokens_per_minute = 1000
-
-        provider = EmbeddingProviderFactory.create(voyage_config, console)
-
-        # This should work without hitting rate limits
-        for i in range(3):
-            embedding = provider.get_embedding(f"test text {i}")
-            assert len(embedding) == 1024
 
     def test_voyage_ai_model_info(self, api_key_available, voyage_config, console):
         """Test getting model information from real API."""

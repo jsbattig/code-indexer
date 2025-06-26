@@ -54,17 +54,7 @@ class VoyageAIConfig(BaseModel):
         description="Maximum number of texts to send in a single batch request",
     )
 
-    # Rate limiting configuration - VoyageAI has TPM (tokens per minute) and RPM (requests per minute) limits
-    # See: https://docs.voyageai.com/docs/rate-limits
-    requests_per_minute: int = Field(
-        default=300, description="Maximum requests per minute (RPM) limit"
-    )
-    tokens_per_minute: Optional[int] = Field(
-        default=None,
-        description="Maximum tokens per minute (TPM) limit - if None, only RPM limiting is used",
-    )
-
-    # Retry configuration for rate limiting and transient errors
+    # Retry configuration for server errors and transient failures
     max_retries: int = Field(
         default=3, description="Maximum number of retries for failed requests"
     )

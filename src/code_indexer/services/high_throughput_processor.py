@@ -277,7 +277,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                         # Create comprehensive info message including file status for progress bar display
                         info_msg = (
                             f"{files_completed}/{files_total} files ({file_progress_pct:.0f}%) | "
-                            f"{vector_stats.embeddings_per_second:.1f} emb/s {vector_stats.throttling_status.value} | "
+                            f"{vector_stats.embeddings_per_second:.1f} emb/s | "
                             f"{vector_thread_count} threads | "
                             f"{display_file.name}{file_status}"
                         )

@@ -11,7 +11,7 @@ from rich.console import Console
 from code_indexer.config import Config, OllamaConfig, VoyageAIConfig
 from code_indexer.services.embedding_provider import EmbeddingProvider, EmbeddingResult
 from code_indexer.services.ollama import OllamaClient
-from code_indexer.services.voyage_ai import VoyageAIClient, RateLimiter
+from code_indexer.services.voyage_ai import VoyageAIClient
 from code_indexer.services.embedding_factory import EmbeddingProviderFactory
 
 
@@ -139,7 +139,6 @@ class TestVoyageAIClient:
             model="voyage-code-3",
             parallel_requests=4,
             batch_size=64,
-            requests_per_minute=300,
         )
 
     @pytest.fixture
@@ -258,6 +257,9 @@ class TestVoyageAIClient:
         # First call: rate limit error
         rate_limit_response = Mock()
         rate_limit_response.status_code = 429
+        rate_limit_response.headers = {
+            "retry-after": "1"
+        }  # Add headers for retry-after
         rate_limit_response.raise_for_status.side_effect = httpx.HTTPStatusError(
             "Rate limit", request=Mock(), response=rate_limit_response
         )
@@ -303,53 +305,6 @@ class TestVoyageAIClient:
         assert info["dimensions"] == 1024  # voyage-code-3 dimensions
         assert info["max_tokens"] == 16000
         assert info["supports_batch"] is True
-
-
-class TestRateLimiter:
-    """Test RateLimiter functionality."""
-
-    def test_initialization(self):
-        """Test RateLimiter initialization."""
-        limiter = RateLimiter(requests_per_minute=60, tokens_per_minute=1000)
-
-        assert limiter.requests_per_minute == 60
-        assert limiter.tokens_per_minute == 1000
-        assert limiter.request_tokens == 60
-        assert limiter.token_tokens == 1000
-
-    def test_can_make_request_within_limits(self):
-        """Test request allowed within limits."""
-        limiter = RateLimiter(requests_per_minute=60, tokens_per_minute=1000)
-
-        assert limiter.can_make_request(estimated_tokens=10) is True
-
-    def test_can_make_request_over_token_limit(self):
-        """Test request blocked due to token limit."""
-        limiter = RateLimiter(requests_per_minute=60, tokens_per_minute=1000)
-
-        assert limiter.can_make_request(estimated_tokens=2000) is False
-
-    def test_consume_tokens(self):
-        """Test token consumption."""
-        limiter = RateLimiter(requests_per_minute=60, tokens_per_minute=1000)
-        initial_request_tokens = limiter.request_tokens
-        initial_token_tokens = limiter.token_tokens
-
-        limiter.consume_tokens(actual_tokens=100)
-
-        assert limiter.request_tokens == initial_request_tokens - 1
-        assert limiter.token_tokens == initial_token_tokens - 100
-
-    def test_wait_time_calculation(self):
-        """Test wait time calculation when limits are exceeded."""
-        limiter = RateLimiter(requests_per_minute=60, tokens_per_minute=1000)
-
-        # Consume all tokens
-        limiter.request_tokens = 0
-        limiter.token_tokens = 0
-
-        wait_time = limiter.wait_time(estimated_tokens=1)
-        assert wait_time > 0
 
 
 class TestEmbeddingProviderFactory:

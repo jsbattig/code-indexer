@@ -2,121 +2,13 @@
 
 import os
 import asyncio
-import time
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor
 import httpx
 from rich.console import Console
 
 from ..config import VoyageAIConfig
 from .embedding_provider import EmbeddingProvider, EmbeddingResult, BatchEmbeddingResult
-
-
-class RateLimiter:
-    """Rate limiter for API requests using token bucket algorithm."""
-
-    def __init__(
-        self, requests_per_minute: int, tokens_per_minute: Optional[int] = None
-    ):
-        self.requests_per_minute = requests_per_minute
-        self.tokens_per_minute = tokens_per_minute
-
-        # Request rate limiting
-        self.request_tokens = float(requests_per_minute)
-        self.request_last_refill = time.time()
-
-        # Token rate limiting (if enabled)
-        self.token_tokens = float(tokens_per_minute if tokens_per_minute else 0)
-        self.token_last_refill: Optional[float] = (
-            time.time() if tokens_per_minute else None
-        )
-
-    def _refill_tokens(self):
-        """Refill tokens based on elapsed time."""
-        now = time.time()
-
-        # Refill request tokens
-        elapsed = now - self.request_last_refill
-        self.request_tokens = min(
-            self.requests_per_minute,
-            self.request_tokens + (elapsed * self.requests_per_minute / 60.0),
-        )
-        self.request_last_refill = now
-
-        # Refill token tokens if enabled
-        if self.tokens_per_minute and self.token_last_refill is not None:
-            token_elapsed = now - self.token_last_refill
-            self.token_tokens = min(
-                self.tokens_per_minute,
-                self.token_tokens + (token_elapsed * self.tokens_per_minute / 60.0),
-            )
-            self.token_last_refill = now
-
-    def can_make_request(self, estimated_tokens: int = 1) -> bool:
-        """Check if a request can be made without hitting rate limits."""
-        self._refill_tokens()
-
-        # Check request limit
-        if self.request_tokens < 1:
-            return False
-
-        # Check token limit if enabled
-        if self.token_tokens is not None and self.token_tokens < estimated_tokens:
-            return False
-
-        return True
-
-    def consume_tokens(self, actual_tokens: int = 1):
-        """Consume tokens after making a request.
-
-        Applies bounds checking to prevent extreme negative values that could
-        cause unreasonably long wait times and stuck throttling states.
-        """
-        self.request_tokens -= 1
-        if self.token_tokens is not None:
-            self.token_tokens -= actual_tokens
-
-        # Apply bounds checking to prevent extreme negative values
-        # This prevents wait times from becoming unreasonably long (days instead of seconds)
-        min_request_tokens = (
-            -self.requests_per_minute
-        )  # Allow going negative by at most 1 minute worth
-        min_token_tokens = -self.tokens_per_minute if self.tokens_per_minute else 0
-
-        self.request_tokens = max(self.request_tokens, min_request_tokens)
-        if self.token_tokens is not None:
-            self.token_tokens = max(self.token_tokens, min_token_tokens)
-
-    def wait_time(self, estimated_tokens: int = 1) -> float:
-        """Calculate how long to wait before making a request.
-
-        Includes overflow protection to ensure wait times remain reasonable
-        even in edge cases where token counts might be unexpectedly low.
-        """
-        self._refill_tokens()
-
-        wait_times = []
-
-        # Request wait time
-        if self.request_tokens < 1:
-            request_wait = (1 - self.request_tokens) * 60.0 / self.requests_per_minute
-            # Overflow protection: cap request wait time to 2 minutes maximum
-            request_wait = min(request_wait, 120.0)
-            wait_times.append(request_wait)
-
-        # Token wait time if enabled
-        if (
-            self.token_tokens is not None
-            and self.tokens_per_minute is not None
-            and self.token_tokens < estimated_tokens
-        ):
-            needed_tokens = estimated_tokens - self.token_tokens
-            token_wait = needed_tokens * 60.0 / self.tokens_per_minute
-            # Overflow protection: cap token wait time to 2 minutes maximum
-            token_wait = min(token_wait, 120.0)
-            wait_times.append(token_wait)
-
-        return max(wait_times) if wait_times else 0.0
 
 
 class VoyageAIClient(EmbeddingProvider):
@@ -126,9 +18,6 @@ class VoyageAIClient(EmbeddingProvider):
         super().__init__(console)
         self.config = config
         self.console = console or Console()
-
-        # Throttling callback for reporting to VectorCalculationManager
-        self.throttling_callback: Optional[Callable] = None
 
         # Get API key from environment
         self.api_key = os.getenv("VOYAGE_API_KEY")
@@ -147,26 +36,8 @@ class VoyageAIClient(EmbeddingProvider):
             },
         )
 
-        # Initialize rate limiter
-        self.rate_limiter = RateLimiter(
-            requests_per_minute=config.requests_per_minute,
-            tokens_per_minute=config.tokens_per_minute,
-        )
-
         # Thread pool for parallel processing
         self.executor = ThreadPoolExecutor(max_workers=config.parallel_requests)
-
-    def set_throttling_callback(
-        self, callback: Optional[Callable[[str, Optional[float]], None]]
-    ):
-        """Set callback for reporting throttling events to VectorCalculationManager.
-
-        Args:
-            callback: Function that takes (event_type, value) where:
-                     event_type is 'client_wait' (CIDX throttling) or 'server_throttle' (API issues)
-                     value is wait_time for client_wait, None for server_throttle
-        """
-        self.throttling_callback = callback
 
     def health_check(self, test_api: bool = False) -> bool:
         """Check if VoyageAI service is configured correctly.
@@ -217,19 +88,8 @@ class VoyageAIClient(EmbeddingProvider):
     async def _make_async_request(
         self, texts: List[str], model: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Make asynchronous request to VoyageAI API with rate limiting and retries."""
+        """Make asynchronous request to VoyageAI API with server-driven retries."""
         model_name = model or self.config.model
-
-        # Estimate tokens for rate limiting
-        total_tokens = sum(self._estimate_tokens(text) for text in texts)
-
-        # Wait for rate limits
-        wait_time = self.rate_limiter.wait_time(total_tokens)
-        if wait_time > 0:
-            # Report CIDX-initiated throttling to callback if available
-            if self.throttling_callback:
-                self.throttling_callback("client_wait", wait_time)
-            await asyncio.sleep(wait_time)
 
         # Prepare request payload
         payload = {"input": texts, "model": model_name}
@@ -252,12 +112,6 @@ class VoyageAIClient(EmbeddingProvider):
 
                 result = response.json()
 
-                # Consume rate limit tokens
-                actual_tokens = result.get("usage", {}).get(
-                    "total_tokens", total_tokens
-                )
-                self.rate_limiter.consume_tokens(actual_tokens)
-
                 if isinstance(result, dict):
                     return result
                 else:
@@ -265,13 +119,22 @@ class VoyageAIClient(EmbeddingProvider):
 
             except httpx.HTTPStatusError as e:
                 last_exception = e
-                if e.response.status_code == 429:  # Rate limit
-                    # Report server-side throttling to callback if available
-                    if self.throttling_callback:
-                        self.throttling_callback("server_throttle", None)
-                    wait_time = self.config.retry_delay * (
-                        2**attempt if self.config.exponential_backoff else 1
-                    )
+                if (
+                    e.response.status_code == 429
+                ):  # Rate limit - use server-driven backoff
+                    # Check for Retry-After header from server
+                    retry_after = e.response.headers.get("retry-after")
+                    if retry_after:
+                        wait_time = float(retry_after)
+                    else:
+                        # Fall back to exponential backoff
+                        wait_time = self.config.retry_delay * (
+                            2**attempt if self.config.exponential_backoff else 1
+                        )
+
+                    # Cap maximum wait time to 5 minutes to prevent excessive delays
+                    wait_time = min(wait_time, 300.0)
+
                     if attempt < self.config.max_retries:
                         await asyncio.sleep(wait_time)
                         continue

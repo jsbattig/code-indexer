@@ -11,7 +11,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass
 from typing import Dict, Any, Optional, List
-from enum import Enum
 
 from .embedding_provider import EmbeddingProvider
 
@@ -39,18 +38,6 @@ class VectorResult:
     error: Optional[str] = None
 
 
-class ThrottlingStatus(Enum):
-    """Throttling status indicators for progress display."""
-
-    FULL_SPEED = "⚡"  # No throttling - operating at full speed
-    CLIENT_THROTTLED = (
-        "🟡"  # CIDX-initiated throttling (our rate limiter is slowing requests)
-    )
-    SERVER_THROTTLED = (
-        "🔴"  # Server-side throttling detected (429 errors, API slowness)
-    )
-
-
 @dataclass
 class VectorCalculationStats:
     """Statistics for vector calculation performance."""
@@ -63,9 +50,6 @@ class VectorCalculationStats:
     queue_size: int = 0
     average_processing_time: float = 0.0
     embeddings_per_second: float = 0.0
-    throttling_status: ThrottlingStatus = ThrottlingStatus.FULL_SPEED
-    client_wait_time: float = 0.0  # Time spent waiting due to CIDX rate limiting
-    server_throttle_count: int = 0  # Number of server throttle events (429s, slowness)
 
 
 @dataclass
@@ -118,37 +102,7 @@ class VectorCalculationManager:
         self.rolling_window: List[RollingWindowEntry] = []
         self.rolling_window_lock = threading.Lock()
 
-        # Throttling detection
-        self.throttling_detection_window = (
-            10.0  # 10 second window for throttling detection
-        )
-        self.recent_wait_events: List[tuple] = (
-            []
-        )  # Track recent client wait events (timestamp, wait_time)
-        self.recent_server_throttles: List[float] = (
-            []
-        )  # Track recent server throttles with timestamps
-        self.total_requests_in_window = (
-            0  # Track total requests for percentage calculation
-        )
-
-        # Set up throttling callback for VoyageAI
-        self._setup_throttling_callback()
-
         logger.info(f"Initialized VectorCalculationManager with {thread_count} threads")
-
-    def _setup_throttling_callback(self):
-        """Set up throttling callback for supported embedding providers."""
-        # Check if this is a VoyageAI provider and set up callback
-        if hasattr(self.embedding_provider, "set_throttling_callback"):
-
-            def throttling_callback(event_type: str, value: Optional[float]):
-                if event_type == "client_wait" and value is not None:
-                    self.record_client_wait_time(value)
-                elif event_type == "server_throttle":
-                    self.record_server_throttle()
-
-            self.embedding_provider.set_throttling_callback(throttling_callback)
 
     def start(self):
         """Start the thread pool."""
@@ -318,9 +272,6 @@ class VectorCalculationManager:
                 self.stats.total_tasks_submitted - self.stats.total_tasks_completed
             )
 
-            # Update throttling status before returning stats
-            self._update_throttling_status()
-
             # Return copy of stats
             return VectorCalculationStats(
                 total_tasks_submitted=self.stats.total_tasks_submitted,
@@ -331,9 +282,6 @@ class VectorCalculationManager:
                 queue_size=self.stats.queue_size,
                 average_processing_time=self.stats.average_processing_time,
                 embeddings_per_second=self.stats.embeddings_per_second,
-                throttling_status=self.stats.throttling_status,
-                client_wait_time=self.stats.client_wait_time,
-                server_throttle_count=self.stats.server_throttle_count,
             )
 
     def wait_for_all_tasks(self, timeout: Optional[float] = None) -> bool:
@@ -435,73 +383,6 @@ class VectorCalculationManager:
                 elapsed_total = current_time - self.start_time
                 if elapsed_total > 0:
                     self.stats.embeddings_per_second = total_completed / elapsed_total
-
-    def record_client_wait_time(self, wait_time: float):
-        """Record CIDX-initiated wait time (our rate limiter slowing requests)."""
-        if wait_time > 0:
-            current_time = time.time()
-            # Only record significant waits (> 0.1s) for throttling detection
-            if wait_time > 0.1:
-                self.recent_wait_events.append((current_time, wait_time))
-
-            with self.stats_lock:
-                self.stats.client_wait_time += wait_time
-
-            # Clean old entries
-            cutoff_time = current_time - self.throttling_detection_window
-            self.recent_wait_events = [
-                (t, w) for t, w in self.recent_wait_events if t >= cutoff_time
-            ]
-
-    def record_server_throttle(self):
-        """Record server-side throttling (429 responses, API slowness)."""
-        current_time = time.time()
-        self.recent_server_throttles.append(current_time)
-
-        with self.stats_lock:
-            self.stats.server_throttle_count += 1
-
-        # Clean old entries
-        cutoff_time = current_time - self.throttling_detection_window
-        self.recent_server_throttles = [
-            t for t in self.recent_server_throttles if t >= cutoff_time
-        ]
-
-    def _update_throttling_status(self):
-        """Update throttling status based on recent activity."""
-        current_time = time.time()
-        cutoff_time = current_time - self.throttling_detection_window
-
-        # Clean old entries
-        self.recent_wait_events = [
-            (t, w) for t, w in self.recent_wait_events if t >= cutoff_time
-        ]
-        self.recent_server_throttles = [
-            t for t in self.recent_server_throttles if t >= cutoff_time
-        ]
-
-        # Determine throttling status
-        server_throttles_recent = len(self.recent_server_throttles)
-
-        if server_throttles_recent > 0:
-            # Server-side throttling detected (429s, API issues) - takes priority
-            self.stats.throttling_status = ThrottlingStatus.SERVER_THROTTLED
-        elif self.recent_wait_events:
-            # Analyze client throttling more intelligently
-            total_wait_time = sum(wait_time for _, wait_time in self.recent_wait_events)
-            avg_wait_time = total_wait_time / len(self.recent_wait_events)
-
-            # Only show as throttled if:
-            # 1. More than 5 significant waits (> 0.1s) in 10 seconds, AND
-            # 2. Average wait time is > 0.5s (indicating real throttling)
-            if len(self.recent_wait_events) > 5 and avg_wait_time > 0.5:
-                self.stats.throttling_status = ThrottlingStatus.CLIENT_THROTTLED
-            else:
-                # Occasional small waits are normal, not real throttling
-                self.stats.throttling_status = ThrottlingStatus.FULL_SPEED
-        else:
-            # No significant waits detected
-            self.stats.throttling_status = ThrottlingStatus.FULL_SPEED
 
 
 def get_default_thread_count(embedding_provider: EmbeddingProvider) -> int:
