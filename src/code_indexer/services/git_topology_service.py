@@ -183,10 +183,14 @@ class GitTopologyService:
         merge_base = self._get_merge_base(old_branch, new_branch)
 
         # Get files that changed between branches
-        changed_files = self._get_changed_files(old_branch, new_branch)
+        raw_changed_files = self._get_changed_files(old_branch, new_branch)
 
-        # Get all files in current branch for metadata updates
-        all_files = self._get_all_tracked_files()
+        # Get all files in target branch for metadata updates
+        all_files = self._get_all_tracked_files(new_branch)
+
+        # Filter changed files to only include files that exist in the target branch
+        # Files that don't exist in target branch should be hidden, not processed as "changed"
+        changed_files = [f for f in raw_changed_files if f in all_files]
         unchanged_files = [f for f in all_files if f not in changed_files]
 
         # Get working directory changes
@@ -286,11 +290,11 @@ class GitTopologyService:
         except (subprocess.TimeoutExpired, subprocess.SubprocessError):
             return False
 
-    def _get_all_tracked_files(self) -> List[str]:
-        """Get all files tracked by git in current HEAD."""
+    def _get_all_tracked_files(self, branch: str = "HEAD") -> List[str]:
+        """Get all files tracked by git in specified branch."""
         try:
             result = subprocess.run(
-                ["git", "ls-tree", "-r", "--name-only", "--full-tree", "HEAD"],
+                ["git", "ls-tree", "-r", "--name-only", "--full-tree", branch],
                 cwd=self.codebase_dir,
                 capture_output=True,
                 text=True,

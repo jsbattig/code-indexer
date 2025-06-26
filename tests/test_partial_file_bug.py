@@ -36,6 +36,10 @@ class TrackedQdrantClient:
 
         return True
 
+    def upsert_points_atomic(self, points):
+        """Atomic version of upsert_points."""
+        return self.upsert_points(points)
+
     def create_point(self, point_id, vector, payload, embedding_model=None):
         return {"id": point_id, "vector": vector, "payload": payload}
 

@@ -50,6 +50,8 @@ def mock_qdrant_client():
     client.collection_exists.return_value = True
     client.create_point.return_value = {"id": "test-id", "vector": [0.1, 0.2, 0.3]}
     client.upsert_points.return_value = True
+    # Mock scroll_points to return a tuple (points, metadata) as expected
+    client.scroll_points.return_value = ([], None)
     return client
 
 
@@ -236,15 +238,15 @@ class TestSmartIndexer:
             indexer, "file_finder"
         ) as mock_file_finder, patch.object(
             indexer.branch_aware_indexer, "index_branch_changes"
-        ) as mock_branch_indexer:
+        ) as mock_branch_indexer, patch.object(
+            indexer.branch_aware_indexer, "hide_files_not_in_branch"
+        ):
             # Setup mocks
             mock_git_status.return_value = {"git_available": False}
             mock_file_finder.find_files.return_value = [Path("test.py")]
             mock_branch_indexer.return_value = BranchIndexingResult(
                 files_processed=1,
                 content_points_created=5,
-                visibility_points_created=1,
-                visibility_points_updated=0,
                 content_points_reused=0,
                 processing_time=0.1,
             )
@@ -274,15 +276,15 @@ class TestSmartIndexer:
             indexer, "file_finder"
         ) as mock_file_finder, patch.object(
             indexer.branch_aware_indexer, "index_branch_changes"
-        ) as mock_branch_indexer:
+        ) as mock_branch_indexer, patch.object(
+            indexer.branch_aware_indexer, "hide_files_not_in_branch"
+        ):
             # Setup mocks
             mock_git_status.return_value = {"git_available": False}
             mock_file_finder.find_files.return_value = [Path("test.py")]
             mock_branch_indexer.return_value = BranchIndexingResult(
                 files_processed=1,
                 content_points_created=5,
-                visibility_points_created=1,
-                visibility_points_updated=0,
                 content_points_reused=0,
                 processing_time=0.1,
             )
@@ -325,7 +327,9 @@ class TestSmartIndexer:
                 indexer, "file_finder"
             ) as mock_file_finder, patch.object(
                 indexer.branch_aware_indexer, "index_branch_changes"
-            ) as mock_branch_indexer:
+            ) as mock_branch_indexer, patch.object(
+                indexer.branch_aware_indexer, "hide_files_not_in_branch"
+            ):
                 # Setup mocks - use the same git_status as the pre-populated metadata
                 mock_git_status.return_value = git_status
                 mock_file_finder.find_modified_files.return_value = [temp_file_path]
@@ -337,8 +341,6 @@ class TestSmartIndexer:
 
                 mock_branch_result = BranchIndexingResult(
                     content_points_created=3,
-                    visibility_points_created=3,
-                    visibility_points_updated=0,
                     content_points_reused=0,
                     processing_time=0.1,
                     files_processed=1,
@@ -486,15 +488,15 @@ class TestSmartIndexer:
             indexer, "file_finder"
         ) as mock_file_finder, patch.object(
             indexer.branch_aware_indexer, "index_branch_changes"
-        ) as mock_branch_indexer:
+        ) as mock_branch_indexer, patch.object(
+            indexer.branch_aware_indexer, "hide_files_not_in_branch"
+        ):
             # Setup mocks - different provider now
             mock_git_status.return_value = git_status
             mock_file_finder.find_files.return_value = [Path("test.py")]
             mock_branch_indexer.return_value = BranchIndexingResult(
                 files_processed=1,
                 content_points_created=5,
-                visibility_points_created=1,
-                visibility_points_updated=0,
                 content_points_reused=0,
                 processing_time=0.1,
             )

@@ -28,7 +28,9 @@ from .services.claude_integration import (
     ClaudeIntegrationService,
     check_claude_sdk_availability,
 )
+from .services.config_fixer import ConfigurationRepairer, generate_fix_report
 from .services.vector_calculation_manager import get_default_thread_count
+from .services.cidx_prompt_generator import create_cidx_ai_prompt
 from . import __version__
 
 
@@ -267,7 +269,7 @@ class GracefulInterruptHandler:
 console = Console()
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.option("--config", "-c", type=click.Path(exists=False), help="Config file path")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 @click.option(
@@ -276,9 +278,39 @@ console = Console()
     type=click.Path(exists=True),
     help="Start directory for config discovery (walks up to find .code-indexer/)",
 )
+@click.option(
+    "--use-cidx-prompt",
+    is_flag=True,
+    help="Generate and display a comprehensive prompt for AI systems to use cidx semantic search",
+)
+@click.option(
+    "--format",
+    type=click.Choice(["text", "markdown", "compact", "comprehensive"]),
+    default="text",
+    help="Output format for the cidx prompt (default: text)",
+)
+@click.option(
+    "--output",
+    type=click.Path(),
+    help="Save cidx prompt to file instead of displaying",
+)
+@click.option(
+    "--compact",
+    is_flag=True,
+    help="Generate compact version of cidx prompt (overrides --format)",
+)
 @click.version_option(version=__version__, prog_name="code-indexer")
 @click.pass_context
-def cli(ctx, config: Optional[str], verbose: bool, path: Optional[str]):
+def cli(
+    ctx,
+    config: Optional[str],
+    verbose: bool,
+    path: Optional[str],
+    use_cidx_prompt: bool,
+    format: str,
+    output: Optional[str],
+    compact: bool,
+):
     """AI-powered semantic code search with local models.
 
     \b
@@ -322,6 +354,12 @@ def cli(ctx, config: Optional[str], verbose: bool, path: Optional[str]):
       code-indexer query "function authentication"
       code-indexer clean-data --all-projects  # Clear all project data
 
+      # Generate AI integration prompt:
+      code-indexer --use-cidx-prompt                    # Display prompt
+      code-indexer --use-cidx-prompt --format markdown  # Markdown format
+      code-indexer --use-cidx-prompt --compact          # Compact version
+      code-indexer --use-cidx-prompt --output ai-prompt.txt  # Save to file
+
       # Using --path to work with different project locations:
       code-indexer --path /home/user/myproject index
       code-indexer --path ../other-project query "search term"
@@ -331,6 +369,39 @@ def cli(ctx, config: Optional[str], verbose: bool, path: Optional[str]):
     """
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
+
+    # Handle --use-cidx-prompt flag (early return)
+    if use_cidx_prompt:
+        try:
+            # Determine format (compact overrides format option)
+            prompt_format = "compact" if compact else format
+
+            # Generate the prompt
+            prompt = create_cidx_ai_prompt(format=prompt_format)
+
+            # Output to file or console
+            if output:
+                output_path = Path(output)
+                output_path.write_text(prompt, encoding="utf-8")
+                console.print(
+                    f"✅ Cidx AI prompt saved to: {output_path}", style="green"
+                )
+            else:
+                console.print(prompt)
+
+            return
+        except Exception as e:
+            console.print(f"❌ Failed to generate cidx prompt: {e}", style="red")
+            if verbose:
+                import traceback
+
+                console.print(traceback.format_exc())
+            sys.exit(1)
+
+    # If no command is provided and --use-cidx-prompt was not used, show help
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
+        return
 
     # Use path for config discovery, leveraging existing backtracking logic
     if path:
@@ -885,6 +956,11 @@ def start(
     type=int,
     help="Number of parallel threads for vector calculations (default: 8 for VoyageAI, 1 for Ollama)",
 )
+@click.option(
+    "--detect-deletions",
+    is_flag=True,
+    help="Detect and handle files deleted from filesystem but still in database (for standard indexing only; --reconcile includes this automatically)",
+)
 @click.pass_context
 def index(
     ctx,
@@ -893,6 +969,7 @@ def index(
     batch_size: int,
     files_count_to_process: Optional[int],
     parallel_vector_worker_thread_count: Optional[int],
+    detect_deletions: bool,
 ):
     """Index the codebase for semantic search.
 
@@ -919,6 +996,10 @@ def index(
       • Real-time progress bar with file names
       • Processing speed and time estimates
       • Error reporting for failed files
+      • Throttling status indicators (VoyageAI only):
+        ⚡ Full speed - no throttling detected
+        🟡 CIDX throttling - our rate limiter is slowing requests
+        🔴 Server throttling - API rate limits or slowness detected
 
     \b
     SMART INDEXING:
@@ -935,6 +1016,16 @@ def index(
       • For non-git projects: compares file modification timestamps
       • For git projects: primarily detects missing files and uses indexing timestamps as fallback
       • Shows remaining files count in status command
+      • --reconcile mode ALWAYS includes deletion detection automatically
+
+    \b
+    DELETION DETECTION:
+      • Standard indexing ignores deleted files (leaves stale database entries)
+      • Use --detect-deletions with standard indexing to clean up deleted files
+      • Git projects: soft delete (hides files in current branch, preserves history)
+      • Non-git projects: hard delete (removes files completely from database)
+      • NOT needed with --reconcile (deletion detection always included)
+      • NOT useful with --clear (collection is emptied and rebuilt anyway)
 
     \b
     PERFORMANCE TUNING:
@@ -948,6 +1039,7 @@ def index(
       code-indexer index                 # Smart incremental indexing (default)
       code-indexer index --clear         # Force full reindex (clears existing data)
       code-indexer index --reconcile     # Reconcile disk vs database and index missing/modified files
+      code-indexer index --detect-deletions  # Standard indexing + cleanup deleted files
       code-indexer index -b 100          # Larger batch size for speed
       code-indexer index -p 4           # Use 4 parallel threads for vector calculations
       code-indexer index -p 1           # Force single-threaded for debugging
@@ -958,6 +1050,28 @@ def index(
       Each project gets its own collection for isolation.
     """
     config_manager = ctx.obj["config_manager"]
+
+    # Validate flag combinations
+    if detect_deletions and reconcile:
+        console.print(
+            "❌ Cannot use --detect-deletions with --reconcile",
+            style="red",
+        )
+        console.print(
+            "💡 --reconcile mode includes deletion detection automatically",
+            style="yellow",
+        )
+        sys.exit(1)
+
+    if detect_deletions and clear:
+        console.print(
+            "⚠️  Warning: --detect-deletions is redundant with --clear",
+            style="yellow",
+        )
+        console.print(
+            "💡 --clear empties the collection completely, making deletion detection unnecessary",
+            style="yellow",
+        )
 
     try:
         config = config_manager.load()
@@ -1145,6 +1259,7 @@ def index(
                     safety_buffer_seconds=60,  # 1-minute safety buffer
                     files_count_to_process=files_count_to_process,
                     vector_thread_count=thread_count,
+                    detect_deletions=detect_deletions,
                 )
 
                 # Stop progress bar with completion message (if not interrupted)
@@ -1460,8 +1575,27 @@ def query(
                 {"key": "path", "match": {"text": path}}
             )
 
-        # Initialize git-aware query service
-        query_service = GenericQueryService(config.codebase_dir, config)
+        # Check if project uses git-aware indexing
+        from .services.git_topology_service import GitTopologyService
+        from .services.branch_aware_indexer import BranchAwareIndexer
+        from .indexing.chunker import TextChunker
+
+        git_topology_service = GitTopologyService(config.codebase_dir)
+        is_git_aware = git_topology_service.is_git_available()
+
+        # Initialize query service based on project type
+        if is_git_aware:
+            # Use branch-aware indexer for git projects
+            text_chunker = TextChunker(config.indexing)
+            branch_aware_indexer = BranchAwareIndexer(
+                qdrant_client, embedding_provider, text_chunker, config
+            )
+            current_branch = git_topology_service.get_current_branch() or "master"
+            use_branch_aware_query = True
+        else:
+            # Use generic query service for non-git projects
+            query_service = GenericQueryService(config.codebase_dir, config)
+            use_branch_aware_query = False
 
         # Apply embedding provider's model filtering when searching
         provider_info = embedding_provider.get_model_info()
@@ -1471,11 +1605,11 @@ def query(
             )
 
             # Get current branch context for git-aware filtering
-            branch_context = query_service.get_current_branch_context()
-            if branch_context["git_available"]:
-                console.print(f"📂 Git repository: {branch_context['project_id']}")
-                console.print(f"🌿 Current branch: {branch_context['current_branch']}")
+            if is_git_aware:
+                console.print(f"📂 Git repository: {config.codebase_dir.name}")
+                console.print(f"🌿 Current branch: {current_branch}")
             else:
+                branch_context = query_service.get_current_branch_context()
                 console.print(f"📁 Non-git project: {branch_context['project_id']}")
 
             # Search
@@ -1488,8 +1622,9 @@ def query(
             if min_score:
                 console.print(f"⭐ Min score: {min_score}")
         else:
-            # Get current branch context for git-aware filtering
-            branch_context = query_service.get_current_branch_context()
+            # Get current branch context for git-aware filtering (for non-git projects)
+            if not is_git_aware:
+                branch_context = query_service.get_current_branch_context()
 
         # Get current branch for display
         current_display_branch = "unknown"
@@ -1517,20 +1652,67 @@ def query(
         if not quiet:
             console.print(f"🤖 Filtering by model: {current_model}")
 
-        # Use model-specific search to ensure we only get results from the current model
-        raw_results = qdrant_client.search_with_model_filter(
-            query_vector=query_embedding,
-            embedding_model=current_model,
-            limit=limit * 2,  # Get more results to allow for git filtering
-            score_threshold=min_score,
-            additional_filters=filter_conditions,
-            accuracy=accuracy,
-        )
+        # Use appropriate search method based on project type
+        if use_branch_aware_query:
+            # Use branch-aware search for git projects
+            if not quiet:
+                console.print("🔍 Applying git-aware filtering...")
 
-        # Apply git-aware filtering
-        if not quiet:
-            console.print("🔍 Applying git-aware filtering...")
-        results = query_service.filter_results_by_current_branch(raw_results)
+            # Build additional filters for branch-aware search
+            additional_filters = {}
+            if language:
+                additional_filters["must"] = [
+                    {"key": "language", "match": {"value": language}}
+                ]
+            if path:
+                additional_filters.setdefault("must", []).append(
+                    {"key": "path", "match": {"text": path}}
+                )
+
+            # Use branch-aware search
+            results = branch_aware_indexer.search_with_branch_context(
+                query_vector=query_embedding,
+                branch=current_branch,
+                limit=limit,
+                collection_name=collection_name,
+            )
+
+            # Apply additional filters manually for now
+            if language or path or min_score:
+                filtered_results = []
+                for result in results:
+                    payload = result.get("payload", {})
+
+                    # Filter by language
+                    if language and payload.get("language") != language:
+                        continue
+
+                    # Filter by path
+                    if path and path not in payload.get("path", ""):
+                        continue
+
+                    # Filter by minimum score
+                    if min_score and result.get("score", 0) < min_score:
+                        continue
+
+                    filtered_results.append(result)
+
+                results = filtered_results
+        else:
+            # Use model-specific search for non-git projects
+            raw_results = qdrant_client.search_with_model_filter(
+                query_vector=query_embedding,
+                embedding_model=current_model,
+                limit=limit * 2,  # Get more results to allow for git filtering
+                score_threshold=min_score,
+                additional_filters=filter_conditions,
+                accuracy=accuracy,
+            )
+
+            # Apply git-aware filtering
+            if not quiet:
+                console.print("🔍 Applying git-aware filtering...")
+            results = query_service.filter_results_by_current_branch(raw_results)
 
         # Limit to requested number after filtering
         results = results[:limit]
@@ -1805,23 +1987,36 @@ def claude(
 
         config = config_manager.load()
 
-        # Initialize services
-        embedding_provider = EmbeddingProviderFactory.create(config, console)
-        qdrant_client = QdrantClient(config.qdrant, console)
+        # Quick health checks with shorter timeout for better UX in Claude command
+        # Create temporary clients with 3-second timeout for health checks
+        import httpx
 
-        # Health checks
-        if not embedding_provider.health_check():
+        try:
+            # Quick embedding service check
+            if config.embedding_provider == "ollama":
+                quick_client = httpx.Client(base_url=config.ollama.host, timeout=3.0)
+                response = quick_client.get("/api/tags")
+                quick_client.close()
+                if response.status_code != 200:
+                    raise Exception("Ollama not responding")
+
+            # Quick Qdrant check
+            quick_qdrant = httpx.Client(base_url=config.qdrant.host, timeout=3.0)
+            response = quick_qdrant.get("/healthz")
+            quick_qdrant.close()
+            if response.status_code != 200:
+                raise Exception("Qdrant not responding")
+
+        except Exception:
             console.print(
-                f"❌ {embedding_provider.get_provider_name().title()} service not available. Run 'start' first.",
+                "❌ Services not available. Run 'code-indexer start' first.",
                 style="red",
             )
             sys.exit(1)
 
-        if not qdrant_client.health_check():
-            console.print(
-                "❌ Qdrant service not available. Run 'start' first.", style="red"
-            )
-            sys.exit(1)
+        # Initialize services (after health checks pass)
+        embedding_provider = EmbeddingProviderFactory.create(config, console)
+        qdrant_client = QdrantClient(config.qdrant, console)
 
         # Ensure provider-aware collection is set for search
         collection_name = qdrant_client.resolve_collection_name(
@@ -2662,6 +2857,122 @@ def uninstall(ctx, force_docker: bool):
 
     except Exception as e:
         console.print(f"❌ Uninstall failed: {e}", style="red")
+        sys.exit(1)
+
+
+@cli.command("fix-config")
+@click.option(
+    "--dry-run", is_flag=True, help="Show what would be fixed without making changes"
+)
+@click.option("--verbose", is_flag=True, help="Show detailed information about fixes")
+@click.option("--force", is_flag=True, help="Apply fixes without confirmation prompts")
+@click.pass_context
+def fix_config(ctx, dry_run: bool, verbose: bool, force: bool):
+    """Fix corrupted configuration files.
+
+    \b
+    Analyzes and repairs common configuration issues including:
+      • JSON syntax errors (trailing commas, unquoted keys, etc.)
+      • Incorrect paths pointing to temporary test directories
+      • Wrong project names (e.g., "test-codebase" instead of actual name)
+      • Outdated git information (branch, commit, availability)
+      • Invalid file references from test data
+      • Inconsistencies between config.json and metadata.json
+
+    \b
+    VALIDATION CHECKS:
+      • Verifies codebase_dir points to parent of .code-indexer folder
+      • Ensures project name matches actual directory name
+      • Updates git state to match actual repository
+      • Derives indexing statistics from Qdrant collections
+      • Removes invalid file paths from metadata
+
+    \b
+    SAFETY FEATURES:
+      • Creates backups before making changes
+      • Validates JSON syntax before semantic fixes
+      • Uses --dry-run to preview changes
+      • Intelligent detection from actual file system state
+
+    \b
+    EXAMPLES:
+      code-indexer fix-config --dry-run     # Preview fixes
+      code-indexer fix-config --verbose     # Show detailed fix information
+      code-indexer fix-config --force       # Apply without prompts
+
+    \b
+    COMMON USE CASES:
+      • After running tests that corrupt configuration
+      • When config points to wrong directories
+      • When git information is outdated
+      • When metadata contains test data
+    """
+    try:
+        # Find configuration directory
+        config_manager = ConfigManager.create_with_backtrack()
+        if not config_manager:
+            console.print(
+                "❌ No configuration found. Run 'code-indexer init' first.", style="red"
+            )
+            sys.exit(1)
+
+        config_dir = config_manager.config_path.parent
+
+        console.print(
+            f"🔧 {'Analyzing' if dry_run else 'Fixing'} configuration in {config_dir}"
+        )
+
+        if verbose:
+            console.print(f"  📁 Config file: {config_manager.config_path}")
+            console.print(f"  📄 Metadata file: {config_dir / 'metadata.json'}")
+
+        # Initialize repairer
+        repairer = ConfigurationRepairer(config_dir, dry_run=dry_run)
+
+        # Run the fix process
+        result = repairer.fix_configuration()
+
+        # Generate and display report
+        report = generate_fix_report(result, dry_run=dry_run)
+        console.print(report)
+
+        # Handle user confirmation for non-dry-run mode
+        if not dry_run and result.fixes_applied and not force:
+            if not click.confirm("\nDo you want to apply these fixes?"):
+                console.print("❌ Configuration fix cancelled", style="yellow")
+                sys.exit(0)
+
+        # Show recommendations
+        if result.success and result.fixes_applied and not dry_run:
+            console.print("\n💡 Recommendations:")
+            console.print("  • Run 'code-indexer status' to verify fixes")
+            console.print(
+                "  • Consider running 'code-indexer index' to rebuild with correct config"
+            )
+
+            if result.warnings:
+                console.print(
+                    "  • Review warnings above and consider cleaning up old collections"
+                )
+
+        if result.success:
+            if dry_run:
+                console.print(
+                    "\n✨ Run without --dry-run to apply these fixes", style="blue"
+                )
+            else:
+                console.print(
+                    "\n✅ Configuration has been successfully fixed!", style="green"
+                )
+        else:
+            sys.exit(1)
+
+    except Exception as e:
+        console.print(f"❌ Configuration fix failed: {e}", style="red")
+        if verbose:
+            import traceback
+
+            console.print(traceback.format_exc())
         sys.exit(1)
 
 

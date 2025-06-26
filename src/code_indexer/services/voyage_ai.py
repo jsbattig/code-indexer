@@ -3,7 +3,7 @@
 import os
 import asyncio
 import time
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 from concurrent.futures import ThreadPoolExecutor
 import httpx
 from rich.console import Console
@@ -104,6 +104,9 @@ class VoyageAIClient(EmbeddingProvider):
         self.config = config
         self.console = console or Console()
 
+        # Throttling callback for reporting to VectorCalculationManager
+        self.throttling_callback: Optional[Callable] = None
+
         # Get API key from environment
         self.api_key = os.getenv("VOYAGE_API_KEY")
         if not self.api_key:
@@ -129,6 +132,18 @@ class VoyageAIClient(EmbeddingProvider):
 
         # Thread pool for parallel processing
         self.executor = ThreadPoolExecutor(max_workers=config.parallel_requests)
+
+    def set_throttling_callback(
+        self, callback: Optional[Callable[[str, Optional[float]], None]]
+    ):
+        """Set callback for reporting throttling events to VectorCalculationManager.
+
+        Args:
+            callback: Function that takes (event_type, value) where:
+                     event_type is 'client_wait' (CIDX throttling) or 'server_throttle' (API issues)
+                     value is wait_time for client_wait, None for server_throttle
+        """
+        self.throttling_callback = callback
 
     def health_check(self, test_api: bool = False) -> bool:
         """Check if VoyageAI service is configured correctly.
@@ -188,6 +203,9 @@ class VoyageAIClient(EmbeddingProvider):
         # Wait for rate limits
         wait_time = self.rate_limiter.wait_time(total_tokens)
         if wait_time > 0:
+            # Report CIDX-initiated throttling to callback if available
+            if self.throttling_callback:
+                self.throttling_callback("client_wait", wait_time)
             await asyncio.sleep(wait_time)
 
         # Prepare request payload
@@ -225,6 +243,9 @@ class VoyageAIClient(EmbeddingProvider):
             except httpx.HTTPStatusError as e:
                 last_exception = e
                 if e.response.status_code == 429:  # Rate limit
+                    # Report server-side throttling to callback if available
+                    if self.throttling_callback:
+                        self.throttling_callback("server_throttle", None)
                     wait_time = self.config.retry_delay * (
                         2**attempt if self.config.exponential_backoff else 1
                     )

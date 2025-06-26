@@ -52,9 +52,56 @@ class TestBranchTopologyE2E:
             EmbeddingProvider.VOYAGE_AI
         )
 
-        # Ensure services are ready
-        if not service_manager.ensure_services_ready(working_dir=temp_dir):
-            pytest.skip("Could not start required services for E2E testing")
+        # COMPREHENSIVE SETUP: Clean up any existing data first
+        print("🧹 Branch topology E2E: Cleaning existing project data...")
+        try:
+            service_manager.cleanup_project_data(working_dir=temp_dir)
+        except Exception as e:
+            print(f"Initial cleanup warning (non-fatal): {e}")
+
+        # COMPREHENSIVE SETUP: Ensure services are ready
+        print("🔧 Branch topology E2E: Ensuring services are ready...")
+        services_ready = service_manager.ensure_services_ready(working_dir=temp_dir)
+        if not services_ready:
+            raise RuntimeError(
+                "Could not start required services for branch topology E2E testing"
+            )
+
+        # COMPREHENSIVE SETUP: Verify services are actually functional
+        print("🔍 Branch topology E2E: Verifying service functionality...")
+        try:
+            # Test with a minimal project to verify services work
+            test_file = temp_dir / "test_setup.py"
+            test_file.write_text("def test(): pass")
+
+            # Initialize project
+            init_result = cli_helper.run_cli_command(
+                ["init", "--force", "--embedding-provider", "voyage-ai"],
+                cwd=temp_dir,
+                timeout=60,
+            )
+            if init_result.returncode != 0:
+                raise RuntimeError(
+                    f"Service verification failed during init: {init_result.stderr}"
+                )
+
+            # Start services
+            start_result = cli_helper.run_cli_command(
+                ["start", "--quiet"], cwd=temp_dir, timeout=120
+            )
+            if start_result.returncode != 0:
+                raise RuntimeError(
+                    f"Service verification failed during start: {start_result.stderr}"
+                )
+
+            # Clean up test file
+            test_file.unlink()
+
+            print(
+                "✅ Branch topology E2E: Comprehensive setup complete - services verified functional"
+            )
+        except Exception as e:
+            raise RuntimeError(f"Branch topology E2E service verification failed: {e}")
 
         return Config(
             codebase_dir=str(temp_dir),
@@ -192,8 +239,8 @@ def helper_function():
 
         assert new_points_added > 0, "New points should be added for the new file"
 
-        # Step 4: Validate content and visibility point structure
-        print("Step 4: Validating content and visibility point architecture")
+        # Step 4: Validate new visibility architecture (content points with hidden_branches)
+        print("Step 4: Validating new hidden_branches visibility architecture")
 
         # Count content points
         content_points, _ = qdrant_client.scroll_points(
@@ -206,22 +253,10 @@ def helper_function():
         content_count = len(content_points)
         print(f"Content points: {content_count}")
 
-        # Count visibility points
-        visibility_points, _ = qdrant_client.scroll_points(
-            filter_conditions={
-                "must": [{"key": "type", "match": {"value": "visibility"}}]
-            },
-            collection_name=collection_name,
-            limit=1000,
-        )
-        visibility_count = len(visibility_points)
-        print(f"Visibility points: {visibility_count}")
-
         # Verify architecture principles
         assert content_count > 0, "Should have content points"
-        assert visibility_count > 0, "Should have visibility points"
 
-        # Verify content points don't have branch information
+        # Verify content points have proper structure with hidden_branches
         for point in content_points:
             payload = point.get("payload", {})
             assert payload.get("type") == "content"
@@ -230,19 +265,21 @@ def helper_function():
             ), "Content points should not contain branch info"
             assert "git_commit" in payload, "Content points should have git commit"
             assert "path" in payload, "Content points should have file path"
-
-        # Verify visibility points have branch mapping
-        for point in visibility_points:
-            payload = point.get("payload", {})
-            assert payload.get("type") == "visibility"
-            assert "branch" in payload, "Visibility points should have branch info"
-            assert "content_id" in payload, "Visibility points should reference content"
             assert (
-                payload.get("status") == "visible"
-            ), "Visibility points should be visible"
+                "hidden_branches" in payload
+            ), "Content points should have hidden_branches array"
+            assert isinstance(
+                payload["hidden_branches"], list
+            ), "hidden_branches should be a list"
+            # Verify that the current test branch is NOT in hidden_branches (i.e., content is visible)
+            assert (
+                test_branch not in payload["hidden_branches"]
+            ), f"Content should be visible in {test_branch}"
 
-        # Step 5: Query for new file content and verify it's visible
-        print("Step 5: Querying for new file content visibility")
+        # Step 5: Query for new file content and verify it's visible using new architecture
+        print(
+            "Step 5: Querying for new file content visibility with hidden_branches filtering"
+        )
 
         query_vector = embedding_provider.get_embedding("new feature implementation")
         search_results = qdrant_client.search_with_branch_topology(
@@ -252,7 +289,7 @@ def helper_function():
             collection_name=collection_name,
         )
 
-        # Verify new file content is found and is a content point
+        # Verify new file content is found and properly filtered by hidden_branches
         new_file_found = False
         for result in search_results:
             payload = result.get("payload", {})
@@ -264,10 +301,18 @@ def helper_function():
                 assert (
                     "branch" not in payload
                 ), "Content points should not have branch field"
+                assert (
+                    "hidden_branches" in payload
+                ), "Content points should have hidden_branches"
+                assert (
+                    test_branch not in payload["hidden_branches"]
+                ), f"Content should be visible (not hidden) in {test_branch}"
                 print(f"Found new file content with score: {result.get('score', 0)}")
                 break
 
-        assert new_file_found, "New file content should be searchable"
+        assert (
+            new_file_found
+        ), "New file content should be searchable with new visibility architecture"
 
         # Step 6: Query for existing file to ensure it's still visible
         print("Step 6: Verifying existing files are still accessible")
@@ -455,21 +500,18 @@ def helper_function():
             after_branch_content_count == initial_content_count
         ), "No new content points should be created for unchanged files"
 
-        # Verify visibility points were created
-        visibility_points, _ = qdrant_client.scroll_points(
-            filter_conditions={
-                "must": [
-                    {"key": "type", "match": {"value": "visibility"}},
-                    {"key": "branch", "match": {"value": test_branch}},
-                ]
-            },
-            collection_name=collection_name,
-            limit=1000,
-        )
+        # Verify content points are visible in new branch (not in hidden_branches)
+        # In new architecture, content points should have hidden_branches that don't include test_branch
+        content_points_visible_in_branch = []
+        for point in after_branch_content_points:
+            payload = point.get("payload", {})
+            hidden_branches = payload.get("hidden_branches", [])
+            if test_branch not in hidden_branches:
+                content_points_visible_in_branch.append(point)
 
         assert (
-            len(visibility_points) > 0
-        ), "Visibility points should be created for new branch"
+            len(content_points_visible_in_branch) > 0
+        ), "Content should be visible in new branch (not hidden) with new architecture"
 
         # Verify files are still searchable
         query_vector = embedding_provider.get_embedding("Hello World")
@@ -541,6 +583,9 @@ def helper_function():
 
         # From branch A, should see branch A file but not branch B file
         subprocess.run(["git", "checkout", branch_a], cwd=e2e_temp_repo, check=True)
+
+        # Re-index branch A to ensure proper branch isolation (hide files from branch B)
+        smart_indexer.smart_index()
 
         # Search for branch A content
         query_a = embedding_provider.get_embedding("unique to branch A")

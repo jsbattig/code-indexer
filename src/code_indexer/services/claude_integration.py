@@ -66,13 +66,31 @@ class ClaudeIntegrationService:
         Returns:
             Formatted prompt string for Claude
         """
+        # Import the unified instruction builder
+        from .cidx_instruction_builder import CidxInstructionBuilder
+
         # Determine exploration depth based on user query
         exploration_depth = self._determine_exploration_depth(user_query)
 
-        # Build semantic search tool instruction
-        tool_instruction = self._create_tool_instruction(
-            enable_exploration, exploration_depth
+        # Create unified CIDX instructions using the builder
+        cidx_builder = CidxInstructionBuilder(self.codebase_dir)
+
+        # Use comprehensive instructions for RAG-first approach (with advanced patterns for deep exploration)
+        instruction_level = (
+            "comprehensive" if exploration_depth == "deep" else "balanced"
         )
+        include_advanced = exploration_depth == "deep"
+
+        # Skip CIDX instructions entirely if exploration is disabled
+        if not enable_exploration or exploration_depth == "none":
+            cidx_instructions = ""
+        else:
+            cidx_instructions = cidx_builder.build_instructions(
+                instruction_level=instruction_level,
+                include_help_output=True,
+                include_examples=True,
+                include_advanced_patterns=include_advanced,
+            )
 
         # Build project context
         project_context = self._create_project_context(project_info)
@@ -92,12 +110,8 @@ class ClaudeIntegrationService:
             exploration_depth
         )
 
-        # Build the complete prompt
-        prompt = f"""You are an expert code analyst working with the {self.project_name or "this"} codebase. You have access to semantic search capabilities and can explore files as needed.
-
-🔬 SCIENTIFIC EVIDENCE REQUIREMENT:
-Treat this analysis like a scientific paper - ALL assertions must be backed by specific evidence from the source code. Every claim you make MUST include markdown links to exact source files and line numbers. No assertion is valid without proper citation to the codebase.
-
+        # Additional citation format guidance for RAG-first approach
+        citation_guidance = f"""
 EVIDENCE AND CITATION REQUIREMENTS:
 File paths in contexts are FACTUAL EVIDENCE. Use them exactly for citations.
 
@@ -114,8 +128,19 @@ CORRECT (clickable URLs):
 ✅ [config setup line 67](file://{self.codebase_dir}/config.py)
 
 RULE: Line numbers go in the DESCRIPTION text, never in the URL path!
+"""
 
-{tool_instruction}
+        # Add evidence requirements
+        evidence_requirements = self._create_evidence_requirements()
+
+        # Build the complete prompt
+        prompt = f"""You are an expert code analyst working with the {self.project_name or "this"} codebase. You have access to semantic search capabilities and can explore files as needed.
+
+{cidx_instructions}
+
+{evidence_requirements}
+
+{citation_guidance}
 
 {project_context}
 
@@ -167,204 +192,6 @@ RIGHT: [description line 123](file:///.../file.py)"""
 
         # Default to shallow exploration
         return "shallow"
-
-    def _create_tool_instruction(
-        self, enable_exploration: bool, exploration_depth: str = "shallow"
-    ) -> str:
-        """Create the semantic search tool instruction."""
-        if not enable_exploration or exploration_depth == "none":
-            return ""
-
-        base_tools = """🎯 MANDATORY WORKFLOW FOR CODE DISCOVERY:
-
-1. **ALWAYS START WITH SEMANTIC SEARCH**: Use `cidx query` first for any code discovery
-2. **READ SPECIFIC FILES**: Use Read for files identified by cidx  
-3. **FALLBACK ONLY**: Use text search only if cidx returns no relevant results
-
-🔍✨ PRIMARY TOOL - SEMANTIC SEARCH (`cidx query`):
-The `cidx query` command is your most powerful tool for intelligent code discovery. Unlike simple text search, it uses advanced semantic understanding to find related code concepts, patterns, and implementations.
-
-**🧠 WHAT MAKES CIDX QUERY UNIQUE**:
-- **Semantic Understanding**: Finds code related to concepts even when exact words don't match
-- **Context Awareness**: Understands relationships between functions, classes, and modules
-- **Relevance Scoring**: Returns results ranked by semantic similarity (0.0-1.0 scale)
-- **Cross-Language Intelligence**: Finds similar patterns across different programming languages
-- **Vector-Based Search**: Uses machine learning embeddings to understand code meaning, not just syntax
-
-**⭐ CORE CAPABILITIES**:
-- Find functions/classes that serve similar purposes with different names
-- Locate implementation patterns (e.g., "error handling", "data validation", "async processing")
-- Discover related code across the entire codebase (tests, configs, documentation)
-- Identify architectural patterns and design choices
-- Find usage examples and integration points
-
-**🎛️ COMMAND OPTIONS FOR PRECISE CONTROL**:
-- `--limit N` - Control number of results (default: 10)
-  • Use `--limit 5` for focused, high-quality results
-  • Use `--limit 20` for comprehensive exploration
-  • Use `--limit 50` for exhaustive discovery
-- `--language LANG` - Filter by programming language (improves accuracy)
-- `--path "pattern"` - Filter by file path patterns (e.g., "*/tests/*", "*/api/*")
-- `--min-score 0.X` - Minimum similarity threshold (0.0-1.0)
-  • Use `--min-score 0.8` for highly relevant matches only
-  • Use `--min-score 0.6` for broader exploration
-  • Use `--min-score 0.4` for discovery of loosely related concepts
-- `--accuracy PROFILE` - Search accuracy vs speed tradeoff (default: balanced)
-  • Use `--accuracy fast` for quicker results with lower precision
-  • Use `--accuracy balanced` for optimal speed/accuracy balance (default)
-  • Use `--accuracy high` for maximum precision with slower search
-
-**🎯 SUPPORTED LANGUAGES** (use exact names for --language filter):
-- **Backend**: `python`, `java`, `csharp`, `cpp`, `c`, `go`, `rust`, `php`
-- **Frontend**: `javascript`, `typescript`, `html`, `css`, `vue`
-- **Mobile**: `swift`, `kotlin`, `dart`
-- **Functional**: `scala`, `ruby`
-- **Scripts**: `shell`, `sql`
-- **Config**: `json`, `yaml`, `toml`
-- **Docs**: `markdown`, `text`
-
-**💡 STRATEGIC USAGE PATTERNS**:
-
-*Concept Discovery*:
-- `cidx query "authentication mechanisms"` - Find all auth-related code
-- `cidx query "error handling patterns"` - Discover error management approaches
-- `cidx query "data validation logic"` - Locate input validation implementations
-
-*Implementation Finding*:
-- `cidx query "API endpoint handlers" --language python` - Find Python API code
-- `cidx query "database queries" --language sql --limit 15` - SQL query patterns
-- `cidx query "async operations" --min-score 0.7` - High-quality async code
-- `cidx query "complex algorithms" --accuracy high` - Maximum precision for intricate code
-
-*Architecture Exploration*:
-- `cidx query "dependency injection setup"` - Find DI configuration
-- `cidx query "microservice communication"` - Discover service integration
-- `cidx query "configuration management"` - Locate config handling
-
-*Testing & Quality*:
-- `cidx query "unit test examples" --path "*/tests/*"` - Find test patterns
-- `cidx query "mock data creation" --limit 10` - Discover test data setup
-- `cidx query "integration test setup"` - Find E2E test patterns
-- `cidx query "performance optimization" --accuracy fast --limit 30` - Quick broad search
-
-**🚀 ADVANCED SEARCH STRATEGIES**:
-
-*Multi-Step Discovery*:
-1. Broad concept search: `cidx query "user management"`
-2. Narrow down: `cidx query "user authentication" --min-score 0.8`
-3. Find related: `cidx query "user permissions" --limit 5`
-
-*Cross-Reference Analysis*:
-1. Find implementations: `cidx query "payment processing"`
-2. Find tests: `cidx query "payment processing" --path "*/tests/*"`
-3. Find config: `cidx query "payment configuration"`
-
-*Language-Specific Exploration*:
-1. Backend: `cidx query "REST API design" --language python`
-2. Frontend: `cidx query "API consumption" --language javascript`
-3. Database: `cidx query "data persistence" --language sql`
-
-*Accuracy-Driven Discovery*:
-1. Quick exploration: `cidx query "caching mechanisms" --accuracy fast --limit 20`
-2. Precise analysis: `cidx query "security vulnerabilities" --accuracy high --min-score 0.8`
-3. Balanced research: `cidx query "design patterns" --accuracy balanced` (default)
-
-**📊 UNDERSTANDING RESULTS**:
-- **Score 0.9-1.0**: Highly relevant, exact concept matches
-- **Score 0.7-0.8**: Very relevant, closely related implementations  
-- **Score 0.5-0.6**: Moderately relevant, similar patterns
-- **Score 0.3-0.4**: Loosely related, might provide context
-- **Score < 0.3**: Minimal relevance, usually not useful
-
-**✅ SEMANTIC SEARCH vs ❌ TEXT SEARCH COMPARISON**:
-✅ `cidx query "user authentication"` → Finds login, auth, security, credentials, sessions
-❌ `grep "auth"` → Only finds literal "auth" text, misses related concepts
-
-✅ `cidx query "error handling"` → Finds exceptions, try-catch, error responses, logging
-❌ `grep "error"` → Only finds "error" text, misses exception handling patterns
-
-✅ `cidx query "async operations"` → Finds promises, await, callbacks, threading, futures
-❌ `grep "async"` → Only finds "async" keyword, misses async patterns
-
-**📖 COMPLEMENTARY TOOLS**:
-- **Read**: Examine specific files discovered by cidx query
-- **Task**: Complex multi-step workflows when cidx needs systematic exploration
-
-**⚠️ FALLBACK TOOLS** (use only when cidx fails):
-- **Glob**: File pattern matching for specific filenames
-- **Grep**: Exact literal string matching (last resort only)
-- **LS**: Basic directory structure exploration
-
-**🎯 SUCCESS CRITERIA**: 
-Always start with semantic search. Your analysis will be more accurate, comprehensive, and insightful when using cidx query for code discovery instead of primitive text matching.
-
-**🔬 EVIDENCE CITATION REQUIREMENTS**:
-- Immediately cite ALL cidx query findings with file:// URLs
-- Format: [description with line info](file://{self.codebase_dir}/path/to/file.py)
-- Include relevance scores in citations when useful
-- Never make claims about code without exact source citations
-- Every technical assertion requires semantic search evidence
-
-**🛡️ IMPORTANT**: You have read-only access. You cannot modify, edit, or execute files."""
-
-        if exploration_depth == "shallow":
-            return (
-                base_tools
-                + """
-
-🔍 EXPLORATION GUIDELINES (LIMITED DEPTH):
-**MANDATORY APPROACH**: Start with semantic search, then targeted file reading
-
-**STEP-BY-STEP WORKFLOW**:
-1. **cidx query first**: Always begin with semantic search for your topic
-2. **Read key files**: Examine the most relevant files found by cidx  
-3. **cidx query again**: Use additional semantic searches if you need more context
-4. **Avoid text search**: Only use grep if cidx completely fails to find anything
-
-**SMART EXPLORATION RULES**:
-- Base analysis on provided semantic search results PLUS targeted cidx queries
-- Be selective - explore only what's necessary for a complete answer
-- If cidx returns good results, DO NOT use grep for the same concept
-
-**TOOL USAGE PRIORITY**:
-🥇 **cidx query** - Your primary tool for ALL code discovery
-🥈 **Read** - For examining files identified by cidx
-🥉 **Task** - For complex workflows involving multiple semantic searches
-
-**REMEMBER**: Text search (grep) finds literal matches but misses semantic relationships. Semantic search (cidx) understands concepts and finds related code even with different terminology."""
-            )
-
-        else:  # exploration_depth == 'deep'
-            return (
-                base_tools
-                + """
-
-🎯 EXPLORATION GUIDELINES (UNLIMITED DEPTH):
-**COMPREHENSIVE SEMANTIC-FIRST APPROACH**: Use extensive semantic searches for thorough analysis
-
-**DEEP EXPLORATION WORKFLOW**:
-1. **Multiple cidx queries**: Start with broad semantic searches, then narrow down
-2. **Systematic file reading**: Read all relevant files found by semantic search
-3. **Follow semantic trails**: Use cidx to explore related concepts and dependencies  
-4. **Cross-reference findings**: Use additional cidx queries to validate and expand understanding
-5. **Text search only if needed**: Use grep only for exact string matches that cidx cannot find
-
-**COMPREHENSIVE ANALYSIS RULES**:
-- Explore thoroughly using semantic search as your primary discovery method
-- Use multiple cidx queries with different search terms to find all related code
-- Read extensively from files identified by semantic search
-- No limits on exploration depth, but prioritize semantic understanding over text matching
-- Build a complete picture through intelligent code discovery, not brute-force text searching
-
-**TOOL USAGE FOR DEEP ANALYSIS**:
-🥇 **cidx query** - Use extensively for comprehensive code discovery  
-🥈 **Read** - Deep examination of all files found by semantic search
-🥉 **Task** - Complex multi-step semantic search workflows
-🏅 **Additional cidx queries** - Follow up searches for related concepts
-
-**DEEP ANALYSIS STRATEGY**: 
-Think like a code archaeologist - use semantic search to understand the conceptual landscape of the codebase, then dive deep into the most relevant areas. Avoid getting lost in literal text matches that miss the bigger picture."""
-            )
 
     def _create_exploration_instructions(self, exploration_depth: str) -> str:
         """Create analysis instructions based on exploration depth."""
@@ -480,6 +307,28 @@ Think like a code archaeologist - use semantic search to understand the conceptu
 
         return "\n".join(context_parts) + "\n"
 
+    def _create_evidence_requirements(self) -> str:
+        """Create general evidence and citation requirements for Claude."""
+        return f"""🔬 EVIDENCE CITATION REQUIREMENTS
+
+**SCIENTIFIC EVIDENCE REQUIREMENT**:
+Treat this analysis like a scientific paper - ALL assertions must be backed by specific evidence from the source code. Every claim you make MUST include markdown links to exact source files and line numbers.
+
+**CITATION FORMAT**:
+- Immediately cite ALL cidx query findings with file:// URLs
+- Format: [description with line info](file://{self.codebase_dir}/path/to/file.py)
+- Include relevance scores in citations when useful  
+- Never make claims about code without exact source citations
+- Every technical assertion requires semantic search evidence
+
+**MANDATORY WORKFLOW**:
+1. **ALWAYS START WITH SEMANTIC SEARCH**: Use `cidx query` first for any code discovery
+2. **READ SPECIFIC FILES**: Use Read for files identified by cidx
+3. **CITE EVERYTHING**: Provide file:line citations for all findings
+4. **FALLBACK ONLY**: Use text search only if cidx returns no relevant results
+
+Remember: You have read-only access. You cannot modify, edit, or execute files."""
+
     def run_analysis(
         self, user_query: str, search_results: List[Dict[str, Any]], **kwargs
     ) -> ClaudeAnalysisResult:
@@ -507,7 +356,12 @@ Think like a code archaeologist - use semantic search to understand the conceptu
         # Check if streaming is requested
         stream_mode = kwargs.get("stream", False)
         if stream_mode:
-            return self._run_claude_cli_streaming(user_query, contexts, **kwargs)
+            # TEMPORARY FIX: Disable streaming due to Claude CLI --verbose + stream-json hang
+            # TODO: Fix the streaming implementation to avoid the hang
+            logger.warning(
+                "Streaming mode temporarily disabled due to Claude CLI hang issue"
+            )
+            # Fall through to non-streaming mode
 
         try:
             # Use the rich prompt system with enhanced tool guidance
@@ -516,23 +370,31 @@ Think like a code archaeologist - use semantic search to understand the conceptu
             enable_exploration = kwargs.get("enable_exploration", True)
 
             # Create the full rich prompt
+            print("🔧 DEBUG: About to create analysis prompt...")
             prompt = self.create_analysis_prompt(
                 user_query=user_query,
                 contexts=contexts,
                 project_info=project_info,
                 enable_exploration=enable_exploration,
             )
+            print("🔧 DEBUG: Analysis prompt created successfully")
 
             try:
                 # Run Claude CLI directly with prompt as stdin
                 cmd = [
                     "claude",
                     "--print",  # Non-interactive mode
-                    "--add-dir",
-                    str(self.codebase_dir),  # Allow access to codebase
+                    # TEMPORARY FIX: Remove --add-dir to avoid timeout issues
+                    # TODO: Investigate why --add-dir causes timeouts and restore it
+                    # "--add-dir",
+                    # str(self.codebase_dir),  # Allow access to codebase
                 ]
 
                 logger.debug(f"Running Claude CLI: {' '.join(cmd)}")
+                print(
+                    f"🔧 DEBUG: About to run Claude CLI with prompt length: {len(prompt)}"
+                )
+                print(f"🔧 DEBUG: Prompt preview: {prompt[:200]}...")
 
                 result = subprocess.run(
                     cmd,
@@ -547,6 +409,19 @@ Think like a code archaeologist - use semantic search to understand the conceptu
                     response = result.stdout.strip()
                     logger.info("Claude CLI analysis completed successfully")
 
+                    # Generate tool usage summary if tracking was requested (non-streaming mode)
+                    tool_summary = None
+                    tool_stats = None
+                    show_claude_plan = kwargs.get("show_claude_plan", False)
+                    if show_claude_plan:
+                        # For non-streaming mode, provide a basic summary indicating no tool tracking occurred
+                        tool_summary = "## Tool Usage Summary\n\nNo tool usage tracking available (streaming mode disabled).\nClaude used non-interactive mode for this analysis."
+                        tool_stats = {
+                            "total_events": 0,
+                            "tools_used": [],
+                            "operation_counts": {},
+                        }
+
                     return ClaudeAnalysisResult(
                         response=response,
                         contexts_used=len(contexts),
@@ -555,10 +430,24 @@ Think like a code archaeologist - use semantic search to understand the conceptu
                         ),
                         search_query=user_query,
                         success=True,
+                        tool_usage_summary=tool_summary,
+                        tool_usage_stats=tool_stats,
                     )
                 else:
                     error_msg = result.stderr.strip() or "Unknown CLI error"
                     logger.error(f"Claude CLI failed: {error_msg}")
+
+                    # Generate tool usage summary if tracking was requested (error case)
+                    tool_summary = None
+                    tool_stats = None
+                    show_claude_plan = kwargs.get("show_claude_plan", False)
+                    if show_claude_plan:
+                        tool_summary = "## Tool Usage Summary\n\nClaude CLI failed - no tool usage tracking available."
+                        tool_stats = {
+                            "total_events": 0,
+                            "tools_used": [],
+                            "operation_counts": {},
+                        }
 
                     return ClaudeAnalysisResult(
                         response="",
@@ -567,6 +456,8 @@ Think like a code archaeologist - use semantic search to understand the conceptu
                         search_query=user_query,
                         success=False,
                         error=f"Claude CLI error: {error_msg}",
+                        tool_usage_summary=tool_summary,
+                        tool_usage_stats=tool_stats,
                     )
 
             finally:
@@ -574,6 +465,19 @@ Think like a code archaeologist - use semantic search to understand the conceptu
 
         except subprocess.TimeoutExpired:
             logger.error("Claude CLI analysis timed out")
+
+            # Generate tool usage summary if tracking was requested (timeout case)
+            tool_summary = None
+            tool_stats = None
+            show_claude_plan = kwargs.get("show_claude_plan", False)
+            if show_claude_plan:
+                tool_summary = "## Tool Usage Summary\n\nClaude CLI timed out - no tool usage tracking available."
+                tool_stats = {
+                    "total_events": 0,
+                    "tools_used": [],
+                    "operation_counts": {},
+                }
+
             return ClaudeAnalysisResult(
                 response="",
                 contexts_used=0,
@@ -581,9 +485,24 @@ Think like a code archaeologist - use semantic search to understand the conceptu
                 search_query=user_query,
                 success=False,
                 error="Claude CLI analysis timed out after 5 minutes",
+                tool_usage_summary=tool_summary,
+                tool_usage_stats=tool_stats,
             )
         except Exception as e:
             logger.error(f"Claude CLI analysis failed: {e}")
+
+            # Generate tool usage summary if tracking was requested (exception case)
+            tool_summary = None
+            tool_stats = None
+            show_claude_plan = kwargs.get("show_claude_plan", False)
+            if show_claude_plan:
+                tool_summary = f"## Tool Usage Summary\n\nClaude CLI failed with exception: {str(e)}\nNo tool usage tracking available."
+                tool_stats = {
+                    "total_events": 0,
+                    "tools_used": [],
+                    "operation_counts": {},
+                }
+
             return ClaudeAnalysisResult(
                 response="",
                 contexts_used=0,
@@ -591,6 +510,8 @@ Think like a code archaeologist - use semantic search to understand the conceptu
                 search_query=user_query,
                 success=False,
                 error=f"CLI execution error: {str(e)}",
+                tool_usage_summary=tool_summary,
+                tool_usage_stats=tool_stats,
             )
 
     def _run_claude_cli_streaming(
@@ -861,107 +782,109 @@ Think like a code archaeologist - use semantic search to understand the conceptu
                 # Wait for process to complete
                 process.wait()
 
+                # Generate tool usage summary if tracking was enabled (regardless of Claude CLI success)
+                tool_summary = None
+                tool_stats = None
+                if show_claude_plan and tool_usage_tracker:
+                    try:
+                        from .claude_tool_tracking import ClaudePlanSummary
+
+                        summary_generator = ClaudePlanSummary()
+                        all_events = tool_usage_tracker.get_all_events()
+                        tool_summary = summary_generator.generate_complete_summary(
+                            all_events
+                        )
+                        tool_stats = tool_usage_tracker.get_summary_stats()
+                    except Exception as e:
+                        logger.warning(f"Failed to generate tool usage summary: {e}")
+                        # Provide minimal summary if generation fails
+                        tool_summary = "Tool usage tracking was enabled but summary generation failed."
+                        tool_stats = {
+                            "total_events": 0,
+                            "tools_used": [],
+                            "operation_counts": {},
+                        }
+
                 if process.returncode == 0:
-                    # Generate tool usage summary if tracking was enabled
-                    tool_summary = None
-                    tool_stats = None
-                    if show_claude_plan and tool_usage_tracker:
+                    # Display final tool usage summary with proper formatting (only on success)
+                    if not quiet and tool_summary:
+                        console.print("\n")
+                        console.print("─" * 80)
+                        console.print(
+                            "🤖 Claude's Problem-Solving Approach",
+                            style="bold cyan",
+                        )
+                        console.print("─" * 80)
                         try:
-                            from .claude_tool_tracking import ClaudePlanSummary
+                            # Special handling for tool usage statistics to ensure proper line breaks
+                            if "📊 Tool Usage Statistics" in tool_summary:
+                                lines = tool_summary.split("\n")
+                                in_stats_section = False
 
-                            summary_generator = ClaudePlanSummary()
-                            all_events = tool_usage_tracker.get_all_events()
-                            tool_summary = summary_generator.generate_complete_summary(
-                                all_events
-                            )
-                            tool_stats = tool_usage_tracker.get_summary_stats()
+                                for line in lines:
+                                    stripped_line = line.strip()
 
-                            # Display final tool usage summary with proper formatting
-                            if not quiet and tool_summary:
-                                console.print("\n")
-                                console.print("─" * 80)
-                                console.print(
-                                    "🤖 Claude's Problem-Solving Approach",
-                                    style="bold cyan",
-                                )
-                                console.print("─" * 80)
-                                try:
-                                    # Special handling for tool usage statistics to ensure proper line breaks
-                                    if "📊 Tool Usage Statistics" in tool_summary:
-                                        lines = tool_summary.split("\n")
-                                        in_stats_section = False
-
-                                        for line in lines:
-                                            stripped_line = line.strip()
-
-                                            if (
-                                                "📊 Tool Usage Statistics"
-                                                in stripped_line
-                                            ):
-                                                in_stats_section = True
-                                                console.print(
-                                                    "\n" + stripped_line,
-                                                    style="bold cyan",
-                                                )
-                                                continue
-
-                                            if in_stats_section and stripped_line:
-                                                if (
-                                                    "Operation Breakdown:"
-                                                    in stripped_line
-                                                ):
-                                                    console.print(
-                                                        "\n" + stripped_line,
-                                                        style="bold",
-                                                    )
-                                                elif any(
-                                                    emoji in stripped_line
-                                                    for emoji in ["🔍✨", "😞", "📄"]
-                                                ):
-                                                    # Operation breakdown items
-                                                    console.print("  " + stripped_line)
-                                                elif (
-                                                    stripped_line
-                                                    and not stripped_line.startswith(
-                                                        "##"
-                                                    )
-                                                ):
-                                                    # Regular statistics lines
-                                                    console.print("  " + stripped_line)
-                                                else:
-                                                    console.print("")
-                                            elif stripped_line:
-                                                # Regular narrative content - use markdown for this part
-
-                                                if any(
-                                                    md_char in line
-                                                    for md_char in [
-                                                        "**",
-                                                        "_",
-                                                        "#",
-                                                        "`",
-                                                        "*",
-                                                    ]
-                                                ):
-                                                    # Process line to improve link readability
-                                                    processed_line = self._process_markdown_for_readability(
-                                                        line
-                                                    )
-                                                    console.print(processed_line)
-                                                else:
-                                                    console.print(line)
-                                            else:
-                                                console.print("")
-                                    else:
-                                        # Regular markdown processing for non-statistics content
-
-                                        # Process for better readability
-                                        processed_summary = (
-                                            self._process_markdown_for_readability(
-                                                tool_summary
-                                            )
+                                    if "📊 Tool Usage Statistics" in stripped_line:
+                                        in_stats_section = True
+                                        console.print(
+                                            "\n" + stripped_line,
+                                            style="bold cyan",
                                         )
-                                        console.print(processed_summary)
+                                        continue
+
+                                    if in_stats_section and stripped_line:
+                                        if "Operation Breakdown:" in stripped_line:
+                                            console.print(
+                                                "\n" + stripped_line,
+                                                style="bold",
+                                            )
+                                        elif any(
+                                            emoji in stripped_line
+                                            for emoji in ["🔍✨", "😞", "📄"]
+                                        ):
+                                            # Operation breakdown items
+                                            console.print("  " + stripped_line)
+                                        elif (
+                                            stripped_line
+                                            and not stripped_line.startswith("##")
+                                        ):
+                                            # Regular statistics lines
+                                            console.print("  " + stripped_line)
+                                        else:
+                                            console.print("")
+                                    elif stripped_line:
+                                        # Regular narrative content - use markdown for this part
+                                        if any(
+                                            md_char in line
+                                            for md_char in [
+                                                "**",
+                                                "_",
+                                                "#",
+                                                "`",
+                                                "*",
+                                            ]
+                                        ):
+                                            # Process line to improve link readability
+                                            processed_line = (
+                                                self._process_markdown_for_readability(
+                                                    line
+                                                )
+                                            )
+                                            console.print(processed_line)
+                                        else:
+                                            console.print(line)
+                                    else:
+                                        console.print("")
+                            else:
+                                # Regular markdown processing for non-statistics content
+                                try:
+                                    # Process for better readability
+                                    processed_summary = (
+                                        self._process_markdown_for_readability(
+                                            tool_summary
+                                        )
+                                    )
+                                    console.print(processed_summary)
                                 except Exception as e:
                                     # Fallback to plain text if markdown rendering fails
                                     logger.warning(f"Markdown rendering failed: {e}")
@@ -996,6 +919,8 @@ Think like a code archaeologist - use semantic search to understand the conceptu
                         search_query=user_query,
                         success=False,
                         error=f"Claude CLI streaming error: {stderr_output}",
+                        tool_usage_summary=tool_summary,
+                        tool_usage_stats=tool_stats,
                     )
 
             except Exception as e:
@@ -1008,6 +933,8 @@ Think like a code archaeologist - use semantic search to understand the conceptu
                     search_query=user_query,
                     success=False,
                     error=f"Streaming error: {str(e)}",
+                    tool_usage_summary=tool_summary,
+                    tool_usage_stats=tool_stats,
                 )
 
         except Exception as e:
@@ -1596,6 +1523,9 @@ Think like a code archaeologist - use semantic search to understand the conceptu
         Returns:
             Formatted prompt string for Claude
         """
+        # Import the unified instruction builder
+        from .cidx_instruction_builder import CidxInstructionBuilder
+
         # Build project context
         project_context = self._create_project_context(project_info)
 
@@ -1617,52 +1547,26 @@ Here's the complete file structure of the codebase:
                     "\n## PROJECT STRUCTURE\n(Unable to generate project structure)\n"
                 )
 
+        # Create unified CIDX instructions using the builder
+        cidx_builder = CidxInstructionBuilder(self.codebase_dir)
+        cidx_instructions = cidx_builder.build_instructions(
+            instruction_level="balanced",
+            include_help_output=True,
+            include_examples=True,
+            include_advanced_patterns=False,
+        )
+
+        # Add evidence requirements
+        evidence_requirements = self._create_evidence_requirements()
+
         # Build the complete prompt
         prompt = f"""You are an expert code analyst working with the {self.project_name or "this"} codebase.
 
-🔬 SCIENTIFIC EVIDENCE REQUIREMENT:
-Treat this analysis like a scientific paper - ALL assertions must be backed by specific evidence from the source code. Every claim you make MUST include markdown links to exact source files and line numbers. No assertion is valid without proper citation to the codebase.
+{cidx_instructions}
 
-🎯 SEARCH STRATEGY:
-You have access to powerful semantic search capabilities. Use them liberally:
-
-CRITICAL: You have access to a powerful semantic search tool `cidx query` that can find relevant code across the entire codebase. Use it liberally - it's much more effective than guessing or making assumptions.
-
-WHEN TO SEARCH:
-✅ "Where is X implemented?" → Search immediately with `cidx query "X implementation"`
-✅ "How does Y work?" → Search for Y-related code first: `cidx query "Y functionality"`  
-✅ "What files contain Z?" → Use semantic search: `cidx query "Z"`
-✅ "Show me examples of..." → Search for examples: `cidx query "examples of..."`
-✅ "Is there any code that..." → Search to verify: `cidx query "code that..."`
-❌ "What is dependency injection?" → Can answer directly (general concept)
-
-SEARCH BEST PRACTICES:
-- Use natural language queries that match developer intent
-- Try multiple search terms if first search doesn't yield results
-- Search for both implementation AND usage patterns
-- Use specific technical terms from the domain/framework
-- Search for error messages, function names, class names, etc.
-
-EXAMPLES:
-- Instead of: "authentication"  
-- Try: "login user authentication", "auth middleware", "token validation"
-
-EVIDENCE REQUIREMENTS:
-- ALL claims about code must be backed by specific file:line citations
-- Use semantic search results to provide concrete examples
-- If you can't find evidence through search, explicitly state "I couldn't find evidence of..."
-- Prefer showing actual code snippets over descriptions
+{evidence_requirements}
 
 {project_context}{project_structure}
-SEMANTIC SEARCH TOOL USAGE:
-Use the `cidx query` command to find relevant code:
-- `cidx query "search terms"` - Find semantically similar code
-- `cidx query "search terms" --limit 5` - Limit results  
-- `cidx query "search terms" --language python` - Filter by language
-- `cidx query "search terms" --path "*/tests/*"` - Filter by path pattern
-- `cidx --help` - See all available commands
-
-Remember: Start with semantic search to find relevant code, then provide evidence-based analysis.
 
 ## USER QUESTION
 {user_query}
@@ -1697,11 +1601,13 @@ Please analyze this question and use semantic search to find relevant code befor
         """
         try:
             # Create claude-first prompt
+            print("🔧 DEBUG: About to create claude-first prompt...")
             prompt = self.create_claude_first_prompt(
                 user_query=user_query,
                 project_info=project_info,
                 include_project_structure=include_project_structure,
             )
+            print("🔧 DEBUG: Claude-first prompt created, calling CLI analysis...")
 
             # Run Claude CLI analysis with empty contexts for claude-first approach
             return self._run_claude_cli_analysis(

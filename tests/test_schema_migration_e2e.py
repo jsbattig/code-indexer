@@ -42,7 +42,7 @@ class TestSchemaMigrationE2E:
 
     @pytest.fixture
     def test_config(self):
-        """Create test configuration using new infrastructure."""
+        """Create test configuration using new infrastructure with comprehensive setup."""
         # Create temporary directory for test
         temp_dir = Path(tempfile.mkdtemp())
 
@@ -54,9 +54,55 @@ class TestSchemaMigrationE2E:
             EmbeddingProvider.VOYAGE_AI
         )
 
-        # Ensure services are ready
-        if not service_manager.ensure_services_ready(working_dir=temp_dir):
+        # COMPREHENSIVE SETUP: Clean up any existing data first
+        print("🧹 Schema migration test: Cleaning existing project data...")
+        try:
+            service_manager.cleanup_project_data(working_dir=temp_dir)
+        except Exception as e:
+            print(f"Initial cleanup warning (non-fatal): {e}")
+
+        # COMPREHENSIVE SETUP: Ensure services are ready
+        print("🔧 Schema migration test: Ensuring services are ready...")
+        services_ready = service_manager.ensure_services_ready(working_dir=temp_dir)
+        if not services_ready:
             pytest.skip("Could not start required services for E2E testing")
+
+        # COMPREHENSIVE SETUP: Verify services are actually functional
+        print("🔍 Schema migration test: Verifying service functionality...")
+        try:
+            # Test with a minimal project to verify services work
+            test_file = temp_dir / "test_setup.py"
+            test_file.write_text("def test(): pass")
+
+            # Initialize project
+            init_result = cli_helper.run_cli_command(
+                ["init", "--force", "--embedding-provider", "voyage-ai"],
+                cwd=temp_dir,
+                timeout=60,
+            )
+            if init_result.returncode != 0:
+                pytest.skip(
+                    f"Service verification failed during init: {init_result.stderr}"
+                )
+
+            # Start services
+            start_result = cli_helper.run_cli_command(
+                ["start", "--quiet"], cwd=temp_dir, timeout=120
+            )
+            if start_result.returncode != 0:
+                pytest.skip(
+                    f"Service verification failed during start: {start_result.stderr}"
+                )
+
+            # Clean up test file
+            test_file.unlink()
+
+            print(
+                "✅ Schema migration comprehensive setup complete - services verified functional"
+            )
+
+        except Exception as e:
+            pytest.skip(f"Service functionality verification failed: {e}")
 
         return Config(
             codebase_dir=str(temp_dir),
@@ -389,7 +435,10 @@ class TestSchemaMigrationE2E:
             stats.files_processed >= 2
         )  # Should process at least README.md and main.py
 
-        # Test search functionality
+        # COMPREHENSIVE VERIFICATION: Test search functionality
+        print(
+            "🔍 Schema migration test: Verifying search functionality after migration..."
+        )
         query = embedding_provider.get_embedding("Hello World")
         results = qdrant_client.search_with_branch_topology(
             query_vector=query,
@@ -398,7 +447,46 @@ class TestSchemaMigrationE2E:
             collection_name=collection_name,
         )
 
+        print(f"Search results count: {len(results)}")
+        if len(results) == 0:
+            # Diagnose search issues
+            try:
+                # Check collection statistics
+                total_points = qdrant_client.count_points(collection_name)
+                print(f"Total points in collection: {total_points}")
+
+                # Check if there are any content points
+                content_points, _ = qdrant_client.scroll_points(
+                    filter_conditions={
+                        "must": [{"key": "type", "match": {"value": "content"}}]
+                    },
+                    collection_name=collection_name,
+                    limit=10,
+                )
+                print(f"Content points found: {len(content_points)}")
+
+                # If we have content points but search fails, it might be a search configuration issue
+                if len(content_points) > 0:
+                    print(
+                        "⚠️  Content points exist but search returned no results - this may indicate a search configuration issue"
+                    )
+                else:
+                    print("❌ No content points found - migration may have failed")
+
+            except Exception as e:
+                print(f"Could not diagnose search issue: {e}")
+
         assert len(results) > 0, "Should be able to search migrated data"
+
+        # Verify search results are properly structured
+        for result in results:
+            payload = result.get("payload", {})
+            assert (
+                payload.get("type") == "content"
+            ), "Search should return content points"
+            assert "content" in payload, "Content points should have content field"
+
+        print("✅ Schema migration search functionality verified")
 
         # NEW STRATEGY: Leave collection for next test (faster execution)
         pass

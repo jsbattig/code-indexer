@@ -201,9 +201,16 @@ class TestIndexingConsistency:
             len(categorized["legacy"]) == 0
         ), f"Should have no legacy points, found {len(categorized['legacy'])}"
         assert len(categorized["new_content"]) > 0, "Should have new content points"
+        # In new architecture, visibility is controlled via hidden_branches in content points
+        # Verify content points have hidden_branches field
+        content_with_visibility = [
+            point
+            for point in categorized["new_content"]
+            if "hidden_branches" in point["payload"]
+        ]
         assert (
-            len(categorized["new_visibility"]) > 0
-        ), "Should have new visibility points"
+            len(content_with_visibility) > 0
+        ), "Content points should have hidden_branches visibility control"
 
         # Verify content points have required fields
         for point in categorized["new_content"]:
@@ -263,9 +270,15 @@ class TestIndexingConsistency:
         assert (
             len(post_reconcile_categorized["new_content"]) > 0
         ), "Should maintain content points"
+        # In new architecture, verify content points maintain hidden_branches visibility control
+        post_reconcile_content_with_visibility = [
+            point
+            for point in post_reconcile_categorized["new_content"]
+            if "hidden_branches" in point["payload"]
+        ]
         assert (
-            len(post_reconcile_categorized["new_visibility"]) > 0
-        ), "Should maintain visibility points"
+            len(post_reconcile_content_with_visibility) > 0
+        ), "Content points should maintain hidden_branches visibility control after reconcile"
 
     def test_repeated_index_operations_are_idempotent(self, smart_indexer):
         """Test that repeated index operations don't create duplicates or mixed architectures."""

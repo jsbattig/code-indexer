@@ -16,11 +16,15 @@ class TestDataCleanerHealth:
             console=self.mock_console, project_name="test-project", force_docker=False
         )
 
+    @patch.object(HealthChecker, "get_timeouts")
     @patch.object(HealthChecker, "wait_for_service_ready")
-    def test_data_cleaner_health_check_success(self, mock_wait_service):
+    def test_data_cleaner_health_check_success(
+        self, mock_wait_service, mock_get_timeouts
+    ):
         """Test successful data cleaner health check."""
         # Mock health check success
         mock_wait_service.return_value = True
+        mock_get_timeouts.return_value = {"data_cleaner_startup": 120}
 
         # Mock data cleaner running check and start
         with patch.object(
@@ -41,11 +45,15 @@ class TestDataCleanerHealth:
                 timeout=120,  # Default data_cleaner_startup timeout
             )
 
+    @patch.object(HealthChecker, "get_timeouts")
     @patch.object(HealthChecker, "wait_for_service_ready")
-    def test_data_cleaner_health_check_timeout(self, mock_wait_service):
+    def test_data_cleaner_health_check_timeout(
+        self, mock_wait_service, mock_get_timeouts
+    ):
         """Test data cleaner health check timeout."""
         # Mock health check timeout
         mock_wait_service.return_value = False
+        mock_get_timeouts.return_value = {"data_cleaner_startup": 120}
 
         # Mock data cleaner start
         with patch.object(
@@ -68,11 +76,15 @@ class TestDataCleanerHealth:
                 "❌ Data cleaner failed to become ready", style="red"
             )
 
+    @patch.object(HealthChecker, "get_timeouts")
     @patch.object(HealthChecker, "wait_for_service_ready")
-    def test_data_cleaner_already_running_no_health_check(self, mock_wait_service):
+    def test_data_cleaner_already_running_with_health_check(
+        self, mock_wait_service, mock_get_timeouts
+    ):
         """Test that health check is performed when data cleaner is already running (for reliability)."""
         # Mock health check to return success
         mock_wait_service.return_value = True
+        mock_get_timeouts.return_value = {"data_cleaner_startup": 120}
 
         # Mock multiple subprocess calls that clean_with_data_cleaner makes
         def mock_subprocess_calls(*args, **kwargs):
@@ -135,9 +147,13 @@ class TestDataCleanerHealth:
                 timeout=120,  # Custom timeout should be used
             )
 
+    @patch.object(HealthChecker, "get_timeouts")
     @patch.object(HealthChecker, "wait_for_service_ready")
-    def test_data_cleaner_start_failure(self, mock_wait_service):
+    def test_data_cleaner_start_failure(self, mock_wait_service, mock_get_timeouts):
         """Test handling when data cleaner fails to start."""
+        # Mock timeouts but won't be used since start fails
+        mock_get_timeouts.return_value = {"data_cleaner_startup": 120}
+
         # Mock data cleaner start failure
         with patch.object(
             self.docker_manager, "start_data_cleaner"

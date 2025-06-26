@@ -35,7 +35,9 @@ def test_dry_run_show_claude_prompt_flag_exists(mock_claude_check):
 @patch("src.code_indexer.cli.QdrantClient")
 @patch("src.code_indexer.cli.EmbeddingProviderFactory")
 @patch("src.code_indexer.cli.ConfigManager")
+@patch("httpx.Client")
 def test_dry_run_shows_prompt_without_execution(
+    mock_httpx_client,
     mock_config_manager,
     mock_embedding_factory,
     mock_qdrant,
@@ -48,11 +50,24 @@ def test_dry_run_shows_prompt_without_execution(
     # Mock Claude SDK availability check
     mock_claude_check.return_value = True
 
+    # Mock HTTP health checks
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_client = MagicMock()
+    mock_client.get.return_value = mock_response
+    mock_httpx_client.return_value = mock_client
+
     # Setup config manager mock
     mock_config_manager_instance = MagicMock()
     mock_config_instance = MagicMock()
     mock_config_instance.codebase_dir = Path("/tmp/test")
     mock_config_instance.qdrant = MagicMock()
+    mock_config_instance.qdrant.host = "http://localhost:6333"
+    mock_config_instance.embedding_provider = (
+        "voyage-ai"  # Not ollama to avoid that health check
+    )
+    mock_config_instance.ollama = MagicMock()
+    mock_config_instance.ollama.host = "http://localhost:11434"
     mock_config_manager_instance.load.return_value = mock_config_instance
     mock_config_manager.return_value = mock_config_manager_instance
 

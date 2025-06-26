@@ -75,8 +75,6 @@ class TestConcurrentIndexingPrevention:
 
                     return BranchIndexingResult(
                         content_points_created=1,
-                        visibility_points_created=1,
-                        visibility_points_updated=0,
                         content_points_reused=0,
                         processing_time=2.0,
                         files_processed=1,
@@ -248,8 +246,6 @@ class TestConcurrentIndexingPrevention:
 
                     mock_index_branch.return_value = BranchIndexingResult(
                         content_points_created=1,
-                        visibility_points_created=1,
-                        visibility_points_updated=0,
                         content_points_reused=0,
                         processing_time=0.1,
                         files_processed=len(test_files),
@@ -328,8 +324,6 @@ class TestConcurrentIndexingPrevention:
 
                     mock_index_branch.return_value = BranchIndexingResult(
                         content_points_created=1,
-                        visibility_points_created=1,
-                        visibility_points_updated=0,
                         content_points_reused=0,
                         processing_time=0.1,
                         files_processed=len(test_files),

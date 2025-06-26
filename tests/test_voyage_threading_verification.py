@@ -197,8 +197,6 @@ class TestClass_{i}:
 
             return BranchIndexingResult(
                 content_points_created=3,
-                visibility_points_created=3,
-                visibility_points_updated=0,
                 content_points_reused=0,
                 processing_time=0.1,
                 files_processed=3,

@@ -21,6 +21,11 @@ class TestGitAwareWatchHandler:
         """Set up test fixtures."""
         self.mock_config = Mock()
         self.mock_config.codebase_dir = Path("/test/codebase")
+        self.mock_config.file_extensions = [
+            "py",
+            "js",
+            "ts",
+        ]  # Mock file extensions for testing
 
         self.mock_smart_indexer = Mock()
         self.mock_git_topology_service = Mock()
@@ -252,6 +257,7 @@ class TestGitAwareWatchHandler:
             ["file.py"],
             force_reprocess=True,
             quiet=False,  # Relative path, quiet=False for debugging
+            watch_mode=True,  # Enable verified deletion for reliability
         )
 
         # Verify metadata updates
@@ -308,7 +314,9 @@ class TestGitAwareWatchHandler:
         # Mock branch indexer result
         mock_branch_result = Mock()
         mock_branch_result.content_points_created = 5
-        mock_branch_result.visibility_points_created = 10
+        mock_branch_result.content_points_reused = 0
+        mock_branch_result.processing_time = 1.0
+        mock_branch_result.files_processed = 2
         self.mock_smart_indexer.branch_aware_indexer.index_branch_changes.return_value = (
             mock_branch_result
         )

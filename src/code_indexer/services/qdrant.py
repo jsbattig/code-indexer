@@ -21,7 +21,7 @@ class QdrantClient:
     def __init__(self, config: QdrantConfig, console: Optional[Console] = None):
         self.config = config
         self.console = console or Console()
-        self.client = httpx.Client(base_url=config.host, timeout=30.0)
+        self.client = httpx.Client(base_url=config.host, timeout=5.0)
         self._current_collection_name: Optional[str] = None
         self._migrator: Optional["QdrantMigrator"] = (
             None  # Lazy initialization to avoid circular imports
@@ -1003,52 +1003,34 @@ class QdrantClient:
         collection_name: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Search with branch topology awareness using the new architecture.
+        Search with branch topology awareness using hidden_branches architecture.
 
-        This method searches content points and filters by branch visibility.
+        This method searches content points where the current branch is NOT in the hidden_branches array,
+        meaning the content is visible in the current branch.
         """
         collection = collection_name or self.config.collection
 
-        # First, get all content IDs visible from this branch
-        visible_content_ids, _ = self.scroll_points(
-            filter_conditions={
-                "must": [
-                    {"key": "type", "match": {"value": "visibility"}},
-                    {"key": "branch", "match": {"value": current_branch}},
-                    {"key": "status", "match": {"value": "visible"}},
-                ]
-            },
-            collection_name=collection,
-            limit=10000,
-            with_payload=True,
-            with_vectors=False,
-        )
+        # Build filter conditions for hidden_branches architecture
+        # Content is visible if current branch is NOT in hidden_branches array
+        filter_conditions = {
+            "must": [
+                {"key": "type", "match": {"value": "content"}},
+            ],
+            "must_not": [
+                # Exclude content where current_branch is in hidden_branches array
+                {"key": "hidden_branches", "match": {"any": [current_branch]}},
+            ],
+        }
 
-        if not visible_content_ids:
-            return []
-
-        # Extract content IDs
-        content_ids = {point["payload"]["content_id"] for point in visible_content_ids}
-
-        # Perform vector search on content points only
-        content_results = self.search(
+        # Perform vector search with branch visibility filtering
+        results = self.search(
             query_vector=query_vector,
-            filter_conditions={
-                "must": [{"key": "type", "match": {"value": "content"}}]
-            },
-            limit=limit * 3,  # Over-fetch to account for filtering
+            filter_conditions=filter_conditions,
+            limit=limit,
             collection_name=collection,
         )
 
-        # Filter by visibility
-        filtered_results = []
-        for result in content_results:
-            if result["id"] in content_ids:
-                filtered_results.append(result)
-                if len(filtered_results) >= limit:
-                    break
-
-        return filtered_results
+        return results
 
     def count_points(self, collection_name: Optional[str] = None) -> int:
         """Count total points in collection."""
@@ -1166,13 +1148,16 @@ class QdrantClient:
     def _batch_update_points(
         self, points: List[Dict[str, Any]], collection_name: str
     ) -> bool:
-        """Update multiple points with new payload data."""
+        """Update multiple points with new payload data using merge operation."""
         try:
-            # Use overwrite payload operation for each point
+            # Use set payload operation to merge new fields without overwriting existing ones
             for point in points:
-                response = self.client.put(
+                response = self.client.post(
                     f"/collections/{collection_name}/points/payload",
-                    json={"points": [point["id"]], "payload": point["payload"]},
+                    json={
+                        "payload": point["payload"],
+                        "points": [point["id"]],
+                    },
                 )
                 response.raise_for_status()
             return True

@@ -122,6 +122,8 @@ if pytest tests/ \
     --ignore=tests/test_reproduce_tiny_chunks.py \
     --ignore=tests/test_chunker_docstring_fix.py \
     --ignore=tests/test_prompt_formatting_issues.py \
+    --ignore=tests/test_reconcile_deletion_integration.py.disabled \
+    --ignore=tests/test_watch_mode_deletion_integration.py.disabled \
     --ignore=tests/test_parallel_voyage_performance.py \
     -m "not slow and not e2e and not real_api" \
     --cov=src/code_indexer --cov-report=xml --cov-report=term; then

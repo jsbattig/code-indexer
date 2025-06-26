@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ContentMetadata:
-    """Metadata for immutable content points."""
+    """Metadata for content points with branch visibility tracking."""
 
     path: str
     chunk_index: int
@@ -51,19 +51,12 @@ class ContentMetadata:
     created_at: float
     working_directory_status: str
     file_mtime: float  # File modification time for reconcile comparisons
+    hidden_branches: List[
+        str
+    ]  # Array of branches where this content is hidden (deleted)
 
 
-@dataclass
-class VisibilityMetadata:
-    """Metadata for branch visibility mapping."""
-
-    branch: str
-    path: str
-    chunk_index: int
-    content_id: str
-    status: str  # 'visible' or 'hidden'
-    priority: int  # For conflict resolution when multiple versions exist
-    created_at: float
+# VisibilityMetadata class removed - now using hidden_branches array in content points
 
 
 @dataclass
@@ -71,8 +64,6 @@ class BranchIndexingResult:
     """Result of branch-aware indexing operation."""
 
     content_points_created: int
-    visibility_points_created: int
-    visibility_points_updated: int
     content_points_reused: int
     processing_time: float
     files_processed: int
@@ -191,8 +182,6 @@ class BranchAwareIndexer:
         start_time = time.time()
         result = BranchIndexingResult(
             content_points_created=0,
-            visibility_points_created=0,
-            visibility_points_updated=0,
             content_points_reused=0,
             processing_time=0,
             files_processed=0,
@@ -214,26 +203,25 @@ class BranchAwareIndexer:
                     vector_thread_count,
                 )
                 result.content_points_created += content_result.content_points_created
-                result.visibility_points_created += (
-                    content_result.visibility_points_created
-                )
                 result.files_processed += len(changed_files)
 
-            # 2. Update visibility for unchanged files - no content creation
+            # 2. Update visibility for unchanged files - no longer needed with hidden_branches approach
             if unchanged_files:
-                visibility_result = self._update_visibility_for_unchanged_files(
-                    unchanged_files, old_branch, new_branch, collection_name
-                )
-                result.visibility_points_created += (
-                    visibility_result.visibility_points_created
-                )
-                result.content_points_reused += visibility_result.content_points_reused
+                # With hidden_branches approach, unchanged files don't need visibility updates
+                # They remain visible in the new branch by default (not in hidden_branches list)
+                result.content_points_reused += len(unchanged_files)
+
+            # 3. Ensure proper branch isolation by hiding files that shouldn't be visible
+            # Get all files that should be visible in the new branch
+            all_visible_files = changed_files + unchanged_files
+            self.hide_files_not_in_branch(
+                new_branch, all_visible_files, collection_name
+            )
 
             result.processing_time = time.time() - start_time
 
             logger.info(
-                f"Branch indexing completed: {result.content_points_created} content points, "
-                f"{result.visibility_points_created} visibility points created, "
+                f"Branch indexing completed: {result.content_points_created} content points created, "
                 f"{result.content_points_reused} content points reused"
             )
 
@@ -251,8 +239,13 @@ class BranchAwareIndexer:
         progress_callback: Optional[Callable] = None,
         vector_thread_count: Optional[int] = None,
     ) -> BranchIndexingResult:
-        """Create content and visibility points for changed files."""
-        result = BranchIndexingResult(0, 0, 0, 0, 0, 0)
+        """Create content points for changed files."""
+        result = BranchIndexingResult(
+            content_points_created=0,
+            content_points_reused=0,
+            processing_time=0,
+            files_processed=0,
+        )
         batch_points = []
 
         # Determine thread count for vector calculation
@@ -310,13 +303,11 @@ class BranchAwareIndexer:
                     # Check if content already exists for this file+commit
                     content_id = self._generate_content_id(file_path, current_commit)
                     if self._content_exists(content_id, collection_name):
-                        # Content exists - just create visibility point
-                        visibility_point = self._create_visibility_point(
-                            branch, file_path, 0, content_id
+                        # Content exists - ensure it's visible in this branch (remove from hidden_branches if present)
+                        self._ensure_file_visible_in_branch(
+                            file_path, branch, collection_name
                         )
-                        batch_points.append(visibility_point)
                         result.content_points_reused += 1
-                        result.visibility_points_created += 1
 
                         # Call progress callback for content reuse with proper format
                         if progress_callback:
@@ -334,9 +325,15 @@ class BranchAwareIndexer:
                             if vector_manager and hasattr(vector_manager, "get_stats"):
                                 stats = vector_manager.get_stats()
                                 if hasattr(stats, "embeddings_per_second"):
-                                    emb_speed = (
-                                        f"{stats.embeddings_per_second:.1f} emb/s"
+                                    throttle_icon = getattr(
+                                        stats, "throttling_status", None
                                     )
+                                    throttle_str = (
+                                        f" {throttle_icon.value}"
+                                        if throttle_icon
+                                        else ""
+                                    )
+                                    emb_speed = f"{stats.embeddings_per_second:.1f} emb/s{throttle_str}"
 
                             info_msg = (
                                 f"{files_completed}/{total_files} files ({file_progress_pct:.0f}%) | "
@@ -427,15 +424,7 @@ class BranchAwareIndexer:
                             batch_points.append(content_point)
                             result.content_points_created += 1
 
-                            # Create visibility point linking branch to content
-                            visibility_point = self._create_visibility_point(
-                                branch,
-                                file_path,
-                                chunk["chunk_index"],
-                                content_point["id"],
-                            )
-                            batch_points.append(visibility_point)
-                            result.visibility_points_created += 1
+                            # No need for separate visibility points - using hidden_branches field instead
 
                         except Exception as e:
                             logger.error(f"Failed to process chunk result: {e}")
@@ -458,7 +447,13 @@ class BranchAwareIndexer:
                         if vector_manager and hasattr(vector_manager, "get_stats"):
                             stats = vector_manager.get_stats()
                             if hasattr(stats, "embeddings_per_second"):
-                                emb_speed = f"{stats.embeddings_per_second:.1f} emb/s"
+                                throttle_icon = getattr(
+                                    stats, "throttling_status", None
+                                )
+                                throttle_str = (
+                                    f" {throttle_icon.value}" if throttle_icon else ""
+                                )
+                                emb_speed = f"{stats.embeddings_per_second:.1f} emb/s{throttle_str}"
 
                         info_msg = (
                             f"{files_completed}/{total_files} files ({file_progress_pct:.0f}%) | "
@@ -520,50 +515,8 @@ class BranchAwareIndexer:
 
         return result if result is not None else {}
 
-    def _update_visibility_for_unchanged_files(
-        self,
-        file_paths: List[str],
-        old_branch: str,
-        new_branch: str,
-        collection_name: str,
-    ) -> BranchIndexingResult:
-        """Update visibility points for unchanged files without touching content."""
-        result = BranchIndexingResult(0, 0, 0, 0, 0, 0)
-        batch_points = []
-
-        # Find content points that are visible in old branch
-        for file_path in file_paths:
-            try:
-                # Get visibility points for this file in old branch
-                old_visibility_points = self._get_visibility_points(
-                    old_branch, file_path, collection_name
-                )
-
-                for vis_point in old_visibility_points:
-                    content_id = vis_point["payload"]["content_id"]
-                    chunk_index = vis_point["payload"]["chunk_index"]
-
-                    # Create new visibility point for new branch
-                    new_visibility_point = self._create_visibility_point(
-                        new_branch, file_path, chunk_index, content_id
-                    )
-                    batch_points.append(new_visibility_point)
-                    result.visibility_points_created += 1
-                    result.content_points_reused += 1
-
-                # Process batch when full
-                if len(batch_points) >= 100:
-                    self.qdrant_client.upsert_points(batch_points, collection_name)
-                    batch_points = []
-
-            except Exception as e:
-                logger.error(f"Failed to update visibility for {file_path}: {e}")
-
-        # Process remaining points
-        if batch_points:
-            self.qdrant_client.upsert_points(batch_points, collection_name)
-
-        return result if result is not None else {}
+    # Note: _update_visibility_for_unchanged_files method removed
+    # With hidden_branches approach, unchanged files don't need visibility updates
 
     def _create_content_point(
         self,
@@ -589,7 +542,7 @@ class BranchAwareIndexer:
             # If file doesn't exist or can't be accessed, use current time
             file_mtime = time.time()
 
-        # Create content metadata
+        # Create content metadata with initial visibility state
         metadata = ContentMetadata(
             path=file_path,
             chunk_index=chunk["chunk_index"],
@@ -601,6 +554,7 @@ class BranchAwareIndexer:
             created_at=time.time(),
             working_directory_status=working_dir_status,
             file_mtime=file_mtime,
+            hidden_branches=[],  # Initially visible in all branches (empty = not hidden anywhere)
         )
 
         # Generate deterministic content ID
@@ -640,36 +594,40 @@ class BranchAwareIndexer:
         )
         return result if result is not None else {}
 
-    def _create_visibility_point(
-        self, branch: str, file_path: str, chunk_index: int, content_id: str
-    ) -> Dict[str, Any]:
-        """Create visibility point linking branch to content."""
-        # Generate deterministic UUID for visibility point
-        visibility_str = f"vis_{branch}_{file_path}_{chunk_index}"
-        namespace = uuid.UUID(
-            "6ba7b811-9dad-11d1-80b4-00c04fd430c8"
-        )  # Different namespace
-        visibility_id = str(uuid.uuid5(namespace, visibility_str))
-
-        metadata = VisibilityMetadata(
-            branch=branch,
-            path=file_path,
-            chunk_index=chunk_index,
-            content_id=content_id,
-            status="visible",
-            priority=1,
-            created_at=time.time(),
+    def _ensure_file_visible_in_branch(
+        self, file_path: str, branch: str, collection_name: str
+    ):
+        """Ensure file is visible in branch by removing branch from hidden_branches array if present."""
+        # Get all content points for this file
+        content_points, _ = self.qdrant_client.scroll_points(
+            filter_conditions={
+                "must": [
+                    {"key": "type", "match": {"value": "content"}},
+                    {"key": "path", "match": {"value": file_path}},
+                ]
+            },
+            limit=1000,  # Should be enough for any file's chunks
+            collection_name=collection_name,
         )
 
-        # Zero vector - not used for similarity search
-        zero_vector = [0.0] * self._get_embedding_dimensions()
+        # Update each content point to remove branch from hidden_branches if present
+        points_to_update = []
+        for point in content_points:
+            current_hidden = point.get("payload", {}).get("hidden_branches", [])
+            if branch in current_hidden:
+                # Remove branch from hidden_branches array
+                new_hidden = [b for b in current_hidden if b != branch]
+                points_to_update.append(
+                    {"id": point["id"], "payload": {"hidden_branches": new_hidden}}
+                )
 
-        result = self.qdrant_client.create_point(
-            point_id=visibility_id,
-            vector=zero_vector,
-            payload={"type": "visibility", **metadata.__dict__},
-        )
-        return result if result is not None else {}
+        # Batch update the points with new hidden_branches arrays
+        if points_to_update:
+            return self.qdrant_client._batch_update_points(
+                points_to_update, collection_name
+            )
+
+        return True  # No updates needed
 
     def search_with_branch_context(
         self,
@@ -679,97 +637,83 @@ class BranchAwareIndexer:
         collection_name: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Search content with branch visibility filtering.
+        Search content with branch visibility filtering using hidden_branches field.
 
-        This performs a two-stage search:
-        1. Vector similarity search on content points
-        2. Filter results by branch visibility
+        Content is visible in a branch unless the branch is in the hidden_branches array.
         """
-        # Over-fetch to account for branch filtering
-        content_results = self.qdrant_client.search(
+        # Search content points with branch visibility filter built-in
+        # Content is visible if current branch is NOT in hidden_branches array
+        filter_conditions = {
+            "must": [
+                {"key": "type", "match": {"value": "content"}},
+            ],
+            "must_not": [
+                # Exclude content where current branch is in hidden_branches array
+                {"key": "hidden_branches", "match": {"any": [branch]}},
+            ],
+        }
+
+        results = self.qdrant_client.search(
             query_vector=query_vector,
-            filter_conditions={
-                "must": [{"key": "type", "match": {"value": "content"}}]
-            },
-            limit=limit * 3,
+            filter_conditions=filter_conditions,
+            limit=limit,
             collection_name=collection_name,
         )
 
-        if not content_results:
-            return []
-
-        # Get visible content IDs for this branch
-        visible_content_ids = self._get_visible_content_ids(
-            branch, collection_name or ""
-        )
-
-        # Filter content results by visibility
-        filtered_results = []
-        for result in content_results:
-            if result["id"] in visible_content_ids:
-                filtered_results.append(result)
-                if len(filtered_results) >= limit:
-                    break
-
-        return filtered_results
+        return results if results is not None else []
 
     def cleanup_branch(self, branch: str, collection_name: str) -> Dict[str, int]:
         """
-        Clean up branch data by hiding visibility points.
+        Clean up branch data by adding branch to hidden_branches of all content points.
 
-        This marks all visibility points for the branch as hidden.
-        Content points are preserved for garbage collection.
+        This marks all content as hidden in the specified branch.
+        Content points are preserved for other branches.
         """
         logger.info(f"Cleaning up branch: {branch}")
 
-        # Hide all visibility points for this branch
-        updated_count = self.qdrant_client.batch_update_points(
+        # Get all content points
+        content_points, _ = self.qdrant_client.scroll_points(
             filter_conditions={
-                "must": [
-                    {"key": "type", "match": {"value": "visibility"}},
-                    {"key": "branch", "match": {"value": branch}},
-                    {"key": "status", "match": {"value": "visible"}},
-                ]
+                "must": [{"key": "type", "match": {"value": "content"}}]
             },
-            payload_updates={"status": "hidden"},
             collection_name=collection_name,
+            limit=10000,
         )
 
-        logger.info(f"Hidden {updated_count} visibility points for branch {branch}")
+        # Add branch to hidden_branches for all content points
+        points_to_update = []
+        for point in content_points:
+            current_hidden = point.get("payload", {}).get("hidden_branches", [])
+            if branch not in current_hidden:
+                new_hidden = current_hidden + [branch]
+                points_to_update.append(
+                    {"id": point["id"], "payload": {"hidden_branches": new_hidden}}
+                )
+
+        updated_count = 0
+        if points_to_update:
+            result = self.qdrant_client._batch_update_points(
+                points_to_update, collection_name
+            )
+            updated_count = len(points_to_update) if result else 0
+
+        logger.info(f"Hidden {updated_count} content points for branch {branch}")
 
         return {
-            "visibility_points_hidden": updated_count,
-            "content_points_preserved": 0,  # Use 0 instead of string for type consistency
+            "content_points_hidden": updated_count,
+            "content_points_preserved": len(content_points) - updated_count,
         }
 
     def garbage_collect_content(self, collection_name: str) -> Dict[str, int]:
         """
-        Remove content points that are no longer visible from any branch.
+        Remove content points that are hidden in ALL branches (completely orphaned).
 
         This is a maintenance operation that can be run periodically.
+        With hidden_branches approach, we can only delete content that is hidden in all existing branches.
         """
         logger.info("Starting content garbage collection")
 
-        # Find all visible content IDs across all branches
-        all_visible_content_ids = set()
-
-        # Get all visibility points that are still visible
-        visible_points, _ = self.qdrant_client.scroll_points(
-            filter_conditions={
-                "must": [
-                    {"key": "type", "match": {"value": "visibility"}},
-                    {"key": "status", "match": {"value": "visible"}},
-                ]
-            },
-            collection_name=collection_name,
-            limit=10000,  # Adjust based on expected volume
-        )
-
-        for point in visible_points:
-            content_id = point["payload"]["content_id"]
-            all_visible_content_ids.add(content_id)
-
-        # Find orphaned content points
+        # Get all unique branches that exist in the system
         all_content_points, _ = self.qdrant_client.scroll_points(
             filter_conditions={
                 "must": [{"key": "type", "match": {"value": "content"}}]
@@ -778,9 +722,26 @@ class BranchAwareIndexer:
             limit=10000,
         )
 
+        if not all_content_points:
+            logger.info("No content points found")
+            return {"content_points_deleted": 0, "content_points_preserved": 0}
+
+        # Collect all branches mentioned in hidden_branches
+        all_branches = set()
+        for point in all_content_points:
+            hidden_branches = point.get("payload", {}).get("hidden_branches", [])
+            all_branches.update(hidden_branches)
+
+        logger.info(
+            f"Found {len(all_branches)} branches in system: {sorted(all_branches)}"
+        )
+
+        # Find content points hidden in ALL branches (completely orphaned)
         orphaned_content_ids = []
         for point in all_content_points:
-            if point["id"] not in all_visible_content_ids:
+            hidden_branches = point.get("payload", {}).get("hidden_branches", [])
+            # If content is hidden in all known branches, it's orphaned
+            if all_branches and set(hidden_branches) >= all_branches:
                 orphaned_content_ids.append(point["id"])
 
         # Delete orphaned content points
@@ -788,10 +749,12 @@ class BranchAwareIndexer:
             deleted_count = self.qdrant_client.delete_points(
                 point_ids=orphaned_content_ids, collection_name=collection_name
             )
-            logger.info(f"Garbage collected {deleted_count} orphaned content points")
+            logger.info(
+                f"Garbage collected {deleted_count} completely orphaned content points"
+            )
         else:
             deleted_count = 0
-            logger.info("No orphaned content points found")
+            logger.info("No completely orphaned content points found")
 
         return {
             "content_points_deleted": deleted_count,
@@ -878,17 +841,15 @@ class BranchAwareIndexer:
         model_info = self.embedding_provider.get_model_info()
         return int(model_info.get("dimensions", 768))
 
-    def _get_visibility_points(
-        self, branch: str, file_path: str, collection_name: str
+    def _get_content_points_for_file(
+        self, file_path: str, collection_name: str
     ) -> List[Dict[str, Any]]:
-        """Get visibility points for file in branch."""
+        """Get content points for file."""
         points, _ = self.qdrant_client.scroll_points(
             filter_conditions={
                 "must": [
-                    {"key": "type", "match": {"value": "visibility"}},
-                    {"key": "branch", "match": {"value": branch}},
+                    {"key": "type", "match": {"value": "content"}},
                     {"key": "path", "match": {"value": file_path}},
-                    {"key": "status", "match": {"value": "visible"}},
                 ]
             },
             collection_name=collection_name,
@@ -897,34 +858,181 @@ class BranchAwareIndexer:
         return list(points)
 
     def _get_visible_content_ids(self, branch: str, collection_name: str) -> Set[str]:
-        """Get all content IDs visible from branch."""
+        """Get all content IDs visible from branch using hidden_branches filter."""
         points, _ = self.qdrant_client.scroll_points(
             filter_conditions={
-                "must": [
-                    {"key": "type", "match": {"value": "visibility"}},
-                    {"key": "branch", "match": {"value": branch}},
-                    {"key": "status", "match": {"value": "visible"}},
-                ]
+                "must": [{"key": "type", "match": {"value": "content"}}],
+                "must_not": [
+                    # Content is visible if current branch is NOT in hidden_branches
+                    {"key": "hidden_branches", "match": {"any": [branch]}},
+                ],
             },
             collection_name=collection_name,
             limit=10000,
         )
 
-        return {point["payload"]["content_id"] for point in points}
+        return {point["id"] for point in points}
 
     def _hide_file_in_branch(self, file_path: str, branch: str, collection_name: str):
-        """Mark file as hidden in branch."""
-        self.qdrant_client.batch_update_points(
+        """Mark file as hidden in branch by adding branch to hidden_branches array."""
+        # Get all content points for this file
+        content_points, _ = self.qdrant_client.scroll_points(
             filter_conditions={
                 "must": [
-                    {"key": "type", "match": {"value": "visibility"}},
-                    {"key": "branch", "match": {"value": branch}},
+                    {"key": "type", "match": {"value": "content"}},
                     {"key": "path", "match": {"value": file_path}},
                 ]
             },
-            payload_updates={"status": "hidden"},
+            limit=1000,  # Should be enough for any file's chunks
             collection_name=collection_name,
         )
+
+        # Update each content point to add branch to hidden_branches if not already present
+        points_to_update = []
+        for point in content_points:
+            current_hidden = point.get("payload", {}).get("hidden_branches", [])
+            if branch not in current_hidden:
+                # Add branch to hidden_branches array
+                new_hidden = current_hidden + [branch]
+                points_to_update.append(
+                    {"id": point["id"], "payload": {"hidden_branches": new_hidden}}
+                )
+
+        # Batch update the points with new hidden_branches arrays
+        if points_to_update:
+            return self.qdrant_client._batch_update_points(
+                points_to_update, collection_name
+            )
+
+        return True  # No updates needed
+
+        # Note: No fallback needed with hidden_branches approach
+        # If no content points exist for the file, that's expected for deleted files
+
+    def hide_files_not_in_branch(
+        self, branch: str, current_files: List[str], collection_name: str
+    ):
+        """Hide all files that exist in the database but not in the current branch's file list.
+
+        This is essential for proper branch isolation during full indexing.
+
+        Args:
+            branch: Current branch name
+            current_files: List of files that exist in the current branch
+            collection_name: Qdrant collection name
+        """
+        # Get all unique file paths from content points in the database
+        all_content_points, _ = self.qdrant_client.scroll_points(
+            filter_conditions={
+                "must": [{"key": "type", "match": {"value": "content"}}]
+            },
+            limit=10000,  # Should be enough for most codebases
+            collection_name=collection_name,
+        )
+
+        # Extract unique file paths from the database
+        db_files = set()
+        for point in all_content_points:
+            file_path = point.get("payload", {}).get("path")
+            if file_path:
+                db_files.add(file_path)
+
+        # Find files that are in the database but not in the current branch
+        current_files_set = set(current_files)
+        files_to_hide = db_files - current_files_set
+
+        if files_to_hide:
+            logger.info(
+                f"Hiding {len(files_to_hide)} files not present in branch {branch}: "
+                f"{', '.join(sorted(files_to_hide))}"
+            )
+
+            # Hide each file that doesn't exist in the current branch
+            for file_path in files_to_hide:
+                self._hide_file_in_branch(file_path, branch, collection_name)
+        else:
+            logger.info(f"No files to hide for branch isolation in {branch}")
+
+        # Ensure files that should be visible are not hidden in this branch
+        # This fixes cases where files were incorrectly hidden in previous operations
+        for file_path in current_files:
+            self._ensure_file_visible_in_branch(file_path, branch, collection_name)
+
+        return True
+
+    def _hide_file_in_branch_with_verification(
+        self, file_path: str, branch: str, collection_name: str
+    ) -> bool:
+        """Mark file as hidden in branch with persistence verification for watch mode reliability."""
+        import time
+
+        logger.info(
+            f"🔧 WATCH MODE: Attempting to hide file {file_path} in branch {branch}"
+        )
+
+        # Perform the hiding operation
+        self._hide_file_in_branch(file_path, branch, collection_name)
+
+        # Verify the hiding was successful with retries for eventual consistency
+        max_retries = (
+            10  # Increased from 3 to 10 for better eventual consistency handling
+        )
+        retry_delay = 1.0  # Increased from 0.5s to 1s for Qdrant consistency
+
+        for attempt in range(max_retries):
+            # Small delay to allow for persistence
+            if attempt > 0:
+                time.sleep(retry_delay)
+
+            # Check if the file is properly hidden
+            if self._verify_file_hidden(file_path, branch, collection_name):
+                logger.info(
+                    f"Successfully hidden file {file_path} in branch {branch} (attempt {attempt + 1})"
+                )
+                return True
+
+            logger.warning(
+                f"File {file_path} still visible after hiding attempt {attempt + 1}"
+            )
+
+        # If we get here, hiding failed after all retries
+        logger.error(
+            f"Failed to hide file {file_path} in branch {branch} after {max_retries} attempts"
+        )
+        return False
+
+    def _verify_file_hidden(
+        self, file_path: str, branch: str, collection_name: str
+    ) -> bool:
+        """Verify that a file is properly hidden by checking hidden_branches field."""
+        try:
+            # Get all content points for this file
+            content_points, _ = self.qdrant_client.scroll_points(
+                filter_conditions={
+                    "must": [
+                        {"key": "type", "match": {"value": "content"}},
+                        {"key": "path", "match": {"value": file_path}},
+                    ]
+                },
+                limit=1000,
+                collection_name=collection_name,
+            )
+
+            # Check if all content points have the branch in their hidden_branches array
+            for content_point in content_points:
+                hidden_branches = content_point.get("payload", {}).get(
+                    "hidden_branches", []
+                )
+                if branch not in hidden_branches:
+                    # File is still visible in this branch - hiding failed
+                    return False
+
+            # All content points are properly hidden in this branch
+            return True
+
+        except Exception as e:
+            logger.error(f"Error verifying file visibility for {file_path}: {e}")
+            return False
 
     def _determine_working_dir_status(self, file_path: str) -> str:
         """Determine working directory status for a file."""
@@ -969,3 +1077,66 @@ class BranchAwareIndexer:
 
         except Exception:
             return "unknown"
+
+    def migrate_to_hidden_branches_schema(self, collection_name: str) -> bool:
+        """Migrate existing collection from visibility points to hidden_branches schema."""
+        try:
+            logger.info("Migrating collection to hidden_branches schema...")
+
+            # Get all content points
+            content_points, _ = self.qdrant_client.scroll_points(
+                filter_conditions={
+                    "must": [{"key": "type", "match": {"value": "content"}}]
+                },
+                limit=10000,
+                collection_name=collection_name,
+            )
+
+            # Add hidden_branches field to content points that don't have it
+            points_to_update = []
+            for point in content_points:
+                payload = point.get("payload", {})
+                if "hidden_branches" not in payload:
+                    points_to_update.append(
+                        {
+                            "id": point["id"],
+                            "payload": {
+                                "hidden_branches": []
+                            },  # Initially visible in all branches
+                        }
+                    )
+
+            if points_to_update:
+                logger.info(
+                    f"Adding hidden_branches field to {len(points_to_update)} content points"
+                )
+                success = self.qdrant_client._batch_update_points(
+                    points_to_update, collection_name
+                )
+                if success:
+                    logger.info("Successfully migrated to hidden_branches schema")
+                    # Clean up old visibility points
+                    self._cleanup_old_visibility_points(collection_name)
+                    return True
+                else:
+                    logger.error("Failed to migrate to hidden_branches schema")
+                    return False
+            else:
+                logger.info("Collection already uses hidden_branches schema")
+                return True
+
+        except Exception as e:
+            logger.error(f"Error during schema migration: {e}")
+            return False
+
+    def _cleanup_old_visibility_points(self, collection_name: str):
+        """Remove old visibility points after migration."""
+        try:
+            # Delete all visibility points
+            self.qdrant_client.delete_by_filter(
+                {"must": [{"key": "type", "match": {"value": "visibility"}}]},
+                collection_name,
+            )
+            logger.info("Cleaned up old visibility points")
+        except Exception as e:
+            logger.warning(f"Could not clean up old visibility points: {e}")

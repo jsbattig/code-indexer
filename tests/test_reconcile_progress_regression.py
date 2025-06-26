@@ -219,6 +219,10 @@ class TestReconcileProgressRegression:
         mock_qdrant_client = Mock()
         mock_qdrant_client.create_point.return_value = {"id": "test-id"}
         mock_qdrant_client.upsert_points.return_value = True
+        mock_qdrant_client.scroll_points.return_value = (
+            [],
+            None,
+        )  # For branch isolation
 
         mock_text_chunker = Mock()
         mock_text_chunker.chunk_file.return_value = [
@@ -288,11 +292,17 @@ class TestReconcileProgressRegression:
             "this is the correct pattern for CLI progress bar updates"
         )
 
-        # Verify the info format is correct: "files (%) | emb/s | threads | filename"
+        # Verify the info format is correct: "files (%) | emb/s {icon} | threads | filename"
         for call in correct_calls:
             info = call["info"]
             assert (
                 "files (" in info and "%) |" in info
             ), f"Should show file progress format in: {info}"
-            assert "emb/s |" in info, f"Should show emb/s format in: {info}"
+            # Updated to account for throttling icons (⚡🟡🔴)
+            assert (
+                "emb/s ⚡ |" in info
+                or "emb/s 🟡 |" in info
+                or "emb/s 🔴 |" in info
+                or "emb/s |" in info
+            ), f"Should show emb/s format with optional throttling icon in: {info}"
             assert "threads |" in info, f"Should show thread count in: {info}"

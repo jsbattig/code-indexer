@@ -34,7 +34,15 @@ class TestResumeAndIncrementalBugs:
             config = Mock(spec=Config)
             config.codebase_dir = Path(tmpdir)
             config.exclude_dirs = ["node_modules", ".git"]
+            config.exclude_files = []
             config.file_extensions = ["py"]
+
+            # Add missing config attributes
+            config.qdrant = Mock()
+            config.qdrant.vector_size = 768
+            config.chunking = Mock()
+            config.chunking.chunk_size = 1000
+            config.chunking.overlap_size = 100
 
             indexing_config = Mock()
             indexing_config.chunk_size = 1000
@@ -45,8 +53,13 @@ class TestResumeAndIncrementalBugs:
             mock_embedding_provider = Mock()
             mock_embedding_provider.get_provider_name.return_value = "test-provider"
             mock_embedding_provider.get_current_model.return_value = "test-model"
+            mock_embedding_provider.get_embedding.return_value = [0.1] * 768
+            mock_embedding_provider.get_model_info.return_value = {"dimensions": 768}
 
             mock_qdrant_client = Mock()
+            mock_qdrant_client.create_point.return_value = {"id": "test-id"}
+            mock_qdrant_client.upsert_points.return_value = True
+            mock_qdrant_client.scroll_points.return_value = ([], None)
 
             with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 metadata_path = Path(f.name)
@@ -68,8 +81,6 @@ class TestResumeAndIncrementalBugs:
                     first_run_calls.append(kwargs)
                     return BranchIndexingResult(
                         content_points_created=10,
-                        visibility_points_created=10,
-                        visibility_points_updated=0,
                         content_points_reused=0,
                         processing_time=1.0,
                         files_processed=len(test_files),
@@ -79,8 +90,6 @@ class TestResumeAndIncrementalBugs:
                     second_run_calls.append(kwargs)
                     return BranchIndexingResult(
                         content_points_created=10,  # BUG: Should be 0 for incremental with no changes
-                        visibility_points_created=10,  # BUG: Should be 0 for incremental with no changes
-                        visibility_points_updated=0,
                         content_points_reused=0,
                         processing_time=1.0,
                         files_processed=len(
@@ -173,7 +182,15 @@ class TestResumeAndIncrementalBugs:
             config = Mock(spec=Config)
             config.codebase_dir = Path(tmpdir)
             config.exclude_dirs = ["node_modules", ".git"]
+            config.exclude_files = []
             config.file_extensions = ["py"]
+
+            # Add missing config attributes
+            config.qdrant = Mock()
+            config.qdrant.vector_size = 768
+            config.chunking = Mock()
+            config.chunking.chunk_size = 1000
+            config.chunking.overlap_size = 100
 
             indexing_config = Mock()
             indexing_config.chunk_size = 1000
@@ -184,8 +201,13 @@ class TestResumeAndIncrementalBugs:
             mock_embedding_provider = Mock()
             mock_embedding_provider.get_provider_name.return_value = "test-provider"
             mock_embedding_provider.get_current_model.return_value = "test-model"
+            mock_embedding_provider.get_embedding.return_value = [0.1] * 768
+            mock_embedding_provider.get_model_info.return_value = {"dimensions": 768}
 
             mock_qdrant_client = Mock()
+            mock_qdrant_client.create_point.return_value = {"id": "test-id"}
+            mock_qdrant_client.upsert_points.return_value = True
+            mock_qdrant_client.scroll_points.return_value = ([], None)
 
             with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 metadata_path = Path(f.name)
@@ -238,8 +260,6 @@ class TestResumeAndIncrementalBugs:
                     # Should only process remaining files, not all files
                     return BranchIndexingResult(
                         content_points_created=actual_files_to_process * 2,
-                        visibility_points_created=actual_files_to_process * 2,
-                        visibility_points_updated=0,
                         content_points_reused=0,
                         processing_time=1.0,
                         files_processed=actual_files_to_process,
@@ -326,7 +346,15 @@ class TestResumeAndIncrementalBugs:
             config = Mock(spec=Config)
             config.codebase_dir = Path(tmpdir)
             config.exclude_dirs = ["node_modules", ".git"]
+            config.exclude_files = []
             config.file_extensions = ["py"]
+
+            # Add missing config attributes
+            config.qdrant = Mock()
+            config.qdrant.vector_size = 768
+            config.chunking = Mock()
+            config.chunking.chunk_size = 1000
+            config.chunking.overlap_size = 100
 
             indexing_config = Mock()
             indexing_config.chunk_size = 1000
@@ -337,8 +365,13 @@ class TestResumeAndIncrementalBugs:
             mock_embedding_provider = Mock()
             mock_embedding_provider.get_provider_name.return_value = "test-provider"
             mock_embedding_provider.get_current_model.return_value = "test-model"
+            mock_embedding_provider.get_embedding.return_value = [0.1] * 768
+            mock_embedding_provider.get_model_info.return_value = {"dimensions": 768}
 
             mock_qdrant_client = Mock()
+            mock_qdrant_client.create_point.return_value = {"id": "test-id"}
+            mock_qdrant_client.upsert_points.return_value = True
+            mock_qdrant_client.scroll_points.return_value = ([], None)
 
             with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 metadata_path = Path(f.name)

@@ -74,6 +74,7 @@ class TestClass_{i}:
         self.mock_qdrant.create_point.return_value = {"id": "test-point"}
         # Make get_point return None so _content_exists returns False (forces chunking path)
         self.mock_qdrant.get_point.return_value = None
+        self.mock_qdrant.scroll_points.return_value = ([], None)  # For branch isolation
 
         # Mock embedding provider
         self.mock_embedding_provider = MockEmbeddingProvider(delay=0.01)
@@ -328,11 +329,17 @@ class TestClass_{i}:
         info_messages = [call["info"] for call in progress_calls if call["info"]]
         assert len(info_messages) > 0, "Should provide informative progress messages"
 
-        # Verify the progress format matches CLI expectations: "files (%) | emb/s | threads | filename"
+        # Verify the progress format matches CLI expectations: "files (%) | emb/s {icon} | threads | filename"
         for info in info_messages:
             assert "files (" in info, f"Should show file count format in: {info}"
             assert "%) |" in info, f"Should show percentage format in: {info}"
-            assert "emb/s |" in info, f"Should show emb/s format in: {info}"
+            # Updated to account for throttling icons (⚡🟡🔴)
+            assert (
+                "emb/s ⚡ |" in info
+                or "emb/s 🟡 |" in info
+                or "emb/s 🔴 |" in info
+                or "emb/s |" in info
+            ), f"Should show emb/s format with optional throttling icon in: {info}"
             assert "threads |" in info, f"Should show thread count in: {info}"
             assert "✓" in info, f"Should show completion status in: {info}"
 

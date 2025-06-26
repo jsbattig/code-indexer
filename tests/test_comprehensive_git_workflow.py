@@ -42,7 +42,7 @@ class ComprehensiveWorkflowTest:
         self.query_results: Dict[str, Dict[str, List[Dict]]] = {}
 
     def setup_test_environment(self):
-        """Setup test infrastructure and create test repository."""
+        """Setup test infrastructure and create test repository with comprehensive setup."""
         # Setup test infrastructure
         self.service_manager, self.cli_helper, self.dir_manager = create_fast_e2e_setup(
             EmbeddingProvider.VOYAGE_AI
@@ -53,7 +53,15 @@ class ComprehensiveWorkflowTest:
         self.config_dir = self.test_repo_dir / ".code-indexer"
         self.config_dir.mkdir(parents=True)
 
-        # Ensure services are ready
+        # COMPREHENSIVE SETUP: Clean up any existing data first
+        print("🧹 Comprehensive setup: Cleaning existing project data...")
+        try:
+            self.service_manager.cleanup_project_data(working_dir=self.test_repo_dir)
+        except Exception as e:
+            print(f"Initial cleanup warning (non-fatal): {e}")
+
+        # COMPREHENSIVE SETUP: Ensure services are ready
+        print("🔧 Comprehensive setup: Ensuring services are ready...")
         services_ready = self.service_manager.ensure_services_ready(
             working_dir=self.test_repo_dir
         )
@@ -61,6 +69,41 @@ class ComprehensiveWorkflowTest:
             raise RuntimeError(
                 "Could not start required services for comprehensive test"
             )
+
+        # COMPREHENSIVE SETUP: Verify services are actually functional
+        print("🔍 Comprehensive setup: Verifying service functionality...")
+        try:
+            # Test with a minimal project to verify services work
+            test_file = self.test_repo_dir / "test_setup.py"
+            test_file.write_text("def test(): pass")
+
+            # Initialize project
+            init_result = self.cli_helper.run_cli_command(
+                ["init", "--force", "--embedding-provider", "voyage-ai"],
+                cwd=self.test_repo_dir,
+                timeout=60,
+            )
+            if init_result.returncode != 0:
+                raise RuntimeError(
+                    f"Service verification failed during init: {init_result.stderr}"
+                )
+
+            # Start services
+            start_result = self.cli_helper.run_cli_command(
+                ["start", "--quiet"], cwd=self.test_repo_dir, timeout=120
+            )
+            if start_result.returncode != 0:
+                raise RuntimeError(
+                    f"Service verification failed during start: {start_result.stderr}"
+                )
+
+            # Clean up test file
+            test_file.unlink()
+
+            print("✅ Comprehensive setup complete - services verified functional")
+
+        except Exception as e:
+            raise RuntimeError(f"Service functionality verification failed: {e}")
 
         return True
 
@@ -547,10 +590,13 @@ The platform follows a modular architecture with clear separation of concerns:
             return {"success": False, "error": str(e), "files_processed": 0}
 
     def query_codebase(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
-        """Query the codebase and return results."""
+        """Query the codebase and return results with comprehensive debugging."""
         try:
             assert self.test_repo_dir is not None
             assert self.config_dir is not None
+
+            print(f"🔍 Querying: '{query}' (limit: {limit})")
+
             # Use CLI helper to run query command
             cmd = [
                 sys.executable,
@@ -572,7 +618,42 @@ The platform follows a modular architecture with clear separation of concerns:
                 timeout=60,  # 1 minute timeout
             )
 
+            print(f"Query result: {result.returncode}")
+            if result.returncode != 0:
+                print(f"Query stderr: {result.stderr}")
+                print(f"Query stdout: {result.stdout}")
+
+                # Diagnose potential issues
+                try:
+                    # Check service status
+                    status_cmd = [
+                        sys.executable,
+                        "-m",
+                        "code_indexer.cli",
+                        "--config",
+                        str(self.config_dir / "config.yaml"),
+                        "status",
+                    ]
+                    status_result = subprocess.run(
+                        status_cmd,
+                        cwd=self.test_repo_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    print(f"Service status during failed query: {status_result.stdout}")
+                except Exception as e:
+                    print(f"Could not get diagnostic info: {e}")
+                return []
+
             if result.returncode == 0:
+                if (
+                    "❌ No results found" in result.stdout
+                    or "No results found" in result.stdout
+                ):
+                    print("⚠️  Query succeeded but returned no results")
+                    return []
+
                 # Parse query results from output
                 # Look for pattern: "📄 File: path | ... | 📊 Score: 0.xxx"
                 results = []
@@ -604,7 +685,7 @@ The platform follows a modular architecture with clear separation of concerns:
                                 try:
                                     score_str = part.split("📊 Score:")[1].strip()
                                     current_result["score"] = float(score_str)
-                                except (subprocess.TimeoutExpired, OSError):
+                                except (ValueError, IndexError):
                                     pass
 
                         in_content = False
@@ -629,9 +710,10 @@ The platform follows a modular architecture with clear separation of concerns:
                 if current_result:
                     results.append(current_result)
 
+                print(f"✅ Query returned {len(results)} results")
                 return results
             else:
-                print(f"Query failed: {result.stderr}")
+                print(f"Query failed with code {result.returncode}: {result.stderr}")
                 return []
 
         except Exception as e:
@@ -1314,6 +1396,11 @@ def is_password_compromised(password: str) -> bool:
             checkout_result = self.workflow_test.run_git_command(["checkout", branch])
             if checkout_result.returncode != 0:
                 continue
+
+            # Re-index the current branch to ensure proper branch isolation
+            branch_index_stats = self.workflow_test.index_current_branch()
+            if not branch_index_stats["success"]:
+                print(f"  ⚠️  Warning: Failed to re-index branch {branch}")
 
             # Test queries that should show different results per branch
             auth_results = self.workflow_test.query_codebase("authentication methods")

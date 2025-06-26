@@ -196,14 +196,26 @@ class RAGContextExtractor:
         ranges = []
         for result in file_results:
             payload = result.get("payload", {})
-            chunk_index = payload.get("chunk_index", 0)
 
-            # Estimate line position from chunk index
-            # This is approximate - could be improved with exact line tracking
-            estimated_line = min(chunk_index * 10, total_lines - 1)
+            # Use actual line numbers from metadata if available
+            chunk_start_line = payload.get("line_start")
+            chunk_end_line = payload.get("line_end")
 
-            start_line = max(0, estimated_line - context_lines // 2)
-            end_line = min(total_lines - 1, estimated_line + context_lines // 2)
+            if chunk_start_line is not None and chunk_end_line is not None:
+                # Use actual line numbers to expand context around the chunk
+                # Convert from 1-indexed to 0-indexed for processing
+                chunk_start_0_indexed = chunk_start_line - 1
+                chunk_end_0_indexed = chunk_end_line - 1
+
+                # Expand context around the actual chunk boundaries
+                start_line = max(0, chunk_start_0_indexed - context_lines)
+                end_line = min(total_lines - 1, chunk_end_0_indexed + context_lines)
+            else:
+                # Fallback to old estimation method if line metadata not available
+                chunk_index = payload.get("chunk_index", 0)
+                estimated_line = min(chunk_index * 10, total_lines - 1)
+                start_line = max(0, estimated_line - context_lines // 2)
+                end_line = min(total_lines - 1, estimated_line + context_lines // 2)
 
             ranges.append((start_line, end_line, result))
 

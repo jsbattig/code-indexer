@@ -1,0 +1,285 @@
+"""
+Test cases that demonstrate the current watch mode deletion bug.
+
+These tests should FAIL with the current implementation because:
+1. Watch mode hard-deletes files across ALL branches (violates branch-aware architecture)
+2. Watch mode bypasses _hide_file_in_branch and uses delete_by_filter instead
+
+These tests will pass once we fix the watch mode deletion logic.
+"""
+
+import pytest
+import tempfile
+from pathlib import Path
+from unittest.mock import patch, MagicMock, ANY
+
+from code_indexer.services.git_aware_watch_handler import GitAwareWatchHandler
+from code_indexer.config import Config
+
+
+class TestWatchModeDeletionBug:
+    """Test the critical watch mode deletion bug that violates branch-aware architecture."""
+
+    @pytest.fixture
+    def git_repo_with_branches(self, tmp_path):
+        """Create a git repo with multiple branches and indexed files."""
+        import subprocess
+
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=tmp_path,
+            check=True,
+        )
+
+        # Create and commit a file in main branch
+        test_file = tmp_path / "test_file.py"
+        test_file.write_text("# Test file content\nprint('hello from main')")
+        subprocess.run(["git", "add", "test_file.py"], cwd=tmp_path, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Add test file"], cwd=tmp_path, check=True
+        )
+
+        # Create feature branch
+        subprocess.run(["git", "checkout", "-b", "feature"], cwd=tmp_path, check=True)
+
+        return {
+            "repo_path": tmp_path,
+            "test_file": test_file,
+            "main_branch": "main",
+            "feature_branch": "feature",
+        }
+
+    def test_watch_mode_preserves_files_in_other_branches(self, git_repo_with_branches):
+        """
+        FAILING TEST: Watch mode should not delete files from other branches.
+
+        Current behavior: Hard deletes file from ALL branches
+        Expected behavior: Only hide file in current branch
+        """
+        repo_path = git_repo_with_branches["repo_path"]
+        test_file = git_repo_with_branches["test_file"]
+
+        # Mock the SmartIndexer and its dependencies
+        with patch(
+            "code_indexer.services.smart_indexer.SmartIndexer"
+        ) as mock_smart_indexer_class:
+            mock_smart_indexer = MagicMock()
+            mock_smart_indexer_class.return_value = mock_smart_indexer
+
+            # Mock BranchAwareIndexer
+            mock_branch_aware_indexer = MagicMock()
+            mock_smart_indexer.branch_aware_indexer = mock_branch_aware_indexer
+
+            # Mock QdrantClient
+            mock_qdrant_client = MagicMock()
+            mock_smart_indexer.qdrant_client = mock_qdrant_client
+
+            # Create watch handler
+            config = Config(codebase_dir=repo_path)
+            watch_handler = GitAwareWatchHandler(
+                smart_indexer=mock_smart_indexer, config=config
+            )
+
+            # Simulate file deletion event in feature branch
+            from watchdog.events import FileDeletedEvent
+
+            delete_event = FileDeletedEvent(src_path=str(test_file))
+
+            # Process the deletion
+            watch_handler.on_deleted(delete_event)
+            watch_handler._process_pending_changes()
+
+            # ASSERTION THAT CURRENTLY FAILS:
+            # Watch mode should call _hide_file_in_branch, not delete_by_filter
+            mock_branch_aware_indexer._hide_file_in_branch.assert_called_once()
+            mock_qdrant_client.delete_by_filter.assert_not_called()
+
+            # The current implementation will FAIL this test because:
+            # 1. It calls SmartIndexer.process_files_incrementally()
+            # 2. Which calls qdrant_client.delete_by_filter()
+            # 3. Which hard-deletes across ALL branches
+
+    def test_watch_mode_uses_branch_aware_deletion(self, git_repo_with_branches):
+        """
+        FAILING TEST: Watch mode should use branch-aware deletion strategy.
+
+        Current behavior: Always uses hard delete via delete_by_filter
+        Expected behavior: Use _hide_file_in_branch for git-aware projects
+        """
+        repo_path = git_repo_with_branches["repo_path"]
+        test_file = git_repo_with_branches["test_file"]
+
+        with patch(
+            "code_indexer.services.smart_indexer.SmartIndexer"
+        ) as mock_smart_indexer_class:
+            mock_smart_indexer = MagicMock()
+            mock_smart_indexer_class.return_value = mock_smart_indexer
+
+            # Mock the current branch detection
+            mock_git_topology = MagicMock()
+            mock_git_topology.get_current_branch.return_value = "feature"
+            mock_smart_indexer.git_topology_service = mock_git_topology
+
+            # Mock BranchAwareIndexer
+            mock_branch_aware_indexer = MagicMock()
+            mock_smart_indexer.branch_aware_indexer = mock_branch_aware_indexer
+
+            # Create watch handler
+            config = Config(codebase_dir=repo_path)
+            watch_handler = GitAwareWatchHandler(
+                smart_indexer=mock_smart_indexer, config=config
+            )
+
+            # Simulate file deletion
+            from watchdog.events import FileDeletedEvent
+
+            delete_event = FileDeletedEvent(src_path=str(test_file))
+
+            watch_handler.on_deleted(delete_event)
+            watch_handler._process_pending_changes()
+
+            # ASSERTION THAT CURRENTLY FAILS:
+            # Should call _hide_file_in_branch with correct parameters
+            expected_file_path = "test_file.py"  # Relative path
+            expected_branch = "feature"
+
+            mock_branch_aware_indexer._hide_file_in_branch.assert_called_once_with(
+                expected_file_path, expected_branch, ANY
+            )
+
+    def test_watch_mode_deletion_preserves_content_points(self, git_repo_with_branches):
+        """
+        FAILING TEST: Watch mode deletion should preserve content points.
+
+        Current behavior: Hard delete removes content points
+        Expected behavior: Only hide visibility points, preserve content
+        """
+        repo_path = git_repo_with_branches["repo_path"]
+        test_file = git_repo_with_branches["test_file"]
+
+        with patch(
+            "code_indexer.services.smart_indexer.SmartIndexer"
+        ) as mock_smart_indexer_class:
+            mock_smart_indexer = MagicMock()
+            mock_smart_indexer_class.return_value = mock_smart_indexer
+
+            # Mock QdrantClient to track what gets deleted
+            mock_qdrant_client = MagicMock()
+            mock_smart_indexer.qdrant_client = mock_qdrant_client
+
+            # Create watch handler
+            config = Config(codebase_dir=repo_path)
+            watch_handler = GitAwareWatchHandler(
+                smart_indexer=mock_smart_indexer, config=config
+            )
+
+            # Simulate file deletion
+            from watchdog.events import FileDeletedEvent
+
+            delete_event = FileDeletedEvent(src_path=str(test_file))
+
+            watch_handler.on_deleted(delete_event)
+            watch_handler._process_pending_changes()
+
+            # ASSERTION THAT CURRENTLY FAILS:
+            # Should not call delete_by_filter (which removes content points)
+            mock_qdrant_client.delete_by_filter.assert_not_called()
+
+            # Should only update visibility points via batch_update_points
+            # (This will fail because current implementation uses delete_by_filter)
+
+    def test_watch_mode_handles_non_git_aware_projects_correctly(self):
+        """
+        Test that watch mode uses correct deletion strategy for non git-aware projects.
+
+        This test should pass even with current implementation since hard delete
+        is correct for non git-aware projects.
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo_path = Path(tmp_dir)
+            test_file = repo_path / "test_file.py"
+            test_file.write_text("# Non git-aware test file")
+
+            with patch(
+                "code_indexer.services.smart_indexer.SmartIndexer"
+            ) as mock_smart_indexer_class:
+                mock_smart_indexer = MagicMock()
+                mock_smart_indexer_class.return_value = mock_smart_indexer
+
+                # Mock as non git-aware project (no git_topology_service)
+                mock_smart_indexer.git_topology_service = None
+
+                # Mock QdrantClient
+                mock_qdrant_client = MagicMock()
+                mock_smart_indexer.qdrant_client = mock_qdrant_client
+
+                # Create watch handler
+                config = Config(codebase_dir=repo_path)
+                watch_handler = GitAwareWatchHandler(
+                    smart_indexer=mock_smart_indexer, config=config
+                )
+
+                # Simulate file deletion
+                from watchdog.events import FileDeletedEvent
+
+                delete_event = FileDeletedEvent(src_path=str(test_file))
+
+                watch_handler.on_deleted(delete_event)
+                watch_handler._process_pending_changes()
+
+                # For non git-aware projects, hard delete is correct
+                # This assertion should pass even with current implementation
+                mock_smart_indexer.process_files_incrementally.assert_called_once()
+
+    def test_watch_mode_branch_context_detection(self, git_repo_with_branches):
+        """
+        FAILING TEST: Watch mode should detect and use current branch context.
+
+        Current behavior: No branch context used in deletion
+        Expected behavior: Use current branch for branch-aware operations
+        """
+        repo_path = git_repo_with_branches["repo_path"]
+        test_file = git_repo_with_branches["test_file"]
+
+        # Switch to feature branch
+        import subprocess
+
+        subprocess.run(["git", "checkout", "feature"], cwd=repo_path, check=True)
+
+        with patch(
+            "code_indexer.services.smart_indexer.SmartIndexer"
+        ) as mock_smart_indexer_class:
+            mock_smart_indexer = MagicMock()
+            mock_smart_indexer_class.return_value = mock_smart_indexer
+
+            # Mock git topology service
+            mock_git_topology = MagicMock()
+            mock_git_topology.get_current_branch.return_value = "feature"
+            mock_smart_indexer.git_topology_service = mock_git_topology
+
+            # Create watch handler
+            config = Config(codebase_dir=repo_path)
+            watch_handler = GitAwareWatchHandler(
+                smart_indexer=mock_smart_indexer, config=config
+            )
+
+            # Simulate file deletion
+            from watchdog.events import FileDeletedEvent
+
+            delete_event = FileDeletedEvent(src_path=str(test_file))
+
+            watch_handler.on_deleted(delete_event)
+            watch_handler._process_pending_changes()
+
+            # ASSERTION THAT CURRENTLY FAILS:
+            # Should detect and use current branch context
+            mock_git_topology.get_current_branch.assert_called()
+
+            # The current implementation doesn't use branch context for deletions
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

@@ -86,6 +86,8 @@ class DocumentProcessor:
                     "content": chunk[
                         "text"
                     ],  # Include content for Qdrant point creation
+                    "line_start": chunk["line_start"],  # Line number metadata
+                    "line_end": chunk["line_end"],  # Line number metadata
                 }
 
                 # Submit to vector calculation manager
@@ -116,6 +118,8 @@ class DocumentProcessor:
                             "chunk_index": vector_result.metadata["chunk_index"],
                             "total_chunks": vector_result.metadata["total_chunks"],
                             "indexed_at": vector_result.metadata["indexed_at"],
+                            "line_start": vector_result.metadata["line_start"],
+                            "line_end": vector_result.metadata["line_end"],
                         },
                         embedding_model=self.embedding_provider.get_current_model(),
                     )

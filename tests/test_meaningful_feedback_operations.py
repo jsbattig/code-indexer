@@ -305,7 +305,6 @@ class TestMeaningfulFeedbackOperations:
             mock_result = Mock()
             mock_result.files_processed = 3
             mock_result.content_points_created = 5
-            mock_result.visibility_points_created = 10
             mock_result.content_points_reused = 8
             mock_result.processing_time = 1.5
             mock_index_changes.return_value = mock_result

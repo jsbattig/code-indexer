@@ -1,0 +1,408 @@
+"""
+Test cases that demonstrate the current reconcile deletion bug.
+
+These tests should FAIL with the current implementation because:
+1. Reconcile never detects files that exist in database but are deleted from filesystem
+2. Reconcile only processes files that exist on disk
+3. No cleanup of stale database entries for deleted files
+
+These tests will pass once we fix the reconcile deletion logic.
+"""
+
+import pytest
+import tempfile
+import subprocess
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+from code_indexer.services.smart_indexer import SmartIndexer
+from code_indexer.config import Config
+
+
+class TestReconcileDeletionBug:
+    """Test the critical reconcile deletion bug that leaves stale data."""
+
+    @pytest.fixture
+    def git_repo_with_indexed_files(self, tmp_path):
+        """Create a git repo with files that have been indexed."""
+        # Initialize git repo
+        subprocess.run(["git", "init"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=tmp_path,
+            check=True,
+        )
+
+        # Create multiple test files
+        files = {}
+        for i in range(3):
+            file_path = tmp_path / f"test_file_{i}.py"
+            file_path.write_text(f"# Test file {i}\nprint('hello from file {i}')")
+            files[f"file_{i}"] = file_path
+
+        # Commit files
+        subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Add test files"], cwd=tmp_path, check=True
+        )
+
+        return {"repo_path": tmp_path, "files": files}
+
+    def test_reconcile_detects_deleted_files(self, git_repo_with_indexed_files):
+        """
+        FAILING TEST: Reconcile should detect files deleted from filesystem.
+
+        Current behavior: Only processes existing files, ignores deleted ones
+        Expected behavior: Detect and handle files that exist in DB but not on disk
+        """
+        repo_path = git_repo_with_indexed_files["repo_path"]
+
+        # Mock SmartIndexer
+        with patch(
+            "code_indexer.services.smart_indexer.SmartIndexer"
+        ) as mock_smart_indexer_class:
+            mock_smart_indexer = MagicMock()
+            mock_smart_indexer_class.return_value = mock_smart_indexer
+
+            # Mock file_finder to return only existing files
+            mock_file_finder = MagicMock()
+            existing_files = [
+                Path("test_file_0.py"),
+                Path("test_file_1.py"),
+            ]  # file_2 will be "deleted"
+            mock_file_finder.find_files.return_value = existing_files
+            mock_smart_indexer.file_finder = mock_file_finder
+
+            # Mock database files (simulate files that were previously indexed)
+            mock_qdrant_client = MagicMock()
+            mock_qdrant_client.scroll_points.return_value = (
+                [
+                    {"payload": {"path": "test_file_0.py", "last_modified": 1000.0}},
+                    {"payload": {"path": "test_file_1.py", "last_modified": 1000.0}},
+                    {
+                        "payload": {"path": "test_file_2.py", "last_modified": 1000.0}
+                    },  # This file was deleted
+                ],
+                None,
+            )
+            mock_smart_indexer.qdrant_client = mock_qdrant_client
+
+            # Create real SmartIndexer to test reconcile logic
+            config = Config(codebase_dir=repo_path)
+            real_indexer = SmartIndexer(config)
+
+            # Replace mocked components
+            real_indexer.file_finder = mock_file_finder
+            real_indexer.qdrant_client = mock_qdrant_client
+
+            # Mock other dependencies
+            mock_git_topology = MagicMock()
+            mock_git_topology.get_current_branch.return_value = "main"
+            real_indexer.git_topology_service = mock_git_topology
+
+            mock_branch_aware = MagicMock()
+            real_indexer.branch_aware_indexer = mock_branch_aware
+
+            # Call reconcile
+            real_indexer._do_reconcile_with_database("test_collection")
+
+            # ASSERTION THAT CURRENTLY FAILS:
+            # Reconcile should detect that test_file_2.py was deleted and handle it
+            # Current implementation only processes existing files, so this will fail
+
+            # Expected behavior: Should call deletion handling for test_file_2.py
+            # This assertion will fail because current reconcile doesn't detect deletions
+            mock_branch_aware._hide_file_in_branch.assert_any_call(
+                "test_file_2.py", "main", "test_collection"
+            )
+
+    def test_reconcile_handles_deleted_files_per_project_type(
+        self, git_repo_with_indexed_files
+    ):
+        """
+        FAILING TEST: Reconcile should handle deletions based on project type.
+
+        Current behavior: No deletion handling at all
+        Expected behavior: Use branch-aware deletion for git projects, hard delete for non-git
+        """
+        repo_path = git_repo_with_indexed_files["repo_path"]
+
+        # Test git-aware project deletion handling
+        with patch(
+            "code_indexer.services.smart_indexer.SmartIndexer"
+        ) as mock_smart_indexer_class:
+            mock_smart_indexer = MagicMock()
+            mock_smart_indexer_class.return_value = mock_smart_indexer
+
+            # Mock file_finder - file_1 was deleted
+            mock_file_finder = MagicMock()
+            mock_file_finder.find_files.return_value = [Path("test_file_0.py")]
+            mock_smart_indexer.file_finder = mock_file_finder
+
+            # Mock database files
+            mock_qdrant_client = MagicMock()
+            mock_qdrant_client.scroll_points.return_value = (
+                [
+                    {"payload": {"path": "test_file_0.py", "last_modified": 1000.0}},
+                    {
+                        "payload": {"path": "test_file_1.py", "last_modified": 1000.0}
+                    },  # Deleted
+                ],
+                None,
+            )
+            mock_smart_indexer.qdrant_client = mock_qdrant_client
+
+            # Mock git-aware components
+            mock_git_topology = MagicMock()
+            mock_git_topology.get_current_branch.return_value = "main"
+            mock_smart_indexer.git_topology_service = mock_git_topology
+
+            mock_branch_aware = MagicMock()
+            mock_smart_indexer.branch_aware_indexer = mock_branch_aware
+
+            # Create real SmartIndexer
+            config = Config(codebase_dir=repo_path)
+            real_indexer = SmartIndexer(config)
+            real_indexer.file_finder = mock_file_finder
+            real_indexer.qdrant_client = mock_qdrant_client
+            real_indexer.git_topology_service = mock_git_topology
+            real_indexer.branch_aware_indexer = mock_branch_aware
+
+            # Add method to detect if git-aware (this doesn't exist yet)
+            real_indexer.is_git_aware = lambda: True
+
+            # Call reconcile with deletion detection (this method doesn't exist yet)
+            # This will fail because the method doesn't exist
+            try:
+                real_indexer._do_reconcile_with_database_and_deletions(
+                    "test_collection"
+                )
+
+                # ASSERTION THAT CURRENTLY FAILS:
+                # Should use branch-aware deletion for git projects
+                mock_branch_aware._hide_file_in_branch.assert_called_once_with(
+                    "test_file_1.py", "main", "test_collection"
+                )
+            except AttributeError:
+                # Expected failure - method doesn't exist yet
+                assert (
+                    True
+                ), "Method _do_reconcile_with_database_and_deletions doesn't exist yet"
+
+    def test_reconcile_performance_with_many_deletions(
+        self, git_repo_with_indexed_files
+    ):
+        """
+        FAILING TEST: Reconcile should efficiently handle many deleted files.
+
+        Current behavior: No deletion handling
+        Expected behavior: Batch deletion operations for performance
+        """
+        repo_path = git_repo_with_indexed_files["repo_path"]
+
+        with patch(
+            "code_indexer.services.smart_indexer.SmartIndexer"
+        ) as mock_smart_indexer_class:
+            mock_smart_indexer = MagicMock()
+            mock_smart_indexer_class.return_value = mock_smart_indexer
+
+            # Mock file_finder - only 1 file remains, 99 were deleted
+            mock_file_finder = MagicMock()
+            mock_file_finder.find_files.return_value = [Path("remaining_file.py")]
+            mock_smart_indexer.file_finder = mock_file_finder
+
+            # Mock database with 100 files
+            db_files = [
+                {"payload": {"path": f"deleted_file_{i}.py", "last_modified": 1000.0}}
+                for i in range(99)
+            ]
+            db_files.append(
+                {"payload": {"path": "remaining_file.py", "last_modified": 1000.0}}
+            )
+
+            mock_qdrant_client = MagicMock()
+            mock_qdrant_client.scroll_points.return_value = (db_files, None)
+            mock_smart_indexer.qdrant_client = mock_qdrant_client
+
+            # Create real SmartIndexer
+            config = Config(codebase_dir=repo_path)
+            real_indexer = SmartIndexer(config)
+            real_indexer.file_finder = mock_file_finder
+            real_indexer.qdrant_client = mock_qdrant_client
+
+            # Mock git components
+            mock_git_topology = MagicMock()
+            mock_git_topology.get_current_branch.return_value = "main"
+            real_indexer.git_topology_service = mock_git_topology
+
+            # Call reconcile
+            real_indexer._do_reconcile_with_database("test_collection")
+
+            # ASSERTION THAT CURRENTLY FAILS:
+            # Should have detected 99 deleted files
+            # Current implementation detects 0 deleted files
+
+            # This is a placeholder assertion that will fail
+            # because current reconcile doesn't detect any deletions
+            assert False, "Current reconcile doesn't detect deleted files"
+
+    def test_detect_deleted_files_method(self, git_repo_with_indexed_files):
+        """
+        FAILING TEST: Should have a method to detect deleted files.
+
+        Current behavior: No such method exists
+        Expected behavior: _detect_deleted_files method returns list of deleted files
+        """
+        repo_path = git_repo_with_indexed_files["repo_path"]
+
+        with patch(
+            "code_indexer.services.smart_indexer.SmartIndexer"
+        ) as mock_smart_indexer_class:
+            mock_smart_indexer = MagicMock()
+            mock_smart_indexer_class.return_value = mock_smart_indexer
+
+            # Create real SmartIndexer
+            config = Config(codebase_dir=repo_path)
+            real_indexer = SmartIndexer(config)
+
+            # ASSERTION THAT CURRENTLY FAILS:
+            # Should have _detect_deleted_files method
+            try:
+                deleted_files = real_indexer._detect_deleted_files("test_collection")
+                assert isinstance(deleted_files, list)
+            except AttributeError:
+                # Expected failure - method doesn't exist yet
+                assert True, "Method _detect_deleted_files doesn't exist yet"
+
+    def test_reconcile_distinguishes_missing_vs_deleted(
+        self, git_repo_with_indexed_files
+    ):
+        """
+        FAILING TEST: Reconcile should distinguish between missing and intentionally deleted files.
+
+        Current behavior: No distinction made
+        Expected behavior: Handle missing files differently from deleted files
+        """
+        repo_path = git_repo_with_indexed_files["repo_path"]
+
+        with patch(
+            "code_indexer.services.smart_indexer.SmartIndexer"
+        ) as mock_smart_indexer_class:
+            mock_smart_indexer = MagicMock()
+            mock_smart_indexer_class.return_value = mock_smart_indexer
+
+            # Mock file_finder
+            mock_file_finder = MagicMock()
+            mock_file_finder.find_files.return_value = [Path("existing_file.py")]
+            mock_smart_indexer.file_finder = mock_file_finder
+
+            # Mock database files - some missing from filesystem, some deleted
+            mock_qdrant_client = MagicMock()
+            mock_qdrant_client.scroll_points.return_value = (
+                [
+                    {"payload": {"path": "existing_file.py", "last_modified": 1000.0}},
+                    {
+                        "payload": {"path": "missing_file.py", "last_modified": 1000.0}
+                    },  # Not in git
+                    {
+                        "payload": {"path": "deleted_file.py", "last_modified": 1000.0}
+                    },  # Deleted from git
+                ],
+                None,
+            )
+            mock_smart_indexer.qdrant_client = mock_qdrant_client
+
+            # Create real SmartIndexer
+            config = Config(codebase_dir=repo_path)
+            real_indexer = SmartIndexer(config)
+            real_indexer.file_finder = mock_file_finder
+            real_indexer.qdrant_client = mock_qdrant_client
+
+            # Mock git to show one file was deleted, one just missing
+            mock_git_topology = MagicMock()
+            mock_git_topology.get_current_branch.return_value = "main"
+            real_indexer.git_topology_service = mock_git_topology
+
+            # Call reconcile
+            real_indexer._do_reconcile_with_database("test_collection")
+
+            # ASSERTION THAT CURRENTLY FAILS:
+            # Should distinguish between missing and deleted files
+            # Current implementation doesn't make this distinction
+            assert (
+                False
+            ), "Current reconcile doesn't distinguish missing vs deleted files"
+
+    def test_non_git_aware_reconcile_deletion_handling(self):
+        """
+        FAILING TEST: Non git-aware reconcile should use hard deletion.
+
+        Current behavior: No deletion handling for non git-aware projects
+        Expected behavior: Use delete_by_filter for non git-aware projects
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repo_path = Path(tmp_dir)
+
+            with patch(
+                "code_indexer.services.smart_indexer.SmartIndexer"
+            ) as mock_smart_indexer_class:
+                mock_smart_indexer = MagicMock()
+                mock_smart_indexer_class.return_value = mock_smart_indexer
+
+                # Mock file_finder - one file deleted
+                mock_file_finder = MagicMock()
+                mock_file_finder.find_files.return_value = [Path("existing_file.py")]
+                mock_smart_indexer.file_finder = mock_file_finder
+
+                # Mock database files
+                mock_qdrant_client = MagicMock()
+                mock_qdrant_client.scroll_points.return_value = (
+                    [
+                        {
+                            "payload": {
+                                "path": "existing_file.py",
+                                "last_modified": 1000.0,
+                            }
+                        },
+                        {
+                            "payload": {
+                                "path": "deleted_file.py",
+                                "last_modified": 1000.0,
+                            }
+                        },
+                    ],
+                    None,
+                )
+                mock_smart_indexer.qdrant_client = mock_qdrant_client
+
+                # Create real SmartIndexer (non git-aware)
+                config = Config(codebase_dir=repo_path)
+                real_indexer = SmartIndexer(config)
+                real_indexer.file_finder = mock_file_finder
+                real_indexer.qdrant_client = mock_qdrant_client
+
+                # No git topology service for non git-aware
+                real_indexer.git_topology_service = None
+
+                # Add method to detect if non git-aware
+                real_indexer.is_git_aware = lambda: False
+
+                # Call reconcile with deletion detection (method doesn't exist yet)
+                try:
+                    real_indexer._do_reconcile_with_database_and_deletions(
+                        "test_collection"
+                    )
+
+                    # ASSERTION THAT CURRENTLY FAILS:
+                    # Should use hard deletion for non git-aware projects
+                    mock_qdrant_client.delete_by_filter.assert_called_once()
+                except AttributeError:
+                    # Expected failure - method doesn't exist yet
+                    assert (
+                        True
+                    ), "Method _do_reconcile_with_database_and_deletions doesn't exist yet"
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

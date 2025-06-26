@@ -111,6 +111,7 @@ class SmartIndexer(HighThroughputProcessor):
         files_count_to_process: Optional[int] = None,
         quiet: bool = False,
         vector_thread_count: Optional[int] = None,
+        detect_deletions: bool = False,
     ) -> ProcessingStats:
         """
         Smart indexing that automatically chooses between full and incremental indexing.
@@ -121,6 +122,10 @@ class SmartIndexer(HighThroughputProcessor):
             batch_size: Batch size for processing
             progress_callback: Optional progress callback
             safety_buffer_seconds: Safety buffer for incremental indexing
+            files_count_to_process: Limit number of files to process (for testing)
+            quiet: Suppress progress output
+            vector_thread_count: Number of threads for vector calculation
+            detect_deletions: Detect and handle files deleted from filesystem but still in database
 
         Returns:
             ProcessingStats with operation results
@@ -214,8 +219,7 @@ class SmartIndexer(HighThroughputProcessor):
 
                         logger.info(
                             f"Graph-optimized branch indexing completed: "
-                            f"{branch_result.content_points_created} content points, "
-                            f"{branch_result.visibility_points_created} visibility points, "
+                            f"{branch_result.content_points_created} content points created, "
                             f"{branch_result.content_points_reused} content points reused"
                         )
 
@@ -272,6 +276,10 @@ class SmartIndexer(HighThroughputProcessor):
                     quiet,
                     vector_thread_count,
                 )
+
+            # Handle deletion detection for standard indexing (when not doing reconcile)
+            if detect_deletions and not reconcile_with_database:
+                self._detect_and_handle_deletions(progress_callback)
 
             # Determine indexing strategy
             if force_full:
@@ -416,6 +424,26 @@ class SmartIndexer(HighThroughputProcessor):
                 vector_thread_count=vector_thread_count,
             )
 
+            # For full indexing, hide all files that don't exist in current branch
+            # This ensures proper branch isolation
+            # IMPORTANT: Use ALL files in current branch, not just the ones being processed
+            all_files_in_branch = list(self.file_finder.find_files())
+            all_relative_files = []
+            for f in all_files_in_branch:
+                try:
+                    if f.is_absolute():
+                        all_relative_files.append(
+                            str(f.relative_to(self.config.codebase_dir))
+                        )
+                    else:
+                        all_relative_files.append(str(f))
+                except ValueError:
+                    all_relative_files.append(str(f))
+
+            self.branch_aware_indexer.hide_files_not_in_branch(
+                current_branch, all_relative_files, collection_name
+            )
+
             # Convert BranchIndexingResult to ProcessingStats
             stats = ProcessingStats()
             stats.files_processed = branch_result.files_processed
@@ -555,6 +583,26 @@ class SmartIndexer(HighThroughputProcessor):
                 collection_name=collection_name,
                 progress_callback=progress_callback,
                 vector_thread_count=vector_thread_count,
+            )
+
+            # For incremental indexing, also hide files that don't exist in current branch
+            # This ensures proper branch isolation even during incremental updates
+            # IMPORTANT: Use ALL files in current branch, not just the ones being processed
+            all_files_in_branch = list(self.file_finder.find_files())
+            all_relative_files = []
+            for f in all_files_in_branch:
+                try:
+                    if f.is_absolute():
+                        all_relative_files.append(
+                            str(f.relative_to(self.config.codebase_dir))
+                        )
+                    else:
+                        all_relative_files.append(str(f))
+                except ValueError:
+                    all_relative_files.append(str(f))
+
+            self.branch_aware_indexer.hide_files_not_in_branch(
+                current_branch, all_relative_files, collection_name
             )
 
             # Convert BranchIndexingResult to ProcessingStats
@@ -770,6 +818,43 @@ class SmartIndexer(HighThroughputProcessor):
             except OSError:
                 # File might have been deleted or is not accessible, skip it
                 continue
+
+        # NEW: Detect files that exist in database but were deleted from filesystem
+        deleted_files = []
+        disk_files_set = {
+            str(f.relative_to(self.config.codebase_dir)) for f in all_files_to_index
+        }
+
+        for indexed_file_path in indexed_files_with_timestamps:
+            # Convert to string for comparison
+            indexed_file_str = (
+                str(indexed_file_path.relative_to(self.config.codebase_dir))
+                if hasattr(indexed_file_path, "relative_to")
+                else str(indexed_file_path)
+            )
+
+            if indexed_file_str not in disk_files_set:
+                # File exists in database but not on disk - was deleted
+                deleted_files.append(indexed_file_str)
+
+        # Handle deleted files using branch-aware strategy
+        if deleted_files:
+            collection_name = self.qdrant_client.resolve_collection_name(
+                self.config, self.embedding_provider
+            )
+
+            for deleted_file in deleted_files:
+                self.delete_file_branch_aware(
+                    deleted_file, collection_name, watch_mode=False
+                )
+
+            if progress_callback:
+                progress_callback(
+                    0,
+                    0,
+                    Path(""),
+                    info=f"🗑️  Cleaned up {len(deleted_files)} deleted files from database",
+                )
 
         if not files_to_index:
             if progress_callback:
@@ -1104,7 +1189,8 @@ class SmartIndexer(HighThroughputProcessor):
 
             logger.info(
                 f"Branch cleanup completed for {branch}: "
-                f"{cleanup_result['visibility_points_hidden']} visibility points hidden"
+                f"{cleanup_result['content_points_hidden']} content points hidden, "
+                f"{cleanup_result['content_points_preserved']} preserved"
             )
 
             return True
@@ -1119,6 +1205,7 @@ class SmartIndexer(HighThroughputProcessor):
         force_reprocess: bool = False,
         quiet: bool = False,
         vector_thread_count: Optional[int] = None,
+        watch_mode: bool = False,
     ) -> ProcessingStats:
         """Process specific files incrementally using git-aware indexing.
 
@@ -1126,6 +1213,8 @@ class SmartIndexer(HighThroughputProcessor):
             file_paths: List of relative file paths to process
             force_reprocess: Force reprocessing even if files seem up to date
             quiet: Suppress progress output
+            vector_thread_count: Number of threads for vector calculation
+            watch_mode: If True, use verified deletion for reliability
 
         Returns:
             ProcessingStats with processing results
@@ -1141,12 +1230,21 @@ class SmartIndexer(HighThroughputProcessor):
                 if abs_path.exists():
                     absolute_paths.append(abs_path)
                 else:
-                    # File was deleted - handle cleanup
-                    self.qdrant_client.delete_by_filter(
-                        {"must": [{"key": "path", "match": {"value": file_path}}]}
+                    # File was deleted - handle cleanup using branch-aware strategy
+                    logger.info(
+                        f"🗑️  WATCH MODE: Processing deletion of {file_path} (watch_mode={watch_mode})"
                     )
-                    if not quiet:
-                        logger.info(f"Deleted vectors for removed file: {file_path}")
+                    collection_name = self.qdrant_client.resolve_collection_name(
+                        self.config, self.embedding_provider
+                    )
+                    success = self.delete_file_branch_aware(
+                        file_path, collection_name, watch_mode
+                    )
+                    if not success and watch_mode:
+                        logger.error(
+                            f"Watch mode deletion verification failed for {file_path}"
+                        )
+                        # Continue processing other files even if one deletion fails
 
             if not absolute_paths:
                 stats.end_time = time.time()
@@ -1183,6 +1281,25 @@ class SmartIndexer(HighThroughputProcessor):
                         collection_name=collection_name,
                         progress_callback=None,  # No progress callback for incremental processing
                         vector_thread_count=vector_thread_count,
+                    )
+
+                    # For incremental file processing, also ensure branch isolation
+                    # IMPORTANT: Use ALL files in current branch, not just the ones being processed
+                    all_files_in_branch = list(self.file_finder.find_files())
+                    all_relative_files = []
+                    for f in all_files_in_branch:
+                        try:
+                            if f.is_absolute():
+                                all_relative_files.append(
+                                    str(f.relative_to(self.config.codebase_dir))
+                                )
+                            else:
+                                all_relative_files.append(str(f))
+                        except ValueError:
+                            all_relative_files.append(str(f))
+
+                    self.branch_aware_indexer.hide_files_not_in_branch(
+                        current_branch, all_relative_files, collection_name
                     )
 
                     # Convert BranchIndexingResult to ProcessingStats
@@ -1222,3 +1339,233 @@ class SmartIndexer(HighThroughputProcessor):
 
         stats.end_time = time.time()
         return stats
+
+    def is_git_aware(self) -> bool:
+        """Determine if this is a git-aware project."""
+        return (
+            self.git_topology_service is not None
+            and self.git_topology_service.get_current_branch() is not None
+        )
+
+    def delete_file_branch_aware(
+        self, file_path: str, collection_name: str, watch_mode: bool = False
+    ) -> bool:
+        """Delete file using appropriate strategy based on project type.
+
+        Args:
+            file_path: Relative path of file to delete
+            collection_name: Qdrant collection name
+            watch_mode: If True, use verification for reliable watch mode deletion
+
+        Returns:
+            True if deletion was successful, False otherwise
+        """
+        if self.is_git_aware():
+            # Use branch-aware soft delete for git projects
+            current_branch = self.git_topology_service.get_current_branch()
+            if current_branch:
+                if watch_mode:
+                    # Use verified hiding for watch mode reliability
+                    success = self.branch_aware_indexer._hide_file_in_branch_with_verification(
+                        file_path, current_branch, collection_name
+                    )
+                    if success:
+                        logger.info(
+                            f"Verified hidden file in branch '{current_branch}': {file_path}"
+                        )
+                    else:
+                        logger.error(
+                            f"Failed to hide file in branch '{current_branch}': {file_path}"
+                        )
+                    return success
+                else:
+                    # Use standard hiding for reconcile mode (already proven reliable)
+                    self.branch_aware_indexer._hide_file_in_branch(
+                        file_path, current_branch, collection_name
+                    )
+                    logger.info(
+                        f"Hidden file in branch '{current_branch}': {file_path}"
+                    )
+                    return True
+            else:
+                logger.warning(
+                    f"Could not determine current branch for file deletion: {file_path}"
+                )
+                return False
+        else:
+            # Use hard delete for non git-aware projects with verification if in watch mode
+            success = self._delete_file_hard_delete_with_verification(
+                file_path, collection_name, watch_mode
+            )
+            if success:
+                logger.info(f"Deleted vectors for removed file: {file_path}")
+            else:
+                logger.error(f"Failed to delete vectors for removed file: {file_path}")
+            return success
+
+    def _delete_file_hard_delete_with_verification(
+        self, file_path: str, collection_name: str, watch_mode: bool
+    ) -> bool:
+        """Perform hard delete with optional verification for watch mode."""
+        try:
+            # Perform the hard delete
+            result = self.qdrant_client.delete_by_filter(
+                {"must": [{"key": "path", "match": {"value": file_path}}]},
+                collection_name,
+            )
+
+            if not watch_mode:
+                # For reconcile mode, trust the operation completed successfully
+                return bool(result)
+
+            # For watch mode, verify the deletion was successful
+            if result:
+                import time
+
+                max_retries = (
+                    10  # Increased from 3 to 10 for better eventual consistency
+                )
+                retry_delay = 1.0  # Increased from 0.5s to 1s for Qdrant consistency
+
+                for attempt in range(max_retries):
+                    if attempt > 0:
+                        time.sleep(retry_delay)
+
+                    # Check if any points still exist for this file
+                    remaining_points, _ = self.qdrant_client.scroll_points(
+                        filter_conditions={
+                            "must": [{"key": "path", "match": {"value": file_path}}]
+                        },
+                        limit=1,
+                        collection_name=collection_name,
+                    )
+
+                    if not remaining_points:
+                        logger.info(
+                            f"Verified hard deletion of {file_path} (attempt {attempt + 1})"
+                        )
+                        return True
+
+                    logger.warning(
+                        f"File {file_path} still has points after deletion attempt {attempt + 1}"
+                    )
+
+                logger.error(
+                    f"Failed to verify hard deletion of {file_path} after {max_retries} attempts"
+                )
+                return False
+
+            return bool(result)
+
+        except Exception as e:
+            logger.error(f"Error during hard deletion of {file_path}: {e}")
+            return False
+
+    def _detect_and_handle_deletions(
+        self, progress_callback: Optional[Callable] = None
+    ) -> None:
+        """Detect and handle files that exist in database but were deleted from filesystem."""
+        try:
+            # Get collection name
+            collection_name = self.qdrant_client.resolve_collection_name(
+                self.config, self.embedding_provider
+            )
+
+            # Get all files that should be indexed (from disk)
+            disk_files = list(self.file_finder.find_files())
+            disk_files_set = {
+                str(f.relative_to(self.config.codebase_dir)) for f in disk_files
+            }
+
+            # Get all files from database (simplified version of reconcile logic)
+            indexed_files = set()
+            offset = None
+
+            while True:
+                try:
+                    points, next_offset = self.qdrant_client.scroll_points(
+                        filter_conditions={
+                            "should": [
+                                {"key": "type", "match": {"value": "content"}},
+                                {"key": "type", "match": {"value": "visibility"}},
+                            ]
+                        },
+                        limit=1000,
+                        offset=offset,
+                        with_payload=True,
+                        with_vectors=False,
+                        collection_name=collection_name,
+                    )
+
+                    for point in points:
+                        if "path" in point["payload"]:
+                            path_from_db = point["payload"]["path"]
+                            # Normalize path - handle both relative and absolute paths
+                            if Path(path_from_db).is_absolute():
+                                file_path = Path(path_from_db)
+                            else:
+                                file_path = self.config.codebase_dir / path_from_db
+
+                            # Convert to relative path string
+                            try:
+                                relative_path = str(
+                                    file_path.relative_to(self.config.codebase_dir)
+                                )
+                                indexed_files.add(relative_path)
+                            except ValueError:
+                                # Path is outside codebase directory, skip
+                                pass
+
+                    offset = next_offset
+                    if offset is None:
+                        break
+
+                except Exception as e:
+                    if progress_callback:
+                        progress_callback(
+                            0,
+                            0,
+                            Path(""),
+                            info=f"Database query failed during deletion detection: {e}",
+                        )
+                    return
+
+            # Find deleted files
+            deleted_files = []
+            for indexed_file in indexed_files:
+                if indexed_file not in disk_files_set:
+                    deleted_files.append(indexed_file)
+
+            # Handle deleted files
+            if deleted_files:
+                for deleted_file in deleted_files:
+                    self.delete_file_branch_aware(
+                        deleted_file, collection_name, watch_mode=False
+                    )
+
+                if progress_callback:
+                    progress_callback(
+                        0,
+                        0,
+                        Path(""),
+                        info=f"🗑️  Detected and cleaned up {len(deleted_files)} deleted files",
+                    )
+                logger.info(
+                    f"Deletion detection: cleaned up {len(deleted_files)} deleted files"
+                )
+            else:
+                if progress_callback:
+                    progress_callback(
+                        0,
+                        0,
+                        Path(""),
+                        info="🔍 Deletion detection: no deleted files found",
+                    )
+                logger.info("Deletion detection: no deleted files found")
+
+        except Exception as e:
+            logger.error(f"Deletion detection failed: {e}")
+            if progress_callback:
+                progress_callback(
+                    0, 0, Path(""), info=f"Deletion detection failed: {e}"
+                )

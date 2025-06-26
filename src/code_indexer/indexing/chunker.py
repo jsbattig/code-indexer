@@ -217,6 +217,80 @@ class TextChunker:
 
         return [chunk for chunk in chunks if chunk.strip()]
 
+    def _smart_split_with_lines(
+        self, text: str, text_lines: List[str], file_extension: str
+    ) -> List[Dict[str, Any]]:
+        """Split text using language-aware delimiters while tracking line numbers."""
+        # For simplicity, use a more direct approach
+        # Split the text normally, then map chunks back to line positions
+
+        # Use the existing smart split method to get text chunks
+        text_chunks = self._smart_split(text, file_extension)
+
+        # Map each text chunk to its line positions
+        chunk_data = []
+        current_pos = 0
+
+        for chunk_text in text_chunks:
+            if not chunk_text.strip():
+                continue
+
+            # Find where this chunk starts in the original text
+            chunk_start_pos = text.find(chunk_text, current_pos)
+            if chunk_start_pos == -1:
+                # Fallback: use current position
+                chunk_start_pos = current_pos
+
+            chunk_end_pos = chunk_start_pos + len(chunk_text)
+
+            # Calculate line numbers for this text segment
+            text_before_chunk = text[:chunk_start_pos]
+            text_in_chunk = text[chunk_start_pos:chunk_end_pos]
+
+            line_start = text_before_chunk.count("\n") + 1
+            line_end = line_start + text_in_chunk.count("\n")
+
+            chunk_data.append(
+                {"text": chunk_text, "line_start": line_start, "line_end": line_end}
+            )
+
+            current_pos = chunk_end_pos
+
+        return chunk_data
+
+    def _fallback_split_with_lines(
+        self, text: str, start_line: int, text_lines: List[str]
+    ) -> List[Dict[str, Any]]:
+        """Fallback splitting when smart splitting doesn't work well, with line tracking."""
+        # Use existing fallback split, then map to line numbers
+        text_chunks = self._fallback_split(text)
+
+        chunk_data = []
+        current_pos = 0
+
+        for chunk_text in text_chunks:
+            # Find where this chunk starts in the original text
+            chunk_start_pos = text.find(chunk_text, current_pos)
+            if chunk_start_pos == -1:
+                chunk_start_pos = current_pos
+
+            chunk_end_pos = chunk_start_pos + len(chunk_text)
+
+            # Calculate line numbers for this text segment
+            text_before_chunk = text[:chunk_start_pos]
+            text_in_chunk = text[chunk_start_pos:chunk_end_pos]
+
+            line_start = text_before_chunk.count("\n") + 1
+            line_end = line_start + text_in_chunk.count("\n")
+
+            chunk_data.append(
+                {"text": chunk_text, "line_start": line_start, "line_end": line_end}
+            )
+
+            current_pos = chunk_end_pos
+
+        return chunk_data
+
     def _fallback_split(self, text: str) -> List[str]:
         """Fallback splitting when smart splitting doesn't work well."""
         if len(text) <= self.chunk_size:
@@ -258,7 +332,7 @@ class TextChunker:
     def chunk_text(
         self, text: str, file_path: Optional[Path] = None
     ) -> List[Dict[str, Any]]:
-        """Split text into chunks with metadata."""
+        """Split text into chunks with metadata including line numbers."""
         if not text or not text.strip():
             return []
 
@@ -267,23 +341,30 @@ class TextChunker:
         if file_path:
             file_extension = file_path.suffix.lstrip(".")
 
-        # Try smart splitting first
-        chunks = self._smart_split(text, file_extension)
+        # Split text into lines for line tracking
+        text_lines = text.splitlines()
+
+        # Create chunks with line position tracking
+        chunk_data = self._smart_split_with_lines(text, text_lines, file_extension)
 
         # If smart splitting results in chunks that are still too large, use fallback
-        final_chunks = []
-        for chunk in chunks:
-            if len(chunk) <= self.chunk_size:
-                final_chunks.append(chunk)
+        final_chunk_data = []
+        for chunk_info in chunk_data:
+            if len(chunk_info["text"]) <= self.chunk_size:
+                final_chunk_data.append(chunk_info)
             else:
-                final_chunks.extend(self._fallback_split(chunk))
+                # Use fallback splitting while preserving line information
+                fallback_chunks = self._fallback_split_with_lines(
+                    chunk_info["text"], chunk_info["line_start"], text_lines
+                )
+                final_chunk_data.extend(fallback_chunks)
 
         # Filter out tiny chunks and merge them with adjacent chunks
         MIN_CHUNK_SIZE = 100  # Minimum meaningful chunk size
-        filtered_chunks: List[str] = []
+        filtered_chunk_data: List[Dict[str, Any]] = []
 
-        for i, chunk_text in enumerate(final_chunks):
-            chunk_text = chunk_text.strip()
+        for i, chunk_info in enumerate(final_chunk_data):
+            chunk_text = chunk_info["text"].strip()
             if not chunk_text:  # Skip empty chunks
                 continue
 
@@ -291,30 +372,38 @@ class TextChunker:
             if len(chunk_text) < MIN_CHUNK_SIZE:
                 # Try to merge with the previous chunk if it exists and won't exceed chunk_size
                 if (
-                    filtered_chunks
-                    and len(filtered_chunks[-1] + "\n" + chunk_text) <= self.chunk_size
+                    filtered_chunk_data
+                    and len(filtered_chunk_data[-1]["text"] + "\n" + chunk_text)
+                    <= self.chunk_size
                 ):
-                    filtered_chunks[-1] = filtered_chunks[-1] + "\n" + chunk_text
+                    # Merge with previous chunk, extending line range
+                    prev_chunk = filtered_chunk_data[-1]
+                    prev_chunk["text"] = prev_chunk["text"] + "\n" + chunk_text
+                    prev_chunk["line_end"] = chunk_info["line_end"]
                     continue
                 # Try to merge with next chunk if available
                 elif (
-                    i + 1 < len(final_chunks)
-                    and len(chunk_text + "\n" + final_chunks[i + 1].strip())
+                    i + 1 < len(final_chunk_data)
+                    and len(chunk_text + "\n" + final_chunk_data[i + 1]["text"].strip())
                     <= self.chunk_size
                 ):
-                    # Merge with next chunk by skipping this one and merging into next iteration
-                    final_chunks[i + 1] = chunk_text + "\n" + final_chunks[i + 1]
+                    # Merge with next chunk by modifying next iteration
+                    next_chunk = final_chunk_data[i + 1]
+                    next_chunk["text"] = chunk_text + "\n" + next_chunk["text"]
+                    next_chunk["line_start"] = chunk_info["line_start"]
                     continue
                 # If we can't merge, only keep it if it has substantial content
                 elif not self._is_fragment(chunk_text):
-                    filtered_chunks.append(chunk_text)
+                    filtered_chunk_data.append(chunk_info)
                 # Otherwise drop the tiny fragment
             else:
-                filtered_chunks.append(chunk_text)
+                filtered_chunk_data.append(chunk_info)
 
-        # Create chunk metadata
+        # Create chunk metadata with line numbers
         result = []
-        for i, chunk_text in enumerate(filtered_chunks):
+        for i, chunk_info in enumerate(filtered_chunk_data):
+            chunk_text = chunk_info["text"]
+
             # Add file context to chunk if it's not too long
             contextual_chunk = chunk_text
             if file_path and len(chunk_text) < self.chunk_size - 100:
@@ -326,10 +415,12 @@ class TextChunker:
                 {
                     "text": contextual_chunk,
                     "chunk_index": i,
-                    "total_chunks": len(filtered_chunks),
+                    "total_chunks": len(filtered_chunk_data),
                     "size": len(contextual_chunk),
                     "file_path": str(file_path) if file_path else None,
                     "file_extension": file_extension,
+                    "line_start": chunk_info["line_start"],
+                    "line_end": chunk_info["line_end"],
                 }
             )
 

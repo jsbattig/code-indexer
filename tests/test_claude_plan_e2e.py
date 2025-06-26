@@ -27,6 +27,7 @@ class TestClaudePlanE2E:
 
     def setup_method(self):
         """Set up test environment with temp directory and sample code."""
+
         # Create temporary directory for test codebase
         self.temp_dir = Path(tempfile.mkdtemp())
         self.codebase_dir = self.temp_dir / "test_codebase"
@@ -35,8 +36,15 @@ class TestClaudePlanE2E:
         # Create sample code files for Claude to analyze
         self._create_sample_codebase()
 
+        # Set up code-indexer for the test codebase so cidx query will work
+        self._setup_code_indexer()
+
     def teardown_method(self):
-        """Clean up temporary directory."""
+        """Clean up temporary directory and code-indexer setup."""
+        # Clean up code-indexer data for this test project
+        self._cleanup_code_indexer()
+
+        # Clean up temporary directory
         if self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
 
@@ -235,6 +243,131 @@ result = api.handle_protected_request({'session_id': session_id})
 ```
 """
         )
+
+    def _setup_code_indexer(self):
+        """Set up code-indexer for the test codebase so cidx query will work."""
+        import subprocess
+        import os
+
+        # Change to the test codebase directory
+        original_cwd = os.getcwd()
+        os.chdir(self.codebase_dir)
+
+        try:
+            # COMPREHENSIVE SETUP: Check if cidx command is available
+            print("🔍 Claude plan E2E: Checking cidx availability...")
+            result = subprocess.run(
+                ["cidx", "--version"], capture_output=True, text=True, timeout=10
+            )
+            if result.returncode != 0:
+                pytest.skip("cidx command not available - required for E2E test")
+
+            # COMPREHENSIVE SETUP: Clean up any existing data first
+            print("🧹 Claude plan E2E: Cleaning existing project data...")
+            cleanup_result = subprocess.run(
+                ["cidx", "clean-data", "--all-projects"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if cleanup_result.returncode != 0:
+                print(f"Cleanup warning (non-fatal): {cleanup_result.stderr}")
+
+            # COMPREHENSIVE SETUP: Initialize code-indexer in the test directory
+            print("🔧 Claude plan E2E: Initializing cidx...")
+            result = subprocess.run(
+                ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if result.returncode != 0:
+                pytest.skip(f"Failed to initialize cidx: {result.stderr}")
+
+            # COMPREHENSIVE SETUP: Start services with recovery
+            print("🔧 Claude plan E2E: Starting services...")
+            start_result = subprocess.run(
+                ["cidx", "start", "--quiet"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if start_result.returncode != 0:
+                # Try recovery - uninstall and reinitialize
+                print("⚠️ Claude plan E2E: Start failed, attempting recovery...")
+                subprocess.run(
+                    ["cidx", "uninstall"], capture_output=True, text=True, timeout=60
+                )
+
+                # Reinitialize after uninstall
+                init_recovery = subprocess.run(
+                    ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                if init_recovery.returncode != 0:
+                    pytest.skip(
+                        f"Failed to reinitialize cidx during recovery: {init_recovery.stderr}"
+                    )
+
+                # Try starting again
+                start_recovery = subprocess.run(
+                    ["cidx", "start", "--quiet"],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                if start_recovery.returncode != 0:
+                    pytest.skip(
+                        f"Failed to start cidx services after recovery: {start_recovery.stderr}"
+                    )
+
+            # COMPREHENSIVE SETUP: Index the sample codebase
+            print("🖾 Claude plan E2E: Indexing codebase...")
+            result = subprocess.run(
+                ["cidx", "index"], capture_output=True, text=True, timeout=180
+            )
+            if result.returncode != 0:
+                pytest.skip(f"Failed to index codebase: {result.stderr}")
+
+            print(
+                "✅ Claude plan E2E: Comprehensive setup complete - cidx ready for testing"
+            )
+
+        except subprocess.TimeoutExpired as e:
+            pytest.skip(
+                f"Timeout setting up code-indexer - services may not be responding: {e}"
+            )
+        except Exception as e:
+            pytest.skip(f"Error setting up code-indexer: {e}")
+        finally:
+            os.chdir(original_cwd)
+
+    def _cleanup_code_indexer(self):
+        """Clean up code-indexer setup for the test."""
+        import subprocess
+        import os
+
+        # Change to the test codebase directory
+        original_cwd = os.getcwd()
+
+        try:
+            os.chdir(self.codebase_dir)
+
+            # Clean up the project data (but don't stop services as other tests might use them)
+            # Use the project-specific cleanup by targeting this directory
+            result = subprocess.run(
+                ["cidx", "clean-data"], capture_output=True, text=True, timeout=30
+            )
+            # Don't fail on cleanup errors, just log them
+            if result.returncode != 0:
+                print(f"Warning: Failed to clean cidx data: {result.stderr}")
+
+        except Exception as e:
+            print(f"Warning: Error during cidx cleanup: {e}")
+        finally:
+            os.chdir(original_cwd)
 
     @pytest.mark.skipif(
         not check_claude_sdk_availability(),
