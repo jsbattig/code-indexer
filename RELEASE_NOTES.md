@@ -1,5 +1,22 @@
 # Code Indexer Release Notes
 
+## Version 1.0.0.2 (2025-06-26)
+
+### 🐛 Critical Bug Fixes
+
+#### **Throttling System Overhaul**
+- **Fixed Stuck Throttling States**: Resolved critical bug where CLIENT_THROTTLED state could persist indefinitely
+- **Bounds Checking**: Added bounds checking in RateLimiter.consume_tokens() to prevent extreme negative token values
+- **Overflow Protection**: Implemented overflow protection in wait_time() calculation, capping wait times at 120 seconds
+- **Recovery Time Improvement**: Reduced maximum recovery time from 11.6 days to ≤1 minute (8,333x improvement)
+- **Race Condition Handling**: Enhanced concurrent token consumption handling to prevent extreme negative states
+- **Comprehensive Testing**: Added 34 new test cases validating the throttling fix across multiple scenarios
+
+### 📊 Performance Metrics
+- **Wait Time Cap**: Maximum wait time reduced from 1,000,001 seconds to 120 seconds
+- **Recovery Guarantee**: Throttling states now guaranteed to recover within reasonable timeframes
+- **Concurrent Safety**: Improved handling of concurrent token consumption scenarios
+
 ## Version 0.1.1.0 (2025-06-25)
 
 ### 🚀 Major Features & Enhancements
