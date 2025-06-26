@@ -57,12 +57,12 @@ class TestNoClientThrottling:
             config, "exponential_backoff"
         ), "Config should still have exponential_backoff"
 
-    def test_vector_calculation_manager_has_no_throttling_status(self):
-        """VectorCalculationManager should not track throttling status."""
+    def test_vector_calculation_manager_has_no_client_throttling(self):
+        """VectorCalculationManager should not have client-side throttling."""
         mock_provider = Mock()
         manager = VectorCalculationManager(mock_provider, thread_count=2)
 
-        # Should not have throttling-related attributes
+        # Should not have CLIENT-side throttling attributes
         assert not hasattr(
             manager, "throttling_detection_window"
         ), "Manager should not have throttling_detection_window"
@@ -72,15 +72,18 @@ class TestNoClientThrottling:
         assert not hasattr(
             manager, "record_client_wait_time"
         ), "Manager should not have record_client_wait_time method"
-        assert not hasattr(
-            manager, "record_server_throttle"
-        ), "Manager should not have record_server_throttle method"
 
-        # Stats should not include throttling status
+        # SERVER-side throttling detection is allowed for monitoring purposes
+        # These help detect when the API is throttling us
+        assert hasattr(
+            manager, "record_server_throttle"
+        ), "Manager should have server throttle detection for monitoring"
+
+        # Stats should include server throttling status for display purposes
         stats = manager.get_stats()
-        assert not hasattr(
+        assert hasattr(
             stats, "throttling_status"
-        ), "Stats should not have throttling_status"
+        ), "Stats should have server throttling status for display"
 
     @pytest.mark.asyncio
     async def test_voyage_ai_makes_requests_without_client_side_delays(self):
@@ -219,13 +222,29 @@ class TestNoClientThrottling:
         with pytest.raises(ImportError):
             from code_indexer.services.voyage_ai import RateLimiter  # noqa: F401
 
-    def test_throttling_status_enum_does_not_exist(self):
-        """The ThrottlingStatus enum should be completely removed."""
-        # This test will fail until we remove the ThrottlingStatus enum
-        with pytest.raises(ImportError):
-            from code_indexer.services.vector_calculation_manager import (  # noqa: F401
-                ThrottlingStatus,
-            )
+    def test_throttling_status_enum_is_server_only(self):
+        """The ThrottlingStatus enum should only have server-side status indicators."""
+        from code_indexer.services.vector_calculation_manager import ThrottlingStatus
+
+        # Should only have server-side throttling indicators
+        assert hasattr(
+            ThrottlingStatus, "FULL_SPEED"
+        ), "Should have FULL_SPEED indicator"
+        assert hasattr(
+            ThrottlingStatus, "SERVER_THROTTLED"
+        ), "Should have SERVER_THROTTLED indicator"
+
+        # Should NOT have client-side throttling indicators
+        assert not hasattr(
+            ThrottlingStatus, "CLIENT_THROTTLED"
+        ), "Should not have CLIENT_THROTTLED"
+
+        # Verify the enum only has the expected values
+        status_values = set(status.name for status in ThrottlingStatus)
+        expected_values = {"FULL_SPEED", "SERVER_THROTTLED"}
+        assert (
+            status_values == expected_values
+        ), f"Expected {expected_values}, got {status_values}"
 
     def test_no_throttling_related_imports_in_indexers(self):
         """Indexer classes should not import throttling-related code."""

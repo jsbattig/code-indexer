@@ -10,11 +10,19 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass
+from enum import Enum
 from typing import Dict, Any, Optional, List
 
 from .embedding_provider import EmbeddingProvider
 
 logger = logging.getLogger(__name__)
+
+
+class ThrottlingStatus(Enum):
+    """Throttling status indicators for display."""
+
+    FULL_SPEED = "⚡"  # No throttling detected
+    SERVER_THROTTLED = "🔴"  # Server-side throttling detected
 
 
 @dataclass
@@ -50,6 +58,8 @@ class VectorCalculationStats:
     queue_size: int = 0
     average_processing_time: float = 0.0
     embeddings_per_second: float = 0.0
+    throttling_status: ThrottlingStatus = ThrottlingStatus.FULL_SPEED
+    server_throttle_count: int = 0
 
 
 @dataclass
@@ -101,6 +111,10 @@ class VectorCalculationManager:
         self.rolling_window_seconds = 30.0
         self.rolling_window: List[RollingWindowEntry] = []
         self.rolling_window_lock = threading.Lock()
+
+        # Server throttling detection (track recent 429s and server errors)
+        self.recent_server_throttles: List[float] = []
+        self.server_throttle_window_seconds = 60.0  # 1 minute window
 
         logger.info(f"Initialized VectorCalculationManager with {thread_count} threads")
 
@@ -235,6 +249,10 @@ class VectorCalculationManager:
             processing_time = time.time() - start_time
             error_msg = str(e)
 
+            # Check if this is a server throttling error
+            if self._is_server_throttling_error(e):
+                self.record_server_throttle()
+
             # Update error stats
             with self.stats_lock:
                 self.stats.total_tasks_failed += 1
@@ -272,6 +290,9 @@ class VectorCalculationManager:
                 self.stats.total_tasks_submitted - self.stats.total_tasks_completed
             )
 
+            # Update throttling status based on recent server throttles
+            self._update_throttling_status()
+
             # Return copy of stats
             return VectorCalculationStats(
                 total_tasks_submitted=self.stats.total_tasks_submitted,
@@ -282,6 +303,8 @@ class VectorCalculationManager:
                 queue_size=self.stats.queue_size,
                 average_processing_time=self.stats.average_processing_time,
                 embeddings_per_second=self.stats.embeddings_per_second,
+                throttling_status=self.stats.throttling_status,
+                server_throttle_count=self.stats.server_throttle_count,
             )
 
     def wait_for_all_tasks(self, timeout: Optional[float] = None) -> bool:
@@ -383,6 +406,56 @@ class VectorCalculationManager:
                 elapsed_total = current_time - self.start_time
                 if elapsed_total > 0:
                     self.stats.embeddings_per_second = total_completed / elapsed_total
+
+    def record_server_throttle(self):
+        """Record a server throttling event (429, API slowness, etc.)."""
+        current_time = time.time()
+        with self.stats_lock:
+            self.recent_server_throttles.append(current_time)
+            self.stats.server_throttle_count += 1
+
+            # Clean up old entries outside the window
+            cutoff_time = current_time - self.server_throttle_window_seconds
+            self.recent_server_throttles = [
+                t for t in self.recent_server_throttles if t >= cutoff_time
+            ]
+
+    def _update_throttling_status(self):
+        """Update throttling status based on recent server throttling events."""
+        current_time = time.time()
+
+        # Clean up old server throttle entries
+        cutoff_time = current_time - self.server_throttle_window_seconds
+        self.recent_server_throttles = [
+            t for t in self.recent_server_throttles if t >= cutoff_time
+        ]
+
+        # Determine throttling status based on recent server throttles
+        # If we've had 3+ server throttles in the last minute, show as server throttled
+        if len(self.recent_server_throttles) >= 3:
+            self.stats.throttling_status = ThrottlingStatus.SERVER_THROTTLED
+        else:
+            self.stats.throttling_status = ThrottlingStatus.FULL_SPEED
+
+    def _is_server_throttling_error(self, exception: Exception) -> bool:
+        """Check if an exception indicates server-side throttling."""
+        error_msg = str(exception).lower()
+
+        # Look for common server throttling indicators
+        throttling_indicators = [
+            "429",  # HTTP 429 Too Many Requests
+            "rate limit",
+            "rate_limit",
+            "too many requests",
+            "quota exceeded",
+            "throttle",
+            "throttling",
+            "timeout",
+            "slow response",
+            "server overload",
+        ]
+
+        return any(indicator in error_msg for indicator in throttling_indicators)
 
 
 def get_default_thread_count(embedding_provider: EmbeddingProvider) -> int:
