@@ -454,7 +454,11 @@ class QdrantClient:
         return int(model_info["dimensions"])
 
     def ensure_provider_aware_collection(
-        self, config, embedding_provider: EmbeddingProvider, quiet: bool = False
+        self,
+        config,
+        embedding_provider: EmbeddingProvider,
+        quiet: bool = False,
+        skip_migration: bool = False,
     ) -> str:
         """Create/validate collection with provider-aware naming and sizing.
 
@@ -462,6 +466,7 @@ class QdrantClient:
             config: Main configuration object containing QdrantConfig
             embedding_provider: Current embedding provider instance
             quiet: Suppress output for migrations and operations
+            skip_migration: Skip migration checks (useful for clear operations)
 
         Returns:
             Collection name that was created/validated
@@ -470,9 +475,13 @@ class QdrantClient:
         vector_size = self.get_vector_size_for_provider(embedding_provider)
 
         # Create collection with auto-detected vector size and migration support
-        success = self.ensure_collection_with_migration(
-            collection_name, vector_size, quiet
-        )
+        if skip_migration:
+            # Skip migration for clear operations to avoid timeouts
+            success = self.ensure_collection(collection_name, vector_size)
+        else:
+            success = self.ensure_collection_with_migration(
+                collection_name, vector_size, quiet
+            )
 
         if not success:
             raise RuntimeError(
