@@ -373,7 +373,7 @@ Remember: You have read-only access. You cannot modify, edit, or execute files."
             if stream_mode:
                 # Use streaming mode implementation
                 return self._run_claude_cli_streaming(user_query, contexts, **kwargs)
-            
+
             try:
                 # Non-streaming mode
                 cmd = [
