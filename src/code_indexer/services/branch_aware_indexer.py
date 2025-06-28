@@ -974,10 +974,9 @@ class BranchAwareIndexer:
         self._hide_file_in_branch(file_path, branch, collection_name)
 
         # Verify the hiding was successful with retries for eventual consistency
-        max_retries = (
-            10  # Increased from 3 to 10 for better eventual consistency handling
-        )
-        retry_delay = 1.0  # Increased from 0.5s to 1s for Qdrant consistency
+        # DEADLOCK FIX: Reduced from 10 retries to prevent 5+ minute hangs
+        max_retries = 3  # Reduced from 10 to 3 for faster deletion processing
+        retry_delay = 0.2  # Reduced from 1.0s to 0.2s to prevent long delays
 
         for attempt in range(max_retries):
             # Small delay to allow for persistence

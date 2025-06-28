@@ -1365,38 +1365,26 @@ class SmartIndexer(HighThroughputProcessor):
             # Use branch-aware soft delete for git projects
             current_branch = self.git_topology_service.get_current_branch()
             if current_branch:
-                if watch_mode:
-                    # Use verified hiding for watch mode reliability
-                    success = self.branch_aware_indexer._hide_file_in_branch_with_verification(
-                        file_path, current_branch, collection_name
-                    )
-                    if success:
-                        logger.info(
-                            f"Verified hidden file in branch '{current_branch}': {file_path}"
-                        )
-                    else:
-                        logger.error(
-                            f"Failed to hide file in branch '{current_branch}': {file_path}"
-                        )
-                    return success
-                else:
-                    # Use standard hiding for reconcile mode (already proven reliable)
-                    self.branch_aware_indexer._hide_file_in_branch(
-                        file_path, current_branch, collection_name
-                    )
-                    logger.info(
-                        f"Hidden file in branch '{current_branch}': {file_path}"
-                    )
-                    return True
+                # DEADLOCK FIX: Always use fast deletion without verification
+                # Trust synchronous operations - verification was causing 5+ minute hangs
+                self.branch_aware_indexer._hide_file_in_branch(
+                    file_path, current_branch, collection_name
+                )
+                logger.info(f"Hidden file in branch '{current_branch}': {file_path}")
+                return True
             else:
                 logger.warning(
                     f"Could not determine current branch for file deletion: {file_path}"
                 )
                 return False
         else:
-            # Use hard delete for non git-aware projects with verification if in watch mode
-            success = self._delete_file_hard_delete_with_verification(
-                file_path, collection_name, watch_mode
+            # DEADLOCK FIX: Use hard delete without verification
+            # Trust synchronous operations - verification was causing 5+ minute hangs
+            success = bool(
+                self.qdrant_client.delete_by_filter(
+                    {"must": [{"key": "path", "match": {"value": file_path}}]},
+                    collection_name,
+                )
             )
             if success:
                 logger.info(f"Deleted vectors for removed file: {file_path}")
@@ -1404,63 +1392,8 @@ class SmartIndexer(HighThroughputProcessor):
                 logger.error(f"Failed to delete vectors for removed file: {file_path}")
             return success
 
-    def _delete_file_hard_delete_with_verification(
-        self, file_path: str, collection_name: str, watch_mode: bool
-    ) -> bool:
-        """Perform hard delete with optional verification for watch mode."""
-        try:
-            # Perform the hard delete
-            result = self.qdrant_client.delete_by_filter(
-                {"must": [{"key": "path", "match": {"value": file_path}}]},
-                collection_name,
-            )
-
-            if not watch_mode:
-                # For reconcile mode, trust the operation completed successfully
-                return bool(result)
-
-            # For watch mode, verify the deletion was successful
-            if result:
-                import time
-
-                max_retries = (
-                    10  # Increased from 3 to 10 for better eventual consistency
-                )
-                retry_delay = 1.0  # Increased from 0.5s to 1s for Qdrant consistency
-
-                for attempt in range(max_retries):
-                    if attempt > 0:
-                        time.sleep(retry_delay)
-
-                    # Check if any points still exist for this file
-                    remaining_points, _ = self.qdrant_client.scroll_points(
-                        filter_conditions={
-                            "must": [{"key": "path", "match": {"value": file_path}}]
-                        },
-                        limit=1,
-                        collection_name=collection_name,
-                    )
-
-                    if not remaining_points:
-                        logger.info(
-                            f"Verified hard deletion of {file_path} (attempt {attempt + 1})"
-                        )
-                        return True
-
-                    logger.warning(
-                        f"File {file_path} still has points after deletion attempt {attempt + 1}"
-                    )
-
-                logger.error(
-                    f"Failed to verify hard deletion of {file_path} after {max_retries} attempts"
-                )
-                return False
-
-            return bool(result)
-
-        except Exception as e:
-            logger.error(f"Error during hard deletion of {file_path}: {e}")
-            return False
+    # DEADLOCK FIX: Removed _delete_file_hard_delete_with_verification method
+    # The verification was causing 5+ minute hangs. Trust synchronous operations instead.
 
     def _detect_and_handle_deletions(
         self, progress_callback: Optional[Callable] = None
@@ -1481,6 +1414,10 @@ class SmartIndexer(HighThroughputProcessor):
             # Get all files from database (simplified version of reconcile logic)
             indexed_files = set()
             offset = None
+
+            # DEADLOCK FIX: Add pagination safety to prevent infinite loops
+            max_iterations = 1000  # Safety limit: max 1M points (1000 * 1000 limit)
+            iteration_count = 0
 
             while True:
                 try:
@@ -1518,6 +1455,23 @@ class SmartIndexer(HighThroughputProcessor):
                                 pass
 
                     offset = next_offset
+                    iteration_count += 1
+
+                    # DEADLOCK FIX: Check for infinite pagination loops
+                    if iteration_count >= max_iterations:
+                        logger.warning(
+                            f"Pagination safety limit reached ({max_iterations} iterations). "
+                            f"Breaking out of deletion detection loop."
+                        )
+                        if progress_callback:
+                            progress_callback(
+                                0,
+                                0,
+                                Path(""),
+                                info=f"⚠️ Pagination limit reached, continuing with {len(indexed_files)} files found",
+                            )
+                        break
+
                     if offset is None:
                         break
 
@@ -1539,7 +1493,16 @@ class SmartIndexer(HighThroughputProcessor):
 
             # Handle deleted files
             if deleted_files:
-                for deleted_file in deleted_files:
+                # DEADLOCK FIX: Add progress feedback during deletion processing
+                for i, deleted_file in enumerate(deleted_files):
+                    if progress_callback:
+                        progress_callback(
+                            i + 1,
+                            len(deleted_files),
+                            Path(deleted_file),
+                            info=f"🗑️ Cleaning up deleted files ({i + 1}/{len(deleted_files)}): {deleted_file}",
+                        )
+
                     self.delete_file_branch_aware(
                         deleted_file, collection_name, watch_mode=False
                     )
