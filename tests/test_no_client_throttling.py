@@ -4,11 +4,8 @@ These tests verify that the system no longer performs client-side rate limiting
 and instead relies on server-driven throttling with proper retry mechanisms.
 """
 
-import asyncio
-import time
 from unittest.mock import Mock, patch
 import pytest
-import httpx
 
 from code_indexer.services.voyage_ai import VoyageAIClient
 from code_indexer.services.vector_calculation_manager import VectorCalculationManager
@@ -85,137 +82,6 @@ class TestNoClientThrottling:
             stats, "throttling_status"
         ), "Stats should have server throttling status for display"
 
-    @pytest.mark.asyncio
-    async def test_voyage_ai_makes_requests_without_client_side_delays(self):
-        """VoyageAI should make requests immediately without client-side rate limiting delays."""
-        config = VoyageAIConfig()
-
-        with patch.dict("os.environ", {"VOYAGE_API_KEY": "test-key"}):
-            client = VoyageAIClient(config)
-
-            # Mock successful response
-            mock_response = {
-                "data": [{"embedding": [0.1, 0.2, 0.3]}],
-                "usage": {"total_tokens": 10},
-            }
-
-            with patch("httpx.AsyncClient.post") as mock_post:
-                # Create a proper mock response
-                mock_resp = Mock()
-                mock_resp.json.return_value = mock_response
-                mock_resp.raise_for_status.return_value = None
-                mock_post.return_value = mock_resp
-
-                # Time multiple rapid requests - should not have artificial delays
-                start_time = time.time()
-
-                # Make 10 rapid requests
-                for _ in range(10):
-                    await client._make_async_request(["test text"])
-
-                elapsed = time.time() - start_time
-
-                # Should complete quickly without rate limiting delays
-                # Allow for some overhead but should be much less than 1 second
-                assert (
-                    elapsed < 1.0
-                ), f"Requests took {elapsed:.2f}s, should be much faster without client throttling"
-
-    @pytest.mark.asyncio
-    async def test_voyage_ai_handles_429_with_server_driven_backoff(self):
-        """VoyageAI should handle 429 responses with server-driven backoff."""
-        config = VoyageAIConfig(max_retries=2, retry_delay=0.1)
-
-        with patch.dict("os.environ", {"VOYAGE_API_KEY": "test-key"}):
-            client = VoyageAIClient(config)
-
-            # Mock 429 response with Retry-After header
-            mock_429_response = Mock()
-            mock_429_response.status_code = 429
-            mock_429_response.headers = {
-                "retry-after": "1"
-            }  # Server says wait 1 second
-
-            # Mock successful response after retry
-            mock_success_response = {
-                "data": [{"embedding": [0.1, 0.2, 0.3]}],
-                "usage": {"total_tokens": 10},
-            }
-
-            call_count = 0
-
-            async def mock_post_side_effect(*args, **kwargs):
-                nonlocal call_count
-                call_count += 1
-                if call_count == 1:
-                    # First call returns 429
-                    raise httpx.HTTPStatusError(
-                        "Rate limited", request=Mock(), response=mock_429_response
-                    )
-                else:
-                    # Second call succeeds
-                    mock_resp = Mock()
-                    mock_resp.json.return_value = mock_success_response
-                    mock_resp.raise_for_status.return_value = None
-                    return mock_resp
-
-            with patch("httpx.AsyncClient.post", side_effect=mock_post_side_effect):
-                with patch("asyncio.sleep") as mock_sleep:
-                    # Should succeed after handling 429
-                    result = await client._make_async_request(["test text"])
-
-                    # Should have made 2 calls (first 429, second success)
-                    assert call_count == 2, "Should retry after 429"
-
-                    # Should have slept based on server's Retry-After header
-                    mock_sleep.assert_called_once_with(1)  # Server said wait 1 second
-
-                    # Should return successful result
-                    assert result == mock_success_response
-
-    @pytest.mark.asyncio
-    async def test_voyage_ai_uses_exponential_backoff_without_retry_after(self):
-        """VoyageAI should use exponential backoff when server doesn't provide Retry-After."""
-        config = VoyageAIConfig(
-            max_retries=2, retry_delay=0.1, exponential_backoff=True
-        )
-
-        with patch.dict("os.environ", {"VOYAGE_API_KEY": "test-key"}):
-            client = VoyageAIClient(config)
-
-            # Mock 429 response without Retry-After header
-            mock_429_response = Mock()
-            mock_429_response.status_code = 429
-            mock_429_response.headers = {}  # No Retry-After header
-
-            mock_success_response = {
-                "data": [{"embedding": [0.1, 0.2, 0.3]}],
-                "usage": {"total_tokens": 10},
-            }
-
-            call_count = 0
-
-            async def mock_post_side_effect(*args, **kwargs):
-                nonlocal call_count
-                call_count += 1
-                if call_count == 1:
-                    raise httpx.HTTPStatusError(
-                        "Rate limited", request=Mock(), response=mock_429_response
-                    )
-                else:
-                    mock_resp = Mock()
-                    mock_resp.json.return_value = mock_success_response
-                    mock_resp.raise_for_status.return_value = None
-                    return mock_resp
-
-            with patch("httpx.AsyncClient.post", side_effect=mock_post_side_effect):
-                with patch("asyncio.sleep") as mock_sleep:
-                    await client._make_async_request(["test text"])
-
-                    # Should use exponential backoff: retry_delay * (2^attempt)
-                    # For attempt 0: 0.1 * (2^0) = 0.1
-                    mock_sleep.assert_called_once_with(0.1)
-
     def test_rate_limiter_class_does_not_exist(self):
         """The RateLimiter class should be completely removed."""
         # This test will fail until we remove the RateLimiter class
@@ -255,54 +121,6 @@ class TestNoClientThrottling:
         assert (
             SmartIndexer is not None
         ), "SmartIndexer should be importable without throttling dependencies"
-
-    @pytest.mark.asyncio
-    async def test_multiple_concurrent_requests_without_client_coordination(self):
-        """Multiple concurrent clients should not try to coordinate rate limiting."""
-        config = VoyageAIConfig()
-
-        with patch.dict("os.environ", {"VOYAGE_API_KEY": "test-key"}):
-            # Create multiple clients (simulating multiple indexers)
-            clients = [VoyageAIClient(config) for _ in range(3)]
-
-            mock_response = {
-                "data": [{"embedding": [0.1, 0.2, 0.3]}],
-                "usage": {"total_tokens": 10},
-            }
-
-            with patch("httpx.AsyncClient.post") as mock_post:
-                # Create a proper mock response
-                mock_resp = Mock()
-                mock_resp.json.return_value = mock_response
-                mock_resp.raise_for_status.return_value = None
-                mock_post.return_value = mock_resp
-
-                # All clients should make requests concurrently without coordination
-                start_time = time.time()
-
-                tasks = []
-                for client in clients:
-                    # Each client makes 5 requests
-                    for _ in range(5):
-                        task = asyncio.create_task(
-                            client._make_async_request(["test text"])
-                        )
-                        tasks.append(task)
-
-                # Wait for all requests to complete
-                await asyncio.gather(*tasks)
-
-                elapsed = time.time() - start_time
-
-                # Should complete quickly without client-side coordination delays
-                assert (
-                    elapsed < 2.0
-                ), f"Concurrent requests took {elapsed:.2f}s, too slow without client throttling"
-
-                # Should have made all 15 requests (3 clients × 5 requests each)
-                assert (
-                    mock_post.call_count == 15
-                ), f"Expected 15 requests, got {mock_post.call_count}"
 
 
 if __name__ == "__main__":

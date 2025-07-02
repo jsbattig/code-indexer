@@ -102,6 +102,9 @@ ignore_errors = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v"
+filterwarnings = [
+    "ignore:The `__fields__` attribute is deprecated.*:DeprecationWarning",
+]
 markers = [
     "e2e: End-to-end tests",
     "voyage_ai: Tests requiring VoyageAI API key",

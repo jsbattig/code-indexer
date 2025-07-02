@@ -1,7 +1,7 @@
 """VoyageAI API client for embeddings generation."""
 
 import os
-import asyncio
+import time
 from typing import List, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor
 import httpx
@@ -27,14 +27,7 @@ class VoyageAIClient(EmbeddingProvider):
                 "Set it with: export VOYAGE_API_KEY=your_api_key_here"
             )
 
-        # Initialize HTTP client
-        self.client = httpx.AsyncClient(
-            timeout=config.timeout,
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-        )
+        # HTTP client will be created per request to avoid threading issues
 
         # Thread pool for parallel processing
         self.executor = ThreadPoolExecutor(max_workers=config.parallel_requests)
@@ -83,12 +76,6 @@ class VoyageAIClient(EmbeddingProvider):
         self, texts: List[str], model: Optional[str] = None
     ) -> Dict[str, Any]:
         """Make synchronous request to VoyageAI API."""
-        return asyncio.run(self._make_async_request(texts, model))
-
-    async def _make_async_request(
-        self, texts: List[str], model: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Make asynchronous request to VoyageAI API with server-driven retries."""
         model_name = model or self.config.model
 
         # Prepare request payload
@@ -98,16 +85,14 @@ class VoyageAIClient(EmbeddingProvider):
         last_exception = None
         for attempt in range(self.config.max_retries + 1):
             try:
-                async with httpx.AsyncClient(
+                with httpx.Client(
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
                     },
                     timeout=self.config.timeout,
-                ) as temp_client:
-                    response = await temp_client.post(
-                        self.config.api_endpoint, json=payload
-                    )
+                ) as client:
+                    response = client.post(self.config.api_endpoint, json=payload)
                 response.raise_for_status()
 
                 result = response.json()
@@ -136,25 +121,22 @@ class VoyageAIClient(EmbeddingProvider):
                     wait_time = min(wait_time, 300.0)
 
                     if attempt < self.config.max_retries:
-                        await asyncio.sleep(wait_time)
+                        time.sleep(wait_time)
                         continue
                 elif e.response.status_code >= 500:  # Server error
                     wait_time = self.config.retry_delay * (
                         2**attempt if self.config.exponential_backoff else 1
                     )
                     if attempt < self.config.max_retries:
-                        await asyncio.sleep(wait_time)
+                        time.sleep(wait_time)
                         continue
                 else:
                     # Client error, don't retry
                     break
-            except (httpx.RequestError, asyncio.TimeoutError) as e:
+            except Exception as e:
                 last_exception = e
                 if attempt < self.config.max_retries:
-                    wait_time = self.config.retry_delay * (
-                        2**attempt if self.config.exponential_backoff else 1
-                    )
-                    await asyncio.sleep(wait_time)
+                    time.sleep(self.config.retry_delay)
                     continue
                 else:
                     break
@@ -295,13 +277,12 @@ class VoyageAIClient(EmbeddingProvider):
         """Check if provider supports efficient batch processing."""
         return True
 
-    async def close(self) -> None:
-        """Close the HTTP client and executor."""
-        await self.client.aclose()
+    def close(self) -> None:
+        """Close the executor."""
         self.executor.shutdown(wait=True)
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        asyncio.run(self.close())
+        self.close()

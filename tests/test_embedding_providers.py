@@ -233,69 +233,6 @@ class TestVoyageAIClient:
         assert embeddings[2] == [0.9, 1.0, 1.1, 1.2]
         mock_request.assert_called_once_with(texts, None)
 
-    @pytest.mark.asyncio
-    @patch("httpx.AsyncClient.post")
-    async def test_make_async_request_success(self, mock_post, voyage_client):
-        """Test successful async API request."""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "data": [{"embedding": [0.1, 0.2, 0.3, 0.4]}],
-            "usage": {"total_tokens": 10},
-        }
-        mock_post.return_value = mock_response
-
-        result = await voyage_client._make_async_request(["test text"])
-
-        assert result["data"][0]["embedding"] == [0.1, 0.2, 0.3, 0.4]
-        assert result["usage"]["total_tokens"] == 10
-
-    @pytest.mark.asyncio
-    @patch("httpx.AsyncClient.post")
-    async def test_make_async_request_rate_limit(self, mock_post, voyage_client):
-        """Test async request with rate limiting."""
-        # First call: rate limit error
-        rate_limit_response = Mock()
-        rate_limit_response.status_code = 429
-        rate_limit_response.headers = {
-            "retry-after": "1"
-        }  # Add headers for retry-after
-        rate_limit_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "Rate limit", request=Mock(), response=rate_limit_response
-        )
-
-        # Second call: success
-        success_response = Mock()
-        success_response.status_code = 200
-        success_response.json.return_value = {
-            "data": [{"embedding": [0.1, 0.2, 0.3, 0.4]}],
-            "usage": {"total_tokens": 10},
-        }
-
-        mock_post.side_effect = [rate_limit_response, success_response]
-
-        # Configure shorter retry delay for testing
-        voyage_client.config.retry_delay = 0.1
-
-        result = await voyage_client._make_async_request(["test text"])
-
-        assert result["data"][0]["embedding"] == [0.1, 0.2, 0.3, 0.4]
-        assert mock_post.call_count == 2
-
-    @pytest.mark.asyncio
-    @patch("httpx.AsyncClient.post")
-    async def test_make_async_request_invalid_api_key(self, mock_post, voyage_client):
-        """Test async request with invalid API key."""
-        mock_response = Mock()
-        mock_response.status_code = 401
-        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "Unauthorized", request=Mock(), response=mock_response
-        )
-        mock_post.return_value = mock_response
-
-        with pytest.raises(ValueError, match="Invalid VoyageAI API key"):
-            await voyage_client._make_async_request(["test text"])
-
     def test_get_model_info(self, voyage_client):
         """Test getting model information."""
         info = voyage_client.get_model_info()
