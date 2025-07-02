@@ -75,14 +75,15 @@ export VOYAGE_API_KEY="your-key"
 code-indexer init --embedding-provider voyage-ai
 ```
 
-**Throttling Status Indicators (VoyageAI only)**
+**Performance Status Indicators (VoyageAI only)**
 
-During indexing, VoyageAI shows real-time throttling status in the progress bar:
-- ⚡ **Full speed** - No throttling detected
-- 🟡 **CIDX throttling** - Our rate limiter is slowing requests to stay within limits
-- 🔴 **Server throttling** - VoyageAI API rate limits or slowness detected
+During indexing, VoyageAI shows real-time performance status in the progress bar:
+- ⚡ **Full speed** - Running at maximum throughput
+- 🔴 **Server throttling** - VoyageAI API rate limits detected, automatically backing off
 
 Example: `15/100 files (15%) | 8.3 emb/s ⚡ | 8 threads | main.py`
+
+The system runs at full speed by default and only backs off when the API server enforces rate limits.
 
 ### Configuration File
 Configuration is stored in `.code-indexer/config.json`:
