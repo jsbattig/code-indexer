@@ -43,6 +43,12 @@ class GitAwareMetadataSchema:
         "schema_version",  # Metadata schema version
     }
 
+    # Optional line number fields (for enhanced display)
+    LINE_NUMBER_FIELDS = {
+        "line_start",  # Starting line number of the chunk
+        "line_end",  # Ending line number of the chunk
+    }
+
     # Git-specific fields (optional, when git_available=True)
     GIT_FIELDS = {
         "git_commit_hash",  # Full git commit hash
@@ -66,7 +72,13 @@ class GitAwareMetadataSchema:
     }
 
     # All possible fields
-    ALL_FIELDS = REQUIRED_FIELDS | GIT_FIELDS | WORKING_DIR_FIELDS | FILESYSTEM_FIELDS
+    ALL_FIELDS = (
+        REQUIRED_FIELDS
+        | GIT_FIELDS
+        | WORKING_DIR_FIELDS
+        | FILESYSTEM_FIELDS
+        | LINE_NUMBER_FIELDS
+    )
 
     @classmethod
     def validate_metadata(cls, metadata: Dict[str, Any]) -> Dict[str, List[str]]:
@@ -124,6 +136,22 @@ class GitAwareMetadataSchema:
         if "file_size" in metadata:
             if not isinstance(metadata["file_size"], int) or metadata["file_size"] < 0:
                 errors.append("Field 'file_size' must be non-negative integer")
+
+        if "line_start" in metadata:
+            if (
+                not isinstance(metadata["line_start"], int)
+                or metadata["line_start"] < 1
+            ):
+                errors.append("Field 'line_start' must be positive integer")
+
+        if "line_end" in metadata:
+            if not isinstance(metadata["line_end"], int) or metadata["line_end"] < 1:
+                errors.append("Field 'line_end' must be positive integer")
+
+        # Validate line range consistency
+        if "line_start" in metadata and "line_end" in metadata:
+            if metadata["line_end"] < metadata["line_start"]:
+                errors.append("Field 'line_end' must be >= 'line_start'")
 
         # Check for unknown fields
         unknown_fields = set(metadata.keys()) - cls.ALL_FIELDS
@@ -286,6 +314,8 @@ class GitAwareMetadataSchema:
         project_id: str,
         file_hash: str,
         git_metadata: Optional[Dict[str, Any]] = None,
+        line_start: Optional[int] = None,
+        line_end: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Create git-aware metadata with full schema support.
@@ -300,6 +330,8 @@ class GitAwareMetadataSchema:
             project_id: Project identifier
             file_hash: File content hash
             git_metadata: Optional git-specific metadata
+            line_start: Starting line number of the chunk
+            line_end: Ending line number of the chunk
 
         Returns:
             Git-aware metadata dictionary
@@ -316,6 +348,8 @@ class GitAwareMetadataSchema:
             "file_hash": file_hash,
             "git_available": git_metadata is not None,
             "schema_version": MetadataSchemaVersion.GIT_AWARE,
+            "line_start": line_start,
+            "line_end": line_end,
         }
 
         if git_metadata:

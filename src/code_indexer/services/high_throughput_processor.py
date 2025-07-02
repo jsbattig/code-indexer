@@ -358,6 +358,8 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             git_metadata=(
                 metadata_info if chunk_task.file_metadata["git_available"] else None
             ),
+            line_start=chunk_task.chunk_data.get("line_start"),
+            line_end=chunk_task.chunk_data.get("line_end"),
         )
 
         # Add filesystem metadata for non-git projects

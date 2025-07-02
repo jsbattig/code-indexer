@@ -17,7 +17,6 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
-from rich.syntax import Syntax
 from rich.table import Column
 
 from .config import ConfigManager, Config
@@ -1735,12 +1734,38 @@ def query(
             language = payload.get("language", "unknown")
             content = payload.get("content", "")
 
+            # Line number info
+            line_start = payload.get("line_start")
+            line_end = payload.get("line_end")
+
+            # Create file path with line numbers
+            if line_start is not None and line_end is not None:
+                if line_start == line_end:
+                    file_path_with_lines = f"{file_path}:{line_start}"
+                else:
+                    file_path_with_lines = f"{file_path}:{line_start}-{line_end}"
+            else:
+                file_path_with_lines = file_path
+
             if quiet:
-                # Quiet mode - minimal output: score, path, content
-                console.print(f"{score:.3f} {file_path}")
+                # Quiet mode - minimal output: score, path with line numbers, content
+                console.print(f"{score:.3f} {file_path_with_lines}")
                 if content:
-                    # Show content without syntax highlighting in quiet mode
-                    console.print(content[:500])
+                    # Show content with line numbers in quiet mode
+                    content_to_display = content[:500]
+                    content_lines = content_to_display.split("\n")
+
+                    # Add line number prefixes if we have line start info
+                    if line_start is not None:
+                        numbered_lines = []
+                        for i, line in enumerate(content_lines):
+                            line_num = line_start + i
+                            numbered_lines.append(f"{line_num:3}: {line}")
+                        content_with_line_numbers = "\n".join(numbered_lines)
+                        console.print(content_with_line_numbers)
+                    else:
+                        console.print(content_to_display)
+
                     if len(content) > 500:
                         console.print("... [truncated]")
                 console.print()  # Empty line between results
@@ -1753,8 +1778,8 @@ def query(
                 git_available = payload.get("git_available", False)
                 project_id = payload.get("project_id", "unknown")
 
-                # Create header with git info
-                header = f"📄 File: {file_path}"
+                # Create header with git info and line numbers
+                header = f"📄 File: {file_path_with_lines}"
                 if language != "unknown":
                     header += f" | 🏷️  Language: {language}"
                 header += f" | 📊 Score: {score:.3f}"
@@ -1777,25 +1802,46 @@ def query(
                 metadata_info += f" | 🏗️  Project: {project_id}"
                 console.print(metadata_info)
 
-                # Content preview
+                # Content preview with line numbers
                 if content:
-                    console.print("\n📖 Content:")
+                    # Create content header with line range
+                    if line_start is not None and line_end is not None:
+                        if line_start == line_end:
+                            content_header = f"📖 Content (Line {line_start}):"
+                        else:
+                            content_header = (
+                                f"📖 Content (Lines {line_start}-{line_end}):"
+                            )
+                    else:
+                        content_header = "📖 Content:"
+
+                    console.print(f"\n{content_header}")
                     console.print("─" * 50)
 
-                    # Syntax highlighting if possible
+                    # Add line number prefixes to content
+                    content_to_display = content[:500]
+                    content_lines = content_to_display.split("\n")
+
+                    # Add line number prefixes if we have line start info
+                    if line_start is not None:
+                        numbered_lines = []
+                        for i, line in enumerate(content_lines):
+                            line_num = line_start + i
+                            numbered_lines.append(f"{line_num:3}: {line}")
+                        content_with_line_numbers = "\n".join(numbered_lines)
+                    else:
+                        content_with_line_numbers = content_to_display
+
+                    # Syntax highlighting if possible (note: syntax highlighting with line numbers is complex)
                     if language and language != "unknown":
                         try:
-                            syntax = Syntax(
-                                content[:500],
-                                language,
-                                theme="monokai",
-                                line_numbers=False,
-                            )
-                            console.print(syntax)
+                            # For now, use plain text with line numbers for better readability
+                            # Rich's Syntax with line_numbers=True uses its own numbering system
+                            console.print(content_with_line_numbers)
                         except Exception:
-                            console.print(content[:500])
+                            console.print(content_with_line_numbers)
                     else:
-                        console.print(content[:500])
+                        console.print(content_with_line_numbers)
 
                     if len(content) > 500:
                         console.print("\n... [truncated]")

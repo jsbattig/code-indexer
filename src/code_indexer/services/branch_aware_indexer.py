@@ -54,6 +54,8 @@ class ContentMetadata:
     hidden_branches: List[
         str
     ]  # Array of branches where this content is hidden (deleted)
+    line_start: int  # Starting line number of the chunk
+    line_end: int  # Ending line number of the chunk
 
 
 # VisibilityMetadata class removed - now using hidden_branches array in content points
@@ -555,6 +557,8 @@ class BranchAwareIndexer:
             working_directory_status=working_dir_status,
             file_mtime=file_mtime,
             hidden_branches=[],  # Initially visible in all branches (empty = not hidden anywhere)
+            line_start=chunk.get("line_start", 1),  # Default to line 1 if not available
+            line_end=chunk.get("line_end", 1),  # Default to line 1 if not available
         )
 
         # Generate deterministic content ID

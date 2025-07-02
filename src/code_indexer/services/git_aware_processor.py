@@ -124,6 +124,8 @@ class GitAwareDocumentProcessor(DocumentProcessor):
                         git_metadata=(
                             metadata_info if file_metadata["git_available"] else None
                         ),
+                        line_start=chunk.get("line_start"),
+                        line_end=chunk.get("line_end"),
                     )
 
                     # Manually add filesystem metadata for non-git projects
