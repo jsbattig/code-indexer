@@ -116,6 +116,7 @@ if pytest tests/ \
     --ignore=tests/test_git_aware_watch_e2e.py \
     --ignore=tests/test_indexing_consistency_e2e.py \
     --ignore=tests/test_timestamp_comparison_e2e.py \
+    --ignore=tests/test_line_number_display_e2e.py \
     --ignore=tests/test_concurrent_indexing_prevention.py \
     --ignore=tests/test_resume_and_incremental_bugs.py \
     --ignore=tests/test_actual_file_chunking.py \
@@ -166,6 +167,7 @@ echo "   • Optimized example tests (require Docker and VoyageAI API)"
 echo "   • Comprehensive git workflow tests (require full service stack)"
 echo "   • Git-aware watch E2E tests (require service dependencies)"
 echo "   • Indexing consistency/timestamp E2E tests (require services)"
+echo "   • Line number display E2E tests (require indexing services)"
 echo "   • Concurrent indexing and file chunking tests (require services)"
 echo "   • Any tests marked as 'slow', 'e2e', or 'real_api'"
 echo ""
