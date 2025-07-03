@@ -234,9 +234,10 @@ class VectorCalculationManager:
 
                 # Update rolling window for smoothed embeddings per second
                 current_time = time.time()
-                self._update_rolling_window(
+                embeddings_per_second = self._update_rolling_window(
                     current_time, self.stats.total_tasks_completed
                 )
+                self.stats.embeddings_per_second = embeddings_per_second
 
             return VectorResult(
                 task_id=task.task_id,
@@ -262,9 +263,10 @@ class VectorCalculationManager:
 
                 # Update rolling window for failed tasks too
                 current_time = time.time()
-                self._update_rolling_window(
+                embeddings_per_second = self._update_rolling_window(
                     current_time, self.stats.total_tasks_completed
                 )
+                self.stats.embeddings_per_second = embeddings_per_second
 
             logger.error(
                 f"Vector calculation failed for task {task.task_id}: {error_msg}"
@@ -362,13 +364,18 @@ class VectorCalculationManager:
         """Context manager exit."""
         self.shutdown(wait=True, timeout=30.0)
 
-    def _update_rolling_window(self, current_time: float, total_completed: int):
+    def _update_rolling_window(
+        self, current_time: float, total_completed: int
+    ) -> float:
         """
         Update rolling window for smoothed embeddings per second calculation.
 
         Args:
             current_time: Current timestamp
             total_completed: Total tasks completed so far
+
+        Returns:
+            Calculated embeddings per second value
         """
         with self.rolling_window_lock:
             # Add current entry
@@ -393,19 +400,21 @@ class VectorCalculationManager:
                 task_diff = newest.completed_tasks - oldest.completed_tasks
 
                 if time_diff > 0:
-                    self.stats.embeddings_per_second = task_diff / time_diff
+                    return task_diff / time_diff
                 else:
                     # Fall back to total average if window is too small
                     elapsed_total = current_time - self.start_time
                     if elapsed_total > 0:
-                        self.stats.embeddings_per_second = (
-                            total_completed / elapsed_total
-                        )
+                        return total_completed / elapsed_total
+                    else:
+                        return 0.0
             else:
                 # Fall back to total average if not enough data points
                 elapsed_total = current_time - self.start_time
                 if elapsed_total > 0:
-                    self.stats.embeddings_per_second = total_completed / elapsed_total
+                    return total_completed / elapsed_total
+                else:
+                    return 0.0
 
     def record_server_throttle(self):
         """Record a server throttling event (429, API slowness, etc.)."""
