@@ -135,6 +135,21 @@ print_step "Cleaning up temporary files"
 rm -f .coverage .coverage.*
 print_success "Coverage files cleaned up"
 
+# Clean up test temporary directories
+print_step "Cleaning up test temporary directories"
+if ls /tmp/code_indexer_test_* >/dev/null 2>&1; then
+    temp_dirs_count=$(ls -d /tmp/code_indexer_test_* 2>/dev/null | wc -l)
+    print_warning "Found ${temp_dirs_count} temporary test directories to clean up"
+    rm -rf /tmp/code_indexer_test_*
+    if [ $? -eq 0 ]; then
+        print_success "Test temporary directories cleaned up"
+    else
+        print_warning "Some test temporary directories could not be cleaned up"
+    fi
+else
+    print_success "No test temporary directories to clean up"
+fi
+
 # Summary
 echo -e "\n${GREEN}🎉 Full automation pipeline completed successfully!${NC}"
 echo "================================="
@@ -147,6 +162,7 @@ if command -v docker &> /dev/null; then
     echo "✅ Docker service files validated"
 fi
 echo "✅ Temporary files cleaned up"
+echo "✅ Test temporary directories cleaned up"
 echo ""
 echo "📌 Note: E2E tests require VOYAGE_API_KEY environment variable"
 echo "📌 Long-running E2E tests now use VoyageAI instead of Ollama for better stability"
