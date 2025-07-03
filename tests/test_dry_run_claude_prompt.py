@@ -132,7 +132,9 @@ def test_dry_run_shows_prompt_without_execution(
 @patch("src.code_indexer.cli.QdrantClient")
 @patch("src.code_indexer.cli.EmbeddingProviderFactory")
 @patch("src.code_indexer.cli.Config")
+@patch("httpx.Client")
 def test_dry_run_prevents_claude_execution(
+    mock_httpx_client,
     mock_config,
     mock_embedding_factory,
     mock_qdrant,
@@ -145,10 +147,21 @@ def test_dry_run_prevents_claude_execution(
     # Mock Claude CLI availability check to avoid dependency issues
     mock_claude_check.return_value = True
 
+    # Mock httpx.Client for health checks
+    mock_httpx_instance = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_httpx_instance.get.return_value = mock_response
+    mock_httpx_client.return_value = mock_httpx_instance
+
     # Setup mocks similar to above
     mock_config_instance = MagicMock()
     mock_config_instance.codebase_dir = Path("/tmp/test")
     mock_config_instance.qdrant = MagicMock()
+    mock_config_instance.qdrant.host = "http://localhost:6333"
+    mock_config_instance.embedding_provider = "ollama"
+    mock_config_instance.ollama = MagicMock()
+    mock_config_instance.ollama.host = "http://localhost:11434"
     mock_config.return_value = mock_config_instance
 
     mock_embedding_instance = MagicMock()

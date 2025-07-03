@@ -43,145 +43,92 @@ class DeletionE2ETest:
         self.collection_name = "deletion_test_collection"
 
     def setup_test_environment(self, tmp_path):
-        """Setup test infrastructure with Ollama for fast execution following NEW STRATEGY."""
-        # Use Ollama for fast e2e tests (no external API dependencies)
+        """Setup test infrastructure with aggressive setup strategy."""
+        # AGGRESSIVE SETUP: Use VoyageAI for reliable E2E tests
         self.service_manager, self.cli_helper, self.dir_manager = create_fast_e2e_setup(
-            EmbeddingProvider.OLLAMA
+            EmbeddingProvider.VOYAGE_AI
         )
+
+        # AGGRESSIVE SETUP: Ensure services and clean state first
+        print("🔧 Aggressive setup: Ensuring services and clean state...")
+        services_ready = self.service_manager.ensure_services_ready()
+        if not services_ready:
+            raise RuntimeError("Could not ensure services are ready for E2E testing")
+
+        # AGGRESSIVE SETUP: Clean all existing data first
+        print("🧹 Aggressive setup: Cleaning all existing project data...")
+        self._cleanup_all_data()
+
+        # AGGRESSIVE SETUP: Verify services are actually working after cleanup
+        print("🔍 Aggressive setup: Verifying services are functional...")
+        try:
+            # Test with a minimal project directory to verify services work
+            test_setup_dir = Path(__file__).parent / "deletion_setup_verification"
+            test_setup_dir.mkdir(exist_ok=True)
+            (test_setup_dir / "test.py").write_text("def test(): pass")
+
+            # Initialize and verify basic functionality works
+            init_result = self.cli_helper.run_cli_command(
+                ["init", "--force", "--embedding-provider", "voyage-ai"],
+                cwd=test_setup_dir,
+                timeout=60,
+            )
+            if init_result.returncode != 0:
+                print(f"Setup verification failed during init: {init_result.stderr}")
+                raise RuntimeError("Services not functioning properly for E2E testing")
+
+            # Start services
+            start_result = self.cli_helper.run_cli_command(
+                ["start", "--quiet"], cwd=test_setup_dir, timeout=120
+            )
+            if start_result.returncode != 0:
+                print(f"Setup verification failed during start: {start_result.stderr}")
+                raise RuntimeError("Could not start services for E2E testing")
+
+            # Clean up verification directory
+            try:
+                import shutil
+
+                shutil.rmtree(test_setup_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+            print("✅ Aggressive setup complete - services verified functional")
+
+        except Exception as e:
+            print(f"Setup verification failed: {e}")
+            raise RuntimeError("Could not verify service functionality for E2E testing")
 
         # Create test repository directory
         self.test_repo_dir = tmp_path / "deletion_test_repo"
         self.test_repo_dir.mkdir(parents=True, exist_ok=True)
 
-        # COMPREHENSIVE SETUP: Clean up any existing state extensively
-        print("🧹 Deletion E2E: Comprehensive cleanup started...")
-        try:
-            # First try to stop any running services to reset state
-            self.cli_helper.run_cli_command(
-                ["stop"], cwd=self.test_repo_dir, timeout=60, expect_success=False
-            )
-        except Exception as e:
-            print(f"Initial stop warning (non-fatal): {e}")
-
-        try:
-            # Clean up any existing data from previous tests
-            self.service_manager.cleanup_project_data(working_dir=self.test_repo_dir)
-        except Exception as e:
-            print(f"Initial cleanup warning (non-fatal): {e}")
-
-        # COMPREHENSIVE SETUP: Initialize project configuration with retries
-        init_attempts = 0
-        max_init_attempts = 3
-        while init_attempts < max_init_attempts:
-            init_attempts += 1
-            print(f"🔧 Deletion E2E: Initializing project (attempt {init_attempts})...")
-
-            init_result = self.cli_helper.run_cli_command(
-                ["init", "--force", "--embedding-provider", "ollama"],
-                cwd=self.test_repo_dir,
-                timeout=60,
-                expect_success=False,
-            )
-
-            if init_result.returncode == 0:
-                break
-            elif init_attempts < max_init_attempts:
-                print(f"Init failed (attempt {init_attempts}): {init_result.stderr}")
-                print("Waiting before retry...")
-                import time
-
-                time.sleep(2)
-            else:
-                raise RuntimeError(
-                    f"Failed to initialize after {max_init_attempts} attempts: {init_result.stderr}"
-                )
-
-        # COMPREHENSIVE SETUP: Ensure services are in expected state with recovery
-        print("🔧 Deletion E2E: Setting up services with Ollama...")
-
-        services_ready = self.service_manager.ensure_services_ready(
-            EmbeddingProvider.OLLAMA, working_dir=self.test_repo_dir
+        # Services are already verified as working in aggressive setup
+        # Initialize this specific project
+        print(f"🔧 Deletion E2E: Initializing project at {self.test_repo_dir}...")
+        init_result = self.cli_helper.run_cli_command(
+            ["init", "--force", "--embedding-provider", "voyage-ai"],
+            cwd=self.test_repo_dir,
+            timeout=60,
         )
-        print(f"Services ready: {services_ready}")
-        if not services_ready:
-            # Try to recover by completely restarting
-            print("🔄 Deletion E2E: Services not ready, attempting full recovery...")
+        if init_result.returncode != 0:
+            raise RuntimeError(f"Failed to initialize project: {init_result.stderr}")
 
-            # Stop everything
-            self.cli_helper.run_cli_command(
-                ["stop"], cwd=self.test_repo_dir, timeout=60, expect_success=False
-            )
-
-            # Try cleanup again
-            try:
-                self.service_manager.cleanup_project_data(
-                    working_dir=self.test_repo_dir
-                )
-            except Exception as e:
-                print(f"Recovery cleanup warning: {e}")
-
-            # Try ensuring services again
-            services_ready = self.service_manager.ensure_services_ready(
-                EmbeddingProvider.OLLAMA, working_dir=self.test_repo_dir
-            )
-
-            if not services_ready:
-                raise RuntimeError(
-                    "Failed to ensure services are ready for test after recovery"
-                )
-
-        # COMPREHENSIVE SETUP: Clean collections to ensure fresh start
-        print("🗑️  Deletion E2E: Ensuring clean collection state...")
+    def _cleanup_all_data(self):
+        """Clean all project data to ensure clean test state."""
+        if not self.cli_helper:
+            return
         try:
-            clean_result = self.cli_helper.run_cli_command(
-                ["clean-data"], cwd=self.test_repo_dir, timeout=60, expect_success=False
+            # Use clean-data command to clean all projects
+            cleanup_result = self.cli_helper.run_cli_command(
+                ["clean-data", "--all-projects"], timeout=60, expect_success=False
             )
-            print(f"Collection cleanup result: {clean_result.returncode}")
+            if cleanup_result.returncode != 0:
+                print(f"Cleanup warning (non-fatal): {cleanup_result.stderr}")
         except Exception as e:
-            print(f"Collection cleanup warning (non-fatal): {e}")
+            print(f"Cleanup warning (non-fatal): {e}")
 
-        # COMPREHENSIVE SETUP: Start services with multiple attempts
-        print("🚀 Deletion E2E: Starting services after cleanup...")
-        start_attempts = 0
-        max_start_attempts = 3
-
-        while start_attempts < max_start_attempts:
-            start_attempts += 1
-            print(f"Starting services (attempt {start_attempts})...")
-
-            start_result = self.cli_helper.run_cli_command(
-                ["start", "--quiet"],
-                cwd=self.test_repo_dir,
-                timeout=120,
-                expect_success=False,
-            )
-
-            if start_result.returncode == 0:
-                print("✅ Deletion E2E: Services started successfully")
-                break
-            elif start_attempts < max_start_attempts:
-                print(f"Start failed (attempt {start_attempts}): {start_result.stderr}")
-                # Stop before retry
-                self.cli_helper.run_cli_command(
-                    ["stop"], cwd=self.test_repo_dir, timeout=60, expect_success=False
-                )
-                import time
-
-                time.sleep(3)
-            else:
-                raise RuntimeError(
-                    f"Failed to start services after {max_start_attempts} attempts: {start_result.stderr}"
-                )
-
-        # COMPREHENSIVE SETUP: Final verification that everything is working
-        print("🔍 Deletion E2E: Verifying setup with status check...")
-        status_result = self.cli_helper.run_cli_command(
-            ["status"], cwd=self.test_repo_dir, timeout=30, expect_success=False
-        )
-        if status_result.returncode != 0:
-            print(f"Warning: Status check failed: {status_result.stderr}")
-        else:
-            print("✅ Deletion E2E: Setup verification completed")
+        print("✅ Deletion E2E: Setup completed - services pre-verified")
 
     def cleanup_test_environment(self):
         """Clean up test environment following NEW STRATEGY."""
@@ -198,8 +145,10 @@ class DeletionE2ETest:
             self.watch_process = None
 
         # Clean data only, keep services running
-        if self.service_manager and self.cli_helper:
-            self.service_manager.cleanup_project_data()
+        try:
+            self._cleanup_all_data()
+        except Exception as e:
+            print(f"Warning: Cleanup failed: {e}")
 
     def create_git_repo_with_files(self, file_count: int = 5) -> Dict[str, Path]:
         """Create a git repository with test files."""

@@ -25,17 +25,84 @@ from .test_infrastructure import (
 class TestDeadlockReproduction:
     """Test class to reproduce deadlock in deletion handling."""
 
-    def setup_method(self):
-        """Setup test environment."""
+    @pytest.fixture(autouse=True)
+    def setup_test_environment(self):
+        """Setup test environment with aggressive setup strategy."""
+        # AGGRESSIVE SETUP: Use test infrastructure for consistent setup
         self.service_manager, self.cli_helper, self.dir_manager = create_fast_e2e_setup(
-            EmbeddingProvider.OLLAMA
+            EmbeddingProvider.VOYAGE_AI
         )
         self.test_repo_dir: Optional[Path] = None
 
-    def teardown_method(self):
-        """Cleanup test environment."""
-        if self.service_manager:
-            self.service_manager.cleanup_project_data()
+        # AGGRESSIVE SETUP: Ensure services and clean state
+        print("🔧 Aggressive setup: Ensuring services and clean state...")
+        services_ready = self.service_manager.ensure_services_ready()
+        if not services_ready:
+            pytest.skip("Could not ensure services are ready for E2E testing")
+
+        # AGGRESSIVE SETUP: Clean all existing data first
+        print("🧹 Aggressive setup: Cleaning all existing project data...")
+        self._cleanup_all_data()
+
+        # AGGRESSIVE SETUP: Verify services are actually working after cleanup
+        print("🔍 Aggressive setup: Verifying services are functional...")
+        try:
+            # Test with a minimal project directory to verify services work
+            test_setup_dir = Path(__file__).parent / "deadlock_setup_verification"
+            test_setup_dir.mkdir(exist_ok=True)
+            (test_setup_dir / "test.py").write_text("def test(): pass")
+
+            # Initialize and verify basic functionality works
+            init_result = self.cli_helper.run_cli_command(
+                ["init", "--force", "--embedding-provider", "voyage-ai"],
+                cwd=test_setup_dir,
+                timeout=60,
+            )
+            if init_result.returncode != 0:
+                print(f"Setup verification failed during init: {init_result.stderr}")
+                pytest.skip("Services not functioning properly for E2E testing")
+
+            # Start services
+            start_result = self.cli_helper.run_cli_command(
+                ["start", "--quiet"], cwd=test_setup_dir, timeout=120
+            )
+            if start_result.returncode != 0:
+                print(f"Setup verification failed during start: {start_result.stderr}")
+                pytest.skip("Could not start services for E2E testing")
+
+            # Clean up verification directory
+            try:
+                import shutil
+
+                shutil.rmtree(test_setup_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+            print("✅ Aggressive setup complete - services verified functional")
+
+        except Exception as e:
+            print(f"Setup verification failed: {e}")
+            pytest.skip("Could not verify service functionality for E2E testing")
+
+        yield
+
+        # Cleanup after test - only clean project data, keep services running
+        try:
+            self._cleanup_all_data()
+        except Exception as e:
+            print(f"Warning: Cleanup failed: {e}")
+
+    def _cleanup_all_data(self):
+        """Clean all project data to ensure clean test state."""
+        try:
+            # Use clean-data command to clean all projects
+            cleanup_result = self.cli_helper.run_cli_command(
+                ["clean-data", "--all-projects"], timeout=60, expect_success=False
+            )
+            if cleanup_result.returncode != 0:
+                print(f"Cleanup warning (non-fatal): {cleanup_result.stderr}")
+        except Exception as e:
+            print(f"Cleanup warning (non-fatal): {e}")
 
     def create_git_repo_with_files(self, base_dir: Path) -> Path:
         """Create a git repository with initial files."""
@@ -148,18 +215,14 @@ class TestDeadlockReproduction:
         self.test_repo_dir = self.create_git_repo_with_files(tmp_path)
         print(f"✅ Created test git repository at: {self.test_repo_dir}")
 
-        # Initialize and start services
+        # Services are already verified as working in aggressive setup
+        # Initialize this specific project
         init_result = self.cli_helper.run_cli_command(
-            ["init", "--embedding-provider", "ollama"],
+            ["init", "--embedding-provider", "voyage-ai"],
             cwd=self.test_repo_dir,
             timeout=30,
         )
         assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
-
-        start_result = self.cli_helper.run_cli_command(
-            ["start"], cwd=self.test_repo_dir, timeout=60
-        )
-        assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
 
         # Perform initial indexing
         initial_index_result = self.cli_helper.run_cli_command(
@@ -244,18 +307,14 @@ class TestDeadlockReproduction:
         # Setup test repository
         self.test_repo_dir = self.create_git_repo_with_files(tmp_path)
 
-        # Initialize and start services
+        # Services are already verified as working in aggressive setup
+        # Initialize this specific project
         init_result = self.cli_helper.run_cli_command(
-            ["init", "--embedding-provider", "ollama"],
+            ["init", "--embedding-provider", "voyage-ai"],
             cwd=self.test_repo_dir,
             timeout=30,
         )
         assert init_result.returncode == 0
-
-        start_result = self.cli_helper.run_cli_command(
-            ["start"], cwd=self.test_repo_dir, timeout=60
-        )
-        assert start_result.returncode == 0
 
         # Perform initial indexing
         initial_index_result = self.cli_helper.run_cli_command(
@@ -346,18 +405,14 @@ class TestDeadlockReproduction:
         # Setup test repository
         self.test_repo_dir = self.create_git_repo_with_files(tmp_path)
 
-        # Initialize and start services
+        # Services are already verified as working in aggressive setup
+        # Initialize this specific project
         init_result = self.cli_helper.run_cli_command(
-            ["init", "--embedding-provider", "ollama"],
+            ["init", "--embedding-provider", "voyage-ai"],
             cwd=self.test_repo_dir,
             timeout=30,
         )
         assert init_result.returncode == 0
-
-        start_result = self.cli_helper.run_cli_command(
-            ["start"], cwd=self.test_repo_dir, timeout=60
-        )
-        assert start_result.returncode == 0
 
         # Perform initial indexing
         initial_index_result = self.cli_helper.run_cli_command(
@@ -436,18 +491,14 @@ class TestDeadlockReproduction:
             capture_output=True,
         )
 
-        # Initialize and start services
+        # Services are already verified as working in aggressive setup
+        # Initialize this specific project
         init_result = self.cli_helper.run_cli_command(
-            ["init", "--embedding-provider", "ollama"],
+            ["init", "--embedding-provider", "voyage-ai"],
             cwd=self.test_repo_dir,
             timeout=30,
         )
         assert init_result.returncode == 0
-
-        start_result = self.cli_helper.run_cli_command(
-            ["start"], cwd=self.test_repo_dir, timeout=60
-        )
-        assert start_result.returncode == 0
 
         # Perform initial indexing
         initial_index_result = self.cli_helper.run_cli_command(
