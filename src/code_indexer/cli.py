@@ -2412,6 +2412,23 @@ def status(ctx, force_docker: bool):
             qdrant_details = "Service down"
         table.add_row("Qdrant", qdrant_status, qdrant_details)
 
+        # Check Data Cleaner
+        try:
+            import requests  # type: ignore
+
+            response = requests.get("http://localhost:8091/", timeout=5)
+            if response.status_code == 200:
+                data_cleaner_status = "✅ Ready"
+                data_cleaner_details = "Cleanup service active"
+            else:
+                data_cleaner_status = "⚠️ Issues"
+                data_cleaner_details = f"HTTP {response.status_code}"
+        except Exception:
+            data_cleaner_status = "❌ Not Available"
+            data_cleaner_details = "Service down"
+
+        table.add_row("Data Cleaner", data_cleaner_status, data_cleaner_details)
+
         # Check index with git-aware information
         metadata_path = config_manager.config_path.parent / "metadata.json"
         if metadata_path.exists():

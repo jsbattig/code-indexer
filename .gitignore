@@ -128,3 +128,5 @@ tests/projects/*/docker-compose.yml
 /test_index
 PRODUCTIVITY_ANALYSIS.md
 /debug
+/.local
+*.lock
