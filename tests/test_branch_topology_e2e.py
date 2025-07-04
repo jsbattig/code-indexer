@@ -31,6 +31,7 @@ from code_indexer.services.smart_indexer import SmartIndexer
 from .test_infrastructure import (
     create_fast_e2e_setup,
     EmbeddingProvider,
+    auto_register_project_collections,
 )
 
 
@@ -46,6 +47,9 @@ class TestBranchTopologyE2E:
         """Create test configuration using new infrastructure."""
         # Use the e2e_temp_repo as the codebase directory to fix the mismatch
         temp_dir = e2e_temp_repo
+
+        # Auto-register collections for this project
+        auto_register_project_collections(temp_dir)
 
         # Set up services using new infrastructure
         service_manager, cli_helper, dir_manager = create_fast_e2e_setup(

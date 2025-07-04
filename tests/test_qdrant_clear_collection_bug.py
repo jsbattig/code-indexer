@@ -5,15 +5,22 @@ This test reproduces the issue where clean-data fails because clear_collection
 uses the wrong HTTP method and endpoint for clearing collection points.
 """
 
+import os
 import pytest
 from unittest.mock import Mock, patch
 
 from code_indexer.services.qdrant import QdrantClient
 from code_indexer.config import QdrantConfig
+from .test_infrastructure import create_fast_e2e_setup, EmbeddingProvider
+from .test_suite_setup import register_test_collection
 
 
 @pytest.mark.slow
 @pytest.mark.qdrant
+@pytest.mark.skipif(
+    os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
+    reason="E2E tests require Docker services which are not available in CI",
+)
 class TestQdrantClearCollectionBug:
     """Test the clear_collection bug that affects clean-data command."""
 
@@ -73,6 +80,22 @@ class TestQdrantClearCollectionBug:
         This test creates a collection, adds some points, then tries to clear it.
         With the bug, clear_collection returns False. After the fix, it should return True.
         """
+        # Comprehensive setup following e2e test patterns
+        service_manager, cli_helper, dir_manager = create_fast_e2e_setup(
+            EmbeddingProvider.OLLAMA  # Using Ollama as it's more predictable than VoyageAI
+        )
+
+        # Ensure services are ready
+        services_ready = service_manager.ensure_services_ready()
+        if not services_ready:
+            # Try force recreation as last resort
+            print("Initial service setup failed, attempting force recreation...")
+            services_ready = service_manager.ensure_services_ready(force_recreate=True)
+
+        assert (
+            services_ready
+        ), "Failed to ensure services are ready for Qdrant clear collection testing"
+
         # Setup
         config = QdrantConfig(
             host="http://localhost:6333",
@@ -81,6 +104,9 @@ class TestQdrantClearCollectionBug:
         )
         client = QdrantClient(config)
         collection_name = "test_clear_bug_collection"
+
+        # Register collection for automatic cleanup
+        register_test_collection(collection_name)
 
         try:
             # Clean up any existing collection first
@@ -133,6 +159,12 @@ class TestQdrantClearCollectionBug:
             # Clean up test collection
             try:
                 client.client.delete(f"/collections/{collection_name}")
+            except Exception:
+                pass  # Best effort cleanup
+
+            # Following e2e test patterns - use clean data strategy instead of full teardown
+            try:
+                service_manager.cleanup_project_data()
             except Exception:
                 pass  # Best effort cleanup
 

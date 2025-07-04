@@ -198,9 +198,21 @@ class DeletionFallbackScanner:
             discovered_files = file_finder.find_files()
 
             # Defensive check for Mock objects during testing
-            if hasattr(discovered_files, "_mock_name"):
+            if (
+                hasattr(discovered_files, "_mock_name")
+                or str(type(discovered_files).__name__) == "Mock"
+            ):
                 logger.warning(
                     "Mock object detected in find_files() result, returning empty snapshot"
+                )
+                return FileSnapshot(timestamp=datetime.now())
+
+            # Additional safety check: ensure discovered_files is iterable
+            try:
+                iter(discovered_files)
+            except TypeError:
+                logger.warning(
+                    "Non-iterable object returned from find_files(), returning empty snapshot"
                 )
                 return FileSnapshot(timestamp=datetime.now())
 

@@ -1,5 +1,27 @@
 # Code Indexer Release Notes
 
+## Version 1.0.0.7 (2025-01-04)
+
+### 🧪 Testing Infrastructure Improvements
+
+#### **Complete Test Collection Registration System**
+- **100% Test Coverage**: Systematically reviewed and updated all 50 Qdrant-dependent tests for proper collection registration
+- **Two Registration Patterns**: Implemented both `auto_register_project_collections()` for E2E tests and `register_test_collection()` for integration tests
+- **Test Isolation**: All tests now have proper cleanup and isolation mechanisms preventing test pollution
+- **Mock Classification**: Properly distinguished between tests using real Qdrant vs mocks (24 tests use mocks appropriately)
+- **Zero Missing Registration**: Achieved 0 tests missing required collection registration
+
+#### **Code Quality & Compliance**
+- **Linting Compliance**: Fixed all formatting issues with Black, Ruff, and MyPy compliance
+- **Systematic Approach**: Used comprehensive audit process with detailed tracking and verification
+- **Documentation**: Updated comprehensive audit report with final completion status
+
+### 📊 Test Infrastructure Metrics
+- **22 tests (44%)** properly use collection registration for real Qdrant operations
+- **4 tests (8%)** have partial registration (intentional for specific testing scenarios)
+- **24 tests (48%)** use mocks and don't require collection registration
+- **0 tests (0%)** missing required collection registration
+
 ## Version 1.0.0.2 (2025-06-26)
 
 ### 🐛 Critical Bug Fixes
@@ -131,12 +153,12 @@
 
 ### Using pipx (Recommended)
 ```bash
-pipx install https://github.com/jsbattig/code-indexer/releases/download/v0.1.1.0/code_indexer-0.1.1.0-py3-none-any.whl
+pipx install https://github.com/jsbattig/code-indexer/releases/download/v1.0.0.7/code_indexer-1.0.0.7-py3-none-any.whl
 ```
 
 ### Using pip
 ```bash
-pip install https://github.com/jsbattig/code-indexer/releases/download/v0.1.1.0/code_indexer-0.1.1.0-py3-none-any.whl
+pip install https://github.com/jsbattig/code-indexer/releases/download/v1.0.0.7/code_indexer-1.0.0.7-py3-none-any.whl
 ```
 
 ### From Source

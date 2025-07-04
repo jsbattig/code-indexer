@@ -15,6 +15,7 @@ from rich.console import Console
 from code_indexer.config import Config, ConfigManager
 from code_indexer.services.embedding_factory import EmbeddingProviderFactory
 from code_indexer.services.qdrant import QdrantClient
+from .test_suite_setup import register_test_collection
 
 
 @pytest.mark.e2e
@@ -183,6 +184,9 @@ class TestE2EProviderSwitching:
         config.qdrant.collection = "test_e2e_collection"
         config.qdrant.vector_size = 1024  # VoyageAI dimensions
 
+        # Register collection for cleanup
+        register_test_collection("test_e2e_collection")
+
         config_manager.save(config)
         return config
 
@@ -255,6 +259,9 @@ class TestE2EQdrantIntegration:
         config.qdrant.host = "http://localhost:6333"
         config.qdrant.collection = "test_e2e_integration"
         config.qdrant.vector_size = 1024
+
+        # Register collection for cleanup
+        register_test_collection("test_e2e_integration")
 
         config_manager.save(config)
         return config

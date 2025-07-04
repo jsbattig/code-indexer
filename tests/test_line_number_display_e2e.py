@@ -11,7 +11,11 @@ from typing import Dict, List
 import pytest
 
 # Import test infrastructure
-from .test_infrastructure import create_fast_e2e_setup, EmbeddingProvider
+from .test_infrastructure import (
+    create_fast_e2e_setup,
+    EmbeddingProvider,
+    auto_register_project_collections,
+)
 
 
 def _get_test_project_with_line_numbers() -> Dict[str, str]:
@@ -350,6 +354,8 @@ class TestLineNumberDisplayE2E:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             project_dir = Path(temp_dir)
+            # Auto-register collections for this project
+            auto_register_project_collections(project_dir)
             test_files = _get_test_project_with_line_numbers()
             self.dir_manager.create_test_project(project_dir, custom_files=test_files)
             yield project_dir

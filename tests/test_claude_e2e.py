@@ -13,7 +13,11 @@ from typing import Dict
 import pytest
 
 # Import test infrastructure to eliminate code duplication
-from .test_infrastructure import create_fast_e2e_setup, EmbeddingProvider
+from .test_infrastructure import (
+    create_fast_e2e_setup,
+    EmbeddingProvider,
+    auto_register_project_collections,
+)
 
 
 # Removed duplicated run_command function - now using CLIHelper from test infrastructure!
@@ -349,6 +353,8 @@ class TestClaudeE2E:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             project_dir = Path(temp_dir)
+            # Auto-register collections for this project
+            auto_register_project_collections(project_dir)
             # Use test infrastructure to create project with custom files
             test_files = _get_test_project_files()
             self.dir_manager.create_test_project(project_dir, custom_files=test_files)

@@ -28,6 +28,7 @@ from .test_infrastructure import (
     CLIHelper,
     ServiceManager,
 )
+from .test_suite_setup import register_test_collection
 
 
 class DeletionE2ETest:
@@ -41,6 +42,9 @@ class DeletionE2ETest:
         self.dir_manager: Optional[DirectoryManager] = None
         self.watch_process: Optional[subprocess.Popen] = None
         self.collection_name = "deletion_test_collection"
+
+        # Register collection for cleanup
+        register_test_collection(self.collection_name)
 
     def setup_test_environment(self, tmp_path):
         """Setup test infrastructure with aggressive setup strategy."""

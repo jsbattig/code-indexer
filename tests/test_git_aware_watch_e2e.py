@@ -20,6 +20,7 @@ import pytest
 from .test_infrastructure import (
     create_fast_e2e_setup,
     EmbeddingProvider,
+    auto_register_project_collections,
 )
 
 
@@ -143,6 +144,8 @@ class TestGitAwareWatchE2E:
 
         # Create temporary directory for test
         self.temp_dir = Path(tempfile.mkdtemp(prefix="watch_test_"))
+        # Auto-register collections for this project
+        auto_register_project_collections(self.temp_dir)
         self.config_dir = self.temp_dir / ".code-indexer"
         self.config_dir.mkdir(parents=True)
 

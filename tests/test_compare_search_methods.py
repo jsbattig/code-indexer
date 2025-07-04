@@ -11,6 +11,7 @@ from code_indexer.config import Config
 from code_indexer.services.embedding_factory import EmbeddingProviderFactory
 from code_indexer.services.qdrant import QdrantClient
 from code_indexer.services.smart_indexer import SmartIndexer
+from .test_suite_setup import register_test_collection
 
 
 def test_compare_search_methods():
@@ -80,6 +81,9 @@ def test_compare_search_methods():
             config, embedding_provider
         )
         qdrant_client.clear_collection(collection_name)
+
+        # Register collection for cleanup
+        register_test_collection(collection_name)
 
         # Create indexer
         metadata_path = repo_path / "metadata.json"

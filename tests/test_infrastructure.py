@@ -20,6 +20,8 @@ from typing import Dict, List, Optional, Union, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
+# Import will be done inside function to avoid circular imports
+
 
 class EmbeddingProvider(Enum):
     """Supported embedding providers for tests."""
@@ -624,3 +626,101 @@ def create_integration_test_setup(
     cli_helper = CLIHelper(config)
 
     return service_manager, cli_helper
+
+
+def auto_register_project_collections(project_dir: Path) -> List[str]:
+    """
+    Auto-discover and register collections that would be created for a project.
+
+    This function analyzes a project directory and determines what collection names
+    would be generated, then registers them for cleanup.
+
+    Args:
+        project_dir: Path to the project directory
+
+    Returns:
+        List of collection names that were registered
+    """
+    import sys
+    from pathlib import Path
+
+    # Add src to path for imports
+    src_path = Path(__file__).parent.parent / "src"
+    if str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
+
+    try:
+        from code_indexer.config import ConfigManager
+        from code_indexer.services.embedding_factory import EmbeddingProviderFactory
+
+        # Import test_suite_setup functions here to avoid circular imports
+        try:
+            from .test_suite_setup import register_test_collection
+        except ImportError:
+            # If running standalone, try absolute import
+            import test_suite_setup
+
+            register_test_collection = test_suite_setup.register_test_collection
+
+        registered_collections = []
+
+        # Try to load config from project directory
+        try:
+            config_manager = ConfigManager.create_with_backtrack(project_dir)
+            config = config_manager.load()
+
+            # Check if provider-aware collections are enabled
+            if config.qdrant.use_provider_aware_collections:
+                # Generate project ID for this directory
+                project_id = EmbeddingProviderFactory.generate_project_id(
+                    str(project_dir)
+                )
+                base_name = config.qdrant.collection_base_name
+
+                # Register collections for common providers that might be used in tests
+                common_providers = [
+                    ("voyage-ai", "voyage-code-3"),
+                    ("ollama", "nomic-embed-text"),
+                ]
+
+                for provider_name, model_name in common_providers:
+                    collection_name = EmbeddingProviderFactory.generate_collection_name(
+                        base_name, provider_name, model_name, project_id
+                    )
+                    register_test_collection(collection_name)
+                    registered_collections.append(collection_name)
+
+            else:
+                # Legacy collection naming
+                collection_name = config.qdrant.collection
+                register_test_collection(collection_name)
+                registered_collections.append(collection_name)
+
+        except Exception:
+            # If config loading fails, generate collections based on project directory
+            project_id = EmbeddingProviderFactory.generate_project_id(str(project_dir))
+            base_name = "code_index"  # Default base name
+
+            # Register collections for common providers
+            common_providers = [
+                ("voyage-ai", "voyage-code-3"),
+                ("ollama", "nomic-embed-text"),
+            ]
+
+            for provider_name, model_name in common_providers:
+                collection_name = EmbeddingProviderFactory.generate_collection_name(
+                    base_name, provider_name, model_name, project_id
+                )
+                register_test_collection(collection_name)
+                registered_collections.append(collection_name)
+
+        if registered_collections:
+            print(
+                f"🔧 Auto-registered {len(registered_collections)} collections for cleanup"
+            )
+
+        return registered_collections
+
+    except Exception as e:
+        print(f"Warning: Could not auto-register collections: {e}")
+        return []

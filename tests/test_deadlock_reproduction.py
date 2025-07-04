@@ -19,6 +19,7 @@ import pytest
 from .test_infrastructure import (
     create_fast_e2e_setup,
     EmbeddingProvider,
+    auto_register_project_collections,
 )
 
 
@@ -213,6 +214,8 @@ class TestDeadlockReproduction:
 
         # Setup test repository
         self.test_repo_dir = self.create_git_repo_with_files(tmp_path)
+        # Auto-register collections for this project
+        auto_register_project_collections(self.test_repo_dir)
         print(f"✅ Created test git repository at: {self.test_repo_dir}")
 
         # Services are already verified as working in aggressive setup
@@ -306,6 +309,8 @@ class TestDeadlockReproduction:
 
         # Setup test repository
         self.test_repo_dir = self.create_git_repo_with_files(tmp_path)
+        # Auto-register collections for this project
+        auto_register_project_collections(self.test_repo_dir)
 
         # Services are already verified as working in aggressive setup
         # Initialize this specific project
@@ -404,6 +409,8 @@ class TestDeadlockReproduction:
 
         # Setup test repository
         self.test_repo_dir = self.create_git_repo_with_files(tmp_path)
+        # Auto-register collections for this project
+        auto_register_project_collections(self.test_repo_dir)
 
         # Services are already verified as working in aggressive setup
         # Initialize this specific project
@@ -473,6 +480,8 @@ class TestDeadlockReproduction:
 
         # Setup with a larger number of files to increase verification complexity
         self.test_repo_dir = self.create_git_repo_with_files(tmp_path)
+        # Auto-register collections for this project
+        auto_register_project_collections(self.test_repo_dir)
 
         # Create additional files to make verification more complex
         for i in range(15):  # Create 15 additional files

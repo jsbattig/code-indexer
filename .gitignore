@@ -116,6 +116,9 @@ tests/debug_docker_setup2/
 tests/.code-indexer/
 test_clean_debug/
 
+# Test collection tracking file (contains temporary collection names used by e2e tests)
+test_collections.txt
+
 # Test project databases and configs
 tests/projects/*/data/
 tests/projects/*/.code-indexer/

@@ -19,6 +19,7 @@ from .test_infrastructure import (
     create_fast_e2e_setup,
     Assertions,
     EmbeddingProvider,
+    auto_register_project_collections,
 )
 
 
@@ -208,6 +209,9 @@ class TestEndToEndComplete:
             # COMPREHENSIVE SETUP: Ensure clean state and services are ready
             print("🧹 Single project test: Cleaning state and verifying services...")
             self.cleanup_all_data()
+
+            # Auto-register collections for this project
+            auto_register_project_collections(project_path)
 
             # COMPREHENSIVE SETUP: Verify services are working before proceeding
             services_ready = self.service_manager.ensure_services_ready()
@@ -493,6 +497,10 @@ class TestEndToEndComplete:
             # COMPREHENSIVE SETUP: Ensure services running, then clean vector data
             self.ensure_services_running()
             self.ensure_clean_vector_state()
+
+            # Auto-register collections for both projects
+            auto_register_project_collections(project1_path)
+            auto_register_project_collections(project2_path)
 
             # Setup project 1 with clean state
             with self.dir_manager.safe_chdir(project1_path):

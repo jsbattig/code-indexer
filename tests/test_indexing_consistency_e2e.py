@@ -19,6 +19,7 @@ from pathlib import Path
 from code_indexer.config import ConfigManager, Config
 from code_indexer.services import QdrantClient, EmbeddingProviderFactory
 from code_indexer.services.smart_indexer import SmartIndexer
+from .test_infrastructure import auto_register_project_collections
 
 
 pytestmark = [pytest.mark.e2e, pytest.mark.slow]
@@ -77,6 +78,9 @@ def smart_indexer(test_config):
     """Create SmartIndexer with test configuration."""
     config = test_config.load()
 
+    # Register collections for cleanup via test infrastructure
+    auto_register_project_collections(config.codebase_dir)
+
     # Initialize services
     from rich.console import Console
 
@@ -105,14 +109,7 @@ def smart_indexer(test_config):
 
     yield indexer
 
-    # Cleanup: remove test collection
-    try:
-        collection_name = qdrant_client.resolve_collection_name(
-            config, embedding_provider
-        )
-        qdrant_client.delete_collection(collection_name)
-    except Exception:
-        pass  # Ignore cleanup errors
+    # Cleanup handled by collection registration system
 
 
 def get_all_points_with_payload(qdrant_client, collection_name):

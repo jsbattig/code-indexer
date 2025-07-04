@@ -13,7 +13,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 # Import new test infrastructure
-from .test_infrastructure import create_fast_e2e_setup, EmbeddingProvider
+from .test_infrastructure import (
+    create_fast_e2e_setup,
+    EmbeddingProvider,
+    auto_register_project_collections,
+)
 
 
 class TestVoyageAIE2E:
@@ -154,6 +158,9 @@ This is a test project for VoyageAI E2E testing.
         # Use real VoyageAI API key from environment
 
         with self.dir_manager.safe_chdir(self.test_dir):
+            # Auto-register collections for this project
+            auto_register_project_collections(self.test_dir)
+
             # NEW STRATEGY: Services should already be running from fixture
             # Just ensure this project is initialized properly
             self.cli_helper.run_cli_command(

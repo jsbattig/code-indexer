@@ -30,6 +30,7 @@ from .test_infrastructure import (
     create_fast_e2e_setup,
     DirectoryManager,
     EmbeddingProvider,
+    auto_register_project_collections,
 )
 
 
@@ -45,6 +46,8 @@ class TestSchemaMigrationE2E:
         """Create test configuration using new infrastructure with comprehensive setup."""
         # Create temporary directory for test
         temp_dir = Path(tempfile.mkdtemp())
+        # Auto-register collections for this project
+        auto_register_project_collections(temp_dir)
 
         # Create test project files
         DirectoryManager.create_test_project(temp_dir, "calculator")

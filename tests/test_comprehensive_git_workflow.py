@@ -26,6 +26,7 @@ from .test_infrastructure import (
     EmbeddingProvider,
     CLIHelper,
     ServiceManager,
+    auto_register_project_collections,
 )
 
 
@@ -50,6 +51,8 @@ class ComprehensiveWorkflowTest:
 
         # Create test repository directory
         self.test_repo_dir = Path(tempfile.mkdtemp(prefix="git_workflow_test_"))
+        # Auto-register collections for this project
+        auto_register_project_collections(self.test_repo_dir)
         self.config_dir = self.test_repo_dir / ".code-indexer"
         self.config_dir.mkdir(parents=True)
 

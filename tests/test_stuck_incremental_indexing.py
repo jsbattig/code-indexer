@@ -22,6 +22,7 @@ from .test_infrastructure import (
     create_fast_e2e_setup,
     EmbeddingProvider,
 )
+from .test_suite_setup import register_test_collection
 
 
 class TestStuckIncrementalIndexing:
@@ -34,6 +35,9 @@ class TestStuckIncrementalIndexing:
         )
         self.test_repo_dir: Optional[Path] = None
         self.collection_name = "stuck_indexing_test"
+
+        # Register collection for cleanup
+        register_test_collection(self.collection_name)
 
     def teardown_method(self):
         """Cleanup test environment."""

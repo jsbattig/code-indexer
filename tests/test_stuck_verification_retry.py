@@ -14,6 +14,7 @@ import pytest
 from .test_infrastructure import (
     create_fast_e2e_setup,
     EmbeddingProvider,
+    auto_register_project_collections,
 )
 
 
@@ -116,6 +117,8 @@ class TestStuckVerificationRetry:
 
         # Setup test repository
         self.test_repo_dir = self.create_git_repo_with_files(tmp_path)
+        # Auto-register collections for this project
+        auto_register_project_collections(self.test_repo_dir)
         print(f"✅ Created test git repository at: {self.test_repo_dir}")
 
         # Initialize code-indexer
@@ -239,6 +242,8 @@ class TestStuckVerificationRetry:
 
         # Setup test repository
         self.test_repo_dir = self.create_git_repo_with_files(tmp_path)
+        # Auto-register collections for this project
+        auto_register_project_collections(self.test_repo_dir)
 
         # Initialize and start services
         init_result = self.cli_helper.run_cli_command(
@@ -317,6 +322,8 @@ class TestStuckVerificationRetry:
 
         # Setup test repository
         self.test_repo_dir = self.create_git_repo_with_files(tmp_path)
+        # Auto-register collections for this project
+        auto_register_project_collections(self.test_repo_dir)
 
         # Create many additional files
         print("📝 Creating many files...")
