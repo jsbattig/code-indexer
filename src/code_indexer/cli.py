@@ -30,6 +30,7 @@ from .services.claude_integration import (
 from .services.config_fixer import ConfigurationRepairer, generate_fix_report
 from .services.vector_calculation_manager import get_default_thread_count
 from .services.cidx_prompt_generator import create_cidx_ai_prompt
+from .services.migration_decorator import requires_qdrant_access
 from . import __version__
 
 
@@ -657,6 +658,7 @@ def init(
     default=512,
     help="Maximum request queue size (default: 512)",
 )
+@requires_qdrant_access("start")
 @click.pass_context
 def start(
     ctx,
@@ -960,6 +962,7 @@ def start(
     is_flag=True,
     help="Detect and handle files deleted from filesystem but still in database (for standard indexing only; --reconcile includes this automatically)",
 )
+@requires_qdrant_access("index")
 @click.pass_context
 def index(
     ctx,
@@ -1306,6 +1309,7 @@ def index(
 )
 @click.option("--batch-size", default=50, help="Batch size for processing")
 @click.option("--initial-sync", is_flag=True, help="Perform full sync before watching")
+@requires_qdrant_access("watch")
 @click.pass_context
 def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
     """Git-aware watch for file changes with branch support."""
@@ -1479,6 +1483,7 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
     is_flag=True,
     help="Quiet mode - only show results, no headers or metadata",
 )
+@requires_qdrant_access("query")
 @click.pass_context
 def query(
     ctx,
@@ -1921,6 +1926,7 @@ def query(
     is_flag=True,
     help="Include full project directory listing in Claude prompt for better project understanding (increases prompt size)",
 )
+@requires_qdrant_access("claude")
 @click.pass_context
 def claude(
     ctx,
@@ -2279,6 +2285,7 @@ def claude(
 @click.option(
     "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
 )
+@requires_qdrant_access("status")
 @click.pass_context
 def status(ctx, force_docker: bool):
     """Show status of services and index.
@@ -2529,6 +2536,7 @@ def status(ctx, force_docker: bool):
 
 
 @cli.command()
+@requires_qdrant_access("optimize")
 @click.pass_context
 def optimize(ctx):
     """Optimize vector database storage and performance."""
@@ -2572,6 +2580,122 @@ def optimize(ctx):
 
     except Exception as e:
         console.print(f"❌ Optimization failed: {e}", style="red")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    "--collection",
+    help="Specific collection to flush (flushes all collections if not specified)",
+)
+@requires_qdrant_access("force-flush")
+@click.pass_context
+def force_flush(ctx, collection: Optional[str]):
+    """Force flush collection data from RAM to disk for CoW operations.
+
+    \b
+    Forces Qdrant to flush all collection data from memory to disk
+    using the snapshot API. This ensures data consistency before
+    copy-on-write (CoW) cloning operations.
+
+    \b
+    USAGE SCENARIOS:
+      • Before CoW cloning indexed projects
+      • Ensuring data persistence before system maintenance
+      • Debugging collection data consistency issues
+
+    \b
+    TECHNICAL DETAILS:
+      • Creates temporary snapshots to trigger flush
+      • Automatically cleans up temporary snapshots
+      • Works with both global and local storage modes
+      • Safe to run on active collections
+
+    \b
+    COW CLONING EXAMPLES:
+      # Complete workflow for CoW cloning:
+      code-indexer force-flush              # Flush before cloning
+
+      # BTRFS filesystem (most common):
+      cp --reflink=always -r /path/to/project /path/to/clone
+
+      # ZFS filesystem:
+      zfs snapshot tank/project@clone
+      zfs clone tank/project@clone tank/clone
+
+      # XFS filesystem (requires reflink support):
+      cp --reflink=always -r /path/to/project /path/to/clone
+
+      # After cloning, fix config in clone:
+      cd /path/to/clone && code-indexer fix-config --force
+    """
+    config_manager = ctx.obj["config_manager"]
+
+    try:
+        config = config_manager.load()
+
+        # Initialize Qdrant client
+        qdrant_client = QdrantClient(config.qdrant, console)
+
+        # Health check
+        if not qdrant_client.health_check():
+            console.print("❌ Qdrant service not available", style="red")
+            sys.exit(1)
+
+        if collection:
+            # Flush specific collection
+            console.print(f"💾 Force flushing collection '{collection}' to disk...")
+            success = qdrant_client.force_flush_to_disk(collection)
+
+            if success:
+                console.print(
+                    f"✅ Successfully flushed collection '{collection}' to disk",
+                    style="green",
+                )
+            else:
+                console.print(
+                    f"❌ Failed to flush collection '{collection}'", style="red"
+                )
+                sys.exit(1)
+        else:
+            # Flush all collections
+            console.print("💾 Force flushing all collections to disk...")
+
+            # Get list of existing collections
+            collections = qdrant_client.list_collections()
+            if not collections:
+                console.print("ℹ️  No collections found to flush", style="yellow")
+                return
+
+            console.print(f"Found {len(collections)} collections to flush...")
+
+            failed_collections = []
+            for coll_name in collections:
+                console.print(f"  💾 Flushing '{coll_name}'...")
+                success = qdrant_client.force_flush_to_disk(coll_name)
+
+                if success:
+                    console.print(
+                        f"  ✅ '{coll_name}' flushed successfully", style="green"
+                    )
+                else:
+                    console.print(f"  ❌ Failed to flush '{coll_name}'", style="red")
+                    failed_collections.append(coll_name)
+
+            if failed_collections:
+                console.print(
+                    f"❌ Failed to flush {len(failed_collections)} collections: {', '.join(failed_collections)}",
+                    style="red",
+                )
+                sys.exit(1)
+            else:
+                console.print(
+                    f"✅ Successfully flushed all {len(collections)} collections to disk",
+                    style="green",
+                )
+
+    except Exception as e:
+        console.print(f"❌ Force flush failed: {e}", style="red")
         sys.exit(1)
 
 
@@ -2718,6 +2842,7 @@ def stop(ctx, force_docker: bool):
 @cli.command()
 @click.option("--migrate", is_flag=True, help="Perform migration if needed")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress output")
+@requires_qdrant_access("schema")
 @click.pass_context
 def schema(ctx, migrate: bool, quiet: bool):
     """Check and manage database schema version.

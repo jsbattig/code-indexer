@@ -89,11 +89,26 @@ fi
 
 # 6. Run tests with coverage
 print_step "Running tests with coverage"
-if pytest tests/ --cov=src/code_indexer --cov-report=xml --cov-report=term; then
-    print_success "All tests passed"
+
+# Check if COW_CLONE_E2E_TESTS is set to exclude the slow CoW clone tests
+if [[ "${COW_CLONE_E2E_TESTS:-}" == "false" ]]; then
+    print_warning "Skipping CoW clone E2E tests (COW_CLONE_E2E_TESTS=false)"
+    # Exclude the specific CoW clone test to speed up the run
+    if pytest tests/ --ignore=tests/test_cow_clone_e2e_full_automation.py --cov=src/code_indexer --cov-report=xml --cov-report=term; then
+        print_success "All tests passed (excluding CoW clone E2E test)"
+    else
+        print_error "Tests failed"
+        exit 1
+    fi
 else
-    print_error "Tests failed"
-    exit 1
+    print_step "Including CoW clone E2E tests (may take several minutes)"
+    print_step "To skip them: export COW_CLONE_E2E_TESTS=false"
+    if pytest tests/ --cov=src/code_indexer --cov-report=xml --cov-report=term; then
+        print_success "All tests passed (including CoW clone E2E)"
+    else
+        print_error "Tests failed (including CoW clone E2E)"
+        exit 1
+    fi
 fi
 
 # 7. Build package

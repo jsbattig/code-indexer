@@ -130,6 +130,7 @@ if pytest tests/ \
     --ignore=tests/test_compare_search_methods.py \
     --ignore=tests/test_debug_branch_isolation.py \
     --ignore=tests/test_search_with_branch_topology_fix.py \
+    --ignore=tests/test_cow_clone_e2e_full_automation.py \
     -m "not slow and not e2e and not real_api" \
     --cov=src/code_indexer --cov-report=xml --cov-report=term; then
     print_success "Unit tests passed"
@@ -167,6 +168,7 @@ echo "   • Docker Compose validation tests (require Docker)"
 echo "   • Idempotent setup tests (require Docker services)"
 echo "   • Branch topology E2E tests (require Git and indexing services)"
 echo "   • Schema migration E2E tests (require Qdrant and embedding services)"
+echo "   • CoW clone E2E tests (require CoW filesystem and real services)"
 echo "   • Optimized example tests (require Docker and VoyageAI API)"
 echo "   • Comprehensive git workflow tests (require full service stack)"
 echo "   • Git-aware watch E2E tests (require service dependencies)"

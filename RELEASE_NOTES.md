@@ -1,5 +1,42 @@
 # Code Indexer Release Notes
 
+## Version 1.1.0.0 (2025-01-05)
+
+### 🚀 Major Feature: Copy-on-Write (CoW) Clone Support
+
+#### **Migration Middleware System**
+- **Real-time Migration Detection**: Automatically detects when indexed projects are CoW clones and handles migration gracefully
+- **Migration State Tracking**: Persistent state tracking across system restarts with async-safe operations
+- **Decorator Integration**: `@requires_qdrant_access` decorator automatically applied to all Qdrant-dependent CLI commands
+- **Deadlock Prevention**: Fixed critical async deadlock in migration state management
+
+#### **CoW Operations Support**
+- **Force-flush Command**: New `force-flush` command ensures data consistency before CoW cloning
+- **Multi-filesystem Support**: Comprehensive examples for BTRFS, ZFS, and XFS filesystems
+- **Project Isolation**: Proper handling of local storage directories for cloned projects
+- **Configuration Migration**: Automatic config fixing for cloned projects
+
+#### **Enhanced CLI Integration**
+- **8 Commands Protected**: Applied migration middleware to index, query, claude, watch, status, optimize, schema, and start commands
+- **Comprehensive Help**: Added detailed CoW cloning examples and workflow documentation
+- **Error Handling**: Robust error handling for missing directories and test environments
+
+#### **Testing Infrastructure**
+- **E2E CoW Test**: Comprehensive 10-phase end-to-end test for complete CoW clone workflow
+- **Aggressive Setup Pattern**: Tests use shared services for better performance while maintaining isolation
+- **Full Automation Integration**: CoW tests included in full-automation.sh by default
+
+### 📊 Technical Implementation
+- **Async-safe Operations**: All migration operations designed for concurrent access
+- **Snapshot API Integration**: Uses Qdrant snapshot API for reliable data flushing
+- **Project Path Flexibility**: Supports both current directory and explicit project path specifications
+- **Cleanup Management**: Automatic cleanup of temporary snapshots and migration artifacts
+
+### 🔧 Developer Experience
+- **Example Workflows**: Complete documentation of CoW cloning processes for different filesystems
+- **Integration Testing**: Comprehensive test coverage for migration scenarios
+- **Performance Optimized**: Minimal overhead for non-CoW operations
+
 ## Version 1.0.0.7 (2025-01-04)
 
 ### 🧪 Testing Infrastructure Improvements

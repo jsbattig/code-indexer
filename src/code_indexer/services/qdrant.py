@@ -46,6 +46,25 @@ class QdrantClient:
         except Exception:
             return False
 
+    def list_collections(self) -> List[str]:
+        """List all collections in the Qdrant instance.
+
+        Returns:
+            List of collection names
+        """
+        try:
+            response = self.client.get("/collections")
+            if response.status_code == 200:
+                data = response.json()
+                # Extract collection names from the response
+                collections = data.get("result", {}).get("collections", [])
+                return [
+                    coll.get("name", "") for coll in collections if coll.get("name")
+                ]
+            return []
+        except Exception:
+            return []
+
     def create_collection(
         self, collection_name: Optional[str] = None, vector_size: Optional[int] = None
     ) -> bool:
@@ -1515,6 +1534,55 @@ class QdrantClient:
             # Optimization is automatic in Qdrant, so we can return True
             # even if explicit optimization calls fail
             return True
+
+    def force_flush_to_disk(self, collection_name: Optional[str] = None) -> bool:
+        """Force flush collection data from RAM to disk using Qdrant snapshot API.
+
+        This creates a temporary snapshot which forces Qdrant to flush all
+        collection data to disk, ensuring data consistency for CoW operations.
+
+        Args:
+            collection_name: Optional collection name, uses current collection if None
+
+        Returns:
+            True if flush succeeded, False otherwise
+        """
+        collection = (
+            collection_name or self._current_collection_name or self.config.collection
+        )
+
+        try:
+            # Create a snapshot which forces flush to disk
+            response = self.client.post(
+                f"/collections/{collection}/snapshots",
+                headers={"Content-Type": "application/json"},
+            )
+
+            if response.status_code == 200:
+                snapshot_info = response.json()
+                snapshot_name = snapshot_info.get("name")
+
+                if snapshot_name:
+                    # Wait a moment for the snapshot to complete
+                    time.sleep(1)
+
+                    # Delete the temporary snapshot to clean up
+                    try:
+                        self.client.delete(
+                            f"/collections/{collection}/snapshots/{snapshot_name}"
+                        )
+                    except Exception:
+                        # Cleanup failure is not critical
+                        pass
+
+                    return True
+
+            return False
+
+        except Exception as e:
+            if self.console:
+                self.console.print(f"Force flush failed: {e}", style="yellow")
+            return False
 
     def close(self) -> None:
         """Close the HTTP client."""

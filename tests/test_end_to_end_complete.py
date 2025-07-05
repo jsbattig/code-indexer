@@ -235,9 +235,24 @@ class TestEndToEndComplete:
             # COMPREHENSIVE SETUP: Verify services are actually functional after start
             print("🔍 Single project test: Verifying service functionality...")
             status_check = self.cli_helper.run_cli_command(["status"], timeout=30)
-            if "❌" in status_check.stdout or status_check.returncode != 0:
+
+            # Check that essential services are running, but allow optional services to be down
+            status_output = status_check.stdout
+            essential_services_down = []
+
+            # Check for critical service failures (excluding Data Cleaner which is optional)
+            lines = status_output.split("\n")
+            for line in lines:
+                # Check Qdrant service
+                if "Qdrant" in line and "❌" in line:
+                    essential_services_down.append("Qdrant")
+                # Check Voyage-AI provider (but not when it shows "Not needed")
+                if "Voyage-Ai Provider" in line and "❌" in line:
+                    essential_services_down.append("Embedding Provider")
+
+            if essential_services_down or status_check.returncode != 0:
                 pytest.fail(
-                    f"Services not functional after start: {status_check.stdout}"
+                    f"Essential services not functional after start. Failed services: {essential_services_down}\nFull status: {status_check.stdout}"
                 )
 
             # 3. Index the project (force full index to avoid incremental skip)

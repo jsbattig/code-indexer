@@ -114,6 +114,7 @@ markers = [
     "slow: Tests that take longer to run",
     "integration: Integration tests requiring multiple services",
     "unit: Unit tests with mocked dependencies",
+    "full_automation: Tests that should only be run in full automation pipeline",
 ]
 
 [tool.coverage.run]
