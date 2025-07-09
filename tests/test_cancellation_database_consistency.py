@@ -8,7 +8,8 @@ Note: This should be marked as e2e since it tests database interaction.
 """
 
 import pytest
-import tempfile
+
+from .conftest import local_temporary_directory
 import time
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -93,7 +94,7 @@ class TestDatabaseConsistencyDuringCancellation:
         """Test that files are indexed atomically - either ALL chunks or NONE."""
         # This test will fail until we implement file-level transaction management
 
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with local_temporary_directory() as temp_dir:
             # Create test files with multiple chunks each
             test_files = []
             for i in range(3):
@@ -191,7 +192,7 @@ class TestDatabaseConsistencyDuringCancellation:
         """Test that progressive metadata reflects only actually completed files."""
         # This test will fail until we implement progressive metadata cleanup
 
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with local_temporary_directory() as temp_dir:
             test_file = Path(temp_dir) / "test_file.py"
             test_file.write_text("def test(): pass\n" * 20)
 
@@ -264,7 +265,7 @@ class TestDatabaseConsistencyDuringCancellation:
         """Test that Qdrant batches are handled safely during cancellation."""
         # This test will fail until we implement enhanced Qdrant batch safety
 
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with local_temporary_directory() as temp_dir:
             # Create multiple files to trigger batching
             test_files = []
             for i in range(10):

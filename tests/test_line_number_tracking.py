@@ -5,11 +5,14 @@ import tempfile
 
 from src.code_indexer.indexing.chunker import TextChunker
 from src.code_indexer.config import IndexingConfig
+from .conftest import local_temporary_directory
 
 
 class TestLineNumberTrackingInChunker:
     """Test line number tracking in TextChunker."""
 
+
+class TestLineNumberTracking:
     def setup_method(self):
         """Set up test fixtures."""
         config = IndexingConfig()
@@ -313,7 +316,7 @@ class TestLineNumbersInRAGExtractor:
         from src.code_indexer.services.rag_context_extractor import RAGContextExtractor
 
         # Create test directory structure
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with local_temporary_directory() as temp_dir:
             temp_path = Path(temp_dir)
 
             # Create a test file
@@ -372,7 +375,7 @@ def function_two():  # Line 6
         """Test that context merging uses actual line positions instead of estimates."""
         from src.code_indexer.services.rag_context_extractor import RAGContextExtractor
 
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with local_temporary_directory() as temp_dir:
             temp_path = Path(temp_dir)
 
             extractor = RAGContextExtractor(temp_path)

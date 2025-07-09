@@ -6,8 +6,9 @@ and provides the fix to ensure files remain visible in branches where they exist
 """
 
 import pytest
+
+from .conftest import local_temporary_directory
 from pathlib import Path
-import tempfile
 import subprocess
 
 from code_indexer.config import Config
@@ -26,7 +27,7 @@ def test_branch_transition_file_visibility():
     if not os.getenv("VOYAGE_API_KEY"):
         pytest.skip("VoyageAI API key required")
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with local_temporary_directory() as temp_dir:
         repo_path = Path(temp_dir)
 
         # Create git repository with initial file

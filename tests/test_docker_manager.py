@@ -3,8 +3,9 @@ Unit tests for DockerManager class.
 Tests the core functionality without requiring actual Docker containers.
 """
 
+from .conftest import local_temporary_directory
+
 import unittest
-import tempfile
 import os
 import sys
 from pathlib import Path
@@ -50,12 +51,14 @@ class TestDockerManager(unittest.TestCase):
         ]
 
         for folder_name, expected in test_cases:
-            with tempfile.TemporaryDirectory() as temp_dir:
+            with local_temporary_directory() as temp_dir:
                 test_dir = Path(temp_dir) / folder_name
                 test_dir.mkdir()
 
                 os.chdir(test_dir)
-                docker_manager = DockerManager()
+                docker_manager = (
+                    DockerManager()
+                )  # Don't set project_name to auto-detect from folder
 
                 self.assertEqual(
                     docker_manager.project_name,
@@ -65,7 +68,7 @@ class TestDockerManager(unittest.TestCase):
 
     def test_project_name_sanitization(self):
         """Test project name sanitization for Docker compatibility."""
-        docker_manager = DockerManager()
+        docker_manager = DockerManager(project_name="test_shared")
 
         test_cases = [
             ("Test_Project", "test_project"),  # Underscores preserved for qdrant
@@ -91,19 +94,25 @@ class TestDockerManager(unittest.TestCase):
 
     def test_container_name_generation(self):
         """Test container name generation with project names."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with local_temporary_directory() as temp_dir:
             test_dir = Path(temp_dir) / "test-project"
             test_dir.mkdir()
 
             os.chdir(test_dir)
-            docker_manager = DockerManager()
+            docker_manager = DockerManager(project_name="test_shared")
+
+            # Generate project config required for new API
+            project_config = docker_manager._generate_container_names(test_dir)
 
             # Test service container names
-            ollama_name = docker_manager.get_container_name("ollama")
-            qdrant_name = docker_manager.get_container_name("qdrant")
+            ollama_name = docker_manager.get_container_name("ollama", project_config)
+            qdrant_name = docker_manager.get_container_name("qdrant", project_config)
 
-            self.assertEqual(ollama_name, "code-indexer-ollama")
-            self.assertEqual(qdrant_name, "code-indexer-qdrant")
+            # Names should include project hash now
+            self.assertTrue(ollama_name.startswith("cidx-"))
+            self.assertTrue(ollama_name.endswith("-ollama"))
+            self.assertTrue(qdrant_name.startswith("cidx-"))
+            self.assertTrue(qdrant_name.endswith("-qdrant"))
 
     def test_explicit_project_name(self):
         """Test providing explicit project name."""
@@ -111,20 +120,44 @@ class TestDockerManager(unittest.TestCase):
 
         self.assertEqual(docker_manager.project_name, "custom-project")
 
-        # Test container names (global architecture ignores project name)
-        ollama_name = docker_manager.get_container_name("ollama")
-        self.assertEqual(ollama_name, "code-indexer-ollama")
+        # Test container names (project-specific architecture)
+        with local_temporary_directory() as temp_dir:
+            test_dir = Path(temp_dir) / "test-project"
+            test_dir.mkdir()
+            project_config = docker_manager._generate_container_names(test_dir)
+
+            ollama_name = docker_manager.get_container_name("ollama", project_config)
+            self.assertTrue(ollama_name.startswith("cidx-"))
+            self.assertTrue(ollama_name.endswith("-ollama"))
 
     def test_compose_config_generation(self):
         """Test Docker Compose configuration generation."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with local_temporary_directory() as temp_dir:
             test_dir = Path(temp_dir) / "test-project"
             test_dir.mkdir()
 
             os.chdir(test_dir)
-            docker_manager = DockerManager()
+            docker_manager = DockerManager(project_name="test_shared")
 
-            config = docker_manager.generate_compose_config()
+            # Generate project config with proper port allocation
+            container_names = docker_manager._generate_container_names(test_dir)
+
+            # CRITICAL: Update main_config with container names before port allocation
+            if not docker_manager.main_config:
+                docker_manager.main_config = {}
+            if "project_containers" not in docker_manager.main_config:
+                docker_manager.main_config["project_containers"] = {}
+            docker_manager.main_config["project_containers"].update(container_names)
+
+            ports = docker_manager._allocate_free_ports()
+            project_config = {
+                **container_names,
+                "qdrant_port": str(ports["qdrant_port"]),
+                "ollama_port": str(ports["ollama_port"]),
+                "data_cleaner_port": str(ports["data_cleaner_port"]),
+            }
+
+            config = docker_manager.generate_compose_config(test_dir, project_config)
 
             # Check basic structure (version field is deprecated in Docker Compose v2+)
             self.assertIn("services", config)
@@ -136,27 +169,44 @@ class TestDockerManager(unittest.TestCase):
             self.assertIn("ollama", services)
             self.assertIn("qdrant", services)
 
-            # Check container names are now global
-            self.assertEqual(
-                services["ollama"]["container_name"], "code-indexer-ollama"
-            )
-            self.assertEqual(
-                services["qdrant"]["container_name"], "code-indexer-qdrant"
-            )
+            # Check container names are project-specific
+            ollama_container = services["ollama"]["container_name"]
+            qdrant_container = services["qdrant"]["container_name"]
+            self.assertTrue(ollama_container.startswith("cidx-"))
+            self.assertTrue(ollama_container.endswith("-ollama"))
+            self.assertTrue(qdrant_container.startswith("cidx-"))
+            self.assertTrue(qdrant_container.endswith("-qdrant"))
 
-            # Check network configuration is now global
+            # Check network configuration is project-specific
             networks = config["networks"]
-            self.assertIn("code-indexer-global", networks)
+            # Should have project-specific network
+            network_names = list(networks.keys())
+            self.assertEqual(len(network_names), 1)
+            network_name = network_names[0]
+            self.assertTrue(network_name.startswith("cidx-"))
+            self.assertTrue(network_name.endswith("-network"))
 
-            # Check that services use the global network
+            # Check that services use the project network
             for service in services.values():
                 self.assertIn("networks", service)
-                self.assertIn("code-indexer-global", service["networks"])
+                self.assertIn(network_name, service["networks"])
 
     def test_health_check_configuration(self):
         """Test health check configuration in Docker Compose."""
-        docker_manager = DockerManager(project_name="test")
-        config = docker_manager.generate_compose_config()
+        with local_temporary_directory() as temp_dir:
+            test_dir = Path(temp_dir) / "test-project"
+            test_dir.mkdir()
+
+            docker_manager = DockerManager(project_name="test_shared")
+            container_names = docker_manager._generate_container_names(test_dir)
+            ports = docker_manager._allocate_free_ports()
+            project_config = {
+                **container_names,
+                "qdrant_port": str(ports["qdrant_port"]),
+                "ollama_port": str(ports["ollama_port"]),
+                "data_cleaner_port": str(ports["data_cleaner_port"]),
+            }
+            config = docker_manager.generate_compose_config(test_dir, project_config)
 
         services = config["services"]
 
@@ -174,8 +224,20 @@ class TestDockerManager(unittest.TestCase):
 
     def test_volume_configuration(self):
         """Test volume configuration for data persistence."""
-        docker_manager = DockerManager(project_name="test")
-        config = docker_manager.generate_compose_config()
+        with local_temporary_directory() as temp_dir:
+            test_dir = Path(temp_dir) / "test-project"
+            test_dir.mkdir()
+
+            docker_manager = DockerManager(project_name="test_shared")
+            container_names = docker_manager._generate_container_names(test_dir)
+            ports = docker_manager._allocate_free_ports()
+            project_config = {
+                **container_names,
+                "qdrant_port": str(ports["qdrant_port"]),
+                "ollama_port": str(ports["ollama_port"]),
+                "data_cleaner_port": str(ports["data_cleaner_port"]),
+            }
+            config = docker_manager.generate_compose_config(test_dir, project_config)
 
         services = config["services"]
 
@@ -189,8 +251,20 @@ class TestDockerManager(unittest.TestCase):
 
     def test_build_configuration(self):
         """Test build configuration for custom Dockerfiles."""
-        docker_manager = DockerManager(project_name="test")
-        config = docker_manager.generate_compose_config()
+        with local_temporary_directory() as temp_dir:
+            test_dir = Path(temp_dir) / "test-project"
+            test_dir.mkdir()
+
+            docker_manager = DockerManager(project_name="test_shared")
+            container_names = docker_manager._generate_container_names(test_dir)
+            ports = docker_manager._allocate_free_ports()
+            project_config = {
+                **container_names,
+                "qdrant_port": str(ports["qdrant_port"]),
+                "ollama_port": str(ports["ollama_port"]),
+                "data_cleaner_port": str(ports["data_cleaner_port"]),
+            }
+            config = docker_manager.generate_compose_config(test_dir, project_config)
 
         services = config["services"]
 
@@ -214,33 +288,52 @@ class TestDockerManager(unittest.TestCase):
             returncode=0, stdout='{"key": "value"}', stderr=""
         )
 
-        docker_manager = DockerManager(project_name="test")
+        docker_manager = DockerManager(project_name="test_shared")
 
         # Test container communication command construction
         # This tests the internal command building without actual execution
-        container_name = docker_manager.get_container_name("ollama")
-        self.assertEqual(container_name, "code-indexer-ollama")
+        with local_temporary_directory() as temp_dir:
+            test_dir = Path(temp_dir) / "test-project"
+            test_dir.mkdir()
+            project_config = docker_manager._generate_container_names(test_dir)
+            container_name = docker_manager.get_container_name("ollama", project_config)
+            self.assertTrue(container_name.startswith("cidx-"))
+            self.assertTrue(container_name.endswith("-ollama"))
 
     def test_network_name_generation(self):
-        """Test network name generation - now uses global network."""
-        docker_manager = DockerManager(project_name="my-project")
-        config = docker_manager.generate_compose_config()
+        """Test network name generation - now uses project-specific network."""
+        with local_temporary_directory() as temp_dir:
+            test_dir = Path(temp_dir) / "test-project"
+            test_dir.mkdir()
 
-        networks = config["networks"]
-        expected_network = "code-indexer-global"
+            docker_manager = DockerManager(project_name="test_shared")
+            container_names = docker_manager._generate_container_names(test_dir)
+            ports = docker_manager._allocate_free_ports()
+            project_config = {
+                **container_names,
+                "qdrant_port": str(ports["qdrant_port"]),
+                "ollama_port": str(ports["ollama_port"]),
+                "data_cleaner_port": str(ports["data_cleaner_port"]),
+            }
+            config = docker_manager.generate_compose_config(test_dir, project_config)
 
-        self.assertIn(expected_network, networks)
+            networks = config["networks"]
+            network_names = list(networks.keys())
+            self.assertEqual(len(network_names), 1)
+            network_name = network_names[0]
+            self.assertTrue(network_name.startswith("cidx-"))
+            self.assertTrue(network_name.endswith("-network"))
 
-        # Check that all services use the global network
-        services = config["services"]
-        for service in services.values():
-            self.assertIn(expected_network, service["networks"])
+            # Check that all services use the project network
+            services = config["services"]
+            for service in services.values():
+                self.assertIn(network_name, service["networks"])
 
     def test_error_handling_invalid_project_name(self):
         """Test handling of edge cases in project name detection."""
         # Test with very long project name
         long_name = "a" * 100
-        docker_manager = DockerManager()
+        docker_manager = DockerManager(project_name="test_shared")
         sanitized = docker_manager._sanitize_project_name(long_name)
 
         # Docker container names have limits, should be truncated or handled
@@ -262,18 +355,34 @@ class TestDockerManagerConfig(unittest.TestCase):
     def test_config_integration(self):
         """Test that DockerManager integrates properly with config system."""
         # This test ensures DockerManager can work without config files
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with local_temporary_directory() as temp_dir:
             test_dir = Path(temp_dir) / "test-project"
             test_dir.mkdir()
 
             os.chdir(test_dir)
 
             # Should not fail even without config files
-            docker_manager = DockerManager()
+            docker_manager = DockerManager(project_name="test_shared")
             self.assertIsNotNone(docker_manager.project_name)
 
-            # Should be able to generate compose config
-            config = docker_manager.generate_compose_config()
+            # Should be able to generate compose config with proper port allocation
+            container_names = docker_manager._generate_container_names(test_dir)
+
+            # CRITICAL: Update main_config with container names before port allocation
+            if not docker_manager.main_config:
+                docker_manager.main_config = {}
+            if "project_containers" not in docker_manager.main_config:
+                docker_manager.main_config["project_containers"] = {}
+            docker_manager.main_config["project_containers"].update(container_names)
+
+            ports = docker_manager._allocate_free_ports()
+            project_config = {
+                **container_names,
+                "qdrant_port": str(ports["qdrant_port"]),
+                "ollama_port": str(ports["ollama_port"]),
+                "data_cleaner_port": str(ports["data_cleaner_port"]),
+            }
+            config = docker_manager.generate_compose_config(test_dir, project_config)
             self.assertIsNotNone(config)
 
 

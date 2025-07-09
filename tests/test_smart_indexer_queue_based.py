@@ -6,10 +6,10 @@ processing for all code paths, eliminating single-threaded and per-file
 threading approaches.
 """
 
-import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 import pytest
+
 
 from code_indexer.config import Config
 from code_indexer.services.smart_indexer import SmartIndexer
@@ -23,7 +23,15 @@ class TestSmartIndexerQueueBased:
     def setup_method(self):
         """Setup test environment."""
         # Create temporary directory
-        self.temp_dir = tempfile.mkdtemp()
+        # Use shared test directory to avoid creating multiple container sets
+        self.temp_dir = str(Path.home() / ".tmp" / "shared_test_containers")
+        # Clean and recreate for test isolation
+        temp_path = Path(self.temp_dir)
+        if temp_path.exists():
+            import shutil
+
+            shutil.rmtree(temp_path, ignore_errors=True)
+        temp_path.mkdir(parents=True, exist_ok=True)
         self.temp_path = Path(self.temp_dir)
 
         # Create test files

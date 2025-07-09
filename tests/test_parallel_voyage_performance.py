@@ -14,6 +14,7 @@ import pytest
 from typing import Dict, List, Optional
 from concurrent.futures import as_completed
 
+from .conftest import get_local_tmp_dir
 from src.code_indexer.config import Config
 from src.code_indexer.services.embedding_factory import EmbeddingProviderFactory
 from src.code_indexer.services.embedding_provider import EmbeddingProvider
@@ -62,7 +63,7 @@ class TestParallelVoyagePerformance:
 
         # Create a minimal config for VoyageAI
         cls.config = Config(
-            codebase_dir="/tmp/test",
+            codebase_dir=str(get_local_tmp_dir() / "test"),
             embedding_provider="voyage-ai",
         )
 

@@ -5,6 +5,8 @@ Tests the WatchMetadata and GitStateMonitor classes for proper state persistence
 and git change detection.
 """
 
+from .conftest import local_temporary_directory
+
 import tempfile
 import time
 from pathlib import Path
@@ -37,7 +39,7 @@ class TestWatchMetadata:
 
     def test_watch_metadata_persistence(self):
         """Test WatchMetadata save/load functionality."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with local_temporary_directory() as temp_dir:
             metadata_path = Path(temp_dir) / "watch_metadata.json"
 
             # Create metadata with test data
@@ -76,7 +78,7 @@ class TestWatchMetadata:
 
     def test_watch_metadata_load_nonexistent(self):
         """Test loading metadata from non-existent file creates new instance."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with local_temporary_directory() as temp_dir:
             metadata_path = Path(temp_dir) / "nonexistent.json"
 
             metadata = WatchMetadata.load_from_disk(metadata_path)
@@ -87,7 +89,7 @@ class TestWatchMetadata:
 
     def test_watch_metadata_load_corrupt_file(self):
         """Test loading corrupt metadata file creates new instance."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with local_temporary_directory() as temp_dir:
             metadata_path = Path(temp_dir) / "corrupt.json"
 
             # Write corrupt JSON

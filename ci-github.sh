@@ -82,7 +82,7 @@ print_step "Running unit tests only (excluding E2E/integration tests)"
 echo "ℹ️  This matches GitHub Actions - only unit tests that don't require external services"
 
 # Run the exact same test command as GitHub Actions
-if pytest tests/ \
+if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest tests/ \
     --ignore=tests/test_e2e_embedding_providers.py \
     --ignore=tests/test_start_stop_e2e.py \
     --ignore=tests/test_end_to_end_complete.py \
@@ -100,6 +100,7 @@ if pytest tests/ \
     --ignore=tests/test_claude_e2e.py \
     --ignore=tests/test_reconcile_e2e.py \
     --ignore=tests/test_voyage_ai_e2e.py \
+    --ignore=tests/test_cow_workflow_e2e.py \
     --ignore=tests/test_docker_compose_validation.py \
     --ignore=tests/test_idempotent_setup.py \
     --ignore=tests/test_branch_topology_e2e.py \
@@ -131,6 +132,7 @@ if pytest tests/ \
     --ignore=tests/test_debug_branch_isolation.py \
     --ignore=tests/test_search_with_branch_topology_fix.py \
     --ignore=tests/test_cow_clone_e2e_full_automation.py \
+    --ignore=tests/test_cow_migration_e2e_full_automation.py \
     -m "not slow and not e2e and not real_api" \
     --cov=src/code_indexer --cov-report=xml --cov-report=term; then
     print_success "Unit tests passed"

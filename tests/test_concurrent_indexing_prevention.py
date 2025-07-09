@@ -6,6 +6,8 @@ can run simultaneously, which could cause data corruption and resource conflicts
 """
 
 import pytest
+
+from .conftest import local_temporary_directory
 import tempfile
 import threading
 import time
@@ -28,7 +30,7 @@ class TestConcurrentIndexingPrevention:
         This test should FAIL initially, demonstrating the bug.
         """
         # Setup two indexer instances for the same project
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with local_temporary_directory() as tmpdir:
             config = Mock(spec=Config)
             config.codebase_dir = Path(tmpdir)
             config.exclude_dirs = ["node_modules", ".git"]
@@ -178,7 +180,7 @@ class TestConcurrentIndexingPrevention:
         When an indexing operation crashes, the heartbeat should expire after a timeout,
         allowing new operations to proceed.
         """
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with local_temporary_directory() as tmpdir:
             config = Mock(spec=Config)
             config.codebase_dir = Path(tmpdir)
             config.exclude_dirs = ["node_modules", ".git"]
@@ -272,7 +274,7 @@ class TestConcurrentIndexingPrevention:
         """
         Test that heartbeat file is properly cleaned up when indexing completes successfully.
         """
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with local_temporary_directory() as tmpdir:
             config = Mock(spec=Config)
             config.codebase_dir = Path(tmpdir)
             config.exclude_dirs = ["node_modules", ".git"]

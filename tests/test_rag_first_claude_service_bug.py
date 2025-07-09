@@ -4,7 +4,8 @@ Test for --rag-first claude_service variable bug.
 This test reproduces the issue where claude_service is not defined in the --rag-first code path.
 """
 
-import tempfile
+from .conftest import local_temporary_directory
+
 from pathlib import Path
 from click.testing import CliRunner
 
@@ -17,7 +18,7 @@ def test_rag_first_approach_now_works():
     runner = CliRunner()
 
     # Create a minimal test project
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with local_temporary_directory() as temp_dir:
         temp_path = Path(temp_dir)
         (temp_path / "test.py").write_text("print('hello world')")
 
@@ -57,7 +58,7 @@ def test_rag_first_vs_claude_first_comparison():
 
     runner = CliRunner()
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with local_temporary_directory() as temp_dir:
         temp_path = Path(temp_dir)
         (temp_path / "main.py").write_text("print('hello world')")
 
@@ -104,7 +105,7 @@ def test_rag_first_with_dry_run():
     runner = CliRunner()
 
     # Create a minimal test project
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with local_temporary_directory() as temp_dir:
         temp_path = Path(temp_dir)
         (temp_path / "test.py").write_text("def test(): pass")
 

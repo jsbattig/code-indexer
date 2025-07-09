@@ -17,7 +17,7 @@ class TestHNSWSearchParameters:
     def qdrant_config(self):
         return QdrantConfig(
             host="http://localhost:6333",
-            collection="test_collection",
+            collection_base_name="test_collection",
             vector_size=768,
             # These should be added in Phase 1
             hnsw_ef=64,
@@ -157,7 +157,7 @@ class TestHNSWCollectionConfiguration:
     def qdrant_config(self):
         return QdrantConfig(
             host="http://localhost:6333",
-            collection="test_collection",
+            collection_base_name="test_collection",
             vector_size=768,
             hnsw_ef=64,
             hnsw_ef_construct=200,
@@ -183,14 +183,23 @@ class TestHNSWCollectionConfiguration:
         # This should be enhanced in Phase 2
         qdrant_client.create_collection()
 
-        # Verify HNSW config was used
-        mock_put.assert_called_once()
-        call_args = mock_put.call_args
-        request_data = call_args[1]["json"]
+        # Verify HNSW config was used (collection creation may make multiple calls)
+        assert (
+            mock_put.call_count >= 1
+        ), f"Expected at least 1 call for collection creation, got {mock_put.call_count}"
+
+        # Check the collection creation call
+        final_call_args = mock_put.call_args_list[0]
+        request_data = final_call_args[1]["json"]
 
         hnsw_config = request_data["hnsw_config"]
         assert hnsw_config["m"] == 32  # From config
         assert hnsw_config["ef_construct"] == 200  # From config
+
+        # Verify CoW structure - simplified approach doesn't use init_from
+        assert (
+            "init_from" not in request_data
+        ), "Simplified CoW should not use init_from"
 
     def test_create_large_codebase_collection_profile(self, qdrant_client):
         """Test creating collection with large codebase profile."""
@@ -256,7 +265,7 @@ class TestHNSWCollectionConfiguration:
                 assert result is True
                 mock_delete.assert_called_once()
                 mock_create.assert_called_once_with(
-                    "large_codebase", qdrant_client.config.collection
+                    "large_codebase", qdrant_client.config.collection_base_name
                 )
 
 

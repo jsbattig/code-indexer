@@ -7,6 +7,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from .conftest import local_temporary_directory
+
 from code_indexer.config import Config
 from code_indexer.services.smart_indexer import SmartIndexer
 from code_indexer.services.progressive_metadata import ProgressiveMetadata
@@ -17,7 +19,7 @@ from code_indexer.services.branch_aware_indexer import BranchIndexingResult
 def mock_config():
     """Create a mock config for testing."""
     # Use a real temporary directory that can be created
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with local_temporary_directory() as tmpdir:
         config = Mock(spec=Config)
         config.exclude_dirs = ["node_modules", ".git"]
         config.file_extensions = ["py", "js", "ts"]

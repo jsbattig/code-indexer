@@ -4,9 +4,10 @@ Test for --dry-run-show-claude-prompt functionality.
 This test verifies that the dry-run option shows the prompt without executing Claude.
 """
 
+from .conftest import local_temporary_directory, get_local_tmp_dir
+
 from click.testing import CliRunner
 from unittest.mock import patch, MagicMock
-import tempfile
 from pathlib import Path
 
 from src.code_indexer.cli import cli
@@ -60,7 +61,7 @@ def test_dry_run_shows_prompt_without_execution(
     # Setup config manager mock
     mock_config_manager_instance = MagicMock()
     mock_config_instance = MagicMock()
-    mock_config_instance.codebase_dir = Path("/tmp/test")
+    mock_config_instance.codebase_dir = Path(str(get_local_tmp_dir() / "test"))
     mock_config_instance.qdrant = MagicMock()
     mock_config_instance.qdrant.host = "http://localhost:6333"
     mock_config_instance.embedding_provider = (
@@ -100,7 +101,7 @@ def test_dry_run_shows_prompt_without_execution(
     mock_query_service.return_value = mock_query_instance
 
     # Create a temporary directory for testing
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with local_temporary_directory() as temp_dir:
         # Mock the codebase directory
         mock_config_instance.codebase_dir = Path(temp_dir)
 
@@ -156,7 +157,7 @@ def test_dry_run_prevents_claude_execution(
 
     # Setup mocks similar to above
     mock_config_instance = MagicMock()
-    mock_config_instance.codebase_dir = Path("/tmp/test")
+    mock_config_instance.codebase_dir = Path(str(get_local_tmp_dir() / "test"))
     mock_config_instance.qdrant = MagicMock()
     mock_config_instance.qdrant.host = "http://localhost:6333"
     mock_config_instance.embedding_provider = "ollama"
@@ -191,7 +192,7 @@ def test_dry_run_prevents_claude_execution(
     }
     mock_query_service.return_value = mock_query_instance
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with local_temporary_directory() as temp_dir:
         mock_config_instance.codebase_dir = Path(temp_dir)
 
         runner = CliRunner()

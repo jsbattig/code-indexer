@@ -1,10 +1,10 @@
 """Tests for configuration management."""
 
-import tempfile
 from pathlib import Path
 
 
 from code_indexer.config import Config, ConfigManager, OllamaConfig
+from .conftest import local_temporary_directory
 
 
 def test_default_config():
@@ -32,7 +32,7 @@ def test_config_validation():
 
 def test_config_manager_save_load():
     """Test saving and loading configuration."""
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with local_temporary_directory() as tmpdir:
         config_path = Path(tmpdir) / "test_config.json"
         manager = ConfigManager(config_path)
 
@@ -56,7 +56,7 @@ def test_config_manager_save_load():
 
 def test_config_manager_update():
     """Test updating configuration."""
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with local_temporary_directory() as tmpdir:
         config_path = Path(tmpdir) / "test_config.json"
         manager = ConfigManager(config_path)
 

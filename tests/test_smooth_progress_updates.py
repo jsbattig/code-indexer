@@ -5,10 +5,12 @@ This test verifies that progress updates are smooth and incremental,
 showing individual file progress rather than batch updates.
 """
 
-import tempfile
 from pathlib import Path
+import uuid
 from unittest.mock import Mock, patch
 import pytest
+
+from .conftest import get_local_tmp_dir
 
 from code_indexer.config import Config
 from code_indexer.services.high_throughput_processor import HighThroughputProcessor
@@ -22,8 +24,9 @@ class TestSmoothProgressUpdates:
     def setup_method(self):
         """Setup test environment."""
         # Create temporary directory
-        self.temp_dir = tempfile.mkdtemp()
+        self.temp_dir = str(get_local_tmp_dir() / f"test_{uuid.uuid4().hex[:8]}")
         self.temp_path = Path(self.temp_dir)
+        self.temp_path.mkdir(parents=True, exist_ok=True)
         self.metadata_path = self.temp_path / "metadata.json"
 
         # Create test files

@@ -7,6 +7,7 @@ These tests focus specifically on the cancellation flags and methods we need to 
 import pytest
 from unittest.mock import Mock
 
+from .conftest import get_local_tmp_dir
 from code_indexer.services.high_throughput_processor import HighThroughputProcessor
 
 
@@ -39,7 +40,7 @@ class TestCancellationMinimal:
         config = Mock()
         config.exclude_dirs = []
         config.exclude_patterns = []
-        config.codebase_dir = Path("/tmp/test")
+        config.codebase_dir = Path(str(get_local_tmp_dir() / "test"))
         embedding_provider = Mock()
         qdrant_client = Mock()
 

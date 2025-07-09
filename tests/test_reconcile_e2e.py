@@ -8,18 +8,16 @@ Refactored to use NEW STRATEGY with test infrastructure to eliminate code duplic
 """
 
 import os
-import tempfile
 import time
-from pathlib import Path
+import json
+import subprocess
 
 import pytest
 
+from .conftest import local_temporary_directory
+
 # Import test infrastructure to eliminate code duplication
-from .test_infrastructure import (
-    create_fast_e2e_setup,
-    EmbeddingProvider,
-    auto_register_project_collections,
-)
+from .test_infrastructure import auto_register_project_collections
 
 
 # Removed duplicated run_command function - now using CLIHelper from test infrastructure!
@@ -83,247 +81,348 @@ def users():
 # Removed duplicated create_test_project function - now using DirectoryManager from test infrastructure!
 
 
+@pytest.fixture
+def reconcile_test_repo():
+    """Create a test repository for reconcile E2E tests."""
+    with local_temporary_directory() as temp_dir:
+        # Auto-register collections for cleanup
+        auto_register_project_collections(temp_dir)
+
+        # Preserve .code-indexer directory if it exists
+        config_dir = temp_dir / ".code-indexer"
+        if not config_dir.exists():
+            config_dir.mkdir(parents=True, exist_ok=True)
+
+        yield temp_dir
+
+
+def create_reconcile_config(test_dir):
+    """Create configuration for reconcile test."""
+    config_dir = test_dir / ".code-indexer"
+    config_file = config_dir / "config.json"
+
+    # Load existing config if it exists (preserves container ports)
+    if config_file.exists():
+        with open(config_file, "r") as f:
+            config = json.load(f)
+    else:
+        config = {
+            "codebase_dir": str(test_dir),
+            "qdrant": {
+                "host": "http://localhost:6333",
+                "collection": "reconcile_test_collection",
+                "vector_size": 1024,
+            },
+        }
+
+    # Only modify test-specific settings, preserve container configuration
+    config["embedding_provider"] = "voyage-ai"
+    config["voyage_ai"] = {
+        "model": "voyage-code-3",
+        "api_key_env": "VOYAGE_API_KEY",
+        "batch_size": 32,
+        "max_retries": 3,
+        "timeout": 30,
+    }
+
+    with open(config_file, "w") as f:
+        json.dump(config, f, indent=2)
+
+    return config_file
+
+
+def create_test_project_with_reconcile_files(test_dir):
+    """Create test files in the test directory for reconcile testing."""
+    test_files = _get_reconcile_test_files()
+
+    for filename, content in test_files.items():
+        file_path = test_dir / filename
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text(content)
+
+
 @pytest.mark.skipif(
     not os.getenv("VOYAGE_API_KEY"),
     reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
 )
-class TestReconcileE2E:
-    """End-to-end tests for reconcile functionality using NEW STRATEGY."""
+def test_reconcile_after_full_index(reconcile_test_repo):
+    """Test that reconcile correctly identifies no work needed after full index."""
+    test_dir = reconcile_test_repo
 
-    @pytest.fixture(autouse=True)
-    def setup_test_environment(self):
-        """Setup test environment using test infrastructure."""
-        # NEW STRATEGY: Use test infrastructure for consistent setup
-        self.service_manager, self.cli_helper, self.dir_manager = create_fast_e2e_setup(
-            EmbeddingProvider.VOYAGE_AI
-        )
-        yield
+    # Create test files
+    create_test_project_with_reconcile_files(test_dir)
 
-    @pytest.fixture
-    def test_project(self):
-        """Create a temporary test project using test infrastructure."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_dir = Path(temp_dir)
-            # Auto-register collections for this project
-            auto_register_project_collections(project_dir)
-            # Use test infrastructure to create project with custom files
-            test_files = _get_reconcile_test_files()
-            self.dir_manager.create_test_project(project_dir, custom_files=test_files)
-            yield project_dir
+    # Create configuration
+    create_reconcile_config(test_dir)
 
-    def test_reconcile_after_full_index(self, test_project):
-        """Test that reconcile correctly identifies no work needed after full index."""
+    # Step 1: Initialize the project with VoyageAI for CI stability
+    init_result = subprocess.run(
+        ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
-        with self.dir_manager.safe_chdir(test_project):
-            # Step 1: Initialize the project with VoyageAI for CI stability
-            self.cli_helper.run_cli_command(
-                ["init", "--force", "--embedding-provider", "voyage-ai"]
+    # Step 2: Setup services (may already be running from shared containers)
+    start_result = subprocess.run(
+        ["code-indexer", "start"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    # Start may fail if services already running, that's ok
+
+    # Step 3: Do full index with limited files for testing
+    index_result = subprocess.run(
+        ["code-indexer", "index", "--clear", "--files-count-to-process", "3"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    # Check if services are available and ensure they're running if needed
+    if index_result.returncode != 0:
+        error_output = index_result.stderr + index_result.stdout
+        if "service not available" in error_output.lower():
+            # Try to start services and retry indexing
+            print("Services not available, attempting to start them...")
+            start_result = subprocess.run(
+                ["code-indexer", "start"],
+                cwd=test_dir,
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
-
-            # Step 2: Setup services (NEW STRATEGY: should already be running from fixture)
-            self.cli_helper.run_cli_command(["start"], timeout=60, expect_success=False)
-            # Setup may fail in test environment, that's ok - we'll check services later
-
-            # Step 3: Do full index with limited files for testing
-            index_result = self.cli_helper.run_cli_command(
-                ["index", "--clear", "--files-count-to-process", "3"],
-                timeout=60,
-                expect_success=False,
-            )
-
-            # Check if services are available and ensure they're running if needed
-            if index_result.returncode != 0:
-                error_output = index_result.stderr + index_result.stdout
-                if "service not available" in error_output.lower():
-                    # Try to start services and retry indexing
-                    print("Services not available, attempting to start them...")
-                    start_result = self.cli_helper.run_cli_command(
-                        ["start"], expect_success=False
-                    )
-                    if start_result.returncode == 0:
-                        # Retry indexing after starting services
-                        index_result = self.cli_helper.run_cli_command(
-                            ["index", "--clear"],
-                            timeout=180,
-                            expect_success=False,
-                        )
-                        assert (
-                            index_result.returncode == 0
-                        ), f"Index failed even after starting services: {index_result.stderr}"
-                    else:
-                        pytest.fail(
-                            f"Could not start services for e2e test: {start_result.stderr}"
-                        )
-                else:
-                    pytest.fail(f"Index failed: {index_result.stderr}")
-
-            # Verify initial indexing worked (case insensitive check)
-            stdout_lower = index_result.stdout.lower()
-            assert (
-                "files processed" in stdout_lower
-                or "completed" in stdout_lower
-                or "indexing complete" in stdout_lower
-            ), f"Expected indexing completion indication in: {index_result.stdout}"
-
-            # Step 4: Wait a moment to ensure timestamps are stable
-            time.sleep(2)
-
-            # Step 5: Run reconcile - should find no work to do
-            reconcile_result = self.cli_helper.run_cli_command(
-                ["index", "--reconcile", "--files-count-to-process", "3"], timeout=60
-            )
-
-            # Check reconcile output
-            output = reconcile_result.stdout
-
-            # Should show files are up-to-date
-            assert "files up-to-date" in output
-
-            # Should NOT reindex files if they're truly up-to-date
-            # The key test: if all files are up-to-date, we shouldn't see "indexing X modified"
-            # with a large number
-            lines = output.split("\n")
-            reconcile_lines = [line for line in lines if "Reconcile:" in line]
-
-            if reconcile_lines:
-                reconcile_line = reconcile_lines[0]
-                print(f"Reconcile line: {reconcile_line}")
-
-                # The line should look like "Reconcile: X/X files up-to-date, indexing 0 files"
-                # or "Reconcile: X/X files up-to-date, no indexing needed"
-                # It should NOT look like "Reconcile: 0/3 files up-to-date, indexing 3 modified"
-
-                # Extract numbers to verify logic
-                if "indexing" in reconcile_line:
-                    if "modified" in reconcile_line:
-                        # This suggests files were detected as modified when they shouldn't be
-                        # This is the bug we're trying to catch
-                        parts = reconcile_line.split()
-                        if len(parts) >= 4:
-                            try:
-                                up_to_date_part = [p for p in parts if "/" in p][
-                                    0
-                                ]  # e.g., "3/3"
-                                up_to_date_count = int(up_to_date_part.split("/")[0])
-
-                                # If we have files up-to-date, we shouldn't be reindexing many files
-                                if up_to_date_count > 0:
-                                    # Look for the number before "modified"
-                                    modified_idx = (
-                                        parts.index("modified")
-                                        if "modified" in parts
-                                        else -1
-                                    )
-                                    if modified_idx > 0:
-                                        modified_count = int(parts[modified_idx - 1])
-
-                                        # The bug: if files are up-to-date, we shouldn't have many modified
-                                        if modified_count == up_to_date_count:
-                                            pytest.fail(
-                                                f"BUG DETECTED: Reconcile shows {up_to_date_count} files up-to-date "
-                                                f"but also {modified_count} modified files. This suggests all "
-                                                f"files are being incorrectly detected as modified.\n"
-                                                f"Full line: {reconcile_line}"
-                                            )
-                            except (ValueError, IndexError):
-                                pass  # Couldn't parse, that's ok
-
-            # Additional check: verify no extensive processing happened
-            # If reconcile is working correctly, it should be very fast
-            processing_lines = [line for line in lines if "files processed" in line]
-            if processing_lines:
-                # Should show 0 files processed or a very small number
-                for line in processing_lines:
-                    if "files processed" in line:
-                        try:
-                            # Extract number before "files processed"
-                            parts = line.split()
-                            processed_idx = parts.index("files")
-                            if processed_idx > 0:
-                                processed_count = int(parts[processed_idx - 1])
-                                # Should process 0 files if truly up-to-date
-                                assert (
-                                    processed_count == 0
-                                ), f"Expected 0 files processed, got {processed_count}: {line}"
-                        except (ValueError, IndexError):
-                            pass  # Couldn't parse
-
-    def test_reconcile_detects_missing_files(self, test_project):
-        """Test that reconcile correctly detects when files are missing from index."""
-
-        with self.dir_manager.safe_chdir(test_project):
-            # Step 1: Initialize with VoyageAI for CI stability
-            self.cli_helper.run_cli_command(
-                ["init", "--force", "--embedding-provider", "voyage-ai"]
-            )
-
-            # Step 2: Index only 2 files
-            index_result = self.cli_helper.run_cli_command(
-                ["index", "--clear", "--files-count-to-process", "2"],
-                timeout=60,
-                expect_success=False,
-            )
-
-            if index_result.returncode != 0:
-                error_output = index_result.stderr + index_result.stdout
-                if "service not available" in error_output.lower():
-                    # Try to start services and retry indexing
-                    print("Services not available, attempting to start them...")
-                    start_result = self.cli_helper.run_cli_command(
-                        ["start"], expect_success=False
-                    )
-                    if start_result.returncode == 0:
-                        # Retry indexing after starting services
-                        index_result = self.cli_helper.run_cli_command(
-                            ["index", "--clear", "--files-count-to-process", "2"],
-                            timeout=180,
-                            expect_success=False,
-                        )
-                        assert (
-                            index_result.returncode == 0
-                        ), f"Index failed even after starting services: {index_result.stderr}"
-                    else:
-                        pytest.fail(
-                            f"Could not start services for e2e test: {start_result.stderr}"
-                        )
-                else:
-                    pytest.fail(f"Index failed: {index_result.stderr}")
-
-            # Step 3: Run reconcile with higher limit - should detect missing files
-            reconcile_result = self.cli_helper.run_cli_command(
-                ["index", "--reconcile", "--files-count-to-process", "5"], timeout=60
-            )
-
-            output = reconcile_result.stdout
-
-            # Should detect missing files and index them, OR all files may already be up-to-date
-            assert (
-                "missing" in output
-                or "files processed" in output
-                or "up-to-date" in output
-            ), f"Unexpected reconcile output: {output}"
-
-            # Should show that some files were processed
-            processing_lines = [
-                line for line in output.split("\n") if "files processed" in line
-            ]
-            if processing_lines:
-                found_processing = False
-                for line in processing_lines:
-                    try:
-                        parts = line.split()
-                        processed_idx = parts.index("files")
-                        if processed_idx > 0:
-                            processed_count = int(parts[processed_idx - 1])
-                            if processed_count > 0:
-                                found_processing = True
-                                break
-                    except (ValueError, IndexError):
-                        pass
-
+            if start_result.returncode == 0:
+                # Retry indexing after starting services
+                index_result = subprocess.run(
+                    ["code-indexer", "index", "--clear"],
+                    cwd=test_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=180,
+                )
                 assert (
-                    found_processing
-                ), f"Expected some files to be processed, but found: {output}"
+                    index_result.returncode == 0
+                ), f"Index failed even after starting services: {index_result.stderr}"
+            else:
+                pytest.fail(
+                    f"Could not start services for e2e test: {start_result.stderr}"
+                )
+        else:
+            pytest.fail(f"Index failed: {index_result.stderr}")
+
+    # Verify initial indexing worked (case insensitive check)
+    stdout_lower = index_result.stdout.lower()
+    assert (
+        "files processed" in stdout_lower
+        or "completed" in stdout_lower
+        or "indexing complete" in stdout_lower
+    ), f"Expected indexing completion indication in: {index_result.stdout}"
+
+    # Step 4: Wait a moment to ensure timestamps are stable
+    time.sleep(2)
+
+    # Step 5: Run reconcile - should find no work to do
+    reconcile_result = subprocess.run(
+        ["code-indexer", "index", "--reconcile", "--files-count-to-process", "3"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert (
+        reconcile_result.returncode == 0
+    ), f"Reconcile failed: {reconcile_result.stderr}"
+
+    # Check reconcile output
+    output = reconcile_result.stdout
+
+    # Should show files are up-to-date
+    assert "files up-to-date" in output
+
+    # Should NOT reindex files if they're truly up-to-date
+    # The key test: if all files are up-to-date, we shouldn't see "indexing X modified"
+    # with a large number
+    lines = output.split("\n")
+    reconcile_lines = [line for line in lines if "Reconcile:" in line]
+
+    if reconcile_lines:
+        reconcile_line = reconcile_lines[0]
+        print(f"Reconcile line: {reconcile_line}")
+
+        # The line should look like "Reconcile: X/X files up-to-date, indexing 0 files"
+        # or "Reconcile: X/X files up-to-date, no indexing needed"
+        # It should NOT look like "Reconcile: 0/3 files up-to-date, indexing 3 modified"
+
+        # Extract numbers to verify logic
+        if "indexing" in reconcile_line:
+            if "modified" in reconcile_line:
+                # This suggests files were detected as modified when they shouldn't be
+                # This is the bug we're trying to catch
+                parts = reconcile_line.split()
+                if len(parts) >= 4:
+                    try:
+                        up_to_date_part = [p for p in parts if "/" in p][
+                            0
+                        ]  # e.g., "3/3"
+                        up_to_date_count = int(up_to_date_part.split("/")[0])
+
+                        # If we have files up-to-date, we shouldn't be reindexing many files
+                        if up_to_date_count > 0:
+                            # Look for the number before "modified"
+                            modified_idx = (
+                                parts.index("modified") if "modified" in parts else -1
+                            )
+                            if modified_idx > 0:
+                                modified_count = int(parts[modified_idx - 1])
+
+                                # The bug: if files are up-to-date, we shouldn't have many modified
+                                if modified_count == up_to_date_count:
+                                    pytest.fail(
+                                        f"BUG DETECTED: Reconcile shows {up_to_date_count} files up-to-date "
+                                        f"but also {modified_count} modified files. This suggests all "
+                                        f"files are being incorrectly detected as modified.\n"
+                                        f"Full line: {reconcile_line}"
+                                    )
+                    except (ValueError, IndexError):
+                        pass  # Couldn't parse, that's ok
+
+    # Additional check: verify no extensive processing happened
+    # If reconcile is working correctly, it should be very fast
+    processing_lines = [line for line in lines if "files processed" in line]
+    if processing_lines:
+        # Should show 0 files processed or a very small number
+        for line in processing_lines:
+            if "files processed" in line:
+                try:
+                    # Extract number before "files processed"
+                    parts = line.split()
+                    processed_idx = parts.index("files")
+                    if processed_idx > 0:
+                        processed_count = int(parts[processed_idx - 1])
+                        # Should process 0 files if truly up-to-date
+                        assert (
+                            processed_count == 0
+                        ), f"Expected 0 files processed, got {processed_count}: {line}"
+                except (ValueError, IndexError):
+                    pass  # Couldn't parse
+
+
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
+def test_reconcile_detects_missing_files(reconcile_test_repo):
+    """Test that reconcile correctly detects when files are missing from index."""
+    test_dir = reconcile_test_repo
+
+    # Create test files
+    create_test_project_with_reconcile_files(test_dir)
+
+    # Create configuration
+    create_reconcile_config(test_dir)
+
+    # Step 1: Initialize with VoyageAI for CI stability
+    init_result = subprocess.run(
+        ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
+
+    # Step 2: Index only 2 files
+    index_result = subprocess.run(
+        ["code-indexer", "index", "--clear", "--files-count-to-process", "2"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    if index_result.returncode != 0:
+        error_output = index_result.stderr + index_result.stdout
+        if "service not available" in error_output.lower():
+            # Try to start services and retry indexing
+            print("Services not available, attempting to start them...")
+            start_result = subprocess.run(
+                ["code-indexer", "start"],
+                cwd=test_dir,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if start_result.returncode == 0:
+                # Retry indexing after starting services
+                index_result = subprocess.run(
+                    [
+                        "code-indexer",
+                        "index",
+                        "--clear",
+                        "--files-count-to-process",
+                        "2",
+                    ],
+                    cwd=test_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=180,
+                )
+                assert (
+                    index_result.returncode == 0
+                ), f"Index failed even after starting services: {index_result.stderr}"
+            else:
+                pytest.fail(
+                    f"Could not start services for e2e test: {start_result.stderr}"
+                )
+        else:
+            pytest.fail(f"Index failed: {index_result.stderr}")
+
+    # Step 3: Run reconcile with higher limit - should detect missing files
+    reconcile_result = subprocess.run(
+        ["code-indexer", "index", "--reconcile", "--files-count-to-process", "5"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert (
+        reconcile_result.returncode == 0
+    ), f"Reconcile failed: {reconcile_result.stderr}"
+
+    output = reconcile_result.stdout
+
+    # Should detect missing files and index them, OR all files may already be up-to-date
+    assert (
+        "missing" in output or "files processed" in output or "up-to-date" in output
+    ), f"Unexpected reconcile output: {output}"
+
+    # Should show that some files were processed
+    processing_lines = [
+        line for line in output.split("\n") if "files processed" in line
+    ]
+    if processing_lines:
+        found_processing = False
+        for line in processing_lines:
+            try:
+                parts = line.split()
+                processed_idx = parts.index("files")
+                if processed_idx > 0:
+                    processed_count = int(parts[processed_idx - 1])
+                    if processed_count > 0:
+                        found_processing = True
+                        break
+            except (ValueError, IndexError):
+                pass
+
+        assert (
+            found_processing
+        ), f"Expected some files to be processed, but found: {output}"
 
 
 def test_manual_reconcile_workflow():

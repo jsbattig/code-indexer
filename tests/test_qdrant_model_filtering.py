@@ -16,7 +16,9 @@ class TestQdrantModelFiltering:
     @pytest.fixture
     def qdrant_config(self):
         return QdrantConfig(
-            host="http://localhost:6333", collection="test_collection", vector_size=768
+            host="http://localhost:6333",
+            collection_base_name="test_collection",
+            vector_size=768,
         )
 
     @pytest.fixture
@@ -298,7 +300,9 @@ class TestQdrantModelFilteringIntegration:
     @pytest.fixture
     def qdrant_config(self):
         return QdrantConfig(
-            host="http://localhost:6333", collection="test_collection", vector_size=768
+            host="http://localhost:6333",
+            collection_base_name="test_collection",
+            vector_size=768,
         )
 
     @pytest.fixture

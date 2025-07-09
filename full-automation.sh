@@ -78,10 +78,11 @@ else
     exit 1
 fi
 
-# 5. Setup test environment (cleanup dangling test collections)
+# 5. Setup test environment using modular script
 print_step "Setting up test environment"
-export FULL_AUTOMATION=1  # Enable test collection cleanup
-if python tests/test_suite_setup.py; then
+
+# Call the dedicated setup script
+if ./setup-test-environment.sh; then
     print_success "Test environment setup completed"
 else
     print_warning "Test environment setup had issues (continuing anyway)"
@@ -94,7 +95,7 @@ print_step "Running tests with coverage"
 if [[ "${COW_CLONE_E2E_TESTS:-}" == "false" ]]; then
     print_warning "Skipping CoW clone E2E tests (COW_CLONE_E2E_TESTS=false)"
     # Exclude the specific CoW clone test to speed up the run
-    if pytest tests/ --ignore=tests/test_cow_clone_e2e_full_automation.py --cov=src/code_indexer --cov-report=xml --cov-report=term; then
+    if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest tests/ --ignore=tests/test_cow_clone_e2e_full_automation.py --cov=src/code_indexer --cov-report=xml --cov-report=term; then
         print_success "All tests passed (excluding CoW clone E2E test)"
     else
         print_error "Tests failed"
@@ -103,7 +104,7 @@ if [[ "${COW_CLONE_E2E_TESTS:-}" == "false" ]]; then
 else
     print_step "Including CoW clone E2E tests (may take several minutes)"
     print_step "To skip them: export COW_CLONE_E2E_TESTS=false"
-    if pytest tests/ --cov=src/code_indexer --cov-report=xml --cov-report=term; then
+    if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest tests/ --cov=src/code_indexer --cov-report=xml --cov-report=term; then
         print_success "All tests passed (including CoW clone E2E)"
     else
         print_error "Tests failed (including CoW clone E2E)"

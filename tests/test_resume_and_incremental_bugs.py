@@ -7,6 +7,8 @@ These tests should FAIL initially, demonstrating the bugs:
 """
 
 import pytest
+
+from .conftest import local_temporary_directory
 import tempfile
 import time
 from pathlib import Path
@@ -30,7 +32,7 @@ class TestResumeAndIncrementalBugs:
 
         This test should FAIL initially, demonstrating that second run does full reindex.
         """
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with local_temporary_directory() as tmpdir:
             config = Mock(spec=Config)
             config.codebase_dir = Path(tmpdir)
             config.exclude_dirs = ["node_modules", ".git"]
@@ -178,7 +180,7 @@ class TestResumeAndIncrementalBugs:
 
         This test should FAIL initially, demonstrating that resume doesn't work.
         """
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with local_temporary_directory() as tmpdir:
             config = Mock(spec=Config)
             config.codebase_dir = Path(tmpdir)
             config.exclude_dirs = ["node_modules", ".git"]
@@ -342,7 +344,7 @@ class TestResumeAndIncrementalBugs:
         This test verifies that the progressive metadata correctly stores the
         interrupted state and provides the right information for resuming.
         """
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with local_temporary_directory() as tmpdir:
             config = Mock(spec=Config)
             config.codebase_dir = Path(tmpdir)
             config.exclude_dirs = ["node_modules", ".git"]

@@ -2,10 +2,12 @@
 Test to verify that --clear command uses multi-threading with Voyage AI.
 """
 
-import tempfile
 from pathlib import Path
+import uuid
 from unittest.mock import Mock, patch
 import pytest
+
+from .conftest import get_local_tmp_dir
 
 from code_indexer.config import Config
 from code_indexer.services.smart_indexer import SmartIndexer
@@ -19,8 +21,9 @@ class TestVoyageThreadingVerification:
     def setup_method(self):
         """Setup test environment."""
         # Create temporary directory
-        self.temp_dir = tempfile.mkdtemp()
+        self.temp_dir = str(get_local_tmp_dir() / f"test_{uuid.uuid4().hex[:8]}")
         self.temp_path = Path(self.temp_dir)
+        self.temp_path.mkdir(parents=True, exist_ok=True)
 
         # Create test files
         self.test_files = []

@@ -33,12 +33,12 @@ handle_request() {
     fi
 }
 
-# Simple HTTP server using netcat
+# Simple HTTP server using netcat - fixed version
 while true; do
-    # Listen for HTTP requests
-    echo -e "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nCleanup service ready\r\n" | nc -l -p 8091 &
+    # Listen for ONE HTTP request and respond (no background process)
+    echo -e "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nCleanup service ready\r\n" | nc -l -p 8091
     
-    # In a real implementation, we'd parse the HTTP request for the path
-    # For this experiment, we'll just sleep and wait for manual testing
-    sleep 10
+    # The nc command blocks until a request comes in, handles it, then exits
+    # The while loop then starts a new nc process for the next request
+    echo "Handled one request, waiting for next..."
 done

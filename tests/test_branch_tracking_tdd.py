@@ -19,9 +19,9 @@ from code_indexer.services.progressive_metadata import ProgressiveMetadata
 class TestBranchTrackingInProgressiveMetadata:
     """Test branch tracking capabilities in ProgressiveMetadata."""
 
-    def test_stores_initial_branch_on_indexing_start(self, tmp_path):
+    def test_stores_initial_branch_on_indexing_start(self, local_tmp_path):
         """Test that current branch is stored when indexing starts."""
-        metadata_file = tmp_path / "metadata.json"
+        metadata_file = local_tmp_path / "metadata.json"
         metadata = ProgressiveMetadata(metadata_file)
 
         git_status = {
@@ -40,9 +40,9 @@ class TestBranchTrackingInProgressiveMetadata:
         metadata2 = ProgressiveMetadata(metadata_file)
         assert metadata2.get_current_branch() == "feature/new-feature"
 
-    def test_updates_current_branch_safely(self, tmp_path):
+    def test_updates_current_branch_safely(self, local_tmp_path):
         """Test that current branch can be updated safely during indexing."""
-        metadata_file = tmp_path / "metadata.json"
+        metadata_file = local_tmp_path / "metadata.json"
         metadata = ProgressiveMetadata(metadata_file)
 
         # Start with initial branch
@@ -58,9 +58,9 @@ class TestBranchTrackingInProgressiveMetadata:
         metadata2 = ProgressiveMetadata(metadata_file)
         assert metadata2.get_current_branch() == "feature/branch-switch"
 
-    def test_handles_concurrent_branch_updates_with_locking(self, tmp_path):
+    def test_handles_concurrent_branch_updates_with_locking(self, local_tmp_path):
         """Test that concurrent branch updates are handled safely with file locking."""
-        metadata_file = tmp_path / "metadata.json"
+        metadata_file = local_tmp_path / "metadata.json"
         metadata = ProgressiveMetadata(metadata_file)
 
         git_status = {"git_available": True, "current_branch": "master"}
@@ -111,9 +111,9 @@ class TestBranchTrackingInProgressiveMetadata:
         final_branch = metadata.get_current_branch()
         assert final_branch.startswith("feature/")
 
-    def test_branch_reading_with_retry_on_lock_failure(self, tmp_path):
+    def test_branch_reading_with_retry_on_lock_failure(self, local_tmp_path):
         """Test that branch reading retries once if file is locked."""
-        metadata_file = tmp_path / "metadata.json"
+        metadata_file = local_tmp_path / "metadata.json"
         metadata = ProgressiveMetadata(metadata_file)
 
         git_status = {"git_available": True, "current_branch": "master"}
@@ -139,9 +139,9 @@ class TestBranchTrackingInProgressiveMetadata:
             assert branch == "master"
             assert call_count == 2  # Should have retried once
 
-    def test_branch_reading_fails_after_max_retries(self, tmp_path):
+    def test_branch_reading_fails_after_max_retries(self, local_tmp_path):
         """Test that branch reading fails gracefully after max retries."""
-        metadata_file = tmp_path / "metadata.json"
+        metadata_file = local_tmp_path / "metadata.json"
         metadata = ProgressiveMetadata(metadata_file)
 
         # Mock file operations to always fail
@@ -154,34 +154,34 @@ class TestBranchTrackingInProgressiveMetadata:
 class TestGitHookManagement:
     """Test git hook installation and management for branch change detection."""
 
-    def test_detects_git_repository(self, tmp_path):
+    def test_detects_git_repository(self, local_tmp_path):
         """Test detection of git repository for hook installation."""
         from code_indexer.services.git_hook_manager import GitHookManager
 
         # Non-git directory
-        non_git_dir = tmp_path / "non-git"
+        non_git_dir = local_tmp_path / "non-git"
         non_git_dir.mkdir()
         hook_manager = GitHookManager(non_git_dir)
         assert not hook_manager.is_git_repository()
 
         # Git directory
-        git_dir = tmp_path / "git-repo"
+        git_dir = local_tmp_path / "git-repo"
         git_dir.mkdir()
         (git_dir / ".git").mkdir()
         hook_manager = GitHookManager(git_dir)
         assert hook_manager.is_git_repository()
 
-    def test_installs_post_checkout_hook(self, tmp_path):
+    def test_installs_post_checkout_hook(self, local_tmp_path):
         """Test installation of post-checkout git hook."""
         from code_indexer.services.git_hook_manager import GitHookManager
 
         # Setup git repo
-        git_dir = tmp_path / "git-repo"
+        git_dir = local_tmp_path / "git-repo"
         git_dir.mkdir()
         git_hooks_dir = git_dir / ".git" / "hooks"
         git_hooks_dir.mkdir(parents=True)
 
-        metadata_file = tmp_path / "metadata.json"
+        metadata_file = local_tmp_path / "metadata.json"
         hook_manager = GitHookManager(git_dir, metadata_file)
 
         # Install hook
@@ -197,12 +197,12 @@ class TestGitHookManagement:
         assert str(metadata_file) in hook_content
         assert "Code Indexer Branch Tracking" in hook_content
 
-    def test_preserves_existing_post_checkout_hook(self, tmp_path):
+    def test_preserves_existing_post_checkout_hook(self, local_tmp_path):
         """Test that existing post-checkout hook is preserved and extended."""
         from code_indexer.services.git_hook_manager import GitHookManager
 
         # Setup git repo with existing hook
-        git_dir = tmp_path / "git-repo"
+        git_dir = local_tmp_path / "git-repo"
         git_hooks_dir = git_dir / ".git" / "hooks"
         git_hooks_dir.mkdir(parents=True)
 
@@ -210,7 +210,7 @@ class TestGitHookManagement:
         existing_hook.write_text("#!/bin/bash\necho 'existing hook'\n")
         existing_hook.chmod(0o755)
 
-        metadata_file = tmp_path / "metadata.json"
+        metadata_file = local_tmp_path / "metadata.json"
         hook_manager = GitHookManager(git_dir, metadata_file)
 
         # Install our hook
@@ -221,15 +221,15 @@ class TestGitHookManagement:
         assert "existing hook" in hook_content
         assert "Code Indexer Branch Tracking" in hook_content
 
-    def test_checks_hook_installation_on_index_command(self, tmp_path):
+    def test_checks_hook_installation_on_index_command(self, local_tmp_path):
         """Test that hook installation is checked every time index command runs."""
         from code_indexer.services.git_hook_manager import GitHookManager
 
-        git_dir = tmp_path / "git-repo"
+        git_dir = local_tmp_path / "git-repo"
         git_hooks_dir = git_dir / ".git" / "hooks"
         git_hooks_dir.mkdir(parents=True)
 
-        metadata_file = tmp_path / "metadata.json"
+        metadata_file = local_tmp_path / "metadata.json"
         hook_manager = GitHookManager(git_dir, metadata_file)
 
         # First check should install hook
@@ -244,10 +244,10 @@ class TestGitHookManagement:
         hook_manager.ensure_hook_installed()
         assert hook_file.exists()
 
-    def test_hook_updates_branch_in_metadata_file(self, tmp_path):
+    def test_hook_updates_branch_in_metadata_file(self, local_tmp_path):
         """Test that git hook actually updates branch in metadata file."""
         # This test simulates the hook execution
-        metadata_file = tmp_path / "metadata.json"
+        metadata_file = local_tmp_path / "metadata.json"
 
         # Create initial metadata
         metadata = ProgressiveMetadata(metadata_file)
@@ -269,19 +269,19 @@ class TestGitHookManagement:
 class TestBranchAwareIndexerIntegration:
     """Test BranchAwareIndexer integration with file-based branch tracking."""
 
-    def test_reads_current_branch_from_metadata_file(self, tmp_path):
+    def test_reads_current_branch_from_metadata_file(self, local_tmp_path):
         """Test that BranchAwareIndexer reads current branch from metadata file."""
         from code_indexer.services.branch_aware_indexer import BranchAwareIndexer
 
         # Setup
-        metadata_file = tmp_path / "metadata.json"
+        metadata_file = local_tmp_path / "metadata.json"
         metadata = ProgressiveMetadata(metadata_file)
         git_status = {"git_available": True, "current_branch": "feature/indexing"}
         metadata.start_indexing("test-provider", "test-model", git_status)
 
         # Mock config and dependencies
         config = Mock()
-        config.codebase_dir = tmp_path
+        config.codebase_dir = local_tmp_path
         embedding_provider = Mock()
         qdrant_client = Mock()
         text_chunker = Mock()
@@ -295,18 +295,18 @@ class TestBranchAwareIndexerIntegration:
         current_branch = indexer.get_current_branch_from_file()
         assert current_branch == "feature/indexing"
 
-    def test_retries_branch_reading_on_file_lock(self, tmp_path):
+    def test_retries_branch_reading_on_file_lock(self, local_tmp_path):
         """Test that indexer retries branch reading if metadata file is locked."""
         from code_indexer.services.branch_aware_indexer import BranchAwareIndexer
 
-        metadata_file = tmp_path / "metadata.json"
+        metadata_file = local_tmp_path / "metadata.json"
         metadata = ProgressiveMetadata(metadata_file)
         git_status = {"git_available": True, "current_branch": "master"}
         metadata.start_indexing("test-provider", "test-model", git_status)
 
         # Mock config and dependencies
         config = Mock()
-        config.codebase_dir = tmp_path
+        config.codebase_dir = local_tmp_path
         indexer = BranchAwareIndexer(Mock(), Mock(), Mock(), config)
         indexer.metadata_file = metadata_file
 
@@ -326,18 +326,18 @@ class TestBranchAwareIndexerIntegration:
             assert branch == "master"
             assert call_count == 2
 
-    def test_uses_file_branch_for_content_point_creation(self, tmp_path):
+    def test_uses_file_branch_for_content_point_creation(self, local_tmp_path):
         """Test that content points use branch from metadata file, not git subprocess."""
         from code_indexer.services.branch_aware_indexer import BranchAwareIndexer
 
-        metadata_file = tmp_path / "metadata.json"
+        metadata_file = local_tmp_path / "metadata.json"
         metadata = ProgressiveMetadata(metadata_file)
         git_status = {"git_available": True, "current_branch": "feature/current"}
         metadata.start_indexing("test-provider", "test-model", git_status)
 
         # Mock dependencies
         config = Mock()
-        config.codebase_dir = tmp_path
+        config.codebase_dir = local_tmp_path
         embedding_provider = Mock()
         embedding_provider.get_current_model.return_value = "test-model"
         qdrant_client = Mock()
@@ -370,7 +370,9 @@ class TestBranchAwareIndexerIntegration:
 class TestEndToEndBranchChangeScenarios:
     """Test complete end-to-end scenarios involving branch changes during indexing."""
 
-    def test_branch_change_during_indexing_updates_subsequent_files(self, tmp_path):
+    def test_branch_change_during_indexing_updates_subsequent_files(
+        self, local_tmp_path
+    ):
         """Test that branch changes during indexing affect subsequent file indexing."""
         # This is a complex integration test that would simulate:
         # 1. Start indexing with branch A
@@ -378,7 +380,7 @@ class TestEndToEndBranchChangeScenarios:
         # 3. Git hook triggers branch change to B
         # 4. Subsequent files get indexed with branch B
 
-        metadata_file = tmp_path / "metadata.json"
+        metadata_file = local_tmp_path / "metadata.json"
         metadata = ProgressiveMetadata(metadata_file)
 
         # Start indexing
@@ -396,9 +398,9 @@ class TestEndToEndBranchChangeScenarios:
 
         # This would be extended to test actual file indexing with different branches
 
-    def test_handles_metadata_file_corruption_gracefully(self, tmp_path):
+    def test_handles_metadata_file_corruption_gracefully(self, local_tmp_path):
         """Test graceful handling of corrupted metadata file during branch reading."""
-        metadata_file = tmp_path / "metadata.json"
+        metadata_file = local_tmp_path / "metadata.json"
 
         # Create corrupted metadata file
         metadata_file.write_text("invalid json {")
@@ -409,9 +411,9 @@ class TestEndToEndBranchChangeScenarios:
         branch = metadata.get_current_branch_with_retry(fallback="unknown")
         assert branch == "unknown"
 
-    def test_metadata_file_recovery_after_corruption(self, tmp_path):
+    def test_metadata_file_recovery_after_corruption(self, local_tmp_path):
         """Test that metadata file can recover after corruption."""
-        metadata_file = tmp_path / "metadata.json"
+        metadata_file = local_tmp_path / "metadata.json"
 
         # Create valid metadata
         metadata = ProgressiveMetadata(metadata_file)

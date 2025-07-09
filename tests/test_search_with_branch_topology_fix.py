@@ -6,8 +6,9 @@ and needs to be fixed to use the hidden_branches approach instead of visibility 
 """
 
 import pytest
+
+from .conftest import local_temporary_directory
 from pathlib import Path
-import tempfile
 import subprocess
 
 from code_indexer.config import Config
@@ -26,7 +27,7 @@ def test_search_with_branch_topology_hidden_branches_architecture():
     if not os.getenv("VOYAGE_API_KEY"):
         pytest.skip("VoyageAI API key required")
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with local_temporary_directory() as temp_dir:
         repo_path = Path(temp_dir)
 
         # Create a simple git repository

@@ -23,7 +23,15 @@ class SharedTestContainers:
         if self.containers_started:
             return True
 
-        self.docker_manager = DockerManager(force_docker=force_docker)
+        self.docker_manager = DockerManager(
+            force_docker=force_docker, project_name="test_shared"
+        )
+        # Use a consistent path for all test containers to avoid creating multiple container sets
+        from pathlib import Path
+
+        shared_test_path = Path.home() / ".tmp" / "shared_test_containers"
+        shared_test_path.mkdir(parents=True, exist_ok=True)
+        self.docker_manager.set_indexing_root(shared_test_path)
 
         # Try cleanup first in case of orphaned containers
         try:

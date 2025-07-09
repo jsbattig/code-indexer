@@ -25,7 +25,6 @@ Test Scenario:
 
 import json
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict
@@ -33,9 +32,8 @@ from typing import Any, Dict
 import pytest
 
 # Import test infrastructure for aggressive setup
+from .conftest import local_temporary_directory
 from .test_infrastructure import (
-    create_fast_e2e_setup,
-    EmbeddingProvider,
     auto_register_project_collections,
 )
 
@@ -48,67 +46,87 @@ pytestmark = [
 ]
 
 
-class TestCoWCloneWorkflowE2E:
-    """Comprehensive e2e test for CoW clone workflow"""
+@pytest.fixture
+def cow_clone_test_workspace():
+    """Create a test workspace for CoW clone testing."""
+    with local_temporary_directory() as temp_dir:
+        # Auto-register collections for cleanup
+        auto_register_project_collections(temp_dir)
 
-    @pytest.fixture(autouse=True)
-    def setup_test_environment(self):
-        """Setup test environment using aggressive setup pattern"""
-        # Use test infrastructure for consistent setup
-        self.service_manager, self.cli_helper, self.dir_manager = create_fast_e2e_setup(
-            EmbeddingProvider.VOYAGE_AI
-        )
+        # Preserve .code-indexer directory if it exists
+        config_dir = temp_dir / ".code-indexer"
+        if not config_dir.exists():
+            config_dir.mkdir(parents=True, exist_ok=True)
 
-        # Ensure services are ready using aggressive setup
-        services_ready = self.service_manager.ensure_services_ready(
-            embedding_provider=EmbeddingProvider.VOYAGE_AI, force_recreate=False
-        )
+        # Ensure we're on a filesystem that supports CoW
+        # This is a basic check - in production you'd want more sophisticated detection
+        if not _check_cow_support(temp_dir):
+            pytest.skip("CoW filesystem required for this test")
 
+        # Ensure services are ready
+        services_ready = _ensure_services_ready(temp_dir)
         if not services_ready:
             pytest.skip("Could not start services for e2e test")
 
-        yield
+        yield temp_dir
 
-    @pytest.fixture(scope="class")
-    def temp_workspace(self):
-        """Create temporary workspace for testing"""
-        with tempfile.TemporaryDirectory(prefix="cow_clone_test_") as temp_dir:
-            workspace = Path(temp_dir)
 
-            # Ensure we're on a filesystem that supports CoW
-            # This is a basic check - in production you'd want more sophisticated detection
-            if not self._check_cow_support(workspace):
-                pytest.skip("CoW filesystem required for this test")
+def _check_cow_support(path: Path) -> bool:
+    """Check if the filesystem supports copy-on-write"""
+    try:
+        # Try to create a test file and use cp --reflink
+        test_file = path / "test_cow_check"
+        test_file.write_text("test")
 
-            yield workspace
+        result = subprocess.run(
+            ["cp", "--reflink=always", str(test_file), str(test_file) + "_copy"],
+            capture_output=True,
+        )
 
-    def _check_cow_support(self, path: Path) -> bool:
-        """Check if the filesystem supports copy-on-write"""
-        try:
-            # Try to create a test file and use cp --reflink
-            test_file = path / "test_cow_check"
-            test_file.write_text("test")
+        # Clean up
+        test_file.unlink(missing_ok=True)
+        (path / "test_cow_check_copy").unlink(missing_ok=True)
 
-            result = subprocess.run(
-                ["cp", "--reflink=always", str(test_file), str(test_file) + "_copy"],
-                capture_output=True,
-            )
+        return result.returncode == 0
+    except Exception:
+        return False
 
-            # Clean up
-            test_file.unlink(missing_ok=True)
-            (path / "test_cow_check_copy").unlink(missing_ok=True)
 
-            return result.returncode == 0
-        except Exception:
+def _ensure_services_ready(temp_dir: Path) -> bool:
+    """Ensure services are ready for testing."""
+    try:
+        # Test basic functionality with init and start
+        init_result = subprocess.run(
+            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            cwd=temp_dir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if init_result.returncode != 0:
             return False
 
-    def _create_test_project(self, workspace: Path, name: str) -> Path:
-        """Create a test project with sample files using test infrastructure"""
-        project_path = workspace / name
+        # Start services
+        start_result = subprocess.run(
+            ["code-indexer", "start", "--quiet"],
+            cwd=temp_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        return start_result.returncode == 0
+    except Exception:
+        return False
 
-        # Define custom files for CoW clone testing
-        test_files = {
-            "src/utils.py": '''
+
+def _create_test_project(workspace: Path, name: str) -> Path:
+    """Create a test project with sample files."""
+    project_path = workspace / name
+    project_path.mkdir(parents=True, exist_ok=True)
+
+    # Define custom files for CoW clone testing
+    test_files = {
+        "src/utils.py": '''
 def calculate_sum(a, b):
     """Calculate sum of two numbers"""
     return a + b
@@ -121,7 +139,7 @@ def process_data(data):
             result.append(item * 2)
     return result
 ''',
-            "src/models.py": '''
+        "src/models.py": '''
 class DataProcessor:
     """Class for processing data efficiently"""
     
@@ -142,7 +160,7 @@ class DataProcessor:
         """Process individual item"""
         return item.upper() if isinstance(item, str) else str(item)
 ''',
-            "config.yaml": """
+        "config.yaml": """
 app:
   name: "Test Application"
   version: "1.0.0"
@@ -155,330 +173,322 @@ processing:
   batch_size: 100
   timeout: 30
 """,
-        }
+    }
 
-        # Use test infrastructure to create project
-        self.dir_manager.create_test_project(project_path, custom_files=test_files)
+    # Create test files
+    for file_path, content in test_files.items():
+        full_path = project_path / file_path
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path.write_text(content)
 
-        # Auto-register collections for cleanup
-        auto_register_project_collections(project_path)
+    # Auto-register collections for cleanup
+    auto_register_project_collections(project_path)
 
-        return project_path
+    return project_path
 
-    def _run_cidx_command(
-        self,
-        command_args: list,
-        cwd: Path,
-        timeout: int = 60,
-        expect_success: bool = True,
-    ) -> str:
-        """Run a cidx command using CLI helper and return output"""
-        try:
-            result = self.cli_helper.run_cli_command(
-                command_args, cwd=cwd, timeout=timeout, expect_success=expect_success
-            )
-            return str(result.stdout)
-        except Exception as e:
-            raise RuntimeError(f"Command failed: {e}") from e
 
-    def _cow_clone_directory(self, source: Path, target: Path):
-        """Perform copy-on-write clone"""
+def _run_cidx_command(
+    command_args: list,
+    cwd: Path,
+    timeout: int = 60,
+    expect_success: bool = True,
+) -> str:
+    """Run a cidx command and return output"""
+    try:
         result = subprocess.run(
-            ["cp", "--reflink=always", "-r", str(source), str(target)],
+            ["code-indexer"] + command_args,
+            cwd=cwd,
             capture_output=True,
             text=True,
+            timeout=timeout,
         )
+        if expect_success and result.returncode != 0:
+            raise RuntimeError(f"Command failed: {result.stderr}")
+        return str(result.stdout)
+    except Exception as e:
+        raise RuntimeError(f"Command failed: {e}") from e
 
-        if result.returncode != 0:
-            raise RuntimeError(f"CoW clone failed: {result.stderr}")
 
-    def _read_config(self, config_path: Path) -> Dict[str, Any]:
-        """Read project configuration"""
-        if config_path.exists():
-            with open(config_path) as f:
-                return json.load(f)  # type: ignore[no-any-return]
-        return {}
+def _cow_clone_directory(source: Path, target: Path):
+    """Perform copy-on-write clone"""
+    result = subprocess.run(
+        ["cp", "--reflink=always", "-r", str(source), str(target)],
+        capture_output=True,
+        text=True,
+    )
 
-    def test_complete_cow_clone_workflow(self, temp_workspace):
-        """
-        Complete end-to-end test of CoW clone workflow
+    if result.returncode != 0:
+        raise RuntimeError(f"CoW clone failed: {result.stderr}")
 
-        This test exercises the entire workflow from project creation
-        to independent operation of cloned projects.
-        """
 
-        # Phase 1: Create and Initialize Original Project
-        print("🚀 Phase 1: Creating original project")
+def _read_config(config_path: Path) -> Dict[str, Any]:
+    """Read project configuration"""
+    if config_path.exists():
+        with open(config_path) as f:
+            return json.load(f)  # type: ignore[no-any-return]
+    return {}
 
-        with self.dir_manager.safe_chdir(temp_workspace):
-            original_project = self._create_test_project(
-                temp_workspace, "original-project"
-            )
 
-            # Initialize with local storage (triggers migration middleware)
-            print("📦 Initializing project with local storage...")
-            self._run_cidx_command(
-                ["init", "--force", "--embedding-provider", "voyage-ai"],
-                original_project,
-            )
+def test_complete_cow_clone_workflow(cow_clone_test_workspace):
+    """
+    Complete end-to-end test of CoW clone workflow
 
-            # Verify initialization
-            assert (original_project / ".code-indexer" / "config.json").exists()
-            print("✅ Project initialized successfully")
+    This test exercises the entire workflow from project creation
+    to independent operation of cloned projects.
+    """
+    temp_workspace = cow_clone_test_workspace
 
-            # Phase 2: Initial Indexing and Verification
-            print("🚀 Phase 2: Initial indexing and verification")
+    # Phase 1: Create and Initialize Original Project
+    print("🚀 Phase 1: Creating original project")
 
-            # Services should already be running from aggressive setup
-            # But let's ensure they're running for this specific project
-            print("📊 Starting services and indexing...")
-            try:
-                self._run_cidx_command(
-                    ["start", "--quiet"],
-                    original_project,
-                    timeout=120,
-                    expect_success=False,
-                )
-            except RuntimeError:
-                # Services might already be running, continue
-                pass
+    original_project = _create_test_project(temp_workspace, "original-project")
 
-            self._run_cidx_command(["index", "--clear"], original_project, timeout=180)
+    # Initialize with local storage (triggers migration middleware)
+    print("📦 Initializing project with local storage...")
+    _run_cidx_command(
+        ["init", "--force", "--embedding-provider", "voyage-ai"],
+        original_project,
+    )
 
-            # Query 1: Verify file1 content (function definition)
-            print("🔍 Querying for function definition...")
-            query1_result = self._run_cidx_command(
-                ["query", "function definition"], original_project
-            )
-            assert "utils.py" in query1_result
-            print("✅ Found function definition in utils.py")
+    # Verify initialization
+    assert (original_project / ".code-indexer" / "config.json").exists()
+    print("✅ Project initialized successfully")
 
-            # Query 2: Verify file2 content (class implementation)
-            print("🔍 Querying for class implementation...")
-            query2_result = self._run_cidx_command(
-                ["query", "class implementation"], original_project
-            )
-            assert "models.py" in query2_result
-            print("✅ Found class implementation in models.py")
+    # Phase 2: Initial Indexing and Verification
+    print("🚀 Phase 2: Initial indexing and verification")
 
-            # Phase 3: Make Changes and Re-index
-            print("🚀 Phase 3: Making changes and re-indexing")
+    # Services should already be running from aggressive setup
+    # But let's ensure they're running for this specific project
+    print("📊 Starting services and indexing...")
+    try:
+        _run_cidx_command(
+            ["start", "--quiet"],
+            original_project,
+            timeout=120,
+            expect_success=False,
+        )
+    except RuntimeError:
+        # Services might already be running, continue
+        pass
 
-            # Make a change to file1
-            print("✏️  Making changes to utils.py...")
-            utils_file = original_project / "src" / "utils.py"
-            current_content = utils_file.read_text()
-            updated_content = (
-                current_content
-                + '''
+    _run_cidx_command(["index", "--clear"], original_project, timeout=180)
+
+    # Query 1: Verify file1 content (function definition)
+    print("🔍 Querying for function definition...")
+    query1_result = _run_cidx_command(
+        ["query", "function definition"], original_project
+    )
+    assert "utils.py" in query1_result
+    print("✅ Found function definition in utils.py")
+
+    # Query 2: Verify file2 content (class implementation)
+    print("🔍 Querying for class implementation...")
+    query2_result = _run_cidx_command(
+        ["query", "class implementation"], original_project
+    )
+    assert "models.py" in query2_result
+    print("✅ Found class implementation in models.py")
+
+    # Phase 3: Make Changes and Re-index
+    print("🚀 Phase 3: Making changes and re-indexing")
+
+    # Make a change to file1
+    print("✏️  Making changes to utils.py...")
+    utils_file = original_project / "src" / "utils.py"
+    current_content = utils_file.read_text()
+    updated_content = (
+        current_content
+        + '''
 
 def updated_function():
     """This is an updated function definition"""
     return "updated functionality"
 '''
-            )
-            utils_file.write_text(updated_content)
+    )
+    utils_file.write_text(updated_content)
 
-            # Re-index to capture the changes
-            print("📊 Re-indexing to capture changes...")
-            self._run_cidx_command(["index"], original_project, timeout=180)
+    # Re-index to capture the changes
+    print("📊 Re-indexing to capture changes...")
+    _run_cidx_command(["index"], original_project, timeout=180)
 
-            # Verify change is indexed
-            print("🔍 Verifying updated content is indexed...")
-            query_updated = self._run_cidx_command(
-                ["query", "updated function definition"], original_project
-            )
-            assert "utils.py" in query_updated
-            print("✅ Updated function found in index")
+    # Verify change is indexed
+    print("🔍 Verifying updated content is indexed...")
+    query_updated = _run_cidx_command(
+        ["query", "updated function definition"], original_project
+    )
+    assert "utils.py" in query_updated
+    print("✅ Updated function found in index")
 
-            # Phase 4: Prepare for CoW Clone
-            print("🚀 Phase 4: Preparing for CoW clone")
+    # Phase 4: Prepare for CoW Clone
+    print("🚀 Phase 4: Preparing for CoW clone")
 
-            # Note: Skipping force-flush for now as it can take too long with many collections
-            # Force flush to ensure consistency would be:
-            # self._run_cidx_command(["force-flush"], original_project, timeout=300)
-            print("✅ Ready for CoW clone")
+    # Note: Skipping force-flush for now as it can take too long with many collections
+    # Force flush to ensure consistency would be:
+    # _run_cidx_command(["force-flush"], original_project, timeout=300)
+    print("✅ Ready for CoW clone")
 
-            # Phase 5: CoW Clone Operation
-            print("🚀 Phase 5: Performing CoW clone")
+    # Phase 5: CoW Clone Operation
+    print("🚀 Phase 5: Performing CoW clone")
 
-            cloned_project = temp_workspace / "cloned-project"
-            print(f"📋 Cloning {original_project} to {cloned_project}...")
+    cloned_project = temp_workspace / "cloned-project"
+    print(f"📋 Cloning {original_project} to {cloned_project}...")
 
-            start_time = time.time()
-            self._cow_clone_directory(original_project, cloned_project)
-            clone_time = time.time() - start_time
+    start_time = time.time()
+    _cow_clone_directory(original_project, cloned_project)
+    clone_time = time.time() - start_time
 
-            print(f"✅ CoW clone completed in {clone_time:.2f} seconds")
+    print(f"✅ CoW clone completed in {clone_time:.2f} seconds")
 
-            # Verify clone exists and has expected structure
-            assert cloned_project.exists()
-            assert (cloned_project / "src" / "utils.py").exists()
-            assert (cloned_project / "src" / "models.py").exists()
-            assert (cloned_project / ".code-indexer" / "config.json").exists()
-            print("✅ Clone structure verified")
+    # Verify clone exists and has expected structure
+    assert cloned_project.exists()
+    assert (cloned_project / "src" / "utils.py").exists()
+    assert (cloned_project / "src" / "models.py").exists()
+    assert (cloned_project / ".code-indexer" / "config.json").exists()
+    print("✅ Clone structure verified")
 
-            # Phase 6: Configure Clone
-            print("🚀 Phase 6: Configuring clone")
+    # Phase 6: Configure Clone
+    print("🚀 Phase 6: Configuring clone")
 
-            # Fix-config on clone (triggers migration)
-            print("🔧 Running fix-config on clone...")
-            self._run_cidx_command(
-                ["fix-config", "--force"], cloned_project, timeout=120
-            )
-            print("✅ Clone configuration updated")
+    # Fix-config on clone (triggers migration)
+    print("🔧 Running fix-config on clone...")
+    _run_cidx_command(["fix-config", "--force"], cloned_project, timeout=120)
+    print("✅ Clone configuration updated")
 
-            # Index the cloned project to create its own collection
-            print("📊 Indexing cloned project...")
-            self._run_cidx_command(["index", "--clear"], cloned_project, timeout=180)
-            print("✅ Cloned project indexed")
+    # Index the cloned project to create its own collection
+    print("📊 Indexing cloned project...")
+    _run_cidx_command(["index", "--clear"], cloned_project, timeout=180)
+    print("✅ Cloned project indexed")
 
-            # Phase 7: Verify Clone Independence
-            print("🚀 Phase 7: Verifying clone independence")
+    # Phase 7: Verify Clone Independence
+    print("🚀 Phase 7: Verifying clone independence")
 
-            # Start services on clone (should already be running)
-            print("🚀 Ensuring services are available for clone...")
-            try:
-                self._run_cidx_command(
-                    ["start", "--quiet"],
-                    cloned_project,
-                    timeout=120,
-                    expect_success=False,
-                )
-            except RuntimeError:
-                # Services might already be running, continue
-                pass
+    # Start services on clone (should already be running)
+    print("🚀 Ensuring services are available for clone...")
+    try:
+        _run_cidx_command(
+            ["start", "--quiet"],
+            cloned_project,
+            timeout=120,
+            expect_success=False,
+        )
+    except RuntimeError:
+        # Services might already be running, continue
+        pass
 
-            # Query same content in both projects
-            print("🔍 Querying both projects for same content...")
+    # Query same content in both projects
+    print("🔍 Querying both projects for same content...")
 
-            original_query1 = self._run_cidx_command(
-                ["query", "function definition"], original_project
-            )
-            cloned_query1 = self._run_cidx_command(
-                ["query", "function definition"], cloned_project
-            )
+    original_query1 = _run_cidx_command(
+        ["query", "function definition"], original_project
+    )
+    cloned_query1 = _run_cidx_command(["query", "function definition"], cloned_project)
 
-            original_query2 = self._run_cidx_command(
-                ["query", "updated function"], original_project
-            )
-            cloned_query2 = self._run_cidx_command(
-                ["query", "updated function"], cloned_project
-            )
+    original_query2 = _run_cidx_command(["query", "updated function"], original_project)
+    cloned_query2 = _run_cidx_command(["query", "updated function"], cloned_project)
 
-            # Both should return similar results (both have the same content)
-            assert "utils.py" in original_query1
-            assert "utils.py" in cloned_query1
-            assert "utils.py" in original_query2
-            assert "utils.py" in cloned_query2
-            print("✅ Both projects return expected query results")
+    # Both should return similar results (both have the same content)
+    assert "utils.py" in original_query1
+    assert "utils.py" in cloned_query1
+    assert "utils.py" in original_query2
+    assert "utils.py" in cloned_query2
+    print("✅ Both projects return expected query results")
 
-            # Phase 8: Verify Local Collection Usage
-            print("🚀 Phase 8: Verifying local collection usage")
+    # Phase 8: Verify Local Collection Usage
+    print("🚀 Phase 8: Verifying local collection usage")
 
-            # Check configuration files exist (structure depends on implementation)
-            print("📋 Checking configuration structures...")
+    # Check configuration files exist (structure depends on implementation)
+    print("📋 Checking configuration structures...")
 
-            # Verify local qdrant-data directories exist
-            original_storage = original_project / ".code-indexer" / "qdrant-data"
-            cloned_storage = cloned_project / ".code-indexer" / "qdrant-data"
+    # Verify local qdrant-data directories exist
+    original_storage = original_project / ".code-indexer" / "qdrant-data"
+    cloned_storage = cloned_project / ".code-indexer" / "qdrant-data"
 
-            # These might be created during indexing
-            print(f"Original storage exists: {original_storage.exists()}")
-            print(f"Cloned storage exists: {cloned_storage.exists()}")
+    # These might be created during indexing
+    print(f"Original storage exists: {original_storage.exists()}")
+    print(f"Cloned storage exists: {cloned_storage.exists()}")
 
-            # Phase 9: Test Independent Operations
-            print("🚀 Phase 9: Testing independent operations")
+    # Phase 9: Test Independent Operations
+    print("🚀 Phase 9: Testing independent operations")
 
-            # Make different changes to each project
-            print("✏️  Making different changes to each project...")
+    # Make different changes to each project
+    print("✏️  Making different changes to each project...")
 
-            # Change in original
-            original_utils = original_project / "src" / "utils.py"
-            original_content = original_utils.read_text()
-            original_utils.write_text(
-                original_content
-                + '''
+    # Change in original
+    original_utils = original_project / "src" / "utils.py"
+    original_content = original_utils.read_text()
+    original_utils.write_text(
+        original_content
+        + '''
 
 def original_specific_function():
     """This function only exists in the original project"""
     return "original specific change"
 '''
-            )
+    )
 
-            # Change in clone
-            cloned_utils = cloned_project / "src" / "utils.py"
-            cloned_content = cloned_utils.read_text()
-            cloned_utils.write_text(
-                cloned_content
-                + '''
+    # Change in clone
+    cloned_utils = cloned_project / "src" / "utils.py"
+    cloned_content = cloned_utils.read_text()
+    cloned_utils.write_text(
+        cloned_content
+        + '''
 
 def cloned_specific_function():
     """This function only exists in the cloned project"""
     return "cloned specific change"
 '''
-            )
+    )
 
-            # Re-index both projects to capture changes
-            print("📊 Re-indexing both projects to capture changes...")
-            self._run_cidx_command(["index"], original_project, timeout=180)
-            self._run_cidx_command(["index"], cloned_project, timeout=180)
+    # Re-index both projects to capture changes
+    print("📊 Re-indexing both projects to capture changes...")
+    _run_cidx_command(["index"], original_project, timeout=180)
+    _run_cidx_command(["index"], cloned_project, timeout=180)
 
-            # Verify isolation - each project should see only its own changes
-            print("🔍 Verifying project isolation...")
+    # Verify isolation - each project should see only its own changes
+    print("🔍 Verifying project isolation...")
 
-            original_specific = self._run_cidx_command(
-                ["query", "original specific"], original_project
-            )
-            cloned_specific = self._run_cidx_command(
-                ["query", "cloned specific"], cloned_project
-            )
+    original_specific = _run_cidx_command(
+        ["query", "original specific"], original_project
+    )
+    cloned_specific = _run_cidx_command(["query", "cloned specific"], cloned_project)
 
-            assert "utils.py" in original_specific
-            assert "utils.py" in cloned_specific
-            print("✅ Both projects see their own changes")
+    assert "utils.py" in original_specific
+    assert "utils.py" in cloned_specific
+    print("✅ Both projects see their own changes")
 
-            # Cross-check isolation (this might not always fail due to indexing timing)
-            # But we'll check anyway
-            try:
-                original_no_clone = self._run_cidx_command(
-                    ["query", "cloned specific"], original_project, expect_success=False
-                )
-                cloned_no_original = self._run_cidx_command(
-                    ["query", "original specific"], cloned_project, expect_success=False
-                )
+    # Cross-check isolation (this might not always fail due to indexing timing)
+    # But we'll check anyway
+    try:
+        original_no_clone = _run_cidx_command(
+            ["query", "cloned specific"], original_project, expect_success=False
+        )
+        cloned_no_original = _run_cidx_command(
+            ["query", "original specific"], cloned_project, expect_success=False
+        )
 
-                # If we get results, they shouldn't contain the other project's changes
-                print("🔍 Cross-checking isolation...")
-                if "utils.py" in original_no_clone:
-                    print(
-                        "⚠️  Original project might see cloned changes (check isolation)"
-                    )
-                if "utils.py" in cloned_no_original:
-                    print(
-                        "⚠️  Cloned project might see original changes (check isolation)"
-                    )
+        # If we get results, they shouldn't contain the other project's changes
+        print("🔍 Cross-checking isolation...")
+        if "utils.py" in original_no_clone:
+            print("⚠️  Original project might see cloned changes (check isolation)")
+        if "utils.py" in cloned_no_original:
+            print("⚠️  Cloned project might see original changes (check isolation)")
 
-            except Exception as e:
-                # This is actually good - means the queries didn't find anything
-                print(
-                    f"✅ Cross-check queries returned no results (good isolation): {e}"
-                )
+    except Exception as e:
+        # This is actually good - means the queries didn't find anything
+        print(f"✅ Cross-check queries returned no results (good isolation): {e}")
 
-            # Phase 10: Cleanup
-            print("🚀 Phase 10: Cleanup")
+    # Phase 10: Cleanup
+    print("🚀 Phase 10: Cleanup")
 
-            # Follow aggressive setup pattern - don't stop services, leave them running
-            print(
-                "✅ Leaving services running for next test (aggressive setup pattern)"
-            )
+    # Follow aggressive setup pattern - don't stop services, leave them running
+    print("✅ Leaving services running for next test (aggressive setup pattern)")
 
-            print("🎉 Complete CoW clone workflow test completed successfully!")
-            print("📊 Summary:")
-            print(f"   - Original project: {original_project}")
-            print(f"   - Cloned project: {cloned_project}")
-            print(f"   - Clone time: {clone_time:.2f} seconds")
-            print("   - Both projects operational independently")
+    print("🎉 Complete CoW clone workflow test completed successfully!")
+    print("📊 Summary:")
+    print(f"   - Original project: {original_project}")
+    print(f"   - Cloned project: {cloned_project}")
+    print(f"   - Clone time: {clone_time:.2f} seconds")
+    print("   - Both projects operational independently")
 
 
 if __name__ == "__main__":

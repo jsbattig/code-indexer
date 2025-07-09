@@ -3,10 +3,10 @@ Tests for the GitAwareDocumentProcessor class.
 """
 
 import pytest
-import tempfile
-import shutil
 import subprocess
+import uuid
 from pathlib import Path
+
 from unittest.mock import patch, MagicMock
 
 from code_indexer.config import Config
@@ -16,9 +16,16 @@ from code_indexer.services.git_aware_processor import GitAwareDocumentProcessor
 class TestGitAwareDocumentProcessor:
     @pytest.fixture
     def temp_dir(self):
-        temp_dir = Path(tempfile.mkdtemp())
+        import shutil
+
+        # Use shared test directory to avoid creating multiple container sets
+        temp_dir = Path.home() / ".tmp" / "shared_test_containers"
+        # Clean and recreate for test isolation
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        temp_dir.mkdir(parents=True, exist_ok=True)
         yield temp_dir
-        shutil.rmtree(temp_dir)
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
     @pytest.fixture
     def config(self, temp_dir):
@@ -85,7 +92,6 @@ class TestGitAwareDocumentProcessor:
 
         point_id = processor._create_point_id(file_metadata, 0)
         # Point ID should be a valid UUID string
-        import uuid
 
         assert uuid.UUID(point_id)  # Validates it's a proper UUID
         # Check it's deterministic (same input = same output)
@@ -102,7 +108,6 @@ class TestGitAwareDocumentProcessor:
 
         point_id = processor._create_point_id(file_metadata, 1)
         # Point ID should be a valid UUID string
-        import uuid
 
         assert uuid.UUID(point_id)  # Validates it's a proper UUID
         # Check it's deterministic

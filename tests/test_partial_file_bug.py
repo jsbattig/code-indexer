@@ -5,7 +5,8 @@ This test creates a scenario where cancellation definitely causes partial files.
 """
 
 import pytest
-import tempfile
+
+from .conftest import local_temporary_directory
 import time
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -65,7 +66,7 @@ class TrackedQdrantClient:
 def test_partial_file_bug_reproduction():
     """Reproduce the partial file indexing bug with aggressive conditions."""
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with local_temporary_directory() as temp_dir:
         # Create ONE file that will have multiple chunks
         test_file = Path(temp_dir) / "multi_chunk_file.py"
         content = "\n".join(

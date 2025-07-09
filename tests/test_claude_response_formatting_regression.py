@@ -5,7 +5,8 @@ This test reproduces and verifies fixes for Claude response formatting issues
 that may have been introduced when fixing dry-run prompt display.
 """
 
-import tempfile
+from .conftest import local_temporary_directory
+
 from pathlib import Path
 
 from src.code_indexer.services.claude_integration import ClaudeIntegrationService
@@ -15,7 +16,7 @@ def test_claude_response_should_preserve_formatting():
     """Test that Claude responses maintain proper Claude Code style formatting when displayed."""
 
     # Create a test ClaudeIntegrationService
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with local_temporary_directory() as temp_dir:
         temp_path = Path(temp_dir)
 
         # Create a simple test project

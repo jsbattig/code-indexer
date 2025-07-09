@@ -3,12 +3,15 @@
 import os
 import subprocess
 import re
+import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 import yaml  # type: ignore
 
 from rich.console import Console
 from .health_checker import HealthChecker
+
+logger = logging.getLogger(__name__)
 
 
 class DockerManager:
@@ -19,15 +22,16 @@ class DockerManager:
         console: Optional[Console] = None,
         project_name: Optional[str] = None,
         force_docker: bool = False,
-        main_config: Optional[Dict[str, Any]] = None,
     ):
         self.console = console or Console()
         self.force_docker = force_docker
         self.project_name = project_name or self._detect_project_name()
         self.compose_file = self._get_global_compose_file_path()
         self._config = self._load_service_config()
-        self.main_config = main_config
-        self.health_checker = HealthChecker(config_manager=main_config)
+        self.health_checker = HealthChecker()
+        self.indexing_root: Optional[Path] = (
+            None  # Will be set via set_indexing_root() for first-time setup
+        )
 
     def _detect_project_name(self) -> str:
         """Detect project name from current folder name for qdrant collection naming."""
@@ -38,6 +42,28 @@ class DockerManager:
         except (FileNotFoundError, OSError):
             # Fallback to default project name if current directory is invalid
             return self._sanitize_project_name("default")
+
+    def _generate_project_hash(self, project_root: Path) -> str:
+        """Generate deterministic hash from project root path for container naming."""
+        import hashlib
+
+        # Use absolute resolved path for consistency
+        canonical_path = str(project_root.resolve())
+
+        # Generate short hash (8 characters should be sufficient for uniqueness)
+        hash_object = hashlib.sha256(canonical_path.encode())
+        return hash_object.hexdigest()[:8]
+
+    def _generate_container_names(self, project_root: Path) -> Dict[str, str]:
+        """Generate project-specific container names based on project path hash."""
+        project_hash = self._generate_project_hash(project_root)
+
+        return {
+            "project_hash": project_hash,
+            "qdrant_name": f"cidx-{project_hash}-qdrant",
+            "ollama_name": f"cidx-{project_hash}-ollama",
+            "data_cleaner_name": f"cidx-{project_hash}-data-cleaner",
+        }
 
     def _sanitize_project_name(self, name: str) -> str:
         """Sanitize project name for use as qdrant collection name."""
@@ -111,23 +137,7 @@ class DockerManager:
         except Exception:
             return default_port
 
-    def _get_service_port(self, service: str, default_port: int) -> int:
-        """Get the port for a service from main config or service config."""
-        # First try to extract from main configuration host URL (prioritize main config)
-        if self.main_config:
-            service_config = self.main_config.get(service, {})
-            if "host" in service_config:
-                return self._extract_port_from_url(service_config["host"], default_port)
-
-        # Fall back to service-specific configuration (legacy)
-        service_port = self._config.get(service, {}).get("docker", {}).get("port", None)
-        if service_port is not None:
-            return int(service_port)
-
-        # Fall back to default
-        return default_port
-
-    def _get_service_url(self, service: str) -> str:
+    def _get_service_url(self, service: str) -> Optional[str]:
         """Get the URL for a service based on configuration."""
         service_config = self._config.get(service, {})
 
@@ -135,12 +145,45 @@ class DockerManager:
         if service_config.get("external", False):
             return str(service_config.get("url", ""))
 
-        # Otherwise, use localhost with configured port
-        default_ports = {"ollama": 11434, "qdrant": 6333}
-        port = service_config.get("docker", {}).get(
-            "port", default_ports.get(service, 0)
-        )
-        return f"http://localhost:{port}"
+        # ===============================================================================
+        # STEP 5: HEALTH CHECK PORT RESOLUTION - CRITICAL FOR SYNCHRONIZATION
+        # ===============================================================================
+        # This method is called by health checks and MUST use the exact same ports
+        # that containers are running on. The port synchronization flow ensures this:
+        #
+        # 1. Port allocation calculates ports and stores in project config
+        # 2. Containers start with those exact ports
+        # 3. Health checks call this method → reads from project config
+        # 4. Perfect synchronization: health checks use container ports!
+        #
+        # Previous bug: This method read stale config while containers used new ports
+        # ===============================================================================
+
+        # PRIMARY: Use project-specific calculated ports (updated during port allocation)
+        try:
+            from ..config import ConfigManager
+
+            config_manager = ConfigManager.create_with_backtrack()
+            config = config_manager.load()
+
+            # Get project ports from current project configuration
+            project_ports = getattr(config, "project_ports", None)
+            if project_ports:
+                # Normalize service name for config key lookup (data-cleaner -> data_cleaner)
+                normalized_service = service.replace("-", "_")
+                service_port_key = f"{normalized_service}_port"
+                # project_ports is a Pydantic object, use getattr instead of dict access
+                port_value = getattr(project_ports, service_port_key, 0)
+                if port_value and port_value != 0:
+                    port = int(port_value)
+                    return f"http://localhost:{port}"
+        except Exception:
+            # If config loading fails, fall back to other methods
+            pass
+
+        # NO FALLBACK PORTS! If we can't get the actual port from project config, return None
+        # This will cause health checks to fail, which is correct behavior
+        return None
 
     def get_required_services(
         self, config: Optional[Dict[str, Any]] = None
@@ -148,15 +191,28 @@ class DockerManager:
         """Determine which services are required based on configuration.
 
         Args:
-            config: Optional configuration dict. If None, uses self.main_config
+            config: Optional configuration dict. If None, loads from project config
 
         Returns:
             List of required service names
         """
         required_services = ["qdrant", "data-cleaner"]  # Always needed
 
-        # Use provided config or fall back to main_config
-        config_to_use = config or self.main_config or {}
+        # Use provided config or load from project configuration
+        if config:
+            config_to_use = config
+        else:
+            try:
+                from ..config import ConfigManager
+
+                config_manager = ConfigManager.create_with_backtrack()
+                project_config = config_manager.load()
+                config_to_use = {
+                    "embedding_provider": project_config.embedding_provider
+                }
+            except Exception:
+                # If config loading fails, use default
+                config_to_use = {"embedding_provider": "ollama"}
 
         # Check embedding provider
         embedding_provider = config_to_use.get("embedding_provider", "ollama")
@@ -166,9 +222,11 @@ class DockerManager:
 
         return required_services
 
-    def _container_exists(self, service_name: str) -> bool:
+    def _container_exists(
+        self, service_name: str, project_config: Dict[str, str]
+    ) -> bool:
         """Check if a container exists using direct container engine commands."""
-        container_name = self.get_container_name(service_name)
+        container_name = self.get_container_name(service_name, project_config)
         container_engine = "docker" if self.force_docker else "podman"
 
         try:
@@ -191,9 +249,11 @@ class DockerManager:
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
 
-    def _container_running(self, service_name: str) -> bool:
+    def _container_running(
+        self, service_name: str, project_config: Dict[str, str]
+    ) -> bool:
         """Check if a container is running using direct container engine commands."""
-        container_name = self.get_container_name(service_name)
+        container_name = self.get_container_name(service_name, project_config)
         container_engine = "docker" if self.force_docker else "podman"
 
         try:
@@ -217,43 +277,99 @@ class DockerManager:
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
 
-    def _container_healthy(self, service_name: str) -> bool:
+    def _container_healthy(
+        self, service_name: str, project_config: Dict[str, str]
+    ) -> bool:
         """Check if a container is healthy."""
-        if not self._container_running(service_name):
+        if not self._container_running(service_name, project_config):
             return False
 
-        # For services with health checks, verify health status
-        if service_name == "ollama":
-            return bool(
-                self.health_checker.is_service_healthy("http://localhost:11434")
-            )
-        elif service_name == "qdrant":
-            return bool(self.health_checker.is_service_healthy("http://localhost:6333"))
-        elif service_name == "data-cleaner":
-            return bool(self.health_checker.is_service_healthy("http://localhost:8091"))
+        # For services with health checks, verify health status using ACTUAL container ports
+        # This is critical for idempotent behavior - we must check the actual running containers
+        actual_port = self._get_actual_container_port(service_name, project_config)
+        if actual_port:
+            service_url = f"http://localhost:{actual_port}"
+            return bool(self.health_checker.is_service_healthy(service_url))
 
+        # NO FALLBACK! If we can't get the actual port, the container is not healthy
+        return False
+
+    def _get_actual_container_port(
+        self, service_name: str, project_config: Dict[str, str]
+    ) -> Optional[int]:
+        """Extract the actual port from a running container."""
+        container_name = self.get_container_name(service_name, project_config)
+
+        # Try both docker and podman
+        for runtime in ["docker", "podman"]:
+            try:
+                # Get port mapping from docker/podman ps
+                cmd = [
+                    runtime,
+                    "ps",
+                    "--filter",
+                    f"name={container_name}",
+                    "--format",
+                    "{{.Ports}}",
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+
+                if result.returncode == 0 and result.stdout.strip():
+                    ports_output = result.stdout.strip()
+                    # Parse port mapping like "0.0.0.0:7264->6333/tcp"
+                    for port_mapping in ports_output.split(", "):
+                        if "->" in port_mapping:
+                            # Extract the external port
+                            external_part = port_mapping.split("->")[0]
+                            if ":" in external_part:
+                                port_str = external_part.split(":")[-1]
+                                try:
+                                    return int(port_str)
+                                except ValueError:
+                                    continue
+
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                continue
+
+        return None
+
+    def _container_up_to_date(
+        self, service_name: str, project_config: Dict[str, str]
+    ) -> bool:
+        """Check if a container is up to date with current configuration."""
+        # Container must exist first
+        if not self._container_exists(service_name, project_config):
+            return False
+
+        # For qdrant and data-cleaner services, verify required host directories exist
+        if service_name in ["qdrant", "data-cleaner"]:
+            project_root = Path.cwd()
+            project_qdrant_dir = project_root / ".code-indexer" / "qdrant"
+            if not project_qdrant_dir.exists():
+                return False
+
+        # In the future, this could check image versions, environment variables, etc.
         return True
 
-    def _container_up_to_date(self, service_name: str) -> bool:
-        """Check if a container is up to date with current configuration."""
-        # For now, assume containers are up to date if they exist
-        # In the future, this could check image versions, environment variables, etc.
-        return self._container_exists(service_name)
-
-    def get_service_state(self, service_name: str) -> Dict[str, Any]:
+    def get_service_state(
+        self, service_name: str, project_config: Dict[str, str]
+    ) -> Dict[str, Any]:
         """Get current state of a specific service."""
         return {
-            "exists": self._container_exists(service_name),
-            "running": self._container_running(service_name),
-            "healthy": self._container_healthy(service_name),
-            "up_to_date": self._container_up_to_date(service_name),
+            "exists": self._container_exists(service_name, project_config),
+            "running": self._container_running(service_name, project_config),
+            "healthy": self._container_healthy(service_name, project_config),
+            "up_to_date": self._container_up_to_date(service_name, project_config),
         }
 
-    def get_services_state(self) -> Dict[str, Dict[str, Any]]:
+    def get_services_state(
+        self, project_config: Dict[str, str]
+    ) -> Dict[str, Dict[str, Any]]:
         """Get state of all required services."""
         required_services = self.get_required_services()
         return {
-            service: self.get_service_state(service) for service in required_services
+            service: self.get_service_state(service, project_config)
+            for service in required_services
         }
 
     def is_docker_available(self) -> bool:
@@ -265,8 +381,16 @@ class DockerManager:
                 result = subprocess.run(
                     ["docker", "--version"], capture_output=True, text=True, timeout=5
                 )
-                return result.returncode == 0
-            except (subprocess.TimeoutExpired, FileNotFoundError):
+                if result.returncode == 0:
+                    logger.debug("Docker is available (forced mode)")
+                    return True
+                else:
+                    logger.warning(
+                        f"Docker command failed in forced mode: {result.stderr}"
+                    )
+                    return False
+            except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+                logger.warning(f"Docker not found in forced mode: {e}")
                 return False
 
         # Normal Podman-first mode
@@ -288,6 +412,315 @@ class DockerManager:
             return result.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
+
+    def _get_available_runtime(self) -> Optional[str]:
+        """Get the available container runtime (podman or docker)."""
+        if self.force_docker:
+            try:
+                result = subprocess.run(
+                    ["docker", "--version"], capture_output=True, timeout=5
+                )
+                return "docker" if result.returncode == 0 else None
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                return None
+        else:
+            # Try podman first
+            try:
+                result = subprocess.run(
+                    ["podman", "--version"], capture_output=True, timeout=5
+                )
+                if result.returncode == 0:
+                    return "podman"
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+
+            # Fallback to docker
+            try:
+                result = subprocess.run(
+                    ["docker", "--version"], capture_output=True, timeout=5
+                )
+                return "docker" if result.returncode == 0 else None
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                return None
+
+    def containers_exist(self, project_config: Dict[str, str]) -> bool:
+        """Check if project-specific containers exist (not necessarily running)."""
+        try:
+            runtime = "docker" if self.force_docker else self._get_available_runtime()
+            if not runtime:
+                return False
+
+            # Use project-specific container names
+            container_names = [
+                project_config["qdrant_name"],
+                project_config["ollama_name"],
+                project_config["data_cleaner_name"],
+            ]
+
+            for name in container_names:
+                try:
+                    cmd = [runtime, "container", "inspect", name]
+                    result = subprocess.run(cmd, capture_output=True, timeout=5)
+                    if result.returncode == 0:
+                        return True  # At least one container exists
+                except subprocess.TimeoutExpired:
+                    continue
+            return False
+        except Exception:
+            return False
+
+    def set_indexing_root(self, indexing_root: Path) -> None:
+        """Set the indexing root directory for mount configuration."""
+        self.indexing_root = indexing_root.resolve()
+
+    def ensure_project_configuration(
+        self, config_manager, project_root: Path
+    ) -> Dict[str, str]:
+        """Ensure project has container names and ports configured."""
+        config = config_manager.load()
+
+        # Generate container names if not present
+        if not config.project_containers.project_hash:
+            container_names = self._generate_container_names(project_root)
+            config.project_containers.project_hash = container_names["project_hash"]
+            config.project_containers.qdrant_name = container_names["qdrant_name"]
+            config.project_containers.ollama_name = container_names["ollama_name"]
+            config.project_containers.data_cleaner_name = container_names[
+                "data_cleaner_name"
+            ]
+
+            # Container names generated - no need to update shared config
+
+        # Generate port assignments: CHECK CONTAINERS FIRST, then config
+        container_names = self._generate_container_names(project_root)
+
+        # Check if any containers exist for this project (permanent ports)
+        existing_ports = {}
+        containers_exist = False
+
+        for service in ["qdrant", "data-cleaner", "ollama"]:
+            if self._container_exists(service, container_names):
+                containers_exist = True
+                actual_port = self._get_actual_container_port(service, container_names)
+                if actual_port:
+                    port_key = f"{service.replace('-', '_')}_port"
+                    existing_ports[port_key] = actual_port
+
+        if containers_exist and existing_ports:
+            # Containers exist - use their ports as permanent (same logic as start_services)
+            self.console.print(
+                "🏃 Found existing containers - using their ports as permanent"
+            )
+            ports = existing_ports
+            # Update config to match actual container ports
+            config.project_ports.qdrant_port = ports.get(
+                "qdrant_port", config.project_ports.qdrant_port
+            )
+            config.project_ports.ollama_port = ports.get(
+                "ollama_port", config.project_ports.ollama_port
+            )
+            config.project_ports.data_cleaner_port = ports.get(
+                "data_cleaner_port", config.project_ports.data_cleaner_port
+            )
+        elif not config.project_ports.qdrant_port:
+            # No containers and no config - allocate new ports
+            project_hash = config.project_containers.project_hash
+            ports = self._allocate_free_ports(project_hash)
+            config.project_ports.qdrant_port = ports["qdrant_port"]
+            config.project_ports.ollama_port = ports["ollama_port"]
+            config.project_ports.data_cleaner_port = ports["data_cleaner_port"]
+        else:
+            # No containers but config exists - use config ports
+            ports = {
+                "qdrant_port": config.project_ports.qdrant_port,
+                "ollama_port": config.project_ports.ollama_port,
+                "data_cleaner_port": config.project_ports.data_cleaner_port,
+            }
+
+        # Always ensure service URLs match calculated ports
+        config.qdrant.host = f"http://localhost:{ports.get('qdrant_port', config.project_ports.qdrant_port)}"
+        config.ollama.host = f"http://localhost:{ports.get('ollama_port', config.project_ports.ollama_port)}"
+
+        # Save updated configuration
+        config_manager.save(config)
+
+        # Only return configuration for required services
+        loaded_config = config_manager.load()
+        config_dict = {
+            "embedding_provider": loaded_config.embedding_provider,
+            "ollama": (
+                loaded_config.ollama.__dict__
+                if hasattr(loaded_config, "ollama")
+                else {}
+            ),
+            "qdrant": (
+                loaded_config.qdrant.__dict__
+                if hasattr(loaded_config, "qdrant")
+                else {}
+            ),
+        }
+        required_services = self.get_required_services(config_dict)
+        result = {}
+
+        # Always include project identifiers
+        if hasattr(config.project_containers, "project_hash"):
+            result["project_hash"] = config.project_containers.project_hash
+
+        # Add container names and ports only for required services
+        if "qdrant" in required_services:
+            result["qdrant_name"] = config.project_containers.qdrant_name
+            result["qdrant_port"] = config.project_ports.qdrant_port
+        if "ollama" in required_services:
+            result["ollama_name"] = config.project_containers.ollama_name
+            result["ollama_port"] = config.project_ports.ollama_port
+        if "data-cleaner" in required_services:
+            result["data_cleaner_name"] = config.project_containers.data_cleaner_name
+            result["data_cleaner_port"] = config.project_ports.data_cleaner_port
+
+        return result
+
+    def _calculate_project_ports(self, project_hash: str) -> Dict[str, int]:
+        """Calculate deterministic ports based on project hash to avoid conflicts."""
+        # Base ports for each service type
+        base_ports = {
+            "qdrant_port": 6333,
+            "ollama_port": 11434,
+            "data_cleaner_port": 8091,
+        }
+
+        # Convert hex hash to integer for calculation
+        hash_int = int(project_hash, 16)
+
+        # Calculate addend from hash (use modulo to keep in reasonable range)
+        # Use different parts of the hash for different services to avoid same offsets
+        port_addends = {
+            "qdrant_port": (hash_int & 0xFFFF) % 1000,  # Use lower 16 bits, max +1000
+            "ollama_port": ((hash_int >> 16) & 0xFFFF)
+            % 1000,  # Use middle 16 bits, max +1000
+            "data_cleaner_port": ((hash_int >> 8) & 0xFFFF)
+            % 1000,  # Use shifted lower bits, max +1000
+        }
+
+        calculated_ports = {}
+        for service, base_port in base_ports.items():
+            addend = port_addends[service]
+            calculated_port = base_port + addend
+            calculated_ports[service] = calculated_port
+
+        self.console.print(
+            f"📊 Port calculation: hash={project_hash} → "
+            f"addends={list(port_addends.values())} → "
+            f"ports={list(calculated_ports.values())}",
+            style="dim",
+        )
+
+        return calculated_ports
+
+    def _allocate_free_ports(
+        self, project_hash: Optional[str] = None
+    ) -> Dict[str, int]:
+        """Allocate ports using deterministic calculation with conflict detection."""
+        # Get project hash from parameter or generate one from current directory
+        if not project_hash:
+            # Use current working directory as a basis for deterministic hash
+            import hashlib
+
+            cwd_path = str(Path.cwd())
+            cwd_hash = hashlib.sha256(cwd_path.encode()).hexdigest()[:8]
+            project_hash = cwd_hash
+
+        if not project_hash:
+            # ===============================================================================
+            # CRITICAL FIX: NEVER USE RANDOM FALLBACK
+            # ===============================================================================
+            # Previous bug: When project_hash was empty, code fell back to random generation:
+            #   unique_seed = f"{time.time()}{random.randint(1000, 9999)}"
+            #   project_hash = hashlib.sha256(unique_seed.encode()).hexdigest()[:8]
+            #
+            # This caused CATASTROPHIC BUG:
+            # - Attempt 1: Uses config hash "18e970d8" → ports [7221, 11811, 8840]
+            # - Attempt 1 fails, config gets corrupted
+            # - Attempt 2: project_hash becomes empty, triggers random fallback
+            # - Random fallback: generates "2ec48a67" → ports [6764, 12406, 8394]
+            # - Different hash = different ports = containers and config out of sync
+            #
+            # Solution: NEVER allow random generation. Force deterministic behavior.
+            # If project_hash is missing, it's a configuration error that must be fixed.
+            # ===============================================================================
+            raise ValueError(
+                "Project hash is required for deterministic port allocation. "
+                "Ensure project configuration is properly initialized."
+            )
+
+        # Try to find available ports using deterministic calculation with collision resolution
+        import socket
+        import hashlib
+
+        max_attempts = 10  # Maximum number of salt attempts to try
+
+        for attempt in range(max_attempts):
+            # For attempt 0, use original project hash (preserves existing behavior)
+            # For subsequent attempts, add salt to hash
+            if attempt == 0:
+                working_hash = project_hash
+                salt_suffix = ""
+            else:
+                # Generate salted hash for collision resolution
+                salt = f"_salt_{attempt}"
+                salted_input = f"{project_hash}{salt}"
+                working_hash = hashlib.sha256(salted_input.encode()).hexdigest()[:8]
+                salt_suffix = f" (salted attempt {attempt})"
+
+            # Calculate ports using the working hash
+            calculated_ports = self._calculate_project_ports(working_hash)
+
+            # Check if all calculated ports are available
+            unavailable_ports = []
+            for service, port in calculated_ports.items():
+                try:
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        s.bind(("localhost", port))
+                        # Port is available
+                except OSError:
+                    unavailable_ports.append((service, port))
+
+            if not unavailable_ports:
+                # All ports are available!
+                if attempt > 0:
+                    self.console.print(
+                        f"🔄 Port collision resolved using salt (attempt {attempt}): "
+                        f"hash={working_hash} → ports={list(calculated_ports.values())}",
+                        style="yellow",
+                    )
+                return calculated_ports
+            else:
+                # Some ports are unavailable, log the attempt
+                unavailable_str = ", ".join(
+                    [f"{svc}={port}" for svc, port in unavailable_ports]
+                )
+                if attempt == 0:
+                    self.console.print(
+                        f"⚠️  Initial port calculation conflicts: {unavailable_str}. "
+                        f"Trying collision resolution...{salt_suffix}",
+                        style="yellow",
+                    )
+                else:
+                    self.console.print(
+                        f"⚠️  Attempt {attempt} still has conflicts: {unavailable_str}. "
+                        f"Trying next salt...{salt_suffix}",
+                        style="dim",
+                    )
+
+        # If we get here, all attempts failed
+        final_unavailable = ", ".join(
+            [f"{svc}={port}" for svc, port in unavailable_ports]
+        )
+        raise RuntimeError(
+            f"Failed to allocate free ports after {max_attempts} attempts. "
+            f"Last attempt conflicts: {final_unavailable}. "
+            f"This indicates severe port congestion. Consider stopping other services. "
+            f"Original project hash: {project_hash}"
+        )
 
     def is_compose_available(self) -> bool:
         """Check if Podman Compose or Docker Compose is available, prioritizing Podman unless force_docker is True."""
@@ -490,20 +923,354 @@ class DockerManager:
         return package_dockerfile
 
     def start_services(self, recreate: bool = False) -> bool:
-        """Start Docker services with intelligent state detection and idempotent behavior."""
+        """Start Docker services with permanent port allocation."""
         # Force remove any problematic containers before starting
         if recreate:
             self._force_remove_problematic_containers()
 
-        # Determine required services based on configuration
-        required_services = self.get_required_services(self.main_config)
+        # Load project configuration using backtracking
+        from ..config import ConfigManager
 
+        config_manager = ConfigManager.create_with_backtrack()
+        config = config_manager.load()
+
+        # Convert config to dict for required services detection
+        config_dict = {
+            "embedding_provider": config.embedding_provider,
+            "ollama": config.ollama.__dict__ if hasattr(config, "ollama") else {},
+            "qdrant": config.qdrant.__dict__ if hasattr(config, "qdrant") else {},
+        }
+
+        # Determine required services based on configuration
+        required_services = self.get_required_services(config_dict)
         self.console.print(f"🔍 Required services: {', '.join(required_services)}")
+
+        # Get project root from config
+        project_root = Path(config.codebase_dir)
+
+        # PERMANENT PORT LOGIC: Check if CONTAINERS exist (not config file)
+        # If containers exist → their ports are permanent
+        # If no containers → allocate new ports
+        container_names = self._generate_container_names(project_root)
+
+        # Check if any required service containers actually exist
+        containers_exist = False
+        actual_ports = {}
+
+        for service in required_services:
+            if self._container_exists(service, container_names):
+                containers_exist = True
+                # Extract actual port from existing container
+                actual_port = self._get_actual_container_port(service, container_names)
+                if actual_port:
+                    port_key = f"{service.replace('-', '_')}_port"
+                    actual_ports[port_key] = actual_port
+                    self.console.print(
+                        f"🔍 Found existing container: {service} on port {actual_port}"
+                    )
+
+        if containers_exist:
+            # Containers exist - their ports are PERMANENT. Sync config with actual ports.
+            self.console.print(
+                "🏃 Found existing containers - using their ports as permanent"
+            )
+
+            # Update config to match actual container ports (synchronization)
+            if actual_ports:
+                self._update_config_with_ports(project_root, actual_ports)
+                self.console.print(
+                    f"💾 Synchronized config with container ports: {actual_ports}"
+                )
+
+            # Check if services are healthy with their actual ports
+
+            # Check if all required services are healthy
+            all_healthy = True
+            for service in required_services:
+                try:
+                    # Get service URL using the permanent ports from config
+                    service_url = self._get_service_url(service)
+                    if service_url is None:
+                        self.console.print(
+                            f"🔍 {service} health check: No URL (port not found)"
+                        )
+                        all_healthy = False
+                        break
+                    is_healthy = self.health_checker.is_service_healthy(service_url)
+                    self.console.print(f"🔍 {service} health check: {is_healthy}")
+                    if not is_healthy:
+                        all_healthy = False
+                        break
+                except Exception as e:
+                    self.console.print(f"🔍 {service} health check failed: {e}")
+                    all_healthy = False
+                    break
+
+            if all_healthy:
+                self.console.print(
+                    "✅ All required services are healthy with permanent ports"
+                )
+                return True
+            else:
+                self.console.print(
+                    "⚠️  Some services not healthy - will restart with same ports"
+                )
+                # Ensure ALL mount directories exist before restarting containers
+                self._ensure_all_mount_paths_exist(project_root, required_services)
+                return self._attempt_start_with_ports(
+                    required_services,
+                    container_names,
+                    project_root,
+                    recreate,
+                    actual_ports,
+                )
+
+        # No existing containers - allocate new permanent ports
+        self.console.print(
+            "🆕 No existing containers - allocating new permanent ports..."
+        )
+
+        # Allocate new permanent ports
+        allocated_ports = self._allocate_free_ports(container_names["project_hash"])
+
+        # Save ports to config RIGHT AWAY - these are now our permanent ports
+        self._update_config_with_ports(project_root, allocated_ports)
+        self.console.print(f"💾 Saved permanent ports to config: {allocated_ports}")
+
+        # Ensure ALL mount directories exist before starting containers
+        self._ensure_all_mount_paths_exist(project_root, required_services)
+
+        # Now start containers with these permanent ports
+        return self._attempt_start_with_ports(
+            required_services,
+            container_names,
+            project_root,
+            recreate,
+            allocated_ports,
+        )
+
+        # Load project configuration using backtracking
+        from ..config import ConfigManager
+
+        config_manager = ConfigManager.create_with_backtrack()
+        config = config_manager.load()
+
+        # Convert config to dict for required services detection
+        config_dict = {
+            "embedding_provider": config.embedding_provider,
+            "ollama": config.ollama.__dict__ if hasattr(config, "ollama") else {},
+            "qdrant": config.qdrant.__dict__ if hasattr(config, "qdrant") else {},
+        }
+
+        # Determine required services based on configuration
+        required_services = self.get_required_services(config_dict)
+        self.console.print(f"🔍 Required services: {', '.join(required_services)}")
+
+        # Get project root from config
+        project_root = Path(config.codebase_dir)
+
+        # Check if containers exist and try to reuse existing configuration (idempotent behavior)
+        # CRITICAL: Only check for existing containers based on project root, not shared config
+        if not recreate:
+            project_config = None
+
+            # Generate container names for this specific project only
+            container_names = self._generate_container_names(project_root)
+
+            # Check if containers with these names actually exist
+            containers_exist = self.containers_exist(container_names)
+            self.console.print(
+                f"🔍 Checking for existing containers: {containers_exist}"
+            )
+
+            if containers_exist:
+                # Extract actual ports from existing containers
+                actual_ports = {}
+                for service in required_services:
+                    actual_port = self._get_actual_container_port(
+                        service, container_names
+                    )
+                    if actual_port:
+                        if service == "qdrant":
+                            actual_ports["qdrant_port"] = str(actual_port)
+                        elif service == "ollama":
+                            actual_ports["ollama_port"] = str(actual_port)
+                        elif service == "data-cleaner":
+                            actual_ports["data_cleaner_port"] = str(actual_port)
+
+                # Create complete project config with both names and ports
+                project_config = container_names.copy()
+
+                # Add extracted ports if available
+                if actual_ports:
+                    # Convert port values to strings for consistency
+                    string_ports = {k: str(v) for k, v in actual_ports.items()}
+                    project_config.update(string_ports)
+                    self.console.print(
+                        "🔍 Detected existing containers - reusing configuration"
+                    )
+                else:
+                    self.console.print(
+                        "🔍 Detected existing containers but couldn't extract ports - will check if running"
+                    )
+
+                # Ensure all required services have port configuration
+                # Generate missing ports for services that need them but don't have ports
+                missing_ports = {}
+                for service in required_services:
+                    port_key = f"{service.replace('-', '_')}_port"
+                    if port_key not in project_config:
+                        # Generate port for missing service using project hash
+                        temp_ports = self._calculate_project_ports(
+                            container_names["project_hash"]
+                        )
+                        missing_ports[port_key] = str(temp_ports[port_key])
+                        self.console.print(
+                            f"🔧 Generated missing port for {service}: {temp_ports[port_key]}"
+                        )
+
+                if missing_ports:
+                    project_config.update(missing_ports)
+
+            # NEW LOGIC: If we have existing containers, check if they're already running
+            # If they are, return success immediately (true idempotency)
+            # If they're not, try to start them with existing ports
+            if project_config:
+                self.console.print(
+                    "♻️  Using existing container configuration (idempotent behavior)"
+                )
+
+                # Check if containers are already running
+                all_running = True
+                for service in required_services:
+                    try:
+                        state = self.get_service_state(service, project_config)
+                        if not (
+                            state.get("exists", False)
+                            and state.get("running", False)
+                            and state.get("healthy", False)
+                        ):
+                            all_running = False
+                            break
+                    except Exception:
+                        all_running = False
+                        break
+
+                if all_running:
+                    # Update config with actual container ports to ensure synchronization
+                    # This ensures config file matches actual running containers
+                    if actual_ports:
+                        extracted_ports = {k: int(v) for k, v in actual_ports.items()}
+                        self._update_config_with_ports(project_root, extracted_ports)
+                        self.console.print(
+                            f"🔄 Updated config with actual container ports: {extracted_ports}"
+                        )
+
+                    self.console.print(
+                        "✅ All required services are already running with existing configuration"
+                    )
+                    return True
+                else:
+                    # Some containers are not running, try to start them with extracted ports from running containers
+                    # Use the ports we extracted from the actual running containers (actual_ports)
+                    # instead of loading potentially stale config from file
+                    extracted_ports = (
+                        {k: int(v) for k, v in actual_ports.items()}
+                        if actual_ports
+                        else {}
+                    )
+
+                    return self._attempt_start_with_ports(
+                        required_services,
+                        project_config,
+                        project_root,
+                        recreate,
+                        extracted_ports,
+                    )
+
+        # ===============================================================================
+        # DYNAMIC PORT ALLOCATION SYSTEM - CRITICAL INFRASTRUCTURE
+        # ===============================================================================
+        # This system ensures each project gets unique, deterministic ports while
+        # handling conflicts gracefully. The key principle: SAME PROJECT = SAME HASH = SAME PORTS
+        #
+        # Flow:
+        # 1. Generate project hash ONCE (deterministic based on project path)
+        # 2. Calculate ports from hash (same hash always = same ports)
+        # 3. Handle conflicts by retrying with different available ports
+        # 4. Update BOTH file config AND in-memory config with final ports
+        # 5. Start containers with those exact ports
+        # 6. Health checks use same in-memory ports -> guaranteed consistency
+        # ===============================================================================
+
+        # STEP 1: Generate project containers for this project only
+        # Hash is deterministic: same project path = same hash = same base ports
+        container_names = self._generate_container_names(project_root)
+        self.console.print(
+            f"📋 Project containers: {container_names['project_hash'][:8]}..."
+        )
+
+        # STEP 2: Smart port allocation with conflict detection and retry
+        # Each retry uses the SAME project hash but finds different available ports
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                self.console.print(
+                    f"🔌 Port allocation attempt {attempt + 1}/{max_retries}..."
+                )
+
+                # Calculate ports based on consistent project hash
+                # If ports are in use, this will find alternatives but keep project identity
+                allocated_ports = self._allocate_free_ports(
+                    container_names["project_hash"]
+                )
+
+                # Create the merged project configuration with both containers and ports
+                project_config = {
+                    "qdrant_name": container_names["qdrant_name"],
+                    "ollama_name": container_names["ollama_name"],
+                    "data_cleaner_name": container_names["data_cleaner_name"],
+                    "qdrant_port": str(allocated_ports["qdrant_port"]),
+                    "ollama_port": str(allocated_ports["ollama_port"]),
+                    "data_cleaner_port": str(allocated_ports["data_cleaner_port"]),
+                }
+
+                self.console.print(
+                    f"🔌 Allocated ports: Qdrant={project_config['qdrant_port']}, "
+                    f"Ollama={project_config['ollama_port']}, "
+                    f"DataCleaner={project_config['data_cleaner_port']}"
+                )
+
+                # Try to start services with these ports
+                success = self._attempt_start_with_ports(
+                    required_services, project_config, project_root, recreate
+                )
+
+                if success:
+                    self.console.print(
+                        "✅ Services started successfully with port configuration saved"
+                    )
+                    return True
+                else:
+                    self.console.print(
+                        f"⚠️  Attempt {attempt + 1} failed, trying with different ports..."
+                    )
+                    continue
+
+            except Exception as e:
+                self.console.print(f"❌ Attempt {attempt + 1} failed: {e}")
+                if attempt == max_retries - 1:
+                    raise
+                continue
+
+        raise RuntimeError(
+            f"Failed to start services after {max_retries} attempts due to port conflicts"
+        )
 
         # Check current state of all required services
         service_states = {}
         for service in required_services:
-            service_states[service] = self.get_service_state(service)
+            service_states[service] = self.get_service_state(service, project_config)
             state = service_states[service]
 
             if state["running"] and state["healthy"]:
@@ -518,14 +1285,17 @@ class DockerManager:
         # Determine if we need to regenerate compose config
         needs_compose_update = (
             recreate
-            or self.main_config is not None
             or not self.compose_file.exists()
             or not all(state["up_to_date"] for state in service_states.values())
         )
 
         if needs_compose_update:
             self.console.print("📝 Updating Docker Compose configuration...")
-            compose_config = self.generate_compose_config()
+            # Get project root from current working directory
+            project_root = Path.cwd()
+            compose_config = self.generate_compose_config(
+                project_root=project_root, project_config=project_config
+            )
             with open(self.compose_file, "w") as f:
                 yaml.dump(compose_config, f, default_flow_style=False)
 
@@ -600,7 +1370,25 @@ class DockerManager:
                 failed_containers = []
 
                 for service in services_to_start:
-                    container_name = f"code-indexer-{service}"
+                    try:
+                        # Get project configuration from config manager
+                        from ..config import ConfigManager
+
+                        config_manager = ConfigManager.create_with_backtrack()
+                        project_config = config_manager.load()
+
+                        # Get container configuration if available
+                        if (
+                            hasattr(project_config, "project_containers")
+                            and project_config.project_containers
+                        ):
+                            container_name = self.get_container_name(
+                                service, project_config.project_containers
+                            )
+                        else:
+                            container_name = f"unknown-{service}"
+                    except Exception:
+                        container_name = f"unknown-{service}"
                     try:
                         start_result = subprocess.run(
                             [runtime, "start", container_name],
@@ -756,12 +1544,37 @@ class DockerManager:
             return False
 
     def stop_services(self) -> bool:
-        """Stop Docker services using deterministic container names with enhanced timeout handling."""
-        expected_containers = [
-            "code-indexer-qdrant",
-            "code-indexer-ollama",
-            "code-indexer-data-cleaner",
-        ]
+        """Stop Docker services using project-specific container names with enhanced timeout handling."""
+        try:
+            # Get project configuration from config manager
+            from ..config import ConfigManager
+
+            config_manager = ConfigManager.create_with_backtrack()
+            project_config = config_manager.load()
+
+            # Get container configuration if available
+            if (
+                hasattr(project_config, "project_containers")
+                and project_config.project_containers
+            ):
+                project_containers = project_config.project_containers
+                expected_containers = [
+                    getattr(project_containers, "qdrant_name", "unknown"),
+                    getattr(project_containers, "ollama_name", "unknown"),
+                    getattr(project_containers, "data_cleaner_name", "unknown"),
+                ]
+            else:
+                expected_containers = [
+                    "unknown-qdrant",
+                    "unknown-ollama",
+                    "unknown-data-cleaner",
+                ]
+        except Exception:
+            expected_containers = [
+                "unknown-qdrant",
+                "unknown-ollama",
+                "unknown-data-cleaner",
+            ]
 
         # Determine runtime: use same logic as compose command selection
         runtime = self._get_preferred_runtime()
@@ -960,11 +1773,36 @@ class DockerManager:
 
     def _force_remove_problematic_containers(self) -> None:
         """Force remove any problematic containers that might interfere with startup."""
-        expected_containers = [
-            "code-indexer-qdrant",
-            "code-indexer-ollama",
-            "code-indexer-data-cleaner",
-        ]
+        try:
+            # Get project configuration from config manager
+            from ..config import ConfigManager
+
+            config_manager = ConfigManager.create_with_backtrack()
+            project_config = config_manager.load()
+
+            # Get container configuration if available
+            if (
+                hasattr(project_config, "project_containers")
+                and project_config.project_containers
+            ):
+                project_containers = project_config.project_containers
+                expected_containers = [
+                    getattr(project_containers, "qdrant_name", "unknown"),
+                    getattr(project_containers, "ollama_name", "unknown"),
+                    getattr(project_containers, "data_cleaner_name", "unknown"),
+                ]
+            else:
+                expected_containers = [
+                    "unknown-qdrant",
+                    "unknown-ollama",
+                    "unknown-data-cleaner",
+                ]
+        except Exception:
+            expected_containers = [
+                "unknown-qdrant",
+                "unknown-ollama",
+                "unknown-data-cleaner",
+            ]
 
         runtime = self._get_preferred_runtime()
 
@@ -1108,7 +1946,9 @@ class DockerManager:
             # Initialize QdrantClient to clean collections
             from .qdrant import QdrantClient
 
-            qdrant_client = QdrantClient(config.qdrant, self.console)
+            qdrant_client = QdrantClient(
+                config.qdrant, self.console, Path(config.codebase_dir)
+            )
 
             # Try to clear collections, but don't fail if services aren't running
             try:
@@ -1170,9 +2010,39 @@ class DockerManager:
         """Get status of required services using deterministic container names."""
         services = {}
         # Only check required services based on current configuration
-        required_services = self.get_required_services(self.main_config)
+        required_services = self.get_required_services()
+
+        # Generate project configuration
+        try:
+            # Get project configuration from config manager
+            from ..config import ConfigManager
+
+            config_manager = ConfigManager.create_with_backtrack()
+            project_config = config_manager.load()
+
+            # Get container configuration if available
+            if (
+                hasattr(project_config, "project_containers")
+                and project_config.project_containers
+            ):
+                # Convert ProjectContainersConfig to Dict[str, str]
+                project_containers = project_config.project_containers.__dict__
+            else:
+                # Generate project configuration from current working directory
+                from pathlib import Path
+
+                project_root = Path.cwd()
+                project_containers = self._generate_container_names(project_root)
+        except Exception:
+            # Generate project configuration from current working directory
+            from pathlib import Path
+
+            project_root = Path.cwd()
+            project_containers = self._generate_container_names(project_root)
+
         expected_containers = [
-            f"code-indexer-{service}" for service in required_services
+            self.get_container_name(service, project_containers)
+            for service in required_services
         ]
 
         # Check both runtimes to find where containers are actually running
@@ -1334,25 +2204,32 @@ class DockerManager:
         except requests.exceptions.RequestException as e:
             return {"success": False, "error": f"Request failed: {str(e)}"}
 
-    def get_adaptive_timeout(self, default_timeout: int = 120) -> int:
+    def get_adaptive_timeout(
+        self,
+        project_config: Dict[str, str],
+        required_services: List[str],
+        default_timeout: int = 120,
+    ) -> int:
         """Get adaptive timeout based on whether containers and models exist."""
         # Check if containers exist
-        containers_exist = self._check_containers_exist()
+        containers_exist = self._check_containers_exist(
+            project_config, required_services
+        )
 
-        # Check if Ollama model exists
-        model_exists = self._check_ollama_model_exists()
+        # Check if Ollama model exists (only if ollama is required)
+        model_exists = (
+            "ollama" in required_services and self._check_ollama_model_exists()
+        )
 
         # If both containers and model exist, use shorter timeout
-        if containers_exist and model_exists:
+        if containers_exist and ("ollama" not in required_services or model_exists):
             adaptive_timeout = 10  # Fast startup expected
-            self.console.print(
-                "🚀 Containers and model exist, using fast timeout (10s)"
-            )
+            self.console.print("🚀 Containers ready, using fast timeout (10s)")
             return adaptive_timeout
         elif containers_exist:
             adaptive_timeout = 30  # Medium startup time
             self.console.print(
-                "📦 Containers exist but model may need download, using medium timeout (30s)"
+                "📦 Containers exist but may need setup, using medium timeout (30s)"
             )
             return adaptive_timeout
         else:
@@ -1362,14 +2239,17 @@ class DockerManager:
             )
             return default_timeout
 
-    def _check_containers_exist(self) -> bool:
-        """Check if both Ollama and Qdrant containers exist."""
+    def _check_containers_exist(
+        self, project_config: Dict[str, str], required_services: List[str]
+    ) -> bool:
+        """Check if required service containers exist."""
         import subprocess
 
         container_engine = "docker" if self.force_docker else "podman"
         container_names = [
-            self.get_container_name("ollama"),
-            self.get_container_name("qdrant"),
+            self.get_container_name(service, project_config)
+            for service in required_services
+            if service in ["ollama", "qdrant", "data-cleaner"]
         ]
 
         try:
@@ -1412,8 +2292,28 @@ class DockerManager:
     def _monitor_qdrant_recovery(self) -> Dict[str, Any]:
         """Monitor Qdrant's collection recovery progress by parsing logs."""
         try:
+            try:
+                # Get project configuration from config manager
+                from ..config import ConfigManager
+
+                config_manager = ConfigManager.create_with_backtrack()
+                project_config = config_manager.load()
+
+                # Get container configuration if available
+                if (
+                    hasattr(project_config, "project_containers")
+                    and project_config.project_containers
+                ):
+                    project_containers = project_config.project_containers
+                    qdrant_container_name = getattr(
+                        project_containers, "qdrant_name", "unknown"
+                    )
+                else:
+                    qdrant_container_name = "unknown-qdrant"
+            except Exception:
+                qdrant_container_name = "unknown-qdrant"
             result = subprocess.run(
-                ["docker", "logs", "--tail", "50", "code-indexer-qdrant"],
+                ["docker", "logs", "--tail", "50", qdrant_container_name],
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -1508,16 +2408,51 @@ class DockerManager:
         else:
             return False, f"connection_refused_{recovery_info['status']}"
 
-    def wait_for_services(self, timeout: int = 120, retry_interval: int = 2) -> bool:
+    def wait_for_services(
+        self,
+        timeout: int = 120,
+        retry_interval: int = 2,
+        project_config: Optional[Dict[str, str]] = None,
+    ) -> bool:
         """Wait for services to be healthy using retry logic with exponential backoff and intelligent Qdrant monitoring."""
         import requests  # type: ignore
 
         # Get list of required services dynamically
         required_services = self.get_required_services()
 
+        # Use provided project_config or try to get from project config as fallback
+        if project_config is None:
+            try:
+                # Get project configuration from config manager
+                from ..config import ConfigManager
+
+                config_manager = ConfigManager.create_with_backtrack()
+                config = config_manager.load()
+
+                # Get container configuration if available
+                if hasattr(config, "project_containers") and config.project_containers:
+                    project_config = config.project_containers
+                else:
+                    # Generate project configuration from current working directory
+                    from pathlib import Path
+
+                    project_root = Path.cwd()
+                    project_config = self._generate_container_names(project_root)
+            except Exception:
+                raise ValueError(
+                    "Project configuration is required. Run project setup first."
+                )
+
+        if not project_config:
+            raise ValueError(
+                "Project containers not configured. Run project setup first."
+            )
+
         # Use adaptive timeout if default timeout is requested
         if timeout == 120:  # Default timeout
-            timeout = self.get_adaptive_timeout(timeout)
+            timeout = self.get_adaptive_timeout(
+                project_config, required_services, timeout
+            )
 
         self.console.print(f"Waiting for services to be ready (timeout: {timeout}s)...")
 
@@ -1572,9 +2507,10 @@ class DockerManager:
                     current_status[service_name] = status_detail
 
                 elif service_name == "data-cleaner":
-                    # Check data-cleaner service with HTTP health check on port 8091
+                    # Check data-cleaner service with HTTP health check using project-specific port
                     try:
-                        response = requests.get("http://localhost:8091/", timeout=5)
+                        data_cleaner_url = self._get_service_url("data-cleaner")
+                        response = requests.get(f"{data_cleaner_url}/", timeout=5)
                         if response.status_code == 200:
                             services_healthy[service_name] = True
                             current_status[service_name] = "ready"
@@ -1701,7 +2637,7 @@ class DockerManager:
         # Show container logs for debugging
         for service in required_services:
             if current_status.get(service) != "ready":
-                logs = self.get_container_logs(service, lines=10)
+                logs = self.get_container_logs(service, project_config, lines=10)
                 if logs.strip():
                     self.console.print(
                         f"\n{service} container logs (last 10 lines):", style="red"
@@ -1710,11 +2646,16 @@ class DockerManager:
 
         return False
 
-    def get_container_logs(self, service: str, lines: int = 50) -> str:
+    def get_container_logs(
+        self,
+        service: str,
+        project_config: Dict[str, str],
+        lines: int = 50,
+    ) -> str:
         """Get recent container logs for debugging startup issues."""
         import subprocess
 
-        container_name = self.get_container_name(service)
+        container_name = self.get_container_name(service, project_config)
 
         # Detect container engine (podman or docker)
         container_engine = (
@@ -1741,13 +2682,58 @@ class DockerManager:
         except Exception as e:
             return f"Error getting logs: {e}"
 
-    def get_container_name(self, service: str) -> str:
-        """Get the global container name for a given service."""
-        return f"code-indexer-{service}"
+    def get_container_name(self, service: str, project_config) -> str:
+        """Get the project-specific container name for a given service."""
+        # Handle both dictionary and Pydantic object inputs
+        if hasattr(project_config, "__dict__"):  # Pydantic object
+            service_name_map = {
+                "qdrant": getattr(project_config, "qdrant_name", None),
+                "ollama": getattr(project_config, "ollama_name", None),
+                "data-cleaner": getattr(project_config, "data_cleaner_name", None),
+            }
+        else:  # Dictionary
+            service_name_map = {
+                "qdrant": project_config.get("qdrant_name"),
+                "ollama": project_config.get("ollama_name"),
+                "data-cleaner": project_config.get("data_cleaner_name"),
+            }
+
+        if service not in service_name_map:
+            raise ValueError(f"Unknown service: {service}")
+
+        container_name = service_name_map[service]
+        if not container_name:
+            raise ValueError(f"No container name configured for service: {service}")
+
+        return str(container_name)
 
     def get_network_name(self) -> str:
-        """Get the global network name."""
-        return "code-indexer-global"
+        """Get the project-specific network name."""
+        try:
+            # Get project configuration from config manager
+            from ..config import ConfigManager
+
+            config_manager = ConfigManager.create_with_backtrack()
+            project_config = config_manager.load()
+
+            # Get container configuration if available
+            if (
+                hasattr(project_config, "project_containers")
+                and project_config.project_containers
+            ):
+                project_hash = getattr(
+                    project_config.project_containers, "project_hash", "unknown"
+                )
+            else:
+                # Generate project hash from current working directory
+                from pathlib import Path
+
+                project_root = Path.cwd()
+                project_hash = self._generate_project_hash(project_root)
+        except Exception:
+            project_hash = "unknown"
+
+        return f"cidx-{project_hash}-network"
 
     def stop(self) -> bool:
         """Stop all services."""
@@ -1779,15 +2765,37 @@ class DockerManager:
         except (requests.exceptions.RequestException, Exception):
             qdrant_running = False
 
-        # Return status in format expected by tests (using global container names)
+        # Return status using project-specific container names
+        try:
+            # Get project configuration from config manager
+            from ..config import ConfigManager
+
+            config_manager = ConfigManager.create_with_backtrack()
+            project_config = config_manager.load()
+
+            # Get container configuration if available
+            if (
+                hasattr(project_config, "project_containers")
+                and project_config.project_containers
+            ):
+                project_containers = project_config.project_containers
+                ollama_name = getattr(project_containers, "ollama_name", "unknown")
+                qdrant_name = getattr(project_containers, "qdrant_name", "unknown")
+            else:
+                ollama_name = "unknown"
+                qdrant_name = "unknown"
+        except Exception:
+            ollama_name = "unknown"
+            qdrant_name = "unknown"
+
         return {
             "ollama": {
                 "running": ollama_running,
-                "name": "code-indexer-ollama",  # Global container name
+                "name": ollama_name,
             },
             "qdrant": {
                 "running": qdrant_running,
-                "name": "code-indexer-qdrant",  # Global container name
+                "name": qdrant_name,
             },
         }
 
@@ -1944,19 +2952,35 @@ class DockerManager:
                         )
                     )
 
-                    container_names = [
-                        self.get_container_name("ollama"),
-                        self.get_container_name("qdrant"),
-                        self.get_container_name("data-cleaner"),
-                    ]
-                    required_ports = [6333, 11434, 8091]  # Qdrant, Ollama, DataCleaner
-
-                    # Wait for complete cleanup with intelligent timeout
-                    validation_success = self.health_checker.wait_for_cleanup_complete(
-                        container_names=container_names,
-                        ports=required_ports,
-                        container_engine=container_engine,
-                        timeout=None,  # Use engine-optimized timeout
+                    # Find all cidx containers for validation
+                    list_cmd = [container_engine, "ps", "-a", "--format", "{{.Names}}"]
+                    try:
+                        list_result = subprocess.run(
+                            list_cmd, capture_output=True, text=True, timeout=10
+                        )
+                        if list_result.returncode == 0:
+                            all_containers = (
+                                list_result.stdout.strip().split("\n")
+                                if list_result.stdout.strip()
+                                else []
+                            )
+                            container_names = [
+                                name
+                                for name in all_containers
+                                if name.startswith("cidx-")
+                            ]
+                        else:
+                            container_names = []
+                    except Exception:
+                        container_names = []
+                    # For general cleanup, we only validate container removal, not specific ports
+                    # since different projects use different port ranges
+                    validation_success = (
+                        self.health_checker.wait_for_containers_stopped(
+                            container_names=container_names,
+                            container_engine=container_engine,
+                            timeout=None,  # Use engine-optimized timeout
+                        )
                     )
 
                     if not validation_success and verbose:
@@ -1988,17 +3012,41 @@ class DockerManager:
             return False
 
     def _force_cleanup_containers(self, verbose: bool = False) -> bool:
-        """Force cleanup containers that won't stop gracefully."""
+        """Force cleanup all cidx containers system-wide."""
         import subprocess
 
         success = True
         container_engine = "docker" if self.force_docker else "podman"
 
-        # Get container names for this project
-        container_names = [
-            self.get_container_name("ollama"),
-            self.get_container_name("qdrant"),
-        ]
+        # Find all cidx containers system-wide
+        try:
+            list_cmd = [container_engine, "ps", "-a", "--format", "{{.Names}}"]
+            result = subprocess.run(
+                list_cmd, capture_output=True, text=True, timeout=10
+            )
+
+            if result.returncode != 0:
+                if verbose:
+                    self.console.print(
+                        f"❌ Failed to list containers: {result.stderr}", style="red"
+                    )
+                return False
+
+            # Filter for cidx containers
+            all_containers = (
+                result.stdout.strip().split("\n") if result.stdout.strip() else []
+            )
+            container_names = [
+                name for name in all_containers if name.startswith("cidx-")
+            ]
+
+            if verbose and container_names:
+                self.console.print(f"🔍 Found cidx containers: {container_names}")
+
+        except Exception as e:
+            if verbose:
+                self.console.print(f"❌ Error listing containers: {e}", style="red")
+            return False
 
         for container_name in container_names:
             try:
@@ -2149,10 +3197,26 @@ class DockerManager:
 
         # Check that containers are actually gone
         container_engine = "docker" if self.force_docker else "podman"
-        container_names = [
-            self.get_container_name("ollama"),
-            self.get_container_name("qdrant"),
-        ]
+
+        # Find all cidx containers for validation
+        list_cmd = [container_engine, "ps", "-a", "--format", "{{.Names}}"]
+        try:
+            list_result = subprocess.run(
+                list_cmd, capture_output=True, text=True, timeout=10
+            )
+            if list_result.returncode == 0:
+                all_containers = (
+                    list_result.stdout.strip().split("\n")
+                    if list_result.stdout.strip()
+                    else []
+                )
+                container_names = [
+                    name for name in all_containers if name.startswith("cidx-")
+                ]
+            else:
+                container_names = []
+        except Exception:
+            container_names = []
 
         for container_name in container_names:
             try:
@@ -2443,19 +3507,26 @@ class DockerManager:
         return success
 
     def _build_ollama_service(
-        self, local_docker_dir: Path, network_name: str
+        self, local_docker_dir: Path, network_name: str, project_config: Dict[str, str]
     ) -> Dict[str, Any]:
         """Build Ollama service configuration."""
-        ollama_port = self._get_service_port("ollama", 11434)
+        # Use dynamically allocated port from project_config
+        if "ollama_port" not in project_config or not project_config["ollama_port"]:
+            raise ValueError(
+                "Dynamic port allocation required: ollama_port missing from project_config"
+            )
+        ollama_port = int(project_config["ollama_port"])
 
         return {
             "build": {
                 "context": str(local_docker_dir.absolute()),
                 "dockerfile": "Dockerfile.ollama",
             },
-            "container_name": self.get_container_name("ollama"),
+            "container_name": self.get_container_name("ollama", project_config),
             "ports": [f"0.0.0.0:{ollama_port}:11434"],
-            "volumes": ["ollama_data:/home/ollama/.ollama"],
+            "volumes": [
+                "ollama_data:/home/ollama/.ollama",
+            ],
             "restart": "unless-stopped",
             "networks": [network_name],
             "environment": self._get_ollama_environment(),
@@ -2469,19 +3540,42 @@ class DockerManager:
         }
 
     def _build_qdrant_service(
-        self, local_docker_dir: Path, network_name: str
+        self,
+        local_docker_dir: Path,
+        network_name: str,
+        project_root: Path,
+        project_config: Dict[str, str],
     ) -> Dict[str, Any]:
-        """Build Qdrant service configuration."""
-        qdrant_port = self._get_service_port("qdrant", 6333)
+        """
+        Build Qdrant service configuration with project-local storage.
+
+        Stores all Qdrant data within the project directory for true isolation.
+        """
+        # Use dynamically allocated port from project_config
+        if "qdrant_port" not in project_config or not project_config["qdrant_port"]:
+            raise ValueError(
+                "Dynamic port allocation required: qdrant_port missing from project_config"
+            )
+        qdrant_port = int(project_config["qdrant_port"])
+
+        # Project-local Qdrant storage
+        project_qdrant_dir = project_root / ".code-indexer" / "qdrant"
+
+        # Ensure project Qdrant directory exists
+        project_qdrant_dir.mkdir(parents=True, exist_ok=True)
+
+        volumes = [
+            f"{project_qdrant_dir}:/qdrant/storage",  # All Qdrant data stored locally in project
+        ]
 
         return {
             "build": {
                 "context": str(local_docker_dir.absolute()),
                 "dockerfile": "Dockerfile.qdrant",
             },
-            "container_name": self.get_container_name("qdrant"),
+            "container_name": self.get_container_name("qdrant", project_config),
             "ports": [f"0.0.0.0:{qdrant_port}:6333"],
-            "volumes": ["qdrant_data:/qdrant/storage"],
+            "volumes": volumes,
             "environment": [
                 "QDRANT_ALLOW_ANONYMOUS_READ=true",
                 "QDRANT_CLUSTER__ENABLED=false",
@@ -2501,20 +3595,43 @@ class DockerManager:
         self,
         local_docker_dir: Path,
         network_name: str,
+        project_root: Path,
+        project_config: Dict[str, str],
         include_ollama_volumes: bool = True,
     ) -> Dict[str, Any]:
         """Build data cleaner service configuration."""
-        volumes = ["qdrant_data:/data/qdrant"]
+        # Use dynamically allocated port from project_config
+        if (
+            "data_cleaner_port" not in project_config
+            or not project_config["data_cleaner_port"]
+        ):
+            raise ValueError(
+                "Dynamic port allocation required: data_cleaner_port missing from project_config"
+            )
+        data_cleaner_port = int(project_config["data_cleaner_port"])
+
+        # Project-local data cleaner configuration - access project Qdrant storage directly
+        project_qdrant_dir = project_root / ".code-indexer" / "qdrant"
+
+        # Ensure project Qdrant directory exists
+        project_qdrant_dir.mkdir(parents=True, exist_ok=True)
+
+        volumes = [
+            f"{project_qdrant_dir}:/data/qdrant",  # Direct access to project Qdrant data
+        ]
+
         if include_ollama_volumes:
-            volumes.append("ollama_data:/data/ollama")
+            ollama_storage_dir = Path.home() / ".ollama_storage"
+            ollama_storage_dir.mkdir(exist_ok=True)
+            volumes.append(f"{ollama_storage_dir}:/data/ollama")
 
         return {
             "build": {
                 "context": str(local_docker_dir.absolute()),
                 "dockerfile": "Dockerfile.cleaner",
             },
-            "container_name": self.get_container_name("data-cleaner"),
-            "ports": ["0.0.0.0:8091:8091"],
+            "container_name": self.get_container_name("data-cleaner", project_config),
+            "ports": [f"0.0.0.0:{data_cleaner_port}:8091"],
             "volumes": volumes,
             "privileged": True,
             "restart": "unless-stopped",
@@ -2529,14 +3646,17 @@ class DockerManager:
         }
 
     def generate_compose_config(
-        self, data_dir: Path = Path(".code-indexer")
+        self,
+        project_root: Path,
+        project_config: Dict[str, str],
+        data_dir: Path = Path(".code-indexer"),
     ) -> Dict[str, Any]:
         """Generate Docker Compose configuration for required services only."""
         # Determine which services are required
         required_services = self.get_required_services()
 
-        # Single global network for all services
-        network_name = "code-indexer-global"
+        # Project-specific network
+        network_name = self.get_network_name()
 
         # Prepare Dockerfiles
         import shutil
@@ -2567,18 +3687,20 @@ class DockerManager:
         compose_config = {
             "services": {},
             "networks": {network_name: {"name": network_name}},
-            "volumes": {"qdrant_data": {"driver": "local"}},
+            "volumes": {
+                "qdrant_metadata": {"driver": "local"}
+            },  # For qdrant metadata only
         }
 
         # Add services based on requirements
         if "qdrant" in required_services:
             compose_config["services"]["qdrant"] = self._build_qdrant_service(
-                local_docker_dir, network_name
+                local_docker_dir, network_name, project_root, project_config
             )
 
         if "ollama" in required_services:
             compose_config["services"]["ollama"] = self._build_ollama_service(
-                local_docker_dir, network_name
+                local_docker_dir, network_name, project_config
             )
             # Only include ollama volumes if ollama is required
             compose_config["volumes"]["ollama_data"] = {"driver": "local"}
@@ -2587,7 +3709,11 @@ class DockerManager:
             # Include ollama volumes in data-cleaner only if ollama service is required
             include_ollama_volumes = "ollama" in required_services
             compose_config["services"]["data-cleaner"] = self._build_cleaner_service(
-                local_docker_dir, network_name, include_ollama_volumes
+                local_docker_dir,
+                network_name,
+                project_root,
+                project_config,
+                include_ollama_volumes,
             )
 
         return compose_config
@@ -2647,10 +3773,52 @@ class DockerManager:
         except Exception:
             return False
 
-    def clean_with_data_cleaner(self, paths: List[str]) -> bool:
+    def clean_with_data_cleaner(
+        self, paths: List[str], project_config: Optional[Dict[str, str]] = None
+    ) -> bool:
         """Use the data cleaner service to remove root-owned files."""
         try:
-            container_name = self.get_container_name("data-cleaner")
+            # For new mode, require project configuration
+            if project_config:
+                container_name = self.get_container_name("data-cleaner", project_config)
+            else:
+                # Fallback: search for any cidx data-cleaner container
+                import subprocess
+
+                container_engine = "docker" if self.force_docker else "podman"
+                list_cmd = [container_engine, "ps", "--format", "{{.Names}}"]
+                try:
+                    list_result = subprocess.run(
+                        list_cmd, capture_output=True, text=True, timeout=10
+                    )
+                    if list_result.returncode == 0:
+                        all_containers = (
+                            list_result.stdout.strip().split("\n")
+                            if list_result.stdout.strip()
+                            else []
+                        )
+                        data_cleaner_containers = [
+                            name
+                            for name in all_containers
+                            if "data-cleaner" in name and name.startswith("cidx-")
+                        ]
+                        if data_cleaner_containers:
+                            container_name = data_cleaner_containers[
+                                0
+                            ]  # Use first found
+                        else:
+                            self.console.print(
+                                "❌ No data-cleaner container found", style="red"
+                            )
+                            return False
+                    else:
+                        self.console.print("❌ Failed to list containers", style="red")
+                        return False
+                except Exception as e:
+                    self.console.print(
+                        f"❌ Error finding data-cleaner container: {e}", style="red"
+                    )
+                    return False
 
             # Detect container engine (podman or docker)
             container_engine = (
@@ -2683,8 +3851,14 @@ class DockerManager:
                     return False
 
             # Always wait for the data cleaner service to be ready (for reliability)
+            # Get data cleaner URL using the same method as health checks (NO FALLBACK PORTS!)
+            data_cleaner_url = self._get_service_url("data-cleaner")
+            if not data_cleaner_url:
+                raise RuntimeError(
+                    "Cannot determine data cleaner port - no project configuration found"
+                )
             data_cleaner_ready = self.health_checker.wait_for_service_ready(
-                "http://localhost:8091",  # Data cleaner root endpoint
+                data_cleaner_url,  # Data cleaner root endpoint
                 timeout=self.health_checker.get_timeouts().get(
                     "data_cleaner_startup", 60
                 ),
@@ -2786,6 +3960,201 @@ class DockerManager:
         env_vars.append(f"OLLAMA_MAX_QUEUE={max_queue}")
 
         return env_vars
+
+    def _ensure_all_mount_paths_exist(
+        self, project_root: Path, required_services: List[str]
+    ) -> None:
+        """Ensure ALL mount directories exist before starting containers.
+
+        This prevents container startup failures due to missing mount paths.
+        """
+        mount_paths_to_create = []
+
+        # Qdrant mount path (used by both qdrant and data-cleaner)
+        qdrant_mount_path = project_root / ".code-indexer" / "qdrant"
+        mount_paths_to_create.append(qdrant_mount_path)
+
+        # Ollama mount path (global, used if ollama service is required)
+        if "ollama" in required_services:
+            ollama_mount_path = Path.home() / ".ollama_storage"
+            mount_paths_to_create.append(ollama_mount_path)
+
+        # Docker context directory (for Dockerfiles)
+        docker_context_path = project_root / ".code-indexer" / "docker"
+        mount_paths_to_create.append(docker_context_path)
+
+        # Create all mount directories
+        for mount_path in mount_paths_to_create:
+            mount_path.mkdir(parents=True, exist_ok=True)
+            self.console.print(f"📁 Ensured mount path exists: {mount_path}")
+
+    def _attempt_start_with_ports(
+        self,
+        required_services: List[str],
+        project_config: Dict[str, str],
+        project_root: Path,
+        recreate: bool,
+        existing_ports: Optional[Dict[str, int]] = None,
+    ) -> bool:
+        """Attempt to start services with the given port configuration."""
+        try:
+            # ===============================================================================
+            # STEP 3: PORT SYNCHRONIZATION - THE CRITICAL FIX
+            # ===============================================================================
+            # Problem: Previously config was updated AFTER containers started, causing
+            # health checks to fail because they used stale ports while containers used new ones.
+            #
+            # Solution: Update config BEFORE containers start, ensuring perfect synchronization:
+            # 1. Extract calculated ports from project_config
+            # 2. Write ports to disk config file (for persistence)
+            # 3. Update in-memory config (for immediate health checks)
+            # 4. Start containers with same ports
+            # 5. Health checks read from updated in-memory config -> SUCCESS!
+            # ===============================================================================
+
+            # Use existing ports if provided, otherwise extract from project_config
+            if existing_ports:
+                project_config_ports = existing_ports
+            else:
+                # Extract the allocated ports from project_config (calculated in previous step)
+                project_config_ports = {}
+                if "qdrant_port" in project_config:
+                    project_config_ports["qdrant_port"] = int(
+                        project_config["qdrant_port"]
+                    )
+                if "ollama_port" in project_config:
+                    project_config_ports["ollama_port"] = int(
+                        project_config["ollama_port"]
+                    )
+                if "data_cleaner_port" in project_config:
+                    project_config_ports["data_cleaner_port"] = int(
+                        project_config["data_cleaner_port"]
+                    )
+
+            # STEP 3A: Update configuration file on disk
+            # This ensures persistence across restarts and allows external tools to see current ports
+            self._update_config_with_ports(project_root, project_config_ports)
+
+            # STEP 3B: Reload config to ensure health checks use updated ports
+            # This ensures health checks read from the updated project configuration
+            from ..config import ConfigManager
+
+            config_manager = ConfigManager.create_with_backtrack(project_root)
+            updated_config = config_manager.load()
+
+            # Update health checker with new config
+            self.health_checker = HealthChecker(config_manager=updated_config)
+
+            # Generate compose configuration with the allocated ports
+            # Use the fixed project_config_ports instead of original project_config
+            # Convert ports to strings for compatibility
+            string_ports = {k: str(v) for k, v in project_config_ports.items()}
+            fixed_project_config = {**project_config, **string_ports}
+            compose_config = self.generate_compose_config(
+                project_root=project_root, project_config=fixed_project_config
+            )
+
+            # Write compose file
+            with open(self.compose_file, "w") as f:
+                yaml.dump(compose_config, f, default_flow_style=False)
+
+            # Start services using docker compose
+            compose_cmd = self.get_compose_command()
+
+            start_cmd = compose_cmd + [
+                "-f",
+                str(self.compose_file),
+                "-p",
+                self.project_name,
+                "up",
+                "-d",
+            ]
+
+            if recreate:
+                start_cmd.append("--force-recreate")
+
+            # Only start required services
+            start_cmd.extend(required_services)
+
+            self.console.print("🚀 Starting Docker services...")
+            result = subprocess.run(
+                start_cmd, capture_output=True, text=True, timeout=180
+            )
+
+            if result.returncode != 0:
+                # Check if failure is due to port conflicts
+                if "bind: address already in use" in result.stderr:
+                    self.console.print(
+                        "⚠️  Port conflict detected, will retry with different ports"
+                    )
+                    return False
+                else:
+                    # Other error - re-raise
+                    self.console.print(f"❌ Failed to start services: {result.stderr}")
+                    raise RuntimeError(f"Service start failed: {result.stderr}")
+
+            # Verify services are actually running and healthy
+            return self.wait_for_services(timeout=120)
+
+        except subprocess.TimeoutExpired:
+            self.console.print("❌ Service startup timed out")
+            return False
+        except Exception as e:
+            self.console.print(f"❌ Error starting services: {e}")
+            return False
+
+    def _update_config_with_ports(
+        self, project_root: Path, allocated_ports: Dict[str, int]
+    ) -> None:
+        """Update the project configuration file with the allocated ports."""
+        try:
+            # First try the standard project config location
+            config_path = project_root / ".code-indexer" / "config.json"
+
+            # NOTE: Simplified config update without main_config dependency
+            # Each project has its own isolated configuration
+
+            if config_path.exists():
+                # Read current config
+                import json
+
+                with open(config_path, "r") as f:
+                    config_data = json.load(f)
+
+                # Update ports section (only update ports that are provided)
+                if "project_ports" not in config_data:
+                    config_data["project_ports"] = {}
+
+                # Update only the ports that are provided
+                for port_key, port_value in allocated_ports.items():
+                    config_data["project_ports"][port_key] = port_value
+
+                # Also update the qdrant host URL to reflect the new port
+                if "qdrant" in config_data:
+                    config_data["qdrant"][
+                        "host"
+                    ] = f"http://localhost:{allocated_ports['qdrant_port']}"
+
+                # Also update ollama host URL if present and if ollama port is allocated
+                if "ollama" in config_data and "ollama_port" in allocated_ports:
+                    config_data["ollama"][
+                        "host"
+                    ] = f"http://localhost:{allocated_ports['ollama_port']}"
+
+                # Write updated config
+                with open(config_path, "w") as f:
+                    json.dump(config_data, f, indent=2)
+
+                # NOTE: Config is now loaded per-project on-demand, eliminating need for in-memory updates
+
+                self.console.print(
+                    f"📝 Updated configuration with ports: {allocated_ports}"
+                )
+            else:
+                self.console.print("⚠️  Configuration file not found, ports not saved")
+
+        except Exception as e:
+            self.console.print(f"⚠️  Failed to update configuration with ports: {e}")
 
 
 def get_global_compose_file_path(force_docker: bool = False) -> Path:

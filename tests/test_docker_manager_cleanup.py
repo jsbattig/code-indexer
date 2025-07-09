@@ -6,11 +6,13 @@ Tests the individual cleanup methods in isolation to ensure they work correctly.
 
 import os
 import subprocess
-import tempfile
 import shutil
 from pathlib import Path
+import uuid
 from unittest.mock import Mock, patch
 import pytest
+
+from .conftest import get_local_tmp_dir, local_temporary_directory
 from rich.console import Console
 
 from code_indexer.services.docker_manager import DockerManager
@@ -29,17 +31,18 @@ class TestDockerManagerCleanup:
         """Create a DockerManager instance for testing"""
         with patch("code_indexer.services.docker_manager.Path.cwd") as mock_cwd:
             # Mock current working directory to avoid real filesystem dependencies
-            mock_cwd.return_value = Path("/tmp/test")
+            mock_cwd.return_value = Path(str(get_local_tmp_dir() / "test"))
 
             manager = DockerManager(
-                console=mock_console, project_name="test_project", force_docker=False
+                console=mock_console, project_name="test_shared", force_docker=False
             )
             return manager
 
     @pytest.fixture
     def temp_directory(self):
         """Create a temporary directory for testing"""
-        temp_dir = Path(tempfile.mkdtemp())
+        temp_dir = Path(str(get_local_tmp_dir() / f"test_{uuid.uuid4().hex[:8]}"))
+        temp_dir.mkdir(parents=True, exist_ok=True)
         yield temp_dir
         # Clean up after test
         if temp_dir.exists():
@@ -48,14 +51,24 @@ class TestDockerManagerCleanup:
     def test_force_cleanup_containers_success(self, docker_manager, mock_console):
         """Test successful force cleanup of containers"""
         with patch("subprocess.run") as mock_run:
-            # Mock successful container cleanup
-            mock_run.return_value = Mock(returncode=0, stdout="", stderr="")
+            # Mock container listing showing 2 containers
+            mock_run.side_effect = [
+                Mock(
+                    returncode=0,
+                    stdout="cidx-abc123-ollama\ncidx-abc123-qdrant\n",
+                    stderr="",
+                ),  # List command
+                Mock(returncode=0, stdout="", stderr=""),  # Kill container 1
+                Mock(returncode=0, stdout="", stderr=""),  # Remove container 1
+                Mock(returncode=0, stdout="", stderr=""),  # Kill container 2
+                Mock(returncode=0, stdout="", stderr=""),  # Remove container 2
+            ]
 
             result = docker_manager._force_cleanup_containers(verbose=True)
 
             assert result is True
-            # Should have called kill and rm for both containers
-            assert mock_run.call_count == 4  # 2 containers × 2 commands each
+            # Should have called list + kill and rm for both containers
+            assert mock_run.call_count == 5  # 1 list + 2 containers × 2 commands each
 
             # Check console output
             mock_console.print.assert_called()
@@ -267,15 +280,23 @@ class TestDockerManagerCleanup:
 
     def test_container_name_generation(self, docker_manager):
         """Test container name generation"""
-        # Test normal mode - global containers with standard naming
-        name = docker_manager.get_container_name("ollama")
-        assert name == "code-indexer-ollama"
+        # Test project-specific container naming
+        with local_temporary_directory() as temp_dir:
+            test_dir = Path(temp_dir) / "test-project"
+            test_dir.mkdir()
+            project_config = docker_manager._generate_container_names(test_dir)
 
-        name = docker_manager.get_container_name("qdrant")
-        assert name == "code-indexer-qdrant"
+            name = docker_manager.get_container_name("ollama", project_config)
+            assert name.startswith("cidx-")
+            assert name.endswith("-ollama")
 
-        name = docker_manager.get_container_name("data-cleaner")
-        assert name == "code-indexer-data-cleaner"
+            name = docker_manager.get_container_name("qdrant", project_config)
+            assert name.startswith("cidx-")
+            assert name.endswith("-qdrant")
+
+            name = docker_manager.get_container_name("data-cleaner", project_config)
+            assert name.startswith("cidx-")
+            assert name.endswith("-data-cleaner")
 
     def test_verbose_output_generation(
         self, docker_manager, mock_console, temp_directory
@@ -302,7 +323,7 @@ class TestCleanupErrorHandling:
     def docker_manager(self):
         """Create a DockerManager instance for error testing"""
         return DockerManager(
-            console=Mock(spec=Console), project_name="test_project", force_docker=False
+            console=Mock(spec=Console), project_name="test_shared", force_docker=False
         )
 
     def test_subprocess_timeout_handling(self, docker_manager):

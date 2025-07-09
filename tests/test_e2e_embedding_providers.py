@@ -7,9 +7,9 @@ They will skip gracefully if tokens are not configured.
 
 import os
 import pytest
-import tempfile
 import shutil
 from pathlib import Path
+
 from rich.console import Console
 
 from code_indexer.config import Config, ConfigManager
@@ -41,9 +41,14 @@ class TestVoyageAIRealAPI:
     @pytest.fixture
     def temp_config_dir(self):
         """Create a temporary directory for configuration."""
-        temp_dir = tempfile.mkdtemp()
-        yield Path(temp_dir)
-        shutil.rmtree(temp_dir)
+        # Use shared test directory to avoid creating multiple container sets
+        temp_dir = Path.home() / ".tmp" / "shared_test_containers"
+        # Clean and recreate for test isolation
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        yield temp_dir
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
     @pytest.fixture
     def voyage_config(self, temp_config_dir):
@@ -169,9 +174,14 @@ class TestE2EProviderSwitching:
     @pytest.fixture
     def temp_config_dir(self):
         """Create a temporary directory for configuration."""
-        temp_dir = tempfile.mkdtemp()
-        yield Path(temp_dir)
-        shutil.rmtree(temp_dir)
+        # Use shared test directory to avoid creating multiple container sets
+        temp_dir = Path.home() / ".tmp" / "shared_test_containers"
+        # Clean and recreate for test isolation
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        yield temp_dir
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
     @pytest.fixture
     def mock_qdrant_config(self, temp_config_dir):
@@ -181,7 +191,7 @@ class TestE2EProviderSwitching:
 
         config = Config()
         config.qdrant.host = "http://localhost:6333"
-        config.qdrant.collection = "test_e2e_collection"
+        config.qdrant.collection_base_name = "test_e2e_collection"
         config.qdrant.vector_size = 1024  # VoyageAI dimensions
 
         # Register collection for cleanup
@@ -245,9 +255,14 @@ class TestE2EQdrantIntegration:
     @pytest.fixture
     def temp_config_dir(self):
         """Create a temporary directory for configuration."""
-        temp_dir = tempfile.mkdtemp()
-        yield Path(temp_dir)
-        shutil.rmtree(temp_dir)
+        # Use shared test directory to avoid creating multiple container sets
+        temp_dir = Path.home() / ".tmp" / "shared_test_containers"
+        # Clean and recreate for test isolation
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        yield temp_dir
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
     @pytest.fixture
     def test_config(self, temp_config_dir):
@@ -257,7 +272,7 @@ class TestE2EQdrantIntegration:
 
         config = Config()
         config.qdrant.host = "http://localhost:6333"
-        config.qdrant.collection = "test_e2e_integration"
+        config.qdrant.collection_base_name = "test_e2e_integration"
         config.qdrant.vector_size = 1024
 
         # Register collection for cleanup
@@ -340,8 +355,15 @@ class TestE2EFullWorkflow:
     @pytest.fixture
     def temp_project_dir(self):
         """Create a temporary project directory with sample files."""
-        temp_dir = tempfile.mkdtemp()
+        # Use shared test directory to avoid creating multiple container sets
+        temp_dir = str(Path.home() / ".tmp" / "shared_test_containers")
+        # Clean and recreate for test isolation
+        temp_path = Path(temp_dir)
+        if temp_path.exists():
+            shutil.rmtree(temp_path)
+        temp_path.mkdir(parents=True)
         project_path = Path(temp_dir)
+        project_path.mkdir(parents=True, exist_ok=True)
 
         # Create sample code files
         (project_path / "main.py").write_text(
@@ -395,7 +417,7 @@ def validate_email(email):
         )
 
         yield project_path
-        shutil.rmtree(temp_dir)
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
     def test_voyage_ai_full_workflow(self, temp_project_dir, console):
         """Test complete workflow with VoyageAI if API key is available."""

@@ -1,6 +1,8 @@
 """Qdrant vector database client."""
 
+import shutil
 import time
+from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -18,7 +20,12 @@ from .embedding_factory import EmbeddingProviderFactory
 class QdrantClient:
     """Client for interacting with Qdrant vector database."""
 
-    def __init__(self, config: QdrantConfig, console: Optional[Console] = None):
+    def __init__(
+        self,
+        config: QdrantConfig,
+        console: Optional[Console] = None,
+        project_root: Optional[Path] = None,
+    ):
         self.config = config
         self.console = console or Console()
         self.client = httpx.Client(base_url=config.host, timeout=30.0)
@@ -26,6 +33,7 @@ class QdrantClient:
         self._migrator: Optional["QdrantMigrator"] = (
             None  # Lazy initialization to avoid circular imports
         )
+        self.project_root = project_root or Path.cwd()
 
     def health_check(self) -> bool:
         """Check if Qdrant service is accessible."""
@@ -38,7 +46,9 @@ class QdrantClient:
     def collection_exists(self, collection_name: Optional[str] = None) -> bool:
         """Check if collection exists."""
         collection = (
-            collection_name or self._current_collection_name or self.config.collection
+            collection_name
+            or self._current_collection_name
+            or self.config.collection_base_name
         )
         try:
             response = self.client.get(f"/collections/{collection}")
@@ -68,68 +78,46 @@ class QdrantClient:
     def create_collection(
         self, collection_name: Optional[str] = None, vector_size: Optional[int] = None
     ) -> bool:
-        """Create a new collection with optimized storage settings."""
-        collection = collection_name or self.config.collection
+        """Create a new collection with optimized direct approach."""
+        collection = collection_name or self.config.collection_base_name
         size = vector_size or self.config.vector_size
 
-        # Optimized collection configuration for storage efficiency
+        # Use direct approach (no CoW, no flush overhead)
+        return self._create_collection_direct(collection, size)
+
+    def _create_collection_direct(self, collection_name: str, vector_size: int) -> bool:
+        """Create collection directly without CoW (for templates)."""
         collection_config = {
             "vectors": {
-                "size": size,
+                "size": vector_size,
                 "distance": "Cosine",
-                # Use disk-based storage for large datasets
                 "on_disk": True,
             },
-            # Optimize indexing parameters for storage and performance
             "hnsw_config": {
-                # Use configured HNSW parameters for optimal performance
-                "m": self.config.hnsw_m,  # From config - better connectivity for large datasets
-                "ef_construct": self.config.hnsw_ef_construct,  # From config - better index quality
-                # Store vectors on disk to save memory
+                "m": self.config.hnsw_m,
+                "ef_construct": self.config.hnsw_ef_construct,
                 "on_disk": True,
             },
-            # Optimize storage settings
             "optimizers_config": {
-                # Lower memmap threshold to use disk sooner
-                "memmap_threshold": 20000,  # Default is 20000
-                # Enable indexing optimizations
-                "indexing_threshold": 10000,  # Default is 20000
-            },
-            # Quantization to reduce storage size (optional - reduces precision)
-            "quantization_config": {
-                "scalar": {
-                    "type": "int8",  # Use 8-bit integers instead of 32-bit floats
-                    "quantile": 0.99,
-                    "always_ram": False,  # Allow quantized vectors on disk
-                }
+                "memmap_threshold": 20000,
+                "indexing_threshold": 10000,
             },
         }
 
         try:
             response = self.client.put(
-                f"/collections/{collection}",
-                json=collection_config,
+                f"/collections/{collection_name}", json=collection_config
             )
-            response.raise_for_status()
+            if response.status_code not in [200, 201]:
+                self.console.print(
+                    f"Direct creation failed: {response.status_code} {response.text}",
+                    style="red",
+                )
+                return False
             return True
         except Exception as e:
-            self.console.print(
-                f"Failed to create collection {collection}: {e}", style="red"
-            )
-            # Fallback to basic collection if optimized creation fails
-            try:
-                basic_config = {"vectors": {"size": size, "distance": "Cosine"}}
-                response = self.client.put(
-                    f"/collections/{collection}",
-                    json=basic_config,
-                )
-                response.raise_for_status()
-                self.console.print(
-                    "⚠️  Created basic collection (optimization failed)", style="yellow"
-                )
-                return True
-            except Exception:
-                return False
+            self.console.print(f"Direct creation exception: {e}", style="red")
+            return False
 
     def create_collection_with_profile(
         self,
@@ -147,7 +135,7 @@ class QdrantClient:
         Returns:
             True if collection created successfully
         """
-        collection = collection_name or self.config.collection
+        collection = collection_name or self.config.collection_base_name
         size = vector_size or self.config.vector_size
 
         # Define HNSW profiles for different codebase sizes
@@ -227,7 +215,7 @@ class QdrantClient:
         Returns:
             True if recreation successful
         """
-        collection = collection_name or self.config.collection
+        collection = collection_name or self.config.collection_base_name
 
         if preserve_data:
             self.console.print(
@@ -246,18 +234,99 @@ class QdrantClient:
         return self.create_collection_with_profile(profile, collection)
 
     def delete_collection(self, collection_name: Optional[str] = None) -> bool:
-        """Delete a collection."""
-        collection = collection_name or self.config.collection
+        """Delete a collection and its CoW data storage."""
+        collection = collection_name or self.config.collection_base_name
+
         try:
+            # First cache the actual storage location before Qdrant deletion
+            actual_storage_path = self._get_cow_storage_path(collection)
+
+            # Delete via Qdrant API
             response = self.client.delete(f"/collections/{collection}")
-            return response.status_code in [200, 404]  # Success or already deleted
-        except Exception:
+            api_success = response.status_code in [
+                200,
+                404,
+            ]  # Success or already deleted
+
+            # Handle CoW storage cleanup using cached path
+            self._cleanup_cow_storage_with_path(collection, actual_storage_path)
+
+            return api_success
+        except Exception as e:
+            if self.console:
+                self.console.print(f"Delete collection failed: {e}", style="yellow")
             return False
+
+    def _get_cow_storage_path(self, collection_name: str) -> Optional[Path]:
+        """Get the actual storage path for a CoW collection before deletion.
+
+        Returns the resolved path if it's a symlink, or the direct path if it exists.
+        Returns None if the collection doesn't exist.
+        """
+        try:
+            global_collections_dir = Path.home() / ".qdrant_collections"
+            symlink_path = global_collections_dir / collection_name
+
+            if symlink_path.exists() or symlink_path.is_symlink():
+                if symlink_path.is_symlink():
+                    # Follow symlink to get actual storage location
+                    return symlink_path.resolve()
+                else:
+                    # Direct directory
+                    return symlink_path
+
+            return None
+        except Exception:
+            return None
+
+    def _cleanup_cow_storage_with_path(
+        self, collection_name: str, actual_storage_path: Optional[Path]
+    ) -> None:
+        """Clean up CoW storage using pre-cached storage path."""
+        try:
+            global_collections_dir = Path.home() / ".qdrant_collections"
+            symlink_path = global_collections_dir / collection_name
+
+            # Remove the symlink/directory from global collections dir
+            if symlink_path.exists() or symlink_path.is_symlink():
+                if symlink_path.is_symlink():
+                    symlink_path.unlink(missing_ok=True)
+                    if self.console:
+                        self.console.print(
+                            f"🗑️  Removed symlink: {symlink_path}", style="dim"
+                        )
+                else:
+                    if symlink_path.is_dir():
+                        shutil.rmtree(symlink_path, ignore_errors=True)
+                        if self.console:
+                            self.console.print(
+                                f"🗑️  Deleted collection directory: {symlink_path}",
+                                style="dim",
+                            )
+
+            # Delete the actual storage data using cached path
+            if actual_storage_path and actual_storage_path.exists():
+                if actual_storage_path.is_dir():
+                    shutil.rmtree(actual_storage_path, ignore_errors=True)
+                    if self.console:
+                        self.console.print(
+                            f"🗑️  Deleted CoW collection data: {actual_storage_path}",
+                            style="dim",
+                        )
+
+        except Exception as e:
+            if self.console:
+                self.console.print(
+                    f"Warning: CoW storage cleanup failed for {collection_name}: {e}",
+                    style="yellow",
+                )
 
     def clear_collection(self, collection_name: Optional[str] = None) -> bool:
         """Clear all points from collection."""
         collection = (
-            collection_name or self._current_collection_name or self.config.collection
+            collection_name
+            or self._current_collection_name
+            or self.config.collection_base_name
         )
         try:
             # Use the correct Qdrant API endpoint and method
@@ -389,10 +458,18 @@ class QdrantClient:
     def ensure_collection(
         self, collection_name: Optional[str] = None, vector_size: Optional[int] = None
     ) -> bool:
-        """Ensure collection exists, create if it doesn't."""
-        collection = collection_name or self.config.collection
+        """Ensure collection exists, create if it doesn't using CoW seeder approach."""
+        collection = collection_name or self.config.collection_base_name
 
-        if self.collection_exists(collection):
+        self.console.print(
+            f"🔍 Checking if collection exists: {collection}", style="blue"
+        )
+        collection_exists = self.collection_exists(collection)
+        self.console.print(
+            f"🔍 Collection exists result: {collection_exists}", style="blue"
+        )
+
+        if collection_exists:
             # Verify collection configuration matches expected settings
             try:
                 info = self.get_collection_info(collection)
@@ -406,7 +483,7 @@ class QdrantClient:
 
                 if actual_size and actual_size != expected_size:
                     self.console.print(
-                        f"⚠️  Collection vector size mismatch: expected {expected_size}, got {actual_size}",
+                        f"⚠️  Collection vector size mismatch: expected {expected_size}, got {expected_size}",
                         style="yellow",
                     )
                     self.console.print(
@@ -418,7 +495,272 @@ class QdrantClient:
                 pass
             return True
 
-        return self.create_collection(collection, vector_size)
+        self.console.print(
+            f"🚀 Creating collection with CoW: {collection}", style="blue"
+        )
+        return self._create_collection_with_cow(collection, vector_size)
+
+    def _create_collection_with_cow(
+        self, collection_name: str, vector_size: Optional[int] = None
+    ) -> bool:
+        """Create collection using post-creation CoW architecture."""
+        self.console.print(
+            f"🔧 CoW creation starting for: {collection_name}", style="cyan"
+        )
+
+        try:
+            # Step 1: Create collection normally (let Qdrant create real directory)
+            self.console.print("📦 Creating collection normally first", style="cyan")
+            collection_config = {
+                "vectors": {
+                    "size": vector_size or self.config.vector_size,
+                    "distance": "Cosine",
+                    "on_disk": True,
+                },
+                "hnsw_config": {
+                    "m": self.config.hnsw_m,
+                    "ef_construct": self.config.hnsw_ef_construct,
+                    "on_disk": True,
+                },
+                "optimizers_config": {
+                    "memmap_threshold": 20000,
+                    "indexing_threshold": 10000,
+                },
+            }
+
+            response = self.client.put(
+                f"/collections/{collection_name}", json=collection_config
+            )
+            if response.status_code not in [200, 201]:
+                self.console.print(
+                    f"❌ Collection creation failed: {response.status_code} {response.text}",
+                    style="red",
+                )
+                return False
+
+            # Step 2: Seed collection with one point if empty, then flush
+            self.console.print(
+                "💾 Seeding and flushing collection data to disk", style="cyan"
+            )
+
+            # Seed with one dummy point to ensure collection has data for proper flush
+            dummy_point = {
+                "points": [
+                    {
+                        "id": 999999,
+                        "vector": [0.0] * (vector_size or self.config.vector_size),
+                        "payload": {"dummy": True, "created_for_cow": True},
+                    }
+                ]
+            }
+            seed_response = self.client.put(
+                f"/collections/{collection_name}/points", json=dummy_point
+            )
+            if seed_response.status_code not in [200, 201]:
+                self.console.print(
+                    f"❌ Seeding failed: {seed_response.status_code} {seed_response.text}",
+                    style="red",
+                )
+                return False
+
+            # Flush is no longer needed and causes 404 errors - removed
+
+            # Add a small delay to let Qdrant settle
+            import time
+
+            time.sleep(1)
+
+            # Step 3: Define paths
+            local_collection_dir = (
+                self.project_root
+                / ".code-indexer"
+                / "qdrant_collection"
+                / collection_name
+            )
+            local_collection_dir.parent.mkdir(parents=True, exist_ok=True)
+
+            self.console.print(f"📁 Local dir: {local_collection_dir}", style="cyan")
+
+            # Step 4: Copy collection data to project-local directory via container
+            if not self._copy_collection_data_via_container(
+                collection_name, local_collection_dir
+            ):
+                return False
+
+            # Step 5: Skip symlink creation (no longer supported)
+            # Collections are now stored in folder structure, symlinks removed
+            self.console.print(
+                "🔗 Skipping symlink creation (using folder structure storage)",
+                style="yellow",
+            )
+
+            self.console.print(
+                f"✅ Collection {collection_name} created successfully",
+                style="green",
+            )
+            return True
+
+        except Exception as e:
+            self.console.print(f"CoW creation exception: {e}", style="red")
+            return False
+
+    def _get_container_runtime_and_name(self) -> Tuple[str, str]:
+        """Detect container runtime (docker/podman) and get container name."""
+        import subprocess
+
+        # Generate project-specific container name from project root
+        if self.project_root:
+            from code_indexer.services.docker_manager import DockerManager
+
+            docker_manager = DockerManager()
+            project_config = docker_manager._generate_container_names(self.project_root)
+            container_name = project_config.get("qdrant_name", "cidx-qdrant")
+        else:
+            container_name = "cidx-qdrant"
+
+        # Check if container exists in podman first
+        try:
+            result = subprocess.run(
+                ["podman", "container", "exists", container_name],
+                capture_output=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                return "podman", container_name
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        # Check if container exists in docker
+        try:
+            result = subprocess.run(
+                ["docker", "container", "inspect", container_name],
+                capture_output=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                return "docker", container_name
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        # Default to podman if nothing found
+        return "podman", container_name
+
+    def _copy_collection_data_via_container(
+        self, collection_name: str, target_dir: Path
+    ) -> bool:
+        """Copy collection data using container exec to avoid permission issues."""
+        import subprocess
+
+        try:
+            runtime, container_name = self._get_container_runtime_and_name()
+
+            # Ensure target directory exists on host
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+            # Convert target path to container mounted path (home directory is mounted as /home)
+            container_source = f"/qdrant/storage/collections/{collection_name}"
+            container_target = str(
+                target_dir
+            )  # Home dir is mounted so path should be accessible
+
+            self.console.print(f"📋 Copying data via {runtime} exec", style="cyan")
+            self.console.print(f"    Source: {container_source}", style="dim")
+            self.console.print(f"    Target: {container_target}", style="dim")
+
+            # Copy data from qdrant storage to target directory
+            # Use robust copying that handles empty directories
+            cmd = [
+                runtime,
+                "exec",
+                container_name,
+                "sh",
+                "-c",
+                f"if [ -d '{container_source}' ]; then cp -r {container_source}/* {container_target}/ 2>/dev/null || true; else echo 'Source collection does not exist'; fi",
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+
+            if result.returncode != 0:
+                self.console.print(
+                    f"❌ Failed to copy collection data: {result.stderr}", style="red"
+                )
+                self.console.print(f"    Command: {' '.join(cmd)}", style="red")
+                return False
+
+            self.console.print(
+                "✅ Collection data copied to project directory", style="green"
+            )
+            return True
+
+        except Exception as e:
+            self.console.print(f"❌ Container copy failed: {e}", style="red")
+            return False
+
+    def _replace_with_symlink_via_container(
+        self, collection_name: str, target_dir: Path
+    ) -> bool:
+        """Replace collection directory with symlink using container exec."""
+        import subprocess
+
+        try:
+            runtime, container_name = self._get_container_runtime_and_name()
+
+            container_collection_path = f"/qdrant/storage/collections/{collection_name}"
+            container_target = str(
+                target_dir
+            )  # Home dir is mounted so path should be accessible
+
+            self.console.print(f"🔗 Creating symlink via {runtime} exec", style="cyan")
+            self.console.print(
+                f"    Collection: {container_collection_path}", style="dim"
+            )
+            self.console.print(f"    Target: {container_target}", style="dim")
+
+            # Remove original directory and create symlink
+            cmd = [
+                runtime,
+                "exec",
+                container_name,
+                "sh",
+                "-c",
+                f"rm -rf {container_collection_path} && ln -s {container_target} {container_collection_path}",
+            ]
+
+            subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=15)
+
+            # Verify symlink was created correctly
+            verify_cmd = [
+                runtime,
+                "exec",
+                container_name,
+                "sh",
+                "-c",
+                f"ls -la {container_collection_path}",
+            ]
+
+            verify_result = subprocess.run(
+                verify_cmd, capture_output=True, text=True, timeout=10
+            )
+
+            if verify_result.returncode == 0 and "->" in verify_result.stdout:
+                self.console.print("✅ Symlink created successfully", style="green")
+                self.console.print(
+                    f"    Details: {verify_result.stdout.strip()}", style="dim"
+                )
+                return True
+            else:
+                self.console.print("❌ Symlink verification failed", style="red")
+                if verify_result.stderr:
+                    self.console.print(
+                        f"    Error: {verify_result.stderr}", style="red"
+                    )
+                return False
+
+        except Exception as e:
+            self.console.print(
+                f"❌ Container symlink creation failed: {e}", style="red"
+            )
+            return False
 
     def resolve_collection_name(
         self, config, embedding_provider: EmbeddingProvider
@@ -434,29 +776,13 @@ class QdrantClient:
         """
         qdrant_config = config.qdrant
 
-        # Use legacy naming if requested
-        if qdrant_config.use_legacy_collection_naming:
-            return str(qdrant_config.collection)
+        # Fixed collection name with only model as dynamic part
+        model_name = embedding_provider.get_current_model()
+        base_name = qdrant_config.collection_base_name
 
-        # Use provider-aware naming
-        if qdrant_config.use_provider_aware_collections:
-            provider_name = embedding_provider.get_provider_name()
-            model_name = embedding_provider.get_current_model()
-            base_name = qdrant_config.collection_base_name
-
-            # Generate project ID for collection isolation
-            project_id = EmbeddingProviderFactory.generate_project_id(
-                str(config.codebase_dir)
-            )
-
-            return str(
-                EmbeddingProviderFactory.generate_collection_name(
-                    base_name, provider_name, model_name, project_id
-                )
-            )
-
-        # Fallback to legacy collection name
-        return str(qdrant_config.collection)
+        # Simple: base_name + model_slug (no provider, no project hash)
+        model_slug = EmbeddingProviderFactory.generate_model_slug("", model_name)
+        return f"{base_name}_{model_slug}"
 
     def get_vector_size_for_provider(
         self, embedding_provider: EmbeddingProvider
@@ -523,7 +849,9 @@ class QdrantClient:
     ) -> bool:
         """Insert or update points in the collection with enhanced batch safety."""
         collection = (
-            collection_name or self._current_collection_name or self.config.collection
+            collection_name
+            or self._current_collection_name
+            or self.config.collection_base_name
         )
 
         try:
@@ -637,7 +965,9 @@ class QdrantClient:
     ) -> List[Dict[str, Any]]:
         """Search for similar vectors with HNSW optimization."""
         collection = (
-            collection_name or self._current_collection_name or self.config.collection
+            collection_name
+            or self._current_collection_name
+            or self.config.collection_base_name
         )
 
         search_params = {
@@ -834,7 +1164,7 @@ class QdrantClient:
         Returns:
             Number of points with the specified embedding model
         """
-        collection = collection_name or self.config.collection
+        collection = collection_name or self.config.collection_base_name
         model_filter = self.create_model_filter(embedding_model)
 
         try:
@@ -850,7 +1180,7 @@ class QdrantClient:
         self, filter_conditions: Dict[str, Any], collection_name: Optional[str] = None
     ) -> bool:
         """Delete points matching filter conditions."""
-        collection = collection_name or self.config.collection
+        collection = collection_name or self.config.collection_base_name
 
         try:
             response = self.client.post(
@@ -870,7 +1200,7 @@ class QdrantClient:
         self, collection_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """Get information about the collection."""
-        collection = collection_name or self.config.collection
+        collection = collection_name or self.config.collection_base_name
 
         try:
             response = self.client.get(f"/collections/{collection}")
@@ -883,7 +1213,7 @@ class QdrantClient:
         self, point_id: str, collection_name: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """Get a specific point by ID."""
-        collection = collection_name or self.config.collection
+        collection = collection_name or self.config.collection_base_name
 
         try:
             response = self.client.get(f"/collections/{collection}/points/{point_id}")
@@ -898,7 +1228,7 @@ class QdrantClient:
         self, point_ids: List[str], collection_name: Optional[str] = None
     ) -> int:
         """Delete specific points by IDs."""
-        collection = collection_name or self.config.collection
+        collection = collection_name or self.config.collection_base_name
 
         try:
             response = self.client.post(
@@ -917,7 +1247,7 @@ class QdrantClient:
         collection_name: Optional[str] = None,
     ) -> int:
         """Update payload fields for points matching filter conditions."""
-        collection = collection_name or self.config.collection
+        collection = collection_name or self.config.collection_base_name
 
         try:
             # First, find points matching the filter
@@ -970,7 +1300,7 @@ class QdrantClient:
         offset: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         """Scroll through points in collection with optional filtering."""
-        collection = collection_name or self.config.collection
+        collection = collection_name or self.config.collection_base_name
 
         try:
             request_data: Dict[str, Any] = {
@@ -1036,7 +1366,7 @@ class QdrantClient:
         This method searches content points where the current branch is NOT in the hidden_branches array,
         meaning the content is visible in the current branch.
         """
-        collection = collection_name or self.config.collection
+        collection = collection_name or self.config.collection_base_name
 
         # Build filter conditions for hidden_branches architecture
         # Content is visible if current branch is NOT in hidden_branches array
@@ -1062,7 +1392,7 @@ class QdrantClient:
 
     def count_points(self, collection_name: Optional[str] = None) -> int:
         """Count total points in collection."""
-        collection = collection_name or self.config.collection
+        collection = collection_name or self.config.collection_base_name
 
         try:
             response = self.client.post(
@@ -1077,7 +1407,7 @@ class QdrantClient:
         self, collection_name: Optional[str] = None
     ) -> Dict[str, Any]:
         """Get collection size information."""
-        collection = collection_name or self.config.collection
+        collection = collection_name or self.config.collection_base_name
 
         try:
             count = self.count_points(collection)
@@ -1106,7 +1436,9 @@ class QdrantClient:
     ) -> bool:
         """Efficiently update branch metadata for multiple files without reprocessing content."""
         collection = (
-            collection_name or self._current_collection_name or self.config.collection
+            collection_name
+            or self._current_collection_name
+            or self.config.collection_base_name
         )
 
         try:
@@ -1198,7 +1530,9 @@ class QdrantClient:
     ) -> bool:
         """Delete data associated with a specific branch, preserving files that exist in other branches."""
         collection = (
-            collection_name or self._current_collection_name or self.config.collection
+            collection_name
+            or self._current_collection_name
+            or self.config.collection_base_name
         )
 
         try:
@@ -1353,7 +1687,9 @@ class QdrantClient:
     ) -> List[Dict[str, Any]]:
         """List existing payload indexes."""
         collection = (
-            collection_name or self._current_collection_name or self.config.collection
+            collection_name
+            or self._current_collection_name
+            or self.config.collection_base_name
         )
 
         try:
@@ -1455,7 +1791,7 @@ class QdrantClient:
         Returns:
             True if collection is ready, False otherwise
         """
-        collection = collection_name or self.config.collection
+        collection = collection_name or self.config.collection_base_name
 
         # First ensure collection exists
         if not self.ensure_collection(collection, vector_size):
@@ -1474,7 +1810,7 @@ class QdrantClient:
         Returns:
             Dictionary with schema information
         """
-        collection = collection_name or self.config.collection
+        collection = collection_name or self.config.collection_base_name
 
         try:
             migrator = self._get_migrator()
@@ -1509,7 +1845,9 @@ class QdrantClient:
     def optimize_collection(self, collection_name: Optional[str] = None) -> bool:
         """Optimize collection storage by triggering Qdrant's optimization process."""
         collection = (
-            collection_name or self._current_collection_name or self.config.collection
+            collection_name
+            or self._current_collection_name
+            or self.config.collection_base_name
         )
         try:
             # Trigger collection optimization
@@ -1548,7 +1886,9 @@ class QdrantClient:
             True if flush succeeded, False otherwise
         """
         collection = (
-            collection_name or self._current_collection_name or self.config.collection
+            collection_name
+            or self._current_collection_name
+            or self.config.collection_base_name
         )
 
         try:

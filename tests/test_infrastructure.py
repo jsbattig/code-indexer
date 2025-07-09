@@ -43,7 +43,9 @@ class InfrastructureConfig:
 
     embedding_provider: EmbeddingProvider = EmbeddingProvider.VOYAGE_AI
     cleanup_strategy: CleanupStrategy = CleanupStrategy.CLEAN_DATA
-    service_timeout: int = 450  # Increased for collection recovery scenarios
+    service_timeout: int = (
+        120  # Reduced from 450s since we now do aggressive cleanup first
+    )
     status_timeout: int = 30
     init_timeout: int = 60
     cleanup_timeout: int = 60
@@ -70,6 +72,11 @@ class ServiceManager:
         timeout = timeout or self.config.status_timeout
 
         try:
+            # Small delay before status check to ensure config is updated
+            import time
+
+            time.sleep(0.5)
+
             result = subprocess.run(
                 self.config.cli_command_prefix + ["status"],
                 capture_output=True,
@@ -116,14 +123,46 @@ class ServiceManager:
         provider = embedding_provider or self.config.embedding_provider
 
         try:
-            # Check if services are already running globally (skip if force_recreate)
-            if not force_recreate and self.are_services_running():
-                # Services already running globally - use them
-                return True
+            # Check if we're running under full-automation.sh with shared services
+            import os
+
+            if os.getenv("FULL_AUTOMATION") == "1":
+                print(
+                    "🔗 Running under full-automation.sh - using shared test services"
+                )
+                # Try to use existing shared services instead of starting new ones
+                try:
+                    from code_indexer.config import ConfigManager
+                    from code_indexer.services.qdrant import QdrantClient
+
+                    config_manager = ConfigManager.create_with_backtrack()
+                    config = config_manager.load()
+                    qdrant_client = QdrantClient(config.qdrant)
+
+                    if qdrant_client.health_check():
+                        print("✅ Shared test services are accessible and healthy")
+                        return True
+                    else:
+                        print(
+                            "⚠️ Shared services not accessible, will start individual services"
+                        )
+                except Exception as e:
+                    print(
+                        f"⚠️ Could not connect to shared services: {e}, will start individual services"
+                    )
+
+            # AGGRESSIVE APPROACH: Always ensure services are properly started
+            # Skip the "already running" check since it's unreliable in test scenarios
+            # where multiple test contexts may interfere with each other
 
             # If force_recreate, clean up existing services first
             if force_recreate:
                 print("Force recreate requested, cleaning up existing services...")
+                # Emergency cleanup for force recreate situations
+                self.cleanup_excessive_test_volumes()
+                self.progressive_cleanup_test_images(
+                    max_images=10
+                )  # More aggressive cleanup
                 subprocess.run(
                     self.config.cli_command_prefix + ["uninstall"],
                     capture_output=True,
@@ -131,8 +170,8 @@ class ServiceManager:
                     timeout=60,
                 )
 
-            # Check if essential services are accessible even without full Docker setup
-            # This handles cases where Qdrant runs outside Docker or independently
+            # Check if shared test services from full-automation.sh are accessible
+            # This handles the case where services are started by test suite setup
             try:
                 from code_indexer.config import ConfigManager
                 from code_indexer.services.qdrant import QdrantClient
@@ -142,13 +181,49 @@ class ServiceManager:
                 qdrant_client = QdrantClient(config.qdrant)
 
                 if qdrant_client.health_check():
-                    print("Essential services accessible, tests can proceed")
+                    print(
+                        "✅ Using shared test services (started by full-automation.sh)"
+                    )
                     return True
             except Exception:
                 pass
 
             # Services not accessible - try to start them
             print("Starting services for E2E testing...")
+
+            # AGGRESSIVE progressive cleanup to maintain reasonable volume and image counts
+            self.progressive_cleanup_test_volumes(max_volumes=5)  # Very aggressive
+            self.progressive_cleanup_test_images(max_images=3)  # Very aggressive
+
+            # Additional cleanup: force cleanup of excessive collections before starting
+            self._cleanup_excessive_qdrant_collections()
+
+            # SMART CONTAINER MANAGEMENT: Check for existing containers and use them if available
+            preserved_containers = self._check_and_preserve_compatible_containers()
+            if preserved_containers:
+                print(
+                    f"✅ Using existing compatible containers: {preserved_containers}"
+                )
+
+                # CRITICAL FIX: Extract port information from running containers and update config
+                success = self._ensure_config_matches_containers(
+                    preserved_containers, working_dir
+                )
+                if not success:
+                    print("⚠️ Could not sync configuration with existing containers")
+                    # Fall through to restart containers with proper config
+                else:
+                    # Check if these containers provide working services with updated config
+                    if self.are_services_running():
+                        print("✅ Existing containers are providing working services")
+                        return True
+                    else:
+                        print(
+                            "⚠️ Existing containers found but services not ready, will restart"
+                        )
+
+            # Stop any conflicting containers (but preserve compatible ones)
+            self._stop_conflicting_containers()
 
             if working_dir:
                 original_cwd = Path.cwd()
@@ -172,7 +247,7 @@ class ServiceManager:
 
             # Start services
             start_result = subprocess.run(
-                self.config.cli_command_prefix + ["start", "--quiet"],
+                self.config.cli_command_prefix + ["start"],
                 capture_output=True,
                 text=True,
                 timeout=self.config.service_timeout,
@@ -199,26 +274,32 @@ class ServiceManager:
                     # Reinitialize and try again
                     if self._ensure_project_initialized(provider):
                         start_result = subprocess.run(
-                            self.config.cli_command_prefix + ["start", "--quiet"],
+                            self.config.cli_command_prefix + ["start"],
                             capture_output=True,
                             text=True,
                             timeout=self.config.service_timeout,
                         )
 
                         if start_result.returncode != 0:
-                            print(
-                                f"Failed to start services after recovery attempt: {start_result.stderr}"
-                            )
+                            print("Failed to start services after recovery attempt:")
+                            print(f"STDOUT: {start_result.stdout}")
+                            print(f"STDERR: {start_result.stderr}")
                             return False
                     else:
                         print("Failed to reinitialize after container cleanup")
                         return False
                 else:
-                    print(f"Failed to start services: {start_result.stderr}")
+                    print("Failed to start services:")
+                    print(f"STDOUT: {start_result.stdout}")
+                    print(f"STDERR: {start_result.stderr}")
                     return False
 
             # Wait for services to be ready
             import time
+
+            # CRITICAL FIX: Add delay to ensure port configuration updates are propagated
+            print("Waiting for port configuration to stabilize...")
+            time.sleep(2)  # Allow config file updates to be written and propagated
 
             start_time = time.time()
             timeout = self.config.service_timeout  # Use full configured timeout
@@ -314,6 +395,795 @@ class ServiceManager:
                     os.chdir(original_cwd)
                 except (FileNotFoundError, OSError):
                     pass
+
+    def progressive_cleanup_test_volumes(self, max_volumes: int = 10) -> bool:
+        """Progressive cleanup of test volumes to maintain a reasonable count.
+
+        This method runs on every test setup to keep volumes under control
+        and prevent accumulation that causes startup timeouts.
+
+        Args:
+            max_volumes: Maximum number of test volumes to keep (default: 30)
+
+        Returns:
+            True if cleanup was successful or not needed
+        """
+        try:
+            # Check if we're using podman or docker
+            container_cmd = "podman"
+            try:
+                subprocess.run(
+                    [container_cmd, "--version"], capture_output=True, check=True
+                )
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                container_cmd = "docker"
+                try:
+                    subprocess.run(
+                        [container_cmd, "--version"], capture_output=True, check=True
+                    )
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    return True  # Skip if no container engine
+
+            # List all volumes
+            result = subprocess.run(
+                [container_cmd, "volume", "ls", "--format", "{{.Name}}"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode != 0:
+                return True  # Skip on error
+
+            # Find test volumes (more comprehensive patterns)
+            all_volumes = (
+                result.stdout.strip().split("\n") if result.stdout.strip() else []
+            )
+            test_volumes = [
+                v
+                for v in all_volumes
+                if v.startswith("code_indexer_test_")
+                or v.startswith("code_indexer_e2e_")
+                or v.startswith("code_indexer_nonroot_test_")
+                or (v.startswith("tmp") and ("qdrant" in v or "ollama" in v))
+                or "_qdrant_data" in v
+                or "_ollama_data" in v
+                or "_qdrant_metadata" in v
+                or "_ollama_metadata" in v
+            ]
+
+            if len(test_volumes) > max_volumes:
+                # Sort volumes by name to get consistent removal order (oldest patterns first)
+                test_volumes.sort()
+                volumes_to_remove = test_volumes[
+                    :-max_volumes
+                ]  # Keep the last max_volumes
+
+                print(
+                    f"🧹 Progressive cleanup: {len(test_volumes)} volumes found, removing {len(volumes_to_remove)} oldest"
+                )
+
+                # Remove volumes in small batches to avoid command line length limits
+                batch_size = 20
+                removed_count = 0
+                for i in range(0, len(volumes_to_remove), batch_size):
+                    batch = volumes_to_remove[i : i + batch_size]
+                    cleanup_result = subprocess.run(
+                        [container_cmd, "volume", "rm", "-f"] + batch,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    if cleanup_result.returncode == 0:
+                        removed_count += len(batch)
+
+                if removed_count > 0:
+                    print(
+                        f"✅ Progressive cleanup: removed {removed_count} old test volumes"
+                    )
+
+                return True
+            else:
+                # Only log when volume count is getting high
+                if len(test_volumes) > max_volumes // 2:
+                    print(
+                        f"📊 Volume count: {len(test_volumes)} test volumes (threshold: {max_volumes})"
+                    )
+                return True
+
+        except Exception:
+            # Silent cleanup - don't spam logs with warnings
+            return True
+
+    def cleanup_excessive_test_volumes(self) -> bool:
+        """Emergency cleanup for when volumes are critically excessive.
+
+        This is the heavy-duty cleanup for when progressive cleanup wasn't enough.
+
+        Returns:
+            True if cleanup was successful or not needed
+        """
+        try:
+            print("🧹 Emergency cleanup: Checking for critically excessive volumes...")
+
+            # Check if we're using podman or docker
+            container_cmd = "podman"
+            try:
+                subprocess.run(
+                    [container_cmd, "--version"], capture_output=True, check=True
+                )
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                container_cmd = "docker"
+                try:
+                    subprocess.run(
+                        [container_cmd, "--version"], capture_output=True, check=True
+                    )
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    print("No container engine found, skipping volume cleanup")
+                    return True
+
+            # List all volumes
+            result = subprocess.run(
+                [container_cmd, "volume", "ls", "--format", "{{.Name}}"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode != 0:
+                print(f"Could not list volumes: {result.stderr}")
+                return True
+
+            # Find test volumes
+            all_volumes = (
+                result.stdout.strip().split("\n") if result.stdout.strip() else []
+            )
+            test_volumes = [
+                v
+                for v in all_volumes
+                if v.startswith("code_indexer_test_")
+                or v.startswith("code_indexer_e2e_")
+                or v.startswith("code_indexer_nonroot_test_")
+                or (v.startswith("tmp") and ("qdrant" in v or "ollama" in v))
+            ]
+
+            if len(test_volumes) > 100:  # Emergency threshold
+                print(
+                    f"🚨 EMERGENCY: Found {len(test_volumes)} test volumes - critical cleanup needed"
+                )
+                print("🗑️  Performing emergency cleanup of old test volumes...")
+
+                # Stop any running containers first
+                subprocess.run(
+                    [
+                        container_cmd,
+                        "stop",
+                        "code-indexer-qdrant",
+                        "code-indexer-data-cleaner",
+                        "code-indexer-ollama",
+                    ],
+                    capture_output=True,
+                )
+                subprocess.run(
+                    [
+                        container_cmd,
+                        "rm",
+                        "code-indexer-qdrant",
+                        "code-indexer-data-cleaner",
+                        "code-indexer-ollama",
+                    ],
+                    capture_output=True,
+                )
+
+                # Remove test volumes in batches to avoid command line length limits
+                batch_size = 50
+                for i in range(0, len(test_volumes), batch_size):
+                    batch = test_volumes[i : i + batch_size]
+                    cleanup_result = subprocess.run(
+                        [container_cmd, "volume", "rm", "-f"] + batch,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                    if cleanup_result.returncode != 0:
+                        print(
+                            f"Warning: Some volumes could not be removed: {cleanup_result.stderr}"
+                        )
+                    else:
+                        print(
+                            f"✅ Emergency cleanup: removed {len(batch)} test volumes"
+                        )
+
+                print(
+                    f"✅ Emergency cleanup complete - removed {len(test_volumes)} volumes"
+                )
+                return True
+            else:
+                return True
+
+        except Exception as e:
+            print(f"Emergency cleanup warning (non-critical): {e}")
+            return True  # Don't fail tests for cleanup issues
+
+    def progressive_cleanup_test_images(self, max_images: int = 5) -> bool:
+        """Progressive cleanup of test container images to prevent accumulation.
+
+        This method runs during test setup to keep test images under control
+        and prevent disk space issues from accumulated test container images.
+
+        Args:
+            max_images: Maximum number of test images to keep (default: 20)
+
+        Returns:
+            True if cleanup was successful or not needed
+        """
+        try:
+            # Check if we're using podman or docker
+            container_cmd = "podman"
+            try:
+                subprocess.run(
+                    [container_cmd, "--version"], capture_output=True, check=True
+                )
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                container_cmd = "docker"
+                try:
+                    subprocess.run(
+                        [container_cmd, "--version"], capture_output=True, check=True
+                    )
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    return True  # Skip if no container engine
+
+            # List all images
+            result = subprocess.run(
+                [
+                    container_cmd,
+                    "images",
+                    "--format",
+                    "{{.Repository}}:{{.Tag}} {{.ID}} {{.CreatedAt}}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode != 0:
+                return True  # Skip on error
+
+            # Find test images (comprehensive patterns)
+            all_images = (
+                result.stdout.strip().split("\n") if result.stdout.strip() else []
+            )
+            test_images = []
+
+            for image_line in all_images:
+                if not image_line.strip():
+                    continue
+
+                parts = image_line.split()
+                if len(parts) < 2:
+                    continue
+
+                image_name = parts[0]
+                image_id = parts[1]
+
+                # Match test-related image patterns
+                if any(
+                    pattern in image_name
+                    for pattern in [
+                        "test_",
+                        "code_indexer_test_",
+                        "_test_",
+                        "code_indexer_e2e_",
+                        "_e2e_",
+                        "code_indexer_nonroot_test_",
+                    ]
+                ):
+                    test_images.append((image_name, image_id, image_line))
+
+            if len(test_images) > max_images:
+                # Sort by creation time (oldest first) - assume newer images are at the end
+                test_images.sort(
+                    key=lambda x: x[2]
+                )  # Sort by full line which includes timestamp
+                images_to_remove = test_images[:-max_images]  # Keep the last max_images
+
+                print(
+                    f"🧹 Progressive cleanup: {len(test_images)} test images found, removing {len(images_to_remove)} oldest"
+                )
+
+                # Remove images in small batches
+                batch_size = 10
+                removed_count = 0
+                for i in range(0, len(images_to_remove), batch_size):
+                    batch = images_to_remove[i : i + batch_size]
+                    image_ids = [img[1] for img in batch]
+
+                    cleanup_result = subprocess.run(
+                        [container_cmd, "rmi", "-f"] + image_ids,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                    if cleanup_result.returncode == 0:
+                        removed_count += len(batch)
+                    else:
+                        # Some images might be in use, continue with next batch
+                        pass
+
+                if removed_count > 0:
+                    print(
+                        f"✅ Progressive cleanup: removed {removed_count} old test images"
+                    )
+
+                return True
+            else:
+                # Only log when image count is getting high
+                if len(test_images) > max_images // 2:
+                    print(
+                        f"📊 Image count: {len(test_images)} test images (threshold: {max_images})"
+                    )
+                return True
+
+        except Exception:
+            # Silent cleanup - don't spam logs with warnings
+            return True
+
+    def _cleanup_excessive_qdrant_collections(self) -> bool:
+        """Emergency cleanup of excessive collections that could slow down Qdrant startup."""
+        try:
+            # Check if we're using podman or docker
+            container_cmd = "podman"
+            try:
+                subprocess.run(
+                    [container_cmd, "--version"], capture_output=True, check=True
+                )
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                container_cmd = "docker"
+                try:
+                    subprocess.run(
+                        [container_cmd, "--version"], capture_output=True, check=True
+                    )
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    return True  # Skip if no container engine
+
+            # Stop Qdrant to access its data
+            subprocess.run(
+                [container_cmd, "stop", "code-indexer-qdrant"],
+                capture_output=True,
+            )
+
+            # Quick check of collection directory
+            qdrant_collections_dir = Path.home() / ".qdrant_collections"
+            if qdrant_collections_dir.exists():
+                collections = list(qdrant_collections_dir.glob("*"))
+                if len(collections) > 5:  # Emergency threshold for collections
+                    print(
+                        f"🚨 EMERGENCY: Found {len(collections)} collections - aggressive cleanup needed"
+                    )
+
+                    # Keep only the most recent 3 collections
+                    collections_by_time = sorted(
+                        collections, key=lambda p: p.stat().st_mtime, reverse=True
+                    )
+                    collections_to_remove = collections_by_time[
+                        3:
+                    ]  # Remove all but 3 most recent
+
+                    for collection_path in collections_to_remove:
+                        try:
+                            if collection_path.is_symlink():
+                                collection_path.unlink()
+                            elif collection_path.is_dir():
+                                import shutil
+
+                                shutil.rmtree(collection_path, ignore_errors=True)
+                            print(f"🗑️  Removed collection: {collection_path.name}")
+                        except Exception:
+                            pass  # Best effort cleanup
+
+                    print(
+                        f"✅ Emergency collection cleanup: removed {len(collections_to_remove)} collections"
+                    )
+
+            return True
+
+        except Exception as e:
+            print(f"Collection cleanup warning (non-critical): {e}")
+            return True  # Don't fail tests for cleanup issues
+
+    def _stop_conflicting_containers(self) -> bool:
+        """Stop any containers that might conflict with test service ports.
+
+        This method identifies and stops containers that are NOT part of the current
+        shared test project but might be using conflicting ports. It preserves containers
+        that belong to the shared test project to enable container reuse between tests.
+
+        CRITICAL SHARED TEST PROJECT LOGIC:
+        - Tests should share containers by running in the same folder
+        - Dynamic port allocation ensures no conflicts
+        - Only stop containers that are NOT part of the current project
+        """
+        try:
+            # Check if we're using podman or docker
+            container_cmd = "podman"
+            try:
+                subprocess.run(
+                    [container_cmd, "--version"], capture_output=True, check=True
+                )
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                container_cmd = "docker"
+                try:
+                    subprocess.run(
+                        [container_cmd, "--version"], capture_output=True, check=True
+                    )
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    return True  # Skip if no container engine
+
+            # CRITICAL FIX: Determine the expected containers for shared test project
+            # Use the same logic as docker_manager to identify project containers
+            from pathlib import Path
+            import hashlib
+
+            # Calculate the expected project hash for shared test project
+            # CRITICAL FIX: Use the same path pattern as docker_manager and conftest.py
+            # The test fixtures create shared_test_repo under project root/.tmp, not home/.tmp
+            project_root = Path(
+                __file__
+            ).parent.parent  # Go up from tests/ to project root
+            shared_test_repo_path = project_root / ".tmp" / "shared_test_repo"
+            canonical_path = str(shared_test_repo_path.resolve())
+            hash_object = hashlib.sha256(canonical_path.encode())
+            expected_project_hash = hash_object.hexdigest()[:8]
+
+            # Expected container names for the shared test project
+            expected_containers = {
+                f"cidx-{expected_project_hash}-qdrant",
+                f"cidx-{expected_project_hash}-data-cleaner",
+                f"cidx-{expected_project_hash}-ollama",
+            }
+
+            print(f"🔍 Shared test project hash: {expected_project_hash}")
+            print(f"🔍 Expected containers for shared project: {expected_containers}")
+
+            if shared_test_repo_path.exists():
+                print(f"✅ Shared test repo exists: {shared_test_repo_path}")
+            else:
+                print(f"📁 Shared test repo will be created: {shared_test_repo_path}")
+
+            # List of legacy containers that should be stopped (static names only)
+            legacy_containers = [
+                "code-indexer-qdrant",
+                "code-indexer-data-cleaner",
+                "code-indexer-ollama",
+            ]
+
+            print("🛑 Checking for containers that need cleanup...")
+
+            # Get list of all running containers
+            ps_result = subprocess.run(
+                [container_cmd, "ps", "--format", "{{.Names}} {{.Ports}} {{.Status}}"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if ps_result.returncode != 0:
+                print("⚠️ Could not list running containers")
+                return True
+
+            running_containers = []
+            lines = (
+                ps_result.stdout.strip().split("\n") if ps_result.stdout.strip() else []
+            )
+            for line in lines:
+                if not line.strip():
+                    continue
+                parts = line.split()
+                if len(parts) >= 1:
+                    container_name = parts[0]
+                    ports_info = " ".join(parts[1:-1]) if len(parts) > 2 else ""
+                    status = parts[-1] if len(parts) > 1 else ""
+                    running_containers.append((container_name, ports_info, status))
+
+            containers_to_stop = []
+
+            # Check each running container
+            for container_name, ports_info, status in running_containers:
+                should_stop = False
+                reason = ""
+
+                # Rule 1: Stop legacy containers with static names
+                if container_name in legacy_containers:
+                    should_stop = True
+                    reason = "legacy container with static name"
+
+                # Rule 2: Stop containers using internal ports 6333 or 8091 (static ports)
+                # but NOT if they are expected dynamic port containers
+                elif (
+                    "->6333" in ports_info or "->8091" in ports_info
+                ) and container_name not in expected_containers:
+                    should_stop = True
+                    reason = "using static internal ports (6333/8091) and not part of shared project"
+
+                # Rule 3: PRESERVE containers that are part of the shared test project
+                elif container_name in expected_containers:
+                    should_stop = False
+                    reason = "part of shared test project - PRESERVING"
+                    print(
+                        f"   ✅ Preserving shared test container: {container_name} ({ports_info})"
+                    )
+
+                if should_stop:
+                    containers_to_stop.append((container_name, reason))
+
+            # Stop containers that need to be stopped
+            if containers_to_stop:
+                print(
+                    f"🛑 Stopping {len(containers_to_stop)} conflicting containers..."
+                )
+                for container_name, reason in containers_to_stop:
+                    print(f"   🔍 Stopping {container_name}: {reason}")
+                    try:
+                        stop_result = subprocess.run(
+                            [container_cmd, "stop", container_name],
+                            capture_output=True,
+                            text=True,
+                            timeout=10,
+                        )
+                        if stop_result.returncode == 0:
+                            print(f"   ✅ Stopped: {container_name}")
+
+                        # Remove stopped container
+                        subprocess.run(
+                            [container_cmd, "rm", container_name],
+                            capture_output=True,
+                            timeout=5,
+                        )
+                    except subprocess.TimeoutExpired:
+                        # Force kill if stop times out
+                        subprocess.run(
+                            [container_cmd, "kill", container_name],
+                            capture_output=True,
+                            timeout=5,
+                        )
+                        subprocess.run(
+                            [container_cmd, "rm", container_name],
+                            capture_output=True,
+                            timeout=5,
+                        )
+                        print(f"   ⚡ Force killed: {container_name}")
+                    except Exception as e:
+                        print(f"   ⚠️ Could not stop {container_name}: {e}")
+            else:
+                print(
+                    "✅ No conflicting containers found - all containers are properly managed"
+                )
+
+            print("✅ Container conflict resolution completed")
+            return True
+
+        except Exception as e:
+            print(f"Container conflict cleanup warning (non-critical): {e}")
+            return True  # Don't fail tests for cleanup issues
+
+    def _check_and_preserve_compatible_containers(self) -> List[str]:
+        """Check for existing containers that are compatible with the current project.
+
+        Returns:
+            List of container names that are compatible and should be preserved
+        """
+        try:
+            # Check if we're using podman or docker
+            container_cmd = "podman"
+            try:
+                subprocess.run(
+                    [container_cmd, "--version"], capture_output=True, check=True
+                )
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                container_cmd = "docker"
+                try:
+                    subprocess.run(
+                        [container_cmd, "--version"], capture_output=True, check=True
+                    )
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    return []  # Skip if no container engine
+
+            # Calculate expected container names for shared test project
+            from pathlib import Path
+            import hashlib
+
+            project_root = Path(
+                __file__
+            ).parent.parent  # Go up from tests/ to project root
+            shared_test_repo_path = project_root / ".tmp" / "shared_test_repo"
+            canonical_path = str(shared_test_repo_path.resolve())
+            hash_object = hashlib.sha256(canonical_path.encode())
+            expected_project_hash = hash_object.hexdigest()[:8]
+
+            expected_containers = [
+                f"cidx-{expected_project_hash}-qdrant",
+                f"cidx-{expected_project_hash}-data-cleaner",
+                f"cidx-{expected_project_hash}-ollama",
+            ]
+
+            # Check which expected containers are currently running
+            ps_result = subprocess.run(
+                [container_cmd, "ps", "--format", "{{.Names}} {{.Status}}"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if ps_result.returncode != 0:
+                return []
+
+            running_containers = []
+            lines = (
+                ps_result.stdout.strip().split("\n") if ps_result.stdout.strip() else []
+            )
+            for line in lines:
+                if not line.strip():
+                    continue
+                parts = line.split()
+                if len(parts) >= 1:
+                    container_name = parts[0]
+                    status = " ".join(parts[1:]) if len(parts) > 1 else ""
+
+                    # Check if this is one of our expected containers and it's running
+                    if container_name in expected_containers and "Up" in status:
+                        running_containers.append(container_name)
+
+            if running_containers:
+                print(f"🔍 Found compatible running containers: {running_containers}")
+
+            return running_containers
+
+        except Exception as e:
+            print(f"Container compatibility check warning: {e}")
+            return []
+
+    def _ensure_config_matches_containers(
+        self, container_names: List[str], working_dir: Optional[Path] = None
+    ) -> bool:
+        """Extract port information from running containers and update the config to match.
+
+        Args:
+            container_names: List of container names that are currently running
+            working_dir: Working directory where the config should be updated
+
+        Returns:
+            True if configuration was successfully updated, False otherwise
+        """
+        try:
+            # Check if we're using podman or docker
+            container_cmd = "podman"
+            try:
+                subprocess.run(
+                    [container_cmd, "--version"], capture_output=True, check=True
+                )
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                container_cmd = "docker"
+                try:
+                    subprocess.run(
+                        [container_cmd, "--version"], capture_output=True, check=True
+                    )
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    return False
+
+            # Extract port mappings from running containers
+            port_config = {}
+            for container_name in container_names:
+                try:
+                    inspect_result = subprocess.run(
+                        [container_cmd, "port", container_name],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
+
+                    if inspect_result.returncode == 0:
+                        port_lines = inspect_result.stdout.strip().split("\n")
+                        for line in port_lines:
+                            if "->" in line:
+                                # Parse lines like "6333/tcp -> 0.0.0.0:6516"
+                                parts = line.split(" -> ")
+                                if len(parts) == 2:
+                                    internal_port = parts[0].split("/")[0]
+                                    external_port = parts[1].split(":")[-1]
+
+                                    # Map internal ports to service types
+                                    if internal_port == "6333":  # Qdrant
+                                        port_config["qdrant_port"] = int(external_port)
+                                    elif internal_port == "11434":  # Ollama
+                                        port_config["ollama_port"] = int(external_port)
+                                    elif internal_port == "8091":  # Data cleaner
+                                        port_config["data_cleaner_port"] = int(
+                                            external_port
+                                        )
+
+                except Exception as e:
+                    print(
+                        f"Warning: Could not extract ports from {container_name}: {e}"
+                    )
+                    continue
+
+            if not port_config:
+                print("⚠️ No valid port mappings found in existing containers")
+                return False
+
+            print(f"🔍 Extracted port configuration: {port_config}")
+
+            # Update the configuration using CLI command
+            if working_dir:
+                original_cwd = Path.cwd()
+                os.chdir(working_dir)
+
+            try:
+                # CRITICAL FIX: Initialize the project first, then manually update the config file
+                # The CLI init command doesn't have individual port options, so we need to update the file directly
+                init_result = subprocess.run(
+                    self.config.cli_command_prefix
+                    + ["init", "--force", "--embedding-provider", "voyage-ai"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+
+                if init_result.returncode != 0:
+                    print(f"Warning: Could not initialize config: {init_result.stderr}")
+                    return False
+
+                # Now manually update the config file with the correct ports
+                config_dir = Path.cwd() / ".code-indexer"
+                config_file = config_dir / "config.json"
+
+                if config_file.exists():
+                    import json
+
+                    with open(config_file, "r") as f:
+                        config_data = json.load(f)
+
+                    # Update the Qdrant host with the correct port
+                    if "qdrant_port" in port_config:
+                        qdrant_port = port_config["qdrant_port"]
+                        config_data["qdrant"][
+                            "host"
+                        ] = f"http://localhost:{qdrant_port}"
+                        print(
+                            f"🔧 Updated Qdrant host to: http://localhost:{qdrant_port}"
+                        )
+
+                    # Update project ports section
+                    if "project_ports" not in config_data:
+                        config_data["project_ports"] = {}
+                    config_data["project_ports"].update(port_config)
+
+                    # Write back the updated config
+                    with open(config_file, "w") as f:
+                        json.dump(config_data, f, indent=2)
+
+                    print(
+                        f"✅ Updated configuration file with extracted ports: {port_config}"
+                    )
+                    return True
+                else:
+                    print("⚠️ Configuration file was not created by init command")
+                    return False
+
+            except Exception as e:
+                print(f"Warning: Could not update configuration: {e}")
+                return False
+
+            finally:
+                if working_dir:
+                    try:
+                        os.chdir(original_cwd)
+                    except (FileNotFoundError, OSError):
+                        pass
+
+        except Exception as e:
+            print(f"Configuration sync error: {e}")
+            return False
 
 
 class DirectoryManager:
@@ -593,9 +1463,20 @@ def create_fast_e2e_setup(
 ) -> Tuple[ServiceManager, CLIHelper, DirectoryManager]:
     """Create a fast E2E test setup following NEW STRATEGY.
 
+    DEPRECATED: This function is deprecated in favor of fixture-based approach.
+    New tests should use the fixture-based pattern with local_temporary_directory()
+    and auto_register_project_collections() instead.
+
     Returns:
         Tuple of (service_manager, cli_helper, directory_manager)
     """
+    import warnings
+
+    warnings.warn(
+        "create_fast_e2e_setup() is deprecated. Use fixture-based approach instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     config = InfrastructureConfig(
         embedding_provider=embedding_provider,
         cleanup_strategy=CleanupStrategy.CLEAN_DATA,
@@ -604,6 +1485,10 @@ def create_fast_e2e_setup(
     service_manager = ServiceManager(config)
     cli_helper = CLIHelper(config)
     directory_manager = DirectoryManager()
+
+    # Progressive cleanup as part of aggressive setup to prevent volume and image accumulation
+    service_manager.progressive_cleanup_test_volumes()
+    service_manager.progressive_cleanup_test_images()
 
     return service_manager, cli_helper, directory_manager
 
@@ -624,6 +1509,10 @@ def create_integration_test_setup(
 
     service_manager = ServiceManager(config)
     cli_helper = CLIHelper(config)
+
+    # Progressive cleanup as part of setup to prevent volume and image accumulation
+    service_manager.progressive_cleanup_test_volumes()
+    service_manager.progressive_cleanup_test_images()
 
     return service_manager, cli_helper
 

@@ -9,9 +9,11 @@ This test ensures that users get clear, context-aware feedback for:
 """
 
 import pytest
-import tempfile
+
+from .conftest import get_local_tmp_dir
 import shutil
 from pathlib import Path
+import uuid
 from unittest.mock import Mock, patch
 import time
 
@@ -27,7 +29,8 @@ class TestMeaningfulFeedbackOperations:
     @pytest.fixture
     def temp_project(self):
         """Create a temporary project with git repo and test files."""
-        temp_dir = Path(tempfile.mkdtemp())
+        temp_dir = Path(str(get_local_tmp_dir() / f"test_{uuid.uuid4().hex[:8]}"))
+        temp_dir.mkdir(parents=True, exist_ok=True)
 
         # Create test files
         (temp_dir / "test1.py").write_text("# Test file 1\nprint('hello')")

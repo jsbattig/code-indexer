@@ -70,22 +70,15 @@ class QdrantConfig(BaseModel):
     """Configuration for Qdrant vector database."""
 
     host: str = Field(default="http://localhost:6333", description="Qdrant API host")
-    collection: str = Field(
-        default="code_index", description="Legacy collection name (deprecated)"
-    )
     collection_base_name: str = Field(
-        default="code_index", description="Base name for provider-aware collections"
+        default="code_index",
+        description="Base name for collections (only dynamic part is embedding model)",
     )
     vector_size: int = Field(
         default=768,
         description="Vector dimension size (deprecated - auto-detected from provider)",
     )
-    use_provider_aware_collections: bool = Field(
-        default=True, description="Use provider-aware collection naming"
-    )
-    use_legacy_collection_naming: bool = Field(
-        default=False, description="Use legacy static collection naming"
-    )
+    # Collection naming: base_name + model_slug (no provider, no project hash)
 
     # HNSW search parameters - Phase 1: Search-time optimization
     hnsw_ef: int = Field(
@@ -149,6 +142,33 @@ class PollingConfig(BaseModel):
     )
     max_interval: float = Field(
         default=2.0, description="Maximum polling interval in seconds"
+    )
+
+
+class ProjectContainersConfig(BaseModel):
+    """Configuration for project-specific container names."""
+
+    project_hash: Optional[str] = Field(
+        default=None, description="Hash derived from project path"
+    )
+    qdrant_name: Optional[str] = Field(
+        default=None, description="Qdrant container name"
+    )
+    ollama_name: Optional[str] = Field(
+        default=None, description="Ollama container name"
+    )
+    data_cleaner_name: Optional[str] = Field(
+        default=None, description="Data cleaner container name"
+    )
+
+
+class ProjectPortsConfig(BaseModel):
+    """Configuration for project-specific port assignments."""
+
+    qdrant_port: Optional[int] = Field(default=None, description="Qdrant service port")
+    ollama_port: Optional[int] = Field(default=None, description="Ollama service port")
+    data_cleaner_port: Optional[int] = Field(
+        default=None, description="Data cleaner service port"
     )
 
 
@@ -233,6 +253,12 @@ class Config(BaseModel):
     indexing: IndexingConfig = Field(default_factory=IndexingConfig)
     timeouts: TimeoutsConfig = Field(default_factory=TimeoutsConfig)
     polling: PollingConfig = Field(default_factory=PollingConfig)
+
+    # Per-project container configuration
+    project_containers: ProjectContainersConfig = Field(
+        default_factory=ProjectContainersConfig
+    )
+    project_ports: ProjectPortsConfig = Field(default_factory=ProjectPortsConfig)
 
     @field_validator("codebase_dir", mode="before")
     @classmethod

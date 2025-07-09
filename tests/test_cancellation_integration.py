@@ -6,6 +6,7 @@ import pytest
 from unittest.mock import Mock, patch
 from pathlib import Path
 
+from .conftest import get_local_tmp_dir
 from code_indexer.services.high_throughput_processor import HighThroughputProcessor
 
 
@@ -26,7 +27,7 @@ class TestCancellationIntegration:
         """Test that an instance of HighThroughputProcessor has cancelled flag."""
         # Create mock config
         config = Mock()
-        config.codebase_dir = Path("/tmp/test")
+        config.codebase_dir = Path(str(get_local_tmp_dir() / "test"))
 
         # Create mock providers
         embedding_provider = Mock()
@@ -57,7 +58,7 @@ class TestCancellationIntegration:
         """Test that request_cancellation sets the cancelled flag to True."""
         # Create mock config
         config = Mock()
-        config.codebase_dir = Path("/tmp/test")
+        config.codebase_dir = Path(str(get_local_tmp_dir() / "test"))
 
         # Create mock providers
         embedding_provider = Mock()

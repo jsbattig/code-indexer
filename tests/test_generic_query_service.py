@@ -3,8 +3,8 @@ Tests for the GenericQueryService class.
 """
 
 import pytest
-import tempfile
 import shutil
+
 from pathlib import Path
 from unittest.mock import patch
 import subprocess
@@ -16,9 +16,14 @@ from code_indexer.services.generic_query_service import GenericQueryService
 class TestGenericQueryService:
     @pytest.fixture
     def temp_dir(self):
-        temp_dir = Path(tempfile.mkdtemp())
+        # Use shared test directory to avoid creating multiple container sets
+        temp_dir = Path.home() / ".tmp" / "shared_test_containers"
+        # Clean and recreate for test isolation
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        temp_dir.mkdir(parents=True, exist_ok=True)
         yield temp_dir
-        shutil.rmtree(temp_dir)
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
     @pytest.fixture
     def config(self, temp_dir):

@@ -9,15 +9,14 @@ Refactored to use NEW STRATEGY with test infrastructure to eliminate code duplic
 import json
 from pathlib import Path
 from typing import Dict
+import subprocess
 
 import pytest
 
+from .conftest import local_temporary_directory
+
 # Import test infrastructure to eliminate code duplication
-from .test_infrastructure import (
-    create_fast_e2e_setup,
-    EmbeddingProvider,
-    auto_register_project_collections,
-)
+from .test_infrastructure import auto_register_project_collections
 
 
 # Removed duplicated run_command function - now using CLIHelper from test infrastructure!
@@ -334,302 +333,368 @@ def check_claude_sdk_available() -> bool:
         return False
 
 
-class TestClaudeE2E:
-    """End-to-end tests for Claude integration."""
+@pytest.fixture
+def claude_e2e_test_repo():
+    """Create a test repository for Claude E2E tests."""
+    with local_temporary_directory() as temp_dir:
+        # Auto-register collections for cleanup
+        auto_register_project_collections(temp_dir)
 
-    @pytest.fixture(autouse=True)
-    def setup_test_environment(self):
-        """Setup test environment using test infrastructure."""
-        # NEW STRATEGY: Use test infrastructure for setup
-        self.service_manager, self.cli_helper, self.dir_manager = create_fast_e2e_setup(
-            EmbeddingProvider.VOYAGE_AI
-        )
-        yield
+        # Preserve .code-indexer directory if it exists
+        config_dir = temp_dir / ".code-indexer"
+        if not config_dir.exists():
+            config_dir.mkdir(parents=True, exist_ok=True)
 
-    @pytest.fixture
-    def test_project(self):
-        """Create a temporary test project using test infrastructure."""
-        import tempfile
+        yield temp_dir
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            project_dir = Path(temp_dir)
-            # Auto-register collections for this project
-            auto_register_project_collections(project_dir)
-            # Use test infrastructure to create project with custom files
-            test_files = _get_test_project_files()
-            self.dir_manager.create_test_project(project_dir, custom_files=test_files)
-            yield project_dir
 
-    def test_claude_sdk_availability(self):
-        """Test that Claude CLI is available for testing."""
-        assert (
-            check_claude_sdk_available()
-        ), "Claude CLI must be installed for e2e tests"
+def create_claude_e2e_config(test_dir):
+    """Create configuration for Claude E2E test."""
+    config_dir = test_dir / ".code-indexer"
+    config_file = config_dir / "config.json"
 
-    def test_claude_command_help(self, test_project):
-        """Test that claude command help works."""
-        with self.dir_manager.safe_chdir(test_project):
-            result = self.cli_helper.run_cli_command(["claude", "--help"])
-            assert "AI-powered code analysis" in result.stdout
-            assert "--context-lines" in result.stdout
-            assert "--stream" in result.stdout
+    # Load existing config if it exists (preserves container ports)
+    if config_file.exists():
+        with open(config_file, "r") as f:
+            config = json.load(f)
+    else:
+        config = {
+            "codebase_dir": str(test_dir),
+            "qdrant": {
+                "host": "http://localhost:6333",
+                "collection": "claude_e2e_test_collection",
+                "vector_size": 1024,
+            },
+        }
 
-    def test_claude_without_setup(self, test_project):
-        """Test claude command behavior without explicit setup."""
-        with self.dir_manager.safe_chdir(test_project):
-            # Use a longer timeout since Claude CLI can be slow, and add debugging
-            print("🔧 Testing Claude command without setup...")
+    # Only modify test-specific settings, preserve container configuration
+    config["embedding_provider"] = "voyage-ai"
+    config["voyage_ai"] = {
+        "model": "voyage-code-3",
+        "api_key_env": "VOYAGE_API_KEY",
+        "batch_size": 32,
+        "max_retries": 3,
+        "timeout": 30,
+    }
 
-            try:
-                result = self.cli_helper.run_cli_command(
-                    ["claude", "test question"],
-                    timeout=120,  # Increased timeout to 2 minutes
-                    expect_success=False,
-                )
+    with open(config_file, "w") as f:
+        json.dump(config, f, indent=2)
 
-                print(f"🔧 Claude command result: returncode={result.returncode}")
-                print(f"🔧 stdout: {result.stdout[:200]}...")
-                print(f"🔧 stderr: {result.stderr[:200]}...")
+    return config_file
 
-                # Handle timeout case specifically in stderr
-                if (
-                    "timed out" in result.stderr.lower()
-                    or "timeout" in result.stderr.lower()
-                ):
-                    # Timeout is acceptable - Claude CLI might hang without proper setup
-                    print(
-                        "⚠️  Claude command timed out - this is acceptable behavior without setup"
-                    )
-                    return
 
-                # Two valid scenarios:
-                # 1. Services not available -> should fail gracefully with helpful error
-                # 2. Services available (e.g., development environment) -> may succeed or fail with different error
+def create_claude_test_project(test_dir):
+    """Create test files in the test directory for Claude E2E testing."""
+    test_files = _get_test_project_files()
 
-                if result.returncode != 0:
-                    # If it failed, it should be with a helpful error message
-                    error_output = (
-                        result.stderr + result.stdout
-                    ).lower()  # Error might be in stdout
+    for filename, content in test_files.items():
+        file_path = test_dir / filename
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text(content)
 
-                    expected_error_phrases = [
-                        "service not available",
-                        "services not available",  # Common variation
-                        "run 'start' first",
-                        "run 'code-indexer start' first",  # Exact message variation
-                        "model not found",
-                        "analysis failed",
-                        "no semantic search results found",  # Valid failure if no index exists
-                        "claude cli not available",  # CLI not installed
-                        "failed to load config",  # Config issues
-                        "timed out",  # Command timeout (acceptable)
-                        "timeout",  # Command timeout (acceptable)
-                        "command timed out",  # CLI helper timeout message
-                    ]
 
-                    # Check if we got an expected error message
-                    found_expected_error = any(
-                        phrase in error_output for phrase in expected_error_phrases
-                    )
+def test_claude_sdk_availability():
+    """Test that Claude CLI is available for testing."""
+    assert check_claude_sdk_available(), "Claude CLI must be installed for e2e tests"
 
-                    if not found_expected_error:
-                        print(f"❌ Unexpected error output: {error_output}")
-                        assert (
-                            False
-                        ), f"Expected helpful error message, got: {result.stderr} | {result.stdout}"
-                    else:
-                        print(
-                            f"✅ Got expected error message: found one of {expected_error_phrases}"
-                        )
-                else:
-                    # If it succeeded, services must be available - that's acceptable in dev environments
-                    # Just verify it actually tried to work (has expected output structure)
-                    output = result.stdout.lower()
-                    success_indicators = [
-                        "claude analysis results",
-                        "semantic search",
-                        "performing semantic search",
-                        "git repository",
-                        "analysis",  # Broader match for Claude output
-                    ]
 
-                    if not any(phrase in output for phrase in success_indicators):
-                        print(f"❌ Unexpected success output: {output[:500]}")
-                        assert (
-                            False
-                        ), f"Expected valid claude output structure, got: {result.stdout}"
-                    else:
-                        print("✅ Claude command succeeded with valid output structure")
+def test_claude_command_help(claude_e2e_test_repo):
+    """Test that claude command help works."""
+    test_dir = claude_e2e_test_repo
 
-            except AssertionError as e:
-                # Handle timeout exception from CLIHelper specifically
-                error_msg = str(e)
-                if "Command timed out" in error_msg:
-                    print(
-                        "⚠️  Claude command timed out - this is acceptable behavior without proper setup"
-                    )
-                    print(f"🔧 Timeout details: {error_msg}")
-                    return  # Timeout is acceptable for this test
-                else:
-                    # Re-raise other assertion errors
-                    raise
+    # Create test project
+    create_claude_test_project(test_dir)
 
-    def test_complete_workflow_mock(self, test_project):
-        """Test complete workflow with mocked services (no actual indexing)."""
-        with self.dir_manager.safe_chdir(test_project):
-            # Test 1: Initialize configuration
-            init_result = self.cli_helper.run_cli_command(
-                ["init", "--force"], timeout=30
-            )
-            assert (
-                "Configuration created" in init_result.stdout
-                or "Initialized configuration" in init_result.stdout
-            )
+    # Create configuration
+    create_claude_e2e_config(test_dir)
 
-            # Verify config file was created
-            config_path = test_project / ".code-indexer" / "config.json"
-            assert config_path.exists(), "Config file should be created"
-
-            # Test 2: Verify configuration content
-            with open(config_path) as f:
-                config = json.load(f)
-
-            assert "codebase_dir" in config
-            assert "file_extensions" in config
-            assert "qdrant" in config
-
-            # Test 3: Test status command
-            self.cli_helper.run_cli_command(["status"], timeout=30)
-            # Status should work even without services running
-            # (it will show services as not available)
-
-            # Test 4: Test claude command behavior
-            claude_result = self.cli_helper.run_cli_command(
-                ["claude", "How does authentication work?"],
-                timeout=60,
-                expect_success=False,
-            )  # Increased timeout for CI environment
-
-            # Two valid scenarios:
-            # 1. Services not available -> should fail gracefully with helpful error
-            # 2. Services available -> may succeed or fail for other reasons (no index, etc.)
-            if claude_result.returncode != 0:
-                error_output = (claude_result.stderr + claude_result.stdout).lower()
-                # Check if command timed out during CI (acceptable failure mode)
-                if (
-                    "timed out" in claude_result.stderr.lower()
-                    or "timeout" in claude_result.stderr.lower()
-                ):
-                    # Timeout is an acceptable failure mode in CI environment
-                    return
-
-                assert any(
-                    phrase in error_output
-                    for phrase in [
-                        "service not available",
-                        "services not available",  # Common variation
-                        "run 'start' first",
-                        "run 'code-indexer start' first",  # Exact message variation
-                        "not available",
-                        "model not found",  # Ollama model not available
-                        "analysis failed",  # Analysis failed due to missing services
-                        "no semantic search results found",  # Valid failure if no index
-                        "claude cli not available",  # CLI not installed
-                        "timed out",  # Command timeout (acceptable in CI)
-                        "timeout",  # Command timeout (acceptable in CI)
-                    ]
-                ), f"Expected helpful error message, got: {claude_result.stderr} | {claude_result.stdout}"
-            else:
-                # If successful, verify it has expected output structure
-                output = claude_result.stdout.lower()
-                assert any(
-                    phrase in output
-                    for phrase in [
-                        "claude analysis results",
-                        "semantic search",
-                        "performing semantic search",
-                        "git repository",
-                    ]
-                ), f"Expected valid claude output, got: {claude_result.stdout}"
-
-    def test_project_structure_created(self, test_project):
-        """Test that our test project structure is correct."""
-        expected_files = [
-            "main.py",
-            "api.py",
-            "utils.py",
-            "README.md",
-            "requirements.txt",
-        ]
-
-        for filename in expected_files:
-            file_path = test_project / filename
-            assert file_path.exists(), f"Test file {filename} should exist"
-            assert (
-                file_path.stat().st_size > 0
-            ), f"Test file {filename} should not be empty"
-
-        # Verify content of key files
-        main_content = (test_project / "main.py").read_text()
-        assert "authenticate_user" in main_content
-        assert "def " in main_content
-
-        api_content = (test_project / "api.py").read_text()
-        assert "Flask" in api_content
-        assert "/api/login" in api_content
-
-        utils_content = (test_project / "utils.py").read_text()
-        assert "hash_password" in utils_content
-        assert "hashlib" in utils_content
-
-    @pytest.mark.skipif(
-        not check_claude_sdk_available(), reason="Claude CLI not available"
+    result = subprocess.run(
+        ["code-indexer", "claude", "--help"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
-    def test_claude_integration_import(self):
-        """Test that Claude integration modules can be imported."""
-        try:
-            from code_indexer.services.claude_integration import (
-                ClaudeIntegrationService,
-                check_claude_sdk_availability,
+    assert result.returncode == 0, f"Claude help failed: {result.stderr}"
+    assert "AI-powered code analysis" in result.stdout
+    assert "--context-lines" in result.stdout
+    assert "--stream" in result.stdout
+
+
+def test_claude_without_setup(claude_e2e_test_repo):
+    """Test claude command behavior without explicit setup."""
+    test_dir = claude_e2e_test_repo
+
+    # Create test project
+    create_claude_test_project(test_dir)
+
+    # Create configuration
+    create_claude_e2e_config(test_dir)
+    # Use a longer timeout since Claude CLI can be slow, and add debugging
+    print("🔧 Testing Claude command without setup...")
+
+    try:
+        result = subprocess.run(
+            ["code-indexer", "claude", "test question"],
+            cwd=test_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,  # Increased timeout to 2 minutes
+        )
+
+        print(f"🔧 Claude command result: returncode={result.returncode}")
+        print(f"🔧 stdout: {result.stdout[:200]}...")
+        print(f"🔧 stderr: {result.stderr[:200]}...")
+
+        # Two valid scenarios:
+        # 1. Services not available -> should fail gracefully with helpful error
+        # 2. Services available (e.g., development environment) -> may succeed or fail with different error
+
+        if result.returncode != 0:
+            # If it failed, it should be with a helpful error message
+            error_output = (
+                result.stderr + result.stdout
+            ).lower()  # Error might be in stdout
+
+            expected_error_phrases = [
+                "service not available",
+                "services not available",  # Common variation
+                "run 'start' first",
+                "run 'code-indexer start' first",  # Exact message variation
+                "model not found",
+                "analysis failed",
+                "no semantic search results found",  # Valid failure if no index exists
+                "claude cli not available",  # CLI not installed
+                "failed to load config",  # Config issues
+                "timed out",  # Command timeout (acceptable)
+                "timeout",  # Command timeout (acceptable)
+                "command timed out",  # CLI helper timeout message
+                "legacy container detected",  # CoW migration required
+                "cow migration required",  # CoW migration required
+            ]
+
+            # Check if we got an expected error message
+            found_expected_error = any(
+                phrase in error_output for phrase in expected_error_phrases
             )
-            from code_indexer.services.rag_context_extractor import RAGContextExtractor
 
-            # Test basic functionality
-            assert check_claude_sdk_availability()
+            if not found_expected_error:
+                print(f"❌ Unexpected error output: {error_output}")
+                assert (
+                    False
+                ), f"Expected helpful error message, got: {result.stderr} | {result.stdout}"
+            else:
+                print(
+                    f"✅ Got expected error message: found one of {expected_error_phrases}"
+                )
+        else:
+            # If it succeeded, services must be available - that's acceptable in dev environments
+            # Just verify it actually tried to work (has expected output structure)
+            output = result.stdout.lower()
+            success_indicators = [
+                "claude analysis results",
+                "semantic search",
+                "performing semantic search",
+                "git repository",
+                "analysis",  # Broader match for Claude output
+            ]
 
-            # Test instantiation (should not raise)
-            import tempfile
+            if not any(phrase in output for phrase in success_indicators):
+                print(f"❌ Unexpected success output: {output[:500]}")
+                assert (
+                    False
+                ), f"Expected valid claude output structure, got: {result.stdout}"
+            else:
+                print("✅ Claude command succeeded with valid output structure")
 
-            with tempfile.TemporaryDirectory() as temp_dir:
-                service = ClaudeIntegrationService(Path(temp_dir), "test-project")
-                assert service.codebase_dir == Path(temp_dir)
-                assert service.project_name == "test-project"
+    except subprocess.TimeoutExpired:
+        # Timeout is acceptable - Claude CLI might hang without proper setup
+        print("⚠️  Claude command timed out - this is acceptable behavior without setup")
+        return
 
-                extractor = RAGContextExtractor(Path(temp_dir))
-                assert extractor.codebase_dir == Path(temp_dir)
 
-        except Exception as e:
-            pytest.fail(f"Claude integration import failed: {e}")
+def test_complete_workflow_mock(claude_e2e_test_repo):
+    """Test complete workflow with mocked services (no actual indexing)."""
+    test_dir = claude_e2e_test_repo
 
-    def test_file_structure_integrity(self, test_project):
-        """Test that the test project files have the expected content structure."""
-        # Test main.py structure
-        main_py = (test_project / "main.py").read_text()
-        assert "def authenticate_user" in main_py
-        assert "username" in main_py and "password" in main_py
-        assert "def get_user_profile" in main_py
+    # Create test project
+    create_claude_test_project(test_dir)
 
-        # Test api.py structure
-        api_py = (test_project / "api.py").read_text()
-        assert "@app.route('/api/login'" in api_py
-        assert "/api/profile" in api_py  # More flexible matching
-        assert "from main import" in api_py
+    # Create configuration
+    create_claude_e2e_config(test_dir)
+    # Test 1: Initialize configuration
+    init_result = subprocess.run(
+        ["code-indexer", "init", "--force"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
+    assert (
+        "Configuration created" in init_result.stdout
+        or "Initialized configuration" in init_result.stdout
+    )
 
-        # Test utils.py structure
-        utils_py = (test_project / "utils.py").read_text()
-        assert "def hash_password" in utils_py
-        assert "def verify_password" in utils_py
-        assert "def generate_session_token" in utils_py
+    # Verify config file was created
+    config_path = test_dir / ".code-indexer" / "config.json"
+    assert config_path.exists(), "Config file should be created"
+
+    # Test 2: Verify configuration content
+    with open(config_path) as f:
+        config = json.load(f)
+
+    assert "codebase_dir" in config
+    assert "file_extensions" in config
+    assert "qdrant" in config
+
+    # Test 3: Test status command
+    status_result = subprocess.run(
+        ["code-indexer", "status"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert status_result.returncode == 0, f"Status failed: {status_result.stderr}"
+    # Status should work even without services running
+    # (it will show services as not available)
+
+    # Test 4: Test claude command behavior
+    try:
+        claude_result = subprocess.run(
+            ["code-indexer", "claude", "How does authentication work?"],
+            cwd=test_dir,
+            capture_output=True,
+            text=True,
+            timeout=60,  # Increased timeout for CI environment
+        )
+
+        # Two valid scenarios:
+        # 1. Services not available -> should fail gracefully with helpful error
+        # 2. Services available -> may succeed or fail for other reasons (no index, etc.)
+        if claude_result.returncode != 0:
+            error_output = (claude_result.stderr + claude_result.stdout).lower()
+
+            assert any(
+                phrase in error_output
+                for phrase in [
+                    "service not available",
+                    "services not available",  # Common variation
+                    "run 'start' first",
+                    "run 'code-indexer start' first",  # Exact message variation
+                    "not available",
+                    "model not found",  # Ollama model not available
+                    "analysis failed",  # Analysis failed due to missing services
+                    "no semantic search results found",  # Valid failure if no index
+                    "claude cli not available",  # CLI not installed
+                    "timed out",  # Command timeout (acceptable in CI)
+                    "timeout",  # Command timeout (acceptable in CI)
+                ]
+            ), f"Expected helpful error message, got: {claude_result.stderr} | {claude_result.stdout}"
+        else:
+            # If successful, verify it has expected output structure
+            output = claude_result.stdout.lower()
+            assert any(
+                phrase in output
+                for phrase in [
+                    "claude analysis results",
+                    "semantic search",
+                    "performing semantic search",
+                    "git repository",
+                ]
+            ), f"Expected valid claude output, got: {claude_result.stdout}"
+    except subprocess.TimeoutExpired:
+        # Timeout is an acceptable failure mode in CI environment
+        print("⚠️  Claude command timed out - this is acceptable behavior in CI")
+        return
+
+
+def test_project_structure_created(claude_e2e_test_repo):
+    """Test that our test project structure is correct."""
+    test_dir = claude_e2e_test_repo
+
+    # Create test project
+    create_claude_test_project(test_dir)
+
+    expected_files = [
+        "main.py",
+        "api.py",
+        "utils.py",
+        "README.md",
+        "requirements.txt",
+    ]
+
+    for filename in expected_files:
+        file_path = test_dir / filename
+        assert file_path.exists(), f"Test file {filename} should exist"
+        assert file_path.stat().st_size > 0, f"Test file {filename} should not be empty"
+
+    # Verify content of key files
+    main_content = (test_dir / "main.py").read_text()
+    assert "authenticate_user" in main_content
+    assert "def " in main_content
+
+    api_content = (test_dir / "api.py").read_text()
+    assert "Flask" in api_content
+    assert "/api/login" in api_content
+
+    utils_content = (test_dir / "utils.py").read_text()
+    assert "hash_password" in utils_content
+    assert "hashlib" in utils_content
+
+
+@pytest.mark.skipif(not check_claude_sdk_available(), reason="Claude CLI not available")
+def test_claude_integration_import():
+    """Test that Claude integration modules can be imported."""
+    try:
+        from code_indexer.services.claude_integration import (
+            ClaudeIntegrationService,
+            check_claude_sdk_availability,
+        )
+        from code_indexer.services.rag_context_extractor import RAGContextExtractor
+
+        # Test basic functionality
+        assert check_claude_sdk_availability()
+
+        # Test instantiation (should not raise)
+
+        with local_temporary_directory() as temp_dir:
+            service = ClaudeIntegrationService(Path(temp_dir), "test-project")
+            assert service.codebase_dir == Path(temp_dir)
+            assert service.project_name == "test-project"
+
+            extractor = RAGContextExtractor(Path(temp_dir))
+            assert extractor.codebase_dir == Path(temp_dir)
+
+    except Exception as e:
+        pytest.fail(f"Claude integration import failed: {e}")
+
+
+def test_file_structure_integrity(claude_e2e_test_repo):
+    """Test that the test project files have the expected content structure."""
+    test_dir = claude_e2e_test_repo
+
+    # Create test project
+    create_claude_test_project(test_dir)
+
+    # Test main.py structure
+    main_py = (test_dir / "main.py").read_text()
+    assert "def authenticate_user" in main_py
+    assert "username" in main_py and "password" in main_py
+    assert "def get_user_profile" in main_py
+
+    # Test api.py structure
+    api_py = (test_dir / "api.py").read_text()
+    assert "@app.route('/api/login'" in api_py
+    assert "/api/profile" in api_py  # More flexible matching
+    assert "from main import" in api_py
+
+    # Test utils.py structure
+    utils_py = (test_dir / "utils.py").read_text()
+    assert "def hash_password" in utils_py
+    assert "def verify_password" in utils_py
+    assert "def generate_session_token" in utils_py
 
 
 def test_manual_workflow():

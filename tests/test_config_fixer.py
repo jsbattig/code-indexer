@@ -1,12 +1,14 @@
 """Tests for configuration fixer functionality."""
 
 import json
-import tempfile
 import shutil
 from pathlib import Path
+import uuid
 from unittest.mock import Mock, patch
 
 import pytest
+
+from .conftest import get_local_tmp_dir
 
 from code_indexer.services.json_validator import JSONSyntaxValidator, JSONSyntaxRepairer
 from code_indexer.services.config_fixer import (
@@ -24,7 +26,8 @@ class TestJSONSyntaxValidator:
 
     def setup_method(self):
         """Setup test environment."""
-        self.temp_dir = Path(tempfile.mkdtemp())
+        self.temp_dir = Path(str(get_local_tmp_dir() / f"test_{uuid.uuid4().hex[:8]}"))
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.validator = JSONSyntaxValidator()
 
     def teardown_method(self):
@@ -127,7 +130,8 @@ class TestJSONSyntaxRepairer:
 
     def setup_method(self):
         """Setup test environment."""
-        self.temp_dir = Path(tempfile.mkdtemp())
+        self.temp_dir = Path(str(get_local_tmp_dir() / f"test_{uuid.uuid4().hex[:8]}"))
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.repairer = JSONSyntaxRepairer()
 
     def teardown_method(self):
@@ -206,7 +210,8 @@ class TestGitStateDetector:
 
     def setup_method(self):
         """Setup test environment."""
-        self.temp_dir = Path(tempfile.mkdtemp())
+        self.temp_dir = Path(str(get_local_tmp_dir() / f"test_{uuid.uuid4().hex[:8]}"))
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
 
     def teardown_method(self):
         """Cleanup test environment."""
@@ -246,9 +251,10 @@ class TestConfigurationValidator:
 
     def setup_method(self):
         """Setup test environment."""
-        self.temp_dir = Path(tempfile.mkdtemp())
+        self.temp_dir = Path(str(get_local_tmp_dir() / f"test_{uuid.uuid4().hex[:8]}"))
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.config_dir = self.temp_dir / ".code-indexer"
-        self.config_dir.mkdir()
+        self.config_dir.mkdir(parents=True, exist_ok=True)
         self.validator = ConfigurationValidator(self.config_dir)
 
     def teardown_method(self):
@@ -299,7 +305,10 @@ class TestConfigurationValidator:
         config = Config(codebase_dir=self.temp_dir)
         metadata = {
             "project_id": self.temp_dir.name,
-            "files_to_index": ["/tmp/nonexistent/file.py", "/another/invalid/path.js"],
+            "files_to_index": [
+                str(get_local_tmp_dir() / "nonexistent/file.py"),
+                "/another/invalid/path.js",
+            ],
         }
 
         fixes = self.validator.validate_metadata(metadata, config)
@@ -358,9 +367,10 @@ class TestConfigurationRepairer:
 
     def setup_method(self):
         """Setup test environment."""
-        self.temp_dir = Path(tempfile.mkdtemp())
+        self.temp_dir = Path(str(get_local_tmp_dir() / f"test_{uuid.uuid4().hex[:8]}"))
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.config_dir = self.temp_dir / ".code-indexer"
-        self.config_dir.mkdir()
+        self.config_dir.mkdir(parents=True, exist_ok=True)
 
         # Create test config files
         self.config_file = self.config_dir / "config.json"
@@ -382,7 +392,7 @@ class TestConfigurationRepairer:
             "git_available": False,
             "current_branch": "unknown",
             "current_commit": "unknown",
-            "files_to_index": ["/tmp/nonexistent/file.py"],
+            "files_to_index": [str(get_local_tmp_dir() / "nonexistent/file.py")],
             "files_processed": 0,
             "chunks_indexed": 0,
         }
@@ -452,9 +462,10 @@ class TestEndToEndScenarios:
 
     def setup_method(self):
         """Setup test environment."""
-        self.temp_dir = Path(tempfile.mkdtemp())
+        self.temp_dir = Path(str(get_local_tmp_dir() / f"test_{uuid.uuid4().hex[:8]}"))
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.config_dir = self.temp_dir / ".code-indexer"
-        self.config_dir.mkdir()
+        self.config_dir.mkdir(parents=True, exist_ok=True)
 
     def teardown_method(self):
         """Cleanup test environment."""
@@ -465,7 +476,9 @@ class TestEndToEndScenarios:
         """Test fixing typical corruption from test runs."""
         # Create corrupted config similar to what tests create
         corrupted_config = {
-            "codebase_dir": "/tmp/tmp12345/test_dir",  # Temp directory
+            "codebase_dir": str(
+                get_local_tmp_dir() / "tmp12345/test_dir"
+            ),  # Temp directory
             "embedding_provider": "voyage-ai",
             "qdrant": {"host": "http://localhost:6333"},
         }
@@ -476,8 +489,10 @@ class TestEndToEndScenarios:
             "current_branch": "unknown",
             "current_commit": "unknown",
             "files_to_index": [
-                "/tmp/tmp12345/test_dir/file1.py",  # Invalid paths
-                "/tmp/tmp12345/test_dir/file2.py",
+                str(
+                    get_local_tmp_dir() / "tmp12345/test_dir/file1.py"
+                ),  # Invalid paths
+                str(get_local_tmp_dir() / "tmp12345/test_dir/file2.py"),
             ],
             "files_processed": 0,
             "chunks_indexed": 0,
@@ -541,7 +556,7 @@ class TestFixReportGeneration:
                 fix_type="path_correction",
                 field="codebase_dir",
                 description="Fix codebase directory path",
-                old_value="/tmp/wrong",
+                old_value=str(get_local_tmp_dir() / "wrong"),
                 new_value="/correct/path",
                 reason="Path correction needed",
             ),
@@ -576,7 +591,7 @@ class TestFixReportGeneration:
                 fix_type="path_correction",
                 field="codebase_dir",
                 description="Fix codebase directory path",
-                old_value="/tmp/wrong",
+                old_value=str(get_local_tmp_dir() / "wrong"),
                 new_value="/correct/path",
                 reason="Path correction needed",
             )

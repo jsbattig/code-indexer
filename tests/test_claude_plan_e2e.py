@@ -3,11 +3,13 @@
 These tests exercise the complete feature without mocks, requiring Claude CLI to be available.
 """
 
-import tempfile
 import shutil
 import pytest
+
+from .conftest import get_local_tmp_dir
 import time
 from pathlib import Path
+import uuid
 
 from src.code_indexer.services.claude_integration import (
     ClaudeIntegrationService,
@@ -29,9 +31,10 @@ class TestClaudePlanE2E:
         """Set up test environment with temp directory and sample code."""
 
         # Create temporary directory for test codebase
-        self.temp_dir = Path(tempfile.mkdtemp())
+        self.temp_dir = Path(str(get_local_tmp_dir() / f"test_{uuid.uuid4().hex[:8]}"))
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.codebase_dir = self.temp_dir / "test_codebase"
-        self.codebase_dir.mkdir()
+        self.codebase_dir.mkdir(parents=True, exist_ok=True)
 
         # Create sample code files for Claude to analyze
         self._create_sample_codebase()

@@ -1,9 +1,9 @@
 """Tests for Docker Compose configuration validation and service detection."""
 
 import os
-import tempfile
 import shutil
 import pytest
+
 import json
 from pathlib import Path
 from unittest.mock import patch
@@ -16,7 +16,13 @@ class TestDockerComposeValidation:
     def setup_test_environment(self):
         """Setup test environment for each test."""
         # Create temporary directory for test
-        self.test_dir = Path(tempfile.mkdtemp())
+        # Use shared test directory to avoid creating multiple container sets
+        self.test_dir = Path.home() / ".tmp" / "shared_test_containers"
+        # Clean and recreate for test isolation
+        if self.test_dir.exists():
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+        self.test_dir.mkdir(parents=True)
+        self.test_dir.mkdir(parents=True, exist_ok=True)
         self.original_cwd = os.getcwd()
         os.chdir(self.test_dir)
 
@@ -28,7 +34,7 @@ class TestDockerComposeValidation:
         # Cleanup
         os.chdir(self.original_cwd)
         if self.test_dir.exists():
-            shutil.rmtree(self.test_dir)
+            shutil.rmtree(self.test_dir, ignore_errors=True)
 
         # Restore environment
         os.environ.clear()
@@ -154,8 +160,26 @@ class TestDockerComposeValidation:
                 console=None, force_docker=True, main_config=config.model_dump()
             )
 
-            # Generate compose config
-            compose_config = docker_manager.generate_compose_config()
+            # Generate compose config with proper port allocation
+            container_names = docker_manager._generate_container_names(self.test_dir)
+
+            # CRITICAL: Update main_config with container names before port allocation
+            if not docker_manager.main_config:
+                docker_manager.main_config = {}
+            if "project_containers" not in docker_manager.main_config:
+                docker_manager.main_config["project_containers"] = {}
+            docker_manager.main_config["project_containers"].update(container_names)
+
+            ports = docker_manager._allocate_free_ports()
+            project_config = {
+                **container_names,
+                "qdrant_port": str(ports["qdrant_port"]),
+                "ollama_port": str(ports["ollama_port"]),
+                "data_cleaner_port": str(ports["data_cleaner_port"]),
+            }
+            compose_config = docker_manager.generate_compose_config(
+                self.test_dir, project_config
+            )
 
             # Validate structure
             assert "services" in compose_config
@@ -207,8 +231,26 @@ class TestDockerComposeValidation:
                 console=None, force_docker=True, main_config=config.model_dump()
             )
 
-            # Generate compose config
-            compose_config = docker_manager.generate_compose_config()
+            # Generate compose config with proper port allocation
+            container_names = docker_manager._generate_container_names(self.test_dir)
+
+            # CRITICAL: Update main_config with container names before port allocation
+            if not docker_manager.main_config:
+                docker_manager.main_config = {}
+            if "project_containers" not in docker_manager.main_config:
+                docker_manager.main_config["project_containers"] = {}
+            docker_manager.main_config["project_containers"].update(container_names)
+
+            ports = docker_manager._allocate_free_ports()
+            project_config = {
+                **container_names,
+                "qdrant_port": str(ports["qdrant_port"]),
+                "ollama_port": str(ports["ollama_port"]),
+                "data_cleaner_port": str(ports["data_cleaner_port"]),
+            }
+            compose_config = docker_manager.generate_compose_config(
+                self.test_dir, project_config
+            )
 
             # Validate structure
             assert "services" in compose_config
@@ -268,7 +310,29 @@ class TestDockerComposeValidation:
                     mock_healthy.return_value = healthy
                     mock_up_to_date.return_value = up_to_date
 
-                    state = docker_manager.get_service_state("test_service")
+                    container_names = docker_manager._generate_container_names(
+                        self.test_dir
+                    )
+
+                    # CRITICAL: Update main_config with container names before port allocation
+                    if not docker_manager.main_config:
+                        docker_manager.main_config = {}
+                    if "project_containers" not in docker_manager.main_config:
+                        docker_manager.main_config["project_containers"] = {}
+                    docker_manager.main_config["project_containers"].update(
+                        container_names
+                    )
+
+                    ports = docker_manager._allocate_free_ports()
+                    project_config = {
+                        **container_names,
+                        "qdrant_port": str(ports["qdrant_port"]),
+                        "ollama_port": str(ports["ollama_port"]),
+                        "data_cleaner_port": str(ports["data_cleaner_port"]),
+                    }
+                    state = docker_manager.get_service_state(
+                        "test_service", project_config
+                    )
 
                     assert state["exists"] == exists
                     assert state["running"] == running
@@ -301,8 +365,28 @@ class TestDockerComposeValidation:
                     console=None, force_docker=True, main_config=config.model_dump()
                 )
 
-                # Generate compose config
-                compose_config = docker_manager.generate_compose_config()
+                # Generate compose config with proper port allocation
+                container_names = docker_manager._generate_container_names(
+                    self.test_dir
+                )
+
+                # CRITICAL: Update main_config with container names before port allocation
+                if not docker_manager.main_config:
+                    docker_manager.main_config = {}
+                if "project_containers" not in docker_manager.main_config:
+                    docker_manager.main_config["project_containers"] = {}
+                docker_manager.main_config["project_containers"].update(container_names)
+
+                ports = docker_manager._allocate_free_ports()
+                project_config = {
+                    **container_names,
+                    "qdrant_port": str(ports["qdrant_port"]),
+                    "ollama_port": str(ports["ollama_port"]),
+                    "data_cleaner_port": str(ports["data_cleaner_port"]),
+                }
+                compose_config = docker_manager.generate_compose_config(
+                    self.test_dir, project_config
+                )
                 services = compose_config["services"]
 
                 if provider == "ollama":
@@ -333,22 +417,43 @@ class TestDockerComposeValidation:
                 console=None, force_docker=True, main_config=config.model_dump()
             )
 
-            # Generate compose config
-            compose_config = docker_manager.generate_compose_config()
+            # Generate compose config with proper port allocation
+            container_names = docker_manager._generate_container_names(self.test_dir)
 
-            # Check volumes
+            # CRITICAL: Update main_config with container names before port allocation
+            if not docker_manager.main_config:
+                docker_manager.main_config = {}
+            if "project_containers" not in docker_manager.main_config:
+                docker_manager.main_config["project_containers"] = {}
+            docker_manager.main_config["project_containers"].update(container_names)
+
+            ports = docker_manager._allocate_free_ports()
+            project_config = {
+                **container_names,
+                "qdrant_port": str(ports["qdrant_port"]),
+                "ollama_port": str(ports["ollama_port"]),
+                "data_cleaner_port": str(ports["data_cleaner_port"]),
+            }
+            compose_config = docker_manager.generate_compose_config(
+                self.test_dir, project_config
+            )
+
+            # Check volumes (CoW architecture uses project-specific paths for qdrant, named volumes for ollama)
             assert "volumes" in compose_config
             volumes = compose_config["volumes"]
-            assert "qdrant_data" in volumes
+            # Qdrant uses project-specific bind mounts, Ollama uses named volumes
             assert "ollama_data" in volumes
 
-            # Check that services use the volumes
+            # Check that services use the appropriate volume configurations
             services = compose_config["services"]
             qdrant_volumes = services["qdrant"]["volumes"]
             ollama_volumes = services["ollama"]["volumes"]
 
-            # Should have persistent volume mounts
-            assert any("qdrant_data" in vol for vol in qdrant_volumes)
+            # Qdrant should use project-specific bind mount (CoW architecture)
+            assert any(
+                "/.code-indexer/qdrant:/qdrant/storage" in vol for vol in qdrant_volumes
+            )
+            # Ollama should use named volume
             assert any("ollama_data" in vol for vol in ollama_volumes)
 
 

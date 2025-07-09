@@ -7,7 +7,7 @@ including cleanup of dangling test collections to ensure fast startup.
 
 import sys
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional, Set, Tuple
 import threading
 
 # Add src to path for imports
@@ -161,6 +161,7 @@ def cleanup_test_collections(
     patterns: Optional[List[str]] = None,
     dry_run: bool = False,
     console: Optional[Console] = None,
+    qdrant_port: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Clean up test collections that have been tracked by e2e tests.
@@ -197,7 +198,12 @@ def cleanup_test_collections(
         config = config_manager.load()
 
         # Check if Qdrant is available directly (more reliable than Docker status)
-        qdrant_client = QdrantClient(config.qdrant, console=console)
+        qdrant_config = config.qdrant
+        if qdrant_port:
+            # Use the custom port if provided
+            qdrant_config = config.qdrant.model_copy()
+            qdrant_config.host = f"http://localhost:{qdrant_port}"
+        qdrant_client = QdrantClient(qdrant_config, console=console)
         if not qdrant_client.health_check():
             console.print(
                 "⚠️  Qdrant service not accessible, skipping collection cleanup",
@@ -291,7 +297,9 @@ def should_run_cleanup() -> bool:
     return False
 
 
-def start_services_for_test_suite(console: Optional[Console] = None) -> bool:
+def start_services_for_test_suite(
+    console: Optional[Console] = None,
+) -> Tuple[bool, Optional[int]]:
     """
     Start Docker services as prerequisite for test suite execution.
 
@@ -299,7 +307,7 @@ def start_services_for_test_suite(console: Optional[Console] = None) -> bool:
         console: Rich console for output
 
     Returns:
-        True if services started successfully, False otherwise
+        Tuple of (success, qdrant_port) where success indicates if services started successfully
     """
     if console is None:
         console = Console()
@@ -309,9 +317,22 @@ def start_services_for_test_suite(console: Optional[Console] = None) -> bool:
         config_manager = ConfigManager.create_with_backtrack()
         config = config_manager.load()
 
+        # Use a consistent path for all test containers to avoid creating multiple container sets
+        shared_test_path = Path.home() / ".tmp" / "shared_test_containers"
+        shared_test_path.mkdir(parents=True, exist_ok=True)
+
         # Create Docker manager with VoyageAI config for test stability
-        voyage_config = {"embedding_provider": "voyage-ai"}
-        docker_manager = DockerManager(console=console, main_config=voyage_config)
+        voyage_config = {
+            "embedding_provider": "voyage-ai",
+            "codebase_dir": str(shared_test_path),  # Required by start_services method
+        }
+        # Use project-specific container model: pass project_name and ensure project setup
+        docker_manager = DockerManager(
+            console=console,
+            main_config=voyage_config,
+            project_name="test_shared",  # Fixed project name for test suite - consistent across all tests
+        )
+        docker_manager.set_indexing_root(shared_test_path)
 
         # Check current status intelligently
         status = docker_manager.get_service_status()
@@ -331,7 +352,7 @@ def start_services_for_test_suite(console: Optional[Console] = None) -> bool:
                         "✅ All required services already running and ready!",
                         style="green",
                     )
-                    return True
+                    return True, None
             except Exception:
                 pass
 
@@ -343,7 +364,7 @@ def start_services_for_test_suite(console: Optional[Console] = None) -> bool:
                 console.print(
                     "✅ Essential services accessible, tests can proceed", style="green"
                 )
-                return True
+                return True, None
         except Exception:
             pass
 
@@ -353,34 +374,18 @@ def start_services_for_test_suite(console: Optional[Console] = None) -> bool:
         success = docker_manager.start_services()
         if not success:
             console.print("❌ Failed to start Docker services", style="red")
-            return False
+            return False, None
 
-        # Wait for services to be ready
-        console.print("⏳ Waiting for services to be ready...", style="blue")
-        import time
+        # Docker manager already validated services are running and healthy
+        console.print("✅ Services are ready!", style="green")
 
-        start_time = time.time()
-        timeout = 60  # Reduced timeout since we already know services started
-
-        while time.time() - start_time < timeout:
-            status = docker_manager.get_service_status()
-            if status.get("status") == "running":
-                # Also check Qdrant health
-                try:
-                    qdrant_client = QdrantClient(config.qdrant, console=console)
-                    if qdrant_client.health_check():
-                        console.print("✅ Services are ready!", style="green")
-                        return True
-                except Exception:
-                    pass
-            time.sleep(2)  # Reduced sleep time
-
-        console.print("⚠️  Services startup timeout", style="yellow")
-        return False
+        # Docker manager starts services successfully, so cleanup can proceed
+        # Try the default port first since existing services might be available
+        return True, 6333
 
     except Exception as e:
         console.print(f"❌ Error starting services: {str(e)}", style="red")
-        return False
+        return False, None
 
 
 def setup_test_suite(console: Optional[Console] = None, force: bool = False) -> bool:
@@ -411,7 +416,7 @@ def setup_test_suite(console: Optional[Console] = None, force: bool = False) -> 
     console.print("🚀 Setting up test suite environment...", style="bold blue")
 
     # Start services as prerequisite
-    success = start_services_for_test_suite(console=console)
+    success, qdrant_port = start_services_for_test_suite(console=console)
     if not success:
         console.print(
             "❌ Failed to start services for test suite",
@@ -420,7 +425,7 @@ def setup_test_suite(console: Optional[Console] = None, force: bool = False) -> 
         return False
 
     # Clean up test collections
-    cleanup_result = cleanup_test_collections(console=console)
+    cleanup_result = cleanup_test_collections(console=console, qdrant_port=qdrant_port)
 
     if "error" in cleanup_result:
         console.print(

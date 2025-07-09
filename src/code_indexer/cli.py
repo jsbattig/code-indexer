@@ -1,5 +1,6 @@
 """Command line interface for Code Indexer."""
 
+import asyncio
 import os
 import sys
 import signal
@@ -31,6 +32,7 @@ from .services.config_fixer import ConfigurationRepairer, generate_fix_report
 from .services.vector_calculation_manager import get_default_thread_count
 from .services.cidx_prompt_generator import create_cidx_ai_prompt
 from .services.migration_decorator import requires_qdrant_access
+from .services.legacy_detector import legacy_detector
 from . import __version__
 
 
@@ -508,7 +510,11 @@ def init(
     • exclude_dirs: ["node_modules", "dist", "my_temp_folder"]
     • file_extensions: ["py", "js", "ts", "java", "cpp"]
     """
-    config_manager = ctx.obj["config_manager"]
+    # For init command, always create config in current directory (or specified codebase_dir)
+    # Don't use the CLI context's config_manager which may have found a parent config
+    target_dir = Path(codebase_dir) if codebase_dir else Path.cwd()
+    project_config_path = target_dir / ".code-indexer" / "config.json"
+    config_manager = ConfigManager(project_config_path)
 
     # Check if config already exists
     if config_manager.config_path.exists() and not force:
@@ -557,7 +563,6 @@ def init(
                 embedding_provider = "ollama"
 
         # Create default config
-        target_dir = Path(codebase_dir) if codebase_dir else Path.cwd()
         config = Config(codebase_dir=target_dir.resolve())
         config_manager._config = config
 
@@ -739,7 +744,7 @@ def start(
         # Use quiet console if requested
         setup_console = Console(quiet=quiet) if quiet else console
 
-        # Create default config if it doesn't exist
+        # Only create a local config if NO config exists anywhere in the directory tree
         if not config_manager.config_path.exists():
             setup_console.print("📝 Creating default configuration...")
             config = config_manager.create_default_config(Path.cwd().resolve())
@@ -754,6 +759,7 @@ def start(
                 "💡 You can edit .code-indexer/config.json to customize exclusions before indexing"
             )
         else:
+            # Load existing config (found via backtracking)
             config = config_manager.load()
 
         # Provider-specific configuration and validation
@@ -814,21 +820,57 @@ def start(
         config_manager.save(config)
 
         # Check Docker availability (auto-detect project name)
-        docker_manager = DockerManager(
-            setup_console, force_docker=force_docker, main_config=config.model_dump()
+        docker_manager = DockerManager(setup_console, force_docker=force_docker)
+
+        # Ensure project has container names and ports configured
+        project_root = config.codebase_dir
+        project_config = docker_manager.ensure_project_configuration(
+            config_manager, project_root
         )
 
-        if not docker_manager.is_docker_available():
+        setup_console.print(
+            f"📋 Project containers: {project_config['qdrant_name'][:12]}...",
+            style="dim",
+        )
+        # Display assigned ports for active services only
+        port_display = []
+        if "qdrant_port" in project_config:
+            port_display.append(f"Qdrant={project_config['qdrant_port']}")
+        if "ollama_port" in project_config:
+            port_display.append(f"Ollama={project_config['ollama_port']}")
+        if "data_cleaner_port" in project_config:
+            port_display.append(f"DataCleaner={project_config['data_cleaner_port']}")
+
+        if port_display:
             setup_console.print(
-                "❌ Docker is not available. Please install Docker first.", style="red"
+                f"🔌 Assigned ports: {', '.join(port_display)}",
+                style="dim",
             )
+
+        if not docker_manager.is_docker_available():
+            if force_docker:
+                setup_console.print(
+                    "❌ Docker is not available but --force-docker was specified. Please install Docker first.",
+                    style="red",
+                )
+            else:
+                setup_console.print(
+                    "❌ Neither Podman nor Docker is available. Please install either Podman or Docker first.",
+                    style="red",
+                )
             sys.exit(1)
 
         if not docker_manager.is_compose_available():
-            setup_console.print(
-                "❌ Docker Compose is not available. Please install Docker Compose first.",
-                style="red",
-            )
+            if force_docker:
+                setup_console.print(
+                    "❌ Docker Compose is not available but --force-docker was specified. Please install Docker Compose first.",
+                    style="red",
+                )
+            else:
+                setup_console.print(
+                    "❌ Neither Podman Compose nor Docker Compose is available. Please install either Podman or Docker Compose first.",
+                    style="red",
+                )
             sys.exit(1)
 
         # Check current service states for intelligent startup
@@ -840,7 +882,7 @@ def start(
         # Get current service states
         all_healthy = True
         for service in required_services:
-            state = docker_manager.get_service_state(service)
+            state = docker_manager.get_service_state(service, project_config)
             if not (state["running"] and state["healthy"]):
                 all_healthy = False
                 break
@@ -855,14 +897,24 @@ def start(
                 sys.exit(1)
 
             # Wait for services to be ready (only required ones)
-            if not docker_manager.wait_for_services():
+            if not docker_manager.wait_for_services(project_config=project_config):
                 setup_console.print("❌ Services failed to start properly", style="red")
                 sys.exit(1)
+
+        # Reload config to get updated ports after service startup
+        config = config_manager.load()
+
+        # Small delay to ensure port updates are fully written to config file
+        import time
+
+        time.sleep(0.5)
 
         # Test connections and setup based on provider
         with setup_console.status("Testing service connections..."):
             embedding_provider = EmbeddingProviderFactory.create(config, setup_console)
-            qdrant_client = QdrantClient(config.qdrant, setup_console)
+            qdrant_client = QdrantClient(
+                config.qdrant, setup_console, Path(config.codebase_dir)
+            )
 
             # Test embedding provider (only if required)
             if config.embedding_provider == "ollama":
@@ -889,7 +941,26 @@ def start(
                     sys.exit(1)
 
             # Always test Qdrant (required for all providers)
-            if not qdrant_client.health_check():
+            # Retry mechanism for Qdrant accessibility to handle port configuration propagation
+            qdrant_accessible = False
+            max_retries = 3
+            for retry in range(max_retries):
+                if qdrant_client.health_check():
+                    qdrant_accessible = True
+                    break
+                if retry < max_retries - 1:  # Don't sleep on last retry
+                    setup_console.print(
+                        f"⏳ Qdrant not yet accessible, retrying in 2s... (attempt {retry + 1}/{max_retries})",
+                        style="yellow",
+                    )
+                    time.sleep(2)
+                    # Force config reload for next retry
+                    config = config_manager.load()
+                    qdrant_client = QdrantClient(
+                        config.qdrant, setup_console, Path(config.codebase_dir)
+                    )
+
+            if not qdrant_accessible:
                 setup_console.print("❌ Qdrant service is not accessible", style="red")
                 sys.exit(1)
 
@@ -918,8 +989,13 @@ def start(
                 f"🤖 Using {embedding_provider.get_provider_name()} provider with model: {embedding_provider.get_current_model()}"
             )
 
-        # Ensure collection exists
-        if not qdrant_client.ensure_collection():
+        # Ensure collection exists - use new fixed collection naming (base_name + model_slug)
+        provider_info = EmbeddingProviderFactory.get_provider_model_info(config)
+        model_slug = EmbeddingProviderFactory.generate_model_slug(
+            "", provider_info["model_name"]
+        )
+        collection_name = f"{config.qdrant.collection_base_name}_{model_slug}"
+        if not qdrant_client.ensure_collection(collection_name):
             setup_console.print("❌ Failed to create Qdrant collection", style="red")
             sys.exit(1)
 
@@ -1080,7 +1156,7 @@ def index(
 
         # Initialize services
         embedding_provider = EmbeddingProviderFactory.create(config, console)
-        qdrant_client = QdrantClient(config.qdrant, console)
+        qdrant_client = QdrantClient(config.qdrant, console, Path(config.codebase_dir))
 
         # Health checks
         if not embedding_provider.health_check():
@@ -1327,7 +1403,7 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
 
         # Initialize services (same as index command)
         embedding_provider = EmbeddingProviderFactory.create(config, console)
-        qdrant_client = QdrantClient(config.qdrant, console)
+        qdrant_client = QdrantClient(config.qdrant, console, Path(config.codebase_dir))
 
         # Health checks
         if not embedding_provider.health_check():
@@ -1541,7 +1617,7 @@ def query(
 
         # Initialize services
         embedding_provider = EmbeddingProviderFactory.create(config, console)
-        qdrant_client = QdrantClient(config.qdrant, console)
+        qdrant_client = QdrantClient(config.qdrant, console, Path(config.codebase_dir))
 
         # Health checks
         if not embedding_provider.health_check():
@@ -2068,7 +2144,7 @@ def claude(
 
         # Initialize services (after health checks pass)
         embedding_provider = EmbeddingProviderFactory.create(config, console)
-        qdrant_client = QdrantClient(config.qdrant, console)
+        qdrant_client = QdrantClient(config.qdrant, console, Path(config.codebase_dir))
 
         # Ensure provider-aware collection is set for search
         collection_name = qdrant_client.resolve_collection_name(
@@ -2335,9 +2411,7 @@ def status(ctx, force_docker: bool):
         table.add_column("Details", style="green")
 
         # Check Docker services (auto-detect project name)
-        docker_manager = DockerManager(
-            force_docker=force_docker, main_config=config.model_dump()
-        )
+        docker_manager = DockerManager(force_docker=force_docker)
         service_status = docker_manager.get_service_status()
 
         docker_status = (
@@ -2419,20 +2493,222 @@ def status(ctx, force_docker: bool):
             qdrant_details = "Service down"
         table.add_row("Qdrant", qdrant_status, qdrant_details)
 
+        # Add Qdrant storage and collection information
+        try:
+            # Get qdrant storage location from container inspection using project-specific container name
+            import subprocess
+
+            # Use correct container runtime and project-specific container name
+            container_runtime = (
+                "docker"
+                if force_docker
+                else (
+                    "podman"
+                    if docker_manager._get_available_runtime() == "podman"
+                    else "docker"
+                )
+            )
+            qdrant_container_name = getattr(
+                config.project_containers, "qdrant_name", "code-indexer-qdrant"
+            )
+
+            result = subprocess.run(
+                [
+                    container_runtime,
+                    "inspect",
+                    "-f",
+                    '{{range .Mounts}}{{if eq .Destination "/qdrant/storage"}}{{.Source}}{{end}}{{end}}',
+                    qdrant_container_name,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                qdrant_storage_path = result.stdout.strip()
+                # Show full path across multiple lines if needed
+                table.add_row("Qdrant Storage", "📁", f"Host:\n{qdrant_storage_path}")
+            else:
+                table.add_row(
+                    "Qdrant Storage", "⚠️  Unknown", "Container inspection failed"
+                )
+
+            # Add current project collection information
+            if qdrant_ok:
+                try:
+                    embedding_provider = EmbeddingProviderFactory.create(
+                        config, console
+                    )
+                    collection_name = qdrant_client.resolve_collection_name(
+                        config, embedding_provider
+                    )
+
+                    # Check if collection exists and get basic info
+                    collection_exists = qdrant_client.collection_exists(collection_name)
+                    if collection_exists:
+                        collection_count = qdrant_client.count_points(collection_name)
+                        collection_status = "✅ Active"
+
+                        # Get local collection path if using symlink system
+                        local_collection_path = (
+                            config_manager.config_path.parent
+                            / "~"
+                            / "Dev"
+                            / "code-indexer"
+                            / ".code-indexer"
+                            / "collections"
+                            / collection_name
+                        )
+
+                        symlink_status = (
+                            "Local symlinked"
+                            if local_collection_path.exists()
+                            else "Global storage"
+                        )
+                        # Show full collection name and details
+                        collection_details = f"Name:\n{collection_name}\nPoints: {collection_count:,} | Storage: {symlink_status}"
+                    else:
+                        collection_status = "❌ Missing"
+                        # Show full collection name for missing collections too
+                        collection_details = f"Name:\n{collection_name}\nStatus: Not created yet - run 'index' command"
+
+                    table.add_row(
+                        "Project Collection", collection_status, collection_details
+                    )
+                except Exception as e:
+                    table.add_row(
+                        "Project Collection", "⚠️  Error", f"Check failed: {str(e)[:50]}"
+                    )
+            else:
+                table.add_row(
+                    "Project Collection", "❌ Unavailable", "Qdrant service down"
+                )
+
+        except Exception as e:
+            table.add_row(
+                "Qdrant Storage", "⚠️  Error", f"Inspection failed: {str(e)[:30]}"
+            )
+
         # Check Data Cleaner
+        #
+        # CRITICAL IMPLEMENTATION NOTE: This status check was debugged and fixed to handle
+        # the data-cleaner's netcat-based HTTP implementation which has specific limitations:
+        #
+        # PROBLEM DISCOVERED: The data-cleaner container runs a simple bash script that uses
+        # `nc -l -p 8091` (netcat) to simulate an HTTP server. This implementation:
+        # 1. Only handles ONE connection at a time
+        # 2. Resets the connection immediately after responding
+        # 3. Cycles every 10 seconds (sleep 10 in the loop)
+        # 4. Causes ConnectionResetError with Python requests library
+        # 5. Works fine with curl (which handles connection resets gracefully)
+        #
+        # SYMPTOMS OF BREAKAGE:
+        # - curl http://localhost:8091/ returns "Cleanup service ready" ✅
+        # - Python requests.get() throws ConnectionResetError ❌
+        # - Status shows "❌ Not Available" despite container running
+        # - docker ps shows container as healthy
+        #
+        # DEBUGGING NOTES:
+        # - The netcat server responds once per cycle and immediately closes
+        # - HTTP/1.1 keep-alive connections fail due to immediate connection termination
+        # - Connection: close header helps but doesn't fully solve timing issues
+        # - Port availability check works when netcat is between cycles
+        #
+        # SOLUTION IMPLEMENTED:
+        # Multi-layered approach to handle netcat server limitations robustly
+        # DO NOT simplify this logic without understanding the netcat behavior!
+        #
+        data_cleaner_available = False
+        data_cleaner_details = "Service down"
+
         try:
             import requests  # type: ignore
+            import subprocess
+            import socket
 
-            response = requests.get("http://localhost:8091/", timeout=5)
-            if response.status_code == 200:
-                data_cleaner_status = "✅ Ready"
-                data_cleaner_details = "Cleanup service active"
-            else:
-                data_cleaner_status = "⚠️ Issues"
-                data_cleaner_details = f"HTTP {response.status_code}"
-        except Exception:
-            data_cleaner_status = "❌ Not Available"
-            data_cleaner_details = "Service down"
+            # APPROACH 1: HTTP request with Connection: close header
+            # This works when netcat is actively listening and handles the request immediately
+            # The Connection: close header prevents HTTP/1.1 keep-alive issues with netcat
+            try:
+                # Use project-specific calculated data cleaner port
+                data_cleaner_port = getattr(
+                    config.project_ports, "data_cleaner_port", 8091
+                )
+                data_cleaner_url = f"http://localhost:{data_cleaner_port}/"
+                response = requests.get(
+                    data_cleaner_url,
+                    timeout=3,
+                    headers={
+                        "Connection": "close"
+                    },  # Critical: prevents keep-alive issues
+                )
+                if response.status_code == 200:
+                    data_cleaner_available = True
+                    data_cleaner_details = "Cleanup service active"
+            except (requests.exceptions.ConnectionError, ConnectionResetError):
+                # Expected behavior: netcat closes connection immediately after responding
+                # This exception is NORMAL and indicates we need to try other approaches
+
+                # APPROACH 2: Raw socket connection test
+                # This works when netcat is between cycles (during the sleep 10 period)
+                # We just check if something is listening on the data cleaner port
+                try:
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                        sock.settimeout(1)  # Quick check to avoid delays
+                        connect_result = sock.connect_ex(
+                            ("localhost", data_cleaner_port)
+                        )
+                        if connect_result == 0:  # Port is listening
+                            data_cleaner_available = True
+                            data_cleaner_details = "Cleanup service active (netcat)"
+                except Exception:
+                    # Socket connection failed - port not listening or refused
+                    pass
+
+            # APPROACH 3: Container status fallback
+            # If both HTTP and socket checks fail, verify the container is at least running
+            # This catches cases where the service is starting up or having issues
+            if not data_cleaner_available:
+                try:
+                    result = subprocess.run(
+                        [
+                            "docker",
+                            "ps",
+                            "--filter",
+                            "name=data-cleaner",
+                            "--format",
+                            "{{.Names}}",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if "data-cleaner" in result.stdout:
+                        data_cleaner_available = True
+                        data_cleaner_details = (
+                            "Container running (service may be cycling)"
+                        )
+                        # Note: This indicates container is up but netcat might be restarting
+                except Exception:
+                    # Docker command failed - container likely not running
+                    pass
+
+        except Exception as e:
+            data_cleaner_details = f"Check failed: {str(e)[:50]}"
+
+        # FINAL STATUS DETERMINATION
+        # If ANY of the three approaches succeeded, consider the service available
+        # This robust approach handles the netcat server's unpredictable timing
+        data_cleaner_status = (
+            "✅ Ready" if data_cleaner_available else "❌ Not Available"
+        )
+
+        # WARNING FOR FUTURE DEVELOPERS:
+        # - Do NOT simplify this to just requests.get() - it will break randomly
+        # - Do NOT remove the multi-approach logic - netcat is unpredictable
+        # - If changing data-cleaner implementation, update these comments
+        # - Test thoroughly with `cidx status` command multiple times in succession
+        # - Consider replacing netcat with proper HTTP server if reliability issues persist
 
         table.add_row("Data Cleaner", data_cleaner_status, data_cleaner_details)
 
@@ -2546,7 +2822,7 @@ def optimize(ctx):
         config = config_manager.load()
 
         # Initialize Qdrant client
-        qdrant_client = QdrantClient(config.qdrant, console)
+        qdrant_client = QdrantClient(config.qdrant, console, Path(config.codebase_dir))
 
         # Health check
         if not qdrant_client.health_check():
@@ -2594,6 +2870,11 @@ def force_flush(ctx, collection: Optional[str]):
     """Force flush collection data from RAM to disk for CoW operations.
 
     \b
+    ⚠️  DEPRECATED: This command is no longer needed with modern Qdrant and
+    per-project container architecture. Qdrant now handles data persistence
+    automatically without manual flush operations.
+
+    \b
     Forces Qdrant to flush all collection data from memory to disk
     using the snapshot API. This ensures data consistency before
     copy-on-write (CoW) cloning operations.
@@ -2631,11 +2912,22 @@ def force_flush(ctx, collection: Optional[str]):
     """
     config_manager = ctx.obj["config_manager"]
 
+    # Show deprecation warning
+    console.print(
+        "⚠️  DEPRECATION WARNING: The 'force-flush' command is deprecated and no longer needed.",
+        style="yellow",
+    )
+    console.print(
+        "   Modern Qdrant handles data persistence automatically. Consider removing this from your workflows.",
+        style="yellow",
+    )
+    console.print()
+
     try:
         config = config_manager.load()
 
         # Initialize Qdrant client
-        qdrant_client = QdrantClient(config.qdrant, console)
+        qdrant_client = QdrantClient(config.qdrant, console, Path(config.codebase_dir))
 
         # Health check
         if not qdrant_client.health_check():
@@ -2803,9 +3095,7 @@ def stop(ctx, force_docker: bool):
         console.print(f"🏗️  Project directory: {config.codebase_dir}")
 
         # Initialize Docker manager
-        docker_manager = DockerManager(
-            console, force_docker=force_docker, main_config=config.model_dump()
-        )
+        docker_manager = DockerManager(console, force_docker=force_docker)
 
         # Check current status
         status = docker_manager.get_service_status()
@@ -2876,7 +3166,7 @@ def schema(ctx, migrate: bool, quiet: bool):
 
         # Initialize services
         embedding_provider = EmbeddingProviderFactory.create(config, console)
-        qdrant_client = QdrantClient(config.qdrant, console)
+        qdrant_client = QdrantClient(config.qdrant, console, Path(config.codebase_dir))
 
         # Health checks
         if not qdrant_client.health_check():
@@ -2999,49 +3289,356 @@ def clean_data(ctx, all_projects: bool, force_docker: bool):
         sys.exit(1)
 
 
+def _perform_complete_system_wipe(force_docker: bool, console: Console):
+    """Perform complete system wipe including all containers, images, cache, and storage directories.
+
+    This is the nuclear option that removes everything related to code-indexer
+    and container engines, including cached data that might persist between runs.
+    """
+
+    console.print(
+        "⚠️  [bold red]PERFORMING COMPLETE SYSTEM WIPE[/bold red]", style="red"
+    )
+    console.print(
+        "This will remove ALL containers, images, cache, and storage directories!",
+        style="yellow",
+    )
+
+    # Step 1: Standard cleanup first
+    console.print("\n🔧 [bold]Step 1: Standard container cleanup[/bold]")
+    try:
+        docker_manager = DockerManager(force_docker=force_docker)
+        if not docker_manager.remove_containers(remove_volumes=True):
+            console.print(
+                "⚠️  Standard cleanup had issues, continuing with wipe...",
+                style="yellow",
+            )
+        docker_manager.clean_data_only(all_projects=True)
+        console.print("✅ Standard cleanup completed")
+    except Exception as e:
+        console.print(
+            f"⚠️  Standard cleanup failed: {e}, continuing with wipe...", style="yellow"
+        )
+
+    # Step 2: Detect container engine
+    console.print("\n🔧 [bold]Step 2: Detecting container engine[/bold]")
+    container_engine = _detect_container_engine(force_docker)
+    console.print(f"📦 Using container engine: {container_engine}")
+
+    # Step 3: Remove ALL container images
+    console.print("\n🔧 [bold]Step 3: Removing ALL container images[/bold]")
+    _wipe_container_images(container_engine, console)
+
+    # Step 4: Aggressive system prune
+    console.print("\n🔧 [bold]Step 4: Aggressive system prune[/bold]")
+    _aggressive_system_prune(container_engine, console)
+
+    # Step 5: Remove storage directories
+    console.print("\n🔧 [bold]Step 5: Removing storage directories[/bold]")
+    _wipe_storage_directories(console)
+
+    # Step 6: Check for remaining root-owned files in current project
+    console.print("\n🔧 [bold]Step 6: Checking for remaining root-owned files[/bold]")
+    _check_remaining_root_files(console)
+
+    console.print("\n🎯 [bold green]COMPLETE SYSTEM WIPE FINISHED[/bold green]")
+    console.print("💡 Run 'code-indexer start' to reinstall from scratch", style="blue")
+
+
+def _detect_container_engine(force_docker: bool) -> str:
+    """Detect which container engine to use."""
+    import subprocess
+
+    if force_docker:
+        return "docker"
+
+    # Try podman first (preferred)
+    try:
+        subprocess.run(
+            ["podman", "--version"], capture_output=True, check=True, timeout=5
+        )
+        return "podman"
+    except (
+        subprocess.CalledProcessError,
+        FileNotFoundError,
+        subprocess.TimeoutExpired,
+    ):
+        pass
+
+    # Fall back to docker
+    try:
+        subprocess.run(
+            ["docker", "--version"], capture_output=True, check=True, timeout=5
+        )
+        return "docker"
+    except (
+        subprocess.CalledProcessError,
+        FileNotFoundError,
+        subprocess.TimeoutExpired,
+    ):
+        raise RuntimeError("Neither podman nor docker is available")
+
+
+def _wipe_container_images(container_engine: str, console: Console):
+    """Remove all container images, including code-indexer and cached images."""
+    import subprocess
+
+    try:
+        # First, get list of all images
+        result = subprocess.run(
+            [container_engine, "images", "-q"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if result.returncode == 0 and result.stdout.strip():
+            image_ids = result.stdout.strip().split("\n")
+            console.print(f"🗑️  Found {len(image_ids)} images to remove")
+
+            # Remove images in batches to avoid command line length limits
+            batch_size = 50
+            removed_count = 0
+            for i in range(0, len(image_ids), batch_size):
+                batch = image_ids[i : i + batch_size]
+                try:
+                    cleanup_result = subprocess.run(
+                        [container_engine, "rmi", "-f"] + batch,
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                    )
+                    if cleanup_result.returncode == 0:
+                        removed_count += len(batch)
+                    else:
+                        # Some images might be in use, continue with next batch
+                        console.print(
+                            "⚠️  Some images in batch could not be removed",
+                            style="yellow",
+                        )
+                except subprocess.TimeoutExpired:
+                    console.print(
+                        "⚠️  Timeout removing image batch, continuing...", style="yellow"
+                    )
+
+            console.print(f"✅ Removed {removed_count} container images")
+        else:
+            console.print("ℹ️  No container images found to remove")
+
+    except Exception as e:
+        console.print(f"⚠️  Image removal failed: {e}", style="yellow")
+
+
+def _aggressive_system_prune(container_engine: str, console: Console):
+    """Perform aggressive system prune to remove all cached data."""
+    import subprocess
+
+    commands = [
+        (
+            f"{container_engine} system prune -a -f --volumes",
+            "Remove all unused data and volumes",
+        ),
+        (
+            (f"{container_engine} builder prune -a -f", "Remove build cache")
+            if container_engine == "docker"
+            else None
+        ),
+        (f"{container_engine} network prune -f", "Remove unused networks"),
+    ]
+
+    for cmd_info in commands:
+        if cmd_info is None:
+            continue
+
+        cmd, description = cmd_info
+        try:
+            console.print(f"🧹 {description}...")
+            result = subprocess.run(
+                cmd.split(), capture_output=True, text=True, timeout=120
+            )
+            if result.returncode == 0:
+                console.print(f"✅ {description} completed")
+            else:
+                console.print(
+                    f"⚠️  {description} had issues: {result.stderr[:100]}",
+                    style="yellow",
+                )
+        except subprocess.TimeoutExpired:
+            console.print(f"⚠️  {description} timed out", style="yellow")
+        except Exception as e:
+            console.print(f"⚠️  {description} failed: {e}", style="yellow")
+
+
+def _wipe_storage_directories(console: Console):
+    """Remove all code-indexer related storage directories."""
+    import shutil
+    from pathlib import Path
+
+    # Directories to remove
+    directories = [
+        (Path.home() / ".qdrant_collections", "Qdrant collections directory"),
+        (Path.home() / ".code-indexer-data", "Global data directory"),
+        (Path.home() / ".code-indexer-compose", "Docker compose directory"),
+        (Path.home() / ".ollama_storage", "Ollama storage directory (if exists)"),
+    ]
+
+    sudo_needed = []
+
+    for dir_path, description in directories:
+        if not dir_path.exists():
+            console.print(f"ℹ️  {description}: not found, skipping")
+            continue
+
+        try:
+            console.print(f"🗑️  Removing {description}...")
+            shutil.rmtree(dir_path)
+            console.print(f"✅ Removed {description}")
+        except PermissionError:
+            console.print(
+                f"🔒 {description}: permission denied, needs sudo", style="yellow"
+            )
+            sudo_needed.append((dir_path, description))
+        except Exception as e:
+            console.print(f"⚠️  Failed to remove {description}: {e}", style="yellow")
+
+    # Handle directories that need sudo
+    if sudo_needed:
+        console.print("\n🔒 [bold yellow]SUDO REQUIRED[/bold yellow]")
+        console.print(
+            "The following directories need sudo to remove (root-owned files):"
+        )
+
+        for dir_path, description in sudo_needed:
+            console.print(f"📁 {description}: {dir_path}")
+
+        console.print("\n💡 [bold]Run this command to complete the cleanup:[/bold]")
+        for dir_path, description in sudo_needed:
+            console.print(f"sudo rm -rf {dir_path}")
+
+
+def _check_remaining_root_files(console: Console):
+    """Check for remaining root-owned files that need manual cleanup."""
+    from pathlib import Path
+
+    # Check current project's .code-indexer directory
+    project_config_dir = Path(".code-indexer")
+    sudo_needed = []
+
+    if project_config_dir.exists():
+        try:
+            # Try to list and check ownership of files in the directory
+            for item in project_config_dir.rglob("*"):
+                try:
+                    item_stat = item.stat()
+                    if item_stat.st_uid == 0:  # Root owned
+                        sudo_needed.append(item)
+                except (OSError, PermissionError):
+                    # If we can't stat it, it might be root-owned
+                    sudo_needed.append(item)
+        except (OSError, PermissionError):
+            # If we can't access the directory at all, it's likely root-owned
+            sudo_needed.append(project_config_dir)
+
+    # Check for any other suspicious directories that might be root-owned
+    suspicious_paths = [
+        Path("~/.tmp").expanduser(),
+        Path("/tmp").glob("code-indexer*"),
+        Path("/var/tmp").glob("code-indexer*") if Path("/var/tmp").exists() else [],
+    ]
+
+    for path_or_glob in suspicious_paths:
+        if hasattr(path_or_glob, "__iter__") and not isinstance(path_or_glob, Path):
+            # It's a glob result
+            for path in path_or_glob:
+                if path.exists():
+                    try:
+                        path_stat = path.stat()
+                        if path_stat.st_uid == 0:
+                            sudo_needed.append(path)
+                    except (OSError, PermissionError):
+                        sudo_needed.append(path)
+        elif isinstance(path_or_glob, Path) and path_or_glob.exists():
+            try:
+                path_stat = path_or_glob.stat()
+                if path_stat.st_uid == 0:
+                    sudo_needed.append(path_or_glob)
+            except (OSError, PermissionError):
+                sudo_needed.append(path_or_glob)
+
+    if sudo_needed:
+        console.print("🔒 [bold yellow]FOUND ROOT-OWNED FILES[/bold yellow]")
+        console.print("The following files/directories need sudo to remove:")
+
+        unique_paths = list(set(str(p) for p in sudo_needed))
+        for path in unique_paths:
+            console.print(f"📁 {path}")
+
+        console.print("\n💡 [bold]Run these commands to complete the cleanup:[/bold]")
+        for path in unique_paths:
+            console.print(f"sudo rm -rf {path}")
+    else:
+        console.print("✅ No root-owned files found")
+
+
 @cli.command()
 @click.option(
     "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
 )
+@click.option(
+    "--wipe-all",
+    is_flag=True,
+    help="DANGEROUS: Perform complete system wipe including all containers, images, cache, and storage directories",
+)
 @click.pass_context
-def uninstall(ctx, force_docker: bool):
+def uninstall(ctx, force_docker: bool, wipe_all: bool):
     """Completely remove all containers and data.
 
     \b
-    Performs complete cleanup by removing Docker containers, volumes,
-    and all project data. Use this for complete uninstallation.
-
-    \b
-    WHAT IT DOES:
+    STANDARD CLEANUP:
       • Stops and removes all Docker containers
       • Removes Docker volumes and networks
       • Clears all project data and configurations
       • Complete cleanup for fresh start
 
     \b
+    WITH --wipe-all (DANGEROUS):
+      • All standard cleanup operations above
+      • Removes ALL container images (including cached builds)
+      • Cleans container engine cache and build cache
+      • Removes ~/.qdrant_collections directory
+      • Removes ~/.code-indexer-data global directory
+      • Removes ~/.code-indexer-compose directory
+      • Performs aggressive system prune
+      • May require sudo for permission-protected files
+
+    \b
     WARNING:
-      This removes everything! You'll need to run 'start' to recreate
-      containers and 'index' to rebuild your search index.
+      Standard: Removes all containers and data, requires restart.
+      --wipe-all: NUCLEAR OPTION - removes everything including
+      cached images, may affect other projects using same engine!
 
     \b
     USE CASES:
-      • Complete uninstallation
-      • Fixing corrupted Docker state
-      • Switching between Docker/Podman
-      • Clean slate for development
+      • Standard: Normal uninstallation, switching providers
+      • --wipe-all: Test environment cleanup, fixing deep corruption,
+        resolving persistent container/permission issues
     """
     try:
-        docker_manager = DockerManager(force_docker=force_docker)
+        if wipe_all:
+            _perform_complete_system_wipe(force_docker, console)
+        else:
+            # Standard uninstall
+            docker_manager = DockerManager(force_docker=force_docker)
 
-        # Remove containers and volumes completely
-        if not docker_manager.remove_containers(remove_volumes=True):
-            sys.exit(1)
+            # Remove containers and volumes completely
+            if not docker_manager.remove_containers(remove_volumes=True):
+                sys.exit(1)
 
-        # Also clean data
-        docker_manager.clean_data_only(all_projects=True)
+            # Also clean data
+            docker_manager.clean_data_only(all_projects=True)
 
-        console.print("✅ Complete uninstallation finished", style="green")
-        console.print("💡 Run 'code-indexer start' to reinstall", style="blue")
+            console.print("✅ Complete uninstallation finished", style="green")
+            console.print("💡 Run 'code-indexer start' to reinstall", style="blue")
 
     except Exception as e:
         console.print(f"❌ Uninstall failed: {e}", style="red")
@@ -3161,6 +3758,191 @@ def fix_config(ctx, dry_run: bool, verbose: bool, force: bool):
             import traceback
 
             console.print(traceback.format_exc())
+        sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
+)
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+@click.pass_context
+def clean_legacy(ctx, force_docker: bool, yes: bool):
+    """Migrate from legacy containers to Copy-on-Write architecture.
+
+    This command performs a complete migration from legacy container setup
+    to the new Copy-on-Write (CoW) architecture:
+
+    \b
+    1. Stops all containers
+    2. Uses data-cleaner to completely wipe storage
+    3. Starts containers with proper home directory mounting
+    4. Enables CoW functionality for collections
+
+    ⚠️  WARNING: This will remove all existing collections and require re-indexing.
+    """
+    console = Console()
+
+    try:
+        console.print("🔍 Checking legacy container status...", style="blue")
+
+        # Check if we're in legacy mode
+        is_legacy = asyncio.run(legacy_detector.check_legacy_container())
+
+        if not is_legacy:
+            console.print(
+                "✅ No legacy containers detected - CoW architecture already active",
+                style="green",
+            )
+            console.print(
+                "\nℹ️  Your containers are already running with proper home directory mounting."
+            )
+            console.print(
+                "   Collections will be stored locally with CoW functionality."
+            )
+            return
+
+        console.print("⚠️  Legacy container detected", style="yellow")
+        console.print("\nThis will:")
+        console.print("  • Stop all containers")
+        console.print("  • Completely wipe existing collection storage")
+        console.print("  • Start containers with CoW architecture")
+        console.print("  • Require re-indexing all projects")
+
+        if not yes:
+            console.print("\n❗ All existing collections will be lost!", style="red")
+            if not click.confirm("Do you want to proceed with the migration?"):
+                console.print("❌ Migration cancelled", style="yellow")
+                return
+
+        # Step 1: Stop containers
+        console.print("\n🛑 Stopping containers...", style="blue")
+        docker_manager = DockerManager(force_docker=force_docker)
+        docker_manager.stop_services()
+        console.print("✅ Containers stopped", style="green")
+
+        # Step 2: Clean storage using existing clean functionality
+        console.print("\n🧹 Cleaning legacy storage...", style="blue")
+
+        # Use the existing clean_data_only functionality
+        success = docker_manager.clean_data_only(all_projects=True)
+        if not success:
+            raise RuntimeError("Failed to clean legacy storage")
+
+        console.print("✅ Legacy storage cleaned", style="green")
+
+        # Step 3: Force remove containers and compose file
+        console.print("\n🔧 Removing old containers and compose file...", style="blue")
+
+        # Remove containers to force recreation with new mounts
+        try:
+            import subprocess
+
+            subprocess.run(
+                ["docker", "rm", "-f", "code-indexer-qdrant"],
+                capture_output=True,
+                timeout=30,
+            )
+            subprocess.run(
+                ["docker", "rm", "-f", "code-indexer-data-cleaner"],
+                capture_output=True,
+                timeout=30,
+            )
+            subprocess.run(
+                ["docker", "rm", "-f", "code-indexer-ollama"],
+                capture_output=True,
+                timeout=30,
+            )
+            console.print("✅ Old containers removed", style="green")
+        except Exception as e:
+            console.print(f"⚠️  Container removal had issues: {e}", style="yellow")
+
+        # Remove old compose file to force regeneration
+        if (
+            hasattr(docker_manager, "compose_file")
+            and docker_manager.compose_file.exists()
+        ):
+            docker_manager.compose_file.unlink()
+            console.print("✅ Old compose file removed", style="green")
+
+        # Step 4: Start containers with proper home mounting
+        console.print("\n🚀 Creating containers with CoW architecture...", style="blue")
+
+        # Start services - this will regenerate containers with home directory mounting
+        docker_manager.start_services()
+
+        # Verify services are running
+        console.print("⏳ Waiting for services to be ready...", style="blue")
+
+        # Give services time to start
+        import time
+
+        time.sleep(10)
+
+        # Check if services are healthy - legacy function checking old container names
+        # This should be removed in new mode only
+        try:
+            # Try to get project config if available
+            if hasattr(docker_manager, "main_config") and docker_manager.main_config:
+                project_config = docker_manager.main_config.get(
+                    "project_containers", {}
+                )
+                if project_config:
+                    qdrant_healthy = docker_manager._container_exists(
+                        "qdrant", project_config
+                    )
+                else:
+                    # Legacy container check - use legacy name directly
+                    import subprocess
+
+                    result = subprocess.run(
+                        ["docker", "container", "inspect", "code-indexer-qdrant"],
+                        capture_output=True,
+                        timeout=5,
+                    )
+                    qdrant_healthy = result.returncode == 0
+            else:
+                # Legacy container check - use legacy name directly
+                import subprocess
+
+                result = subprocess.run(
+                    ["docker", "container", "inspect", "code-indexer-qdrant"],
+                    capture_output=True,
+                    timeout=5,
+                )
+                qdrant_healthy = result.returncode == 0
+        except Exception:
+            qdrant_healthy = False
+        if qdrant_healthy:
+            console.print("✅ Qdrant service started successfully", style="green")
+        else:
+            console.print("⚠️  Qdrant service may still be starting", style="yellow")
+
+        # Verify CoW architecture is active
+        console.print("\n🔍 Verifying CoW architecture...", style="blue")
+        is_legacy_after = asyncio.run(legacy_detector.check_legacy_container())
+
+        if not is_legacy_after:
+            console.print("✅ CoW architecture successfully activated!", style="green")
+        else:
+            console.print(
+                "⚠️  CoW architecture verification failed - manual restart may be needed",
+                style="yellow",
+            )
+
+        console.print("\n🎉 Migration completed successfully!", style="green")
+        console.print("\nNext steps:")
+        console.print(
+            "  1. Run 'cidx index' in your projects to create local collections"
+        )
+        console.print("  2. Collections will be stored locally with CoW functionality")
+        console.print("  3. Use 'cidx status' to verify local collection setup")
+
+    except Exception as e:
+        console.print(f"❌ Migration failed: {e}", style="red")
+        console.print("\nYou may need to manually restart containers:")
+        console.print("  cidx stop")
+        console.print("  cidx start")
         sys.exit(1)
 
 

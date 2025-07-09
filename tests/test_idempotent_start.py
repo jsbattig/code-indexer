@@ -1,9 +1,9 @@
 """Tests for idempotent start behavior."""
 
 import os
-import tempfile
 import shutil
 import pytest
+
 import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -16,7 +16,12 @@ class TestIdempotentStart:
     def setup_test_environment(self):
         """Setup test environment for each test."""
         # Create temporary directory for test
-        self.test_dir = Path(tempfile.mkdtemp())
+        # Use shared test directory to avoid creating multiple container sets
+        self.test_dir = Path.home() / ".tmp" / "shared_test_containers"
+        # Clean and recreate for test isolation
+        if self.test_dir.exists():
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+        self.test_dir.mkdir(parents=True, exist_ok=True)
         try:
             self.original_cwd = os.getcwd()
         except (FileNotFoundError, OSError):
@@ -36,7 +41,7 @@ class TestIdempotentStart:
             # If original directory doesn't exist, go to home
             os.chdir(Path.home())
         if self.test_dir.exists():
-            shutil.rmtree(self.test_dir)
+            shutil.rmtree(self.test_dir, ignore_errors=True)
 
         # Restore environment
         os.environ.clear()
@@ -99,9 +104,16 @@ class TestIdempotentStart:
             config_manager = ConfigManager.create_with_backtrack(self.test_dir)
             config = config_manager.load()
 
-            docker_manager = DockerManager(
-                console=None, force_docker=True, main_config=config.model_dump()
-            )
+            # Set up project containers configuration for idempotent behavior
+            config_dict = config.model_dump()
+            config_dict["project_containers"] = {
+                "project_hash": "abc12345",
+                "qdrant_name": "cidx-abc12345-qdrant",
+                "ollama_name": "cidx-abc12345-ollama",
+                "data_cleaner_name": "cidx-abc12345-data-cleaner",
+            }
+
+            docker_manager = DockerManager(console=None, force_docker=True)
 
             # Mock all services as healthy
             with patch.object(docker_manager, "get_service_state") as mock_state:
@@ -131,7 +143,12 @@ class TestIdempotentStart:
 
         with patch("code_indexer.cli.DockerManager") as mock_docker_class, patch(
             "code_indexer.cli.EmbeddingProviderFactory"
-        ) as mock_factory, patch("code_indexer.cli.QdrantClient") as mock_qdrant_class:
+        ) as mock_factory, patch(
+            "code_indexer.cli.QdrantClient"
+        ) as mock_qdrant_class, patch(
+            "code_indexer.services.legacy_detector.legacy_detector.check_legacy_container",
+            return_value=False,
+        ):
             # Setup mocks
             mock_docker = MagicMock()
             mock_docker.is_docker_available.return_value = True
@@ -186,7 +203,12 @@ class TestIdempotentStart:
 
         with patch("code_indexer.cli.DockerManager") as mock_docker_class, patch(
             "code_indexer.cli.EmbeddingProviderFactory"
-        ) as mock_factory, patch("code_indexer.cli.QdrantClient") as mock_qdrant_class:
+        ) as mock_factory, patch(
+            "code_indexer.cli.QdrantClient"
+        ) as mock_qdrant_class, patch(
+            "code_indexer.services.legacy_detector.legacy_detector.check_legacy_container",
+            return_value=False,
+        ):
             # Setup mocks
             mock_docker = MagicMock()
             mock_docker.is_docker_available.return_value = True
@@ -260,12 +282,26 @@ class TestIdempotentStart:
             config_manager = ConfigManager.create_with_backtrack(self.test_dir)
             config = config_manager.load()
 
-            docker_manager = DockerManager(
-                console=None, force_docker=True, main_config=config.model_dump()
-            )
+            # Set up project containers configuration for recreate test
+            config_dict = config.model_dump()
+            config_dict["project_containers"] = {
+                "project_hash": "def56789",
+                "qdrant_name": "cidx-def56789-qdrant",
+                "ollama_name": "cidx-def56789-ollama",
+                "data_cleaner_name": "cidx-def56789-data-cleaner",
+            }
 
-            # Mock all services as healthy
-            with patch.object(docker_manager, "get_service_state") as mock_state:
+            docker_manager = DockerManager(console=None, force_docker=True)
+
+            # Mock additional methods to prevent hanging
+            with patch.object(
+                docker_manager, "get_service_state"
+            ) as mock_state, patch.object(
+                docker_manager, "_update_config_with_ports"
+            ), patch.object(
+                docker_manager, "wait_for_services", return_value=True
+            ):
+
                 mock_state.return_value = {
                     "exists": True,
                     "running": True,
@@ -278,15 +314,23 @@ class TestIdempotentStart:
 
                 assert result is True
 
-                # With recreate=True, should NOT call docker-compose start (subprocess.run)
-                # Should only call docker-compose up --force-recreate (Popen)
-                mock_popen.assert_called_once()
+                # With recreate=True, should call docker-compose up --force-recreate (subprocess.run)
+                mock_run.assert_called()
 
                 # Verify --force-recreate flag is passed and it's docker-compose up
-                call_args = mock_popen.call_args[0][0]
-                assert "--force-recreate" in call_args
-                assert "up" in call_args
-                assert "-d" in call_args
+                # Find the call that includes --force-recreate
+                force_recreate_call = None
+                for call in mock_run.call_args_list:
+                    call_args = call[0][0]
+                    if "--force-recreate" in call_args:
+                        force_recreate_call = call_args
+                        break
+
+                assert (
+                    force_recreate_call is not None
+                ), "Expected --force-recreate call not found"
+                assert "up" in force_recreate_call
+                assert "-d" in force_recreate_call
 
 
 if __name__ == "__main__":

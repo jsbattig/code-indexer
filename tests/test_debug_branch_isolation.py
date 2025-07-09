@@ -3,8 +3,9 @@ Debug branch isolation logic to understand why files aren't visible in their own
 """
 
 import pytest
+
+from .conftest import local_temporary_directory
 from pathlib import Path
-import tempfile
 import subprocess
 from typing import Dict, Any
 
@@ -24,7 +25,7 @@ def test_debug_branch_isolation():
     if not os.getenv("VOYAGE_API_KEY"):
         pytest.skip("VoyageAI API key required")
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with local_temporary_directory() as temp_dir:
         repo_path = Path(temp_dir)
 
         # Create a simple git repository

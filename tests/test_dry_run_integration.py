@@ -4,8 +4,9 @@ Simple integration test for dry-run functionality.
 This test validates that the --dry-run-show-claude-prompt flag works correctly.
 """
 
+from .conftest import local_temporary_directory
+
 from click.testing import CliRunner
-import tempfile
 import subprocess
 import os
 from pathlib import Path
@@ -18,7 +19,7 @@ def test_dry_run_simple_integration():
     """Test dry-run flag with services setup to verify it shows prompt without executing Claude."""
 
     # Create a temporary directory structure that would be a valid codebase
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with local_temporary_directory() as temp_dir:
         temp_path = Path(temp_dir)
         # Safely get current working directory
         try:
@@ -135,7 +136,7 @@ def test_normal_execution_differs_from_dry_run():
     """Test that normal execution attempts to actually run Claude (vs dry-run which doesn't)."""
 
     # Create a temporary directory structure that would be a valid codebase
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with local_temporary_directory() as temp_dir:
         temp_path = Path(temp_dir)
         # Safely get current working directory
         try:

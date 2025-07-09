@@ -9,6 +9,7 @@ and Qdrant collection contents.
 import json
 import time
 import subprocess
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -17,6 +18,7 @@ from dataclasses import dataclass
 from code_indexer.config import ConfigManager, Config
 from code_indexer.services.json_validator import JSONSyntaxRepairer
 from code_indexer.services.qdrant import QdrantClient
+from code_indexer.services.embedding_factory import EmbeddingProviderFactory
 
 
 @dataclass
@@ -458,7 +460,12 @@ class ConfigurationRepairer:
                     backup_path.write_text(self.metadata_file.read_text())
                     backup_files.append(str(backup_path))
 
-            # Step 6: Check for wrong collections
+            # Step 6: Check and fix CoW symlink issues
+            print("🔍 Checking CoW symlinks...")
+            cow_fixes = self._fix_cow_symlinks()
+            all_fixes.extend(cow_fixes)
+
+            # Step 7: Check for wrong collections
             print("🔍 Checking Qdrant collections...")
             collection_warnings = self._check_collections()
             all_warnings.extend(collection_warnings)
@@ -544,7 +551,17 @@ class ConfigurationRepairer:
         # Try to get collection stats
         collection_stats = None
         if self.collection_analyzer:
-            collection_name = f"{correct_project_name}_{config.embedding_provider}"
+            # Use new fixed collection naming: base_name + model_slug
+            base_name = config.qdrant.collection_base_name
+            if config.embedding_provider == "voyage-ai":
+                model_name = config.voyage_ai.model
+            elif config.embedding_provider == "ollama":
+                model_name = config.ollama.model
+            else:
+                model_name = "unknown"
+
+            model_slug = EmbeddingProviderFactory.generate_model_slug("", model_name)
+            collection_name = f"{base_name}_{model_slug}"
             collection_stats = self.collection_analyzer.derive_stats_from_collection(
                 collection_name
             )
@@ -581,7 +598,9 @@ class ConfigurationRepairer:
     def _initialize_qdrant_client(self, config: Config):
         """Initialize Qdrant client for collection analysis."""
         try:
-            self.qdrant_client = QdrantClient(config.qdrant)
+            self.qdrant_client = QdrantClient(
+                config.qdrant, project_root=Path(config.codebase_dir)
+            )
             if self.qdrant_client.health_check():
                 self.collection_analyzer = CollectionAnalyzer(self.qdrant_client)
             else:
@@ -608,6 +627,192 @@ class ConfigurationRepairer:
             )
 
         return warnings
+
+    def _fix_cow_symlinks(self) -> List[ConfigFix]:
+        """Check and fix CoW (Copy-on-Write) symlink issues."""
+        fixes = []
+
+        try:
+            # Check for stale symlinks in global collections directory
+            global_collections_dir = Path.home() / ".qdrant_collections"
+
+            if global_collections_dir.exists():
+                stale_symlinks = []
+
+                for item in global_collections_dir.iterdir():
+                    if item.is_symlink():
+                        target = item.resolve()
+                        # Check if target exists and if it's pointing to correct project
+                        if not target.exists() or not str(target).startswith(
+                            str(self.config_dir.parent)
+                        ):
+                            stale_symlinks.append(item)
+
+                if stale_symlinks:
+                    fixes.append(
+                        ConfigFix(
+                            fix_type="cow_symlink_cleanup",
+                            field="symlinks",
+                            description="Remove stale CoW symlinks",
+                            old_value=len(stale_symlinks),
+                            new_value=0,
+                            reason=f"Found {len(stale_symlinks)} stale symlinks pointing to wrong locations",
+                        )
+                    )
+
+                    if not self.dry_run:
+                        for symlink in stale_symlinks:
+                            print(f"  🗑️  Removing stale symlink: {symlink.name}")
+                            symlink.unlink()
+
+            # Check for orphaned collection directories in project
+            project_collections_dir = self.config_dir / "qdrant_collection"
+
+            if project_collections_dir.exists():
+                orphaned_dirs = []
+
+                for item in project_collections_dir.iterdir():
+                    if item.is_dir():
+                        # Check if corresponding symlink exists
+                        expected_symlink = global_collections_dir / item.name
+                        if (
+                            not expected_symlink.exists()
+                            or not expected_symlink.is_symlink()
+                        ):
+                            orphaned_dirs.append(item)
+
+                if orphaned_dirs:
+                    fixes.append(
+                        ConfigFix(
+                            fix_type="cow_orphaned_directories",
+                            field="directories",
+                            description="Remove orphaned collection directories",
+                            old_value=len(orphaned_dirs),
+                            new_value=0,
+                            reason=f"Found {len(orphaned_dirs)} orphaned collection directories without symlinks",
+                        )
+                    )
+
+                    if not self.dry_run:
+                        for orphaned_dir in orphaned_dirs:
+                            print(
+                                f"  🗑️  Removing orphaned directory: {orphaned_dir.name}"
+                            )
+                            shutil.rmtree(orphaned_dir, ignore_errors=True)
+
+            # Ensure proper directory structure exists
+            if not global_collections_dir.exists():
+                fixes.append(
+                    ConfigFix(
+                        fix_type="cow_directory_structure",
+                        field="directories",
+                        description="Create CoW directory structure",
+                        old_value="missing",
+                        new_value="created",
+                        reason="Global collections directory is required for CoW functionality",
+                    )
+                )
+
+                if not self.dry_run:
+                    print(
+                        f"  📁 Creating global collections directory: {global_collections_dir}"
+                    )
+                    global_collections_dir.mkdir(parents=True, exist_ok=True)
+
+            # Ensure project collection directory exists
+            if not project_collections_dir.exists():
+                fixes.append(
+                    ConfigFix(
+                        fix_type="cow_project_structure",
+                        field="directories",
+                        description="Create project CoW directory structure",
+                        old_value="missing",
+                        new_value="created",
+                        reason="Project collections directory is required for CoW functionality",
+                    )
+                )
+
+                if not self.dry_run:
+                    print(
+                        f"  📁 Creating project collections directory: {project_collections_dir}"
+                    )
+                    project_collections_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create expected collection structure for current project
+            try:
+                # Load config to get embedding provider details
+                config_manager = ConfigManager(self.config_file)
+                config = config_manager.load()
+
+                # Load metadata to get project details
+                if self.metadata_file.exists():
+                    with open(self.metadata_file, "r") as f:
+                        metadata = json.load(f)
+
+                    embedding_provider = metadata.get(
+                        "embedding_provider", config.embedding_provider
+                    )
+                    base_name = config.qdrant.collection_base_name
+
+                    # Get model name from config based on provider
+                    if embedding_provider == "voyage-ai":
+                        model_name = config.voyage_ai.model
+                    elif embedding_provider == "ollama":
+                        model_name = config.ollama.model
+                    else:
+                        model_name = "unknown"
+
+                    # Use new fixed collection naming: base_name + model_slug (no project_id)
+                    model_slug = EmbeddingProviderFactory.generate_model_slug(
+                        "", model_name
+                    )
+                    expected_collection_name = f"{base_name}_{model_slug}"
+
+                    expected_local_dir = (
+                        project_collections_dir / expected_collection_name
+                    )
+                    expected_symlink = global_collections_dir / expected_collection_name
+
+                    # Check if the expected structure exists
+                    if not expected_local_dir.exists() or not expected_symlink.exists():
+                        fixes.append(
+                            ConfigFix(
+                                fix_type="cow_expected_structure",
+                                field="collection_structure",
+                                description="Create expected CoW collection structure",
+                                old_value="missing",
+                                new_value=expected_collection_name,
+                                reason=f"Collection structure needed for project with {embedding_provider}",
+                            )
+                        )
+
+                        if not self.dry_run:
+                            print(
+                                f"  📁 Creating expected collection directory: {expected_collection_name}"
+                            )
+                            expected_local_dir.mkdir(parents=True, exist_ok=True)
+
+                            if (
+                                expected_symlink.exists()
+                                or expected_symlink.is_symlink()
+                            ):
+                                if expected_symlink.is_symlink():
+                                    expected_symlink.unlink()
+                                else:
+                                    shutil.rmtree(expected_symlink, ignore_errors=True)
+
+                            print(f"  🔗 Creating symlink: {expected_collection_name}")
+                            expected_symlink.symlink_to(
+                                expected_local_dir, target_is_directory=True
+                            )
+
+            except Exception as e:
+                print(f"Warning: Could not create expected collection structure: {e}")
+
+        except Exception as e:
+            print(f"Warning: Could not check CoW symlinks: {e}")
+
+        return fixes
 
 
 def generate_fix_report(result: FixResult, dry_run: bool = False) -> str:

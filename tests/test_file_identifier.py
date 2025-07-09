@@ -6,7 +6,8 @@ to ensure the FileIdentifier works correctly in all scenarios.
 """
 
 import pytest
-import tempfile
+
+from .conftest import local_temporary_directory
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -21,7 +22,7 @@ class TestFileIdentifier:
     @pytest.fixture
     def temp_dir(self):
         """Create a temporary directory for testing."""
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with local_temporary_directory() as temp_dir:
             yield Path(temp_dir)
 
     @pytest.fixture

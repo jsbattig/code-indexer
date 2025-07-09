@@ -106,14 +106,14 @@ class TestReconcileProgressRegression:
             for update in progress_bar_updates
         ), "Progress bar should show the file processing info"
 
-    def test_high_throughput_processor_progress_callback_format(self, tmp_path):
+    def test_high_throughput_processor_progress_callback_format(self, local_tmp_path):
         """Test that HighThroughputProcessor uses correct progress callback format for CLI compatibility."""
         from code_indexer.services.high_throughput_processor import (
             HighThroughputProcessor,
         )
 
         # Setup test environment
-        project_dir = tmp_path / "test_project"
+        project_dir = local_tmp_path / "test_project"
         project_dir.mkdir()
 
         test_files = []
@@ -197,11 +197,11 @@ class TestReconcileProgressRegression:
                 call["file_path"] == "."
             ), f"Progress calls with info should use empty path, but got: {call['file_path']}"
 
-    def test_branch_aware_indexer_progress_callback_format(self, tmp_path):
+    def test_branch_aware_indexer_progress_callback_format(self, local_tmp_path):
         """Test that BranchAwareIndexer calls progress callback with correct parameters."""
 
         # Setup test environment
-        project_dir = tmp_path / "test_project"
+        project_dir = local_tmp_path / "test_project"
         project_dir.mkdir()
 
         test_file = project_dir / "test_file.py"

@@ -3,4 +3,7 @@ FROM linner.ddns.net:4443/docker.io.proxy/qdrant/qdrant:latest
 # Install curl for health checks
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
+# Create directories with default permissions (removed custom user mapping)
+RUN mkdir -p /qdrant/storage /qdrant/storage/collections /qdrant/snapshots /qdrant/snapshots/tmp
+
 # Keep the original entrypoint

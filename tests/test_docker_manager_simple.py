@@ -3,8 +3,9 @@ Simplified unit tests for DockerManager class.
 Tests only the methods that actually exist in the implementation.
 """
 
+from .conftest import local_temporary_directory
+
 import unittest
-import tempfile
 import os
 import sys
 from pathlib import Path
@@ -49,11 +50,12 @@ class TestDockerManager(unittest.TestCase):
         ]
 
         for folder_name, expected in test_cases:
-            with tempfile.TemporaryDirectory() as temp_dir:
+            with local_temporary_directory() as temp_dir:
                 test_dir = Path(temp_dir) / folder_name
                 test_dir.mkdir()
 
                 os.chdir(test_dir)
+                # Test automatic project name detection (no explicit project_name)
                 docker_manager = DockerManager()
 
                 self.assertEqual(
@@ -64,7 +66,7 @@ class TestDockerManager(unittest.TestCase):
 
     def test_project_name_sanitization(self):
         """Test project name sanitization for Docker compatibility."""
-        docker_manager = DockerManager()
+        docker_manager = DockerManager(project_name="test_shared")
 
         test_cases = [
             ("Test_Project", "test_project"),  # Underscores preserved for qdrant
@@ -96,7 +98,7 @@ class TestDockerManager(unittest.TestCase):
 
     def test_compose_file_path(self):
         """Test that compose file path is set correctly."""
-        docker_manager = DockerManager(project_name="test")
+        docker_manager = DockerManager(project_name="test_shared")
 
         # The compose file should be in the dedicated compose directory (separated from data)
         expected_path = Path.home() / ".code-indexer-compose" / "docker-compose.yml"
@@ -104,7 +106,7 @@ class TestDockerManager(unittest.TestCase):
 
     def test_docker_availability_check(self):
         """Test Docker availability checking method exists."""
-        docker_manager = DockerManager(project_name="test")
+        docker_manager = DockerManager(project_name="test_shared")
 
         # Should not raise an exception
         result = docker_manager.is_docker_available()
@@ -112,7 +114,7 @@ class TestDockerManager(unittest.TestCase):
 
     def test_compose_availability_check(self):
         """Test Docker Compose availability checking method exists."""
-        docker_manager = DockerManager(project_name="test")
+        docker_manager = DockerManager(project_name="test_shared")
 
         # Should not raise an exception
         result = docker_manager.is_compose_available()
@@ -120,7 +122,7 @@ class TestDockerManager(unittest.TestCase):
 
     def test_get_compose_command(self):
         """Test get compose command method exists."""
-        docker_manager = DockerManager(project_name="test")
+        docker_manager = DockerManager(project_name="test_shared")
 
         # Should not raise an exception and return a list
         result = docker_manager.get_compose_command()
@@ -129,7 +131,7 @@ class TestDockerManager(unittest.TestCase):
 
     def test_error_handling_invalid_project_name(self):
         """Test handling of edge cases in project name detection."""
-        docker_manager = DockerManager()
+        docker_manager = DockerManager(project_name="test_shared")
 
         # Test with very long project name
         long_name = "a" * 100
@@ -154,14 +156,14 @@ class TestDockerManagerConfig(unittest.TestCase):
     def test_config_integration(self):
         """Test that DockerManager integrates properly with config system."""
         # This test ensures DockerManager can work without config files
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with local_temporary_directory() as temp_dir:
             test_dir = Path(temp_dir) / "test-project"
             test_dir.mkdir()
 
             os.chdir(test_dir)
 
             # Should not fail even without config files
-            docker_manager = DockerManager()
+            docker_manager = DockerManager(project_name="test_shared")
             self.assertIsNotNone(docker_manager.project_name)
 
 

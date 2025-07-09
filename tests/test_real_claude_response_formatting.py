@@ -5,7 +5,8 @@ This test reproduces the exact formatting issue seen in the user's real Claude r
 where headers, bold text, code blocks and other formatting are not being displayed properly.
 """
 
-import tempfile
+from .conftest import local_temporary_directory
+
 from pathlib import Path
 from io import StringIO
 
@@ -17,7 +18,7 @@ def test_real_claude_response_formatting_issue():
     """Test that reproduces the exact formatting issue from user's real Claude response."""
 
     # Create a test ClaudeIntegrationService
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with local_temporary_directory() as temp_dir:
         temp_path = Path(temp_dir)
         (temp_path / "main.py").write_text("print('hello')")
 
@@ -263,7 +264,7 @@ relationships, not just text matches."""
 def test_current_formatting_method_works():
     """Test that demonstrates the current _render_content_with_file_links method now works to format content."""
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with local_temporary_directory() as temp_dir:
         temp_path = Path(temp_dir)
         (temp_path / "main.py").write_text("print('hello')")
 

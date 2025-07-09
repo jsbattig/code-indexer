@@ -28,10 +28,7 @@ class TestStartStopStatusCycle:
         """Set up test environment."""
         self.config = Config()
         # Use VoyageAI config to avoid Ollama port conflicts in tests
-        voyage_config = {"embedding_provider": "voyage-ai"}
-        self.docker_manager = DockerManager(
-            force_docker=True, main_config=voyage_config
-        )
+        self.docker_manager = DockerManager(force_docker=True)
 
         # Expected container names (VoyageAI config - no Ollama needed)
         self.expected_containers = [

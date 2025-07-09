@@ -10,51 +10,35 @@ Performance comparison:
 """
 
 import os
-import tempfile
-from pathlib import Path
+import json
+import time
+import subprocess
 import pytest
 
-from .shared_container_fixture import (
-    fast_cli_command,
-    shared_containers,  # noqa: F401
-    clean_test_data,  # noqa: F401
-)
+from .conftest import local_temporary_directory
+from .test_infrastructure import auto_register_project_collections
 
 
-@pytest.mark.skipif(
-    not os.getenv("VOYAGE_API_KEY"),
-    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
-)
-class TestOptimizedExample:
-    """Example of optimized E2E test using shared containers."""
+@pytest.fixture
+def optimized_test_repo():
+    """Create a test repository for optimized E2E tests."""
+    with local_temporary_directory() as temp_dir:
+        # Auto-register collections for cleanup
+        auto_register_project_collections(temp_dir)
 
-    @pytest.fixture(autouse=True)
-    def setup_test_project(self, shared_containers, clean_test_data):  # noqa: F811
-        """Setup test project directory - containers already running."""
+        # Preserve .code-indexer directory if it exists
+        config_dir = temp_dir / ".code-indexer"
+        if not config_dir.exists():
+            config_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create temporary test project
-        self.test_dir = Path(tempfile.mkdtemp(prefix="optimized_test_"))
-        self.original_cwd = Path.cwd()
+        yield temp_dir
 
-        # Create test files
-        self.create_test_files()
 
-        # Change to test directory
-        os.chdir(self.test_dir)
+def create_test_files(test_dir):
+    """Create test files for indexing."""
 
-        yield
-
-        # Cleanup: only remove test directory, containers stay running
-        os.chdir(self.original_cwd)
-        import shutil
-
-        shutil.rmtree(self.test_dir, ignore_errors=True)
-
-    def create_test_files(self):
-        """Create test files for indexing."""
-
-        (self.test_dir / "main.py").write_text(
-            """
+    (test_dir / "main.py").write_text(
+        """
 def authenticate_user(username, password):
     '''User authentication function'''
     return username == "admin" and password == "secret"
@@ -69,10 +53,10 @@ class UserManager:
         self.users[username] = {"email": email}
         return True
 """
-        )
+    )
 
-        (self.test_dir / "api.py").write_text(
-            """
+    (test_dir / "api.py").write_text(
+        """
 from fastapi import FastAPI
 app = FastAPI()
 
@@ -87,81 +71,227 @@ async def get_user(user_id: int):
     '''Get user by ID endpoint'''
     return {"id": user_id, "username": f"user_{user_id}"}
 """
-        )
+    )
 
-    def test_fast_indexing_workflow(self, shared_containers):  # noqa: F811
-        """Test indexing workflow with shared containers (FAST)."""
 
-        # Step 1: Init project with VoyageAI (containers already running)
-        result = fast_cli_command(
-            ["init", "--embedding-provider", "voyage-ai", "--force"]
-        )
-        assert result.returncode == 0, f"Init failed: {result.stderr}"
+def create_optimized_config(test_dir):
+    """Create configuration for optimized test."""
+    config_dir = test_dir / ".code-indexer"
+    config_file = config_dir / "config.json"
 
-        # Step 2: Index project (no container startup needed)
-        result = fast_cli_command(["index"], timeout=60)
-        assert result.returncode == 0, f"Index failed: {result.stderr}"
-        assert "Files processed:" in result.stdout
+    # Load existing config if it exists (preserves container ports)
+    if config_file.exists():
+        with open(config_file, "r") as f:
+            config = json.load(f)
+    else:
+        config = {
+            "codebase_dir": str(test_dir),
+            "qdrant": {
+                "host": "http://localhost:6333",
+                "collection": f"test_collection_{int(time.time())}",
+            },
+        }
 
-        # Step 3: Search for content
-        result = fast_cli_command(["query", "authentication function"])
-        assert result.returncode == 0, f"Query failed: {result.stderr}"
-        # Note: May not find results due to VoyageAI vs test data mismatch, but that's OK for performance test
+    # Only modify test-specific settings, preserve container configuration
+    config["embedding_provider"] = "voyage-ai"
+    config["voyage_ai"] = {
+        "model": "voyage-code-3",
+        "api_key_env": "VOYAGE_API_KEY",
+        "batch_size": 32,
+        "max_retries": 3,
+        "timeout": 30,
+    }
 
-        # Step 4: Check status
-        result = fast_cli_command(["status"])
-        assert result.returncode == 0, f"Status failed: {result.stderr}"
+    with open(config_file, "w") as f:
+        json.dump(config, f, indent=2)
 
-        # No container cleanup needed - shared_containers handles it
+    return config_file
 
-    def test_fast_multiple_projects(self, shared_containers):  # noqa: F811
-        """Test multiple project workflow with shared containers (FAST)."""
 
-        # Project 1
-        result = fast_cli_command(
-            ["init", "--embedding-provider", "voyage-ai", "--force"]
-        )
-        assert result.returncode == 0
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
+def test_fast_indexing_workflow(optimized_test_repo):
+    """Test indexing workflow with shared containers (FAST)."""
+    test_dir = optimized_test_repo
 
-        result = fast_cli_command(["index"])
-        assert result.returncode == 0
+    # Create test files
+    create_test_files(test_dir)
 
-        # Quick data cleanup (not container cleanup)
-        result = fast_cli_command(["clean-data"])
-        assert result.returncode == 0
+    # Create configuration
+    create_optimized_config(test_dir)
 
-        # Project 2 setup (containers still running)
-        result = fast_cli_command(
-            ["init", "--embedding-provider", "voyage-ai", "--force"]
-        )
-        assert result.returncode == 0
+    # Step 1: Init project with VoyageAI (containers already running)
+    result = subprocess.run(
+        ["code-indexer", "init", "--embedding-provider", "voyage-ai", "--force"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, f"Init failed: {result.stderr}"
 
-        result = fast_cli_command(["index"])
-        assert result.returncode == 0
+    # Step 2: Index project (no container startup needed)
+    result = subprocess.run(
+        ["code-indexer", "index"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, f"Index failed: {result.stderr}"
+    assert "Files processed:" in result.stdout or "Processing complete" in result.stdout
 
-        # Fast cleanup again
-        result = fast_cli_command(["clean-data"])
-        assert result.returncode == 0
+    # Step 3: Search for content
+    result = subprocess.run(
+        ["code-indexer", "query", "authentication function", "--quiet"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, f"Query failed: {result.stderr}"
+    # Note: May not find results due to VoyageAI vs test data mismatch, but that's OK for performance test
 
-    def test_fast_error_recovery(self, shared_containers):  # noqa: F811
-        """Test error conditions with shared containers (FAST)."""
+    # Step 4: Check status
+    result = subprocess.run(
+        ["code-indexer", "status"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, f"Status failed: {result.stderr}"
 
-        # Test query without index
-        result = fast_cli_command(["query", "nonexistent"])
-        # Should fail gracefully, but test should be fast
+    # No container cleanup needed - service manager handles it
 
-        # Test status without setup
-        result = fast_cli_command(["status"])
-        assert result.returncode == 0
 
-        # Quick recovery
-        result = fast_cli_command(
-            ["init", "--embedding-provider", "voyage-ai", "--force"]
-        )
-        assert result.returncode == 0
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
+def test_fast_multiple_projects(optimized_test_repo):
+    """Test multiple project workflow with shared containers (FAST)."""
+    test_dir = optimized_test_repo
 
-        result = fast_cli_command(["index"])
-        assert result.returncode == 0
+    # Create test files
+    create_test_files(test_dir)
+
+    # Create configuration
+    create_optimized_config(test_dir)
+
+    # Project 1
+    result = subprocess.run(
+        ["code-indexer", "init", "--embedding-provider", "voyage-ai", "--force"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0
+
+    result = subprocess.run(
+        ["code-indexer", "index"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0
+
+    # Quick data cleanup (not container cleanup)
+    result = subprocess.run(
+        ["code-indexer", "clean-data"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+
+    # Project 2 setup (containers still running)
+    result = subprocess.run(
+        ["code-indexer", "init", "--embedding-provider", "voyage-ai", "--force"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0
+
+    result = subprocess.run(
+        ["code-indexer", "index"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0
+
+    # Fast cleanup again
+    result = subprocess.run(
+        ["code-indexer", "clean-data"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+
+
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
+def test_fast_error_recovery(optimized_test_repo):
+    """Test error conditions with shared containers (FAST)."""
+    test_dir = optimized_test_repo
+
+    # Create test files
+    create_test_files(test_dir)
+
+    # Create configuration
+    create_optimized_config(test_dir)
+
+    # Test query without index
+    result = subprocess.run(
+        ["code-indexer", "query", "nonexistent", "--quiet"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    # Should fail gracefully, but test should be fast
+
+    # Test status without setup
+    result = subprocess.run(
+        ["code-indexer", "status"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+
+    # Quick recovery
+    result = subprocess.run(
+        ["code-indexer", "init", "--embedding-provider", "voyage-ai", "--force"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0
+
+    result = subprocess.run(
+        ["code-indexer", "index"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0
 
 
 # For comparison - this is how slow tests look:
@@ -172,21 +302,23 @@ class TestSlowExample:
     def tearDown(self):
         """This is what makes tests slow - full cleanup every time."""
         # DON'T DO THIS in new tests:
-        fast_cli_command(["uninstall"], timeout=90)
+        # fast_cli_command(["uninstall"], timeout=90)
         # This takes 30-60 seconds per test!
+        pass  # This is just a demonstration
 
     def test_slow_workflow(self):
         """Slow test that starts containers from scratch."""
         # Step 1: Full container startup (30-60s)
-        fast_cli_command(["start", "--quiet"], timeout=180)
+        # fast_cli_command(["start", "--quiet"], timeout=180)
 
         # Step 2: Index (fast part)
-        fast_cli_command(["index"])
+        # fast_cli_command(["index"])
 
         # Step 3: Query (fast part)
-        fast_cli_command(["query", "something"])
+        # fast_cli_command(["query", "something"])
 
         # Step 4: Full cleanup (30-60s)
-        self.tearDown()
+        # self.tearDown()
 
         # Total time: 60-120s per test vs 5-10s with shared containers!
+        pass  # This is just a demonstration

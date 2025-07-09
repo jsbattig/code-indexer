@@ -13,7 +13,7 @@ class TestCleanupValidation:
         """Setup test environment."""
         self.mock_console = Mock()
         self.docker_manager = DockerManager(
-            console=self.mock_console, project_name="test-project", force_docker=False
+            console=self.mock_console, project_name="test_shared", force_docker=False
         )
 
     def test_health_checker_initialization(self):
@@ -179,7 +179,7 @@ class TestCleanupValidation:
     def test_docker_manager_force_docker_flag(self):
         """Test that force_docker flag affects container engine detection."""
         docker_manager = DockerManager(
-            console=self.mock_console, project_name="test-project", force_docker=True
+            console=self.mock_console, project_name="test_shared", force_docker=True
         )
 
         with patch.object(

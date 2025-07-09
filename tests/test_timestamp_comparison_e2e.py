@@ -10,7 +10,7 @@ Marked as e2e tests to exclude from CI due to dependency on real services.
 """
 
 import pytest
-import tempfile
+
 import shutil
 import time
 from pathlib import Path
@@ -27,7 +27,20 @@ pytestmark = [pytest.mark.e2e, pytest.mark.slow]
 @pytest.fixture
 def temp_project_dir():
     """Create a temporary project directory with test files."""
-    temp_dir = Path(tempfile.mkdtemp())
+    # Use shared test directory to avoid creating multiple container sets
+    temp_dir = Path.home() / ".tmp" / "shared_test_containers"
+
+    # CRITICAL: Preserve .code-indexer directory to maintain container configuration
+    if temp_dir.exists():
+        # Clean only the project files, NOT the .code-indexer config directory
+        for item in temp_dir.iterdir():
+            if item.name != ".code-indexer":
+                if item.is_dir():
+                    shutil.rmtree(item, ignore_errors=True)
+                else:
+                    item.unlink(missing_ok=True)
+    else:
+        temp_dir.mkdir(parents=True, exist_ok=True)
 
     # Create a simple test project structure
     (temp_dir / "src").mkdir()
@@ -46,25 +59,39 @@ def temp_project_dir():
 
     yield temp_dir
 
-    # Cleanup
-    shutil.rmtree(temp_dir, ignore_errors=True)
+    # Don't clean up here - let the next test clean it up
+    # This ensures container reuse between tests
+    pass
 
 
 @pytest.fixture
 def test_config(temp_project_dir):
-    """Create test configuration."""
+    """Load and modify existing test configuration without overwriting container ports."""
     config_dir = temp_project_dir / ".code-indexer"
-    config_dir.mkdir()
+    config_file = config_dir / "config.json"
 
-    config = Config(codebase_dir=temp_project_dir)
-    config.indexing.chunk_size = 200
-    config.indexing.max_file_size = 10000
+    # Use existing config if it exists (preserves container ports)
+    if config_file.exists():
+        config_manager = ConfigManager(config_file)
+        config = config_manager.load()
 
-    # Configure a reliable embedding provider for E2E tests
-    config.embedding_provider = "voyage-ai"
+        # Only modify test-specific settings, preserve container configuration
+        config.indexing.chunk_size = 200
+        config.indexing.max_file_size = 10000
+        config.embedding_provider = "voyage-ai"
 
-    config_manager = ConfigManager(config_dir / "config.json")
-    config_manager.save(config)
+        # Save only the modified fields, preserving existing container/port config
+        config_manager.save(config)
+    else:
+        # Fallback: create new config if none exists
+        config_dir.mkdir(exist_ok=True)
+        config = Config(codebase_dir=temp_project_dir)
+        config.indexing.chunk_size = 200
+        config.indexing.max_file_size = 10000
+        config.embedding_provider = "voyage-ai"
+
+        config_manager = ConfigManager(config_file)
+        config_manager.save(config)
 
     return config_manager
 

@@ -13,7 +13,7 @@ class TestDataCleanerHealth:
         """Setup test environment."""
         self.mock_console = Mock()
         self.docker_manager = DockerManager(
-            console=self.mock_console, project_name="test-project", force_docker=False
+            console=self.mock_console, project_name="test_shared", force_docker=False
         )
 
     @patch.object(HealthChecker, "get_timeouts")
@@ -227,7 +227,7 @@ class TestDataCleanerIntegration:
         """Setup test environment."""
         self.mock_console = Mock()
         self.docker_manager = DockerManager(
-            console=self.mock_console, project_name="test-project", force_docker=False
+            console=self.mock_console, project_name="test_shared", force_docker=False
         )
 
     def test_clean_with_data_cleaner_workflow(self):

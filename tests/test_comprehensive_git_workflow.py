@@ -14,97 +14,67 @@ Test Scenario: E-commerce Platform Development
 import os
 import sys
 import time
-import tempfile
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 import pytest
 
-from .test_infrastructure import (
-    create_fast_e2e_setup,
-    DirectoryManager,
-    EmbeddingProvider,
-    CLIHelper,
-    ServiceManager,
-    auto_register_project_collections,
-)
+from .conftest import local_temporary_directory
+from .test_infrastructure import auto_register_project_collections
+
+
+@pytest.fixture
+def comprehensive_test_repo():
+    """Create a comprehensive test repository with git structure."""
+    with local_temporary_directory() as temp_dir:
+        # Auto-register collections for cleanup
+        auto_register_project_collections(temp_dir)
+
+        # Create basic project structure but preserve .code-indexer if it exists
+        config_dir = temp_dir / ".code-indexer"
+        if not config_dir.exists():
+            config_dir.mkdir(parents=True, exist_ok=True)
+
+        yield temp_dir
 
 
 class ComprehensiveWorkflowTest:
     """Comprehensive test for git-aware development workflow."""
 
-    def __init__(self):
-        self.test_repo_dir: Optional[Path] = None
-        self.config_dir: Optional[Path] = None
-        self.service_manager: Optional[ServiceManager] = None
-        self.cli_helper: Optional[CLIHelper] = None
-        self.dir_manager: Optional[DirectoryManager] = None
+    def __init__(self, test_repo_dir: Path):
+        self.test_repo_dir = test_repo_dir
+        self.config_dir = test_repo_dir / ".code-indexer"
         self.watch_process: Optional[subprocess.Popen] = None
         self.query_results: Dict[str, Dict[str, List[Dict]]] = {}
 
     def setup_test_environment(self):
-        """Setup test infrastructure and create test repository with comprehensive setup."""
-        # Setup test infrastructure
-        self.service_manager, self.cli_helper, self.dir_manager = create_fast_e2e_setup(
-            EmbeddingProvider.VOYAGE_AI
-        )
-
-        # Create test repository directory
-        self.test_repo_dir = Path(tempfile.mkdtemp(prefix="git_workflow_test_"))
-        # Auto-register collections for this project
-        auto_register_project_collections(self.test_repo_dir)
-        self.config_dir = self.test_repo_dir / ".code-indexer"
-        self.config_dir.mkdir(parents=True)
-
-        # COMPREHENSIVE SETUP: Clean up any existing data first
-        print("🧹 Comprehensive setup: Cleaning existing project data...")
-        try:
-            self.service_manager.cleanup_project_data(working_dir=self.test_repo_dir)
-        except Exception as e:
-            print(f"Initial cleanup warning (non-fatal): {e}")
-
-        # COMPREHENSIVE SETUP: Ensure services are ready
-        print("🔧 Comprehensive setup: Ensuring services are ready...")
-        services_ready = self.service_manager.ensure_services_ready(
-            working_dir=self.test_repo_dir
-        )
-        if not services_ready:
-            raise RuntimeError(
-                "Could not start required services for comprehensive test"
-            )
-
-        # COMPREHENSIVE SETUP: Verify services are actually functional
+        """Setup test infrastructure without using deprecated create_fast_e2e_setup."""
         print("🔍 Comprehensive setup: Verifying service functionality...")
+
+        # Simple service verification by running basic commands
         try:
-            # Test with a minimal project to verify services work
-            test_file = self.test_repo_dir / "test_setup.py"
-            test_file.write_text("def test(): pass")
-
-            # Initialize project
-            init_result = self.cli_helper.run_cli_command(
-                ["init", "--force", "--embedding-provider", "voyage-ai"],
-                cwd=self.test_repo_dir,
-                timeout=60,
-            )
-            if init_result.returncode != 0:
-                raise RuntimeError(
-                    f"Service verification failed during init: {init_result.stderr}"
+            # Initialize project if config doesn't exist with correct settings
+            config_file = self.config_dir / "config.json"
+            if not config_file.exists():
+                init_result = subprocess.run(
+                    [
+                        "code-indexer",
+                        "init",
+                        "--force",
+                        "--embedding-provider",
+                        "voyage-ai",
+                    ],
+                    cwd=self.test_repo_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
                 )
-
-            # Start services
-            start_result = self.cli_helper.run_cli_command(
-                ["start", "--quiet"], cwd=self.test_repo_dir, timeout=120
-            )
-            if start_result.returncode != 0:
-                raise RuntimeError(
-                    f"Service verification failed during start: {start_result.stderr}"
-                )
-
-            # Clean up test file
-            test_file.unlink()
+                if init_result.returncode != 0:
+                    raise RuntimeError(
+                        f"Service verification failed during init: {init_result.stderr}"
+                    )
 
             print("✅ Comprehensive setup complete - services verified functional")
-
         except Exception as e:
             raise RuntimeError(f"Service functionality verification failed: {e}")
 
@@ -802,81 +772,122 @@ The platform follows a modular architecture with clear separation of concerns:
     not os.getenv("VOYAGE_API_KEY"),
     reason="VoyageAI API key required for comprehensive workflow test",
 )
-class TestComprehensiveGitWorkflow:
-    """Test class for comprehensive git-aware workflow."""
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
+@pytest.mark.skipif(
+    os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
+    reason="E2E tests require Docker services which are not available in CI",
+)
+def test_comprehensive_git_workflow_all_phases(comprehensive_test_repo):
+    """Complete git-aware workflow test covering all development phases."""
+    test_dir = comprehensive_test_repo
 
-    @pytest.fixture(autouse=True)
-    def setup_and_cleanup(self):
-        """Setup and cleanup test environment."""
-        self.workflow_test = ComprehensiveWorkflowTest()
-        self.workflow_test.setup_test_environment()
+    try:
+        original_cwd = Path.cwd()
+        os.chdir(test_dir)
 
-        yield
+        # Initialize and start services
+        init_result = subprocess.run(
+            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            cwd=test_dir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
-        self.workflow_test.cleanup_test_environment()
+        start_result = subprocess.run(
+            ["code-indexer", "start", "--quiet"],
+            cwd=test_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
 
-    def test_comprehensive_git_workflow_all_phases(self):
-        """Complete git-aware workflow test covering all development phases."""
+        # Create workflow test instance with the fixture-provided repo
+        workflow_test = ComprehensiveWorkflowTest(test_dir)
+        workflow_test.setup_test_environment()
+
         # === PHASE 1: Initial Setup and Baseline ===
         print("\n=== PHASE 1: Initial Setup and Baseline ===")
 
         # Create realistic e-commerce codebase
-        assert self.workflow_test.create_ecommerce_codebase()
+        assert workflow_test.create_ecommerce_codebase()
 
         # Initialize git repository
-        git_result = self.workflow_test.run_git_command(["init"])
+        git_result = workflow_test.run_git_command(["init"])
         assert git_result.returncode == 0
 
         # Configure git
-        self.workflow_test.run_git_command(["config", "user.name", "Test Developer"])
-        self.workflow_test.run_git_command(["config", "user.email", "dev@example.com"])
+        workflow_test.run_git_command(["config", "user.name", "Test Developer"])
+        workflow_test.run_git_command(["config", "user.email", "dev@example.com"])
 
         # Commit A: Initial commit with basic auth and payment
-        self.workflow_test.run_git_command(["add", "."])
-        commit_result = self.workflow_test.run_git_command(
+        workflow_test.run_git_command(["add", "."])
+        commit_result = workflow_test.run_git_command(
             ["commit", "-m", "Initial commit: Basic auth and payment systems"]
         )
         assert commit_result.returncode == 0
 
         # Index master branch and establish baseline
-        index_stats = self.workflow_test.index_current_branch()
+        index_stats = workflow_test.index_current_branch()
         assert index_stats[
             "success"
         ], f"Indexing failed: {index_stats.get('error', 'Unknown error')}"
         assert index_stats["files_processed"] > 0
 
         # Validate baseline queries
-        auth_results = self.workflow_test.query_codebase("authentication methods")
-        payment_results = self.workflow_test.query_codebase("payment processing")
+        auth_results = workflow_test.query_codebase("authentication methods")
+        payment_results = workflow_test.query_codebase("payment processing")
 
         assert len(auth_results) > 0, "Should find authentication-related code"
         assert len(payment_results) > 0, "Should find payment-related code"
 
         # Store baseline results
-        self.workflow_test.query_results["master_baseline"] = {
+        workflow_test.query_results["master_baseline"] = {
             "auth": auth_results,
             "payment": payment_results,
         }
         print(f"✅ Phase 1 complete - Indexed {index_stats['files_processed']} files")
 
         # === PHASE 2: Feature Development Workflow ===
-        self._run_phase_2_feature_development()
+        _run_phase_2_feature_development(workflow_test)
 
         # === PHASE 3: Production Emergency (Release Branch) ===
-        self._run_phase_3_production_emergency()
+        _run_phase_3_production_emergency(workflow_test)
 
         # === PHASE 4: Branch Isolation Validation ===
-        self._run_phase_4_validation()
+        _run_phase_4_validation(workflow_test)
 
-    def _run_phase_2_feature_development(self):
-        """Phase 2: Feature development with branch switching."""
-        print("\n=== PHASE 2: Feature Development Workflow ===")
+        print("✅ Comprehensive git workflow test completed successfully!")
 
-        # Ensure we start from master branch
-        self.workflow_test.run_git_command(["checkout", "master"])
+    finally:
+        try:
+            os.chdir(original_cwd)
+            # Clean up
+            subprocess.run(
+                ["code-indexer", "clean", "--remove-data", "--quiet"],
+                cwd=test_dir,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except Exception:
+            pass
 
-        # Start from master branch and add inventory management (Commit B)
-        inventory_code = '''
+
+def _run_phase_2_feature_development(workflow_test):
+    """Phase 2: Feature development with branch switching."""
+    print("\n=== PHASE 2: Feature Development Workflow ===")
+
+    # Ensure we start from master branch
+    workflow_test.run_git_command(["checkout", "master"])
+
+    # Start from master branch and add inventory management (Commit B)
+    inventory_code = '''
 """Inventory management module for e-commerce platform."""
 
 from typing import Dict, List, Optional
@@ -1026,35 +1037,36 @@ class InventoryManager:
         })
 '''
 
-        # Create inventory module
-        assert self.workflow_test.test_repo_dir is not None
-        (
-            self.workflow_test.test_repo_dir / "src" / "inventory" / "manager.py"
-        ).write_text(inventory_code)
+    # Create inventory module
+    assert workflow_test.test_repo_dir is not None
+    (workflow_test.test_repo_dir / "src" / "inventory" / "manager.py").write_text(
+        inventory_code
+    )
 
-        # Commit B: Add inventory management
-        self.workflow_test.run_git_command(["add", "src/inventory/manager.py"])
-        commit_b = self.workflow_test.run_git_command(
-            ["commit", "-m", "Add inventory management system"]
-        )
-        assert commit_b.returncode == 0
+    # Commit B: Add inventory management
+    workflow_test.run_git_command(["add", "src/inventory/manager.py"])
+    commit_b = workflow_test.run_git_command(
+        ["commit", "-m", "Add inventory management system"]
+    )
+    assert commit_b.returncode == 0
 
-        # Index master with inventory before creating feature branch
-        master_index_stats = self.workflow_test.index_current_branch()
-        assert master_index_stats["success"]
+    # Index master with inventory before creating feature branch
+    master_index_stats = workflow_test.index_current_branch()
+    assert master_index_stats["success"]
 
-        # Create feature-payment-v2 branch from commit B
-        branch_result = self.workflow_test.run_git_command(
-            ["checkout", "-b", "feature-payment-v2"]
-        )
-        assert branch_result.returncode == 0
+    # Create feature-payment-v2 branch from commit B
+    branch_result = workflow_test.run_git_command(
+        ["checkout", "-b", "feature-payment-v2"]
+    )
+    assert branch_result.returncode == 0
 
-        # Add experimental payment gateway integration (Commit I)
-        payment_v2_code = '''
+    # Add experimental payment gateway integration (Commit I)
+    payment_v2_code = '''
 """Advanced payment gateway integration module."""
 
 import asyncio
 import aiohttp
+import datetime
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from .processor import PaymentResult, PaymentStatus, PaymentMethod
@@ -1206,46 +1218,44 @@ class RecurringPaymentManager:
         return await self.gateway.process_payment_async(gateway_name, payment_data)
 '''
 
-        # Add payment v2 module
-        assert self.workflow_test.test_repo_dir is not None
-        (
-            self.workflow_test.test_repo_dir / "src" / "payment" / "gateway_v2.py"
-        ).write_text(payment_v2_code)
+    # Add payment v2 module
+    assert workflow_test.test_repo_dir is not None
+    (workflow_test.test_repo_dir / "src" / "payment" / "gateway_v2.py").write_text(
+        payment_v2_code
+    )
 
-        # Commit I: Experimental payment gateway integration
-        self.workflow_test.run_git_command(["add", "src/payment/gateway_v2.py"])
-        commit_i = self.workflow_test.run_git_command(
-            ["commit", "-m", "Add experimental payment gateway v2 with async support"]
-        )
-        assert commit_i.returncode == 0
+    # Commit I: Experimental payment gateway integration
+    workflow_test.run_git_command(["add", "src/payment/gateway_v2.py"])
+    commit_i = workflow_test.run_git_command(
+        ["commit", "-m", "Add experimental payment gateway v2 with async support"]
+    )
+    assert commit_i.returncode == 0
 
-        # Index the feature branch
-        feature_index_stats = self.workflow_test.index_current_branch()
-        assert feature_index_stats["success"]
+    # Index the feature branch
+    feature_index_stats = workflow_test.index_current_branch()
+    assert feature_index_stats["success"]
 
-        # Query the feature branch - should now find payment gateway v2 features
-        payment_v2_results = self.workflow_test.query_codebase("async payment gateway")
-        recurring_results = self.workflow_test.query_codebase(
-            "recurring subscription payments"
-        )
+    # Query the feature branch - should now find payment gateway v2 features
+    payment_v2_results = workflow_test.query_codebase("async payment gateway")
+    recurring_results = workflow_test.query_codebase("recurring subscription payments")
 
-        assert len(payment_v2_results) > 0, "Should find async payment gateway code"
-        assert len(recurring_results) > 0, "Should find recurring payment code"
+    assert len(payment_v2_results) > 0, "Should find async payment gateway code"
+    assert len(recurring_results) > 0, "Should find recurring payment code"
 
-        # === WATCH MODE INTEGRATION: Simulate active development ===
-        print("\n🔄 Testing watch mode during active development...")
+    # === WATCH MODE INTEGRATION: Simulate active development ===
+    print("\n🔄 Testing watch mode during active development...")
 
-        # Start watch mode for real-time monitoring
-        watch_started = self.workflow_test.start_watch_mode(debounce=0.5)
-        assert watch_started, "Watch mode should start successfully"
+    # Start watch mode for real-time monitoring
+    watch_started = workflow_test.start_watch_mode(debounce=0.5)
+    assert watch_started, "Watch mode should start successfully"
 
-        # Simulate continued development while watch is running
-        assert self.workflow_test.test_repo_dir is not None
-        additional_feature_file = (
-            self.workflow_test.test_repo_dir / "src" / "payment" / "analytics.py"
-        )
-        additional_feature_file.write_text(
-            '''
+    # Simulate continued development while watch is running
+    assert workflow_test.test_repo_dir is not None
+    additional_feature_file = (
+        workflow_test.test_repo_dir / "src" / "payment" / "analytics.py"
+    )
+    additional_feature_file.write_text(
+        '''
 """Payment analytics module for monitoring transactions."""
 
 from typing import Dict, List, Any
@@ -1281,43 +1291,42 @@ class PaymentAnalytics:
         successful = sum(1 for t in recent_transactions if t['status'] == 'completed')
         return successful / len(recent_transactions)
 '''
-        )
+    )
 
-        # Wait briefly for watch to potentially detect the new file
-        time.sleep(2.0)
+    # Wait briefly for watch to potentially detect the new file
+    time.sleep(2.0)
 
-        # Stop watch mode
-        self.workflow_test.stop_watch_mode()
-        print("✅ Watch mode integration tested successfully")
+    # Stop watch mode
+    workflow_test.stop_watch_mode()
+    print("✅ Watch mode integration tested successfully")
 
-        # Store feature branch results
-        self.workflow_test.query_results["feature_payment_v2"] = {
-            "payment_v2": payment_v2_results,
-            "recurring": recurring_results,
-        }
-        print("✅ Phase 2 complete - Feature branch with async payment gateway")
+    # Store feature branch results
+    workflow_test.query_results["feature_payment_v2"] = {
+        "payment_v2": payment_v2_results,
+        "recurring": recurring_results,
+    }
+    print("✅ Phase 2 complete - Feature branch with async payment gateway")
 
-    def _run_phase_3_production_emergency(self):
-        """Phase 3: Production emergency on release branch from older commit."""
-        print("\n=== PHASE 3: Production Emergency (Release Branch) ===")
 
-        # Switch back to master to get commit A for release branch
-        self.workflow_test.run_git_command(["checkout", "master"])
+def _run_phase_3_production_emergency(workflow_test):
+    """Phase 3: Production emergency on release branch from older commit."""
+    print("\n=== PHASE 3: Production Emergency (Release Branch) ===")
 
-        # Get commit A hash (first commit)
-        log_result = self.workflow_test.run_git_command(
-            ["log", "--oneline", "--reverse"]
-        )
-        first_commit = log_result.stdout.strip().split("\n")[0].split()[0]
+    # Switch back to master to get commit A for release branch
+    workflow_test.run_git_command(["checkout", "master"])
 
-        # Create release-v1.2 branch from commit A (older baseline)
-        release_result = self.workflow_test.run_git_command(
-            ["checkout", "-b", "release-v1.2", first_commit]
-        )
-        assert release_result.returncode == 0
+    # Get commit A hash (first commit)
+    log_result = workflow_test.run_git_command(["log", "--oneline", "--reverse"])
+    first_commit = log_result.stdout.strip().split("\n")[0].split()[0]
 
-        # Add critical security fix in auth (Commit G)
-        security_fix = '''
+    # Create release-v1.2 branch from commit A (older baseline)
+    release_result = workflow_test.run_git_command(
+        ["checkout", "-b", "release-v1.2", first_commit]
+    )
+    assert release_result.returncode == 0
+
+    # Add critical security fix in auth (Commit G)
+    security_fix = '''
 def check_password_strength(password: str) -> bool:
     """Check if password meets security requirements."""
     if len(password) < 8:
@@ -1337,121 +1346,118 @@ def is_password_compromised(password: str) -> bool:
     return password.lower() in common_passwords
 '''
 
-        # Add security functions to login.py
-        assert self.workflow_test.test_repo_dir is not None
-        login_file = self.workflow_test.test_repo_dir / "src" / "auth" / "login.py"
-        current_content = login_file.read_text()
-        updated_content = current_content + "\n\n" + security_fix
-        login_file.write_text(updated_content)
+    # Add security functions to login.py
+    assert workflow_test.test_repo_dir is not None
+    login_file = workflow_test.test_repo_dir / "src" / "auth" / "login.py"
+    current_content = login_file.read_text()
+    updated_content = current_content + "\n\n" + security_fix
+    login_file.write_text(updated_content)
 
-        # Commit G: Security fix
-        self.workflow_test.run_git_command(["add", "src/auth/login.py"])
-        commit_g = self.workflow_test.run_git_command(
-            ["commit", "-m", "SECURITY: Add password strength validation"]
-        )
-        assert commit_g.returncode == 0
+    # Commit G: Security fix
+    workflow_test.run_git_command(["add", "src/auth/login.py"])
+    commit_g = workflow_test.run_git_command(
+        ["commit", "-m", "SECURITY: Add password strength validation"]
+    )
+    assert commit_g.returncode == 0
 
-        # Index release branch
-        release_index_stats = self.workflow_test.index_current_branch()
-        assert release_index_stats["success"]
+    # Index release branch
+    release_index_stats = workflow_test.index_current_branch()
+    assert release_index_stats["success"]
 
-        # Query release branch - should have security features but not inventory/payment v2
-        security_results = self.workflow_test.query_codebase(
-            "password strength validation"
-        )
-        inventory_results = self.workflow_test.query_codebase("InventoryManager class")
+    # Query release branch - should have security features but not inventory/payment v2
+    security_results = workflow_test.query_codebase("password strength validation")
+    inventory_results = workflow_test.query_codebase("InventoryManager class")
 
-        assert len(security_results) > 0, "Should find security validation code"
+    assert len(security_results) > 0, "Should find security validation code"
 
-        # Check that no actual InventoryManager class is found (more specific test)
-        inventory_manager_results = [
-            r for r in inventory_results if "InventoryManager" in r.get("content", "")
-        ]
-        assert (
-            len(inventory_manager_results) == 0
-        ), f"Should NOT find InventoryManager class in release branch, found: {[r['file'] for r in inventory_manager_results]}"
+    # Check that no actual InventoryManager class is found (more specific test)
+    inventory_manager_results = [
+        r for r in inventory_results if "InventoryManager" in r.get("content", "")
+    ]
+    assert (
+        len(inventory_manager_results) == 0
+    ), f"Should NOT find InventoryManager class in release branch, found: {[r['file'] for r in inventory_manager_results]}"
 
-        # Also check that inventory manager file doesn't exist in results at all
+    # Also check that inventory manager file doesn't exist in results at all
+    inventory_file_results = [
+        r for r in inventory_results if "inventory/manager.py" in r["file"]
+    ]
+    assert (
+        len(inventory_file_results) == 0
+    ), "Should NOT find inventory/manager.py file in release branch"
+
+    # Store release branch results
+    workflow_test.query_results["release_v1_2"] = {
+        "security": security_results,
+        "inventory": inventory_results,
+    }
+    print("✅ Phase 3 complete - Release branch with security fixes")
+
+
+def _run_phase_4_validation(workflow_test):
+    """Phase 4: Final validation of branch isolation."""
+    print("\n=== PHASE 4: Branch Isolation Validation ===")
+
+    # Test query isolation across branches
+    branches_to_test = ["master", "feature-payment-v2", "release-v1.2"]
+    validation_results = {}
+
+    for branch in branches_to_test:
+        print(f"Testing branch: {branch}")
+        checkout_result = workflow_test.run_git_command(["checkout", branch])
+        if checkout_result.returncode != 0:
+            continue
+
+        # Re-index the current branch to ensure proper branch isolation
+        branch_index_stats = workflow_test.index_current_branch()
+        if not branch_index_stats["success"]:
+            print(f"  ⚠️  Warning: Failed to re-index branch {branch}")
+
+        # Test queries that should show different results per branch
+        auth_results = workflow_test.query_codebase("authentication methods")
+        payment_results = workflow_test.query_codebase("payment processing")
+        inventory_results = workflow_test.query_codebase("InventoryManager class")
+
+        # Check for specific inventory file
         inventory_file_results = [
             r for r in inventory_results if "inventory/manager.py" in r["file"]
         ]
-        assert (
-            len(inventory_file_results) == 0
-        ), "Should NOT find inventory/manager.py file in release branch"
 
-        # Store release branch results
-        self.workflow_test.query_results["release_v1_2"] = {
-            "security": security_results,
-            "inventory": inventory_results,
+        validation_results[branch] = {
+            "auth_count": len(auth_results),
+            "payment_count": len(payment_results),
+            "inventory_count": len(
+                inventory_file_results
+            ),  # Count actual inventory file
+            "inventory_total": len(inventory_results),  # Include all for reference
         }
-        print("✅ Phase 3 complete - Release branch with security fixes")
+        print(
+            f"  Branch {branch}: auth={len(auth_results)}, payment={len(payment_results)}, inventory_files={len(inventory_file_results)}"
+        )
 
-    def _run_phase_4_validation(self):
-        """Phase 4: Final validation of branch isolation."""
-        print("\n=== PHASE 4: Branch Isolation Validation ===")
+    # Validate branch isolation expectations
+    # Master: has auth + payment + inventory (but not payment v2)
+    assert (
+        validation_results["master"]["inventory_count"] > 0
+    ), "Master should have inventory"
 
-        # Test query isolation across branches
-        branches_to_test = ["master", "feature-payment-v2", "release-v1.2"]
-        validation_results = {}
+    # Feature branch: has auth + payment + inventory + payment v2
+    assert (
+        validation_results["feature-payment-v2"]["inventory_count"] > 0
+    ), "Feature branch should have inventory"
 
-        for branch in branches_to_test:
-            print(f"Testing branch: {branch}")
-            checkout_result = self.workflow_test.run_git_command(["checkout", branch])
-            if checkout_result.returncode != 0:
-                continue
+    # Release branch: has auth only (older branch point, before inventory was added)
+    assert (
+        validation_results["release-v1.2"]["inventory_count"] == 0
+    ), "Release should NOT have inventory"
 
-            # Re-index the current branch to ensure proper branch isolation
-            branch_index_stats = self.workflow_test.index_current_branch()
-            if not branch_index_stats["success"]:
-                print(f"  ⚠️  Warning: Failed to re-index branch {branch}")
+    print("✅ Phase 4 complete - Branch isolation validated")
+    print(f"Branch results: {validation_results}")
 
-            # Test queries that should show different results per branch
-            auth_results = self.workflow_test.query_codebase("authentication methods")
-            payment_results = self.workflow_test.query_codebase("payment processing")
-            inventory_results = self.workflow_test.query_codebase(
-                "InventoryManager class"
-            )
-
-            # Check for specific inventory file
-            inventory_file_results = [
-                r for r in inventory_results if "inventory/manager.py" in r["file"]
-            ]
-
-            validation_results[branch] = {
-                "auth_count": len(auth_results),
-                "payment_count": len(payment_results),
-                "inventory_count": len(
-                    inventory_file_results
-                ),  # Count actual inventory file
-                "inventory_total": len(inventory_results),  # Include all for reference
-            }
-            print(
-                f"  Branch {branch}: auth={len(auth_results)}, payment={len(payment_results)}, inventory_files={len(inventory_file_results)}"
-            )
-
-        # Validate branch isolation expectations
-        # Master: has auth + payment + inventory (but not payment v2)
-        assert (
-            validation_results["master"]["inventory_count"] > 0
-        ), "Master should have inventory"
-
-        # Feature branch: has auth + payment + inventory + payment v2
-        assert (
-            validation_results["feature-payment-v2"]["inventory_count"] > 0
-        ), "Feature branch should have inventory"
-
-        # Release branch: has auth only (older branch point, before inventory was added)
-        assert (
-            validation_results["release-v1.2"]["inventory_count"] == 0
-        ), "Release should NOT have inventory"
-
-        print("✅ Phase 4 complete - Branch isolation validated")
-        print(f"Branch results: {validation_results}")
-
-        # Store validation results (convert to expected type)
-        self.workflow_test.query_results["branch_validation"] = {
-            "validation": [validation_results]  # Wrap in list to match expected type
-        }
+    # Store validation results (convert to expected type)
+    workflow_test.query_results["branch_validation"] = {
+        "validation": [validation_results]  # Wrap in list to match expected type
+    }
 
 
 # Helper functions for test validation

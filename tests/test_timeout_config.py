@@ -1,20 +1,24 @@
 """Tests for timeout configuration integration."""
 
-import tempfile
 import json
 from pathlib import Path
+import uuid
 from unittest.mock import Mock
 
 from code_indexer.config import ConfigManager, Config, TimeoutsConfig, PollingConfig
 from code_indexer.services.health_checker import HealthChecker
+from .conftest import get_local_tmp_dir
 
 
 class TestTimeoutConfiguration:
     """Test timeout configuration functionality."""
 
+
+class TestTimeoutConfig:
     def setup_method(self):
         """Setup test environment."""
-        self.temp_dir = Path(tempfile.mkdtemp())
+        self.temp_dir = Path(str(get_local_tmp_dir() / f"test_{uuid.uuid4().hex[:8]}"))
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.config_path = self.temp_dir / "config.json"
 
     def test_default_timeout_values(self):
@@ -265,7 +269,7 @@ class TestTimeoutConfigurationIntegration:
 
         mock_console = Mock()
         docker_manager = DockerManager(
-            console=mock_console, project_name="test-project", main_config=config_dict
+            console=mock_console, project_name="test_shared", main_config=config_dict
         )
 
         # Test that health checker gets the config

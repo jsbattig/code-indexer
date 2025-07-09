@@ -6,10 +6,11 @@ gracefully and responds quickly to cancellation requests.
 """
 
 import time
-import tempfile
 from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 import pytest
+
+from .conftest import local_temporary_directory, get_local_tmp_dir
 
 from code_indexer.services.high_throughput_processor import HighThroughputProcessor
 from code_indexer.services.qdrant import QdrantClient
@@ -87,7 +88,7 @@ class TestHighThroughputProcessorCancellation:
 
         # Create mock config
         self.config = Mock()
-        self.config.codebase_dir = Path("/tmp/test")
+        self.config.codebase_dir = Path(str(get_local_tmp_dir() / "test"))
         self.config.exclude_dirs = []
         self.config.exclude_patterns = []
 
@@ -184,7 +185,7 @@ class TestHighThroughputProcessorCancellation:
         )
 
         # Create test files
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with local_temporary_directory() as temp_dir:
             test_files = []
             for i in range(5):
                 test_file = Path(temp_dir) / f"test{i}.py"
@@ -269,7 +270,7 @@ class TestHighThroughputProcessorCancellation:
         )
 
         # Create test files
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with local_temporary_directory() as temp_dir:
             test_files = []
             for i in range(10):  # More files to ensure some get cancelled
                 test_file = Path(temp_dir) / f"test{i}.py"
@@ -364,7 +365,7 @@ class TestHighThroughputProcessorCancellation:
         )
 
         # Create a few test files
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with local_temporary_directory() as temp_dir:
             test_files = []
             for i in range(3):
                 test_file = Path(temp_dir) / f"test{i}.py"
@@ -449,7 +450,7 @@ class TestHighThroughputProcessorCancellation:
         )
 
         # Create a test file
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with local_temporary_directory() as temp_dir:
             test_file = Path(temp_dir) / "test.py"
             test_file.write_text("def test():\n    pass\n")
 

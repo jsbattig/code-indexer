@@ -6,7 +6,8 @@ that deletion strategies are properly selected based on project type.
 """
 
 import pytest
-import tempfile
+
+from .conftest import local_temporary_directory
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -41,9 +42,9 @@ class TestBranchAwareDeletion:
         return mock_client
 
     @pytest.fixture
-    def branch_aware_indexer(self, tmp_path, mock_qdrant_client):
+    def branch_aware_indexer(self, local_tmp_path, mock_qdrant_client):
         """Create a BranchAwareIndexer for testing."""
-        config = Config(codebase_dir=tmp_path)
+        config = Config(codebase_dir=local_tmp_path)
 
         # Mock embedding provider
         mock_embedding_provider = MagicMock()
@@ -270,7 +271,7 @@ class TestBranchAwareDeletion:
 
         This test should now PASS since we implemented the functionality.
         """
-        with tempfile.TemporaryDirectory() as tmp_dir:
+        with local_temporary_directory() as tmp_dir:
             repo_path = Path(tmp_dir)
 
             # Initialize git repo
@@ -298,7 +299,7 @@ class TestBranchAwareDeletion:
 
         This test should now PASS since we implemented the functionality.
         """
-        with tempfile.TemporaryDirectory() as tmp_dir:
+        with local_temporary_directory() as tmp_dir:
             repo_path = Path(tmp_dir)
             # Don't initialize git repo - non git-aware
 
@@ -410,7 +411,7 @@ class TestDeletionStrategySelection:
 
         This test should now PASS since we implemented the functionality.
         """
-        with tempfile.TemporaryDirectory() as tmp_dir:
+        with local_temporary_directory() as tmp_dir:
             repo_path = Path(tmp_dir)
 
             # Initialize git repo to make it git-aware
@@ -449,7 +450,7 @@ class TestDeletionStrategySelection:
 
         This test should now PASS since we implemented the functionality.
         """
-        with tempfile.TemporaryDirectory() as tmp_dir:
+        with local_temporary_directory() as tmp_dir:
             repo_path = Path(tmp_dir)
             # Don't initialize git repo - non git-aware
 
