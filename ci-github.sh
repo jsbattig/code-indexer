@@ -111,6 +111,7 @@ if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest tests/ \
     --ignore=tests/test_cow_workflow_e2e.py \
     --ignore=tests/test_docker_compose_validation.py \
     --ignore=tests/test_idempotent_setup.py \
+    --ignore=tests/test_idempotent_start.py \
     --ignore=tests/test_branch_topology_e2e.py \
     --ignore=tests/test_optimized_example.py \
     --ignore=tests/test_comprehensive_git_workflow.py \
@@ -175,6 +176,7 @@ echo "   • Reconcile E2E tests (require indexing services)"
 echo "   • VoyageAI E2E tests (require Docker and API keys)"
 echo "   • Docker Compose validation tests (require Docker)"
 echo "   • Idempotent setup tests (require Docker services)"
+echo "   • Idempotent start tests (require Docker services)"
 echo "   • Branch topology E2E tests (require Git and indexing services)"
 echo "   • CoW clone E2E tests (require CoW filesystem and real services)"
 echo "   • Optimized example tests (require Docker and VoyageAI API)"

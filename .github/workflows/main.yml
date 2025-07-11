@@ -63,6 +63,7 @@ jobs:
           --ignore=tests/test_cow_workflow_e2e.py \
           --ignore=tests/test_docker_compose_validation.py \
           --ignore=tests/test_idempotent_setup.py \
+          --ignore=tests/test_idempotent_start.py \
           --ignore=tests/test_branch_topology_e2e.py \
           --ignore=tests/test_schema_migration_e2e.py \
           --ignore=tests/test_optimized_example.py \
