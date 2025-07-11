@@ -218,6 +218,7 @@ def test_normal_execution_differs_from_dry_run():
             "analysis summary",  # Success case
             "claude cli not available",  # Expected failure case
             "claude analysis failed",  # Expected failure case
+            "services not available",  # Expected failure case when services aren't running
         ]
 
         found_execution = any(

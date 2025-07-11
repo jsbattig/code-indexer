@@ -130,3 +130,5 @@ PRODUCTIVITY_ANALYSIS.md
 /debug
 /.local
 *.lock
+.env.local.new
+*.json

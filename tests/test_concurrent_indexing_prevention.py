@@ -47,6 +47,7 @@ class TestConcurrentIndexingPrevention:
             mock_embedding_provider.get_current_model.return_value = "test-model"
 
             mock_qdrant_client = Mock()
+            mock_qdrant_client.scroll_points.return_value = ([], None)
 
             # Use same metadata path for both indexers (same project)
             with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
@@ -197,6 +198,7 @@ class TestConcurrentIndexingPrevention:
             mock_embedding_provider.get_current_model.return_value = "test-model"
 
             mock_qdrant_client = Mock()
+            mock_qdrant_client.scroll_points.return_value = ([], None)
 
             with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 metadata_path = Path(f.name)
@@ -291,6 +293,7 @@ class TestConcurrentIndexingPrevention:
             mock_embedding_provider.get_current_model.return_value = "test-model"
 
             mock_qdrant_client = Mock()
+            mock_qdrant_client.scroll_points.return_value = ([], None)
 
             with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 metadata_path = Path(f.name)

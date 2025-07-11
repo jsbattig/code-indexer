@@ -329,7 +329,6 @@ def start_services_for_test_suite(
         # Use project-specific container model: pass project_name and ensure project setup
         docker_manager = DockerManager(
             console=console,
-            main_config=voyage_config,
             project_name="test_shared",  # Fixed project name for test suite - consistent across all tests
         )
         docker_manager.set_indexing_root(shared_test_path)
@@ -450,7 +449,7 @@ def setup_test_suite(console: Optional[Console] = None, force: bool = False) -> 
 if __name__ == "__main__":
     """
     Command line interface for test suite setup.
-    Usage: python tests/test_suite_setup.py [--dry-run]
+    Usage: python tests/suite_setup.py [--dry-run]
     """
     import argparse
 

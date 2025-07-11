@@ -54,6 +54,338 @@ class InfrastructureConfig:
     adaptive_timeout_multiplier: float = 1.5
 
 
+@dataclass
+class ProjectTestConfig:
+    """Configuration template for test projects."""
+
+    name: str
+    embedding_provider: EmbeddingProvider = EmbeddingProvider.VOYAGE_AI
+    collection_base_name: str = "test_collection"
+    chunk_size: int = 1000
+    chunk_overlap: int = 100
+    qdrant_vector_size: int = 1024
+    voyage_ai_model: str = "voyage-code-3"
+    voyage_ai_batch_size: int = 64
+    voyage_ai_parallel_requests: int = 6
+    use_provider_aware_collections: bool = True
+
+    def get_config_dict(self, codebase_dir: str) -> Dict:
+        """Generate config dictionary for this test project."""
+        return {
+            "codebase_dir": codebase_dir,
+            "embedding_provider": self.embedding_provider.value,
+            "qdrant": {
+                "vector_size": self.qdrant_vector_size,
+                "use_provider_aware_collections": self.use_provider_aware_collections,
+                "collection_base_name": self.collection_base_name,
+            },
+            "voyage_ai": {
+                "model": self.voyage_ai_model,
+                "batch_size": self.voyage_ai_batch_size,
+                "max_retries": 3,
+                "timeout": 30,
+                "parallel_requests": self.voyage_ai_parallel_requests,
+            },
+            "indexing": {
+                "chunk_size": self.chunk_size,
+                "chunk_overlap": self.chunk_overlap,
+            },
+        }
+
+
+class TestProjectInventory:
+    """Manages isolated test project configurations without tinkering with existing environments."""
+
+    # Predefined test project configurations
+    BRANCH_TOPOLOGY = ProjectTestConfig(
+        name="branch_topology",
+        collection_base_name="test_branch_topology_clean",
+        chunk_size=1000,
+        voyage_ai_parallel_requests=6,
+    )
+
+    RECONCILE = ProjectTestConfig(
+        name="reconcile",
+        collection_base_name="reconcile_test_collection",
+        chunk_size=1000,
+        voyage_ai_batch_size=32,
+    )
+
+    TIMESTAMP_COMPARISON = ProjectTestConfig(
+        name="timestamp_comparison",
+        collection_base_name="test_timestamp_comparison",
+        chunk_size=800,
+    )
+
+    CLI_PROGRESS = ProjectTestConfig(
+        name="cli_progress", collection_base_name="test_cli_progress", chunk_size=1000
+    )
+
+    GIT_AWARE_WATCH = ProjectTestConfig(
+        name="git_aware_watch",
+        collection_base_name="test_watch",
+        chunk_size=500,
+        chunk_overlap=50,
+        voyage_ai_batch_size=16,
+        voyage_ai_parallel_requests=4,
+    )
+
+    DELETION_HANDLING = ProjectTestConfig(
+        name="deletion_handling",
+        collection_base_name="test_deletion",
+        chunk_size=800,
+        chunk_overlap=80,
+        voyage_ai_batch_size=32,
+    )
+
+    CLAUDE_E2E = ProjectTestConfig(
+        name="claude_e2e",
+        collection_base_name="test_claude",
+        chunk_size=1000,
+        chunk_overlap=100,
+        voyage_ai_batch_size=64,
+    )
+
+    END_TO_END_COMPLETE = ProjectTestConfig(
+        name="end_to_end_complete",
+        collection_base_name="test_e2e_complete",
+        chunk_size=1200,
+        chunk_overlap=120,
+        voyage_ai_batch_size=32,
+        voyage_ai_parallel_requests=8,
+    )
+
+    START_STOP_E2E = ProjectTestConfig(
+        name="start_stop_e2e",
+        collection_base_name="start_stop_test_collection",
+        chunk_size=1000,
+        chunk_overlap=100,
+        voyage_ai_batch_size=64,
+    )
+
+    DOCKER_COMPOSE_VALIDATION = ProjectTestConfig(
+        name="docker_compose_validation",
+        collection_base_name="test_docker_compose",
+        chunk_size=500,
+        chunk_overlap=50,
+        voyage_ai_batch_size=32,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    IDEMPOTENT_START = ProjectTestConfig(
+        name="idempotent_start",
+        collection_base_name="test_idempotent",
+        chunk_size=600,
+        chunk_overlap=60,
+        voyage_ai_batch_size=32,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    INTEGRATION_MULTIPROJECT_1 = ProjectTestConfig(
+        name="integration_multiproject_1",
+        collection_base_name="test_multiproject_1",
+        chunk_size=800,
+        chunk_overlap=80,
+        voyage_ai_batch_size=32,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    INTEGRATION_MULTIPROJECT_2 = ProjectTestConfig(
+        name="integration_multiproject_2",
+        collection_base_name="test_multiproject_2",
+        chunk_size=900,
+        chunk_overlap=90,
+        voyage_ai_batch_size=32,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    LINE_NUMBER_DISPLAY = ProjectTestConfig(
+        name="line_number_display",
+        collection_base_name="test_line_numbers",
+        chunk_size=600,
+        chunk_overlap=60,
+        voyage_ai_batch_size=32,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    OPTIMIZED_EXAMPLE = ProjectTestConfig(
+        name="optimized_example",
+        collection_base_name="test_optimized",
+        chunk_size=700,
+        chunk_overlap=70,
+        voyage_ai_batch_size=32,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    QDRANT_CLEAR_COLLECTION_BUG = ProjectTestConfig(
+        name="qdrant_clear_collection_bug",
+        collection_base_name="test_qdrant_clear",
+        chunk_size=800,
+        chunk_overlap=80,
+        voyage_ai_batch_size=32,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    TIMEOUT_CONFIG = ProjectTestConfig(
+        name="timeout_config",
+        collection_base_name="test_timeout",
+        chunk_size=500,
+        chunk_overlap=50,
+        voyage_ai_batch_size=16,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    VOYAGE_AI_E2E = ProjectTestConfig(
+        name="voyage_ai_e2e",
+        collection_base_name="test_voyage_ai",
+        chunk_size=1000,
+        chunk_overlap=100,
+        voyage_ai_batch_size=64,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    GIT_AWARE_WATCH_E2E_ADDITIONAL = ProjectTestConfig(
+        name="git_aware_watch_e2e_additional",
+        collection_base_name="test_git_watch_additional",
+        chunk_size=600,
+        chunk_overlap=60,
+        voyage_ai_batch_size=32,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    END_TO_END_DUAL_ENGINE = ProjectTestConfig(
+        name="end_to_end_dual_engine",
+        collection_base_name="test_dual_engine",
+        chunk_size=800,
+        chunk_overlap=80,
+        voyage_ai_batch_size=32,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    STUCK_INCREMENTAL_INDEXING = ProjectTestConfig(
+        name="stuck_incremental_indexing",
+        collection_base_name="test_stuck_incremental",
+        chunk_size=700,
+        chunk_overlap=70,
+        voyage_ai_batch_size=16,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    DEADLOCK_REPRODUCTION = ProjectTestConfig(
+        name="deadlock_reproduction",
+        collection_base_name="test_deadlock",
+        chunk_size=500,
+        chunk_overlap=50,
+        voyage_ai_batch_size=16,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    STUCK_VERIFICATION_RETRY = ProjectTestConfig(
+        name="stuck_verification_retry",
+        collection_base_name="test_stuck_verification",
+        chunk_size=600,
+        chunk_overlap=60,
+        voyage_ai_batch_size=16,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    COMPREHENSIVE_GIT_WORKFLOW = ProjectTestConfig(
+        name="comprehensive_git_workflow",
+        collection_base_name="test_comprehensive_git",
+        chunk_size=900,
+        chunk_overlap=90,
+        voyage_ai_batch_size=32,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    COW_CLONE_E2E_FULL_AUTOMATION = ProjectTestConfig(
+        name="cow_clone_e2e_full_automation",
+        collection_base_name="test_cow_clone_full",
+        chunk_size=1000,
+        chunk_overlap=100,
+        voyage_ai_batch_size=64,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    DEBUG_BRANCH_ISOLATION = ProjectTestConfig(
+        name="debug_branch_isolation",
+        collection_base_name="test_debug_branch",
+        chunk_size=700,
+        chunk_overlap=70,
+        voyage_ai_batch_size=32,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    BRANCH_TRANSITION_LOGIC_FIX = ProjectTestConfig(
+        name="branch_transition_logic_fix",
+        collection_base_name="test_branch_transition",
+        chunk_size=800,
+        chunk_overlap=80,
+        voyage_ai_batch_size=32,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    COMPARE_SEARCH_METHODS = ProjectTestConfig(
+        name="compare_search_methods",
+        collection_base_name="test_compare_search",
+        chunk_size=600,
+        chunk_overlap=60,
+        voyage_ai_batch_size=32,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    DEFAULT = ProjectTestConfig(
+        name="default", collection_base_name="test_default", chunk_size=1000
+    )
+
+    @classmethod
+    def create_project_space(
+        cls, test_dir: Path, project_config: ProjectTestConfig
+    ) -> Path:
+        """Create isolated project space with specific configuration.
+
+        Args:
+            test_dir: Base test directory
+            project_config: Test project configuration
+
+        Returns:
+            Path to the created config file
+        """
+        import json
+
+        config_dir = test_dir / ".code-indexer"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_file = config_dir / "config.json"
+
+        # Generate fresh config for this test project
+        config = project_config.get_config_dict(str(test_dir))
+
+        with open(config_file, "w") as f:
+            json.dump(config, f, indent=2)
+
+        print(
+            f"🔧 Created isolated test project '{project_config.name}' with collection: {project_config.collection_base_name}"
+        )
+
+        return config_file
+
+    @classmethod
+    def get_all_test_collections(cls) -> List[str]:
+        """Get list of all test collection base names for cleanup."""
+        return [
+            cls.BRANCH_TOPOLOGY.collection_base_name,
+            cls.RECONCILE.collection_base_name,
+            cls.TIMESTAMP_COMPARISON.collection_base_name,
+            cls.CLI_PROGRESS.collection_base_name,
+            cls.GIT_AWARE_WATCH.collection_base_name,
+            cls.DELETION_HANDLING.collection_base_name,
+            cls.CLAUDE_E2E.collection_base_name,
+            cls.END_TO_END_COMPLETE.collection_base_name,
+            cls.START_STOP_E2E.collection_base_name,
+            cls.DEFAULT.collection_base_name,
+        ]
+
+
 class ServiceManager:
     """Manages services for tests following NEW STRATEGY patterns."""
 
@@ -1517,6 +1849,265 @@ def create_integration_test_setup(
     return service_manager, cli_helper
 
 
+def detect_service_state() -> dict:
+    """Detect current service state for tests to adapt behavior.
+
+    Returns:
+        Dictionary with service state information
+    """
+    try:
+        # Try to detect if services are already running by checking common status
+        import subprocess
+
+        # Get appropriate shared test directory based on test context
+        shared_dir = get_shared_test_directory(force_docker=False)
+        result = subprocess.run(
+            ["code-indexer", "status"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=shared_dir,
+        )
+
+        if result.returncode == 0:
+            # Parse status output to determine service health
+            stdout = result.stdout.lower()
+            # Look for Qdrant specifically since that's what indexing needs
+            qdrant_ready = "qdrant" in stdout and (
+                "✅ ready" in stdout or "available" in stdout
+            )
+            docker_services_running = "docker services" in stdout and (
+                "✅" in stdout or "running" in stdout
+            )
+            services_running = qdrant_ready and docker_services_running
+
+            return {
+                "services_running": services_running,
+                "qdrant_ready": qdrant_ready,
+                "docker_services_running": docker_services_running,
+                "status_accessible": True,
+                "raw_status": result.stdout,
+            }
+        else:
+            return {
+                "services_running": False,
+                "qdrant_ready": False,
+                "docker_services_running": False,
+                "status_accessible": False,
+                "raw_status": result.stdout if result.stdout else result.stderr,
+            }
+    except Exception as e:
+        return {
+            "services_running": False,
+            "qdrant_ready": False,
+            "docker_services_running": False,
+            "status_accessible": False,
+            "error": str(e),
+        }
+
+
+def adaptive_service_setup(project_path: Path, helper: "CLIHelper") -> bool:
+    """Set up services adaptively based on current state.
+
+    Args:
+        project_path: Project directory to run commands in
+        helper: CLIHelper instance to use for commands
+
+    Returns:
+        True if services are ready, False otherwise
+    """
+    import time
+
+    # Always check service state from the project directory context
+    try:
+        # 1. First, ensure clean data state if services are running
+        status_result = helper.run_cli_command(
+            ["status"], cwd=project_path, expect_success=False, timeout=10
+        )
+
+        if status_result.returncode == 0:
+            stdout = status_result.stdout.lower()
+            # Check if all required services are healthy
+            qdrant_healthy = "qdrant" in stdout and (
+                "healthy" in stdout or "✅" in stdout
+            )
+            data_cleaner_healthy = "data-cleaner" in stdout and (
+                "healthy" in stdout or "✅" in stdout
+            )
+
+            # For voyage-ai, we don't need ollama
+            embedding_provider = helper.config.embedding_provider.value
+            if embedding_provider == "voyage-ai":
+                services_ready = qdrant_healthy and data_cleaner_healthy
+            else:
+                ollama_healthy = "ollama" in stdout and (
+                    "healthy" in stdout or "✅" in stdout
+                )
+                services_ready = (
+                    qdrant_healthy and data_cleaner_healthy and ollama_healthy
+                )
+
+            if services_ready:
+                print("✅ Services already running and healthy")
+                # Clean data for fresh test state
+                clean_result = helper.run_cli_command(
+                    ["clean", "--data-only"],
+                    cwd=project_path,
+                    expect_success=False,
+                    timeout=30,
+                )
+                if clean_result.returncode == 0:
+                    print("✅ Data cleaned for fresh test state")
+                return True
+
+        # 2. Services not ready, try to start them with shorter timeout
+        print("🚀 Starting services for project...")
+        start_result = helper.run_cli_command(
+            ["start", "--quiet"],
+            cwd=project_path,
+            expect_success=False,
+            timeout=60,  # Reduced from 120
+        )
+
+        # Check if start failed due to services already running
+        if start_result.returncode != 0:
+            stderr = (start_result.stderr or "").lower()
+            stdout = (start_result.stdout or "").lower()
+            if "already" in stderr or "already" in stdout:
+                print("⚠️ Services already running, checking health...")
+            else:
+                print(f"❌ Failed to start services: {start_result.stderr}")
+                return False
+
+        # 3. Poll for service health with shorter timeout
+        max_wait = 30  # Total max wait time
+        poll_interval = 2
+        start_time = time.time()
+
+        while time.time() - start_time < max_wait:
+            health_status = helper.run_cli_command(
+                ["status"], cwd=project_path, expect_success=False, timeout=5
+            )
+
+            if health_status.returncode == 0:
+                stdout = health_status.stdout.lower()
+                qdrant_healthy = "qdrant" in stdout and (
+                    "healthy" in stdout or "✅" in stdout
+                )
+
+                if qdrant_healthy:
+                    print("✅ Services started and healthy")
+                    return True
+
+            time.sleep(poll_interval)
+
+        print(f"⚠️ Services did not become healthy within {max_wait} seconds")
+        return False
+
+    except Exception as e:
+        print(f"⚠️ Service setup failed: {e}")
+        return False
+
+
+def ensure_collection_ready(
+    project_path: Path, collection_name: str, force_recreate: bool = False
+) -> bool:
+    """Ensure a collection is ready for testing.
+
+    Args:
+        project_path: Project directory
+        collection_name: Name of the collection
+        force_recreate: Force recreation of collection
+
+    Returns:
+        True if collection is ready, False otherwise
+    """
+    try:
+        from ..config import ConfigManager
+        from ..services.qdrant import QdrantClient
+        from ..services.embedding_factory import EmbeddingProviderFactory
+
+        # Load configuration
+        config_manager = ConfigManager.create_with_backtrack(project_path)
+        config = config_manager.load()
+
+        # Create clients
+        embedding_provider = EmbeddingProviderFactory.create(config)
+        qdrant_client = QdrantClient(config.qdrant)
+
+        # Resolve actual collection name
+        resolved_name = qdrant_client.resolve_collection_name(
+            config, embedding_provider
+        )
+
+        if force_recreate:
+            # Delete if exists
+            if qdrant_client.collection_exists(resolved_name):
+                qdrant_client.delete_collection(resolved_name)
+                print(f"🗑️  Deleted existing collection: {resolved_name}")
+
+        # Ensure collection exists with correct dimensions
+        success = qdrant_client.ensure_collection(
+            resolved_name, embedding_provider.dimension
+        )
+
+        if success:
+            print(f"✅ Collection ready: {resolved_name}")
+            return True
+        else:
+            print(f"❌ Failed to ensure collection: {resolved_name}")
+            return False
+
+    except Exception as e:
+        print(f"❌ Collection setup failed: {e}")
+        return False
+
+
+def get_shared_test_directory(force_docker: bool = False) -> Path:
+    """Get the shared test directory path, with separate directories for Docker vs Podman.
+
+    This prevents permission conflicts between Docker (root) and Podman (rootless) tests.
+
+    Args:
+        force_docker: If True, return the Docker-specific test directory
+
+    Returns:
+        Path to the appropriate shared test directory
+    """
+    base_dir = Path.home() / ".tmp"
+    if force_docker:
+        return base_dir / "shared_test_containers_docker"
+    else:
+        return base_dir / "shared_test_containers"
+
+
+def create_isolated_project_dir(test_name: str, force_docker: bool = False) -> Path:
+    """Create an isolated project directory for tests that need unique collections.
+
+    This preserves shared container performance while giving tests that truly need
+    isolation (like git-aware tests) their own project space and thus unique collection names.
+
+    Args:
+        test_name: Name of the test (used for directory naming)
+        force_docker: If True, create directory in Docker-specific namespace
+
+    Returns:
+        Path to isolated project directory
+    """
+    import uuid
+    import time
+
+    # Create unique project directory that will generate its own project_id hash
+    unique_id = f"{test_name}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+    if force_docker:
+        isolated_dir = Path.home() / ".tmp" / f"isolated_test_docker_{unique_id}"
+    else:
+        isolated_dir = Path.home() / ".tmp" / f"isolated_test_{unique_id}"
+    isolated_dir.mkdir(parents=True, exist_ok=True)
+
+    return isolated_dir
+
+
 def auto_register_project_collections(project_dir: Path) -> List[str]:
     """
     Auto-discover and register collections that would be created for a project.
@@ -1542,14 +2133,14 @@ def auto_register_project_collections(project_dir: Path) -> List[str]:
         from code_indexer.config import ConfigManager
         from code_indexer.services.embedding_factory import EmbeddingProviderFactory
 
-        # Import test_suite_setup functions here to avoid circular imports
+        # Import suite_setup functions here to avoid circular imports
         try:
-            from .test_suite_setup import register_test_collection
+            from .suite_setup import register_test_collection
         except ImportError:
             # If running standalone, try absolute import
-            import test_suite_setup
+            import suite_setup
 
-            register_test_collection = test_suite_setup.register_test_collection
+            register_test_collection = suite_setup.register_test_collection
 
         registered_collections = []
 
@@ -1613,3 +2204,230 @@ def auto_register_project_collections(project_dir: Path) -> List[str]:
     except Exception as e:
         print(f"Warning: Could not auto-register collections: {e}")
         return []
+
+
+class TestSuiteCleanup:
+    """Manages cleanup of test suite containers and data."""
+
+    @staticmethod
+    def cleanup_all_test_containers():
+        """Remove all test containers and Qdrant data."""
+        import subprocess
+
+        print("🧹 Starting comprehensive test suite cleanup...")
+
+        # Get all test container names with cidx prefix
+        try:
+            # List all containers with cidx prefix
+            result = subprocess.run(
+                [
+                    "podman",
+                    "ps",
+                    "-a",
+                    "--format",
+                    "{{.Names}}",
+                    "--filter",
+                    "name=cidx-",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode == 0:
+                container_names = [
+                    name.strip() for name in result.stdout.split("\n") if name.strip()
+                ]
+
+                if container_names:
+                    print(f"🗑️ Found {len(container_names)} test containers to remove")
+
+                    # Stop containers
+                    for name in container_names:
+                        print(f"  Stopping {name}...")
+                        subprocess.run(
+                            ["podman", "stop", name], capture_output=True, timeout=30
+                        )
+
+                    # Remove containers
+                    for name in container_names:
+                        print(f"  Removing {name}...")
+                        subprocess.run(
+                            ["podman", "rm", "-f", name],
+                            capture_output=True,
+                            timeout=30,
+                        )
+
+                    print(f"✅ Removed {len(container_names)} test containers")
+                else:
+                    print("ℹ️ No test containers found to remove")
+
+        except Exception as e:
+            print(f"⚠️ Error during container cleanup: {e}")
+
+        # Cleanup test volumes
+        try:
+            result = subprocess.run(
+                [
+                    "podman",
+                    "volume",
+                    "ls",
+                    "--format",
+                    "{{.Name}}",
+                    "--filter",
+                    "name=cidx-",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode == 0:
+                volume_names = [
+                    name.strip() for name in result.stdout.split("\n") if name.strip()
+                ]
+
+                if volume_names:
+                    print(f"🗑️ Found {len(volume_names)} test volumes to remove")
+
+                    for name in volume_names:
+                        print(f"  Removing volume {name}...")
+                        subprocess.run(
+                            ["podman", "volume", "rm", "-f", name],
+                            capture_output=True,
+                            timeout=30,
+                        )
+
+                    print(f"✅ Removed {len(volume_names)} test volumes")
+                else:
+                    print("ℹ️ No test volumes found to remove")
+
+        except Exception as e:
+            print(f"⚠️ Error during volume cleanup: {e}")
+
+        # Cleanup test Qdrant collections
+        TestSuiteCleanup._cleanup_test_collections()
+
+        # Cleanup temporary directories
+        TestSuiteCleanup._cleanup_test_temp_directories()
+
+        print("✅ Test suite cleanup completed")
+
+    @staticmethod
+    def _cleanup_test_collections():
+        """Remove test collections from any running Qdrant instances."""
+        try:
+            from code_indexer.services.qdrant import QdrantClient
+            from code_indexer.config import ConfigManager
+
+            # Try to connect to shared test containers config
+            # Default to non-Docker directory for backward compatibility
+            shared_dir = get_shared_test_directory(force_docker=False)
+            shared_config_path = shared_dir / ".code-indexer" / "config.json"
+            if shared_config_path.exists():
+                try:
+                    config_manager = ConfigManager.from_directory(
+                        shared_config_path.parent.parent
+                    )
+                    config = config_manager.load()
+
+                    qdrant_client = QdrantClient(config.qdrant)
+                    if qdrant_client.health_check():
+                        print("🗑️ Cleaning up test collections...")
+
+                        # Get all test collection names
+                        test_collections = (
+                            TestProjectInventory.get_all_test_collections()
+                        )
+
+                        # Also get collections from any additional registries if they exist
+                        # Note: Global test registry no longer needed with inventory system
+
+                        for collection_base in set(
+                            test_collections
+                        ):  # Remove duplicates
+                            # For provider-aware collections, we need to clean up all variants
+                            collections_to_remove = []
+
+                            # Common provider variations
+                            provider_variations = [
+                                f"{collection_base}_voyage-ai_voyage-code-3",
+                                f"{collection_base}_ollama_nomic-embed-text",
+                                collection_base,  # Legacy naming
+                            ]
+
+                            for collection_name in provider_variations:
+                                try:
+                                    if qdrant_client.collection_exists(collection_name):
+                                        collections_to_remove.append(collection_name)
+                                except Exception:
+                                    continue
+
+                            # Remove found collections
+                            for collection_name in collections_to_remove:
+                                try:
+                                    qdrant_client.delete_collection(collection_name)
+                                    print(f"  Removed collection: {collection_name}")
+                                except Exception as e:
+                                    print(f"  Failed to remove {collection_name}: {e}")
+
+                        if collections_to_remove:
+                            print(
+                                f"✅ Cleaned up {len(collections_to_remove)} test collections"
+                            )
+                        else:
+                            print("ℹ️ No test collections found to remove")
+
+                except Exception as e:
+                    print(f"⚠️ Could not connect to Qdrant for collection cleanup: {e}")
+
+        except Exception as e:
+            print(f"⚠️ Error during collection cleanup: {e}")
+
+    @staticmethod
+    def _cleanup_test_temp_directories():
+        """Clean up test temporary directories."""
+        import shutil
+
+        temp_patterns = [
+            "/tmp/code_indexer_test_*",
+            str(get_shared_test_directory(force_docker=False)),
+            str(get_shared_test_directory(force_docker=True)),
+        ]
+
+        for pattern in temp_patterns:
+            try:
+                if "*" in pattern:
+                    # Use glob for wildcard patterns
+                    import glob
+
+                    paths = glob.glob(pattern)
+                    for glob_path in paths:
+                        if Path(glob_path).exists():
+                            shutil.rmtree(glob_path, ignore_errors=True)
+                            print(f"  Removed temp directory: {glob_path}")
+                else:
+                    # Direct path
+                    direct_path = Path(pattern)
+                    if direct_path.exists():
+                        shutil.rmtree(direct_path, ignore_errors=True)
+                        print(f"  Removed temp directory: {direct_path}")
+
+            except Exception as e:
+                print(f"⚠️ Could not remove {pattern}: {e}")
+
+
+def create_test_project_with_inventory(
+    test_dir: Path, project_config: ProjectTestConfig
+) -> Path:
+    """Create a test project using the inventory system instead of config tinkering.
+
+    This is the recommended way to create test projects that need specific configurations.
+    """
+    # Auto-register collections for cleanup
+    auto_register_project_collections(test_dir)
+
+    # Create isolated project space
+    config_file = TestProjectInventory.create_project_space(test_dir, project_config)
+
+    return config_file

@@ -14,21 +14,27 @@ import pytest
 
 from .conftest import local_temporary_directory
 from .test_infrastructure import (
-    auto_register_project_collections,
+    TestProjectInventory,
+    create_test_project_with_inventory,
 )
 
 
 @pytest.fixture
-def dual_engine_test_repo():
+def dual_engine_test_repo(request):
     """Create a test repository for dual engine tests."""
-    with local_temporary_directory() as temp_dir:
-        # Auto-register collections for cleanup
-        auto_register_project_collections(temp_dir)
+    # Get force_docker parameter from the test's parametrization
+    force_docker = False
 
-        # Preserve .code-indexer directory if it exists
-        config_dir = temp_dir / ".code-indexer"
-        if not config_dir.exists():
-            config_dir.mkdir(parents=True, exist_ok=True)
+    # For parametrized tests, get the parameter value from the test method
+    if hasattr(request, "node") and hasattr(request.node, "callspec"):
+        # Extract force_docker from the test's parametrization
+        force_docker = request.node.callspec.params.get("force_docker", False)
+
+    with local_temporary_directory(force_docker=force_docker) as temp_dir:
+        # Create isolated project space using inventory system (no config tinkering)
+        create_test_project_with_inventory(
+            temp_dir, TestProjectInventory.END_TO_END_DUAL_ENGINE
+        )
 
         yield temp_dir
 
@@ -107,6 +113,18 @@ class TestAuthentication(unittest.TestCase):
         capture_output=True,
         check=True,
     )
+
+    # Create .gitignore to prevent committing .code-indexer directory
+    (test_dir / ".gitignore").write_text(
+        """.code-indexer/
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.env
+"""
+    )
+
     subprocess.run(["git", "add", "."], cwd=test_dir, capture_output=True, check=True)
     subprocess.run(
         ["git", "commit", "-m", "Initial commit"],
@@ -319,11 +337,12 @@ class TestEndToEndDualEngine:
             assert (
                 "✅" in result.stdout
             ), "Services should still be running after clean-data"
+            # The collection still exists but with 0 documents after clean-data
             assert (
-                "❌ Missing" in result.stdout
-                or "❌ Not Found" in result.stdout
-                or "Not Found" in result.stdout
-            ), f"Index should be cleared after clean-data: {result.stdout}"
+                "Points: 0" in result.stdout
+                or "0 docs" in result.stdout
+                or "0 points" in result.stdout.lower()
+            ), f"Index should show 0 documents after clean-data: {result.stdout}"
 
         finally:
             try:
@@ -499,6 +518,9 @@ class TestEndToEndDualEngine:
 
             # Clean project data from Podman test
             self.run_cli_command(["clean-data"], test_dir, timeout=90)
+
+            # Stop Podman services before testing Docker
+            self.run_cli_command(["stop"], test_dir, timeout=90)
 
             # Test Docker second
             print("Testing Docker...")

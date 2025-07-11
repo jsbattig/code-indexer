@@ -10,13 +10,67 @@ import subprocess
 import time
 import shutil
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Optional
 from contextlib import contextmanager
 
 import pytest
+import requests  # type: ignore
 
 from code_indexer.config import Config
 from code_indexer.services.docker_manager import DockerManager
+
+# Load environment variables from .env files
+from . import load_env  # noqa: F401 - Used for side effects
+
+
+def detect_running_qdrant_port() -> Optional[int]:
+    """Detect the port of a running Qdrant service.
+
+    Returns:
+        Port number if found, None otherwise
+    """
+    # Common Qdrant ports including the current project's assigned port
+    qdrant_ports = [
+        7221,
+        7249,
+        6560,
+        6333,
+        6334,
+        6335,
+        6902,
+    ]  # Add current project port first
+
+    for port in qdrant_ports:
+        try:
+            response = requests.get(f"http://localhost:{port}/cluster", timeout=2)
+            if response.status_code == 200 and "status" in response.json():
+                return port
+        except Exception:
+            continue
+
+    return None
+
+
+def get_test_qdrant_config() -> dict:
+    """Get Qdrant configuration for tests that auto-detects running service.
+
+    Returns:
+        Qdrant config dict with detected host or default
+    """
+    detected_port = detect_running_qdrant_port()
+    if detected_port:
+        return {
+            "host": f"http://localhost:{detected_port}",
+            "collection": "test_collection",
+            "vector_size": 1024,
+        }
+    else:
+        # Fallback to default
+        return {
+            "host": "http://localhost:6333",
+            "collection": "test_collection",
+            "vector_size": 1024,
+        }
 
 
 # Global helper functions for local tmp directory management
@@ -29,10 +83,19 @@ def get_local_tmp_dir() -> Path:
 
 
 @contextmanager
-def local_temporary_directory(prefix: str = "test_"):
-    """Context manager that creates a temporary directory in ~/.tmp (outside git context)."""
+def local_temporary_directory(prefix: str = "test_", force_docker: bool = False):
+    """Context manager that creates a temporary directory in ~/.tmp (outside git context).
+
+    Args:
+        prefix: Prefix for the directory name (unused for shared directories)
+        force_docker: If True, use Docker-specific shared directory
+    """
+    # Import here to avoid circular dependency
+    from tests.test_infrastructure import get_shared_test_directory
+
     # Use shared test directory to avoid creating multiple container sets
-    temp_path = Path.home() / ".tmp" / "shared_test_containers"
+    # Docker and Podman get separate directories to avoid permission conflicts
+    temp_path = get_shared_test_directory(force_docker)
 
     # Ensure directory exists but DON'T delete it if containers are using it
     temp_path.mkdir(parents=True, exist_ok=True)
@@ -68,13 +131,18 @@ class E2EServiceManager:
         self.config_dir = config_dir
         self.services_started = False
 
-    def clean_legacy_containers(self) -> bool:
+    def clean_legacy_containers(self, force_docker: bool = False) -> bool:
         """Clean any legacy containers that might interfere with CoW tests."""
         try:
             print("🧹 Cleaning legacy containers...")
-            docker_manager = DockerManager(project_name="test_shared")
+            docker_manager = DockerManager(
+                project_name="test_shared", force_docker=force_docker
+            )
+            # Import here to avoid circular dependency
+            from tests.test_infrastructure import get_shared_test_directory
+
             # Use a consistent path for all test containers to avoid creating multiple container sets
-            shared_test_path = Path.home() / ".tmp" / "shared_test_containers"
+            shared_test_path = get_shared_test_directory(force_docker)
             shared_test_path.mkdir(parents=True, exist_ok=True)
             docker_manager.set_indexing_root(shared_test_path)
             success = docker_manager.remove_containers(remove_volumes=True)
@@ -291,6 +359,17 @@ def e2e_temp_repo() -> Generator[Path, None, None]:
         )
         (repo_path / "main.py").write_text(
             'def main():\n    print("Hello World")\n\nif __name__ == "__main__":\n    main()'
+        )
+
+        # Create .gitignore to prevent committing .code-indexer directory
+        (repo_path / ".gitignore").write_text(
+            """.code-indexer/
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.env
+"""
         )
 
         # Initial commit

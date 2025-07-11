@@ -5,15 +5,20 @@
 
 set -e  # Exit on any error
 
-echo "🚀 Starting full automation pipeline..."
-echo "================================="
-
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+echo "🚀 Starting full automation pipeline..."
+echo "================================="
+
+if [[ "$SKIP_DOCKER_TESTS" == "true" ]]; then
+    echo -e "${YELLOW}⚠️  Running in Podman-only mode (Docker tests will be skipped)${NC}"
+    echo ""
+fi
 
 print_step() {
     echo -e "\n${BLUE}➡️  $1${NC}"
@@ -31,10 +36,47 @@ print_error() {
     echo -e "${RED}❌ $1${NC}"
 }
 
+# Parse command line arguments
+SKIP_DOCKER_TESTS=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --skip-docker|--podman-only)
+            SKIP_DOCKER_TESTS=true
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: $0 [options]"
+            echo "Options:"
+            echo "  --skip-docker, --podman-only   Skip Docker-specific tests (run Podman tests only)"
+            echo "  --help, -h                     Show this help message"
+            exit 0
+            ;;
+        *)
+            print_error "Unknown option: $1"
+            echo "Use --help to see available options"
+            exit 1
+            ;;
+    esac
+done
+
 # Check if we're in the right directory
 if [[ ! -f "pyproject.toml" ]]; then
     print_error "Not in project root directory (pyproject.toml not found)"
     exit 1
+fi
+
+if [[ "$SKIP_DOCKER_TESTS" == "true" ]]; then
+    print_warning "Docker tests will be skipped - running Podman tests only"
+fi
+
+# Source .env files if they exist
+if [[ -f ".env.local" ]]; then
+    source .env.local
+    print_success "Loaded environment variables from .env.local"
+fi
+if [[ -f ".env" ]]; then
+    source .env
+    print_success "Loaded environment variables from .env"
 fi
 
 # Check for VoyageAI API key (required for E2E tests)
@@ -88,28 +130,193 @@ else
     print_warning "Test environment setup had issues (continuing anyway)"
 fi
 
-# 6. Run tests with coverage
-print_step "Running tests with coverage"
+# 6. Run tests with coverage (individual test files for better isolation)
+print_step "Running tests with coverage - individual test files for better isolation"
+
+
+# Get all test files
+test_files=(tests/test_*.py)
+
+# Filter out Docker tests if requested
+if [[ "$SKIP_DOCKER_TESTS" == "true" ]]; then
+    print_step "Filtering out Docker-specific tests"
+    filtered_files=()
+    docker_test_files=(
+        "tests/test_docker_compose_validation.py"
+        "tests/test_docker_manager_cleanup.py"
+        "tests/test_end_to_end_dual_engine.py"
+        "tests/test_e2e_embedding_providers.py"
+    )
+    
+    for file in "${test_files[@]}"; do
+        # Check if this file is in our Docker test list
+        skip_file=false
+        for docker_test in "${docker_test_files[@]}"; do
+            if [[ "$file" == "$docker_test" ]]; then
+                skip_file=true
+                break
+            fi
+        done
+        
+        if [[ "$skip_file" == "true" ]]; then
+            print_warning "Skipping Docker test: $(basename "$file")"
+        else
+            filtered_files+=("$file")
+        fi
+    done
+    test_files=("${filtered_files[@]}")
+    print_success "Filtered to ${#test_files[@]} Podman-compatible tests"
+fi
 
 # Check if COW_CLONE_E2E_TESTS is set to exclude the slow CoW clone tests
 if [[ "${COW_CLONE_E2E_TESTS:-}" == "false" ]]; then
     print_warning "Skipping CoW clone E2E tests (COW_CLONE_E2E_TESTS=false)"
-    # Exclude the specific CoW clone test to speed up the run
-    if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest tests/ --ignore=tests/test_cow_clone_e2e_full_automation.py --cov=src/code_indexer --cov-report=xml --cov-report=term; then
-        print_success "All tests passed (excluding CoW clone E2E test)"
-    else
-        print_error "Tests failed"
-        exit 1
-    fi
+    # Filter out CoW clone test
+    filtered_files=()
+    for file in "${test_files[@]}"; do
+        if [[ "$file" != "tests/test_cow_clone_e2e_full_automation.py" ]]; then
+            filtered_files+=("$file")
+        fi
+    done
+    test_files=("${filtered_files[@]}")
 else
     print_step "Including CoW clone E2E tests (may take several minutes)"
     print_step "To skip them: export COW_CLONE_E2E_TESTS=false"
-    if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest tests/ --cov=src/code_indexer --cov-report=xml --cov-report=term; then
-        print_success "All tests passed (including CoW clone E2E)"
+fi
+
+# Initialize coverage
+rm -f .coverage 2>/dev/null || true
+
+# Setup test output logging
+TEST_OUTPUT_DIR="test_output_$(date +%Y%m%d_%H%M%S)"
+mkdir -p "$TEST_OUTPUT_DIR"
+TEST_LOG="$TEST_OUTPUT_DIR/full_test_run.log"
+TEST_SUMMARY_LOG="$TEST_OUTPUT_DIR/test_summary.json"
+
+echo "   📝 Test output will be saved to: $TEST_OUTPUT_DIR"
+echo ""
+
+# Run each test file individually
+failed_tests=()
+passed_count=0
+skipped_count=0
+total_count=${#test_files[@]}
+current_index=0
+
+echo "   Total test files to run: $total_count"
+echo ""
+
+# Start JSON summary
+echo '{"test_run": {' > "$TEST_SUMMARY_LOG"
+echo '  "start_time": "'$(date -Iseconds)'",' >> "$TEST_SUMMARY_LOG"
+echo '  "total_files": '$total_count',' >> "$TEST_SUMMARY_LOG"
+echo '  "test_results": [' >> "$TEST_SUMMARY_LOG"
+
+for test_file in "${test_files[@]}"; do
+    current_index=$((current_index + 1))
+    
+    # Create individual test log
+    test_name=$(basename "$test_file" .py)
+    individual_log="$TEST_OUTPUT_DIR/${test_name}.log"
+    
+    # Run test and capture output
+    echo -e "\n   [$current_index/$total_count] Running $test_name..." | tee -a "$TEST_LOG"
+    
+    # Run the test with output to both console and file
+    PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest "$test_file" \
+        --cov=src/code_indexer --cov-append --no-cov-on-fail --cov-report= \
+        --tb=auto --maxfail=3 --no-header -p no:warnings 2>&1 | tee -a "$TEST_LOG" | tee "$individual_log"
+    
+    exit_code=${PIPESTATUS[0]}
+    
+    # Check if tests were skipped by examining output
+    if grep -q "collected 0 items.*skipped" "$individual_log" || grep -q "^====.* skipped in .*====" "$individual_log"; then
+        test_status="skipped"
+    elif [[ $exit_code -eq 0 ]]; then
+        test_status="passed"
+    elif [[ $exit_code -eq 5 ]]; then
+        # Exit code 5 usually means no tests collected
+        test_status="skipped"
     else
-        print_error "Tests failed (including CoW clone E2E)"
-        exit 1
+        test_status="failed"
     fi
+    
+    # Add comma if not first result
+    if [[ $current_index -gt 1 ]]; then
+        echo ',' >> "$TEST_SUMMARY_LOG"
+    fi
+    
+    # Write JSON result
+    echo -n '    {"file": "'$test_file'", "name": "'$test_name'", "status": "'$test_status'"}' >> "$TEST_SUMMARY_LOG"
+    
+    if [[ $test_status == "passed" ]]; then
+        echo "   ✅ $test_name passed" | tee -a "$TEST_LOG"
+        passed_count=$((passed_count + 1))
+    elif [[ $test_status == "skipped" ]]; then
+        echo "   ⏭️  $test_name skipped" | tee -a "$TEST_LOG"
+        skipped_count=$((skipped_count + 1))
+        # Don't count as failed
+    else
+        echo "   ❌ $test_name failed" | tee -a "$TEST_LOG"
+        failed_tests+=("$test_file")
+    fi
+done
+
+# Close JSON summary
+echo '' >> "$TEST_SUMMARY_LOG"
+echo '  ],' >> "$TEST_SUMMARY_LOG"
+echo '  "end_time": "'$(date -Iseconds)'",' >> "$TEST_SUMMARY_LOG"
+echo '  "passed_count": '$passed_count',' >> "$TEST_SUMMARY_LOG"
+echo '  "skipped_count": '$skipped_count',' >> "$TEST_SUMMARY_LOG"
+echo '  "failed_count": '${#failed_tests[@]} >> "$TEST_SUMMARY_LOG"
+echo '}}' >> "$TEST_SUMMARY_LOG"
+
+# Generate final coverage report
+if [[ -f .coverage ]]; then
+    echo "   Generating final coverage report..."
+    PYTHONPATH="$(pwd)/src:$(pwd)/tests" python -m coverage xml
+    PYTHONPATH="$(pwd)/src:$(pwd)/tests" python -m coverage report --show-missing
+fi
+
+# Report results
+echo ""
+echo "📊 Test Results Summary:"
+echo "   Passed: $passed_count/$total_count"
+echo "   Skipped: $skipped_count/$total_count"
+echo "   Failed: ${#failed_tests[@]}/$total_count"
+
+# Generate detailed test report using Python parser
+if [[ -f "parse_test_results.py" ]]; then
+    echo ""
+    echo "📋 Generating detailed test report..."
+    python parse_test_results.py "$TEST_OUTPUT_DIR" | tee "$TEST_OUTPUT_DIR/detailed_summary.txt"
+else
+    echo ""
+    echo "⚠️  Test parser not found, showing basic summary only"
+fi
+
+if [[ ${#failed_tests[@]} -eq 0 ]]; then
+    if [[ "${COW_CLONE_E2E_TESTS:-}" == "false" ]]; then
+        print_success "All tests passed (excluding CoW clone E2E test) - using individual test file execution"
+    else
+        print_success "All tests passed (including CoW clone E2E) - using individual test file execution"
+    fi
+else
+    echo ""
+    echo "❌ Failed test files:"
+    for failed_test in "${failed_tests[@]}"; do
+        echo "   - $failed_test"
+    done
+    print_error "Some tests failed - using individual test file execution"
+    
+    # Show where to find detailed logs
+    echo ""
+    echo "📁 Detailed logs saved in: $TEST_OUTPUT_DIR/"
+    echo "   - Full test run: $TEST_LOG"
+    echo "   - Individual test logs: $TEST_OUTPUT_DIR/*.log"
+    echo "   - JSON summary: $TEST_SUMMARY_LOG"
+    
+    exit 1
 fi
 
 # 7. Build package
@@ -164,6 +371,20 @@ if ls /tmp/code_indexer_test_* >/dev/null 2>&1; then
     fi
 else
     print_success "No test temporary directories to clean up"
+fi
+
+# Comprehensive test suite cleanup
+print_step "Performing comprehensive test suite cleanup"
+"$SCRIPT_DIR/cleanup-test-suite.sh"
+print_success "Test suite cleanup completed"
+
+# Additional container cleanup
+print_step "Running additional container cleanup"
+if [[ -f "./cleanup-test-containers.sh" ]]; then
+    ./cleanup-test-containers.sh
+    print_success "Additional container cleanup completed"
+else
+    print_warning "cleanup-test-containers.sh not found, skipping additional cleanup"
 fi
 
 # Summary

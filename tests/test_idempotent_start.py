@@ -1,59 +1,41 @@
 """Tests for idempotent start behavior."""
 
 import os
-import shutil
 import pytest
 
 import json
-from pathlib import Path
 from unittest.mock import patch, MagicMock
+
+# Import new test infrastructure
+from .conftest import local_temporary_directory
+from .test_infrastructure import (
+    TestProjectInventory,
+    create_test_project_with_inventory,
+)
+
+
+@pytest.fixture
+def idempotent_start_test_repo():
+    """Create a test repository for idempotent start tests."""
+    with local_temporary_directory() as temp_dir:
+        # Create isolated project space using inventory system (no config tinkering)
+        create_test_project_with_inventory(
+            temp_dir, TestProjectInventory.IDEMPOTENT_START
+        )
+
+        yield temp_dir
 
 
 class TestIdempotentStart:
     """Test that start operations are idempotent and don't duplicate work."""
 
-    @pytest.fixture(autouse=True)
-    def setup_test_environment(self):
-        """Setup test environment for each test."""
-        # Create temporary directory for test
-        # Use shared test directory to avoid creating multiple container sets
-        self.test_dir = Path.home() / ".tmp" / "shared_test_containers"
-        # Clean and recreate for test isolation
-        if self.test_dir.exists():
-            shutil.rmtree(self.test_dir, ignore_errors=True)
-        self.test_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            self.original_cwd = os.getcwd()
-        except (FileNotFoundError, OSError):
-            # If current directory doesn't exist, use a safe default
-            self.original_cwd = str(Path.home())
-        os.chdir(self.test_dir)
-
-        # Store original environment
-        self.original_env = dict(os.environ)
-
-        yield
-
-        # Cleanup
-        try:
-            os.chdir(self.original_cwd)
-        except (FileNotFoundError, OSError):
-            # If original directory doesn't exist, go to home
-            os.chdir(Path.home())
-        if self.test_dir.exists():
-            shutil.rmtree(self.test_dir, ignore_errors=True)
-
-        # Restore environment
-        os.environ.clear()
-        os.environ.update(self.original_env)
-
-    def create_config(self, embedding_provider="ollama"):
+    def create_config(self, test_dir, embedding_provider="ollama"):
         """Create configuration for specified embedding provider."""
-        config_dir = self.test_dir / ".code-indexer"
+        config_dir = test_dir / ".code-indexer"
         config_dir.mkdir(exist_ok=True)
 
         base_config = {
-            "codebase_dir": str(self.test_dir),
+            "codebase_dir": str(test_dir),
             "embedding_provider": embedding_provider,
             "qdrant": {
                 "host": "http://localhost:6333",
@@ -85,9 +67,11 @@ class TestIdempotentStart:
 
         return config_file
 
-    def test_idempotent_start_services_all_healthy(self):
+    def test_idempotent_start_services_all_healthy(self, idempotent_start_test_repo):
         """Test that start_services is idempotent when all services are healthy."""
-        self.create_config("ollama")
+        test_dir = idempotent_start_test_repo
+
+        self.create_config(test_dir, "ollama")
 
         # Mock Docker operations
         with patch(
@@ -101,28 +85,37 @@ class TestIdempotentStart:
             from code_indexer.services.docker_manager import DockerManager
             from code_indexer.config import ConfigManager
 
-            config_manager = ConfigManager.create_with_backtrack(self.test_dir)
+            config_manager = ConfigManager.create_with_backtrack(test_dir)
             config = config_manager.load()
 
             # Set up project containers configuration for idempotent behavior
-            config_dict = config.model_dump()
-            config_dict["project_containers"] = {
-                "project_hash": "abc12345",
-                "qdrant_name": "cidx-abc12345-qdrant",
-                "ollama_name": "cidx-abc12345-ollama",
-                "data_cleaner_name": "cidx-abc12345-data-cleaner",
-            }
+            from code_indexer.config import ProjectContainersConfig
+
+            config.project_containers = ProjectContainersConfig(
+                project_hash="abc12345",
+                qdrant_name="cidx-abc12345-qdrant",
+                ollama_name="cidx-abc12345-ollama",
+                data_cleaner_name="cidx-abc12345-data-cleaner",
+            )
+
+            # Save the updated config back to the config manager
+            config_manager.save(config)
 
             docker_manager = DockerManager(console=None, force_docker=True)
 
             # Mock all services as healthy
-            with patch.object(docker_manager, "get_service_state") as mock_state:
+            with patch.object(
+                docker_manager, "get_service_state"
+            ) as mock_state, patch.object(
+                docker_manager, "wait_for_services"
+            ) as mock_wait:
                 mock_state.return_value = {
                     "exists": True,
                     "running": True,
                     "healthy": True,
                     "up_to_date": True,
                 }
+                mock_wait.return_value = True
 
                 # Call start_services - should be idempotent
                 result = docker_manager.start_services(recreate=False)
@@ -191,10 +184,12 @@ class TestIdempotentStart:
             mock_qdrant.health_check.assert_called_once()
             mock_qdrant.ensure_collection.assert_called_once()
 
-    def test_idempotent_start_voyage_ai_no_ollama(self):
+    def test_idempotent_start_voyage_ai_no_ollama(self, idempotent_start_test_repo):
         """Test that VoyageAI setup doesn't involve Ollama at all."""
+        test_dir = idempotent_start_test_repo
+
         os.environ["VOYAGE_API_KEY"] = "test_key"
-        self.create_config("voyage-ai")
+        self.create_config(test_dir, "voyage-ai")
 
         from click.testing import CliRunner
         from code_indexer.cli import cli
@@ -258,9 +253,13 @@ class TestIdempotentStart:
                 or not mock_provider.pull_model.called
             )
 
-    def test_force_recreate_overrides_idempotent_behavior(self):
+    def test_force_recreate_overrides_idempotent_behavior(
+        self, idempotent_start_test_repo
+    ):
         """Test that --force-recreate overrides idempotent behavior."""
-        self.create_config("ollama")
+        test_dir = idempotent_start_test_repo
+
+        self.create_config(test_dir, "ollama")
 
         with patch(
             "code_indexer.services.docker_manager.subprocess.run"
@@ -279,17 +278,21 @@ class TestIdempotentStart:
             from code_indexer.services.docker_manager import DockerManager
             from code_indexer.config import ConfigManager
 
-            config_manager = ConfigManager.create_with_backtrack(self.test_dir)
+            config_manager = ConfigManager.create_with_backtrack(test_dir)
             config = config_manager.load()
 
             # Set up project containers configuration for recreate test
-            config_dict = config.model_dump()
-            config_dict["project_containers"] = {
-                "project_hash": "def56789",
-                "qdrant_name": "cidx-def56789-qdrant",
-                "ollama_name": "cidx-def56789-ollama",
-                "data_cleaner_name": "cidx-def56789-data-cleaner",
-            }
+            from code_indexer.config import ProjectContainersConfig
+
+            config.project_containers = ProjectContainersConfig(
+                project_hash="def56789",
+                qdrant_name="cidx-def56789-qdrant",
+                ollama_name="cidx-def56789-ollama",
+                data_cleaner_name="cidx-def56789-data-cleaner",
+            )
+
+            # Save the updated config back to the config manager
+            config_manager.save(config)
 
             docker_manager = DockerManager(console=None, force_docker=True)
 

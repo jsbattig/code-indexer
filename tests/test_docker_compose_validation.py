@@ -1,52 +1,41 @@
 """Tests for Docker Compose configuration validation and service detection."""
 
 import os
-import shutil
 import pytest
 
 import json
-from pathlib import Path
 from unittest.mock import patch
+
+# Import new test infrastructure
+from .conftest import local_temporary_directory
+from .test_infrastructure import (
+    TestProjectInventory,
+    create_test_project_with_inventory,
+)
+
+
+@pytest.fixture
+def docker_compose_test_repo():
+    """Create a test repository for Docker Compose validation tests."""
+    with local_temporary_directory() as temp_dir:
+        # Create isolated project space using inventory system (no config tinkering)
+        create_test_project_with_inventory(
+            temp_dir, TestProjectInventory.DOCKER_COMPOSE_VALIDATION
+        )
+
+        yield temp_dir
 
 
 class TestDockerComposeValidation:
     """Test Docker Compose configuration generation and validation."""
 
-    @pytest.fixture(autouse=True)
-    def setup_test_environment(self):
-        """Setup test environment for each test."""
-        # Create temporary directory for test
-        # Use shared test directory to avoid creating multiple container sets
-        self.test_dir = Path.home() / ".tmp" / "shared_test_containers"
-        # Clean and recreate for test isolation
-        if self.test_dir.exists():
-            shutil.rmtree(self.test_dir, ignore_errors=True)
-        self.test_dir.mkdir(parents=True)
-        self.test_dir.mkdir(parents=True, exist_ok=True)
-        self.original_cwd = os.getcwd()
-        os.chdir(self.test_dir)
-
-        # Store original environment
-        self.original_env = dict(os.environ)
-
-        yield
-
-        # Cleanup
-        os.chdir(self.original_cwd)
-        if self.test_dir.exists():
-            shutil.rmtree(self.test_dir, ignore_errors=True)
-
-        # Restore environment
-        os.environ.clear()
-        os.environ.update(self.original_env)
-
-    def create_config(self, embedding_provider="ollama"):
+    def create_config(self, test_dir, embedding_provider="ollama"):
         """Create configuration for specified embedding provider."""
-        config_dir = self.test_dir / ".code-indexer"
+        config_dir = test_dir / ".code-indexer"
         config_dir.mkdir(exist_ok=True)
 
         base_config = {
-            "codebase_dir": str(self.test_dir),
+            "codebase_dir": str(test_dir),
             "embedding_provider": embedding_provider,
             "qdrant": {
                 "host": "http://localhost:6333",
@@ -78,10 +67,12 @@ class TestDockerComposeValidation:
 
         return config_file
 
-    def test_required_services_ollama_provider(self):
+    def test_required_services_ollama_provider(self, docker_compose_test_repo):
         """Test required services detection for Ollama provider."""
+        test_dir = docker_compose_test_repo
+
         # Create Ollama configuration
-        self.create_config("ollama")
+        self.create_config(test_dir, "ollama")
 
         # Mock Docker operations
         with patch("code_indexer.services.docker_manager.subprocess.run") as mock_run:
@@ -91,12 +82,10 @@ class TestDockerComposeValidation:
             from code_indexer.services.docker_manager import DockerManager
             from code_indexer.config import ConfigManager
 
-            config_manager = ConfigManager.create_with_backtrack(self.test_dir)
+            config_manager = ConfigManager.create_with_backtrack(test_dir)
             config = config_manager.load()
 
-            docker_manager = DockerManager(
-                console=None, force_docker=True, main_config=config.model_dump()
-            )
+            docker_manager = DockerManager(console=None, force_docker=True)
 
             # Test required services
             required_services = docker_manager.get_required_services(
@@ -108,13 +97,15 @@ class TestDockerComposeValidation:
             assert "ollama" in required_services
             assert len(required_services) == 3
 
-    def test_required_services_voyage_ai_provider(self):
+    def test_required_services_voyage_ai_provider(self, docker_compose_test_repo):
         """Test required services detection for VoyageAI provider."""
+        test_dir = docker_compose_test_repo
+
         # Set API key
         os.environ["VOYAGE_API_KEY"] = "test_key"
 
         # Create VoyageAI configuration
-        self.create_config("voyage-ai")
+        self.create_config(test_dir, "voyage-ai")
 
         # Mock Docker operations
         with patch("code_indexer.services.docker_manager.subprocess.run") as mock_run:
@@ -124,12 +115,10 @@ class TestDockerComposeValidation:
             from code_indexer.services.docker_manager import DockerManager
             from code_indexer.config import ConfigManager
 
-            config_manager = ConfigManager.create_with_backtrack(self.test_dir)
+            config_manager = ConfigManager.create_with_backtrack(test_dir)
             config = config_manager.load()
 
-            docker_manager = DockerManager(
-                console=None, force_docker=True, main_config=config.model_dump()
-            )
+            docker_manager = DockerManager(console=None, force_docker=True)
 
             # Test required services
             required_services = docker_manager.get_required_services(
@@ -141,34 +130,39 @@ class TestDockerComposeValidation:
             assert "ollama" not in required_services
             assert len(required_services) == 2
 
-    def test_compose_config_ollama_provider(self):
+    def test_compose_config_ollama_provider(self, docker_compose_test_repo):
         """Test Docker Compose configuration generation for Ollama provider."""
-        # Create Ollama configuration
-        self.create_config("ollama")
+        test_dir = docker_compose_test_repo
 
-        # Mock Docker operations
-        with patch("code_indexer.services.docker_manager.subprocess.run") as mock_run:
+        # Create Ollama configuration
+        self.create_config(test_dir, "ollama")
+
+        # Mock Docker operations and ConfigManager to return ollama provider
+        with patch(
+            "code_indexer.services.docker_manager.subprocess.run"
+        ) as mock_run, patch(
+            "code_indexer.config.ConfigManager"
+        ) as mock_config_manager:
             mock_run.return_value.returncode = 0
 
-            from code_indexer.services.docker_manager import DockerManager
-            from code_indexer.config import ConfigManager
+            # Mock the ConfigManager to return ollama as embedding provider
+            mock_config = (
+                mock_config_manager.create_with_backtrack.return_value.load.return_value
+            )
+            mock_config.embedding_provider = "ollama"
+            mock_config.model_dump.return_value = {"embedding_provider": "ollama"}
 
-            config_manager = ConfigManager.create_with_backtrack(self.test_dir)
-            config = config_manager.load()
+            from code_indexer.services.docker_manager import DockerManager
 
             docker_manager = DockerManager(
-                console=None, force_docker=True, main_config=config.model_dump()
+                console=None,
+                force_docker=True,
             )
 
             # Generate compose config with proper port allocation
-            container_names = docker_manager._generate_container_names(self.test_dir)
+            container_names = docker_manager._generate_container_names(test_dir)
 
-            # CRITICAL: Update main_config with container names before port allocation
-            if not docker_manager.main_config:
-                docker_manager.main_config = {}
-            if "project_containers" not in docker_manager.main_config:
-                docker_manager.main_config["project_containers"] = {}
-            docker_manager.main_config["project_containers"].update(container_names)
+            # Container names are generated dynamically by the DockerManager
 
             ports = docker_manager._allocate_free_ports()
             project_config = {
@@ -178,7 +172,7 @@ class TestDockerComposeValidation:
                 "data_cleaner_port": str(ports["data_cleaner_port"]),
             }
             compose_config = docker_manager.generate_compose_config(
-                self.test_dir, project_config
+                test_dir, project_config
             )
 
             # Validate structure
@@ -209,37 +203,31 @@ class TestDockerComposeValidation:
             cleaner_service = services["data-cleaner"]
             assert "build" in cleaner_service
 
-    def test_compose_config_voyage_ai_provider(self):
+    def test_compose_config_voyage_ai_provider(self, docker_compose_test_repo):
         """Test Docker Compose configuration generation for VoyageAI provider."""
+        test_dir = docker_compose_test_repo
+
         # Set API key
         os.environ["VOYAGE_API_KEY"] = "test_key"
 
         # Create VoyageAI configuration
-        self.create_config("voyage-ai")
+        self.create_config(test_dir, "voyage-ai")
 
         # Mock Docker operations
         with patch("code_indexer.services.docker_manager.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
 
             from code_indexer.services.docker_manager import DockerManager
-            from code_indexer.config import ConfigManager
-
-            config_manager = ConfigManager.create_with_backtrack(self.test_dir)
-            config = config_manager.load()
 
             docker_manager = DockerManager(
-                console=None, force_docker=True, main_config=config.model_dump()
+                console=None,
+                force_docker=True,
             )
 
             # Generate compose config with proper port allocation
-            container_names = docker_manager._generate_container_names(self.test_dir)
+            container_names = docker_manager._generate_container_names(test_dir)
 
-            # CRITICAL: Update main_config with container names before port allocation
-            if not docker_manager.main_config:
-                docker_manager.main_config = {}
-            if "project_containers" not in docker_manager.main_config:
-                docker_manager.main_config["project_containers"] = {}
-            docker_manager.main_config["project_containers"].update(container_names)
+            # Container names are generated dynamically by the DockerManager
 
             ports = docker_manager._allocate_free_ports()
             project_config = {
@@ -249,7 +237,7 @@ class TestDockerComposeValidation:
                 "data_cleaner_port": str(ports["data_cleaner_port"]),
             }
             compose_config = docker_manager.generate_compose_config(
-                self.test_dir, project_config
+                test_dir, project_config
             )
 
             # Validate structure
@@ -266,23 +254,22 @@ class TestDockerComposeValidation:
             # Should have exactly 2 services
             assert len(services) == 2
 
-    def test_service_state_detection_methods(self):
+    def test_service_state_detection_methods(self, docker_compose_test_repo):
         """Test service state detection methods."""
+        test_dir = docker_compose_test_repo
+
         # Create configuration
-        self.create_config("ollama")
+        self.create_config(test_dir, "ollama")
 
         # Mock Docker operations
         with patch("code_indexer.services.docker_manager.subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
 
             from code_indexer.services.docker_manager import DockerManager
-            from code_indexer.config import ConfigManager
-
-            config_manager = ConfigManager.create_with_backtrack(self.test_dir)
-            config = config_manager.load()
 
             docker_manager = DockerManager(
-                console=None, force_docker=True, main_config=config.model_dump()
+                console=None,
+                force_docker=True,
             )
 
             # Mock individual state check methods
@@ -310,18 +297,9 @@ class TestDockerComposeValidation:
                     mock_healthy.return_value = healthy
                     mock_up_to_date.return_value = up_to_date
 
-                    container_names = docker_manager._generate_container_names(
-                        self.test_dir
-                    )
+                    container_names = docker_manager._generate_container_names(test_dir)
 
-                    # CRITICAL: Update main_config with container names before port allocation
-                    if not docker_manager.main_config:
-                        docker_manager.main_config = {}
-                    if "project_containers" not in docker_manager.main_config:
-                        docker_manager.main_config["project_containers"] = {}
-                    docker_manager.main_config["project_containers"].update(
-                        container_names
-                    )
+                    # Container names are generated dynamically by the DockerManager
 
                     ports = docker_manager._allocate_free_ports()
                     project_config = {
@@ -339,8 +317,10 @@ class TestDockerComposeValidation:
                     assert state["healthy"] == healthy
                     assert state["up_to_date"] == up_to_date
 
-    def test_compose_config_with_different_providers(self):
+    def test_compose_config_with_different_providers(self, docker_compose_test_repo):
         """Test that compose config changes based on provider configuration."""
+        test_dir = docker_compose_test_repo
+
         # Test with different embedding providers
         providers = ["ollama", "voyage-ai"]
 
@@ -348,34 +328,33 @@ class TestDockerComposeValidation:
             if provider == "voyage-ai":
                 os.environ["VOYAGE_API_KEY"] = "test_key"
 
-            self.create_config(provider)
+            self.create_config(test_dir, provider)
 
             with patch(
                 "code_indexer.services.docker_manager.subprocess.run"
-            ) as mock_run:
+            ) as mock_run, patch(
+                "code_indexer.config.ConfigManager"
+            ) as mock_config_manager:
                 mock_run.return_value.returncode = 0
 
-                from code_indexer.services.docker_manager import DockerManager
-                from code_indexer.config import ConfigManager
+                # Mock the ConfigManager to return the current provider
+                mock_config = (
+                    mock_config_manager.create_with_backtrack.return_value.load.return_value
+                )
+                mock_config.embedding_provider = provider
+                mock_config.model_dump.return_value = {"embedding_provider": provider}
 
-                config_manager = ConfigManager.create_with_backtrack(self.test_dir)
-                config = config_manager.load()
+                from code_indexer.services.docker_manager import DockerManager
 
                 docker_manager = DockerManager(
-                    console=None, force_docker=True, main_config=config.model_dump()
+                    console=None,
+                    force_docker=True,
                 )
 
                 # Generate compose config with proper port allocation
-                container_names = docker_manager._generate_container_names(
-                    self.test_dir
-                )
+                container_names = docker_manager._generate_container_names(test_dir)
 
-                # CRITICAL: Update main_config with container names before port allocation
-                if not docker_manager.main_config:
-                    docker_manager.main_config = {}
-                if "project_containers" not in docker_manager.main_config:
-                    docker_manager.main_config["project_containers"] = {}
-                docker_manager.main_config["project_containers"].update(container_names)
+                # Container names are generated dynamically by the DockerManager
 
                 ports = docker_manager._allocate_free_ports()
                 project_config = {
@@ -385,7 +364,7 @@ class TestDockerComposeValidation:
                     "data_cleaner_port": str(ports["data_cleaner_port"]),
                 }
                 compose_config = docker_manager.generate_compose_config(
-                    self.test_dir, project_config
+                    test_dir, project_config
                 )
                 services = compose_config["services"]
 
@@ -400,32 +379,37 @@ class TestDockerComposeValidation:
                 assert "qdrant" in services
                 assert "data-cleaner" in services
 
-    def test_compose_config_volumes_and_networks(self):
+    def test_compose_config_volumes_and_networks(self, docker_compose_test_repo):
         """Test that compose config includes proper volumes and networks."""
-        self.create_config("ollama")
+        test_dir = docker_compose_test_repo
 
-        with patch("code_indexer.services.docker_manager.subprocess.run") as mock_run:
+        self.create_config(test_dir, "ollama")
+
+        with patch(
+            "code_indexer.services.docker_manager.subprocess.run"
+        ) as mock_run, patch(
+            "code_indexer.config.ConfigManager"
+        ) as mock_config_manager:
             mock_run.return_value.returncode = 0
 
-            from code_indexer.services.docker_manager import DockerManager
-            from code_indexer.config import ConfigManager
+            # Mock the ConfigManager to return ollama as embedding provider
+            mock_config = (
+                mock_config_manager.create_with_backtrack.return_value.load.return_value
+            )
+            mock_config.embedding_provider = "ollama"
+            mock_config.model_dump.return_value = {"embedding_provider": "ollama"}
 
-            config_manager = ConfigManager.create_with_backtrack(self.test_dir)
-            config = config_manager.load()
+            from code_indexer.services.docker_manager import DockerManager
 
             docker_manager = DockerManager(
-                console=None, force_docker=True, main_config=config.model_dump()
+                console=None,
+                force_docker=True,
             )
 
             # Generate compose config with proper port allocation
-            container_names = docker_manager._generate_container_names(self.test_dir)
+            container_names = docker_manager._generate_container_names(test_dir)
 
-            # CRITICAL: Update main_config with container names before port allocation
-            if not docker_manager.main_config:
-                docker_manager.main_config = {}
-            if "project_containers" not in docker_manager.main_config:
-                docker_manager.main_config["project_containers"] = {}
-            docker_manager.main_config["project_containers"].update(container_names)
+            # Container names are generated dynamically by the DockerManager
 
             ports = docker_manager._allocate_free_ports()
             project_config = {
@@ -435,7 +419,7 @@ class TestDockerComposeValidation:
                 "data_cleaner_port": str(ports["data_cleaner_port"]),
             }
             compose_config = docker_manager.generate_compose_config(
-                self.test_dir, project_config
+                test_dir, project_config
             )
 
             # Check volumes (CoW architecture uses project-specific paths for qdrant, named volumes for ollama)

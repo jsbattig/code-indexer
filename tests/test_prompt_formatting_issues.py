@@ -6,8 +6,6 @@ These tests reproduce and verify fixes for:
 2. .gitignore files being included in project structure when git-aware
 """
 
-from .conftest import local_temporary_directory
-
 from pathlib import Path
 
 from src.code_indexer.services.claude_integration import ClaudeIntegrationService
@@ -17,7 +15,9 @@ def test_prompt_should_not_have_excessive_blank_lines():
     """Test that generated prompts don't have excessive blank lines."""
 
     # Create a test ClaudeIntegrationService
-    with local_temporary_directory() as temp_dir:
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
 
         # Create a simple test project
@@ -90,7 +90,9 @@ def test_prompt_should_not_have_excessive_blank_lines():
 def test_gitignore_files_should_not_appear_in_project_structure():
     """Test that .gitignore files are excluded from project structure when git-aware."""
 
-    with local_temporary_directory() as temp_dir:
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
 
         # Create a git repository structure
@@ -175,7 +177,9 @@ build/
 def test_project_structure_respects_gitignore_patterns():
     """Test that gitignore pattern matching works correctly."""
 
-    with local_temporary_directory() as temp_dir:
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
 
         # Create git repository
@@ -288,7 +292,9 @@ Thumbs.db
 def test_non_git_project_includes_all_files():
     """Test that non-git projects include all files (no .gitignore filtering)."""
 
-    with local_temporary_directory() as temp_dir:
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
 
         # Create files without initializing git

@@ -7,15 +7,19 @@ and provides the fix to ensure files remain visible in branches where they exist
 
 import pytest
 
-from .conftest import local_temporary_directory
-from pathlib import Path
 import subprocess
-
-from code_indexer.config import Config
 from code_indexer.services.embedding_factory import EmbeddingProviderFactory
 from code_indexer.services.qdrant import QdrantClient
 from code_indexer.services.smart_indexer import SmartIndexer
-from .test_suite_setup import register_test_collection
+from .suite_setup import register_test_collection
+from .test_infrastructure import (
+    CLIHelper,
+    TestProjectInventory,
+    create_test_project_with_inventory,
+    adaptive_service_setup,
+    InfrastructureConfig,
+    EmbeddingProvider,
+)
 
 
 def test_branch_transition_file_visibility():
@@ -27,8 +31,18 @@ def test_branch_transition_file_visibility():
     if not os.getenv("VOYAGE_API_KEY"):
         pytest.skip("VoyageAI API key required")
 
+    # Use isolated project directory for proper container isolation
+    config = InfrastructureConfig(embedding_provider=EmbeddingProvider.VOYAGE_AI)
+    helper = CLIHelper(config)
+
+    # Create isolated project directory using inventory system
+    from .conftest import local_temporary_directory
+
     with local_temporary_directory() as temp_dir:
-        repo_path = Path(temp_dir)
+        create_test_project_with_inventory(
+            temp_dir, TestProjectInventory.BRANCH_TRANSITION_LOGIC_FIX
+        )
+        repo_path = temp_dir
 
         # Create git repository with initial file
         subprocess.run(["git", "init"], cwd=repo_path, check=True)
@@ -50,35 +64,28 @@ def test_branch_transition_file_visibility():
             ["git", "commit", "-m", "Add shared file"], cwd=repo_path, check=True
         )
 
-        # Create test config
-        config = Config(
-            codebase_dir=str(repo_path),
-            embedding_provider="voyage-ai",
-            voyage_ai={
-                "model": "voyage-code-3",
-                "api_endpoint": "https://api.voyageai.com/v1/embeddings",
-                "timeout": 30,
-                "parallel_requests": 2,
-                "batch_size": 8,
-                "max_retries": 3,
-            },
-            qdrant={
-                "host": "http://localhost:6333",
-                "collection": "test_branch_transition",
-                "vector_size": 1024,
-                "use_provider_aware_collections": True,
-                "collection_base_name": "test_branch_transition",
-            },
-            indexing={
-                "chunk_size": 200,
-                "chunk_overlap": 20,
-                "file_extensions": [".py"],
-            },
+        # Project collections are automatically registered by inventory system
+
+        # Initialize project using CLI helper
+        helper.run_cli_command(
+            ["init", "--force", "--embedding-provider", "voyage-ai"], cwd=repo_path
         )
 
-        # Initialize services
+        # Set up services
+        if not adaptive_service_setup(repo_path, helper):
+            pytest.skip("Could not set up services for test")
+
+        # Create test config - use CLI-based approach instead of direct config
+        from code_indexer.config import ConfigManager
+
+        config_manager = ConfigManager.create_with_backtrack(repo_path)
+        config = config_manager.load()
+
+        # Create embedding provider and qdrant client using loaded config
         embedding_provider = EmbeddingProviderFactory.create(config)
         qdrant_client = QdrantClient(config.qdrant)
+
+        # Get collection name and clear it
         collection_name = qdrant_client.resolve_collection_name(
             config, embedding_provider
         )
@@ -162,11 +169,12 @@ def test_branch_transition_file_visibility():
             hidden_branches = payload.get("hidden_branches", [])
             print(f"  hidden_branches: {hidden_branches}")
 
-        # THIS IS THE KEY TEST: shared file should be visible on feature branch
+        # This is the key assertion - shared file should be visible on feature branch
         # because it exists in both master and feature branches
-        assert (
-            shared_visible_feature
-        ), "Shared file should be visible on feature branch (exists in both branches)"
+        assert shared_visible_feature, (
+            "BUG: Shared file should be visible on feature branch because it exists in both branches. "
+            "This indicates the branch transition logic is incorrectly hiding files."
+        )
 
         # Step 5: Test feature file visibility
         print("\n=== Step 5: Test feature file visibility ===")

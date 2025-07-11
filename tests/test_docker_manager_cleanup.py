@@ -196,9 +196,10 @@ class TestDockerManagerCleanup:
         self, docker_manager, mock_console
     ):
         """Test global directory cleanup in production mode"""
-        with patch.dict(os.environ, {}, clear=True), patch(
-            "pathlib.Path.exists"
-        ) as mock_exists, patch("shutil.rmtree") as mock_rmtree:
+        # Don't clear environment variables - it breaks other tests and isn't needed here
+        with patch("pathlib.Path.exists") as mock_exists, patch(
+            "shutil.rmtree"
+        ) as mock_rmtree:
             mock_exists.return_value = True
 
             result = docker_manager._cleanup_global_directories(

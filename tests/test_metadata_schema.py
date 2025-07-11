@@ -368,11 +368,3 @@ class TestMetadataValidator:
             MetadataValidator.get_schema_version(git_metadata)
             == MetadataSchemaVersion.GIT_AWARE
         )
-
-    def test_needs_migration(self):
-        """Test migration need detection."""
-        legacy_metadata = {"path": "test"}
-        current_metadata = {"schema_version": MetadataSchemaVersion.CURRENT}
-
-        assert MetadataValidator.needs_migration(legacy_metadata) is True
-        assert MetadataValidator.needs_migration(current_metadata) is False

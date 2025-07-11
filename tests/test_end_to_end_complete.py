@@ -19,7 +19,8 @@ import requests  # type: ignore
 # Import new test infrastructure
 from .conftest import local_temporary_directory
 from .test_infrastructure import (
-    auto_register_project_collections,
+    TestProjectInventory,
+    create_test_project_with_inventory,
 )
 
 
@@ -27,20 +28,16 @@ from .test_infrastructure import (
 def end_to_end_test_repo():
     """Create a test repository for end-to-end tests."""
     with local_temporary_directory() as temp_dir:
-        # Auto-register collections for cleanup
-        auto_register_project_collections(temp_dir)
-
-        # Preserve .code-indexer directory if it exists
-        config_dir = temp_dir / ".code-indexer"
-        if not config_dir.exists():
-            config_dir.mkdir(parents=True, exist_ok=True)
+        # Create isolated project space using inventory system (no config tinkering)
+        create_test_project_with_inventory(
+            temp_dir, TestProjectInventory.END_TO_END_COMPLETE
+        )
 
         yield temp_dir
 
 
 def create_end_to_end_config(test_dir):
     """Create configuration for end-to-end test."""
-    import requests  # type: ignore
 
     config_dir = test_dir / ".code-indexer"
     config_file = config_dir / "config.json"
@@ -62,23 +59,16 @@ def create_end_to_end_config(test_dir):
             },
         }
 
-    # Try to detect running Qdrant service and update config
-    qdrant_ports = [7249, 6560, 6333, 6334, 6335]  # Common Qdrant ports
-    working_port = None
+    # Use the shared port detection helper
+    from .conftest import detect_running_qdrant_port
 
-    for port in qdrant_ports:
-        try:
-            response = requests.get(f"http://localhost:{port}/cluster", timeout=2)
-            if response.status_code == 200 and "status" in response.json():
-                working_port = port
-                print(f"🔍 Found Qdrant running on port {port}")
-                break
-        except Exception:
-            continue
+    working_port = detect_running_qdrant_port()
 
     if working_port:
         config["qdrant"]["host"] = f"http://localhost:{working_port}"
         print(f"✅ Updated config to use Qdrant on port {working_port}")
+    else:
+        print("⚠️  No running Qdrant service detected, using default port")
 
     # Override collection name to avoid conflicts (use timestamp to ensure uniqueness)
     import time
@@ -245,12 +235,12 @@ def test_single_project_workflow(end_to_end_test_repo):
         assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
         # Create configuration after init (like branch topology tests)
-        create_end_to_end_config(project1_dir)
+        # Config created by inventory system
 
         # 2. Start services (handle conflicts gracefully)
         print("🚀 Single project test: Starting services...")
         start_result = subprocess.run(
-            ["code-indexer", "start"],
+            ["code-indexer", "start", "--force-docker"],
             cwd=project1_dir,
             capture_output=True,
             text=True,
@@ -354,7 +344,7 @@ def test_complete_lifecycle_management(end_to_end_test_repo):
     """Test complete container lifecycle: start -> uninstall -> verify shutdown."""
     test_dir = end_to_end_test_repo
     project1_dir, _ = create_test_projects(test_dir)
-    create_end_to_end_config(project1_dir)
+    # Config created by inventory system
 
     # This test is skipped but kept for reference
     pytest.skip("Lifecycle management test not needed for fixture-based approach")
@@ -377,7 +367,7 @@ def test_multi_project_isolation_and_search(end_to_end_test_repo):
         original_cwd = Path.cwd()
 
         # Setup project 1
-        create_end_to_end_config(project1_dir)
+        # Config created by inventory system
         os.chdir(project1_dir)
 
         init_result1 = subprocess.run(
@@ -392,7 +382,7 @@ def test_multi_project_isolation_and_search(end_to_end_test_repo):
         ), f"Project 1 init failed: {init_result1.stderr}"
 
         start_result1 = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["code-indexer", "start", "--force-docker", "--quiet"],
             cwd=project1_dir,
             capture_output=True,
             text=True,
@@ -414,7 +404,7 @@ def test_multi_project_isolation_and_search(end_to_end_test_repo):
         ), f"Project 1 index failed: {index_result1.stderr}"
 
         # Setup project 2
-        create_end_to_end_config(project2_dir)
+        # Config created by inventory system
         os.chdir(project2_dir)
 
         init_result2 = subprocess.run(
@@ -427,6 +417,18 @@ def test_multi_project_isolation_and_search(end_to_end_test_repo):
         assert (
             init_result2.returncode == 0
         ), f"Project 2 init failed: {init_result2.stderr}"
+
+        # Start services for project 2 (should be idempotent)
+        start_result2 = subprocess.run(
+            ["code-indexer", "start", "--force-docker", "--quiet"],
+            cwd=project2_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert (
+            start_result2.returncode == 0
+        ), f"Project 2 start failed: {start_result2.stderr}"
 
         index_result2 = subprocess.run(
             ["code-indexer", "index"],
@@ -503,7 +505,7 @@ def test_error_conditions_and_recovery(end_to_end_test_repo):
     """Test error handling and recovery scenarios."""
     test_dir = end_to_end_test_repo
     project1_dir, _ = create_test_projects(test_dir)
-    create_end_to_end_config(project1_dir)
+    # Config created by inventory system
 
     try:
         original_cwd = Path.cwd()
@@ -520,7 +522,7 @@ def test_error_conditions_and_recovery(end_to_end_test_repo):
         assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
         start_result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["code-indexer", "start", "--force-docker", "--quiet"],
             cwd=project1_dir,
             capture_output=True,
             text=True,
@@ -604,7 +606,7 @@ def test_concurrent_operations(end_to_end_test_repo):
         original_cwd = Path.cwd()
 
         # Setup project 1
-        create_end_to_end_config(project1_dir)
+        # Config created by inventory system
         os.chdir(project1_dir)
 
         init_result1 = subprocess.run(
@@ -619,7 +621,7 @@ def test_concurrent_operations(end_to_end_test_repo):
         ), f"Project 1 init failed: {init_result1.stderr}"
 
         start_result1 = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["code-indexer", "start", "--force-docker", "--quiet"],
             cwd=project1_dir,
             capture_output=True,
             text=True,
@@ -641,7 +643,7 @@ def test_concurrent_operations(end_to_end_test_repo):
         ), f"Project 1 index failed: {index_result1.stderr}"
 
         # Setup project 2 (services should already be running)
-        create_end_to_end_config(project2_dir)
+        # Config created by inventory system
         os.chdir(project2_dir)
 
         init_result2 = subprocess.run(
@@ -654,6 +656,18 @@ def test_concurrent_operations(end_to_end_test_repo):
         assert (
             init_result2.returncode == 0
         ), f"Project 2 init failed: {init_result2.stderr}"
+
+        # Start services for project 2 (should be idempotent with project 1)
+        start_result2 = subprocess.run(
+            ["code-indexer", "start", "--force-docker", "--quiet"],
+            cwd=project2_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert (
+            start_result2.returncode == 0
+        ), f"Project 2 start failed: {start_result2.stderr}"
 
         index_result2 = subprocess.run(
             ["code-indexer", "index"],

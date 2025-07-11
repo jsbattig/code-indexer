@@ -85,6 +85,7 @@ class TestClass_{i}:
             "points_count": 0,
             "collection_name": "test_collection",
         }
+        self.mock_qdrant.scroll_points.return_value = ([], None)
 
         # Mock embedding provider
         self.mock_embedding_provider = MockEmbeddingProvider(delay=0.01)
@@ -255,63 +256,25 @@ class TestClass_{i}:
             print(
                 f"\n=== Testing HighThroughputProcessor fallback with {len(self.test_files)} files ==="
             )
-            stats = smart_indexer.smart_index(
-                force_full=True,  # Force full indexing (same as --clear)
-                reconcile_with_database=False,
-                batch_size=50,
-                progress_callback=debug_progress_callback,
-                safety_buffer_seconds=60,
-                files_count_to_process=None,
-                vector_thread_count=2,
-            )
-
-        print("\n=== FALLBACK ANALYSIS ===")
-        print(f"Expected total files: {len(self.test_files)}")
-        print(f"First call total (progress bar init): {first_call_total}")
-        print(f"Final stats.files_processed: {stats.files_processed}")
-        print(f"Total progress calls: {len(progress_calls)}")
-
-        if first_call_total and len(self.test_files) > 0:
-            ratio = first_call_total / len(self.test_files)
-            print(f"Ratio (first_total / expected_files): {ratio:.1f}")
-
-            if ratio > 5:
-                print(
-                    f"❌ PROBLEM: Progress bar initialized with {first_call_total} "
-                    f"instead of {len(self.test_files)}. This suggests chunk count "
-                    f"is being passed instead of file count!"
+            # Should raise RuntimeError due to disabled fallbacks
+            with pytest.raises(
+                RuntimeError,
+                match="Git-aware indexing failed and fallbacks are disabled",
+            ):
+                smart_indexer.smart_index(
+                    force_full=True,  # Force full indexing (same as --clear)
+                    reconcile_with_database=False,
+                    batch_size=50,
+                    progress_callback=debug_progress_callback,
+                    safety_buffer_seconds=60,
+                    files_count_to_process=None,
+                    vector_thread_count=2,
                 )
-            else:
-                print("✅ OK: Progress bar initialized with reasonable total")
 
-        # Show progress calls
-        print("\nFallback progress calls:")
-        for i, call in enumerate(progress_calls):
-            print(
-                f"  {i+1}: {call['current']}/{call['total']} = {call['percentage']:.1f}% - {call['info']}"
-            )
-
-        # This is the critical test - does the fallback path show wrong percentages?
-        if len(progress_calls) >= 2:
-            middle_call = progress_calls[len(progress_calls) // 2]
-            expected_percentage = (middle_call["current"] / len(self.test_files)) * 100
-            actual_percentage = middle_call["percentage"]
-
-            print("\nFallback Percentage Check:")
-            print(
-                f"  Middle call: {middle_call['current']}/{middle_call['total']} = {actual_percentage:.1f}%"
-            )
-            print(
-                f"  Expected: {middle_call['current']}/{len(self.test_files)} = {expected_percentage:.1f}%"
-            )
-
-            if abs(actual_percentage - expected_percentage) > 5:
-                print("❌ CONFIRMED: Fallback progress percentage is wrong!")
-                assert (
-                    False
-                ), f"Fallback progress shows {actual_percentage:.1f}% instead of {expected_percentage:.1f}%"
-            else:
-                print("✅ Fallback progress percentage looks correct")
+        # Test passes if RuntimeError is raised due to disabled fallbacks
+        print("\n=== FALLBACK DISABLED ANALYSIS ===")
+        print(f"Expected total files: {len(self.test_files)}")
+        print("✅ Git-aware indexing correctly fails fast without fallbacks")
 
     def teardown_method(self):
         """Cleanup test environment."""

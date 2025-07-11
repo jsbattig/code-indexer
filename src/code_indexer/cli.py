@@ -2115,63 +2115,98 @@ def claude(
 
         config = config_manager.load()
 
-        # Quick health checks with shorter timeout for better UX in Claude command
-        # Create temporary clients with 3-second timeout for health checks
-        import httpx
+        # If in dry-run mode, skip service health checks
+        if not dry_run_show_claude_prompt:
+            # Quick health checks with shorter timeout for better UX in Claude command
+            # Create temporary clients with 3-second timeout for health checks
+            import httpx
 
-        try:
-            # Quick embedding service check
-            if config.embedding_provider == "ollama":
-                quick_client = httpx.Client(base_url=config.ollama.host, timeout=3.0)
-                response = quick_client.get("/api/tags")
-                quick_client.close()
+            try:
+                # Quick embedding service check
+                if config.embedding_provider == "ollama":
+                    quick_client = httpx.Client(
+                        base_url=config.ollama.host, timeout=3.0
+                    )
+                    response = quick_client.get("/api/tags")
+                    quick_client.close()
+                    if response.status_code != 200:
+                        raise Exception("Ollama not responding")
+
+                # Quick Qdrant check
+                quick_qdrant = httpx.Client(base_url=config.qdrant.host, timeout=3.0)
+                response = quick_qdrant.get("/healthz")
+                quick_qdrant.close()
                 if response.status_code != 200:
-                    raise Exception("Ollama not responding")
+                    raise Exception("Qdrant not responding")
 
-            # Quick Qdrant check
-            quick_qdrant = httpx.Client(base_url=config.qdrant.host, timeout=3.0)
-            response = quick_qdrant.get("/healthz")
-            quick_qdrant.close()
-            if response.status_code != 200:
-                raise Exception("Qdrant not responding")
+            except Exception:
+                console.print(
+                    "❌ Services not available. Run 'code-indexer start' first.",
+                    style="red",
+                )
+                sys.exit(1)
 
-        except Exception:
-            console.print(
-                "❌ Services not available. Run 'code-indexer start' first.",
-                style="red",
+        # For dry-run mode, we only need minimal initialization
+        if dry_run_show_claude_prompt:
+            # Initialize only what's needed for prompt generation
+            # Initialize query service for git-aware filtering (doesn't need services)
+            query_service = GenericQueryService(config.codebase_dir, config)
+
+            # Get project context
+            branch_context = query_service.get_current_branch_context()
+            if not quiet:
+                if branch_context["git_available"]:
+                    console.print(f"📂 Git repository: {branch_context['project_id']}")
+                    console.print(
+                        f"🌿 Current branch: {branch_context['current_branch']}"
+                    )
+                else:
+                    console.print(f"📁 Non-git project: {branch_context['project_id']}")
+
+            # Initialize Claude integration service (needed for prompt generation)
+            claude_service = ClaudeIntegrationService(
+                codebase_dir=config.codebase_dir,
+                project_name=branch_context["project_id"],
             )
-            sys.exit(1)
 
-        # Initialize services (after health checks pass)
-        embedding_provider = EmbeddingProviderFactory.create(config, console)
-        qdrant_client = QdrantClient(config.qdrant, console, Path(config.codebase_dir))
+            # Skip to dry-run handling without initializing other services
+            embedding_provider = None
+            qdrant_client = None
+        else:
+            # Initialize services (after health checks pass)
+            embedding_provider = EmbeddingProviderFactory.create(config, console)
+            qdrant_client = QdrantClient(
+                config.qdrant, console, Path(config.codebase_dir)
+            )
 
-        # Ensure provider-aware collection is set for search
-        collection_name = qdrant_client.resolve_collection_name(
-            config, embedding_provider
-        )
-        qdrant_client._current_collection_name = collection_name
+            # Ensure provider-aware collection is set for search
+            collection_name = qdrant_client.resolve_collection_name(
+                config, embedding_provider
+            )
+            qdrant_client._current_collection_name = collection_name
 
-        # Initialize query service for git-aware filtering
-        query_service = GenericQueryService(config.codebase_dir, config)
+            # Initialize query service for git-aware filtering
+            query_service = GenericQueryService(config.codebase_dir, config)
 
-        # Get project context
-        branch_context = query_service.get_current_branch_context()
-        if not quiet:
-            if branch_context["git_available"]:
-                console.print(f"📂 Git repository: {branch_context['project_id']}")
-                console.print(f"🌿 Current branch: {branch_context['current_branch']}")
-            else:
-                console.print(f"📁 Non-git project: {branch_context['project_id']}")
+            # Get project context
+            branch_context = query_service.get_current_branch_context()
+            if not quiet:
+                if branch_context["git_available"]:
+                    console.print(f"📂 Git repository: {branch_context['project_id']}")
+                    console.print(
+                        f"🌿 Current branch: {branch_context['current_branch']}"
+                    )
+                else:
+                    console.print(f"📁 Non-git project: {branch_context['project_id']}")
 
-        # Initialize Claude integration service (needed for both approaches)
-        claude_service = ClaudeIntegrationService(
-            codebase_dir=config.codebase_dir,
-            project_name=branch_context["project_id"],
-        )
+            # Initialize Claude integration service (needed for both approaches)
+            claude_service = ClaudeIntegrationService(
+                codebase_dir=config.codebase_dir,
+                project_name=branch_context["project_id"],
+            )
 
         # Branch based on approach: claude-first (default) or RAG-first (legacy)
-        if rag_first:
+        if rag_first and not dry_run_show_claude_prompt:
             # LEGACY RAG-FIRST APPROACH
             if not quiet:
                 console.print("🔄 Using legacy RAG-first approach")
@@ -2179,6 +2214,13 @@ def claude(
                 console.print(
                     f"📊 Limit: {limit}  < /dev/null |  Context: {context_lines} lines"
                 )
+
+            # Ensure we have required services for RAG-first approach
+            if embedding_provider is None or qdrant_client is None:
+                console.print(
+                    "❌ Services not initialized for RAG-first approach", style="red"
+                )
+                sys.exit(1)
 
             if not quiet:
                 with console.status("Generating query embedding..."):
@@ -2361,9 +2403,12 @@ def claude(
 @click.option(
     "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
 )
-@requires_qdrant_access("status")
 @click.pass_context
 def status(ctx, force_docker: bool):
+    _status_impl(ctx, force_docker)
+
+
+def _status_impl(ctx, force_docker: bool):
     """Show status of services and index.
 
     \b
@@ -2412,28 +2457,68 @@ def status(ctx, force_docker: bool):
 
         # Check Docker services (auto-detect project name)
         docker_manager = DockerManager(force_docker=force_docker)
-        service_status = docker_manager.get_service_status()
+        try:
+            service_status = docker_manager.get_service_status()
+            docker_status = (
+                "✅ Running"
+                if service_status["status"] == "running"
+                else "❌ Not Running"
+            )
+            table.add_row(
+                "Docker Services",
+                docker_status,
+                f"{len(service_status['services'])} services",
+            )
+        except Exception:
+            # Handle case where containers haven't been created yet
+            table.add_row(
+                "Docker Services",
+                "❌ Not Configured",
+                "Run 'code-indexer start' to create containers",
+            )
+            service_status = {"status": "not_configured", "services": {}}
 
-        docker_status = (
-            "✅ Running" if service_status["status"] == "running" else "❌ Not Running"
-        )
-        table.add_row(
-            "Docker Services",
-            docker_status,
-            f"{len(service_status['services'])} services",
-        )
-
-        # Check embedding provider
+        # Check embedding provider - only if container is running
         try:
             embedding_provider = EmbeddingProviderFactory.create(config, console)
-            provider_ok = embedding_provider.health_check()
             provider_name = embedding_provider.get_provider_name().title()
-            provider_status = "✅ Ready" if provider_ok else "❌ Not Available"
-            provider_details = (
-                f"Model: {embedding_provider.get_current_model()}"
-                if provider_ok
-                else "Service down"
-            )
+
+            # Check if embedding provider needs a container (Ollama)
+            if config.embedding_provider == "ollama":
+                # Check if ollama container is running first
+                ollama_container_running = False
+                if service_status["services"]:  # Only check if services dict exists
+                    for container_name, container_info in service_status[
+                        "services"
+                    ].items():
+                        if (
+                            "ollama" in container_name
+                            and container_info["state"] == "running"
+                        ):
+                            ollama_container_running = True
+                            break
+
+                if ollama_container_running:
+                    provider_ok = embedding_provider.health_check()
+                    provider_status = "✅ Ready" if provider_ok else "❌ Not Available"
+                    provider_details = (
+                        f"Model: {embedding_provider.get_current_model()}"
+                        if provider_ok
+                        else "Service down"
+                    )
+                else:
+                    provider_status = "❌ Container not running"
+                    provider_details = "Ollama container is not running"
+            else:
+                # For non-container providers (VoyageAI), do health check
+                provider_ok = embedding_provider.health_check()
+                provider_status = "✅ Ready" if provider_ok else "❌ Not Available"
+                provider_details = (
+                    f"Model: {embedding_provider.get_current_model()}"
+                    if provider_ok
+                    else "Service down"
+                )
+
             table.add_row(
                 f"{provider_name} Provider", provider_status, provider_details
             )
@@ -2450,91 +2535,76 @@ def status(ctx, force_docker: bool):
                 "Ollama", "✅ Not needed", f"Using {config.embedding_provider}"
             )
 
-        # Check Qdrant
-        qdrant_client = QdrantClient(config.qdrant)
-        qdrant_ok = qdrant_client.health_check()
-        qdrant_status = "✅ Ready" if qdrant_ok else "❌ Not Available"
-        qdrant_details = ""
-        if qdrant_ok:
-            try:
-                # Get the correct collection name using the current embedding provider
-                embedding_provider = EmbeddingProviderFactory.create(config, console)
-                collection_name = qdrant_client.resolve_collection_name(
-                    config, embedding_provider
-                )
-                project_count = qdrant_client.count_points(collection_name)
+        # Check Qdrant - only if container is running
+        qdrant_container_running = False
+        qdrant_ok = False  # Initialize to False
+        qdrant_client = None  # Initialize to None
+        if service_status["services"]:  # Only check if services dict exists
+            for container_name, container_info in service_status["services"].items():
+                if "qdrant" in container_name and container_info["state"] == "running":
+                    qdrant_container_running = True
+                    break
 
-                # Get total documents across all collections for context
+        if qdrant_container_running:
+            qdrant_client = QdrantClient(config.qdrant)
+            qdrant_ok = qdrant_client.health_check()
+            qdrant_status = "✅ Ready" if qdrant_ok else "❌ Not Available"
+            qdrant_details = ""
+            if qdrant_ok:
                 try:
-                    import requests  # type: ignore
-
-                    response = requests.get(
-                        f"{config.qdrant.host}/collections", timeout=5
+                    # Get the correct collection name using the current embedding provider
+                    embedding_provider = EmbeddingProviderFactory.create(
+                        config, console
                     )
-                    if response.status_code == 200:
-                        collections_data = response.json()
-                        total_count = 0
-                        for collection_info in collections_data.get("result", {}).get(
-                            "collections", []
-                        ):
-                            coll_name = collection_info["name"]
-                            coll_count = qdrant_client.count_points(coll_name)
-                            total_count += coll_count
-                        qdrant_details = (
-                            f"Project: {project_count} docs | Total: {total_count} docs"
+                    collection_name = qdrant_client.resolve_collection_name(
+                        config, embedding_provider
+                    )
+                    project_count = qdrant_client.count_points(collection_name)
+
+                    # Get total documents across all collections for context
+                    try:
+                        import requests  # type: ignore
+
+                        response = requests.get(
+                            f"{config.qdrant.host}/collections", timeout=5
                         )
-                    else:
+                        if response.status_code == 200:
+                            collections_data = response.json()
+                            total_count = 0
+                            for collection_info in collections_data.get(
+                                "result", {}
+                            ).get("collections", []):
+                                coll_name = collection_info["name"]
+                                coll_count = qdrant_client.count_points(coll_name)
+                                total_count += coll_count
+                            qdrant_details = f"Project: {project_count} docs | Total: {total_count} docs"
+                        else:
+                            qdrant_details = f"Documents: {project_count}"
+                    except Exception:
                         qdrant_details = f"Documents: {project_count}"
                 except Exception:
-                    qdrant_details = f"Documents: {project_count}"
-            except Exception:
-                qdrant_details = "Collection ready"
+                    qdrant_details = "Collection ready"
+            else:
+                qdrant_details = "Service down"
         else:
-            qdrant_details = "Service down"
+            qdrant_status = "❌ Container not running"
+            qdrant_details = "Qdrant container is not running"
+
         table.add_row("Qdrant", qdrant_status, qdrant_details)
 
         # Add Qdrant storage and collection information
         try:
-            # Get qdrant storage location from container inspection using project-specific container name
-            import subprocess
+            import os
 
-            # Use correct container runtime and project-specific container name
-            container_runtime = (
-                "docker"
-                if force_docker
-                else (
-                    "podman"
-                    if docker_manager._get_available_runtime() == "podman"
-                    else "docker"
-                )
+            # Get storage path from configuration instead of container inspection
+            # Use the project-specific storage path
+            project_storage_path = (
+                f"/home/{os.getenv('USER', 'user')}/Dev/code-indexer/.qdrant-storage"
             )
-            qdrant_container_name = getattr(
-                config.project_containers, "qdrant_name", "code-indexer-qdrant"
-            )
-
-            result = subprocess.run(
-                [
-                    container_runtime,
-                    "inspect",
-                    "-f",
-                    '{{range .Mounts}}{{if eq .Destination "/qdrant/storage"}}{{.Source}}{{end}}{{end}}',
-                    qdrant_container_name,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                qdrant_storage_path = result.stdout.strip()
-                # Show full path across multiple lines if needed
-                table.add_row("Qdrant Storage", "📁", f"Host:\n{qdrant_storage_path}")
-            else:
-                table.add_row(
-                    "Qdrant Storage", "⚠️  Unknown", "Container inspection failed"
-                )
+            table.add_row("Qdrant Storage", "📁", f"Host:\n{project_storage_path}")
 
             # Add current project collection information
-            if qdrant_ok:
+            if qdrant_ok and qdrant_client:
                 try:
                     embedding_provider = EmbeddingProviderFactory.create(
                         config, console
@@ -2781,7 +2851,7 @@ def status(ctx, force_docker: bool):
             table.add_row("Git Repository", "⚠️  Error", "Could not check git status")
 
         # Storage information
-        if qdrant_ok:
+        if qdrant_ok and qdrant_client:
             try:
                 # Use the correct collection name for storage info too
                 embedding_provider = EmbeddingProviderFactory.create(config, console)
@@ -3126,121 +3196,6 @@ def stop(ctx, force_docker: bool):
 
     except Exception as e:
         console.print(f"❌ Stop failed: {e}", style="red")
-        sys.exit(1)
-
-
-@cli.command()
-@click.option("--migrate", is_flag=True, help="Perform migration if needed")
-@click.option("--quiet", "-q", is_flag=True, help="Suppress output")
-@requires_qdrant_access("schema")
-@click.pass_context
-def schema(ctx, migrate: bool, quiet: bool):
-    """Check and manage database schema version.
-
-    \b
-    Shows information about the current database schema and can
-    perform automatic migration from legacy to new architecture.
-
-    \b
-    Legacy architecture:
-      • Single points with git_branch field
-      • Content directly stored in search points
-
-    \b
-    New architecture:
-      • Content points (immutable, type: content)
-      • Visibility points (mutable, type: visibility)
-      • Separation of content storage from branch visibility
-
-    \b
-    Examples:
-      code-indexer schema                # Check schema info
-      code-indexer schema --migrate      # Migrate if needed
-      code-indexer schema --migrate -q   # Migrate quietly
-    """
-    console = Console(quiet=quiet)
-
-    try:
-        config_manager = ctx.obj["config_manager"]
-        config = config_manager.load()
-
-        # Initialize services
-        embedding_provider = EmbeddingProviderFactory.create(config, console)
-        qdrant_client = QdrantClient(config.qdrant, console, Path(config.codebase_dir))
-
-        # Health checks
-        if not qdrant_client.health_check():
-            console.print(
-                "❌ Qdrant service not available. Run 'start' first.", style="red"
-            )
-            sys.exit(1)
-
-        # Get collection name
-        collection_name = qdrant_client.resolve_collection_name(
-            config, embedding_provider
-        )
-
-        if not qdrant_client.collection_exists(collection_name):
-            if not quiet:
-                console.print(
-                    f"📄 Collection {collection_name} does not exist", style="yellow"
-                )
-            return
-
-        # Get schema information
-        schema_info = qdrant_client.get_schema_info(collection_name)
-
-        if not quiet:
-            console.print(
-                f"📄 Schema Information for {collection_name}", style="bold blue"
-            )
-            console.print(f"   Version: {schema_info['schema_version']}")
-            console.print(f"   Description: {schema_info['schema_description']}")
-            console.print(f"   Total Points: {schema_info['total_points']:,}")
-
-            if schema_info["legacy_points"] > 0:
-                console.print(
-                    f"   Legacy Points: {schema_info['legacy_points']:,}",
-                    style="yellow",
-                )
-                console.print(f"   Branches: {schema_info['branches']}", style="yellow")
-
-                if schema_info["branch_counts"]:
-                    console.print("   Branch breakdown:", style="yellow")
-                    for branch, count in schema_info["branch_counts"].items():
-                        console.print(
-                            f"     {branch}: {count:,} points", style="yellow"
-                        )
-            else:
-                console.print("   ✅ No legacy points found", style="green")
-
-        # Perform migration if requested
-        if migrate and schema_info["migration_needed"]:
-            if not quiet:
-                console.print(
-                    f"\n🔄 Starting migration for {collection_name}...", style="blue"
-                )
-
-            success = qdrant_client.check_and_migrate_if_needed(collection_name, quiet)
-
-            if success:
-                if not quiet:
-                    console.print("✅ Migration completed successfully", style="green")
-            else:
-                console.print("❌ Migration failed", style="red")
-                sys.exit(1)
-
-        elif migrate and not schema_info["migration_needed"]:
-            if not quiet:
-                console.print("✅ No migration needed", style="green")
-        elif schema_info["migration_needed"] and not quiet:
-            console.print(
-                "\n💡 Migration available - use --migrate flag to perform migration",
-                style="blue",
-            )
-
-    except Exception as e:
-        console.print(f"❌ Schema check failed: {e}", style="red")
         sys.exit(1)
 
 

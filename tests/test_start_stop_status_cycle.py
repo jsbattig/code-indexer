@@ -15,7 +15,7 @@ This test is marked as 'slow' and will only run in full-automation.sh
 import pytest
 import time
 import subprocess
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from src.code_indexer.config import Config
 from src.code_indexer.services.docker_manager import DockerManager
@@ -30,19 +30,55 @@ class TestStartStopStatusCycle:
         # Use VoyageAI config to avoid Ollama port conflicts in tests
         self.docker_manager = DockerManager(force_docker=True)
 
-        # Expected container names (VoyageAI config - no Ollama needed)
-        self.expected_containers = [
-            "code-indexer-qdrant",
-            "code-indexer-data-cleaner",
-        ]
+        # Get actual container names from docker manager (per-project naming)
+        # These will be project-specific like "cidx-{hash}-qdrant"
+        try:
+            # Get container names for the current project
+            from src.code_indexer.config import ConfigManager
+
+            config_manager = ConfigManager.create_with_backtrack()
+            config = config_manager.load()
+
+            self.expected_containers: List[str] = []
+            if (
+                hasattr(config.project_containers, "qdrant_name")
+                and config.project_containers.qdrant_name
+            ):
+                self.expected_containers.append(config.project_containers.qdrant_name)
+            if (
+                hasattr(config.project_containers, "data_cleaner_name")
+                and config.project_containers.data_cleaner_name
+            ):
+                self.expected_containers.append(
+                    config.project_containers.data_cleaner_name
+                )
+
+        except Exception as e:
+            # Fallback to discovering container names dynamically during test
+            print(f"Could not determine container names in setup: {e}")
+            if not hasattr(self, "expected_containers"):
+                self.expected_containers = []
 
     def teardown_method(self):
         """Clean up after test."""
-        # Ensure services are stopped after test
+        # IMPORTANT: Restore services to running state for next tests
+        # This test manipulates Docker state, so it must clean up properly
         try:
-            self.docker_manager.stop_services()
-        except Exception:
-            pass
+            # Start services to restore normal state for subsequent tests
+            print("Restoring services to running state for next tests...")
+            start_result = self.docker_manager.start_services()
+            if start_result:
+                # Give services time to be ready
+                time.sleep(10)
+                print("✅ Services restored for next tests")
+            else:
+                print(
+                    "⚠️ Warning: Could not restore services - next tests may be affected"
+                )
+        except Exception as e:
+            print(
+                f"⚠️ Warning: Error restoring services: {e} - next tests may be affected"
+            )
 
     def _get_container_status_direct(self, container_name: str) -> str:
         """Get container status directly using docker inspect."""
@@ -60,11 +96,42 @@ class TestStartStopStatusCycle:
         except Exception:
             return "error"
 
+    def _discover_running_containers(self):
+        """Discover running containers that match our project pattern."""
+        try:
+            result = subprocess.run(
+                ["docker", "ps", "--format", "{{.Names}}"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                all_containers = result.stdout.strip().split("\n")
+                # Filter for containers that look like our project containers
+                project_containers = [
+                    name
+                    for name in all_containers
+                    if name
+                    and ("qdrant" in name or "data-cleaner" in name)
+                    and "cidx-" in name
+                ]
+                if project_containers:
+                    self.expected_containers = [
+                        c for c in project_containers if c is not None
+                    ]
+                    print(f"Discovered containers: {project_containers}")
+        except Exception as e:
+            print(f"Failed to discover containers: {e}")
+
     def _wait_for_containers_state(
         self, expected_state: str, timeout: int = 60
     ) -> bool:
         """Wait for all containers to reach expected state."""
         start_time = time.time()
+
+        # If we don't have expected containers, discover them from running containers
+        if not self.expected_containers:
+            self._discover_running_containers()
 
         while time.time() - start_time < timeout:
             all_match = True
@@ -129,7 +196,12 @@ class TestStartStopStatusCycle:
 
     @pytest.mark.slow
     def test_complete_start_stop_status_cycle(self):
-        """Test the complete start/stop/status cycle."""
+        """Test the complete start/stop/status cycle.
+
+        WARNING: This test manipulates Docker container states and could affect
+        subsequent tests if not properly cleaned up. The teardown_method() ensures
+        services are restored to running state for other tests.
+        """
 
         print("\n=== Starting Complete Start/Stop/Status Cycle Test ===")
 
@@ -205,6 +277,10 @@ class TestStartStopStatusCycle:
         status_after_restart = self._verify_docker_manager_status(expected_running=True)
         print(f"Status after restart: {status_after_restart}")
 
+        # Ensure services are fully ready before test ends
+        print("\n8. Ensuring services are fully ready for next tests...")
+        time.sleep(5)  # Give services extra time to be completely ready
+
         print("\n=== Test Completed Successfully ===")
 
     @pytest.mark.slow
@@ -277,7 +353,7 @@ class TestStartStopStatusCycle:
             return  # Skip the Docker-specific stop test
 
         # Update expected containers to match what's actually running
-        self.expected_containers = actual_containers
+        self.expected_containers = [c for c in actual_containers if c is not None]
 
         containers_started = self._wait_for_containers_state("running", timeout=30)
         assert (

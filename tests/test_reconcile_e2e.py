@@ -9,7 +9,6 @@ Refactored to use NEW STRATEGY with test infrastructure to eliminate code duplic
 
 import os
 import time
-import json
 import subprocess
 
 import pytest
@@ -17,7 +16,10 @@ import pytest
 from .conftest import local_temporary_directory
 
 # Import test infrastructure to eliminate code duplication
-from .test_infrastructure import auto_register_project_collections
+from .test_infrastructure import (
+    TestProjectInventory,
+    create_test_project_with_inventory,
+)
 
 
 # Removed duplicated run_command function - now using CLIHelper from test infrastructure!
@@ -85,50 +87,13 @@ def users():
 def reconcile_test_repo():
     """Create a test repository for reconcile E2E tests."""
     with local_temporary_directory() as temp_dir:
-        # Auto-register collections for cleanup
-        auto_register_project_collections(temp_dir)
-
-        # Preserve .code-indexer directory if it exists
-        config_dir = temp_dir / ".code-indexer"
-        if not config_dir.exists():
-            config_dir.mkdir(parents=True, exist_ok=True)
+        # Create isolated project space using inventory system (no config tinkering)
+        create_test_project_with_inventory(temp_dir, TestProjectInventory.RECONCILE)
 
         yield temp_dir
 
 
-def create_reconcile_config(test_dir):
-    """Create configuration for reconcile test."""
-    config_dir = test_dir / ".code-indexer"
-    config_file = config_dir / "config.json"
-
-    # Load existing config if it exists (preserves container ports)
-    if config_file.exists():
-        with open(config_file, "r") as f:
-            config = json.load(f)
-    else:
-        config = {
-            "codebase_dir": str(test_dir),
-            "qdrant": {
-                "host": "http://localhost:6333",
-                "collection": "reconcile_test_collection",
-                "vector_size": 1024,
-            },
-        }
-
-    # Only modify test-specific settings, preserve container configuration
-    config["embedding_provider"] = "voyage-ai"
-    config["voyage_ai"] = {
-        "model": "voyage-code-3",
-        "api_key_env": "VOYAGE_API_KEY",
-        "batch_size": 32,
-        "max_retries": 3,
-        "timeout": 30,
-    }
-
-    with open(config_file, "w") as f:
-        json.dump(config, f, indent=2)
-
-    return config_file
+# Removed create_reconcile_config - now using TestProjectInventory.RECONCILE
 
 
 def create_test_project_with_reconcile_files(test_dir):
@@ -151,9 +116,6 @@ def test_reconcile_after_full_index(reconcile_test_repo):
 
     # Create test files
     create_test_project_with_reconcile_files(test_dir)
-
-    # Create configuration
-    create_reconcile_config(test_dir)
 
     # Step 1: Initialize the project with VoyageAI for CI stability
     init_result = subprocess.run(
@@ -323,9 +285,6 @@ def test_reconcile_detects_missing_files(reconcile_test_repo):
 
     # Create test files
     create_test_project_with_reconcile_files(test_dir)
-
-    # Create configuration
-    create_reconcile_config(test_dir)
 
     # Step 1: Initialize with VoyageAI for CI stability
     init_result = subprocess.run(

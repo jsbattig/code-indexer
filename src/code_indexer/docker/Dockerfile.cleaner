@@ -7,6 +7,11 @@ RUN apk add --no-cache \
     findutils \
     coreutils
 
+# Build argument for cache invalidation when cleanup script changes
+ARG CLEANUP_SCRIPT_HASH=default
+# Force cache invalidation when cleanup script hash changes
+RUN echo "Cleanup script hash: ${CLEANUP_SCRIPT_HASH}"
+
 # Create a simple cleanup script
 COPY cleanup.sh /cleanup.sh
 RUN chmod +x /cleanup.sh

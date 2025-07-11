@@ -80,6 +80,7 @@ class TestClass_{i}:
         self.mock_qdrant.clear_collection.return_value = True
         self.mock_qdrant.resolve_collection_name.return_value = "test_collection"
         self.mock_qdrant.collection_exists.return_value = True
+        self.mock_qdrant.scroll_points.return_value = ([], None)
 
         # Mock embedding provider (simulating Voyage AI)
         self.mock_embedding_provider = MockEmbeddingProvider(
@@ -141,14 +142,12 @@ class TestClass_{i}:
                 "BranchAwareIndexer forced failure for testing"
             )
 
-            # Mock the fallback high-throughput processing to capture thread count
-            with patch.object(
-                smart_indexer,
-                "process_files_high_throughput",
-                side_effect=capture_vector_thread_count,
+            # Should raise RuntimeError due to disabled fallbacks
+            with pytest.raises(
+                RuntimeError,
+                match="Git-aware indexing failed and fallbacks are disabled",
             ):
-                # Call smart_index with force_full=True (equivalent to --clear)
-                stats = smart_indexer.smart_index(
+                smart_indexer.smart_index(
                     force_full=True,  # This is what --clear does
                     reconcile_with_database=False,
                     batch_size=50,
@@ -157,17 +156,6 @@ class TestClass_{i}:
                     files_count_to_process=None,
                     vector_thread_count=8,  # Voyage AI typical thread count
                 )
-
-        # Verify that the fallback path preserved the vector thread count
-        assert vector_thread_count_used == 8, (
-            f"Expected fallback to preserve vector_thread_count=8 for Voyage AI, but got {vector_thread_count_used}. "
-            f"This indicates that --clear fallback is not properly using multi-threading with Voyage AI."
-        )
-
-        # Verify successful processing in fallback
-        assert stats.files_processed >= len(
-            self.test_files
-        ), "Should process test files in fallback"
 
     @pytest.mark.unit
     def test_branch_aware_indexer_receives_thread_count(self):

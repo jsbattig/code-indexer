@@ -13,64 +13,31 @@ Converted to use fixture-based approach with shared test infrastructure.
 
 import time
 import subprocess
-import json
 import os
 from pathlib import Path
 from typing import Dict, Any
 import pytest
 
 from .conftest import local_temporary_directory
-from .test_infrastructure import auto_register_project_collections
+from .test_infrastructure import (
+    TestProjectInventory,
+    create_test_project_with_inventory,
+)
 
 
 @pytest.fixture
 def deletion_test_repo():
     """Create a test repository for deletion handling tests."""
     with local_temporary_directory() as temp_dir:
-        # Auto-register collections for cleanup
-        auto_register_project_collections(temp_dir)
-
-        # Preserve .code-indexer directory if it exists
-        config_dir = temp_dir / ".code-indexer"
-        if not config_dir.exists():
-            config_dir.mkdir(parents=True, exist_ok=True)
+        # Create isolated project space using inventory system (no config tinkering)
+        create_test_project_with_inventory(
+            temp_dir, TestProjectInventory.DELETION_HANDLING
+        )
 
         yield temp_dir
 
 
-def create_deletion_test_config(test_dir):
-    """Create configuration for deletion test."""
-    config_dir = test_dir / ".code-indexer"
-    config_file = config_dir / "config.json"
-
-    # Load existing config if it exists (preserves container ports)
-    if config_file.exists():
-        with open(config_file, "r") as f:
-            config = json.load(f)
-    else:
-        config = {
-            "codebase_dir": str(test_dir),
-            "qdrant": {
-                "host": "http://localhost:6333",
-                "collection": "deletion_test_collection",
-                "vector_size": 1024,
-            },
-        }
-
-    # Only modify test-specific settings, preserve container configuration
-    config["embedding_provider"] = "voyage-ai"
-    config["voyage_ai"] = {
-        "model": "voyage-code-3",
-        "api_key_env": "VOYAGE_API_KEY",
-        "batch_size": 32,
-        "max_retries": 3,
-        "timeout": 30,
-    }
-
-    with open(config_file, "w") as f:
-        json.dump(config, f, indent=2)
-
-    return config_file
+# Removed create_deletion_test_config - now using TestProjectInventory.DELETION_HANDLING
 
 
 def create_git_repo_with_files(test_dir, file_count: int = 5) -> Dict[str, Path]:
@@ -126,6 +93,17 @@ def get_feature_{i}_config():
 '''
         file_path.write_text(content)
         files[f"module_{i}"] = file_path
+
+    # Create .gitignore to prevent committing .code-indexer directory
+    (test_dir / ".gitignore").write_text(
+        """.code-indexer/
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.env
+"""
+    )
 
     # Commit initial files
     subprocess.run(["git", "add", "."], cwd=test_dir, check=True)
@@ -331,7 +309,7 @@ def test_git_aware_watch_deletion(deletion_test_repo):
     test_dir = deletion_test_repo
 
     # Create configuration
-    create_deletion_test_config(test_dir)
+    # Config created by inventory system
 
     # Create git repository with files
     files = create_git_repo_with_files(test_dir, 3)
@@ -449,7 +427,7 @@ def test_git_aware_reconcile_deletion(deletion_test_repo):
     test_dir = deletion_test_repo
 
     # Create configuration
-    create_deletion_test_config(test_dir)
+    # Config created by inventory system
 
     # Create git repository with files
     files = create_git_repo_with_files(test_dir, 4)
@@ -559,7 +537,7 @@ def test_multi_branch_isolation(deletion_test_repo):
     test_dir = deletion_test_repo
 
     # Create configuration
-    create_deletion_test_config(test_dir)
+    # Config created by inventory system
 
     # Create git repository with files
     files = create_git_repo_with_files(test_dir, 3)
@@ -716,7 +694,7 @@ def test_non_git_hard_deletion(deletion_test_repo):
     test_dir = deletion_test_repo
 
     # Create configuration
-    create_deletion_test_config(test_dir)
+    # Config created by inventory system
 
     # Create non-git project (no git init)
     files = create_non_git_project_with_files(test_dir, 3)
@@ -818,7 +796,7 @@ def test_non_git_watch_deletion(deletion_test_repo):
     test_dir = deletion_test_repo
 
     # Create configuration
-    create_deletion_test_config(test_dir)
+    # Config created by inventory system
 
     # Create non-git project
     files = create_non_git_project_with_files(test_dir, 2)
@@ -926,7 +904,7 @@ def test_deletion_performance(deletion_test_repo):
     test_dir = deletion_test_repo
 
     # Create configuration
-    create_deletion_test_config(test_dir)
+    # Config created by inventory system
 
     # Create project with many files
     files = create_git_repo_with_files(test_dir, 10)

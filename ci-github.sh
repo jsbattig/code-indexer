@@ -5,6 +5,14 @@
 
 set -e  # Exit on any error
 
+# Source .env files if they exist (for local testing)
+if [[ -f ".env.local" ]]; then
+    source .env.local
+fi
+if [[ -f ".env" ]]; then
+    source .env
+fi
+
 echo "🚀 Starting GitHub CI pipeline (local)..."
 echo "==========================================="
 
@@ -104,7 +112,6 @@ if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest tests/ \
     --ignore=tests/test_docker_compose_validation.py \
     --ignore=tests/test_idempotent_setup.py \
     --ignore=tests/test_branch_topology_e2e.py \
-    --ignore=tests/test_schema_migration_e2e.py \
     --ignore=tests/test_optimized_example.py \
     --ignore=tests/test_comprehensive_git_workflow.py \
     --ignore=tests/test_claude_plan_e2e.py \
@@ -169,7 +176,6 @@ echo "   • VoyageAI E2E tests (require Docker and API keys)"
 echo "   • Docker Compose validation tests (require Docker)"
 echo "   • Idempotent setup tests (require Docker services)"
 echo "   • Branch topology E2E tests (require Git and indexing services)"
-echo "   • Schema migration E2E tests (require Qdrant and embedding services)"
 echo "   • CoW clone E2E tests (require CoW filesystem and real services)"
 echo "   • Optimized example tests (require Docker and VoyageAI API)"
 echo "   • Comprehensive git workflow tests (require full service stack)"

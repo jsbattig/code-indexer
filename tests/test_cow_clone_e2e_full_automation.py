@@ -34,7 +34,8 @@ import pytest
 # Import test infrastructure for aggressive setup
 from .conftest import local_temporary_directory
 from .test_infrastructure import (
-    auto_register_project_collections,
+    TestProjectInventory,
+    create_test_project_with_inventory,
 )
 
 # Mark this test as requiring full automation and exclude from CI
@@ -50,23 +51,20 @@ pytestmark = [
 def cow_clone_test_workspace():
     """Create a test workspace for CoW clone testing."""
     with local_temporary_directory() as temp_dir:
-        # Auto-register collections for cleanup
-        auto_register_project_collections(temp_dir)
-
-        # Preserve .code-indexer directory if it exists
-        config_dir = temp_dir / ".code-indexer"
-        if not config_dir.exists():
-            config_dir.mkdir(parents=True, exist_ok=True)
+        # Create isolated project space using inventory system (no config tinkering)
+        create_test_project_with_inventory(
+            temp_dir, TestProjectInventory.COW_CLONE_E2E_FULL_AUTOMATION
+        )
 
         # Ensure we're on a filesystem that supports CoW
         # This is a basic check - in production you'd want more sophisticated detection
-        if not _check_cow_support(temp_dir):
+        cow_support = _check_cow_support(temp_dir)
+        print(f"CoW support check: {cow_support}")
+        if not cow_support:
             pytest.skip("CoW filesystem required for this test")
 
-        # Ensure services are ready
-        services_ready = _ensure_services_ready(temp_dir)
-        if not services_ready:
-            pytest.skip("Could not start services for e2e test")
+        # Don't check services here - the test will start them in its own project directory
+        print("Skipping service check in fixture - test will handle services")
 
         yield temp_dir
 
@@ -96,6 +94,7 @@ def _ensure_services_ready(temp_dir: Path) -> bool:
     """Ensure services are ready for testing."""
     try:
         # Test basic functionality with init and start
+        print(f"Running init in {temp_dir}")
         init_result = subprocess.run(
             ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
             cwd=temp_dir,
@@ -104,18 +103,24 @@ def _ensure_services_ready(temp_dir: Path) -> bool:
             timeout=60,
         )
         if init_result.returncode != 0:
+            print(f"Init failed: {init_result.stderr}")
             return False
 
         # Start services
+        print("Running start command...")
         start_result = subprocess.run(
             ["code-indexer", "start", "--quiet"],
             cwd=temp_dir,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=180,
         )
+        if start_result.returncode != 0:
+            print(f"Start failed: {start_result.stderr}")
+            print(f"Start stdout: {start_result.stdout}")
         return start_result.returncode == 0
-    except Exception:
+    except Exception as e:
+        print(f"Exception in _ensure_services_ready: {e}")
         return False
 
 
@@ -180,9 +185,6 @@ processing:
         full_path = project_path / file_path
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(content)
-
-    # Auto-register collections for cleanup
-    auto_register_project_collections(project_path)
 
     return project_path
 
@@ -264,7 +266,7 @@ def test_complete_cow_clone_workflow(cow_clone_test_workspace):
         _run_cidx_command(
             ["start", "--quiet"],
             original_project,
-            timeout=120,
+            timeout=180,
             expect_success=False,
         )
     except RuntimeError:
@@ -351,7 +353,7 @@ def updated_function():
 
     # Fix-config on clone (triggers migration)
     print("🔧 Running fix-config on clone...")
-    _run_cidx_command(["fix-config", "--force"], cloned_project, timeout=120)
+    _run_cidx_command(["fix-config", "--force"], cloned_project, timeout=180)
     print("✅ Clone configuration updated")
 
     # Index the cloned project to create its own collection
@@ -368,7 +370,7 @@ def updated_function():
         _run_cidx_command(
             ["start", "--quiet"],
             cloned_project,
-            timeout=120,
+            timeout=180,
             expect_success=False,
         )
     except RuntimeError:

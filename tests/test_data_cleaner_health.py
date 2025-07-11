@@ -24,17 +24,29 @@ class TestDataCleanerHealth:
         """Test successful data cleaner health check."""
         # Mock health check success
         mock_wait_service.return_value = True
-        mock_get_timeouts.return_value = {"data_cleaner_startup": 120}
+        mock_get_timeouts.return_value = {"data_cleaner_startup": 180}
 
         # Mock data cleaner running check and start
         with patch.object(
             self.docker_manager, "start_data_cleaner"
         ) as mock_start, patch(
             "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run:
+        ) as mock_run, patch.object(
+            self.docker_manager, "_get_service_url"
+        ) as mock_get_url:
             mock_start.return_value = True
-            mock_run.return_value.returncode = 0
-            mock_run.return_value.stdout = ""  # Data cleaner not running initially
+            mock_get_url.return_value = "http://localhost:8091"
+
+            # Mock container discovery and status check
+            run_responses = [
+                Mock(
+                    returncode=0, stdout="cidx-12345678-data-cleaner\n"
+                ),  # Container list
+                Mock(returncode=0, stdout=""),  # Container not running check
+                Mock(returncode=0, stdout="docker"),  # Container engine detection
+                Mock(returncode=0, stdout=""),  # Cleanup command execution
+            ]
+            mock_run.side_effect = run_responses
 
             result = self.docker_manager.clean_with_data_cleaner(["/data/test"])
 
@@ -42,7 +54,7 @@ class TestDataCleanerHealth:
             assert result is True
             mock_wait_service.assert_called_once_with(
                 "http://localhost:8091",
-                timeout=120,  # Default data_cleaner_startup timeout
+                timeout=180,  # Default data_cleaner_startup timeout
             )
 
     @patch.object(HealthChecker, "get_timeouts")
@@ -53,17 +65,28 @@ class TestDataCleanerHealth:
         """Test data cleaner health check timeout."""
         # Mock health check timeout
         mock_wait_service.return_value = False
-        mock_get_timeouts.return_value = {"data_cleaner_startup": 120}
+        mock_get_timeouts.return_value = {"data_cleaner_startup": 180}
 
         # Mock data cleaner start
         with patch.object(
             self.docker_manager, "start_data_cleaner"
         ) as mock_start, patch(
             "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run:
+        ) as mock_run, patch.object(
+            self.docker_manager, "_get_service_url"
+        ) as mock_get_url:
             mock_start.return_value = True
-            mock_run.return_value.returncode = 0
-            mock_run.return_value.stdout = ""  # Data cleaner not running initially
+            mock_get_url.return_value = "http://localhost:8091"
+
+            # Mock container discovery and status check
+            run_responses = [
+                Mock(
+                    returncode=0, stdout="cidx-12345678-data-cleaner\n"
+                ),  # Container list
+                Mock(returncode=0, stdout=""),  # Container not running check
+                Mock(returncode=0, stdout="docker"),  # Container engine detection
+            ]
+            mock_run.side_effect = run_responses
 
             result = self.docker_manager.clean_with_data_cleaner(["/data/test"])
 
@@ -84,7 +107,7 @@ class TestDataCleanerHealth:
         """Test that health check is performed when data cleaner is already running (for reliability)."""
         # Mock health check to return success
         mock_wait_service.return_value = True
-        mock_get_timeouts.return_value = {"data_cleaner_startup": 120}
+        mock_get_timeouts.return_value = {"data_cleaner_startup": 180}
 
         # Mock multiple subprocess calls that clean_with_data_cleaner makes
         def mock_subprocess_calls(*args, **kwargs):
@@ -94,10 +117,15 @@ class TestDataCleanerHealth:
             # Handle different subprocess calls
             if args[0][0] == "which":
                 mock_result.stdout = ""  # No podman, use docker
-            elif "ps" in args[0]:
-                mock_result.stdout = (
-                    "test-project-data-cleaner"  # Container already running
-                )
+            elif "ps" in args[0] and "--format" in args[0]:
+                if "filter" in args[0]:
+                    mock_result.stdout = (
+                        "cidx-12345678-data-cleaner"  # Container already running
+                    )
+                else:
+                    mock_result.stdout = (
+                        "cidx-12345678-data-cleaner\n"  # Container list
+                    )
             else:
                 mock_result.stdout = ""  # Other calls succeed
                 mock_result.stderr = ""
@@ -107,14 +135,16 @@ class TestDataCleanerHealth:
         with patch(
             "code_indexer.services.docker_manager.subprocess.run",
             side_effect=mock_subprocess_calls,
-        ):
+        ), patch.object(self.docker_manager, "_get_service_url") as mock_get_url:
+            mock_get_url.return_value = "http://localhost:8091"
+
             result = self.docker_manager.clean_with_data_cleaner(["/data/test"])
 
             # Should succeed and perform health check even when already running (for reliability)
             assert result is True
             mock_wait_service.assert_called_once_with(
                 "http://localhost:8091",
-                timeout=120,  # Default data_cleaner_startup timeout
+                timeout=180,  # Default data_cleaner_startup timeout
             )
 
     @patch.object(HealthChecker, "get_timeouts")
@@ -134,17 +164,29 @@ class TestDataCleanerHealth:
             self.docker_manager, "start_data_cleaner"
         ) as mock_start, patch(
             "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run:
+        ) as mock_run, patch.object(
+            self.docker_manager, "_get_service_url"
+        ) as mock_get_url:
             mock_start.return_value = True
-            mock_run.return_value.returncode = 0
-            mock_run.return_value.stdout = ""  # Data cleaner not running initially
+            mock_get_url.return_value = "http://localhost:8091"
+
+            # Mock container discovery and status check
+            run_responses = [
+                Mock(
+                    returncode=0, stdout="cidx-12345678-data-cleaner\n"
+                ),  # Container list
+                Mock(returncode=0, stdout=""),  # Container not running check
+                Mock(returncode=0, stdout="docker"),  # Container engine detection
+                Mock(returncode=0, stdout=""),  # Cleanup command execution
+            ]
+            mock_run.side_effect = run_responses
 
             result = self.docker_manager.clean_with_data_cleaner(["/data/test"])
 
             assert result is True
             mock_wait_service.assert_called_once_with(
                 "http://localhost:8091",
-                timeout=120,  # Custom timeout should be used
+                timeout=120,  # Custom timeout should be used as configured
             )
 
     @patch.object(HealthChecker, "get_timeouts")
@@ -152,7 +194,7 @@ class TestDataCleanerHealth:
     def test_data_cleaner_start_failure(self, mock_wait_service, mock_get_timeouts):
         """Test handling when data cleaner fails to start."""
         # Mock timeouts but won't be used since start fails
-        mock_get_timeouts.return_value = {"data_cleaner_startup": 120}
+        mock_get_timeouts.return_value = {"data_cleaner_startup": 180}
 
         # Mock data cleaner start failure
         with patch.object(
@@ -239,13 +281,19 @@ class TestDataCleanerIntegration:
             self.docker_manager.health_checker, "wait_for_service_ready"
         ) as mock_health, patch(
             "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run:
+        ) as mock_run, patch.object(
+            self.docker_manager, "_get_service_url"
+        ) as mock_get_url:
             # Setup mocks for successful workflow
             mock_start.return_value = True
             mock_health.return_value = True
+            mock_get_url.return_value = "http://localhost:8091"
 
             # Mock subprocess calls
             run_responses = [
+                Mock(
+                    returncode=0, stdout="cidx-12345678-data-cleaner\n"
+                ),  # Container list
                 Mock(returncode=0, stdout=""),  # Data cleaner not running check
                 Mock(returncode=0, stdout="docker"),  # Container engine detection
                 Mock(returncode=0, stdout=""),  # Cleanup command execution
@@ -256,7 +304,7 @@ class TestDataCleanerIntegration:
 
             assert result is True
             mock_start.assert_called_once()
-            mock_health.assert_called_once_with("http://localhost:8091", timeout=120)
+            mock_health.assert_called_once_with("http://localhost:8091", timeout=180)
 
     def test_data_cleaner_error_propagation(self):
         """Test that data cleaner errors are properly propagated."""
@@ -267,10 +315,22 @@ class TestDataCleanerIntegration:
             self.docker_manager.health_checker, "wait_for_service_ready"
         ) as mock_health, patch(
             "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run:
+        ) as mock_run, patch.object(
+            self.docker_manager, "_get_service_url"
+        ) as mock_get_url:
             mock_start.return_value = True
             mock_health.return_value = False  # Health check fails
-            mock_run.return_value = Mock(returncode=0, stdout="")
+            mock_get_url.return_value = "http://localhost:8091"
+
+            # Mock container discovery and status check
+            run_responses = [
+                Mock(
+                    returncode=0, stdout="cidx-12345678-data-cleaner\n"
+                ),  # Container list
+                Mock(returncode=0, stdout=""),  # Container not running check
+                Mock(returncode=0, stdout="docker"),  # Container engine detection
+            ]
+            mock_run.side_effect = run_responses
 
             result = self.docker_manager.clean_with_data_cleaner(["/data/test"])
 

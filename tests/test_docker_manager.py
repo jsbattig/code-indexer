@@ -137,17 +137,37 @@ class TestDockerManager(unittest.TestCase):
             test_dir.mkdir()
 
             os.chdir(test_dir)
+
+            # Create config file for embedding provider
+            config_dir = test_dir / ".code-indexer"
+            config_dir.mkdir(exist_ok=True)
+
+            config_data = {
+                "codebase_dir": str(test_dir),
+                "embedding_provider": "ollama",
+                "qdrant": {
+                    "host": "http://localhost:6333",
+                    "collection_base_name": "test_collection",
+                },
+                "ollama": {
+                    "host": "http://localhost:11434",
+                    "model": "nomic-embed-text",
+                    "num_parallel": 1,
+                    "max_loaded_models": 1,
+                    "max_queue": 512,
+                },
+                "exclude_patterns": ["*.git*", "__pycache__", "node_modules"],
+            }
+
+            import json
+
+            with open(config_dir / "config.json", "w") as f:
+                json.dump(config_data, f, indent=2)
+
             docker_manager = DockerManager(project_name="test_shared")
 
             # Generate project config with proper port allocation
             container_names = docker_manager._generate_container_names(test_dir)
-
-            # CRITICAL: Update main_config with container names before port allocation
-            if not docker_manager.main_config:
-                docker_manager.main_config = {}
-            if "project_containers" not in docker_manager.main_config:
-                docker_manager.main_config["project_containers"] = {}
-            docker_manager.main_config["project_containers"].update(container_names)
 
             ports = docker_manager._allocate_free_ports()
             project_config = {
@@ -197,6 +217,33 @@ class TestDockerManager(unittest.TestCase):
             test_dir = Path(temp_dir) / "test-project"
             test_dir.mkdir()
 
+            # Create config file for embedding provider
+            config_dir = test_dir / ".code-indexer"
+            config_dir.mkdir(exist_ok=True)
+
+            config_data = {
+                "codebase_dir": str(test_dir),
+                "embedding_provider": "ollama",
+                "qdrant": {
+                    "host": "http://localhost:6333",
+                    "collection_base_name": "test_collection",
+                },
+                "ollama": {
+                    "host": "http://localhost:11434",
+                    "model": "nomic-embed-text",
+                    "num_parallel": 1,
+                    "max_loaded_models": 1,
+                    "max_queue": 512,
+                },
+                "exclude_patterns": ["*.git*", "__pycache__", "node_modules"],
+            }
+
+            import json
+
+            with open(config_dir / "config.json", "w") as f:
+                json.dump(config_data, f, indent=2)
+
+            os.chdir(test_dir)
             docker_manager = DockerManager(project_name="test_shared")
             container_names = docker_manager._generate_container_names(test_dir)
             ports = docker_manager._allocate_free_ports()
@@ -228,6 +275,33 @@ class TestDockerManager(unittest.TestCase):
             test_dir = Path(temp_dir) / "test-project"
             test_dir.mkdir()
 
+            # Create config file for embedding provider
+            config_dir = test_dir / ".code-indexer"
+            config_dir.mkdir(exist_ok=True)
+
+            config_data = {
+                "codebase_dir": str(test_dir),
+                "embedding_provider": "ollama",
+                "qdrant": {
+                    "host": "http://localhost:6333",
+                    "collection_base_name": "test_collection",
+                },
+                "ollama": {
+                    "host": "http://localhost:11434",
+                    "model": "nomic-embed-text",
+                    "num_parallel": 1,
+                    "max_loaded_models": 1,
+                    "max_queue": 512,
+                },
+                "exclude_patterns": ["*.git*", "__pycache__", "node_modules"],
+            }
+
+            import json
+
+            with open(config_dir / "config.json", "w") as f:
+                json.dump(config_data, f, indent=2)
+
+            os.chdir(test_dir)
             docker_manager = DockerManager(project_name="test_shared")
             container_names = docker_manager._generate_container_names(test_dir)
             ports = docker_manager._allocate_free_ports()
@@ -255,6 +329,33 @@ class TestDockerManager(unittest.TestCase):
             test_dir = Path(temp_dir) / "test-project"
             test_dir.mkdir()
 
+            # Create config file for embedding provider
+            config_dir = test_dir / ".code-indexer"
+            config_dir.mkdir(exist_ok=True)
+
+            config_data = {
+                "codebase_dir": str(test_dir),
+                "embedding_provider": "ollama",
+                "qdrant": {
+                    "host": "http://localhost:6333",
+                    "collection_base_name": "test_collection",
+                },
+                "ollama": {
+                    "host": "http://localhost:11434",
+                    "model": "nomic-embed-text",
+                    "num_parallel": 1,
+                    "max_loaded_models": 1,
+                    "max_queue": 512,
+                },
+                "exclude_patterns": ["*.git*", "__pycache__", "node_modules"],
+            }
+
+            import json
+
+            with open(config_dir / "config.json", "w") as f:
+                json.dump(config_data, f, indent=2)
+
+            os.chdir(test_dir)
             docker_manager = DockerManager(project_name="test_shared")
             container_names = docker_manager._generate_container_names(test_dir)
             ports = docker_manager._allocate_free_ports()
@@ -361,19 +462,38 @@ class TestDockerManagerConfig(unittest.TestCase):
 
             os.chdir(test_dir)
 
+            # Create config file for embedding provider
+            config_dir = test_dir / ".code-indexer"
+            config_dir.mkdir(exist_ok=True)
+
+            config_data = {
+                "codebase_dir": str(test_dir),
+                "embedding_provider": "ollama",
+                "qdrant": {
+                    "host": "http://localhost:6333",
+                    "collection_base_name": "test_collection",
+                },
+                "ollama": {
+                    "host": "http://localhost:11434",
+                    "model": "nomic-embed-text",
+                    "num_parallel": 1,
+                    "max_loaded_models": 1,
+                    "max_queue": 512,
+                },
+                "exclude_patterns": ["*.git*", "__pycache__", "node_modules"],
+            }
+
+            import json
+
+            with open(config_dir / "config.json", "w") as f:
+                json.dump(config_data, f, indent=2)
+
             # Should not fail even without config files
             docker_manager = DockerManager(project_name="test_shared")
             self.assertIsNotNone(docker_manager.project_name)
 
             # Should be able to generate compose config with proper port allocation
             container_names = docker_manager._generate_container_names(test_dir)
-
-            # CRITICAL: Update main_config with container names before port allocation
-            if not docker_manager.main_config:
-                docker_manager.main_config = {}
-            if "project_containers" not in docker_manager.main_config:
-                docker_manager.main_config["project_containers"] = {}
-            docker_manager.main_config["project_containers"].update(container_names)
 
             ports = docker_manager._allocate_free_ports()
             project_config = {

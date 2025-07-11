@@ -6,28 +6,31 @@ individual progress messages are still being generated instead of
 progress bar updates.
 """
 
-from pathlib import Path
-import uuid
-from unittest.mock import Mock
 import pytest
 
-from .conftest import get_local_tmp_dir
+from .conftest import local_temporary_directory
+from .test_infrastructure import (
+    TestProjectInventory,
+    create_test_project_with_inventory,
+)
 
-from code_indexer.config import Config
-from code_indexer.services.smart_indexer import SmartIndexer
-from code_indexer.services import QdrantClient
-from tests.test_vector_calculation_manager import MockEmbeddingProvider
+import subprocess
+import os
 
 
 class TestCLIProgressE2E:
     """End-to-end tests for CLI progress behavior."""
 
     def setup_method(self):
-        """Setup test environment."""
-        # Create temporary directory
-        self.temp_dir = str(get_local_tmp_dir() / f"test_{uuid.uuid4().hex[:8]}")
-        self.temp_path = Path(self.temp_dir)
-        self.temp_path.mkdir(parents=True, exist_ok=True)
+        """Setup test environment using shared infrastructure."""
+        # Use shared test infrastructure to avoid container conflicts
+        self.temp_context = local_temporary_directory()
+        self.temp_path = self.temp_context.__enter__()
+
+        # Create test project with inventory system
+        create_test_project_with_inventory(
+            self.temp_path, TestProjectInventory.CLI_PROGRESS
+        )
 
         # Create test files (small enough to process quickly)
         self.test_files = []
@@ -50,213 +53,149 @@ class TestClass_{i}:
             file_path.write_text(content)
             self.test_files.append(file_path)
 
-        # Create metadata path
-        self.metadata_path = self.temp_path / "metadata.json"
+        # Initialize and start services for this test
+        self._ensure_services_ready()
 
-        # Create mock config
-        self.config = Mock(spec=Config)
-        self.config.codebase_dir = self.temp_path
-        self.config.exclude_dirs = []
-        self.config.exclude_files = []
-        self.config.file_extensions = ["py"]
+    @pytest.mark.skipif(
+        not os.getenv("VOYAGE_API_KEY"),
+        reason="VoyageAI API key required for E2E tests",
+    )
+    @pytest.mark.e2e
+    def test_cli_progress_output_format(self):
+        """Test that CLI progress output follows the correct format."""
+        # The shared test infrastructure handles service setup automatically
+        # Services should be ready via the inventory system
 
-        # Mock nested config attributes
-        self.config.qdrant = Mock()
-        self.config.qdrant.vector_size = 768
-
-        self.config.indexing = Mock()
-        self.config.indexing.chunk_size = 200
-        self.config.indexing.overlap_size = 50
-        self.config.indexing.max_file_size = 1000000
-        self.config.indexing.min_file_size = 1
-
-        self.config.chunking = Mock()
-        self.config.chunking.chunk_size = 200
-        self.config.chunking.overlap_size = 50
-
-        # Mock Qdrant client
-        self.mock_qdrant = Mock(spec=QdrantClient)
-        self.mock_qdrant.upsert_points.return_value = True
-        self.mock_qdrant.create_point.return_value = {"id": "test-point"}
-        self.mock_qdrant.ensure_provider_aware_collection.return_value = (
-            "test_collection"
-        )
-        self.mock_qdrant.clear_collection.return_value = True
-        self.mock_qdrant.resolve_collection_name.return_value = "test_collection"
-        self.mock_qdrant.collection_exists.return_value = True
-        self.mock_qdrant.get_collection_info.return_value = {
-            "points_count": 0,
-            "collection_name": "test_collection",
-        }
-
-        # Mock embedding provider
-        self.mock_embedding_provider = MockEmbeddingProvider(delay=0.01)
-
-    @pytest.mark.unit
-    def test_old_processor_methods_progress_behavior(self):
-        """Test that old processor methods also use correct progress callback format."""
-        from code_indexer.indexing.processor import DocumentProcessor
-
-        # Test the old process_files_parallel method directly
-        processor = DocumentProcessor(
-            config=self.config,
-            embedding_provider=self.mock_embedding_provider,
-            qdrant_client=self.mock_qdrant,
+        # Run indexing and capture output
+        index_result = subprocess.run(
+            ["code-indexer", "index", "--clear"],
+            cwd=self.temp_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
 
-        # CLI-style progress callback that detects problematic patterns
-        progress_calls = []
-        problematic_calls = []
+        # Check for successful completion
+        assert index_result.returncode == 0, f"Index failed: {index_result.stderr}"
 
-        def cli_progress_callback(current, total, file_path, error=None, info=None):
-            """Simulate the CLI progress callback behavior."""
-            progress_calls.append(
-                {
-                    "current": current,
-                    "total": total,
-                    "file_path": str(file_path),
-                    "info": info,
-                    "error": error,
-                }
-            )
+        # Check output format - should have progress indicators
+        output_lines = index_result.stdout.split("\n")
 
-            # CLI logic: Check for problematic patterns
-            # Setup messages (total=0) are handled separately and file_path doesn't matter
-            if str(file_path) != "." and info is not None and total > 0:
-                # This pattern causes individual messages instead of progress bar updates
-                problematic_calls.append(
-                    {
-                        "current": current,
-                        "total": total,
-                        "file_path": str(file_path),
-                        "info": info,
-                        "message": f"ℹ️  {info}",  # What the CLI would print
-                    }
+        # Look for problematic individual file messages
+        problematic_lines = []
+        for line in output_lines:
+            # Check for individual file processing messages that shouldn't appear
+            if "ℹ️" in line and ".py" in line and "Processing" in line:
+                problematic_lines.append(line)
+
+        # Assert no problematic output
+        assert len(problematic_lines) == 0, (
+            f"Found {len(problematic_lines)} individual file processing messages "
+            f"that should be shown in progress bar instead. Examples: {problematic_lines[:3]}"
+        )
+
+    @pytest.mark.skipif(
+        not os.getenv("VOYAGE_API_KEY"),
+        reason="VoyageAI API key required for E2E tests",
+    )
+    @pytest.mark.e2e
+    def test_cli_clear_command_no_individual_messages(self):
+        """Test that 'cidx index --clear' doesn't show individual file messages."""
+        # The shared test infrastructure handles service setup automatically
+        # Services should be ready via the inventory system
+
+        # Run indexing with --clear and check output
+        index_result = subprocess.run(
+            ["code-indexer", "index", "--clear"],
+            cwd=self.temp_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        # Check for successful completion
+        assert index_result.returncode == 0, f"Index failed: {index_result.stderr}"
+
+        # Analyze output for problematic patterns
+        output = index_result.stdout
+        lines = output.split("\n")
+
+        # Count different types of messages
+        setup_messages = []
+        progress_messages = []
+        individual_file_messages = []
+
+        for line in lines:
+            if "ℹ️" in line:
+                if (
+                    any(ext in line for ext in [".py", ".md", ".txt"])
+                    and "Processing" in line
+                ):
+                    individual_file_messages.append(line)
+                else:
+                    setup_messages.append(line)
+            elif "█" in line or "▌" in line:  # Progress bar characters
+                progress_messages.append(line)
+
+        # Should have setup messages and progress bar, but no individual file messages
+        assert len(individual_file_messages) == 0, (
+            f"Found {len(individual_file_messages)} individual file processing messages. "
+            f"These should be shown in progress bar instead. Examples: {individual_file_messages[:3]}"
+        )
+
+        # Verify we processed files (should see success message)
+        assert (
+            "✅" in output or "complete" in output.lower()
+        ), "Should show completion message"
+
+    def _ensure_services_ready(self):
+        """Ensure services are initialized and running for the test."""
+        import subprocess
+        import pytest
+
+        # Initialize code-indexer
+        init_result = subprocess.run(
+            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            cwd=self.temp_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if init_result.returncode != 0:
+            pytest.skip(f"Failed to initialize code-indexer: {init_result.stderr}")
+
+        # Start services
+        start_result = subprocess.run(
+            ["code-indexer", "start"],
+            cwd=self.temp_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        if start_result.returncode != 0:
+            # Check if services are already running
+            if (
+                "already in use" in start_result.stdout
+                or "already running" in start_result.stdout
+            ):
+                # Verify services are accessible
+                status_result = subprocess.run(
+                    ["code-indexer", "status"],
+                    cwd=self.temp_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
                 )
-
-        # Call the old process_files_parallel method that was causing issues
-        processor.process_files_parallel(
-            self.test_files,
-            batch_size=10,
-            progress_callback=cli_progress_callback,
-            vector_thread_count=2,
-        )
-
-        # Print analysis for debugging
-        print(f"\nOld method - Total progress calls: {len(progress_calls)}")
-        print(f"Old method - Problematic calls: {len(problematic_calls)}")
-
-        if problematic_calls:
-            print("\nProblematic calls from old method:")
-            for i, call in enumerate(problematic_calls):
-                print(f"  Problem {i}: {call['message']}")
-
-        # Assert that we have no problematic calls
-        assert len(problematic_calls) == 0, (
-            f"Found {len(problematic_calls)} progress calls in old processor method that would cause "
-            f"individual messages instead of progress bar updates. "
-            f"Examples: {problematic_calls[:3]}"
-        )
-
-    @pytest.mark.unit
-    def test_cli_clear_command_progress_behavior(self):
-        """Test the exact progress behavior of 'cidx index --clear' command."""
-
-        # Create SmartIndexer instance (same as CLI)
-        smart_indexer = SmartIndexer(
-            config=self.config,
-            embedding_provider=self.mock_embedding_provider,
-            qdrant_client=self.mock_qdrant,
-            metadata_path=self.metadata_path,
-        )
-
-        # CLI-style progress callback that detects problematic patterns
-        progress_calls = []
-        problematic_calls = []
-
-        def cli_progress_callback(current, total, file_path, error=None, info=None):
-            """Simulate the CLI progress callback behavior."""
-            progress_calls.append(
-                {
-                    "current": current,
-                    "total": total,
-                    "file_path": str(file_path),
-                    "info": info,
-                    "error": error,
-                }
-            )
-
-            # CLI logic: Check for problematic patterns
-            # Setup messages (total=0) are handled separately and file_path doesn't matter
-            if str(file_path) != "." and info is not None and total > 0:
-                # This pattern causes individual messages instead of progress bar updates
-                problematic_calls.append(
-                    {
-                        "current": current,
-                        "total": total,
-                        "file_path": str(file_path),
-                        "info": info,
-                        "message": f"ℹ️  {info}",  # What the CLI would print
-                    }
-                )
-
-        # Call the exact same method as CLI: smart_index with force_full=True (--clear)
-        stats = smart_indexer.smart_index(
-            force_full=True,  # This is what --clear does
-            reconcile_with_database=False,
-            batch_size=50,
-            progress_callback=cli_progress_callback,
-            safety_buffer_seconds=60,
-            files_count_to_process=None,
-            vector_thread_count=8,
-        )
-
-        # Print analysis for debugging
-        print(f"\nTotal progress calls: {len(progress_calls)}")
-        print(
-            f"Problematic calls (would show individual messages): {len(problematic_calls)}"
-        )
-
-        print("\nAll progress calls:")
-        for i, call in enumerate(progress_calls):
-            print(
-                f"  Call {i}: current={call['current']}, total={call['total']}, "
-                f"file_path='{call['file_path']}', info='{call['info']}'"
-            )
-
-        if problematic_calls:
-            print("\nProblematic calls that would show individual messages:")
-            for i, call in enumerate(problematic_calls):
-                print(f"  Problem {i}: {call['message']}")
-
-        # Assert that we have no problematic calls
-        assert len(problematic_calls) == 0, (
-            f"Found {len(problematic_calls)} progress calls that would cause "
-            f"individual messages instead of progress bar updates. "
-            f"These calls combine real file paths with info messages, triggering "
-            f"CLI individual message display. Examples: {problematic_calls[:3]}"
-        )
-
-        # Verify that all progress calls with info use empty paths
-        info_calls = [call for call in progress_calls if call["info"] is not None]
-        assert len(info_calls) > 0, "Should have progress calls with info messages"
-
-        for call in info_calls:
-            assert call["file_path"] == ".", (
-                f"Progress calls with info should use empty path (.), but got: '{call['file_path']}'. "
-                f"Info: '{call['info']}'"
-            )
-
-        # Verify successful processing
-        assert stats.files_processed >= len(
-            self.test_files
-        ), "Should process test files"
+                if status_result.returncode == 0 and "✅" in status_result.stdout:
+                    return  # Services are running and accessible
+            pytest.skip(f"Failed to start services: {start_result.stdout}")
 
     def teardown_method(self):
         """Cleanup test environment."""
-        import shutil
-
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
+        # Exit the shared test infrastructure context
+        if hasattr(self, "temp_context"):
+            self.temp_context.__exit__(None, None, None)
 
 
 if __name__ == "__main__":

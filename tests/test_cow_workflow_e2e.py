@@ -90,9 +90,8 @@ class TestCoWWorkflowE2E:
                 return True
 
             def mock_replace_with_symlink(collection_name, target_dir):
-                # Create symlink in global collections directory
-                symlink_path = global_collections_dir / collection_name
-                symlink_path.symlink_to(target_dir)
+                # Symlink creation is no longer supported in the current implementation
+                # This function exists for backward compatibility but does nothing
                 return True
 
             # Mock HTTP client and container operations for simplified CoW approach
@@ -127,10 +126,12 @@ class TestCoWWorkflowE2E:
                 )
                 assert local_collection_dir.exists()
 
-                # Verify symlink was created
-                symlink_path = global_collections_dir / "test_collection"
-                assert symlink_path.is_symlink()
-                assert symlink_path.resolve() == local_collection_dir
+                # Verify the collection data file was created (symlinks are no longer used)
+                # The current implementation uses folder structure storage without symlinks
+                assert (local_collection_dir / "dummy_data").exists()
+                assert (
+                    local_collection_dir / "dummy_data"
+                ).read_text() == "copied data"
 
     def test_cow_project_copying(self):
         """Test that copying a project maintains independent collections."""

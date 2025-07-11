@@ -226,14 +226,14 @@ class SmartIndexer(HighThroughputProcessor):
                         return stats
 
                     except Exception as e:
-                        if progress_callback:
-                            progress_callback(
-                                0,
-                                0,
-                                Path(""),
-                                info=f"Graph-optimized branch indexing failed: {e}, falling back to standard indexing",
-                            )
-                        # Fall through to standard indexing on error
+                        logger.error(
+                            f"Graph-optimized branch indexing failed in git project: {e}"
+                        )
+                        # NO FALLBACK - fail fast in git projects
+                        raise RuntimeError(
+                            f"Git-aware graph-optimized indexing failed and fallbacks are disabled. "
+                            f"Original error: {e}"
+                        ) from e
 
             # Check for interrupted operations first - highest priority (unless forcing full)
             if (
@@ -454,17 +454,14 @@ class SmartIndexer(HighThroughputProcessor):
             stats.end_time = time.time()
 
         except Exception as e:
-            logger.warning(
-                f"BranchAwareIndexer failed during full index, falling back to standard indexing: {e}"
+            logger.error(
+                f"BranchAwareIndexer failed during full index in git project: {e}"
             )
-            # Fallback to standard processing
-            stats = self._process_files_with_metadata(
-                files_to_index,
-                batch_size,
-                progress_callback,
-                resumable=True,
-                vector_thread_count=vector_thread_count,
-            )
+            # NO FALLBACK - fail fast in git projects
+            raise RuntimeError(
+                f"Git-aware indexing failed and fallbacks are disabled. "
+                f"Original error: {e}"
+            ) from e
 
         # Mark as completed
         self.progressive_metadata.complete_indexing()
@@ -615,17 +612,14 @@ class SmartIndexer(HighThroughputProcessor):
             stats.end_time = time.time()
 
         except Exception as e:
-            logger.warning(
-                f"BranchAwareIndexer failed during incremental indexing, falling back to standard indexing: {e}"
+            logger.error(
+                f"BranchAwareIndexer failed during incremental indexing in git project: {e}"
             )
-            # Fallback to standard processing
-            stats = self._process_files_with_metadata(
-                files_to_index,
-                batch_size,
-                progress_callback,
-                resumable=True,
-                vector_thread_count=vector_thread_count,
-            )
+            # NO FALLBACK - fail fast in git projects
+            raise RuntimeError(
+                f"Git-aware incremental indexing failed and fallbacks are disabled. "
+                f"Original error: {e}"
+            ) from e
 
         # Mark as completed
         self.progressive_metadata.complete_indexing()
@@ -956,17 +950,14 @@ class SmartIndexer(HighThroughputProcessor):
             stats.end_time = time.time()
 
         except Exception as e:
-            logger.warning(
-                f"BranchAwareIndexer failed during reconcile, falling back to standard indexing: {e}"
+            logger.error(
+                f"BranchAwareIndexer failed during reconcile in git project: {e}"
             )
-            # Fallback to standard processing
-            stats = self._process_files_with_metadata(
-                files_to_index,
-                batch_size,
-                progress_callback,
-                resumable=True,
-                vector_thread_count=vector_thread_count,
-            )
+            # NO FALLBACK - fail fast in git projects
+            raise RuntimeError(
+                f"Git-aware reconcile failed and fallbacks are disabled. "
+                f"Original error: {e}"
+            ) from e
 
         # Mark as completed
         self.progressive_metadata.complete_indexing()
@@ -1067,17 +1058,12 @@ class SmartIndexer(HighThroughputProcessor):
             stats.end_time = time.time()
 
         except Exception as e:
-            logger.warning(
-                f"BranchAwareIndexer failed during resume, falling back to standard indexing: {e}"
-            )
-            # Fallback to standard processing
-            stats = self._process_files_with_metadata(
-                existing_files,
-                batch_size,
-                progress_callback,
-                resumable=True,
-                vector_thread_count=vector_thread_count,
-            )
+            logger.error(f"BranchAwareIndexer failed during resume in git project: {e}")
+            # NO FALLBACK - fail fast in git projects
+            raise RuntimeError(
+                f"Git-aware resume failed and fallbacks are disabled. "
+                f"Original error: {e}"
+            ) from e
 
         # Mark as completed
         self.progressive_metadata.complete_indexing()
@@ -1309,25 +1295,14 @@ class SmartIndexer(HighThroughputProcessor):
                     stats.failed_files = 0
 
                 except Exception as e:
-                    logger.warning(
-                        f"BranchAwareIndexer failed during process_files_incrementally, falling back to standard indexing: {e}"
+                    logger.error(
+                        f"BranchAwareIndexer failed during process_files_incrementally in git project: {e}"
                     )
-                    # Fallback to HighThroughputProcessor
-                    thread_count = vector_thread_count or get_default_thread_count(
-                        self.embedding_provider
-                    )
-
-                    high_throughput_stats = self.process_files_high_throughput(
-                        absolute_paths,
-                        vector_thread_count=thread_count,
-                        batch_size=50,  # Default batch size
-                        progress_callback=None,  # No progress callback for incremental processing
-                    )
-
-                    # Convert to ProcessingStats format
-                    stats.files_processed = high_throughput_stats.files_processed
-                    stats.chunks_created = high_throughput_stats.chunks_created
-                    stats.failed_files = high_throughput_stats.failed_files
+                    # NO FALLBACK - fail fast in git projects
+                    raise RuntimeError(
+                        f"Git-aware incremental processing failed and fallbacks are disabled. "
+                        f"Original error: {e}"
+                    ) from e
 
                 if not quiet:
                     logger.info(

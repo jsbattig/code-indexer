@@ -51,6 +51,18 @@ class TestMeaningfulFeedbackOperations:
             cwd=temp_dir,
             capture_output=True,
         )
+
+        # Create .gitignore to prevent committing .code-indexer directory
+        (temp_dir / ".gitignore").write_text(
+            """.code-indexer/
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.env
+"""
+        )
+
         subprocess.run(["git", "add", "."], cwd=temp_dir, capture_output=True)
         subprocess.run(
             ["git", "commit", "-m", "Initial commit"], cwd=temp_dir, capture_output=True

@@ -58,185 +58,196 @@ class TestCLIFlagValidation:
 
     def test_detect_deletions_with_clear_warning(self, local_tmp_path):
         """Test that --detect-deletions with --clear shows warning but continues."""
-        # Create a minimal test directory
-        test_dir = local_tmp_path / "test_project"
-        test_dir.mkdir()
-        test_file = test_dir / "test.py"
-        test_file.write_text("print('hello')")
+        # Create a truly isolated test directory (not using shared infrastructure)
+        import tempfile
 
-        # Change to test directory
-        original_cwd = Path.cwd()
-        try:
-            import os
+        with tempfile.TemporaryDirectory() as isolated_tmp:
+            test_dir = Path(isolated_tmp) / "test_project"
+            test_dir.mkdir()
+            test_file = test_dir / "test.py"
+            test_file.write_text("print('hello')")
 
-            os.chdir(test_dir)
+            # Change to test directory
+            original_cwd = Path.cwd()
+            try:
+                import os
 
-            # This should show warning but then may fail due to missing services
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "code_indexer.cli",
-                    "index",
-                    "--detect-deletions",
-                    "--clear",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+                os.chdir(test_dir)
 
-            # Check for legacy container detection first
-            if "Legacy container detected" in result.stdout:
-                # In test environment, legacy detection blocks CLI validation
-                assert "CoW migration required" in result.stdout
-                return
+                # This should show warning but then may fail due to missing services
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "code_indexer.cli",
+                        "index",
+                        "--detect-deletions",
+                        "--clear",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,  # Reduced timeout since it should fail fast in isolated env
+                )
 
-            # Should show warning message in clean environment
-            assert (
-                "⚠️  Warning: --detect-deletions is redundant with --clear"
-                in result.stdout
-            )
-            assert "💡 --clear empties the collection completely" in result.stdout
+                # Check for legacy container detection first
+                if "Legacy container detected" in result.stdout:
+                    # In test environment, legacy detection blocks CLI validation
+                    assert "CoW migration required" in result.stdout
+                    return
 
-            # Command may fail due to missing services, but flag validation should pass
-            if result.returncode != 0:
-                # Acceptable failures are service-related, not flag validation
-                acceptable_errors = [
-                    "No configuration found",
-                    "Services not running",
-                    "Connection refused",
-                    "Failed to connect",
-                    "Qdrant",
-                    "Ollama service not available",
-                    "No files found to index",
-                ]
-                error_output = result.stderr + result.stdout
-                assert any(
-                    error in error_output for error in acceptable_errors
-                ), f"Unexpected error (should be service-related): {error_output}"
+                # Should show warning message in clean environment
+                assert (
+                    "⚠️  Warning: --detect-deletions is redundant with --clear"
+                    in result.stdout
+                )
+                assert "💡 --clear empties the collection completely" in result.stdout
 
-        finally:
-            os.chdir(original_cwd)
+                # Command may fail due to missing services, but flag validation should pass
+                if result.returncode != 0:
+                    # Acceptable failures are service-related, not flag validation
+                    acceptable_errors = [
+                        "No configuration found",
+                        "Services not running",
+                        "Connection refused",
+                        "Failed to connect",
+                        "Qdrant",
+                        "Ollama service not available",
+                        "No files found to index",
+                    ]
+                    error_output = result.stderr + result.stdout
+                    assert any(
+                        error in error_output for error in acceptable_errors
+                    ), f"Unexpected error (should be service-related): {error_output}"
+
+            finally:
+                os.chdir(original_cwd)
 
     def test_detect_deletions_alone_valid(self, local_tmp_path):
         """Test that --detect-deletions alone is valid."""
-        # Create a minimal test directory
-        test_dir = local_tmp_path / "test_project"
-        test_dir.mkdir()
-        test_file = test_dir / "test.py"
-        test_file.write_text("print('hello')")
+        # Create a truly isolated test directory (not using shared infrastructure)
+        import tempfile
 
-        # Change to test directory
-        original_cwd = Path.cwd()
-        try:
-            import os
+        with tempfile.TemporaryDirectory() as isolated_tmp:
+            test_dir = Path(isolated_tmp) / "test_project"
+            test_dir.mkdir()
+            test_file = test_dir / "test.py"
+            test_file.write_text("print('hello')")
 
-            os.chdir(test_dir)
+            # Change to test directory
+            original_cwd = Path.cwd()
+            try:
+                import os
 
-            # This should work (though may fail due to services not running)
-            # We're only testing flag validation, not full functionality
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "code_indexer.cli",
-                    "index",
-                    "--detect-deletions",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+                os.chdir(test_dir)
 
-            # Check for legacy container detection first
-            if "Legacy container detected" in result.stdout:
-                # In test environment, legacy detection is expected
-                assert "CoW migration required" in result.stdout
-                return
+                # This should work (though may fail due to services not running)
+                # We're only testing flag validation, not full functionality
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "code_indexer.cli",
+                        "index",
+                        "--detect-deletions",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,  # Reduced timeout since it should fail fast in isolated env
+                )
 
-            # Should not show flag validation errors in clean environment
-            assert (
-                "❌ Cannot use --detect-deletions with --reconcile" not in result.stdout
-            )
-            assert (
-                "⚠️  Warning: --detect-deletions is redundant with --clear"
-                not in result.stdout
-            )
+                # Check for legacy container detection first
+                if "Legacy container detected" in result.stdout:
+                    # In test environment, legacy detection is expected
+                    assert "CoW migration required" in result.stdout
+                    return
 
-            # The command might fail due to missing services, but not due to flag validation
-            if result.returncode != 0:
-                # Acceptable failures are service-related, not flag validation
-                acceptable_errors = [
-                    "No configuration found",
-                    "Services not running",
-                    "Connection refused",
-                    "Failed to connect",
-                    "Qdrant",
-                    "Ollama service not available",
-                    "No files found to index",
-                ]
-                error_output = result.stderr + result.stdout
-                assert any(
-                    error in error_output for error in acceptable_errors
-                ), f"Unexpected error (should be service-related): {error_output}"
+                # Should not show flag validation errors in clean environment
+                assert (
+                    "❌ Cannot use --detect-deletions with --reconcile"
+                    not in result.stdout
+                )
+                assert (
+                    "⚠️  Warning: --detect-deletions is redundant with --clear"
+                    not in result.stdout
+                )
 
-        finally:
-            os.chdir(original_cwd)
+                # The command might fail due to missing services, but not due to flag validation
+                if result.returncode != 0:
+                    # Acceptable failures are service-related, not flag validation
+                    acceptable_errors = [
+                        "No configuration found",
+                        "Services not running",
+                        "Connection refused",
+                        "Failed to connect",
+                        "Qdrant",
+                        "Ollama service not available",
+                        "No files found to index",
+                    ]
+                    error_output = result.stderr + result.stdout
+                    assert any(
+                        error in error_output for error in acceptable_errors
+                    ), f"Unexpected error (should be service-related): {error_output}"
+
+            finally:
+                os.chdir(original_cwd)
 
     def test_reconcile_alone_valid(self, local_tmp_path):
         """Test that --reconcile alone is valid (includes deletion detection)."""
-        # Create a minimal test directory
-        test_dir = local_tmp_path / "test_project"
-        test_dir.mkdir()
-        test_file = test_dir / "test.py"
-        test_file.write_text("print('hello')")
+        # Create a truly isolated test directory (not using shared infrastructure)
+        import tempfile
 
-        # Change to test directory
-        original_cwd = Path.cwd()
-        try:
-            import os
+        with tempfile.TemporaryDirectory() as isolated_tmp:
+            test_dir = Path(isolated_tmp) / "test_project"
+            test_dir.mkdir()
+            test_file = test_dir / "test.py"
+            test_file.write_text("print('hello')")
 
-            os.chdir(test_dir)
+            # Change to test directory
+            original_cwd = Path.cwd()
+            try:
+                import os
 
-            # This should work (though may fail due to services not running)
-            result = subprocess.run(
-                [sys.executable, "-m", "code_indexer.cli", "index", "--reconcile"],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+                os.chdir(test_dir)
 
-            # Check for legacy container detection first
-            if "Legacy container detected" in result.stdout:
-                # In test environment, legacy detection is expected
-                assert "CoW migration required" in result.stdout
-                return
+                # This should work (though may fail due to services not running)
+                result = subprocess.run(
+                    [sys.executable, "-m", "code_indexer.cli", "index", "--reconcile"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,  # Reduced timeout since it should fail fast in isolated env
+                )
 
-            # Should not show flag validation errors in clean environment
-            assert (
-                "❌ Cannot use --detect-deletions with --reconcile" not in result.stdout
-            )
+                # Check for legacy container detection first
+                if "Legacy container detected" in result.stdout:
+                    # In test environment, legacy detection is expected
+                    assert "CoW migration required" in result.stdout
+                    return
 
-            # The command might fail due to missing services, but not due to flag validation
-            if result.returncode != 0:
-                # Acceptable failures are service-related, not flag validation
-                acceptable_errors = [
-                    "No configuration found",
-                    "Services not running",
-                    "Connection refused",
-                    "Failed to connect",
-                    "Qdrant",
-                    "Ollama service not available",
-                    "No files found to index",
-                ]
-                error_output = result.stderr + result.stdout
-                assert any(
-                    error in error_output for error in acceptable_errors
-                ), f"Unexpected error (should be service-related): {error_output}"
+                # Should not show flag validation errors in clean environment
+                assert (
+                    "❌ Cannot use --detect-deletions with --reconcile"
+                    not in result.stdout
+                )
 
-        finally:
-            os.chdir(original_cwd)
+                # The command might fail due to missing services, but not due to flag validation
+                if result.returncode != 0:
+                    # Acceptable failures are service-related, not flag validation
+                    acceptable_errors = [
+                        "No configuration found",
+                        "Services not running",
+                        "Connection refused",
+                        "Failed to connect",
+                        "Qdrant",
+                        "Ollama service not available",
+                        "No files found to index",
+                    ]
+                    error_output = result.stderr + result.stdout
+                    assert any(
+                        error in error_output for error in acceptable_errors
+                    ), f"Unexpected error (should be service-related): {error_output}"
+
+            finally:
+                os.chdir(original_cwd)
 
     def test_help_includes_deletion_detection_section(self):
         """Test that help text includes DELETION DETECTION section."""

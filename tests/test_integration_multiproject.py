@@ -15,7 +15,8 @@ from code_indexer.config import ConfigManager
 
 # Import new test infrastructure to eliminate duplication
 from .test_infrastructure import (
-    auto_register_project_collections,
+    TestProjectInventory,
+    create_test_project_with_inventory,
 )
 
 
@@ -89,46 +90,114 @@ def handle_start_command_gracefully(project_dir, extra_args=None):
 
 @pytest.fixture
 def multiproject_test_setup():
-    """Create test setup for multi-project integration tests."""
-    # Define project paths
-    test_root = Path(__file__).parent / "projects"
-    project1_path = test_root / "test_project_1"
-    project2_path = test_root / "test_project_2"
+    """Create test setup for multi-project integration tests using inventory system."""
+    with local_temporary_directory() as temp_dir:
+        # Create two isolated project spaces using inventory system (no config tinkering)
+        project1_path = temp_dir / "project1"
+        project2_path = temp_dir / "project2"
 
-    # Ensure test projects exist
-    if not project1_path.exists() or not project2_path.exists():
-        pytest.skip("Test project directories not found")
+        project1_path.mkdir()
+        project2_path.mkdir()
 
-    # Clean legacy containers first to avoid CoW conflicts
-    docker_manager = DockerManager(project_name="test_shared")
-    docker_manager.remove_containers(remove_volumes=True)
+        create_test_project_with_inventory(
+            project1_path, TestProjectInventory.INTEGRATION_MULTIPROJECT_1
+        )
+        create_test_project_with_inventory(
+            project2_path, TestProjectInventory.INTEGRATION_MULTIPROJECT_2
+        )
 
-    # Auto-register collections for both projects
-    auto_register_project_collections(project1_path)
-    auto_register_project_collections(project2_path)
+        # Create test files for both projects
+        create_test_files_for_multiproject(project1_path, project2_path)
 
-    yield {
-        "project1_path": project1_path,
-        "project2_path": project2_path,
-        "test_root": test_root,
-    }
+        yield {
+            "project1_path": project1_path,
+            "project2_path": project2_path,
+            "test_root": temp_dir,
+        }
 
-    # Cleanup both projects
-    for project_path in [project1_path, project2_path]:
-        try:
-            original_cwd = Path.cwd()
-            os.chdir(project_path)
-            import subprocess
 
-            subprocess.run(
-                ["code-indexer", "clean", "--remove-data", "--quiet"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            os.chdir(original_cwd)
-        except Exception:
-            pass
+def create_test_files_for_multiproject(project1_path, project2_path):
+    """Create test files for multi-project testing."""
+    # Project 1: Calculator app
+    (project1_path / "calculator.py").write_text(
+        """
+def add(a, b):
+    '''Add two numbers'''
+    return a + b
+
+def multiply(a, b):
+    '''Multiply two numbers'''
+    return a * b
+
+def calculator_main():
+    '''Main calculator function'''
+    print("Calculator Application")
+    result = add(5, 3)
+    print(f"5 + 3 = {result}")
+"""
+    )
+
+    (project1_path / "math_utils.py").write_text(
+        """
+import math
+
+def square_root(n):
+    '''Calculate square root'''
+    return math.sqrt(n)
+
+def factorial(n):
+    '''Calculate factorial'''
+    if n <= 1:
+        return 1
+    return n * factorial(n - 1)
+"""
+    )
+
+    # Project 2: Web server app
+    (project2_path / "web_server.py").write_text(
+        """
+from flask import Flask, jsonify
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    '''Home route'''
+    return "Web Server Application"
+
+@app.route('/api/data')
+def get_data():
+    '''API data endpoint'''
+    return jsonify({"message": "Hello from API", "status": "success"})
+
+def start_server():
+    '''Start the web server'''
+    app.run(debug=True)
+"""
+    )
+
+    (project2_path / "database.py").write_text(
+        """
+class Database:
+    '''Simple database class'''
+    
+    def __init__(self):
+        self.data = {}
+    
+    def store(self, key, value):
+        '''Store data in database'''
+        self.data[key] = value
+    
+    def retrieve(self, key):
+        '''Retrieve data from database'''
+        return self.data.get(key)
+    
+    def delete(self, key):
+        '''Delete data from database'''
+        if key in self.data:
+            del self.data[key]
+"""
+    )
 
 
 @pytest.mark.skipif(
@@ -202,7 +271,7 @@ class TestMultiProjectIntegration:
             docker_manager1 = (
                 DockerManager()
             )  # No explicit project name for auto-detection
-            assert docker_manager1.project_name == "test_project_1"
+            assert docker_manager1.project_name == "project1"
         finally:
             os.chdir(original_cwd)
 
@@ -212,7 +281,7 @@ class TestMultiProjectIntegration:
             docker_manager2 = (
                 DockerManager()
             )  # No explicit project name for auto-detection
-            assert docker_manager2.project_name == "test_project_2"
+            assert docker_manager2.project_name == "project2"
         finally:
             os.chdir(original_cwd)
 
@@ -506,27 +575,8 @@ class TestMultiProjectIntegration:
             )
             assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
-            # Use graceful start handling
+            # Use graceful start handling (services should already be configured properly)
             handle_start_command_gracefully(project1_path)
-
-            # Update config to use unique collection name to avoid conflicts
-            import time
-            import json
-
-            timestamp = str(int(time.time()))
-            config_file = project1_path / ".code-indexer" / "config.json"
-            if config_file.exists():
-                with open(config_file, "r") as f:
-                    config = json.load(f)
-                config.setdefault("qdrant", {})[
-                    "collection"
-                ] = f"cleanup_test_{timestamp}"
-                config["qdrant"]["collection_base_name"] = f"cleanup_test_{timestamp}"
-                with open(config_file, "w") as f:
-                    json.dump(config, f, indent=2)
-                print(
-                    f"✅ Updated config to use unique collection: cleanup_test_{timestamp}"
-                )
 
             # Verify services are running using CLI status command
             status_result = subprocess.run(

@@ -16,20 +16,20 @@ import subprocess
 import pytest
 
 from .conftest import local_temporary_directory
-from .test_infrastructure import auto_register_project_collections
+from .test_infrastructure import (
+    TestProjectInventory,
+    create_test_project_with_inventory,
+)
 
 
 @pytest.fixture
 def optimized_test_repo():
     """Create a test repository for optimized E2E tests."""
     with local_temporary_directory() as temp_dir:
-        # Auto-register collections for cleanup
-        auto_register_project_collections(temp_dir)
-
-        # Preserve .code-indexer directory if it exists
-        config_dir = temp_dir / ".code-indexer"
-        if not config_dir.exists():
-            config_dir.mkdir(parents=True, exist_ok=True)
+        # Create isolated project space using inventory system (no config tinkering)
+        create_test_project_with_inventory(
+            temp_dir, TestProjectInventory.OPTIMIZED_EXAMPLE
+        )
 
         yield temp_dir
 
@@ -122,7 +122,7 @@ def test_fast_indexing_workflow(optimized_test_repo):
     # Create configuration
     create_optimized_config(test_dir)
 
-    # Step 1: Init project with VoyageAI (containers already running)
+    # Step 1: Init project with VoyageAI
     result = subprocess.run(
         ["code-indexer", "init", "--embedding-provider", "voyage-ai", "--force"],
         cwd=test_dir,
@@ -132,7 +132,17 @@ def test_fast_indexing_workflow(optimized_test_repo):
     )
     assert result.returncode == 0, f"Init failed: {result.stderr}"
 
-    # Step 2: Index project (no container startup needed)
+    # Step 2: Start services
+    result = subprocess.run(
+        ["code-indexer", "start", "--quiet"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, f"Start failed: {result.stderr}"
+
+    # Step 3: Index project
     result = subprocess.run(
         ["code-indexer", "index"],
         cwd=test_dir,
@@ -143,7 +153,7 @@ def test_fast_indexing_workflow(optimized_test_repo):
     assert result.returncode == 0, f"Index failed: {result.stderr}"
     assert "Files processed:" in result.stdout or "Processing complete" in result.stdout
 
-    # Step 3: Search for content
+    # Step 4: Search for content
     result = subprocess.run(
         ["code-indexer", "query", "authentication function", "--quiet"],
         cwd=test_dir,
@@ -154,7 +164,7 @@ def test_fast_indexing_workflow(optimized_test_repo):
     assert result.returncode == 0, f"Query failed: {result.stderr}"
     # Note: May not find results due to VoyageAI vs test data mismatch, but that's OK for performance test
 
-    # Step 4: Check status
+    # Step 5: Check status
     result = subprocess.run(
         ["code-indexer", "status"],
         cwd=test_dir,
@@ -191,6 +201,16 @@ def test_fast_multiple_projects(optimized_test_repo):
     )
     assert result.returncode == 0
 
+    # Start services
+    result = subprocess.run(
+        ["code-indexer", "start", "--quiet"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0
+
     result = subprocess.run(
         ["code-indexer", "index"],
         cwd=test_dir,
@@ -210,13 +230,23 @@ def test_fast_multiple_projects(optimized_test_repo):
     )
     assert result.returncode == 0
 
-    # Project 2 setup (containers still running)
+    # Project 2 setup (ensure containers are still running)
     result = subprocess.run(
         ["code-indexer", "init", "--embedding-provider", "voyage-ai", "--force"],
         cwd=test_dir,
         capture_output=True,
         text=True,
         timeout=60,
+    )
+    assert result.returncode == 0
+
+    # Ensure services are still running after clean-data
+    result = subprocess.run(
+        ["code-indexer", "start", "--quiet"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     assert result.returncode == 0
 
@@ -281,6 +311,16 @@ def test_fast_error_recovery(optimized_test_repo):
         capture_output=True,
         text=True,
         timeout=60,
+    )
+    assert result.returncode == 0
+
+    # Start services
+    result = subprocess.run(
+        ["code-indexer", "start", "--quiet"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     assert result.returncode == 0
 

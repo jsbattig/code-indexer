@@ -17,7 +17,8 @@ import pytest
 
 from .conftest import local_temporary_directory
 from .test_infrastructure import (
-    auto_register_project_collections,
+    TestProjectInventory,
+    create_test_project_with_inventory,
 )
 
 
@@ -25,52 +26,10 @@ from .test_infrastructure import (
 def deadlock_test_repo():
     """Create a test repository for deadlock reproduction tests."""
     with local_temporary_directory() as temp_dir:
-        # Auto-register collections for cleanup
-        auto_register_project_collections(temp_dir)
-
-        # Preserve .code-indexer directory if it exists
-        config_dir = temp_dir / ".code-indexer"
-        if not config_dir.exists():
-            config_dir.mkdir(parents=True, exist_ok=True)
-
-        # Ensure services are available and functioning
-        print("🔧 Deadlock test setup: Verifying services are functional...")
-        try:
-            # Test basic functionality with init and start
-            init_result = subprocess.run(
-                [
-                    "code-indexer",
-                    "init",
-                    "--force",
-                    "--embedding-provider",
-                    "voyage-ai",
-                ],
-                cwd=temp_dir,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            if init_result.returncode != 0:
-                print(f"Setup verification failed during init: {init_result.stderr}")
-                pytest.skip("Services not functioning properly for E2E testing")
-
-            # Start services
-            start_result = subprocess.run(
-                ["code-indexer", "start", "--quiet"],
-                cwd=temp_dir,
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            if start_result.returncode != 0:
-                print(f"Setup verification failed during start: {start_result.stderr}")
-                pytest.skip("Could not start services for E2E testing")
-
-            print("✅ Deadlock test setup complete - services verified functional")
-
-        except Exception as e:
-            print(f"Setup verification failed: {e}")
-            pytest.skip("Could not verify service functionality for E2E testing")
+        # Create isolated project space using inventory system (no config tinkering)
+        create_test_project_with_inventory(
+            temp_dir, TestProjectInventory.DEADLOCK_REPRODUCTION
+        )
 
         yield temp_dir
 
@@ -117,6 +76,17 @@ def create_git_repo_with_files(base_dir: Path) -> Path:
     for file_path, content in files_to_create:
         full_path = repo_dir / file_path
         full_path.write_text(content)
+
+    # Create .gitignore to prevent committing .code-indexer directory
+    (repo_dir / ".gitignore").write_text(
+        """.code-indexer/
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.env
+"""
+    )
 
     # Commit initial files
     subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)

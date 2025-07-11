@@ -525,17 +525,3 @@ class MetadataValidator:
             Schema version string
         """
         return str(metadata.get("schema_version", MetadataSchemaVersion.LEGACY))
-
-    @staticmethod
-    def needs_migration(metadata: Dict[str, Any]) -> bool:
-        """
-        Check if metadata needs migration to current schema.
-
-        Args:
-            metadata: Metadata dictionary
-
-        Returns:
-            True if migration is needed, False otherwise
-        """
-        current_version = MetadataValidator.get_schema_version(metadata)
-        return current_version != MetadataSchemaVersion.CURRENT

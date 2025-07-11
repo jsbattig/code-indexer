@@ -19,7 +19,7 @@ class TestHealthChecker:
         """Test initialization without config manager."""
         hc = HealthChecker()
         assert hc.config_manager is None
-        assert hc.default_timeouts["service_startup"] == 180
+        assert hc.default_timeouts["service_startup"] == 240
         assert hc.default_polling["initial_interval"] == 0.5
 
     def test_init_with_config(self):

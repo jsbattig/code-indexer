@@ -20,7 +20,7 @@ class OllamaClient(EmbeddingProvider):
     def health_check(self) -> bool:
         """Check if Ollama service is accessible."""
         try:
-            response = self.client.get("/api/tags")
+            response = self.client.get("/api/tags", timeout=2.0)
             return bool(response.status_code == 200)
         except Exception:
             return False

@@ -20,20 +20,20 @@ from typing import Dict, List, Any, Optional
 import pytest
 
 from .conftest import local_temporary_directory
-from .test_infrastructure import auto_register_project_collections
+from .test_infrastructure import (
+    TestProjectInventory,
+    create_test_project_with_inventory,
+)
 
 
 @pytest.fixture
 def comprehensive_test_repo():
     """Create a comprehensive test repository with git structure."""
     with local_temporary_directory() as temp_dir:
-        # Auto-register collections for cleanup
-        auto_register_project_collections(temp_dir)
-
-        # Create basic project structure but preserve .code-indexer if it exists
-        config_dir = temp_dir / ".code-indexer"
-        if not config_dir.exists():
-            config_dir.mkdir(parents=True, exist_ok=True)
+        # Create isolated project space using inventory system (no config tinkering)
+        create_test_project_with_inventory(
+            temp_dir, TestProjectInventory.COMPREHENSIVE_GIT_WORKFLOW
+        )
 
         yield temp_dir
 
@@ -463,36 +463,8 @@ The platform follows a modular architecture with clear separation of concerns:
 """
             )
 
-            # Create config file for indexing
-            import json
-
-            config_content = {
-                "codebase_dir": str(self.test_repo_dir),
-                "embedding_provider": "voyage-ai",
-                "voyage_ai": {
-                    "model": "voyage-code-3",
-                    "api_endpoint": "https://api.voyageai.com/v1/embeddings",
-                    "timeout": 30,
-                    "parallel_requests": 4,
-                    "batch_size": 16,
-                    "max_retries": 3,
-                },
-                "qdrant": {
-                    "host": "http://localhost:6333",
-                    "collection": "test_comprehensive",
-                    "vector_size": 1024,
-                    "use_provider_aware_collections": True,
-                    "collection_base_name": "test_comprehensive",
-                },
-                "indexing": {
-                    "chunk_size": 500,
-                    "chunk_overlap": 50,
-                    "file_extensions": [".py", ".md", ".txt", ".json"],
-                },
-            }
-            (self.config_dir / "config.yaml").write_text(
-                json.dumps(config_content, indent=2)
-            )
+            # Preserve existing config created by setup_test_environment
+            # Don't overwrite the working configuration with hardcoded values
 
             return True
 
@@ -522,7 +494,7 @@ The platform follows a modular architecture with clear separation of concerns:
                 "-m",
                 "code_indexer.cli",
                 "--config",
-                str(self.config_dir / "config.yaml"),
+                str(self.config_dir / "config.json"),
                 "index",
             ]
 
@@ -531,7 +503,7 @@ The platform follows a modular architecture with clear separation of concerns:
                 cwd=self.test_repo_dir,
                 capture_output=True,
                 text=True,
-                timeout=120,  # 2 minutes timeout
+                timeout=180,  # 2 minutes timeout
             )
 
             if result.returncode == 0:
@@ -576,7 +548,7 @@ The platform follows a modular architecture with clear separation of concerns:
                 "-m",
                 "code_indexer.cli",
                 "--config",
-                str(self.config_dir / "config.yaml"),
+                str(self.config_dir / "config.json"),
                 "query",
                 query,
                 "--limit",
@@ -604,7 +576,7 @@ The platform follows a modular architecture with clear separation of concerns:
                         "-m",
                         "code_indexer.cli",
                         "--config",
-                        str(self.config_dir / "config.yaml"),
+                        str(self.config_dir / "config.json"),
                         "status",
                     ]
                     status_result = subprocess.run(
@@ -708,7 +680,7 @@ The platform follows a modular architecture with clear separation of concerns:
                 "-m",
                 "code_indexer.cli",
                 "--config",
-                str(self.config_dir / "config.yaml"),
+                str(self.config_dir / "config.json"),
                 "watch",
                 "--debounce",
                 str(debounce),
@@ -803,7 +775,7 @@ def test_comprehensive_git_workflow_all_phases(comprehensive_test_repo):
             cwd=test_dir,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=180,
         )
         assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
 

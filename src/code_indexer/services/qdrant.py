@@ -3,10 +3,8 @@
 import shutil
 import time
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, Tuple
 
-if TYPE_CHECKING:
-    from .schema_migration import QdrantMigrator
 import httpx
 from rich.console import Console
 
@@ -30,15 +28,12 @@ class QdrantClient:
         self.console = console or Console()
         self.client = httpx.Client(base_url=config.host, timeout=30.0)
         self._current_collection_name: Optional[str] = None
-        self._migrator: Optional["QdrantMigrator"] = (
-            None  # Lazy initialization to avoid circular imports
-        )
         self.project_root = project_root or Path.cwd()
 
     def health_check(self) -> bool:
         """Check if Qdrant service is accessible."""
         try:
-            response = self.client.get("/healthz")
+            response = self.client.get("/healthz", timeout=2.0)
             return bool(response.status_code == 200)
         except Exception:
             return False
@@ -824,9 +819,7 @@ class QdrantClient:
             # Skip migration for clear operations to avoid timeouts
             success = self.ensure_collection(collection_name, vector_size)
         else:
-            success = self.ensure_collection_with_migration(
-                collection_name, vector_size, quiet
-            )
+            success = self.ensure_collection(collection_name, vector_size)
 
         if not success:
             raise RuntimeError(
@@ -1699,148 +1692,6 @@ class QdrantClient:
         except Exception as e:
             self.console.print(f"Failed to list indexes: {e}", style="red")
             return []
-
-    def _get_migrator(self):
-        """Get migrator instance with lazy initialization to avoid circular imports."""
-        if self._migrator is None:
-            from .schema_migration import QdrantMigrator
-
-            self._migrator = QdrantMigrator(self, self.console)
-        return self._migrator
-
-    def check_and_migrate_if_needed(
-        self, collection_name: str, quiet: bool = False
-    ) -> bool:
-        """
-        Check if migration is needed and perform it automatically.
-
-        Args:
-            collection_name: Name of collection to check/migrate
-            quiet: Suppress progress output
-
-        Returns:
-            True if migration was successful or not needed, False if failed
-        """
-        try:
-            migrator = self._get_migrator()
-
-            # Check if migration is needed
-            if not migrator.schema_manager.is_migration_needed(collection_name):
-                return True
-
-            # Check if migration is safe
-            is_safe, warnings = migrator.is_migration_safe(collection_name)
-
-            if not is_safe:
-                if not quiet:
-                    self.console.print(
-                        f"❌ Migration not safe for {collection_name}", style="red"
-                    )
-                    for warning in warnings:
-                        self.console.print(f"   {warning}", style="red")
-                return False
-
-            # Show warnings if not quiet
-            if warnings and not quiet:
-                self.console.print(
-                    f"⚠️  Migration warnings for {collection_name}:", style="yellow"
-                )
-                for warning in warnings:
-                    self.console.print(f"   {warning}", style="yellow")
-
-            if not quiet:
-                self.console.print(
-                    f"🔄 Auto-migrating collection {collection_name} to new architecture...",
-                    style="blue",
-                )
-
-            # Perform migration
-            result = migrator.migrate_collection(collection_name, quiet=quiet)
-
-            # Check if migration was successful
-            if result.errors:
-                if not quiet:
-                    self.console.print(
-                        "❌ Migration completed with errors", style="red"
-                    )
-                return False
-
-            return True
-
-        except Exception as e:
-            if not quiet:
-                self.console.print(f"❌ Auto-migration failed: {e}", style="red")
-            return False
-
-    def ensure_collection_with_migration(
-        self,
-        collection_name: Optional[str] = None,
-        vector_size: Optional[int] = None,
-        quiet: bool = False,
-    ) -> bool:
-        """
-        Ensure collection exists and is migrated to current architecture.
-
-        This method combines ensure_collection with auto-migration.
-
-        Args:
-            collection_name: Collection name (optional)
-            vector_size: Vector dimensions (optional)
-            quiet: Suppress output
-
-        Returns:
-            True if collection is ready, False otherwise
-        """
-        collection = collection_name or self.config.collection_base_name
-
-        # First ensure collection exists
-        if not self.ensure_collection(collection, vector_size):
-            return False
-
-        # Then check and migrate if needed
-        return self.check_and_migrate_if_needed(collection, quiet)
-
-    def get_schema_info(self, collection_name: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Get schema information for a collection.
-
-        Args:
-            collection_name: Collection name (optional)
-
-        Returns:
-            Dictionary with schema information
-        """
-        collection = collection_name or self.config.collection_base_name
-
-        try:
-            migrator = self._get_migrator()
-            schema = migrator.schema_manager.detect_schema_version(collection)
-            stats = migrator.schema_manager.get_migration_stats(collection)
-
-            return {
-                "collection_name": collection,
-                "schema_version": schema.version,
-                "schema_description": schema.description,
-                "is_legacy": schema.is_legacy,
-                "migration_needed": schema.is_legacy and schema.version != "empty",
-                "total_points": self.count_points(collection),
-                "legacy_points": stats.get("total_legacy_points", 0),
-                "branches": stats.get("branches", 0),
-                "branch_counts": stats.get("branch_counts", {}),
-            }
-
-        except Exception as e:
-            return {
-                "collection_name": collection,
-                "schema_version": "error",
-                "schema_description": f"Error getting schema info: {e}",
-                "is_legacy": False,
-                "migration_needed": False,
-                "total_points": 0,
-                "legacy_points": 0,
-                "branches": 0,
-                "branch_counts": {},
-            }
 
     def optimize_collection(self, collection_name: Optional[str] = None) -> bool:
         """Optimize collection storage by triggering Qdrant's optimization process."""

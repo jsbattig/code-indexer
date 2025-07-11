@@ -152,7 +152,15 @@ class VoyageAIClient(EmbeddingProvider):
                     "VoyageAI rate limit exceeded. Try reducing parallel_requests or requests_per_minute."
                 )
             else:
-                raise RuntimeError(f"VoyageAI API error: {last_exception}")
+                # Include more detailed error information for debugging
+                try:
+                    response_text = last_exception.response.text
+                except Exception:
+                    response_text = "Unable to read response"
+                raise RuntimeError(
+                    f"VoyageAI API error (HTTP {last_exception.response.status_code}): {last_exception}. "
+                    f"Response: {response_text}"
+                )
         else:
             raise ConnectionError(f"Failed to connect to VoyageAI: {last_exception}")
 

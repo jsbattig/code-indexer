@@ -382,30 +382,17 @@ class TestClass_{i}:
             smart_indexer.branch_aware_indexer,
             "index_branch_changes",
             side_effect=Exception("Force fallback to queue-based"),
-        ), patch.object(
-            smart_indexer, "process_files_high_throughput"
-        ) as mock_high_throughput:
-
-            mock_high_throughput.return_value = Mock(
-                files_processed=len(self.test_files), chunks_created=15, failed_files=0
-            )
-
-            # Call reconcile operation
-            smart_indexer.smart_index(
-                reconcile_with_database=True,
-                progress_callback=progress_callback,
-                batch_size=10,
-            )
-
-            # Verify that reconcile fallback also uses our smooth progress
-            assert (
-                mock_high_throughput.called
-            ), "Should use high-throughput processing as fallback"
-            assert (
-                len(progress_calls) > 0
-            ), "Should have progress calls from reconcile operation"
-
-            print(f"Reconcile fallback progress calls: {len(progress_calls)}")
+        ):
+            # Should raise RuntimeError due to disabled fallbacks
+            with pytest.raises(
+                RuntimeError,
+                match="Git-aware reconcile failed and fallbacks are disabled",
+            ):
+                smart_indexer.smart_index(
+                    reconcile_with_database=True,
+                    progress_callback=progress_callback,
+                    batch_size=10,
+                )
 
             # The reconcile operation may show both database checking AND file processing progress
             # We mainly want to verify it doesn't have the old "jumpy" progress behavior

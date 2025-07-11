@@ -15,7 +15,10 @@ import pytest
 from .conftest import local_temporary_directory
 
 # Import test infrastructure
-from .test_infrastructure import auto_register_project_collections
+from .test_infrastructure import (
+    TestProjectInventory,
+    create_test_project_with_inventory,
+)
 
 
 def _get_test_project_with_line_numbers() -> Dict[str, str]:
@@ -270,13 +273,10 @@ def handle_create_user_request():
 def line_number_test_repo():
     """Create a test repository for line number display tests."""
     with local_temporary_directory() as temp_dir:
-        # Auto-register collections for cleanup
-        auto_register_project_collections(temp_dir)
-
-        # Preserve .code-indexer directory if it exists
-        config_dir = temp_dir / ".code-indexer"
-        if not config_dir.exists():
-            config_dir.mkdir(parents=True, exist_ok=True)
+        # Create isolated project space using inventory system (no config tinkering)
+        create_test_project_with_inventory(
+            temp_dir, TestProjectInventory.LINE_NUMBER_DISPLAY
+        )
 
         yield temp_dir
 
@@ -349,6 +349,16 @@ def test_line_numbers_in_quiet_query_results(line_number_test_repo):
         timeout=60,
     )
     assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
+
+    # Start services
+    start_result = subprocess.run(
+        ["code-indexer", "start", "--quiet"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
 
     # Index the project
     index_result = subprocess.run(
@@ -425,6 +435,16 @@ def test_line_numbers_in_verbose_query_results(line_number_test_repo):
     )
     assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
+    # Start services
+    start_result = subprocess.run(
+        ["code-indexer", "start", "--quiet"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
+
     # Index the project
     index_result = subprocess.run(
         ["code-indexer", "index"],
@@ -494,6 +514,16 @@ def test_line_numbers_with_actual_line_prefixes(line_number_test_repo):
         timeout=60,
     )
     assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
+
+    # Start services
+    start_result = subprocess.run(
+        ["code-indexer", "start", "--quiet"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
 
     # Index the project
     index_result = subprocess.run(
@@ -609,6 +639,16 @@ def test_line_numbers_match_file_structure(line_number_test_repo):
         timeout=60,
     )
     assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
+
+    # Start services
+    start_result = subprocess.run(
+        ["code-indexer", "start", "--quiet"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
 
     index_result = subprocess.run(
         ["code-indexer", "index"],

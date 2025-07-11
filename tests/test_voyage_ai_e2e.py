@@ -6,27 +6,36 @@ Refactored to use NEW STRATEGY with test infrastructure for better performance.
 import os
 import pytest
 
-from .conftest import local_temporary_directory
 import json
 import time
 
 # Import new test infrastructure
-from .test_infrastructure import auto_register_project_collections
+from .test_infrastructure import (
+    TestProjectInventory,
+    create_test_project_with_inventory,
+)
 
 
 @pytest.fixture
 def voyage_ai_test_repo():
     """Create a test repository for VoyageAI E2E tests."""
-    with local_temporary_directory() as temp_dir:
-        # Auto-register collections for cleanup
-        auto_register_project_collections(temp_dir)
+    from pathlib import Path
 
-        # Preserve .code-indexer directory if it exists
-        config_dir = temp_dir / ".code-indexer"
-        if not config_dir.exists():
-            config_dir.mkdir(parents=True, exist_ok=True)
+    # Create a fresh temporary directory to avoid permission conflicts
+    temp_base = Path.home() / ".tmp" / f"voyage_ai_test_{int(time.time())}"
+    temp_base.mkdir(parents=True, exist_ok=True)
 
-        yield temp_dir
+    try:
+        # Create isolated project space using inventory system (no config tinkering)
+        create_test_project_with_inventory(
+            temp_base, TestProjectInventory.VOYAGE_AI_E2E
+        )
+        yield temp_base
+    finally:
+        # Clean up
+        import shutil
+
+        shutil.rmtree(temp_base, ignore_errors=True)
 
 
 def create_test_codebase(test_dir):
@@ -178,7 +187,9 @@ def test_voyage_ai_full_workflow(voyage_ai_test_repo):
         ):
             print("Services already running, continuing with test...")
         else:
-            assert False, f"Start failed: {start_result.stderr}"
+            assert (
+                False
+            ), f"Start failed with return code {start_result.returncode}. stderr: {start_result.stderr}, stdout: {start_result.stdout}"
 
     # Test indexing workflow
     index_result = subprocess.run(

@@ -417,30 +417,37 @@ class DockerManager:
         """Get the available container runtime (podman or docker)."""
         if self.force_docker:
             try:
+                # Fast check: just see if docker binary exists and is executable
                 result = subprocess.run(
-                    ["docker", "--version"], capture_output=True, timeout=5
+                    ["docker", "--version"],
+                    capture_output=True,
+                    stderr=subprocess.DEVNULL,
                 )
                 return "docker" if result.returncode == 0 else None
-            except (subprocess.TimeoutExpired, FileNotFoundError):
+            except FileNotFoundError:
                 return None
         else:
-            # Try podman first
+            # Try podman first - fast binary check
             try:
                 result = subprocess.run(
-                    ["podman", "--version"], capture_output=True, timeout=5
+                    ["podman", "--version"],
+                    capture_output=True,
+                    stderr=subprocess.DEVNULL,
                 )
                 if result.returncode == 0:
                     return "podman"
-            except (subprocess.TimeoutExpired, FileNotFoundError):
+            except FileNotFoundError:
                 pass
 
-            # Fallback to docker
+            # Fallback to docker - fast binary check
             try:
                 result = subprocess.run(
-                    ["docker", "--version"], capture_output=True, timeout=5
+                    ["docker", "--version"],
+                    capture_output=True,
+                    stderr=subprocess.DEVNULL,
                 )
                 return "docker" if result.returncode == 0 else None
-            except (subprocess.TimeoutExpired, FileNotFoundError):
+            except FileNotFoundError:
                 return None
 
     def containers_exist(self, project_config: Dict[str, str]) -> bool:
@@ -974,6 +981,31 @@ class DockerManager:
             self.console.print(
                 "🏃 Found existing containers - using their ports as permanent"
             )
+
+            # Ensure all required services have port assignments
+            # Some services might not have containers yet, so we need to allocate ports for them
+            missing_services = []
+            for service in required_services:
+                port_key = f"{service.replace('-', '_')}_port"
+                if port_key not in actual_ports:
+                    missing_services.append(service)
+
+            if missing_services:
+                self.console.print(
+                    f"🔍 Missing containers for services: {missing_services}, allocating ports..."
+                )
+                # Allocate ports for missing services using the same project hash
+                project_hash = container_names["project_hash"]
+                all_calculated_ports = self._allocate_free_ports(project_hash)
+
+                # Only use the ports for missing services, preserve existing container ports
+                for service in missing_services:
+                    port_key = f"{service.replace('-', '_')}_port"
+                    if port_key in all_calculated_ports:
+                        actual_ports[port_key] = all_calculated_ports[port_key]
+                        self.console.print(
+                            f"🔌 Allocated port for {service}: {all_calculated_ports[port_key]}"
+                        )
 
             # Update config to match actual container ports (synchronization)
             if actual_ports:
@@ -2066,7 +2098,7 @@ class DockerManager:
                         ],
                         capture_output=True,
                         text=True,
-                        timeout=5,
+                        timeout=1,  # Quick timeout for status checks
                     )
 
                     if result.returncode == 0:
@@ -2095,6 +2127,9 @@ class DockerManager:
                             state == "running" and best_status["state"] != "running"
                         ):
                             best_status = current_status
+
+                        # If we got a successful result, don't try other runtimes
+                        break
 
                 except Exception:
                     continue  # Try next runtime
@@ -2208,7 +2243,7 @@ class DockerManager:
         self,
         project_config: Dict[str, str],
         required_services: List[str],
-        default_timeout: int = 120,
+        default_timeout: int = 180,
     ) -> int:
         """Get adaptive timeout based on whether containers and models exist."""
         # Check if containers exist
@@ -2410,7 +2445,7 @@ class DockerManager:
 
     def wait_for_services(
         self,
-        timeout: int = 120,
+        timeout: int = 180,
         retry_interval: int = 2,
         project_config: Optional[Dict[str, str]] = None,
     ) -> bool:
@@ -2449,7 +2484,7 @@ class DockerManager:
             )
 
         # Use adaptive timeout if default timeout is requested
-        if timeout == 120:  # Default timeout
+        if timeout == 180:  # Default timeout
             timeout = self.get_adaptive_timeout(
                 project_config, required_services, timeout
             )
@@ -3738,7 +3773,7 @@ class DockerManager:
             ]
 
             self.console.print("🧹 Starting data cleaner service...")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
 
             if result.returncode == 0:
                 self.console.print("✅ Data cleaner service started successfully")
@@ -4094,7 +4129,7 @@ class DockerManager:
                     raise RuntimeError(f"Service start failed: {result.stderr}")
 
             # Verify services are actually running and healthy
-            return self.wait_for_services(timeout=120)
+            return self.wait_for_services(timeout=180)
 
         except subprocess.TimeoutExpired:
             self.console.print("❌ Service startup timed out")

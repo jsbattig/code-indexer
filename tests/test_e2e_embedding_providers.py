@@ -8,14 +8,13 @@ They will skip gracefully if tokens are not configured.
 import os
 import pytest
 import shutil
-from pathlib import Path
 
 from rich.console import Console
 
 from code_indexer.config import Config, ConfigManager
 from code_indexer.services.embedding_factory import EmbeddingProviderFactory
 from code_indexer.services.qdrant import QdrantClient
-from .test_suite_setup import register_test_collection
+from .suite_setup import register_test_collection
 
 
 @pytest.mark.e2e
@@ -41,14 +40,23 @@ class TestVoyageAIRealAPI:
     @pytest.fixture
     def temp_config_dir(self):
         """Create a temporary directory for configuration."""
+        # Import here to avoid circular dependency
+        from tests.test_infrastructure import get_shared_test_directory
+
         # Use shared test directory to avoid creating multiple container sets
-        temp_dir = Path.home() / ".tmp" / "shared_test_containers"
-        # Clean and recreate for test isolation
-        if temp_dir.exists():
-            shutil.rmtree(temp_dir, ignore_errors=True)
+        temp_dir = get_shared_test_directory(force_docker=False)
         temp_dir.mkdir(parents=True, exist_ok=True)
+
+        # Clean only test files, not the entire directory
+        # This preserves .code-indexer/qdrant that containers might be using
+        for item in temp_dir.iterdir():
+            if item.name != ".code-indexer" and item.is_file():
+                item.unlink(missing_ok=True)
+            elif item.name != ".code-indexer" and item.is_dir():
+                shutil.rmtree(item, ignore_errors=True)
+
         yield temp_dir
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        # Don't clean up - shared directory should persist for container reuse
 
     @pytest.fixture
     def voyage_config(self, temp_config_dir):
@@ -174,14 +182,23 @@ class TestE2EProviderSwitching:
     @pytest.fixture
     def temp_config_dir(self):
         """Create a temporary directory for configuration."""
+        # Import here to avoid circular dependency
+        from tests.test_infrastructure import get_shared_test_directory
+
         # Use shared test directory to avoid creating multiple container sets
-        temp_dir = Path.home() / ".tmp" / "shared_test_containers"
-        # Clean and recreate for test isolation
-        if temp_dir.exists():
-            shutil.rmtree(temp_dir, ignore_errors=True)
+        temp_dir = get_shared_test_directory(force_docker=False)
         temp_dir.mkdir(parents=True, exist_ok=True)
+
+        # Clean only test files, not the entire directory
+        # This preserves .code-indexer/qdrant that containers might be using
+        for item in temp_dir.iterdir():
+            if item.name != ".code-indexer" and item.is_file():
+                item.unlink(missing_ok=True)
+            elif item.name != ".code-indexer" and item.is_dir():
+                shutil.rmtree(item, ignore_errors=True)
+
         yield temp_dir
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        # Don't clean up - shared directory should persist for container reuse
 
     @pytest.fixture
     def mock_qdrant_config(self, temp_config_dir):
@@ -255,14 +272,23 @@ class TestE2EQdrantIntegration:
     @pytest.fixture
     def temp_config_dir(self):
         """Create a temporary directory for configuration."""
+        # Import here to avoid circular dependency
+        from tests.test_infrastructure import get_shared_test_directory
+
         # Use shared test directory to avoid creating multiple container sets
-        temp_dir = Path.home() / ".tmp" / "shared_test_containers"
-        # Clean and recreate for test isolation
-        if temp_dir.exists():
-            shutil.rmtree(temp_dir, ignore_errors=True)
+        temp_dir = get_shared_test_directory(force_docker=False)
         temp_dir.mkdir(parents=True, exist_ok=True)
+
+        # Clean only test files, not the entire directory
+        # This preserves .code-indexer/qdrant that containers might be using
+        for item in temp_dir.iterdir():
+            if item.name != ".code-indexer" and item.is_file():
+                item.unlink(missing_ok=True)
+            elif item.name != ".code-indexer" and item.is_dir():
+                shutil.rmtree(item, ignore_errors=True)
+
         yield temp_dir
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        # Don't clean up - shared directory should persist for container reuse
 
     @pytest.fixture
     def test_config(self, temp_config_dir):
@@ -355,15 +381,23 @@ class TestE2EFullWorkflow:
     @pytest.fixture
     def temp_project_dir(self):
         """Create a temporary project directory with sample files."""
+        # Import here to avoid circular dependency
+        from tests.test_infrastructure import get_shared_test_directory
+
         # Use shared test directory to avoid creating multiple container sets
-        temp_dir = str(Path.home() / ".tmp" / "shared_test_containers")
-        # Clean and recreate for test isolation
-        temp_path = Path(temp_dir)
-        if temp_path.exists():
-            shutil.rmtree(temp_path)
-        temp_path.mkdir(parents=True)
-        project_path = Path(temp_dir)
-        project_path.mkdir(parents=True, exist_ok=True)
+        # This test doesn't use force_docker, so it uses the default Podman directory
+        temp_path = get_shared_test_directory(force_docker=False)
+        temp_path.mkdir(parents=True, exist_ok=True)
+
+        # Clean only test files, not the entire directory
+        # This preserves .code-indexer/qdrant that containers might be using
+        for item in temp_path.iterdir():
+            if item.name != ".code-indexer" and item.is_file():
+                item.unlink(missing_ok=True)
+            elif item.name != ".code-indexer" and item.is_dir():
+                shutil.rmtree(item, ignore_errors=True)
+
+        project_path = temp_path
 
         # Create sample code files
         (project_path / "main.py").write_text(
@@ -417,7 +451,7 @@ def validate_email(email):
         )
 
         yield project_path
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        # Don't clean up - shared directory should persist for container reuse
 
     def test_voyage_ai_full_workflow(self, temp_project_dir, console):
         """Test complete workflow with VoyageAI if API key is available."""

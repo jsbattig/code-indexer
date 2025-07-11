@@ -15,12 +15,12 @@ class HealthChecker:
         """Initialize health checker with optional config manager or config dict."""
         self.config_manager = config_manager
         self.default_timeouts = {
-            "service_startup": 180,
+            "service_startup": 240,
             "service_shutdown": 30,
             "port_release": 15,
             "cleanup_validation": 30,
-            "health_check": 120,
-            "data_cleaner_startup": 120,
+            "health_check": 180,
+            "data_cleaner_startup": 180,
         }
         self.default_polling = {
             "initial_interval": 0.5,

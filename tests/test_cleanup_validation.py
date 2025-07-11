@@ -20,11 +20,13 @@ class TestCleanupValidation:
         """Test that DockerManager initializes HealthChecker."""
         assert isinstance(self.docker_manager.health_checker, HealthChecker)
 
-    @patch.object(HealthChecker, "wait_for_cleanup_complete")
-    def test_cleanup_validation_calls_health_checker(self, mock_wait_cleanup):
+    @patch.object(HealthChecker, "wait_for_containers_stopped")
+    def test_cleanup_validation_calls_health_checker(
+        self, mock_wait_containers_stopped
+    ):
         """Test that cleanup validation calls HealthChecker correctly."""
         # Mock successful cleanup validation
-        mock_wait_cleanup.return_value = True
+        mock_wait_containers_stopped.return_value = True
 
         # Mock the compose command to avoid actual Docker calls
         with patch.object(self.docker_manager, "get_compose_command") as mock_compose:
@@ -45,32 +47,29 @@ class TestCleanupValidation:
                     self.docker_manager.cleanup(validate=True, verbose=True)
 
                     # Verify HealthChecker was called
-                    mock_wait_cleanup.assert_called_once()
+                    mock_wait_containers_stopped.assert_called_once()
 
                 # Verify correct parameters were passed
-                call_args = mock_wait_cleanup.call_args
+                call_args = mock_wait_containers_stopped.call_args
                 assert "container_names" in call_args.kwargs
-                assert "ports" in call_args.kwargs
                 assert "container_engine" in call_args.kwargs
+                assert "timeout" in call_args.kwargs
 
-                # Check container names include project prefix
+                # Check container names - they should be empty since compose file doesn't exist
                 container_names = call_args.kwargs["container_names"]
-                # The project name is auto-detected from current directory name
-                assert any("ollama" in name for name in container_names)
-                assert any("qdrant" in name for name in container_names)
-                assert any("data-cleaner" in name for name in container_names)
+                assert isinstance(container_names, list)
 
-                # Check required ports
-                ports = call_args.kwargs["ports"]
-                assert 6333 in ports  # Qdrant
-                assert 11434 in ports  # Ollama
-                assert 8091 in ports  # DataCleaner
+                # Check container engine is correctly passed
+                assert call_args.kwargs["container_engine"] in ["docker", "podman"]
 
-    @patch.object(HealthChecker, "wait_for_cleanup_complete")
-    def test_cleanup_validation_timeout(self, mock_wait_cleanup):
+                # Check timeout is None (uses engine-optimized timeout)
+                assert call_args.kwargs["timeout"] is None
+
+    @patch.object(HealthChecker, "wait_for_containers_stopped")
+    def test_cleanup_validation_timeout(self, mock_wait_containers_stopped):
         """Test cleanup validation timeout handling."""
         # Mock cleanup validation timeout
-        mock_wait_cleanup.return_value = False
+        mock_wait_containers_stopped.return_value = False
 
         # Mock the compose command and subprocess to avoid actual Docker calls
         with patch.object(
@@ -89,7 +88,7 @@ class TestCleanupValidation:
                 self.docker_manager.cleanup(validate=True, verbose=True)
 
                 # Cleanup should still succeed even if validation times out
-                mock_wait_cleanup.assert_called_once()
+                mock_wait_containers_stopped.assert_called_once()
 
                 # Check that timeout warning was printed
                 self.mock_console.print.assert_any_call(
@@ -97,8 +96,8 @@ class TestCleanupValidation:
                     style="yellow",
                 )
 
-    @patch.object(HealthChecker, "wait_for_cleanup_complete")
-    def test_cleanup_validation_disabled(self, mock_wait_cleanup):
+    @patch.object(HealthChecker, "wait_for_containers_stopped")
+    def test_cleanup_validation_disabled(self, mock_wait_containers_stopped):
         """Test cleanup without validation."""
         # Mock the compose command and subprocess to avoid actual Docker calls
         with patch.object(
@@ -113,7 +112,7 @@ class TestCleanupValidation:
             self.docker_manager.cleanup(validate=False)
 
             # HealthChecker should not be called when validation is disabled
-            mock_wait_cleanup.assert_not_called()
+            mock_wait_containers_stopped.assert_not_called()
 
     @patch.object(HealthChecker, "wait_for_ports_available")
     @patch.object(HealthChecker, "is_port_available")
@@ -183,8 +182,8 @@ class TestCleanupValidation:
         )
 
         with patch.object(
-            docker_manager.health_checker, "wait_for_cleanup_complete"
-        ) as mock_wait_cleanup, patch.object(
+            docker_manager.health_checker, "wait_for_containers_stopped"
+        ) as mock_wait_containers_stopped, patch.object(
             docker_manager, "get_compose_command"
         ) as mock_compose, patch(
             "code_indexer.services.docker_manager.subprocess.run"
@@ -192,7 +191,7 @@ class TestCleanupValidation:
             mock_compose.return_value = ["docker-compose"]
             mock_run.return_value.returncode = 0
             mock_run.return_value.stdout = ""
-            mock_wait_cleanup.return_value = True
+            mock_wait_containers_stopped.return_value = True
 
             # Mock compose file existence to trigger validation path
             with patch("pathlib.Path.exists") as mock_exists:
@@ -201,13 +200,15 @@ class TestCleanupValidation:
                 docker_manager.cleanup(validate=True)
 
                 # Should use docker engine when force_docker=True
-                call_args = mock_wait_cleanup.call_args
+                call_args = mock_wait_containers_stopped.call_args
                 assert call_args.kwargs["container_engine"] == "docker"
 
-    @patch.object(HealthChecker, "wait_for_cleanup_complete")
-    def test_cleanup_integration_with_health_checker_config(self, mock_wait_cleanup):
+    @patch.object(HealthChecker, "wait_for_containers_stopped")
+    def test_cleanup_integration_with_health_checker_config(
+        self, mock_wait_containers_stopped
+    ):
         """Test that HealthChecker uses engine-optimized timeouts."""
-        mock_wait_cleanup.return_value = True
+        mock_wait_containers_stopped.return_value = True
 
         # Mock the compose command and subprocess to avoid actual Docker calls
         with patch.object(
@@ -226,7 +227,7 @@ class TestCleanupValidation:
                 self.docker_manager.cleanup(validate=True)
 
                 # Verify that timeout=None is passed (uses engine-optimized timeout)
-                call_args = mock_wait_cleanup.call_args
+                call_args = mock_wait_containers_stopped.call_args
                 assert call_args.kwargs["timeout"] is None
 
 
@@ -251,10 +252,9 @@ class TestHealthCheckerPortValidation:
         """Test cleanup complete validation logic."""
         health_checker = HealthChecker()
 
-        # Test with containers that shouldn't exist and ports that should be free
-        result = health_checker.wait_for_cleanup_complete(
+        # Test with containers that shouldn't exist
+        result = health_checker.wait_for_containers_stopped(
             container_names=["nonexistent-container"],
-            ports=[65500, 65501],
             container_engine="podman",
             timeout=5,
         )

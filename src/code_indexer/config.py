@@ -114,7 +114,7 @@ class TimeoutsConfig(BaseModel):
     """Configuration for various timeout settings."""
 
     service_startup: int = Field(
-        default=180, description="Service startup timeout in seconds"
+        default=240, description="Service startup timeout in seconds"
     )
     service_shutdown: int = Field(
         default=30, description="Service shutdown timeout in seconds"
@@ -124,10 +124,10 @@ class TimeoutsConfig(BaseModel):
         default=30, description="Cleanup validation timeout in seconds"
     )
     health_check: int = Field(
-        default=120, description="Health check timeout in seconds"
+        default=180, description="Health check timeout in seconds"
     )
     data_cleaner_startup: int = Field(
-        default=120, description="Data cleaner startup timeout in seconds"
+        default=180, description="Data cleaner startup timeout in seconds"
     )
 
 

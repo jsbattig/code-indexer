@@ -18,12 +18,27 @@ class TestGenericQueryService:
     def temp_dir(self):
         # Use shared test directory to avoid creating multiple container sets
         temp_dir = Path.home() / ".tmp" / "shared_test_containers"
-        # Clean and recreate for test isolation
-        if temp_dir.exists():
-            shutil.rmtree(temp_dir, ignore_errors=True)
         temp_dir.mkdir(parents=True, exist_ok=True)
+
+        # Clean only test files, preserve .code-indexer directory for containers
+        test_subdirs = ["src", ".git", "test_files"]
+        for subdir in test_subdirs:
+            subdir_path = temp_dir / subdir
+            if subdir_path.exists():
+                shutil.rmtree(subdir_path, ignore_errors=True)
+
+        # Clean any test files in root (preserve .code-indexer)
+        for item in temp_dir.iterdir():
+            if item.is_file() and item.suffix in [".py", ".js", ".md", ".txt"]:
+                item.unlink(missing_ok=True)
+
         yield temp_dir
-        shutil.rmtree(temp_dir, ignore_errors=True)
+
+        # Clean up test files after test
+        for subdir in test_subdirs:
+            subdir_path = temp_dir / subdir
+            if subdir_path.exists():
+                shutil.rmtree(subdir_path, ignore_errors=True)
 
     @pytest.fixture
     def config(self, temp_dir):
@@ -55,8 +70,8 @@ class TestGenericQueryService:
         (temp_dir / "main.py").write_text('print("main")')
         (temp_dir / "utils.py").write_text("def helper(): pass")
 
-        # Initial commit
-        subprocess.run(["git", "add", "."], cwd=temp_dir, check=True)
+        # Initial commit - only add the specific test files
+        subprocess.run(["git", "add", "main.py", "utils.py"], cwd=temp_dir, check=True)
         subprocess.run(
             ["git", "commit", "-m", "Initial commit"], cwd=temp_dir, check=True
         )

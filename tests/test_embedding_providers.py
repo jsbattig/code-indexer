@@ -156,11 +156,20 @@ class TestVoyageAIClient:
 
     def test_initialization_no_api_key(self, voyage_config, console):
         """Test VoyageAIClient initialization without API key."""
-        with patch.dict(os.environ, {}, clear=True):
+        # Only remove the specific environment variable we're testing, don't clear everything
+        # Use a context manager that temporarily removes just VOYAGE_API_KEY
+        original_key = os.environ.get("VOYAGE_API_KEY")
+        if "VOYAGE_API_KEY" in os.environ:
+            del os.environ["VOYAGE_API_KEY"]
+        try:
             with pytest.raises(
                 ValueError, match="VOYAGE_API_KEY environment variable is required"
             ):
                 VoyageAIClient(voyage_config, console)
+        finally:
+            # Restore the original value
+            if original_key is not None:
+                os.environ["VOYAGE_API_KEY"] = original_key
 
     def test_initialization_with_api_key(self, voyage_client, voyage_config):
         """Test VoyageAIClient initialization with API key."""

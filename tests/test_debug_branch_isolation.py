@@ -4,16 +4,20 @@ Debug branch isolation logic to understand why files aren't visible in their own
 
 import pytest
 
-from .conftest import local_temporary_directory
-from pathlib import Path
 import subprocess
 from typing import Dict, Any
-
-from code_indexer.config import Config
 from code_indexer.services.embedding_factory import EmbeddingProviderFactory
 from code_indexer.services.qdrant import QdrantClient
 from code_indexer.services.smart_indexer import SmartIndexer
-from .test_suite_setup import register_test_collection
+from .suite_setup import register_test_collection
+from .test_infrastructure import (
+    CLIHelper,
+    TestProjectInventory,
+    create_test_project_with_inventory,
+    adaptive_service_setup,
+    InfrastructureConfig,
+    EmbeddingProvider,
+)
 
 
 def test_debug_branch_isolation():
@@ -25,8 +29,18 @@ def test_debug_branch_isolation():
     if not os.getenv("VOYAGE_API_KEY"):
         pytest.skip("VoyageAI API key required")
 
+    # Use isolated project directory for proper container isolation
+    config = InfrastructureConfig(embedding_provider=EmbeddingProvider.VOYAGE_AI)
+    helper = CLIHelper(config)
+
+    # Create isolated project directory using inventory system
+    from .conftest import local_temporary_directory
+
     with local_temporary_directory() as temp_dir:
-        repo_path = Path(temp_dir)
+        create_test_project_with_inventory(
+            temp_dir, TestProjectInventory.DEBUG_BRANCH_ISOLATION
+        )
+        repo_path = temp_dir
 
         # Create a simple git repository
         subprocess.run(["git", "init"], cwd=repo_path, check=True)
@@ -48,31 +62,22 @@ def test_debug_branch_isolation():
             ["git", "commit", "-m", "Initial commit"], cwd=repo_path, check=True
         )
 
-        # Create test config
-        config = Config(
-            codebase_dir=str(repo_path),
-            embedding_provider="voyage-ai",
-            voyage_ai={
-                "model": "voyage-code-3",
-                "api_endpoint": "https://api.voyageai.com/v1/embeddings",
-                "timeout": 30,
-                "parallel_requests": 2,
-                "batch_size": 8,
-                "max_retries": 3,
-            },
-            qdrant={
-                "host": "http://localhost:6333",
-                "collection": "test_debug_isolation",
-                "vector_size": 1024,
-                "use_provider_aware_collections": True,
-                "collection_base_name": "test_debug_isolation",
-            },
-            indexing={
-                "chunk_size": 200,
-                "chunk_overlap": 20,
-                "file_extensions": [".py"],
-            },
+        # Project collections are automatically registered by inventory system
+
+        # Initialize project using CLI helper
+        helper.run_cli_command(
+            ["init", "--force", "--embedding-provider", "voyage-ai"], cwd=repo_path
         )
+
+        # Set up services
+        if not adaptive_service_setup(repo_path, helper):
+            pytest.skip("Could not set up services for test")
+
+        # Create test config - use CLI-based approach instead of direct config
+        from code_indexer.config import ConfigManager
+
+        config_manager = ConfigManager.create_with_backtrack(repo_path)
+        config = config_manager.load()
 
         # Initialize services
         embedding_provider = EmbeddingProviderFactory.create(config)

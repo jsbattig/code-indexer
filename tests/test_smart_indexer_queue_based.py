@@ -22,17 +22,35 @@ class TestSmartIndexerQueueBased:
 
     def setup_method(self):
         """Setup test environment."""
-        # Create temporary directory
-        # Use shared test directory to avoid creating multiple container sets
-        self.temp_dir = str(Path.home() / ".tmp" / "shared_test_containers")
-        # Clean and recreate for test isolation
-        temp_path = Path(self.temp_dir)
-        if temp_path.exists():
-            import shutil
+        # Import here to avoid circular dependency
+        from tests.test_infrastructure import get_shared_test_directory
 
-            shutil.rmtree(temp_path, ignore_errors=True)
+        # Use shared test directory to avoid creating multiple container sets
+        temp_path = get_shared_test_directory(force_docker=False)
         temp_path.mkdir(parents=True, exist_ok=True)
-        self.temp_path = Path(self.temp_dir)
+
+        # Clean only test files, preserve .code-indexer directory for containers
+        import shutil
+
+        test_subdirs = ["metadata.json"] + [f"test_file_{i}.py" for i in range(10)]
+        for item_name in test_subdirs:
+            item_path = temp_path / item_name
+            if item_path.exists():
+                if item_path.is_file():
+                    item_path.unlink(missing_ok=True)
+                elif item_path.is_dir():
+                    shutil.rmtree(item_path, ignore_errors=True)
+
+        # Clean any other test files but preserve .code-indexer
+        for item in temp_path.iterdir():
+            if item.name != ".code-indexer" and item.name.startswith("test_"):
+                if item.is_file():
+                    item.unlink(missing_ok=True)
+                elif item.is_dir():
+                    shutil.rmtree(item, ignore_errors=True)
+
+        self.temp_dir = str(temp_path)
+        self.temp_path = temp_path
 
         # Create test files
         self.test_files = []
@@ -92,13 +110,14 @@ class TestClass_{i}:
             "points_count": 0,
             "collection_name": "test_collection",
         }
+        self.mock_qdrant.scroll_points.return_value = ([], None)
 
         # Mock embedding provider
         self.mock_embedding_provider = MockEmbeddingProvider(delay=0.01)
 
     @pytest.mark.unit
     def test_smart_indexer_uses_queue_based_processing(self):
-        """Test that SmartIndexer uses queue-based processing, not per-file processing."""
+        """Test that SmartIndexer fails fast when BranchAwareIndexer fails (no fallbacks)."""
 
         # Create SmartIndexer instance
         smart_indexer = SmartIndexer(
@@ -108,43 +127,26 @@ class TestClass_{i}:
             metadata_path=self.metadata_path,
         )
 
-        # Mock BranchAwareIndexer to fail and force fallback to high-throughput processing
+        # Mock BranchAwareIndexer to fail
         with patch.object(
             smart_indexer.branch_aware_indexer,
             "index_branch_changes",
             side_effect=Exception("Force fallback"),
-        ), patch.object(
-            smart_indexer, "process_files_high_throughput"
-        ) as mock_high_throughput:
-
-            mock_high_throughput.return_value = Mock(
-                files_processed=len(self.test_files), chunks_created=20, failed_files=0
-            )
-
-            # Call smart_index to trigger processing
-            result = smart_indexer.smart_index(
-                force_full=True,
-                batch_size=10,
-                files_count_to_process=len(self.test_files),
-            )
-
-            # Verify high-throughput processing was called
-            assert mock_high_throughput.called
-            call_args = mock_high_throughput.call_args
-
-            # Verify it was called with files and proper parameters
-            assert len(call_args[0][0]) > 0  # files list should not be empty
-            assert "vector_thread_count" in call_args[1]
-            assert "batch_size" in call_args[1]
-
-            # Verify processing stats
-            assert result.files_processed == len(self.test_files)
-            assert result.chunks_created == 20
-            assert result.failed_files == 0
+        ):
+            # Should raise RuntimeError due to disabled fallbacks
+            with pytest.raises(
+                RuntimeError,
+                match="Git-aware indexing failed and fallbacks are disabled",
+            ):
+                smart_indexer.smart_index(
+                    force_full=True,
+                    batch_size=10,
+                    files_count_to_process=len(self.test_files),
+                )
 
     @pytest.mark.unit
     def test_smart_indexer_no_single_threaded_fallback(self):
-        """Test that SmartIndexer never falls back to single-threaded processing."""
+        """Test that SmartIndexer fails fast without fallbacks when BranchAwareIndexer fails."""
 
         smart_indexer = SmartIndexer(
             config=self.config,
@@ -153,46 +155,28 @@ class TestClass_{i}:
             metadata_path=self.metadata_path,
         )
 
-        # Mock both old methods to ensure they're never called
+        # Mock BranchAwareIndexer to fail
         with patch.object(
             smart_indexer.branch_aware_indexer,
             "index_branch_changes",
             side_effect=Exception("Force fallback"),
-        ), patch.object(
-            smart_indexer,
-            "process_file",
-            side_effect=AssertionError("process_file should not be called"),
-        ) as mock_process_file, patch.object(
-            smart_indexer,
-            "process_file_parallel",
-            side_effect=AssertionError("process_file_parallel should not be called"),
-        ) as mock_process_parallel, patch.object(
-            smart_indexer, "process_files_high_throughput"
-        ) as mock_high_throughput:
-
-            mock_high_throughput.return_value = Mock(
-                files_processed=len(self.test_files), chunks_created=15, failed_files=0
-            )
-
-            # Test with vector_thread_count=1 (should still use queue-based)
-            smart_indexer.smart_index(
-                force_full=True,
-                batch_size=5,
-                files_count_to_process=len(self.test_files),
-            )
-
-            # Verify old methods were never called
-            assert not mock_process_file.called
-            assert not mock_process_parallel.called
-
-            # Verify high-throughput processing was called
-            assert mock_high_throughput.called
+        ):
+            # Should raise RuntimeError due to disabled fallbacks
+            with pytest.raises(
+                RuntimeError,
+                match="Git-aware indexing failed and fallbacks are disabled",
+            ):
+                smart_indexer.smart_index(
+                    force_full=True,
+                    batch_size=5,
+                    files_count_to_process=len(self.test_files),
+                )
 
     @pytest.mark.unit
     def test_smart_indexer_thread_count_handling(self):
-        """Test that SmartIndexer properly handles thread count for different providers."""
+        """Test that SmartIndexer fails fast when BranchAwareIndexer fails (no fallbacks)."""
 
-        # Test with VoyageAI provider (should default to 8 threads)
+        # Test with VoyageAI provider
         voyage_provider = MockEmbeddingProvider("voyage-ai", delay=0.01)
 
         smart_indexer = SmartIndexer(
@@ -206,20 +190,15 @@ class TestClass_{i}:
             smart_indexer.branch_aware_indexer,
             "index_branch_changes",
             side_effect=Exception("Force fallback"),
-        ), patch.object(
-            smart_indexer, "process_files_high_throughput"
-        ) as mock_high_throughput:
-            mock_high_throughput.return_value = Mock(
-                files_processed=len(self.test_files), chunks_created=12, failed_files=0
-            )
+        ):
+            # Should raise RuntimeError due to disabled fallbacks
+            with pytest.raises(
+                RuntimeError,
+                match="Git-aware indexing failed and fallbacks are disabled",
+            ):
+                smart_indexer.smart_index(force_full=True)
 
-            smart_indexer.smart_index(force_full=True)
-
-            # Verify high-throughput was called with proper thread count
-            call_args = mock_high_throughput.call_args
-            assert call_args[1]["vector_thread_count"] == 8  # VoyageAI default
-
-        # Test with Ollama provider (should default to 1 thread)
+        # Test with Ollama provider
         ollama_provider = MockEmbeddingProvider("ollama", delay=0.05)
 
         smart_indexer_ollama = SmartIndexer(
@@ -233,22 +212,17 @@ class TestClass_{i}:
             smart_indexer_ollama.branch_aware_indexer,
             "index_branch_changes",
             side_effect=Exception("Force fallback"),
-        ), patch.object(
-            smart_indexer_ollama, "process_files_high_throughput"
-        ) as mock_high_throughput_ollama:
-            mock_high_throughput_ollama.return_value = Mock(
-                files_processed=len(self.test_files), chunks_created=10, failed_files=0
-            )
-
-            smart_indexer_ollama.smart_index(force_full=True)
-
-            # Verify high-throughput was called with proper thread count
-            call_args = mock_high_throughput_ollama.call_args
-            assert call_args[1]["vector_thread_count"] == 1  # Ollama default
+        ):
+            # Should raise RuntimeError due to disabled fallbacks
+            with pytest.raises(
+                RuntimeError,
+                match="Git-aware indexing failed and fallbacks are disabled",
+            ):
+                smart_indexer_ollama.smart_index(force_full=True)
 
     @pytest.mark.unit
     def test_smart_indexer_progress_callback_integration(self):
-        """Test that progress callbacks work with queue-based processing."""
+        """Test that SmartIndexer fails fast when BranchAwareIndexer fails (no fallbacks)."""
 
         smart_indexer = SmartIndexer(
             config=self.config,
@@ -275,25 +249,19 @@ class TestClass_{i}:
             smart_indexer.branch_aware_indexer,
             "index_branch_changes",
             side_effect=Exception("Force fallback"),
-        ), patch.object(
-            smart_indexer, "process_files_high_throughput"
-        ) as mock_high_throughput:
-            mock_high_throughput.return_value = Mock(
-                files_processed=len(self.test_files), chunks_created=18, failed_files=0
-            )
-
-            smart_indexer.smart_index(
-                force_full=True, progress_callback=progress_callback
-            )
-
-            # Verify high-throughput processing was called with progress callback
-            call_args = mock_high_throughput.call_args
-            assert "progress_callback" in call_args[1]
-            assert call_args[1]["progress_callback"] == progress_callback
+        ):
+            # Should raise RuntimeError due to disabled fallbacks
+            with pytest.raises(
+                RuntimeError,
+                match="Git-aware indexing failed and fallbacks are disabled",
+            ):
+                smart_indexer.smart_index(
+                    force_full=True, progress_callback=progress_callback
+                )
 
     @pytest.mark.unit
     def test_smart_indexer_metadata_update_queue_based(self):
-        """Test that metadata is properly updated after queue-based processing."""
+        """Test that SmartIndexer fails fast when BranchAwareIndexer fails (no fallbacks)."""
 
         smart_indexer = SmartIndexer(
             config=self.config,
@@ -302,35 +270,39 @@ class TestClass_{i}:
             metadata_path=self.metadata_path,
         )
 
-        # Setup expected processing results
-
         with patch.object(
             smart_indexer.branch_aware_indexer,
             "index_branch_changes",
             side_effect=Exception("Force fallback"),
-        ), patch.object(
-            smart_indexer, "process_files_high_throughput"
-        ) as mock_high_throughput:
-
-            mock_high_throughput.return_value = Mock(
-                files_processed=3, chunks_created=9, failed_files=2
-            )
-
-            result = smart_indexer.smart_index(force_full=True)
-
-            # Verify that high-throughput stats were converted to ProcessingStats correctly
-            assert result.files_processed == 3
-            assert result.chunks_created == 9
-            assert result.failed_files == 2
-
-            # Verify high-throughput was called
-            assert mock_high_throughput.called
+        ):
+            # Should raise RuntimeError due to disabled fallbacks
+            with pytest.raises(
+                RuntimeError,
+                match="Git-aware indexing failed and fallbacks are disabled",
+            ):
+                smart_indexer.smart_index(force_full=True)
 
     def teardown_method(self):
         """Cleanup test environment."""
+        # Don't destroy shared directory - only clean test files
         import shutil
 
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
+        temp_path = Path(self.temp_dir)
+
+        # Clean test files created by this test
+        test_files = ["metadata.json"] + [f"test_file_{i}.py" for i in range(10)]
+        for item_name in test_files:
+            item_path = temp_path / item_name
+            if item_path.exists() and item_path.is_file():
+                item_path.unlink(missing_ok=True)
+
+        # Clean any other test artifacts but preserve .code-indexer
+        for item in temp_path.iterdir():
+            if item.name != ".code-indexer" and item.name.startswith("test_"):
+                if item.is_file():
+                    item.unlink(missing_ok=True)
+                elif item.is_dir():
+                    shutil.rmtree(item, ignore_errors=True)
 
 
 if __name__ == "__main__":
