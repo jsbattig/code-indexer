@@ -395,10 +395,38 @@ class BranchAwareIndexer:
 
                     # Always use parallel processing - no fallbacks needed
                     for chunk_idx, chunk in enumerate(chunks):
+                        # Prepare metadata including semantic data
+                        chunk_metadata = {
+                            "file_path": file_path,
+                            "chunk_index": chunk_idx,
+                            "semantic_chunking": chunk.get("semantic_chunking", False),
+                        }
+
+                        # Add semantic metadata if available
+                        if chunk.get("semantic_chunking", False):
+                            chunk_metadata.update(
+                                {
+                                    "semantic_type": chunk.get("semantic_type"),
+                                    "semantic_name": chunk.get("semantic_name"),
+                                    "semantic_path": chunk.get("semantic_path"),
+                                    "semantic_signature": chunk.get(
+                                        "semantic_signature"
+                                    ),
+                                    "semantic_parent": chunk.get("semantic_parent"),
+                                    "semantic_context": chunk.get(
+                                        "semantic_context", {}
+                                    ),
+                                    "semantic_scope": chunk.get("semantic_scope"),
+                                    "semantic_language_features": chunk.get(
+                                        "semantic_language_features", []
+                                    ),
+                                }
+                            )
+
                         # Submit chunk for parallel processing (don't wait for result yet)
                         future = vector_manager.submit_chunk(
                             chunk["text"],
-                            {"file_path": file_path, "chunk_index": chunk_idx},
+                            chunk_metadata,
                         )
                         chunk_futures.append(future)
                         chunk_data.append((chunk, current_commit))
@@ -422,6 +450,7 @@ class BranchAwareIndexer:
                                 commit,
                                 vector_result.embedding,
                                 branch,
+                                vector_result.metadata,
                             )
                             batch_points.append(content_point)
                             result.content_points_created += 1
@@ -527,6 +556,7 @@ class BranchAwareIndexer:
         commit: str,
         embedding: List[float],
         branch: str,
+        vector_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Create immutable content point with precomputed embedding and branch context."""
         # Generate content hash
@@ -586,6 +616,26 @@ class BranchAwareIndexer:
             # Project info (but NOT branch - that's in visibility points)
             "project_id": project_id,  # Project identifier
         }
+
+        # Add semantic metadata if available
+        if vector_metadata and vector_metadata.get("semantic_chunking", False):
+            payload.update(
+                {
+                    "semantic_chunking": vector_metadata["semantic_chunking"],
+                    "semantic_type": vector_metadata.get("semantic_type"),
+                    "semantic_name": vector_metadata.get("semantic_name"),
+                    "semantic_path": vector_metadata.get("semantic_path"),
+                    "semantic_signature": vector_metadata.get("semantic_signature"),
+                    "semantic_parent": vector_metadata.get("semantic_parent"),
+                    "semantic_context": vector_metadata.get("semantic_context", {}),
+                    "semantic_scope": vector_metadata.get("semantic_scope"),
+                    "semantic_language_features": vector_metadata.get(
+                        "semantic_language_features", []
+                    ),
+                }
+            )
+        else:
+            payload["semantic_chunking"] = False
 
         # Get embedding model name for metadata
         embedding_model = self.embedding_provider.get_current_model()

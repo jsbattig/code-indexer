@@ -140,6 +140,61 @@ def _is_markdown_content(text: str) -> bool:
     return indicator_count >= 2 or "```" in text or text.count("#") >= 2
 
 
+def _passes_semantic_filters(
+    payload: dict,
+    semantic_type: Optional[str],
+    semantic_scope: Optional[str],
+    semantic_features: Optional[str],
+    semantic_parent: Optional[str],
+    semantic_only: bool,
+) -> bool:
+    """Check if a search result passes semantic filtering criteria."""
+    # Get semantic metadata from payload
+    is_semantic = payload.get("semantic_chunking", False)
+
+    # If semantic_only is True, exclude non-semantic chunks
+    if semantic_only and not is_semantic:
+        return False
+
+    # If this is not a semantic chunk, no other semantic filters apply
+    if not is_semantic:
+        return True
+
+    # Filter by semantic type
+    if semantic_type:
+        result_type = payload.get("semantic_type", "")
+        if not result_type or result_type.lower() != semantic_type.lower():
+            return False
+
+    # Filter by semantic scope
+    if semantic_scope:
+        result_scope = payload.get("semantic_scope", "")
+        if not result_scope or result_scope.lower() != semantic_scope.lower():
+            return False
+
+    # Filter by semantic parent
+    if semantic_parent:
+        result_parent = payload.get("semantic_parent", "")
+        if not result_parent or semantic_parent.lower() not in result_parent.lower():
+            return False
+
+    # Filter by semantic features
+    if semantic_features:
+        result_features = payload.get("semantic_language_features", [])
+        if not result_features:
+            return False
+
+        # Parse requested features (comma-separated)
+        requested_features = [f.strip().lower() for f in semantic_features.split(",")]
+        result_features_lower = [f.lower() for f in result_features]
+
+        # Check if any of the requested features are present
+        if not any(feature in result_features_lower for feature in requested_features):
+            return False
+
+    return True
+
+
 class GracefulInterruptHandler:
     """Handler for graceful interruption of long-running operations with timeout protection."""
 
@@ -1554,6 +1609,31 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
     help="Search accuracy profile: fast (lower accuracy, faster), balanced (default), high (higher accuracy, slower)",
 )
 @click.option(
+    "--semantic-type",
+    "--type",
+    help="Filter by semantic type (e.g., class, function, method, interface)",
+)
+@click.option(
+    "--semantic-scope",
+    "--scope",
+    help="Filter by semantic scope (e.g., global, class, function, module)",
+)
+@click.option(
+    "--semantic-features",
+    "--features",
+    help="Filter by language features (comma-separated, e.g., async,static,generic)",
+)
+@click.option(
+    "--semantic-parent",
+    "--parent",
+    help="Filter by parent context (e.g., ClassName, ModuleName)",
+)
+@click.option(
+    "--semantic-only",
+    is_flag=True,
+    help="Only show results from semantic chunking (exclude text chunks)",
+)
+@click.option(
     "--quiet",
     "-q",
     is_flag=True,
@@ -1569,6 +1649,11 @@ def query(
     path: Optional[str],
     min_score: Optional[float],
     accuracy: str,
+    semantic_type: Optional[str],
+    semantic_scope: Optional[str],
+    semantic_features: Optional[str],
+    semantic_parent: Optional[str],
+    semantic_only: bool,
     quiet: bool,
 ):
     """Search the indexed codebase using semantic similarity.
@@ -1593,6 +1678,14 @@ def query(
       • Accuracy: --accuracy high (higher accuracy, slower search)
 
     \b
+    SEMANTIC FILTERING (AST-based):
+      • Type: --type class (only classes)
+      • Scope: --scope global (only global-level constructs)
+      • Features: --features async,static (functions with specific features)
+      • Parent: --parent User (only code inside User class)
+      • Semantic only: --semantic-only (exclude text chunks)
+
+    \b
     QUERY EXAMPLES:
       "authentication function"           # Find auth-related code
       "database connection setup"        # Find DB setup code
@@ -1601,7 +1694,15 @@ def query(
       "unit test mock"                   # Find mocking in tests
 
     \b
-    EXAMPLES:
+    SEMANTIC SEARCH EXAMPLES:
+      code-indexer query "login" --type function
+      code-indexer query "user" --type class --scope global
+      code-indexer query "save" --parent User --features async
+      code-indexer query "validation" --semantic-only
+      code-indexer query "api" --features static,public
+
+    \b
+    TRADITIONAL EXAMPLES:
       code-indexer query "user login"
       code-indexer query "database" --language python
       code-indexer query "test" --path */tests/* --limit 5
@@ -1659,6 +1760,8 @@ def query(
         from .services.git_topology_service import GitTopologyService
         from .services.branch_aware_indexer import BranchAwareIndexer
         from .indexing.chunker import TextChunker
+        from .indexing.semantic_chunker import SemanticChunker
+        from typing import Union
 
         git_topology_service = GitTopologyService(config.codebase_dir)
         is_git_aware = git_topology_service.is_git_available()
@@ -1666,7 +1769,12 @@ def query(
         # Initialize query service based on project type
         if is_git_aware:
             # Use branch-aware indexer for git projects
-            text_chunker = TextChunker(config.indexing)
+            # Use semantic chunker if enabled, otherwise text chunker
+            text_chunker: Union[TextChunker, SemanticChunker]
+            if config.indexing.use_semantic_chunking:
+                text_chunker = SemanticChunker(config.indexing)
+            else:
+                text_chunker = TextChunker(config.indexing)
             branch_aware_indexer = BranchAwareIndexer(
                 qdrant_client, embedding_provider, text_chunker, config
             )
@@ -1758,7 +1866,30 @@ def query(
             )
 
             # Apply additional filters manually for now
-            if language or path or min_score:
+            if (
+                language
+                or path
+                or min_score
+                or any(
+                    [
+                        semantic_type,
+                        semantic_scope,
+                        semantic_features,
+                        semantic_parent,
+                        semantic_only,
+                    ]
+                )
+            ):
+                if not quiet and any(
+                    [
+                        semantic_type,
+                        semantic_scope,
+                        semantic_features,
+                        semantic_parent,
+                        semantic_only,
+                    ]
+                ):
+                    console.print("🧠 Applying semantic filtering...")
                 filtered_results = []
                 for result in results:
                     payload = result.get("payload", {})
@@ -1773,6 +1904,17 @@ def query(
 
                     # Filter by minimum score
                     if min_score and result.get("score", 0) < min_score:
+                        continue
+
+                    # Apply semantic filters
+                    if not _passes_semantic_filters(
+                        payload,
+                        semantic_type,
+                        semantic_scope,
+                        semantic_features,
+                        semantic_parent,
+                        semantic_only,
+                    ):
                         continue
 
                     filtered_results.append(result)
@@ -1793,6 +1935,32 @@ def query(
             if not quiet:
                 console.print("🔍 Applying git-aware filtering...")
             results = query_service.filter_results_by_current_branch(raw_results)
+
+            # Apply semantic filtering to non-git results
+            if any(
+                [
+                    semantic_type,
+                    semantic_scope,
+                    semantic_features,
+                    semantic_parent,
+                    semantic_only,
+                ]
+            ):
+                if not quiet:
+                    console.print("🧠 Applying semantic filtering...")
+                filtered_results = []
+                for result in results:
+                    payload = result.get("payload", {})
+                    if _passes_semantic_filters(
+                        payload,
+                        semantic_type,
+                        semantic_scope,
+                        semantic_features,
+                        semantic_parent,
+                        semantic_only,
+                    ):
+                        filtered_results.append(result)
+                results = filtered_results
 
         # Limit to requested number after filtering
         results = results[:limit]
@@ -1829,8 +1997,20 @@ def query(
                 file_path_with_lines = file_path
 
             if quiet:
-                # Quiet mode - minimal output: score, path with line numbers, content
-                console.print(f"{score:.3f} {file_path_with_lines}")
+                # Quiet mode - minimal output: score, path with line numbers, semantic info (if available)
+                semantic_chunking = payload.get("semantic_chunking", False)
+                semantic_info_quiet = ""
+                if semantic_chunking:
+                    semantic_type = payload.get("semantic_type", "")
+                    semantic_name = payload.get("semantic_name", "")
+                    if semantic_type and semantic_name:
+                        semantic_info_quiet = f" [{semantic_type}: {semantic_name}]"
+                    elif semantic_type:
+                        semantic_info_quiet = f" [{semantic_type}]"
+
+                console.print(
+                    f"{score:.3f} {file_path_with_lines}{semantic_info_quiet}"
+                )
                 if content:
                     # Show content with line numbers in quiet mode
                     content_to_display = content[:500]
@@ -1882,6 +2062,43 @@ def query(
 
                 metadata_info += f" | 🏗️  Project: {project_id}"
                 console.print(metadata_info)
+
+                # Semantic information display (when available)
+                semantic_chunking = payload.get("semantic_chunking", False)
+                if semantic_chunking:
+                    semantic_type = payload.get("semantic_type", "unknown")
+                    semantic_name = payload.get("semantic_name", "")
+                    semantic_parent = payload.get("semantic_parent", "")
+                    semantic_scope = payload.get("semantic_scope", "")
+                    semantic_signature = payload.get("semantic_signature", "")
+                    semantic_features = payload.get("semantic_language_features", [])
+
+                    # Create semantic info display
+                    semantic_info = f"🧠 Semantic: {semantic_type}"
+                    if semantic_name:
+                        semantic_info += f" '{semantic_name}'"
+                    if semantic_parent:
+                        semantic_info += f" in {semantic_parent}"
+                    if semantic_scope and semantic_scope != "global":
+                        semantic_info += f" | 🔍 Scope: {semantic_scope}"
+                    if semantic_features:
+                        features_str = ", ".join(
+                            semantic_features[:3]
+                        )  # Show first 3 features
+                        if len(semantic_features) > 3:
+                            features_str += f" (+{len(semantic_features) - 3} more)"
+                        semantic_info += f" | 🏷️ Features: {features_str}"
+
+                    console.print(f"[bold green]{semantic_info}[/bold green]")
+
+                    # Show semantic signature if available and different from name
+                    if semantic_signature and semantic_signature != semantic_name:
+                        signature_display = semantic_signature
+                        if len(signature_display) > 80:
+                            signature_display = signature_display[:77] + "..."
+                        console.print(
+                            f"📝 Signature: [italic]{signature_display}[/italic]"
+                        )
 
                 # Content preview with line numbers
                 if content:
@@ -2405,6 +2622,33 @@ def claude(
 )
 @click.pass_context
 def status(ctx, force_docker: bool):
+    """Show status of services and index.
+    \b
+    Displays comprehensive information about your code-indexer installation:
+    \b
+    SERVICE STATUS:
+      • Ollama: AI embedding service status
+      • Qdrant: Vector database status
+      • Docker containers: Running/stopped state
+    \b
+    INDEX INFORMATION:
+      • Project configuration details
+      • Git repository information (if applicable)
+      • Vector collection statistics
+      • Storage usage and optimization status
+      • Number of indexed files and chunks
+    \b
+    CONFIGURATION SUMMARY:
+      • File extensions being indexed
+      • Excluded directories
+      • File size and chunk limits
+      • Model and collection settings
+    \b
+    EXAMPLE OUTPUT:
+      ✅ Services: Ollama (ready), Qdrant (ready)
+      📂 Project: my-app (Git: feature-branch)
+      🔍 Collection: 1,234 chunks, 567 files indexed
+      💾 Storage: 45.2MB vector data, optimized"""
     _status_impl(ctx, force_docker)
 
 

@@ -127,7 +127,7 @@ def test_clear_collection_integration_with_real_qdrant(qdrant_test_repo):
     )
     assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
-    # Start services if needed - use graceful handling like other tests
+    # Start services - be idempotent if they're already running
     start_result = subprocess.run(
         ["code-indexer", "start"],
         cwd=test_dir,
@@ -136,27 +136,20 @@ def test_clear_collection_integration_with_real_qdrant(qdrant_test_repo):
         timeout=120,
     )
 
+    # If start fails, check if services are already running
     if start_result.returncode != 0:
-        # Check if services are already running
-        if (
-            "already in use" in start_result.stdout
-            or "already in use" in start_result.stderr
-            or "already running" in start_result.stdout
-            or "already running" in start_result.stderr
-            or "already running and healthy" in start_result.stdout
-        ):
-            # Verify services are accessible
-            status_result = subprocess.run(
-                ["code-indexer", "status"],
-                cwd=test_dir,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if status_result.returncode != 0 or "✅" not in status_result.stdout:
-                pytest.skip(f"Services not accessible: {status_result.stdout}")
-        else:
-            # Check if it's a collection creation issue (infrastructure problem)
+        # Check status to see if services are healthy
+        status_result = subprocess.run(
+            ["code-indexer", "status"],
+            cwd=test_dir,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        # If services are not running, skip the test
+        if status_result.returncode != 0 or "✅" not in status_result.stdout:
+            # Check if it's a collection creation issue
             if (
                 "Failed to create/validate collection" in start_result.stdout
                 or "Collection creation failed" in start_result.stdout
@@ -165,8 +158,14 @@ def test_clear_collection_integration_with_real_qdrant(qdrant_test_repo):
                 pytest.skip(
                     "Infrastructure issue: Qdrant collection creation failed - containers may need restart"
                 )
+            pytest.skip(
+                f"Could not start services: {start_result.stdout} | {start_result.stderr}"
+            )
 
-            pytest.skip(f"Could not start services: {start_result.stderr}")
+    # Give services a moment to stabilize
+    import time
+
+    time.sleep(2)
 
     # Setup - read actual config to get the correct port
     from code_indexer.config import ConfigManager

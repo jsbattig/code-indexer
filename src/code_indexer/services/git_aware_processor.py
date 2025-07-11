@@ -3,12 +3,12 @@ Git-aware document processor that extends the base DocumentProcessor.
 """
 
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any
 
 from code_indexer.config import Config
 from code_indexer.services import QdrantClient
 from code_indexer.services.embedding_provider import EmbeddingProvider
-from code_indexer.indexing.processor import DocumentProcessor, ProcessingStats
+from code_indexer.indexing.processor import DocumentProcessor
 from code_indexer.services.file_identifier import FileIdentifier
 from code_indexer.services.git_detection import GitDetectionService
 from code_indexer.services.metadata_schema import (
@@ -238,99 +238,6 @@ class GitAwareDocumentProcessor(DocumentProcessor):
             return False
 
         return True
-
-    def index_codebase(
-        self,
-        clear_existing: bool = False,
-        batch_size: int = 50,
-        progress_callback: Optional[Callable] = None,
-        check_git_changes: bool = True,
-    ) -> ProcessingStats:
-        """Index the entire codebase with git-aware processing.
-
-        Args:
-            clear_existing: Whether to clear existing index
-            batch_size: Batch size for processing
-            progress_callback: Optional progress callback
-            check_git_changes: Whether to check for git initialization
-        """
-        # Check for git initialization if requested
-        if check_git_changes and self.git_detection.detect_git_initialization():
-            # Git was newly initialized, force full re-index
-            clear_existing = True
-
-        # Handle clearing if requested
-        if clear_existing:
-            if hasattr(self.qdrant_client, "clear_collection"):
-                self.qdrant_client.clear_collection()
-
-        # Find all files and process them using parallel processing
-        files_to_process = list(self.file_finder.find_files())
-        return self.process_files_parallel(
-            files_to_process,
-            batch_size=batch_size,
-            progress_callback=progress_callback,
-        )
-
-    def update_index_smart(
-        self,
-        batch_size: int = 50,
-        progress_callback: Optional[Callable] = None,
-    ) -> ProcessingStats:
-        """Smart update that handles git-aware incremental updates.
-
-        This method:
-        1. Detects git changes (branch switches, commits)
-        2. Finds files that need updating based on git metadata
-        3. Removes outdated entries from the index
-        4. Processes updated files
-        """
-        # Check for git state changes
-        if self.git_detection.detect_git_initialization():
-            # Git was newly initialized, full re-index
-            return self.index_codebase(
-                clear_existing=True,
-                batch_size=batch_size,
-                progress_callback=progress_callback,
-            )
-
-        # Get current git state
-        current_git_state = self.git_detection._get_current_git_state()
-        previous_git_state = self.git_detection._load_previous_git_state()
-
-        # Detect branch changes
-        branch_changed = (
-            current_git_state["git_available"]
-            and previous_git_state.get("git_available")
-            and current_git_state.get("branch") != previous_git_state.get("branch")
-        )
-
-        if branch_changed:
-            # Branch changed, we need to update metadata for all files
-            # But we don't need to clear the index since we're using git-aware point IDs
-            files_to_update = list(self.file_finder.find_files())
-        else:
-            # Normal incremental update based on file modification times
-            last_index_time = previous_git_state.get("last_index_time", 0)
-            files_to_update = list(
-                self.file_finder.find_modified_files(last_index_time)
-            )
-
-        if not files_to_update:
-            return ProcessingStats()
-
-        # Update git state
-        self.git_detection._save_git_state(current_git_state)
-
-        # Process updated files using parallel processing
-        from .vector_calculation_manager import get_default_thread_count
-
-        return self.process_files_parallel(
-            files_to_update,
-            vector_thread_count=get_default_thread_count(self.embedding_provider),
-            batch_size=batch_size,
-            progress_callback=progress_callback,
-        )
 
     def get_git_status(self) -> Dict[str, Any]:
         """Get current git status and metadata."""

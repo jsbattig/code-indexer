@@ -17,12 +17,14 @@ from pathlib import Path
 from typing import List, Optional
 import pytest
 
-
 from .test_infrastructure import (
     TestProjectInventory,
     create_test_project_with_inventory,
 )
 from .conftest import local_temporary_directory
+
+# Mark all tests in this file as e2e to exclude from ci-github.sh
+pytestmark = pytest.mark.e2e
 
 
 class WatchSubprocessManager:
@@ -303,7 +305,13 @@ def setup_watch_test_environment(test_dir):
         timeout=120,
     )
     if start_result.returncode != 0:
-        raise RuntimeError(f"Start failed: {start_result.stderr}")
+        # In quiet mode, error messages might be suppressed
+        error_msg = (
+            start_result.stderr or start_result.stdout or "No error message available"
+        )
+        raise RuntimeError(
+            f"Start failed with exit code {start_result.returncode}: {error_msg}"
+        )
 
     # Verify services are actually ready
     status_result = subprocess.run(

@@ -14,6 +14,8 @@ from ..services.vector_calculation_manager import (
 )
 from .file_finder import FileFinder
 from .chunker import TextChunker
+from .semantic_chunker import SemanticChunker
+from typing import Union
 
 
 @dataclass
@@ -53,7 +55,13 @@ class DocumentProcessor:
         self.embedding_provider = embedding_provider
         self.qdrant_client = qdrant_client
         self.file_finder = FileFinder(config)
-        self.text_chunker = TextChunker(config.indexing)
+        # Use semantic chunker if enabled, otherwise text chunker
+        # Note: We assign to self.text_chunker for compatibility, but it may be a SemanticChunker
+        self.text_chunker: Union[TextChunker, SemanticChunker]
+        if config.indexing.use_semantic_chunking:
+            self.text_chunker = SemanticChunker(config.indexing)
+        else:
+            self.text_chunker = TextChunker(config.indexing)
 
     def process_file(self, file_path: Path) -> List[Dict[str, Any]]:
         """DEPRECATED: Use process_files_high_throughput instead."""
@@ -90,6 +98,26 @@ class DocumentProcessor:
                     "line_end": chunk["line_end"],  # Line number metadata
                 }
 
+                # Add semantic metadata if available
+                if chunk.get("semantic_chunking", False):
+                    chunk_metadata.update(
+                        {
+                            "semantic_chunking": chunk["semantic_chunking"],
+                            "semantic_type": chunk.get("semantic_type"),
+                            "semantic_name": chunk.get("semantic_name"),
+                            "semantic_path": chunk.get("semantic_path"),
+                            "semantic_signature": chunk.get("semantic_signature"),
+                            "semantic_parent": chunk.get("semantic_parent"),
+                            "semantic_context": chunk.get("semantic_context", {}),
+                            "semantic_scope": chunk.get("semantic_scope"),
+                            "semantic_language_features": chunk.get(
+                                "semantic_language_features", []
+                            ),
+                        }
+                    )
+                else:
+                    chunk_metadata["semantic_chunking"] = False
+
                 # Submit to vector calculation manager
                 future = vector_manager.submit_chunk(chunk["text"], chunk_metadata)
                 chunk_futures.append(future)
@@ -108,19 +136,55 @@ class DocumentProcessor:
                         )
 
                     # Create Qdrant point with the calculated embedding
+                    payload = {
+                        "path": vector_result.metadata["path"],
+                        "content": vector_result.metadata["content"],
+                        "language": vector_result.metadata["language"],
+                        "file_size": vector_result.metadata["file_size"],
+                        "chunk_index": vector_result.metadata["chunk_index"],
+                        "total_chunks": vector_result.metadata["total_chunks"],
+                        "indexed_at": vector_result.metadata["indexed_at"],
+                        "line_start": vector_result.metadata["line_start"],
+                        "line_end": vector_result.metadata["line_end"],
+                        "semantic_chunking": vector_result.metadata.get(
+                            "semantic_chunking", False
+                        ),
+                    }
+
+                    # Add semantic metadata if available
+                    if vector_result.metadata.get("semantic_chunking", False):
+                        payload.update(
+                            {
+                                "semantic_type": vector_result.metadata.get(
+                                    "semantic_type"
+                                ),
+                                "semantic_name": vector_result.metadata.get(
+                                    "semantic_name"
+                                ),
+                                "semantic_path": vector_result.metadata.get(
+                                    "semantic_path"
+                                ),
+                                "semantic_signature": vector_result.metadata.get(
+                                    "semantic_signature"
+                                ),
+                                "semantic_parent": vector_result.metadata.get(
+                                    "semantic_parent"
+                                ),
+                                "semantic_context": vector_result.metadata.get(
+                                    "semantic_context", {}
+                                ),
+                                "semantic_scope": vector_result.metadata.get(
+                                    "semantic_scope"
+                                ),
+                                "semantic_language_features": vector_result.metadata.get(
+                                    "semantic_language_features", []
+                                ),
+                            }
+                        )
+
                     point = self.qdrant_client.create_point(
                         vector=vector_result.embedding,
-                        payload={
-                            "path": vector_result.metadata["path"],
-                            "content": vector_result.metadata["content"],
-                            "language": vector_result.metadata["language"],
-                            "file_size": vector_result.metadata["file_size"],
-                            "chunk_index": vector_result.metadata["chunk_index"],
-                            "total_chunks": vector_result.metadata["total_chunks"],
-                            "indexed_at": vector_result.metadata["indexed_at"],
-                            "line_start": vector_result.metadata["line_start"],
-                            "line_end": vector_result.metadata["line_end"],
-                        },
+                        payload=payload,
                         embedding_model=self.embedding_provider.get_current_model(),
                     )
                     points.append(point)
@@ -209,28 +273,6 @@ class DocumentProcessor:
 
         stats.end_time = time.time()
         return stats
-
-    def index_codebase(
-        self,
-        clear_existing: bool = False,
-        batch_size: int = 50,
-        progress_callback: Optional[Callable] = None,
-    ) -> ProcessingStats:
-        """DEPRECATED: Use SmartIndexer instead."""
-        raise NotImplementedError(
-            "index_codebase is deprecated. Use SmartIndexer.smart_index() for all indexing operations."
-        )
-
-    def update_index(
-        self,
-        since_timestamp: float,
-        batch_size: int = 50,
-        progress_callback: Optional[Callable] = None,
-    ) -> ProcessingStats:
-        """DEPRECATED: Use SmartIndexer instead."""
-        raise NotImplementedError(
-            "update_index is deprecated. Use SmartIndexer.smart_index() for all indexing operations."
-        )
 
     def get_indexable_stats(self) -> Dict[str, Any]:
         """Get statistics about indexable files."""

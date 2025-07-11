@@ -73,22 +73,117 @@ class ProjectTestConfig:
         """Generate config dictionary for this test project."""
         return {
             "codebase_dir": codebase_dir,
+            "file_extensions": [
+                "py",
+                "js",
+                "ts",
+                "tsx",
+                "java",
+                "c",
+                "cpp",
+                "h",
+                "hpp",
+                "go",
+                "rs",
+                "rb",
+                "php",
+                "pl",
+                "pm",
+                "pod",
+                "t",
+                "psgi",
+                "sh",
+                "bash",
+                "html",
+                "css",
+                "md",
+                "json",
+                "yaml",
+                "yml",
+                "toml",
+                "sql",
+                "swift",
+                "kt",
+                "scala",
+                "dart",
+                "vue",
+                "jsx",
+            ],
+            "exclude_dirs": [
+                "node_modules",
+                "venv",
+                "__pycache__",
+                ".git",
+                "dist",
+                "build",
+                "target",
+                ".idea",
+                ".vscode",
+                ".gradle",
+                "bin",
+                "obj",
+                "coverage",
+                ".next",
+                ".nuxt",
+                "dist-*",
+                ".code-indexer",
+            ],
             "embedding_provider": self.embedding_provider.value,
-            "qdrant": {
-                "vector_size": self.qdrant_vector_size,
-                "use_provider_aware_collections": self.use_provider_aware_collections,
-                "collection_base_name": self.collection_base_name,
+            "ollama": {
+                "host": "http://localhost:11434",
+                "model": "nomic-embed-text",
+                "timeout": 30,
+                "num_parallel": 1,
+                "max_loaded_models": 1,
+                "max_queue": 512,
             },
             "voyage_ai": {
+                "api_endpoint": "https://api.voyageai.com/v1/embeddings",
                 "model": self.voyage_ai_model,
-                "batch_size": self.voyage_ai_batch_size,
-                "max_retries": 3,
                 "timeout": 30,
                 "parallel_requests": self.voyage_ai_parallel_requests,
+                "batch_size": self.voyage_ai_batch_size,
+                "max_retries": 3,
+                "retry_delay": 1.0,
+                "exponential_backoff": True,
+            },
+            "qdrant": {
+                "host": "http://localhost:6333",
+                "collection_base_name": self.collection_base_name,  # Preserve test collection name!
+                "vector_size": self.qdrant_vector_size,
+                "hnsw_ef": 64,
+                "hnsw_ef_construct": 200,
+                "hnsw_m": 32,
             },
             "indexing": {
                 "chunk_size": self.chunk_size,
                 "chunk_overlap": self.chunk_overlap,
+                "max_file_size": 1048576,
+                "index_comments": True,
+                "use_semantic_chunking": True,  # Enable semantic chunking for tests
+            },
+            "timeouts": {
+                "service_startup": 240,
+                "service_shutdown": 30,
+                "port_release": 15,
+                "cleanup_validation": 30,
+                "health_check": 180,
+                "data_cleaner_startup": 180,
+            },
+            "polling": {
+                "initial_interval": 0.5,
+                "backoff_factor": 1.2,
+                "max_interval": 2.0,
+            },
+            "project_containers": {
+                "qdrant_name": f"cidx-test_{self.name}-qdrant",
+                "ollama_name": f"cidx-test_{self.name}-ollama",
+                "data_cleaner_name": f"cidx-test_{self.name}-data-cleaner",
+            },
+            "project_ports": {
+                "qdrant_port": None,
+                "ollama_port": None,
+                "data_cleaner_port": None,
             },
         }
 
@@ -2079,6 +2174,21 @@ def get_shared_test_directory(force_docker: bool = False) -> Path:
         return base_dir / "shared_test_containers_docker"
     else:
         return base_dir / "shared_test_containers"
+
+
+def get_shared_test_project_dir() -> Path:
+    """Get the shared test project directory used for container reuse.
+
+    This returns the same directory path that's used by the shared test fixtures,
+    allowing different tests to reuse the same containers and collections.
+
+    Returns:
+        Path to shared test project directory
+    """
+    project_root = Path(__file__).parent.parent  # Go up from tests/ to project root
+    shared_test_repo_path = project_root / ".tmp" / "shared_test_repo"
+    shared_test_repo_path.mkdir(parents=True, exist_ok=True)
+    return shared_test_repo_path
 
 
 def create_isolated_project_dir(test_name: str, force_docker: bool = False) -> Path:

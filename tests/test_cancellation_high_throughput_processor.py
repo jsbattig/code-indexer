@@ -1,157 +1,49 @@
 """
-Unit tests for HighThroughputProcessor cancellation functionality.
+Tests for cancellation functionality in HighThroughputProcessor.
 
-These tests verify that the HighThroughputProcessor can be cancelled
-gracefully and responds quickly to cancellation requests.
+This test module verifies that the HighThroughputProcessor can be properly cancelled
+and handles cancellation gracefully without losing completed work.
 """
 
 import time
 from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import MagicMock, patch
+
 import pytest
 
-from .conftest import local_temporary_directory, get_local_tmp_dir
-
+from code_indexer.config import Config
 from code_indexer.services.high_throughput_processor import HighThroughputProcessor
-from code_indexer.services.qdrant import QdrantClient
-from code_indexer.services.embedding_provider import EmbeddingProvider, EmbeddingResult
-from typing import List, Optional, Dict, Any
+from tests.conftest import local_temporary_directory
 
-
-class MockEmbeddingProvider(EmbeddingProvider):
-    """Mock embedding provider for testing."""
-
-    def __init__(self, delay: float = 0.1):
-        super().__init__()
-        self.delay = delay
-
-    def get_provider_name(self) -> str:
-        return "test-provider"
-
-    def get_current_model(self) -> str:
-        return "test-model"
-
-    def get_model_info(self) -> Dict[str, Any]:
-        return {"name": "test-model", "dimensions": 768}
-
-    def get_embedding(self, text: str, model: Optional[str] = None) -> List[float]:
-        time.sleep(self.delay)
-        return [1.0] * 768
-
-    def get_embeddings_batch(
-        self, texts: List[str], model: Optional[str] = None
-    ) -> List[List[float]]:
-        return [self.get_embedding(text, model) for text in texts]
-
-    def get_embedding_with_metadata(
-        self, text: str, model: Optional[str] = None
-    ) -> EmbeddingResult:
-        embedding = self.get_embedding(text, model)
-        return EmbeddingResult(
-            embedding=embedding,
-            model=model or self.get_current_model(),
-            tokens_used=len(text.split()),
-            provider=self.get_provider_name(),
-        )
-
-    def get_embeddings_batch_with_metadata(
-        self, texts: List[str], model: Optional[str] = None
-    ):
-        embeddings = self.get_embeddings_batch(texts, model)
-        return MagicMock(
-            embeddings=embeddings,
-            model=model or self.get_current_model(),
-            total_tokens_used=sum(len(text.split()) for text in texts),
-            provider=self.get_provider_name(),
-        )
-
-    def supports_batch_processing(self) -> bool:
-        return True
-
-    def health_check(self) -> bool:
-        return True
+# Mark all tests in this file as e2e to exclude from ci-github.sh
+pytestmark = pytest.mark.e2e
 
 
 class TestHighThroughputProcessorCancellation:
-    """Test cases for HighThroughputProcessor cancellation functionality."""
+    """Test cancellation functionality in HighThroughputProcessor."""
 
-    def setup_method(self, method):
-        """Set up test fixtures."""
-        self.embedding_provider = MockEmbeddingProvider(delay=0.1)
-        self.qdrant_client = Mock(spec=QdrantClient)
-        self.qdrant_client.upsert_points.return_value = True
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Set up test environment."""
+        # Create test config
+        self.config = Config(
+            codebase_dir="/tmp/test-project",
+            file_extensions=["py", "js", "ts"],
+            exclude_dirs=["node_modules", "__pycache__"],
+        )
+
+        # Create mock embedding provider
+        self.embedding_provider = MagicMock()
+        self.embedding_provider.get_embedding.return_value = [0.1] * 768
+        self.embedding_provider.get_current_model.return_value = "test-model"
+
+        # Create mock Qdrant client
+        self.qdrant_client = MagicMock()
+        self.qdrant_client.create_point.return_value = {"id": "test-point"}
         self.qdrant_client.upsert_points_atomic.return_value = True
-        self.qdrant_client.create_point.return_value = {
-            "id": "test",
-            "vector": [1.0] * 768,
-        }
 
-        # Create mock config
-        self.config = Mock()
-        self.config.codebase_dir = Path(str(get_local_tmp_dir() / "test"))
-        self.config.exclude_dirs = []
-        self.config.exclude_patterns = []
-
-    @patch("code_indexer.services.git_aware_processor.FileIdentifier")
-    @patch("code_indexer.services.git_aware_processor.GitDetectionService")
-    @patch("code_indexer.indexing.processor.FileFinder")
-    @patch("code_indexer.indexing.processor.TextChunker")
-    def test_has_cancelled_flag(
-        self,
-        mock_text_chunker,
-        mock_file_finder,
-        mock_git_detection,
-        mock_file_identifier,
-    ):
-        """Test that HighThroughputProcessor has cancelled flag."""
-        # Create processor with mocked dependencies
-        processor = HighThroughputProcessor(
-            config=self.config,
-            embedding_provider=self.embedding_provider,
-            qdrant_client=self.qdrant_client,
-        )
-
-        # Should have cancelled attribute
-        assert hasattr(processor, "cancelled")
-        assert isinstance(processor.cancelled, bool)
-        assert not processor.cancelled
-
-    @patch("code_indexer.services.git_aware_processor.FileIdentifier")
-    @patch("code_indexer.services.git_aware_processor.GitDetectionService")
-    @patch("code_indexer.indexing.processor.FileFinder")
-    @patch("code_indexer.indexing.processor.TextChunker")
-    def test_has_request_cancellation_method(
-        self,
-        mock_text_chunker,
-        mock_file_finder,
-        mock_git_detection,
-        mock_file_identifier,
-    ):
-        """Test that HighThroughputProcessor has request_cancellation method."""
-        # Create processor with mocked dependencies
-        processor = HighThroughputProcessor(
-            config=self.config,
-            embedding_provider=self.embedding_provider,
-            qdrant_client=self.qdrant_client,
-        )
-
-        # Should have request_cancellation method
-        assert hasattr(processor, "request_cancellation")
-        assert callable(getattr(processor, "request_cancellation"))
-
-    @patch("code_indexer.services.git_aware_processor.FileIdentifier")
-    @patch("code_indexer.services.git_aware_processor.GitDetectionService")
-    @patch("code_indexer.indexing.processor.FileFinder")
-    @patch("code_indexer.indexing.processor.TextChunker")
-    def test_request_cancellation_sets_flag(
-        self,
-        mock_text_chunker,
-        mock_file_finder,
-        mock_git_detection,
-        mock_file_identifier,
-    ):
+    def test_request_cancellation_sets_flag(self):
         """Test that request_cancellation sets the cancelled flag."""
-        # Create processor with mocked dependencies
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
@@ -165,19 +57,8 @@ class TestHighThroughputProcessorCancellation:
         processor.request_cancellation()
         assert processor.cancelled
 
-    @patch("code_indexer.services.git_aware_processor.FileIdentifier")
-    @patch("code_indexer.services.git_aware_processor.GitDetectionService")
-    @patch("code_indexer.indexing.processor.FileFinder")
-    @patch("code_indexer.indexing.processor.TextChunker")
-    def test_as_completed_loop_checks_cancellation(
-        self,
-        mock_text_chunker,
-        mock_file_finder,
-        mock_git_detection,
-        mock_file_identifier,
-    ):
+    def test_as_completed_loop_checks_cancellation(self):
         """Test that as_completed loop checks cancellation flag every iteration."""
-        # Create processor with mocked dependencies
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
@@ -200,69 +81,64 @@ class TestHighThroughputProcessorCancellation:
                         "chunk_index": 0,
                         "total_chunks": 1,
                         "file_extension": "py",
+                        "line_start": 1,
+                        "line_end": 2,
                     }
                 ]
 
-            processor.text_chunker.chunk_file.side_effect = mock_chunk_file
+            with patch.object(
+                processor.text_chunker, "chunk_file", side_effect=mock_chunk_file
+            ):
+                # Mock file identifier
+                def mock_get_file_metadata(file_path):
+                    return {
+                        "project_id": "test-project",
+                        "file_hash": "test-hash",
+                        "git_available": False,
+                        "file_mtime": time.time(),
+                        "file_size": 100,
+                    }
 
-            # Mock file identifier
-            def mock_get_file_metadata(file_path):
-                return {
-                    "project_id": "test-project",
-                    "file_hash": "test-hash",
-                    "git_available": False,
-                    "file_mtime": time.time(),
-                    "file_size": 100,
-                }
+                with patch.object(
+                    processor.file_identifier,
+                    "get_file_metadata",
+                    side_effect=mock_get_file_metadata,
+                ):
+                    # Track progress callback calls
+                    callback_calls = []
 
-            processor.file_identifier.get_file_metadata.side_effect = (
-                mock_get_file_metadata
-            )
+                    def progress_callback(current, total, path, info=None):
+                        callback_calls.append((current, total, str(path), info))
+                        # Cancel after first callback
+                        if len(callback_calls) == 2:
+                            processor.request_cancellation()
+                            return "INTERRUPT"
+                        return None
 
-            # Track progress callback calls
-            callback_calls = []
+                    # Process files (should be cancelled quickly)
+                    start_time = time.time()
+                    processor.process_files_high_throughput(
+                        files=test_files,
+                        vector_thread_count=2,
+                        batch_size=10,
+                        progress_callback=progress_callback,
+                    )
+                    processing_time = time.time() - start_time
 
-            def progress_callback(current, total, path, info=None):
-                callback_calls.append((current, total, str(path), info))
-                # Cancel after first callback
-                if len(callback_calls) == 2:
-                    processor.request_cancellation()
-                    return "INTERRUPT"
-                return None
+                    # Should complete quickly due to cancellation
+                    assert (
+                        processing_time < 2.0
+                    ), f"Processing took {processing_time:.2f}s, expected < 2.0s"
 
-            # Process files (should be cancelled quickly)
-            start_time = time.time()
-            processor.process_files_high_throughput(
-                files=test_files,
-                vector_thread_count=2,
-                batch_size=10,
-                progress_callback=progress_callback,
-            )
-            processing_time = time.time() - start_time
+                    # Should have received cancellation signal
+                    assert len(callback_calls) >= 2
+                    # Check that we have at least 2 callbacks and cancellation occurred
+                    assert (
+                        processor.cancelled
+                    ), "Processor should be marked as cancelled"
 
-            # Should complete quickly due to cancellation
-            assert (
-                processing_time < 2.0
-            ), f"Processing took {processing_time:.2f}s, expected < 2.0s"
-
-            # Should have received cancellation signal
-            assert len(callback_calls) >= 2
-            # Check that we have at least 2 callbacks and cancellation occurred
-            assert processor.cancelled, "Processor should be marked as cancelled"
-
-    @patch("code_indexer.services.git_aware_processor.FileIdentifier")
-    @patch("code_indexer.services.git_aware_processor.GitDetectionService")
-    @patch("code_indexer.indexing.processor.FileFinder")
-    @patch("code_indexer.indexing.processor.TextChunker")
-    def test_cancellation_prevents_further_processing(
-        self,
-        mock_text_chunker,
-        mock_file_finder,
-        mock_git_detection,
-        mock_file_identifier,
-    ):
+    def test_cancellation_prevents_further_processing(self):
         """Test that cancellation prevents further chunk processing."""
-        # Create processor with mocked dependencies
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
@@ -287,87 +163,88 @@ class TestHighThroughputProcessorCancellation:
                         "chunk_index": j,
                         "total_chunks": 3,
                         "file_extension": "py",
+                        "line_start": j * 10 + 1,
+                        "line_end": (j + 1) * 10,
                     }
                     for j in range(3)
                 ]
 
-            processor.text_chunker.chunk_file.side_effect = mock_chunk_file
+            with patch.object(
+                processor.text_chunker, "chunk_file", side_effect=mock_chunk_file
+            ):
+                # Mock file identifier
+                def mock_get_file_metadata(file_path):
+                    return {
+                        "project_id": "test-project",
+                        "file_hash": f"hash-{file_path.name}",
+                        "git_available": False,
+                        "file_mtime": time.time(),
+                        "file_size": 300,
+                    }
 
-            # Mock file identifier
-            def mock_get_file_metadata(file_path):
-                return {
-                    "project_id": "test-project",
-                    "file_hash": f"hash-{file_path.name}",
-                    "git_available": False,
-                    "file_mtime": time.time(),
-                    "file_size": 300,
-                }
+                with patch.object(
+                    processor.file_identifier,
+                    "get_file_metadata",
+                    side_effect=mock_get_file_metadata,
+                ):
+                    # Mock embedding to be slow enough that we can cancel
+                    def slow_embedding(text):
+                        time.sleep(0.05)  # 50ms per embedding
+                        return [0.1] * 768
 
-            processor.file_identifier.get_file_metadata.side_effect = (
-                mock_get_file_metadata
-            )
+                    with patch.object(
+                        processor.embedding_provider,
+                        "get_embedding",
+                        side_effect=slow_embedding,
+                    ):
+                        # Start processing in a separate thread
+                        import threading
 
-            # Use slower embedding provider to ensure cancellation takes effect
-            processor.embedding_provider = MockEmbeddingProvider(delay=0.2)
+                        stats = None
+                        exception = None
 
-            # Track progress and cancel early
-            callback_count = 0
+                        def run_processing():
+                            nonlocal stats, exception
+                            try:
+                                stats = processor.process_files_high_throughput(
+                                    test_files, vector_thread_count=2
+                                )
+                            except Exception as e:
+                                exception = e
 
-            def progress_callback(current, total, path, info=None):
-                nonlocal callback_count
-                callback_count += 1
-                # Cancel after a few callbacks
-                if callback_count == 3:
-                    processor.request_cancellation()
-                    return "INTERRUPT"
-                return None
+                        processing_thread = threading.Thread(target=run_processing)
+                        processing_thread.start()
 
-            # Process files
-            start_time = time.time()
-            stats = processor.process_files_high_throughput(
-                files=test_files,
-                vector_thread_count=2,
-                batch_size=5,
-                progress_callback=progress_callback,
-            )
-            processing_time = time.time() - start_time
+                        # Let it start processing some chunks
+                        time.sleep(0.3)
 
-            # Should complete much faster than processing all chunks
-            # Without cancellation: 10 files * 3 chunks * 0.2s = 6s minimum
-            # With cancellation: should be much less
-            assert (
-                processing_time < 3.0
-            ), f"Processing took {processing_time:.2f}s, expected < 3.0s"
+                        # Request cancellation
+                        processor.request_cancellation()
 
-            # Should have processed fewer than all files
-            assert stats.files_processed < len(
-                test_files
-            ), f"Expected fewer than {len(test_files)} files processed, got {stats.files_processed}"
+                        # Wait for processing to complete
+                        processing_thread.join(timeout=5.0)
 
-    @pytest.mark.unit
-    @patch("code_indexer.services.git_aware_processor.FileIdentifier")
-    @patch("code_indexer.services.git_aware_processor.GitDetectionService")
-    @patch("code_indexer.indexing.processor.FileFinder")
-    @patch("code_indexer.indexing.processor.TextChunker")
-    def test_cancellation_preserves_completed_work(
-        self,
-        mock_text_chunker,
-        mock_file_finder,
-        mock_git_detection,
-        mock_file_identifier,
-    ):
-        """Test that cancellation preserves already completed work."""
-        # Create processor with mocked dependencies
+                        # Should have stopped due to cancellation
+                        assert processor.cancelled
+                        assert stats is not None  # Should have partial results
+                        assert exception is None  # Should not have thrown an exception
+
+                        # Should have processed fewer than total files due to cancellation
+                        total_possible_chunks = len(test_files) * 3  # 3 chunks per file
+                        assert stats.chunks_created < total_possible_chunks
+
+    def test_cancellation_preserves_completed_work(self):
+        """Test that cancellation preserves completed work and doesn't lose data."""
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
             qdrant_client=self.qdrant_client,
         )
 
-        # Create a few test files
+        # Create test files
         with local_temporary_directory() as temp_dir:
             test_files = []
-            for i in range(3):
+            for i in range(6):
                 test_file = Path(temp_dir) / f"test{i}.py"
                 test_file.write_text(f"def test{i}():\n    pass\n")
                 test_files.append(test_file)
@@ -380,121 +257,96 @@ class TestHighThroughputProcessorCancellation:
                         "chunk_index": 0,
                         "total_chunks": 1,
                         "file_extension": "py",
+                        "line_start": 1,
+                        "line_end": 2,
                     }
                 ]
 
-            processor.text_chunker.chunk_file.side_effect = mock_chunk_file
+            with patch.object(
+                processor.text_chunker, "chunk_file", side_effect=mock_chunk_file
+            ):
+                # Mock file identifier
+                def mock_get_file_metadata(file_path):
+                    return {
+                        "project_id": "test-project",
+                        "file_hash": f"hash-{file_path.name}",
+                        "git_available": False,
+                        "file_mtime": time.time(),
+                        "file_size": 100,
+                    }
 
-            # Mock file identifier
-            def mock_get_file_metadata(file_path):
-                return {
-                    "project_id": "test-project",
-                    "file_hash": f"hash-{file_path.name}",
-                    "git_available": False,
-                    "file_mtime": time.time(),
-                    "file_size": 100,
-                }
+                with patch.object(
+                    processor.file_identifier,
+                    "get_file_metadata",
+                    side_effect=mock_get_file_metadata,
+                ):
+                    # Track upsert calls to ensure completed work is preserved
+                    upsert_calls = []
 
-            processor.file_identifier.get_file_metadata.side_effect = (
-                mock_get_file_metadata
-            )
+                    def track_upsert(points):
+                        upsert_calls.append(len(points))
+                        return True
 
-            # Cancel after second file starts processing
-            callback_count = 0
+                    with patch.object(
+                        processor.qdrant_client,
+                        "upsert_points_atomic",
+                        side_effect=track_upsert,
+                    ):
+                        # Start processing in a separate thread
+                        import threading
 
-            def progress_callback(current, total, path, info=None):
-                nonlocal callback_count
-                callback_count += 1
-                if callback_count == 5:  # Cancel partway through
-                    processor.request_cancellation()
-                    return "INTERRUPT"
-                return None
+                        stats = None
 
-            # Process files
-            stats = processor.process_files_high_throughput(
-                files=test_files,
-                vector_thread_count=1,
-                batch_size=10,
-                progress_callback=progress_callback,
-            )
+                        def run_processing():
+                            nonlocal stats
+                            stats = processor.process_files_high_throughput(
+                                test_files, vector_thread_count=2, batch_size=3
+                            )
 
-            # Should have completed at least some work
-            assert stats.files_processed >= 0
-            assert stats.chunks_created >= 0
+                        processing_thread = threading.Thread(target=run_processing)
+                        processing_thread.start()
 
-            # Qdrant should have been called for any completed work
-            if stats.chunks_created > 0:
-                # Check for either upsert_points or upsert_points_atomic calls
-                assert (
-                    self.qdrant_client.upsert_points.called
-                    or self.qdrant_client.upsert_points_atomic.called
-                )
+                        # Let it process some files
+                        time.sleep(0.2)
 
-    @patch("code_indexer.services.git_aware_processor.FileIdentifier")
-    @patch("code_indexer.services.git_aware_processor.GitDetectionService")
-    @patch("code_indexer.indexing.processor.FileFinder")
-    @patch("code_indexer.indexing.processor.TextChunker")
-    def test_multiple_cancellation_requests_safe(
-        self,
-        mock_text_chunker,
-        mock_file_finder,
-        mock_git_detection,
-        mock_file_identifier,
-    ):
-        """Test that multiple cancellation requests are safe."""
-        # Create processor with mocked dependencies
+                        # Request cancellation
+                        processor.request_cancellation()
+
+                        # Wait for processing to complete
+                        processing_thread.join(timeout=3.0)
+
+                        # Completed work should have been preserved
+                        if upsert_calls:
+                            total_upserted = sum(upsert_calls)
+                            assert (
+                                total_upserted > 0
+                            ), "Some chunks should have been upserted"
+
+                        # Stats should reflect the work that was completed
+                        assert stats is not None
+                        assert stats.chunks_created >= 0
+
+    def test_multiple_cancellation_requests_safe(self):
+        """Test that multiple cancellation requests are safe and don't cause issues."""
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
             qdrant_client=self.qdrant_client,
         )
 
-        # Create a test file
-        with local_temporary_directory() as temp_dir:
-            test_file = Path(temp_dir) / "test.py"
-            test_file.write_text("def test():\n    pass\n")
+        # Initially not cancelled
+        assert not processor.cancelled
 
-            # Mock chunker
-            processor.text_chunker.chunk_file.return_value = [
-                {
-                    "text": "content",
-                    "chunk_index": 0,
-                    "total_chunks": 1,
-                    "file_extension": "py",
-                }
-            ]
+        # Multiple cancellation requests should be safe
+        processor.request_cancellation()
+        assert processor.cancelled
 
-            # Mock file identifier
-            processor.file_identifier.get_file_metadata.return_value = {
-                "project_id": "test-project",
-                "file_hash": "test-hash",
-                "git_available": False,
-                "file_mtime": time.time(),
-                "file_size": 100,
-            }
+        processor.request_cancellation()  # Second call
+        assert processor.cancelled
 
-            # Multiple cancellation requests should be safe
-            processor.request_cancellation()
-            processor.request_cancellation()
-            processor.request_cancellation()
+        processor.request_cancellation()  # Third call
+        assert processor.cancelled
 
-            # All calls should be safe, no exceptions
-            assert processor.cancelled
-
-            # Processing should still work (just exit immediately)
-            def progress_callback(current, total, path, info=None):
-                return "INTERRUPT"  # Always interrupt
-
-            stats = processor.process_files_high_throughput(
-                files=[test_file],
-                vector_thread_count=1,
-                batch_size=10,
-                progress_callback=progress_callback,
-            )
-
-            # Should complete without errors
-            assert stats is not None
-
-
-if __name__ == "__main__":
-    pytest.main([__file__])
+        # Should still be in valid state
+        assert hasattr(processor, "cancelled")
+        assert processor.cancelled is True

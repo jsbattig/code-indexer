@@ -1,5 +1,63 @@
 # Code Indexer Release Notes
 
+## Version 2.0.0.0 (2025-01-11)
+
+### 🚨 BREAKING CHANGES
+
+#### **Legacy Indexing Methods Removed**
+- **Removed deprecated methods**: Completely removed `index_codebase()` and `update_index_smart()` from `GitAwareDocumentProcessor`
+- **Removed deprecated methods**: Completely removed `index_codebase()` and `update_index()` from `DocumentProcessor`
+- **API Breaking Change**: These methods now only exist in `SmartIndexer` which is the single source of truth for all indexing operations
+- **Migration Required**: Any external code calling these deprecated methods must be updated to use `SmartIndexer.smart_index()` instead
+
+#### **AST-Based Semantic Chunking is Now Default**
+- **Configuration Change**: `use_semantic_chunking` now defaults to `True` instead of `False`
+- **Enhanced Search Results**: All new indexes will use AST-based semantic chunking by default for improved code understanding
+- **Fallback Behavior**: Automatically falls back to text chunking for unsupported languages or malformed code
+
+### 🚀 Major Features & Enhancements
+
+#### **Codebase Architecture Cleanup**
+- **Simplified Indexing Paths**: Consolidated all indexing operations through `SmartIndexer` eliminating code duplication
+- **Removed Dead Code**: Eliminated unreachable indexing methods that were no longer used in production
+- **Cleaner Architecture**: Streamlined processor hierarchy with clear separation of concerns
+
+#### **Enhanced Test Infrastructure**
+- **Container Reuse Optimization**: Fixed test infrastructure to reuse containers between tests instead of creating new ones
+- **Improved E2E Tests**: AST chunking E2E tests now use shared project directories and `index --clear` for data reset
+- **Better Test Performance**: Reduced container creation overhead in test suite by using proper shared infrastructure
+
+#### **Code Quality Improvements**
+- **Full Linting Compliance**: All code now passes ruff, black, and mypy checks
+- **Type Safety**: Enhanced type checking across all modified modules
+- **Documentation Updates**: Updated method signatures and documentation to reflect current architecture
+
+### 🐛 Bug Fixes
+- **Container Proliferation**: Fixed issue where E2E tests were creating new containers for each test run
+- **Test Infrastructure**: Fixed project hash calculation issues in test environment
+- **Semantic Metadata**: Fixed semantic metadata storage and display in query results
+
+### 🔧 Technical Improvements
+- **Reduced Code Complexity**: Removed approximately 100 lines of deprecated code across processor classes
+- **Better Error Messages**: Deprecated methods now provide clear guidance on replacements
+- **Consistent API**: All indexing now goes through the same well-tested code path
+
+### 📊 Breaking Change Impact Analysis
+- **External API Users**: Any code directly calling `processor.index_codebase()` or `processor.update_index_smart()` must migrate
+- **CLI Users**: No impact - all CLI commands continue to work unchanged
+- **SmartIndexer Usage**: Recommended migration path is to use `SmartIndexer.smart_index()` for all indexing operations
+
+### 🏗️ Migration Guide
+```python
+# OLD (no longer works)
+processor = GitAwareDocumentProcessor(config, embedding_provider, qdrant_client)
+stats = processor.index_codebase(clear_existing=True)
+
+# NEW (recommended)
+smart_indexer = SmartIndexer(config, embedding_provider, qdrant_client)
+stats = smart_indexer.smart_index(clear_existing=True)
+```
+
 ## Version 1.1.0.0 (2025-01-05)
 
 ### 🚀 Major Feature: Copy-on-Write (CoW) Clone Support

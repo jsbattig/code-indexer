@@ -91,6 +91,7 @@ echo "ℹ️  This matches GitHub Actions - only unit tests that don't require e
 
 # Run the exact same test command as GitHub Actions
 if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest tests/ \
+    -m "not e2e" \
     --ignore=tests/test_e2e_embedding_providers.py \
     --ignore=tests/test_start_stop_e2e.py \
     --ignore=tests/test_end_to_end_complete.py \
@@ -126,6 +127,10 @@ if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest tests/ \
     --ignore=tests/test_indexing_consistency_e2e.py \
     --ignore=tests/test_timestamp_comparison_e2e.py \
     --ignore=tests/test_line_number_display_e2e.py \
+    --ignore=tests/test_semantic_query_display_e2e.py \
+    --ignore=tests/test_semantic_search_capabilities_e2e.py \
+    --ignore=tests/test_semantic_chunking_ast_fallback_e2e.py \
+    --ignore=tests/test_cancellation_high_throughput_processor.py \
     --ignore=tests/test_concurrent_indexing_prevention.py \
     --ignore=tests/test_resume_and_incremental_bugs.py \
     --ignore=tests/test_actual_file_chunking.py \

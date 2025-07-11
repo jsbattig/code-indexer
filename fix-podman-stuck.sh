@@ -106,9 +106,13 @@ reset_podman_completely() {
     echo "  Stopping all podman user services..."
     systemctl --user stop podman.socket podman.service 2>/dev/null || true
     
-    # Kill any remaining podman processes
+    # Kill any remaining podman processes more aggressively
     echo "  Killing any remaining podman processes..."
     pkill -f podman 2>/dev/null || echo "    No podman processes to kill"
+    pkill -9 podman 2>/dev/null || true
+    pkill -9 conmon 2>/dev/null || true
+    pkill -9 crun 2>/dev/null || true
+    pkill -9 runc 2>/dev/null || true
     
     # Wait for processes to die
     sleep 5
@@ -117,15 +121,34 @@ reset_podman_completely() {
     echo "  Cleaning runtime directories..."
     rm -rf ~/.local/share/containers/storage/tmp/* 2>/dev/null || true
     rm -rf /run/user/$(id -u)/containers/* 2>/dev/null || true
+    rm -rf /run/user/$(id -u)/libpod/* 2>/dev/null || true
+    rm -rf /tmp/podman-run-$(id -u)/ 2>/dev/null || true
+    rm -rf /tmp/containers-user-$(id -u)/ 2>/dev/null || true
     
-    # Reset podman system
-    echo "  Resetting podman system..."
-    timeout 30s podman system reset --force 2>/dev/null || echo "    System reset failed"
+    # If podman is completely stuck, remove the entire storage
+    echo "  Removing podman storage (complete reset)..."
+    rm -rf ~/.local/share/containers/ 2>/dev/null || true
+    rm -rf ~/.config/containers/ 2>/dev/null || true
+    
+    # Reset podman system (might fail if podman is stuck)
+    echo "  Attempting podman system reset..."
+    timeout 10s podman system reset --force 2>/dev/null || echo "    System reset failed - proceeding with manual cleanup"
+    
+    # Reinitialize podman
+    echo "  Reinitializing podman..."
+    systemctl --user daemon-reload
+    
+    # Migrate podman to create fresh directories
+    echo "  Running podman system migrate..."
+    podman system migrate 2>/dev/null || echo "    Migration failed - will retry after service start"
     
     # Restart podman
     echo "  Restarting podman service..."
     systemctl --user start podman.socket
     sleep 5
+    
+    # Try migration again after service start
+    podman system migrate 2>/dev/null || true
 }
 
 # Function to clean system-wide if needed (requires sudo)
@@ -136,6 +159,20 @@ system_wide_cleanup() {
     echo "  Cleaning system-wide container resources..."
     sudo systemctl stop podman.socket podman.service 2>/dev/null || true
     sudo pkill -f podman 2>/dev/null || echo "    No system podman processes to kill"
+    sudo pkill -9 podman 2>/dev/null || true
+    sudo pkill -9 conmon 2>/dev/null || true
+    
+    # Clean up any hanging mounts
+    echo "  Cleaning up hanging mounts..."
+    sudo umount -f /run/user/$(id -u)/netns/* 2>/dev/null || true
+    sudo umount -f /var/lib/containers/storage/overlay/* 2>/dev/null || true
+    sudo umount -f /run/containers/storage/* 2>/dev/null || true
+    
+    # Remove system-wide podman directories if they exist
+    echo "  Removing system podman directories..."
+    sudo rm -rf /var/lib/containers/ 2>/dev/null || true
+    sudo rm -rf /run/containers/ 2>/dev/null || true
+    sudo rm -rf /run/libpod/ 2>/dev/null || true
     
     # Clean up cgroup resources
     echo "  Cleaning cgroup resources..."
@@ -144,16 +181,26 @@ system_wide_cleanup() {
         sudo rmdir "$dir" 2>/dev/null || true
     done
     
-    # Clean up network namespaces
+    # Clean up network namespaces more aggressively
     echo "  Cleaning network namespaces..."
-    sudo ip netns list 2>/dev/null | grep -E "netns|cni" | while read ns rest; do
+    sudo ip netns list 2>/dev/null | grep -E "netns|cni|podman" | awk '{print $1}' | while read ns; do
         echo "    Removing network namespace: $ns"
         sudo ip netns delete "$ns" 2>/dev/null || true
     done
     
+    # Clean up any CNI networks
+    echo "  Cleaning CNI networks..."
+    sudo rm -rf /var/lib/cni/ 2>/dev/null || true
+    sudo rm -rf /etc/cni/net.d/ 2>/dev/null || true
+    
     # Restart networking
     echo "  Restarting networking..."
     sudo systemctl restart NetworkManager 2>/dev/null || true
+    
+    # Reload systemd
+    echo "  Reloading systemd..."
+    systemctl --user daemon-reload
+    sudo systemctl daemon-reload
     
     # Start user podman again
     echo "  Starting user podman service..."

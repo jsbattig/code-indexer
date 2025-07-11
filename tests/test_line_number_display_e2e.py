@@ -20,6 +20,9 @@ from .test_infrastructure import (
     create_test_project_with_inventory,
 )
 
+# Mark all tests in this file as e2e to exclude from ci-github.sh
+pytestmark = pytest.mark.e2e
+
 
 def _get_test_project_with_line_numbers() -> Dict[str, str]:
     """Get test project files designed to test line number display."""
@@ -396,13 +399,15 @@ def test_line_numbers_in_quiet_query_results(line_number_test_repo):
     # Check that at least one result shows line numbers
     has_line_numbers = False
     for line in result_lines:
-        # Expected format: "0.85 authentication.py:6-26" or "0.85 authentication.py:6"
+        # Expected format: "0.85 authentication.py:6-26 " or "0.85 authentication.py:6 "
         if ":" in line and (".py:" in line or ".js:" in line):
-            file_part = line.split(" ", 1)[1]  # Get everything after score
+            file_part = line.split(" ", 1)[
+                1
+            ].strip()  # Get everything after score and strip trailing space
             if ":" in file_part:
-                line_part = file_part.split(":")[1]
+                line_part = file_part.split(":")[1].strip()
                 # Check if it's a line number or range (digits, possibly with dash)
-                if line_part.replace("-", "").isdigit():
+                if line_part and line_part.replace("-", "").replace(" ", "").isdigit():
                     has_line_numbers = True
                     break
 

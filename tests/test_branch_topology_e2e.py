@@ -29,6 +29,9 @@ from .test_infrastructure import (
     create_test_project_with_inventory,
 )
 
+# Mark all tests in this file as e2e to exclude from ci-github.sh
+pytestmark = pytest.mark.e2e
+
 
 @pytest.fixture
 def branch_topology_test_repo():

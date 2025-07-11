@@ -1,0 +1,33 @@
+
+================================================================================
+📊 DETAILED TEST FAILURE REPORT
+================================================================================
+
+📈 Overall Statistics:
+   Total test files: 102
+   Passed: 91
+   Failed: 6
+   Success rate: 89.2%
+
+❌ Failed Test Files (6):
+   1. test_git_aware_watch_e2e
+   2. test_line_number_display_e2e
+   3. test_qdrant_clear_collection_bug
+   4. test_semantic_chunking_ast_fallback_e2e
+   5. test_service_readiness
+   6. test_start_stop_e2e
+
+🔍 Errors by Type:
+
+   Asserti... (1 occurrences):
+      📁 test_start_stop_e2e:
+         • test_start_without_prior_setup
+           Asserti...
+
+📋 Common Error Patterns:
+
+💡 Recommendations:
+
+================================================================================
+📁 Full logs available in: test_output_20250711_162156
+================================================================================

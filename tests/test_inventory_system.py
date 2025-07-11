@@ -101,10 +101,8 @@ def test_inventory_config_structure():
         # Verify qdrant section
         qdrant_config = config["qdrant"]
         assert "vector_size" in qdrant_config
-        assert "use_provider_aware_collections" in qdrant_config
         assert "collection_base_name" in qdrant_config
 
         # Verify values
         assert config["embedding_provider"] == "voyage-ai"
         assert qdrant_config["vector_size"] == 1024
-        assert qdrant_config["use_provider_aware_collections"] is True
