@@ -96,7 +96,9 @@ class QdrantClient:
             "optimizers_config": {
                 "memmap_threshold": 20000,
                 "indexing_threshold": 10000,
+                "default_segment_number": 8,
             },
+            "on_disk_payload": True,
         }
 
         try:
@@ -169,7 +171,9 @@ class QdrantClient:
             "optimizers_config": {
                 "memmap_threshold": 20000,
                 "indexing_threshold": 10000,
+                "default_segment_number": 8,
             },
+            "on_disk_payload": True,
             "quantization_config": {
                 "scalar": {
                     "type": "int8",
@@ -520,7 +524,9 @@ class QdrantClient:
                 "optimizers_config": {
                     "memmap_threshold": 20000,
                     "indexing_threshold": 10000,
+                    "default_segment_number": 8,
                 },
+                "on_disk_payload": True,
             }
 
             response = self.client.put(
