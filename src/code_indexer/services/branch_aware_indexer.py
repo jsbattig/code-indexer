@@ -1011,12 +1011,13 @@ class BranchAwareIndexer:
 
         for point in all_content_points:
             file_path = point.get("payload", {}).get("path")
-            if file_path:
+            point_id = point.get("id")
+            if file_path and point_id:  # Only process if we have both path and id
                 if file_path not in file_to_point_info:
                     file_to_point_info[file_path] = []
                 file_to_point_info[file_path].append(
                     {
-                        "id": point["id"],
+                        "id": point_id,
                         "hidden_branches": point.get("payload", {}).get(
                             "hidden_branches", []
                         ),
