@@ -176,8 +176,8 @@ class SemanticChunker:
         try:
             with open(path_obj, "r", encoding="utf-8") as f:
                 content = f.read()
-        except Exception as e:
-            print(f"Failed to read file {path_obj}: {e}")
+        except Exception:
+            # File reading failed, fall back to text chunking silently
             return self.text_chunker.chunk_file(path_obj)  # type: ignore[no-any-return]
 
         # Detect language from file extension
@@ -198,9 +198,9 @@ class SemanticChunker:
             # Convert SemanticChunk objects to dictionaries
             return [chunk.to_dict() for chunk in semantic_chunks]
 
-        except Exception as e:
+        except Exception:
             # On any parsing error, fall back to text chunking
-            print(f"Semantic chunking failed for {path_obj}: {e}")
+            # Semantic chunking failed, fall back to text chunking silently
             return self.text_chunker.chunk_file(path_obj)  # type: ignore[no-any-return]
 
     def _detect_language(self, file_path: str) -> str:
@@ -253,9 +253,9 @@ class SemanticChunker:
             # Convert SemanticChunk objects to dictionaries
             return [chunk.to_dict() for chunk in semantic_chunks]
 
-        except Exception as e:
+        except Exception:
             # On any parsing error, fall back to text chunking
-            print(f"Semantic chunking failed for {file_path}: {e}")
+            # Semantic chunking failed, fall back to text chunking silently
             return self._fallback_to_text_chunking(content, file_path)
 
     def _fallback_to_text_chunking(

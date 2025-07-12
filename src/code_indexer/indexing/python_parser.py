@@ -49,12 +49,10 @@ class PythonSemanticParser(BaseSemanticParser):
 
             return self.chunks
 
-        except (SyntaxError, Exception) as e:
-            # Return empty list to trigger fallback
-            import traceback
-
-            print(f"Python parsing failed: {e}")
-            print(f"Traceback: {traceback.format_exc()}")
+        except (SyntaxError, Exception):
+            # Return empty list to trigger fallback to text chunking
+            # Don't print errors for files with different Python syntax (Python 2, syntax errors, etc.)
+            # This is expected behavior - semantic chunker falls back to text chunking
             return []
 
     def _collect_module_code(
