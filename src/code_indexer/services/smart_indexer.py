@@ -442,7 +442,7 @@ class SmartIndexer(HighThroughputProcessor):
                     all_relative_files.append(str(f))
 
             self.branch_aware_indexer.hide_files_not_in_branch(
-                current_branch, all_relative_files, collection_name
+                current_branch, all_relative_files, collection_name, progress_callback
             )
 
             # Convert BranchIndexingResult to ProcessingStats
@@ -600,7 +600,7 @@ class SmartIndexer(HighThroughputProcessor):
                     all_relative_files.append(str(f))
 
             self.branch_aware_indexer.hide_files_not_in_branch(
-                current_branch, all_relative_files, collection_name
+                current_branch, all_relative_files, collection_name, progress_callback
             )
 
             # Convert BranchIndexingResult to ProcessingStats

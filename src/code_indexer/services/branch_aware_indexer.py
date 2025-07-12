@@ -964,7 +964,11 @@ class BranchAwareIndexer:
         # If no content points exist for the file, that's expected for deleted files
 
     def hide_files_not_in_branch(
-        self, branch: str, current_files: List[str], collection_name: str
+        self,
+        branch: str,
+        current_files: List[str],
+        collection_name: str,
+        progress_callback: Optional[Callable] = None,
     ):
         """Hide all files that exist in the database but not in the current branch's file list.
 
@@ -974,7 +978,14 @@ class BranchAwareIndexer:
             branch: Current branch name
             current_files: List of files that exist in the current branch
             collection_name: Qdrant collection name
+            progress_callback: Optional callback for progress reporting
         """
+        # Phase 1: Scanning database
+        if progress_callback:
+            progress_callback(
+                0, 0, Path(""), info="🔍 Scanning database for branch isolation..."
+            )
+
         # Get all unique file paths from content points in the database
         all_content_points, _ = self.qdrant_client.scroll_points(
             filter_conditions={
@@ -984,33 +995,107 @@ class BranchAwareIndexer:
             collection_name=collection_name,
         )
 
-        # Extract unique file paths from the database
-        db_files = set()
+        # Phase 2: Building file mappings
+        if progress_callback:
+            progress_callback(
+                0,
+                0,
+                Path(""),
+                info=f"📊 Analyzing {len(all_content_points)} chunks across files...",
+            )
+
+        # Build comprehensive mapping of files to point IDs and their hidden_branches
+        file_to_point_info: Dict[str, List[Dict[str, Any]]] = {}  # file_path -> list of {id, hidden_branches}
+
         for point in all_content_points:
             file_path = point.get("payload", {}).get("path")
             if file_path:
-                db_files.add(file_path)
+                if file_path not in file_to_point_info:
+                    file_to_point_info[file_path] = []
+                file_to_point_info[file_path].append(
+                    {
+                        "id": point["id"],
+                        "hidden_branches": point.get("payload", {}).get(
+                            "hidden_branches", []
+                        ),
+                    }
+                )
 
-        # Find files that are in the database but not in the current branch
+        # Phase 3: Calculate what needs updating
         current_files_set = set(current_files)
+        db_files = set(file_to_point_info.keys())
         files_to_hide = db_files - current_files_set
 
-        if files_to_hide:
-            logger.info(
-                f"Hiding {len(files_to_hide)} files not present in branch {branch}: "
-                f"{', '.join(sorted(files_to_hide))}"
+        if progress_callback:
+            progress_callback(
+                0,
+                0,
+                Path(""),
+                info=f"🔧 Preparing branch isolation: {len(files_to_hide)} files to hide, checking {len(current_files_set)} for visibility...",
             )
 
-            # Hide each file that doesn't exist in the current branch
-            for file_path in files_to_hide:
-                self._hide_file_in_branch(file_path, branch, collection_name)
-        else:
-            logger.info(f"No files to hide for branch isolation in {branch}")
+        # Collect ALL updates in memory to batch them
+        all_updates = []
 
-        # Ensure files that should be visible are not hidden in this branch
-        # This fixes cases where files were incorrectly hidden in previous operations
-        for file_path in current_files:
-            self._ensure_file_visible_in_branch(file_path, branch, collection_name)
+        # Process files that need to be hidden
+        for file_path in files_to_hide:
+            for point_info in file_to_point_info.get(file_path, []):
+                if branch not in point_info["hidden_branches"]:
+                    # Add branch to hidden_branches array
+                    new_hidden = point_info["hidden_branches"] + [branch]
+                    all_updates.append(
+                        {
+                            "id": point_info["id"],
+                            "payload": {"hidden_branches": new_hidden},
+                        }
+                    )
+
+        # Process files that should be visible (only if they're currently hidden)
+        for file_path in current_files_set:
+            if file_path in file_to_point_info:  # File exists in DB
+                for point_info in file_to_point_info[file_path]:
+                    if branch in point_info["hidden_branches"]:
+                        # Remove branch from hidden_branches array
+                        new_hidden = [
+                            b for b in point_info["hidden_branches"] if b != branch
+                        ]
+                        all_updates.append(
+                            {
+                                "id": point_info["id"],
+                                "payload": {"hidden_branches": new_hidden},
+                            }
+                        )
+
+        # Phase 4: Apply updates in batches
+        if all_updates:
+            logger.info(
+                f"Branch isolation: applying {len(all_updates)} updates for branch {branch}"
+            )
+
+            total_updates = len(all_updates)
+            chunk_size = 1000
+
+            for i in range(0, total_updates, chunk_size):
+                chunk = all_updates[i : i + chunk_size]
+                self.qdrant_client._batch_update_points(chunk, collection_name)
+
+                if progress_callback:
+                    completed = min(i + chunk_size, total_updates)
+                    progress_callback(
+                        completed,
+                        total_updates,
+                        Path(""),
+                        info=f"🔄 Applying branch isolation: {completed}/{total_updates} updates",
+                    )
+        else:
+            logger.info(f"No branch isolation updates needed for branch {branch}")
+            if progress_callback:
+                progress_callback(
+                    0,
+                    0,
+                    Path(""),
+                    info="✅ Branch isolation complete - no updates needed",
+                )
 
         return True
 
