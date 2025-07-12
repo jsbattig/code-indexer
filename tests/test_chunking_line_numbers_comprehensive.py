@@ -7,7 +7,6 @@ report accurate line numbers that match the actual content boundaries.
 """
 
 import pytest
-from pathlib import Path
 from code_indexer.config import IndexingConfig
 from code_indexer.indexing.chunker import TextChunker
 from code_indexer.indexing.semantic_chunker import SemanticChunker
@@ -37,7 +36,7 @@ class TestChunkingLineNumberAccuracy:
     def _verify_chunk_line_numbers(self, chunk, original_text, file_description=""):
         """
         Verify that a chunk's reported line numbers match its actual content.
-        
+
         Args:
             chunk: The chunk to verify (dict with text, line_start, line_end)
             original_text: The original text the chunk was extracted from
@@ -45,34 +44,39 @@ class TestChunkingLineNumberAccuracy:
         """
         # Get the lines from the original text
         original_lines = original_text.splitlines()
-        
+
         # Verify line numbers are valid
-        assert chunk["line_start"] >= 1, f"{file_description}: line_start must be >= 1, got {chunk['line_start']}"
-        assert chunk["line_end"] >= chunk["line_start"], f"{file_description}: line_end must be >= line_start"
-        assert chunk["line_end"] <= len(original_lines), f"{file_description}: line_end {chunk['line_end']} exceeds total lines {len(original_lines)}"
-        
+        assert (
+            chunk["line_start"] >= 1
+        ), f"{file_description}: line_start must be >= 1, got {chunk['line_start']}"
+        assert (
+            chunk["line_end"] >= chunk["line_start"]
+        ), f"{file_description}: line_end must be >= line_start"
+        assert chunk["line_end"] <= len(
+            original_lines
+        ), f"{file_description}: line_end {chunk['line_end']} exceeds total lines {len(original_lines)}"
+
         # Extract the expected content based on reported line numbers
-        expected_lines = original_lines[chunk["line_start"]-1:chunk["line_end"]]
-        expected_content = '\n'.join(expected_lines)
-        
-        # Get actual chunk content lines
-        chunk_content = chunk["text"].strip()
+        expected_lines = original_lines[chunk["line_start"] - 1 : chunk["line_end"]]
+
+        # Get actual chunk content lines WITHOUT stripping to preserve line alignment
+        chunk_content = chunk["text"]
         chunk_lines = chunk_content.splitlines()
-        
+
         # Verify the first and last lines match
         if chunk_lines and expected_lines:
             chunk_first_line = chunk_lines[0].strip()
             chunk_last_line = chunk_lines[-1].strip()
             expected_first_line = expected_lines[0].strip()
             expected_last_line = expected_lines[-1].strip()
-            
+
             assert chunk_first_line == expected_first_line, (
                 f"{file_description}: First line mismatch\n"
                 f"Chunk first line: '{chunk_first_line}'\n"
                 f"Expected first line: '{expected_first_line}'\n"
                 f"Chunk reports lines {chunk['line_start']}-{chunk['line_end']}"
             )
-            
+
             assert chunk_last_line == expected_last_line, (
                 f"{file_description}: Last line mismatch\n"
                 f"Chunk last line: '{chunk_last_line}'\n"
@@ -100,7 +104,7 @@ if __name__ == "__main__":
     main()"""
 
         chunks = text_chunker.chunk_text(code)
-        
+
         for i, chunk in enumerate(chunks):
             self._verify_chunk_line_numbers(
                 chunk, code, f"Text chunking simple code - chunk {i+1}"
@@ -109,7 +113,7 @@ if __name__ == "__main__":
     def test_text_chunking_complex_python_file(self, text_chunker):
         """Test text chunking with a complex Python file that will be split."""
         code = ""
-        
+
         # Build a large Python file
         for i in range(1, 51):
             code += f"""
@@ -133,10 +137,10 @@ class DataProcessor{i}:
         return {{'processed': self.processed_count, 'algorithm': {i}}}
 
 """
-        
+
         chunks = text_chunker.chunk_text(code)
         assert len(chunks) > 1, "Expected multiple chunks for large code file"
-        
+
         for i, chunk in enumerate(chunks):
             self._verify_chunk_line_numbers(
                 chunk, code, f"Text chunking complex Python - chunk {i+1}"
@@ -218,16 +222,16 @@ if __name__ == "__main__":
 
         # Test with semantic chunker
         chunks = semantic_chunker.chunk_content(code, "test.py")
-        
+
         assert len(chunks) > 0, "Expected at least one chunk"
-        
+
         for i, chunk in enumerate(chunks):
             # Convert semantic chunk to dict format
-            if hasattr(chunk, 'to_dict'):
+            if hasattr(chunk, "to_dict"):
                 chunk_dict = chunk.to_dict()
             else:
                 chunk_dict = chunk
-                
+
             self._verify_chunk_line_numbers(
                 chunk_dict, code, f"Semantic chunking Python classes - chunk {i+1}"
             )
@@ -325,17 +329,17 @@ class LargeComplexClass:
 """
 
         chunks = semantic_chunker.chunk_content(code, "large_class.py")
-        
+
         # Should have multiple chunks for a large class
         assert len(chunks) >= 1, "Expected at least one chunk for large class"
-        
+
         for i, chunk in enumerate(chunks):
             # Convert semantic chunk to dict format
-            if hasattr(chunk, 'to_dict'):
+            if hasattr(chunk, "to_dict"):
                 chunk_dict = chunk.to_dict()
             else:
                 chunk_dict = chunk
-                
+
             self._verify_chunk_line_numbers(
                 chunk_dict, code, f"Semantic chunking large class - chunk {i+1}"
             )
@@ -396,7 +400,7 @@ class ClassWithSpecialContent:
 # Final comment at end of file"""
 
         chunks = text_chunker.chunk_text(code)
-        
+
         for i, chunk in enumerate(chunks):
             self._verify_chunk_line_numbers(
                 chunk, code, f"Text chunking edge cases - chunk {i+1}"
@@ -419,21 +423,21 @@ class SimpleClass:
         # Get chunks from both chunkers
         text_chunks = text_chunker.chunk_text(code)
         semantic_chunks = semantic_chunker.chunk_content(code, "test.py")
-        
+
         # Convert semantic chunks to dict format
         semantic_chunks_dict = []
         for chunk in semantic_chunks:
-            if hasattr(chunk, 'to_dict'):
+            if hasattr(chunk, "to_dict"):
                 semantic_chunks_dict.append(chunk.to_dict())
             else:
                 semantic_chunks_dict.append(chunk)
-        
+
         # Verify line numbers for both
         for i, chunk in enumerate(text_chunks):
             self._verify_chunk_line_numbers(
                 chunk, code, f"Text chunker consistency test - chunk {i+1}"
             )
-            
+
         for i, chunk in enumerate(semantic_chunks_dict):
             self._verify_chunk_line_numbers(
                 chunk, code, f"Semantic chunker consistency test - chunk {i+1}"
@@ -444,33 +448,39 @@ class SimpleClass:
         # Create a large file with known structure
         lines = []
         for i in range(1, 201):  # 200 functions
-            lines.extend([
-                f"def function_{i}():",
-                f"    '''Function number {i} for testing.'''", 
-                f"    result = {i} * 2",
-                f"    print(f'Function {i} result: {{result}}')",
-                f"    return result",
-                "",  # Empty line between functions
-            ])
-        
-        code = '\n'.join(lines)
+            lines.extend(
+                [
+                    f"def function_{i}():",
+                    f"    '''Function number {i} for testing.'''",
+                    f"    result = {i} * 2",
+                    f"    print(f'Function {i} result: {{result}}')",
+                    "    return result",
+                    "",  # Empty line between functions
+                ]
+            )
+
+        code = "\n".join(lines)
         expected_total_lines = len(lines)
-        
+
         chunks = text_chunker.chunk_text(code)
-        assert len(chunks) > 5, f"Expected many chunks for large file, got {len(chunks)}"
-        
+        assert (
+            len(chunks) > 5
+        ), f"Expected many chunks for large file, got {len(chunks)}"
+
         # Verify every chunk
         for i, chunk in enumerate(chunks):
             self._verify_chunk_line_numbers(
                 chunk, code, f"Large file chunking - chunk {i+1}"
             )
-            
+
         # Verify coverage - all lines should be covered by at least one chunk
         covered_lines = set()
         for chunk in chunks:
             for line_num in range(chunk["line_start"], chunk["line_end"] + 1):
                 covered_lines.add(line_num)
-                
+
         # Should cover most of the file (allowing for some overlap/gaps due to chunking)
         coverage_ratio = len(covered_lines) / expected_total_lines
-        assert coverage_ratio > 0.8, f"Expected >80% line coverage, got {coverage_ratio:.2%}"
+        assert (
+            coverage_ratio > 0.8
+        ), f"Expected >80% line coverage, got {coverage_ratio:.2%}"

@@ -51,7 +51,10 @@ class PythonSemanticParser(BaseSemanticParser):
 
         except (SyntaxError, Exception) as e:
             # Return empty list to trigger fallback
+            import traceback
+
             print(f"Python parsing failed: {e}")
+            print(f"Traceback: {traceback.format_exc()}")
             return []
 
     def _collect_module_code(
@@ -193,7 +196,11 @@ class PythonSemanticParser(BaseSemanticParser):
             if isinstance(base, ast.Name):
                 bases.append(base.id)
             elif isinstance(base, ast.Attribute):
-                bases.append(ast.get_source_segment(content, base) or "Unknown")
+                try:
+                    base_src = ast.get_source_segment(content, base)
+                    bases.append(base_src or "Unknown")
+                except (IndexError, Exception):
+                    bases.append("Unknown")
 
         # Count methods
         methods = [
@@ -209,7 +216,7 @@ class PythonSemanticParser(BaseSemanticParser):
             size=len(content),
             file_path=file_path,
             file_extension=Path(file_path).suffix,
-            line_start=node.lineno,
+            line_start=self._get_node_start_line(node),
             line_end=getattr(node, "end_lineno", node.lineno),
             semantic_type="class",
             semantic_name=node.name,
@@ -221,9 +228,7 @@ class PythonSemanticParser(BaseSemanticParser):
             ),
             semantic_parent=None,
             semantic_context={
-                "decorators": [
-                    ast.get_source_segment(content, d) for d in node.decorator_list
-                ],
+                "decorators": self._safe_get_decorators(content, node.decorator_list),
                 "bases": bases,
                 "method_count": len(methods),
             },
@@ -272,7 +277,7 @@ class PythonSemanticParser(BaseSemanticParser):
             size=len(func_content),
             file_path=file_path,
             file_extension=Path(file_path).suffix,
-            line_start=node.lineno,
+            line_start=self._get_node_start_line(node),
             line_end=getattr(node, "end_lineno", node.lineno),
             semantic_type="function",
             semantic_name=node.name,
@@ -362,3 +367,34 @@ class PythonSemanticParser(BaseSemanticParser):
         chunk.semantic_scope = "class"
 
         return chunk
+
+    def _safe_get_decorators(
+        self, content: str, decorator_list: List[ast.expr]
+    ) -> List[str]:
+        """Safely extract decorator source code, handling parsing errors."""
+        decorators = []
+        for d in decorator_list:
+            try:
+                decorator_src = ast.get_source_segment(content, d)
+                if decorator_src:
+                    decorators.append(decorator_src)
+                else:
+                    decorators.append("@<unknown>")
+            except (IndexError, Exception):
+                decorators.append("@<unknown>")
+        return decorators
+
+    def _get_node_start_line(self, node: ast.AST) -> int:
+        """Get the actual start line of a node, including decorators."""
+        if hasattr(node, "decorator_list") and node.decorator_list:
+            decorator_lines: List[int] = [
+                d.lineno
+                for d in node.decorator_list
+                if hasattr(d, "lineno") and isinstance(d.lineno, int)
+            ]
+            if decorator_lines:
+                return min(decorator_lines)
+        lineno_val = getattr(node, "lineno", None)
+        if isinstance(lineno_val, int):
+            return lineno_val
+        return 1
