@@ -681,10 +681,54 @@ class ServiceManager:
             )
 
             if start_result.returncode != 0:
+                # Check for Qdrant WAL error first
+                if (
+                    "Wal error" in start_result.stdout
+                    or "Resource temporarily unavailable" in start_result.stdout
+                    or "Can't write to WAL" in start_result.stdout
+                ):
+                    print("Detected Qdrant WAL error, cleaning up Qdrant data...")
+
+                    # Clean up Qdrant data directory
+                    if working_dir:
+                        qdrant_dir = working_dir / ".code-indexer" / "qdrant"
+                    else:
+                        qdrant_dir = Path.cwd() / ".code-indexer" / "qdrant"
+                    if qdrant_dir.exists():
+                        import shutil
+
+                        try:
+                            shutil.rmtree(qdrant_dir / "storage", ignore_errors=True)
+                            shutil.rmtree(qdrant_dir / "snapshots", ignore_errors=True)
+                            shutil.rmtree(qdrant_dir / "log", ignore_errors=True)
+                            shutil.rmtree(qdrant_dir / "wal", ignore_errors=True)
+                            print("✅ Cleaned Qdrant data directories")
+                        except Exception as e:
+                            print(f"Warning: Error cleaning Qdrant data: {e}")
+
+                    # Try starting again after cleanup
+                    start_result = subprocess.run(
+                        self.config.cli_command_prefix + ["start"],
+                        capture_output=True,
+                        text=True,
+                        timeout=self.config.service_timeout,
+                    )
+
+                    if start_result.returncode != 0:
+                        print(
+                            "Failed to start after Qdrant cleanup, trying full uninstall..."
+                        )
+                        # Fall through to container cleanup below
+                    else:
+                        # Success after Qdrant cleanup
+                        return True
+
                 # Check for container issues and attempt recovery
                 if (
                     "No such container" in start_result.stdout
                     or "Error response from daemon" in start_result.stdout
+                    or start_result.returncode
+                    != 0  # Also try recovery for other failures
                 ):
                     print(
                         "Detected container issues, attempting uninstall and clean restart..."
