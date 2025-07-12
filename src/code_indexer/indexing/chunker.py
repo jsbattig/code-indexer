@@ -220,160 +220,58 @@ class TextChunker:
     def _smart_split_with_lines(
         self, text: str, text_lines: List[str], file_extension: str
     ) -> List[Dict[str, Any]]:
-        """Split text using language-aware delimiters while tracking line numbers."""
+        """Simplified text chunking that prevents infinite loops."""
+        if not text_lines:
+            return []
+
         chunk_data = []
-        current_line_idx = 0  # 0-based index into text_lines
+        current_line_idx = 0
 
         while current_line_idx < len(text_lines):
-            # Determine chunk boundaries
             chunk_start_line = current_line_idx + 1  # 1-based line number
-            chunk_lines_count = 0
             current_chunk_size = 0
+            lines_in_chunk: List[str] = []
 
-            # Track if we're in a multi-line construct
-            in_multiline_construct = False
-            multiline_start_idx = None
-            construct_type = ""
-
-            # Check if we're starting in the middle of a string continuation
-            if current_line_idx > 0:
-                line = text_lines[current_line_idx]
-                line_stripped = line.strip()
-
-                # If this line starts with a string continuation, look back
-                if (
-                    line_stripped.startswith('f"')
-                    or line_stripped.startswith('"')
-                    or line_stripped.startswith("'")
-                    or (
-                        line_stripped
-                        and line_stripped[0] in "fF"
-                        and len(line_stripped) > 1
-                        and line_stripped[1] in "\"'"
-                    )
-                ):
-                    # Look backward to find the start of the construct
-                    look_back_idx = current_line_idx - 1
-                    while look_back_idx >= 0:
-                        prev_line = text_lines[look_back_idx]
-                        if self._is_multiline_construct_start(
-                            prev_line, text_lines, look_back_idx, file_extension
-                        )[0]:
-                            # Found the start, adjust our starting position
-                            current_line_idx = look_back_idx
-                            chunk_start_line = current_line_idx + 1
-                            break
-                        look_back_idx -= 1
-
-            # Add lines until we reach size limit or find a good break point
+            # Add lines until we reach chunk size limit
             temp_line_idx = current_line_idx
-            while (
-                temp_line_idx < len(text_lines) and current_chunk_size < self.chunk_size
-            ):
+            while temp_line_idx < len(text_lines):
                 line = text_lines[temp_line_idx]
-                line_size = len(line) + 1  # +1 for newline (except last line)
-                if temp_line_idx == len(text_lines) - 1 and not text.endswith("\n"):
-                    line_size = len(line)  # Last line without newline
+                line_size = len(line) + 1  # +1 for newline
 
-                # Check if we're entering or in a multi-line construct
-                if not in_multiline_construct:
-                    in_multiline_construct, construct_type = (
-                        self._is_multiline_construct_start(
-                            line, text_lines, temp_line_idx, file_extension
-                        )
-                    )
-                    if in_multiline_construct:
-                        multiline_start_idx = temp_line_idx
-
-                # Check if we're exiting a multi-line construct
-                if in_multiline_construct:
-                    if self._is_multiline_construct_end(
-                        line, text_lines, temp_line_idx, construct_type, file_extension
-                    ):
-                        in_multiline_construct = False
-                        multiline_start_idx = None
-
-                # Check if adding this line would exceed chunk size
+                # If this would exceed chunk size and we have at least one line, break
                 if (
                     current_chunk_size + line_size > self.chunk_size
-                    and chunk_lines_count > 0
+                    and len(lines_in_chunk) > 0
                 ):
-                    # Before breaking, check if this line starts a new multi-line construct
-                    # Even if we're not currently in one, we should look ahead
-                    if not in_multiline_construct:
-                        will_start_construct, construct_type = (
-                            self._is_multiline_construct_start(
-                                line, text_lines, temp_line_idx, file_extension
-                            )
-                        )
-                        if will_start_construct:
-                            # Calculate size of the upcoming construct
-                            upcoming_construct_size = self._calculate_construct_size(
-                                text_lines,
-                                temp_line_idx,
-                                temp_line_idx,
-                                file_extension,
-                            )
-                            max_construct_size = (
-                                self.chunk_size * 2.5
-                                if file_extension == "java"
-                                else self.chunk_size * 1.5
-                            )
+                    break
 
-                            # If the construct is reasonable size, start it in this chunk
-                            if upcoming_construct_size < max_construct_size:
-                                in_multiline_construct = True
-                                multiline_start_idx = temp_line_idx
-
-                    # If we're in a multi-line construct, try to keep it together
-                    if in_multiline_construct and multiline_start_idx is not None:
-                        # Calculate the size of the entire construct
-                        construct_size = self._calculate_construct_size(
-                            text_lines,
-                            multiline_start_idx,
-                            temp_line_idx,
-                            file_extension,
-                        )
-
-                        # If the construct is reasonable size, include it entirely
-                        # Be more generous for Java string concatenations
-                        max_construct_size = (
-                            self.chunk_size * 2.5
-                            if file_extension == "java"
-                            else self.chunk_size * 1.5
-                        )
-                        if construct_size < max_construct_size:
-                            # Continue to include the construct
-                            pass
-                        else:
-                            # Construct is too large, check for break point
-                            if self._is_good_break_point(line, file_extension):
-                                break
-                            elif current_chunk_size + line_size > self.chunk_size * 1.5:
-                                break
-                    else:
-                        # Not in multi-line construct, check for natural break points
-                        if self._is_good_break_point(line, file_extension):
-                            break
-                        # If we're way over the limit, break anyway
-                        elif current_chunk_size + line_size > self.chunk_size * 1.2:
-                            break
-
+                lines_in_chunk.append(line)
                 current_chunk_size += line_size
-                chunk_lines_count += 1
                 temp_line_idx += 1
 
-            # Ensure we have at least one line
-            if chunk_lines_count == 0 and current_line_idx < len(text_lines):
-                chunk_lines_count = 1
+            # Handle case where single line exceeds chunk size
+            if len(lines_in_chunk) == 0 and current_line_idx < len(text_lines):
+                line = text_lines[current_line_idx]
+                if len(line) > self.chunk_size:
+                    # Split oversized line
+                    line_chunks = self._split_oversized_line(line, current_line_idx + 1)
+                    chunk_data.extend(line_chunks)
+                    current_line_idx += 1
+                    continue
+                else:
+                    # Include at least one line
+                    lines_in_chunk = [line]
 
-            if chunk_lines_count > 0:
-                chunk_end_line = chunk_start_line + chunk_lines_count - 1
+            if lines_in_chunk:
+                chunk_end_line = chunk_start_line + len(lines_in_chunk) - 1
 
-                # Extract the exact text for this line range
-                chunk_text = self._extract_line_range(
-                    text, text_lines, chunk_start_line, chunk_end_line
-                )
+                # Build chunk text directly from collected lines
+                chunk_text = "\n".join(lines_in_chunk)
+
+                # Add final newline if this chunk doesn't go to end of file
+                # or if original text ends with newline
+                if chunk_end_line < len(text_lines) or text.endswith("\n"):
+                    chunk_text += "\n"
 
                 chunk_data.append(
                     {
@@ -383,47 +281,48 @@ class TextChunker:
                     }
                 )
 
-                # Move to next chunk with overlap
-                # Don't create overlap if we've processed all the content
-                if temp_line_idx >= len(text_lines):
-                    break
-
-                # Be smarter about overlap - avoid starting in the middle of constructs
-                overlap_lines = min(
-                    self.chunk_overlap // 50,  # Estimate lines from character overlap
-                    chunk_lines_count // 4,  # Or 25% of current chunk
-                    5,  # But no more than 5 lines
-                )
-
-                # Adjust the next starting position
-                next_start = current_line_idx + chunk_lines_count - overlap_lines
-
-                # Check if the next start would be in the middle of a construct
-                if next_start < len(text_lines):
-                    next_line = text_lines[next_start]
-                    next_line_stripped = next_line.strip()
-
-                    # If next line is a string continuation, find a better break
-                    if (
-                        next_line_stripped.startswith('f"')
-                        or next_line_stripped.startswith('"')
-                        or next_line_stripped.startswith("'")
-                    ):
-                        # Look for a better starting point
-                        better_start = next_start
-                        for idx in range(next_start - 1, current_line_idx, -1):
-                            if self._is_good_break_point(
-                                text_lines[idx], file_extension
-                            ):
-                                better_start = idx + 1
-                                break
-                        next_start = better_start
-
-                current_line_idx = max(current_line_idx + 1, next_start)
+                # For simplified chunker: move to next chunk without overlap to prevent duplication
+                # This eliminates the complex overlap logic that was causing content bleeding
+                current_line_idx += len(lines_in_chunk)
             else:
-                break
+                # Safety: always advance at least one line
+                current_line_idx += 1
 
         return chunk_data
+
+    def _split_oversized_line(
+        self, line: str, line_number: int
+    ) -> List[Dict[str, Any]]:
+        """Split a single oversized line into multiple chunks."""
+        chunks = []
+        start_pos = 0
+
+        while start_pos < len(line):
+            end_pos = start_pos + self.chunk_size
+            if end_pos >= len(line):
+                # Last chunk
+                chunk_text = line[start_pos:]
+            else:
+                # Try to break at a reasonable boundary
+                chunk_text = line[start_pos:end_pos]
+                # Look for space, comma, or other break characters
+                for break_char in [" ", ",", ";", "|", '"', "'", "}", "]", ")", ">"]:
+                    last_break = chunk_text.rfind(break_char)
+                    if last_break > self.chunk_size * 0.8:  # At least 80% of chunk size
+                        chunk_text = line[start_pos : start_pos + last_break + 1]
+                        break
+
+            chunks.append(
+                {
+                    "text": chunk_text,
+                    "line_start": line_number,
+                    "line_end": line_number,
+                }
+            )
+
+            start_pos += len(chunk_text)
+
+        return chunks
 
     def _extract_line_range(
         self, original_text: str, text_lines: List[str], start_line: int, end_line: int
@@ -1054,10 +953,13 @@ class TextChunker:
             # Check if this chunk is too small and might be a fragment
             if len(chunk_text) < MIN_CHUNK_SIZE:
                 # Try to merge with the previous chunk if it exists and won't exceed chunk_size
+                # BUT: Only if this chunk doesn't overlap with the previous chunk's line range
                 if (
                     filtered_chunk_data
                     and len(filtered_chunk_data[-1]["text"] + "\n" + chunk_text)
                     <= self.chunk_size
+                    and chunk_info["line_start"]
+                    > filtered_chunk_data[-1]["line_end"]  # No overlap
                 ):
                     # Merge with previous chunk, extending line range
                     prev_chunk = filtered_chunk_data[-1]
@@ -1141,6 +1043,17 @@ class TextChunker:
 
     def chunk_file(self, file_path: Path) -> List[Dict[str, Any]]:
         """Read and chunk a file."""
+        # Debug logging
+        import os
+        import datetime
+
+        debug_file = os.path.expanduser("~/.tmp/cidx_debug.log")
+        with open(debug_file, "a") as f:
+            f.write(
+                f"[{datetime.datetime.now().isoformat()}] TextChunker.chunk_file called for: {file_path}\n"
+            )
+            f.flush()
+
         try:
             # Try different encodings
             encodings = ["utf-8", "utf-8-sig", "latin-1", "cp1252"]
@@ -1156,6 +1069,12 @@ class TextChunker:
 
             if text is None:
                 raise ValueError(f"Could not decode file {file_path}")
+
+            with open(debug_file, "a") as f:
+                f.write(
+                    f"[{datetime.datetime.now().isoformat()}] Read {len(text)} chars, calling chunk_text\n"
+                )
+                f.flush()
 
             return self.chunk_text(text, file_path)
 
