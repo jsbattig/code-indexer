@@ -454,13 +454,27 @@ def test_semantic_display_different_languages():
 @pytest.mark.voyage_ai
 def test_fallback_display_for_text_chunks():
     """Test that non-semantic chunks still display properly."""
-    with local_temporary_directory() as temp_dir:
-        test_dir = temp_dir / "fallback_display_test"
-        test_dir.mkdir()
+    # Use isolated project directory to avoid interference with other tests
+    from .test_infrastructure import create_isolated_project_dir
 
-        # Create project with text files (no semantic chunking)
-        project_files = {
-            "README.md": """# Test Project
+    test_dir = create_isolated_project_dir("fallback_display")
+
+    # Create test project with inventory system (will preserve existing config)
+    create_test_project_with_inventory(test_dir, TestProjectInventory.CLI_PROGRESS)
+
+    # CRITICAL: Remove any existing files to ensure clean test state
+    import shutil
+
+    for item in test_dir.iterdir():
+        if item.name != ".code-indexer":  # Preserve configuration
+            if item.is_dir():
+                shutil.rmtree(item)
+            else:
+                item.unlink()
+
+    # Create project with text files (no semantic chunking)
+    project_files = {
+        "README.md": """# Test Project
             
 This is a test project for validating query display.
 
@@ -474,7 +488,7 @@ This is a test project for validating query display.
 2. Install dependencies
 3. Run the application
 """,
-            "config.yaml": """app:
+        "config.yaml": """app:
   name: TestApp
   port: 8080
   debug: true
@@ -484,62 +498,50 @@ database:
   port: 5432
   name: testdb
 """,
-        }
+    }
 
-        # Create test project with inventory system
-        create_test_project_with_inventory(test_dir, TestProjectInventory.CLI_PROGRESS)
+    # Add custom test files
+    for filename, content in project_files.items():
+        (test_dir / filename).write_text(content)
 
-        # Add custom test files
-        for filename, content in project_files.items():
-            (test_dir / filename).write_text(content)
+    # Ensure services are started first (start is idempotent)
+    start_result = subprocess.run(
+        ["code-indexer", "start"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert start_result.returncode == 0
 
-        # Initialize and start services
-        init_result = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=test_dir,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        assert init_result.returncode == 0
+    # COMPREHENSIVE SETUP: Clear index and reindex only the new files
+    index_result = subprocess.run(
+        ["code-indexer", "index", "--clear"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    assert index_result.returncode == 0
 
-        start_result = subprocess.run(
-            ["code-indexer", "start"],
-            cwd=test_dir,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        assert start_result.returncode == 0
+    # Query for text content
+    query_result = subprocess.run(
+        ["code-indexer", "query", "authentication features"],
+        cwd=test_dir,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert query_result.returncode == 0
 
-        # Index the project
-        index_result = subprocess.run(
-            ["code-indexer", "index"],
-            cwd=test_dir,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        assert index_result.returncode == 0
+    output = query_result.stdout
 
-        # Query for text content
-        query_result = subprocess.run(
-            ["code-indexer", "query", "authentication features"],
-            cwd=test_dir,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        assert query_result.returncode == 0
+    # Should not show semantic information for text files
+    assert (
+        "🧠 Semantic:" not in output
+    ), f"Unexpected semantic info for text files: {output}"
 
-        output = query_result.stdout
-
-        # Should not show semantic information for text files
-        assert (
-            "🧠 Semantic:" not in output
-        ), f"Unexpected semantic info for text files: {output}"
-
-        # Should still show normal file and content information
-        assert (
-            "📄 File:" in output or "Found" in output
-        ), f"No file information found: {output}"
+    # Should still show normal file and content information
+    assert (
+        "📄 File:" in output or "Found" in output
+    ), f"No file information found: {output}"
