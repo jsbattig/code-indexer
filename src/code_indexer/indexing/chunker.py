@@ -298,75 +298,66 @@ class TextChunker:
                     current_chunk_size + line_size > self.chunk_size
                     and chunk_lines_count > 0
                 ):
-                    # For Java, never break on string concatenation lines regardless of size
-                    if file_extension == "java" and line.strip().endswith(" +"):
-                        pass  # Continue adding this line even if it exceeds size
-                    else:
-                        # Before breaking, check if this line starts a new multi-line construct
-                        # Even if we're not currently in one, we should look ahead
-                        if not in_multiline_construct:
-                            will_start_construct, construct_type = (
-                                self._is_multiline_construct_start(
-                                    line, text_lines, temp_line_idx, file_extension
-                                )
+                    # Before breaking, check if this line starts a new multi-line construct
+                    # Even if we're not currently in one, we should look ahead
+                    if not in_multiline_construct:
+                        will_start_construct, construct_type = (
+                            self._is_multiline_construct_start(
+                                line, text_lines, temp_line_idx, file_extension
                             )
-                            if will_start_construct:
-                                # Calculate size of the upcoming construct
-                                upcoming_construct_size = (
-                                    self._calculate_construct_size(
-                                        text_lines,
-                                        temp_line_idx,
-                                        temp_line_idx,
-                                        file_extension,
-                                    )
-                                )
-                                max_construct_size = (
-                                    self.chunk_size * 2.5
-                                    if file_extension == "java"
-                                    else self.chunk_size * 1.5
-                                )
-
-                                # If the construct is reasonable size, start it in this chunk
-                                if upcoming_construct_size < max_construct_size:
-                                    in_multiline_construct = True
-                                    multiline_start_idx = temp_line_idx
-
-                        # If we're in a multi-line construct, try to keep it together
-                        if in_multiline_construct and multiline_start_idx is not None:
-                            # Calculate the size of the entire construct
-                            construct_size = self._calculate_construct_size(
+                        )
+                        if will_start_construct:
+                            # Calculate size of the upcoming construct
+                            upcoming_construct_size = self._calculate_construct_size(
                                 text_lines,
-                                multiline_start_idx,
+                                temp_line_idx,
                                 temp_line_idx,
                                 file_extension,
                             )
-
-                            # If the construct is reasonable size, include it entirely
-                            # Be more generous for Java string concatenations
                             max_construct_size = (
                                 self.chunk_size * 2.5
                                 if file_extension == "java"
                                 else self.chunk_size * 1.5
                             )
-                            if construct_size < max_construct_size:
-                                # Continue to include the construct
-                                pass
-                            else:
-                                # Construct is too large, check for break point
-                                if self._is_good_break_point(line, file_extension):
-                                    break
-                                elif (
-                                    current_chunk_size + line_size
-                                    > self.chunk_size * 1.5
-                                ):
-                                    break
+
+                            # If the construct is reasonable size, start it in this chunk
+                            if upcoming_construct_size < max_construct_size:
+                                in_multiline_construct = True
+                                multiline_start_idx = temp_line_idx
+
+                    # If we're in a multi-line construct, try to keep it together
+                    if in_multiline_construct and multiline_start_idx is not None:
+                        # Calculate the size of the entire construct
+                        construct_size = self._calculate_construct_size(
+                            text_lines,
+                            multiline_start_idx,
+                            temp_line_idx,
+                            file_extension,
+                        )
+
+                        # If the construct is reasonable size, include it entirely
+                        # Be more generous for Java string concatenations
+                        max_construct_size = (
+                            self.chunk_size * 2.5
+                            if file_extension == "java"
+                            else self.chunk_size * 1.5
+                        )
+                        if construct_size < max_construct_size:
+                            # Continue to include the construct
+                            pass
                         else:
-                            # Not in multi-line construct, check for natural break points
+                            # Construct is too large, check for break point
                             if self._is_good_break_point(line, file_extension):
                                 break
-                            # If we're way over the limit, break anyway
-                            elif current_chunk_size + line_size > self.chunk_size * 1.2:
+                            elif current_chunk_size + line_size > self.chunk_size * 1.5:
                                 break
+                    else:
+                        # Not in multi-line construct, check for natural break points
+                        if self._is_good_break_point(line, file_extension):
+                            break
+                        # If we're way over the limit, break anyway
+                        elif current_chunk_size + line_size > self.chunk_size * 1.2:
+                            break
 
                 current_chunk_size += line_size
                 chunk_lines_count += 1
