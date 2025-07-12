@@ -1005,7 +1005,9 @@ class BranchAwareIndexer:
             )
 
         # Build comprehensive mapping of files to point IDs and their hidden_branches
-        file_to_point_info: Dict[str, List[Dict[str, Any]]] = {}  # file_path -> list of {id, hidden_branches}
+        file_to_point_info: Dict[str, List[Dict[str, Any]]] = (
+            {}
+        )  # file_path -> list of {id, hidden_branches}
 
         for point in all_content_points:
             file_path = point.get("payload", {}).get("path")
