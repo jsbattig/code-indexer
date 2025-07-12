@@ -68,11 +68,32 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         all_chunk_tasks = []
         task_counter = 0
 
+        # Debug: Log processing start
+        import os
+        import datetime
+
+        debug_file = os.path.expanduser("~/.tmp/cidx_debug.log")
+        os.makedirs(os.path.dirname(debug_file), exist_ok=True)
+
         logger.info("Phase 1: Creating chunk queue from all files...")
         for file_path in files:
             try:
+                # Debug: Log each file being processed
+                with open(debug_file, "a") as f:
+                    f.write(
+                        f"[{datetime.datetime.now().isoformat()}] Starting to chunk: {file_path}\n"
+                    )
+                    f.flush()
                 # Chunk the file
                 chunks = self.text_chunker.chunk_file(file_path)
+
+                # Debug: Log completion of chunking
+                with open(debug_file, "a") as f:
+                    f.write(
+                        f"[{datetime.datetime.now().isoformat()}] Completed chunking: {file_path} - {len(chunks) if chunks else 0} chunks\n"
+                    )
+                    f.flush()
+
                 if not chunks:
                     continue
 

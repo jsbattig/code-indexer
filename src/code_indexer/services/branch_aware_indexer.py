@@ -25,6 +25,8 @@ import hashlib
 import logging
 import time
 import uuid
+import os
+import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Callable
@@ -181,6 +183,17 @@ class BranchAwareIndexer:
         Returns:
             BranchIndexingResult with operation statistics
         """
+        # Debug logging
+        import os
+        import datetime
+
+        debug_file = os.path.expanduser("~/.tmp/cidx_debug.log")
+        with open(debug_file, "a") as f:
+            f.write(
+                f"[{datetime.datetime.now().isoformat()}] BranchAwareIndexer.index_branch_changes started with {len(changed_files)} changed files\n"
+            )
+            f.flush()
+
         start_time = time.time()
         result = BranchIndexingResult(
             content_points_created=0,
@@ -197,6 +210,12 @@ class BranchAwareIndexer:
         try:
             # 1. Process changed files - create new content points
             if changed_files:
+                with open(debug_file, "a") as f:
+                    f.write(
+                        f"[{datetime.datetime.now().isoformat()}] Calling _index_changed_files\n"
+                    )
+                    f.flush()
+
                 content_result = self._index_changed_files(
                     changed_files,
                     new_branch,
@@ -204,6 +223,12 @@ class BranchAwareIndexer:
                     progress_callback,
                     vector_thread_count,
                 )
+
+                with open(debug_file, "a") as f:
+                    f.write(
+                        f"[{datetime.datetime.now().isoformat()}] _index_changed_files completed\n"
+                    )
+                    f.flush()
                 result.content_points_created += content_result.content_points_created
                 result.files_processed += len(changed_files)
 
@@ -242,6 +267,13 @@ class BranchAwareIndexer:
         vector_thread_count: Optional[int] = None,
     ) -> BranchIndexingResult:
         """Create content points for changed files."""
+        # Debug logging
+        debug_file = os.path.expanduser("~/.tmp/cidx_debug.log")
+        with open(debug_file, "a") as f:
+            f.write(
+                f"[{datetime.datetime.now().isoformat()}] _index_changed_files started with {len(file_paths)} files\n"
+            )
+            f.flush()
         result = BranchIndexingResult(
             content_points_created=0,
             content_points_reused=0,
@@ -259,11 +291,30 @@ class BranchAwareIndexer:
         current_file_index = 0
 
         # Use VectorCalculationManager for parallel embedding processing
+        with open(debug_file, "a") as f:
+            f.write(
+                f"[{datetime.datetime.now().isoformat()}] Creating VectorCalculationManager with {vector_thread_count} threads\n"
+            )
+            f.flush()
+
         with VectorCalculationManager(
             self.embedding_provider, vector_thread_count
         ) as vector_manager:
+            with open(debug_file, "a") as f:
+                f.write(
+                    f"[{datetime.datetime.now().isoformat()}] VectorCalculationManager created, starting file loop\n"
+                )
+                f.flush()
+
             for file_path in file_paths:
                 try:
+                    # Debug log each file
+                    with open(debug_file, "a") as f:
+                        f.write(
+                            f"[{datetime.datetime.now().isoformat()}] Processing file {current_file_index+1}/{total_files}: {file_path}\n"
+                        )
+                        f.flush()
+
                     full_path = self.codebase_dir / file_path
                     if not full_path.exists():
                         # File was deleted - update visibility to hidden
@@ -304,6 +355,7 @@ class BranchAwareIndexer:
 
                     # Check if content already exists for this file+commit
                     content_id = self._generate_content_id(file_path, current_commit)
+
                     if self._content_exists(content_id, collection_name):
                         # Content exists - ensure it's visible in this branch (remove from hidden_branches if present)
                         self._ensure_file_visible_in_branch(
@@ -358,7 +410,19 @@ class BranchAwareIndexer:
                         continue
 
                     # Content doesn't exist - create content + visibility points
+                    with open(debug_file, "a") as f:
+                        f.write(
+                            f"[{datetime.datetime.now().isoformat()}] Starting to chunk file: {file_path}\n"
+                        )
+                        f.flush()
+
                     chunks = self.text_chunker.chunk_file(full_path)
+
+                    with open(debug_file, "a") as f:
+                        f.write(
+                            f"[{datetime.datetime.now().isoformat()}] Finished chunking: {len(chunks) if chunks else 0} chunks\n"
+                        )
+                        f.flush()
                     if not chunks:
                         # Call progress callback for empty file if provided
                         if progress_callback:

@@ -158,6 +158,18 @@ class FileFinder:
 
     def find_files(self) -> Iterator[Path]:
         """Find all files that should be indexed."""
+        # Debug logging
+        import datetime
+
+        debug_file = os.path.expanduser("~/.tmp/cidx_debug.log")
+        os.makedirs(os.path.dirname(debug_file), exist_ok=True)
+
+        with open(debug_file, "a") as f:
+            f.write(
+                f"[{datetime.datetime.now().isoformat()}] FileFinder.find_files started for {self.config.codebase_dir}\n"
+            )
+            f.flush()
+
         if not self.config.codebase_dir.exists():
             raise ValueError(
                 f"Codebase directory does not exist: {self.config.codebase_dir}"
@@ -185,6 +197,14 @@ class FileFinder:
             # Process files in current directory
             for file_name in files:
                 file_path = root_path / file_name
+
+                # Debug: Log file being checked
+                if file_name == "ruff_output.json" or file_path.stat().st_size > 500000:
+                    with open(debug_file, "a") as f:
+                        f.write(
+                            f"[{datetime.datetime.now().isoformat()}] Checking large file: {file_path} ({file_path.stat().st_size} bytes)\n"
+                        )
+                        f.flush()
 
                 if self._should_include_file(file_path):
                     yield file_path

@@ -348,6 +348,15 @@ class SmartIndexer(HighThroughputProcessor):
         vector_thread_count: Optional[int] = None,
     ) -> ProcessingStats:
         """Perform full indexing."""
+        # Debug: Log start of full index
+        import os
+        import datetime
+
+        debug_file = os.path.expanduser("~/.tmp/cidx_debug.log")
+        os.makedirs(os.path.dirname(debug_file), exist_ok=True)
+        with open(debug_file, "a") as f:
+            f.write(f"[{datetime.datetime.now().isoformat()}] _do_full_index started\n")
+            f.flush()
 
         # Ensure provider-aware collection exists and get info before clearing
         # Skip migration for full index (clear) since we'll clear all data anyway
@@ -385,7 +394,15 @@ class SmartIndexer(HighThroughputProcessor):
         self.progressive_metadata.start_indexing(provider_name, model_name, git_status)
 
         # Find all files
+        with open(debug_file, "a") as f:
+            f.write(f"[{datetime.datetime.now().isoformat()}] Finding files...\n")
+            f.flush()
         files_to_index = list(self.file_finder.find_files())
+        with open(debug_file, "a") as f:
+            f.write(
+                f"[{datetime.datetime.now().isoformat()}] Found {len(files_to_index)} files\n"
+            )
+            f.flush()
 
         if not files_to_index:
             self.progressive_metadata.complete_indexing()
@@ -401,19 +418,25 @@ class SmartIndexer(HighThroughputProcessor):
         try:
             # Convert absolute paths to relative paths for BranchAwareIndexer
             relative_files = []
-            for f in files_to_index:
+            for file_path in files_to_index:
                 try:
                     # If path is absolute and within codebase_dir, make it relative
-                    if f.is_absolute():
+                    if file_path.is_absolute():
                         relative_files.append(
-                            str(f.relative_to(self.config.codebase_dir))
+                            str(file_path.relative_to(self.config.codebase_dir))
                         )
                     else:
                         # Already relative, use as-is
-                        relative_files.append(str(f))
+                        relative_files.append(str(file_path))
                 except ValueError:
                     # Path is not within codebase_dir, use as-is (shouldn't happen in normal usage)
-                    relative_files.append(str(f))
+                    relative_files.append(str(file_path))
+
+            with open(debug_file, "a") as f:
+                f.write(
+                    f"[{datetime.datetime.now().isoformat()}] Calling branch_aware_indexer.index_branch_changes with {len(relative_files)} files\n"
+                )
+                f.flush()
 
             branch_result = self.branch_aware_indexer.index_branch_changes(
                 old_branch="",  # No old branch for full index
@@ -425,21 +448,27 @@ class SmartIndexer(HighThroughputProcessor):
                 vector_thread_count=vector_thread_count,
             )
 
+            with open(debug_file, "a") as f:
+                f.write(
+                    f"[{datetime.datetime.now().isoformat()}] branch_aware_indexer.index_branch_changes completed\n"
+                )
+                f.flush()
+
             # For full indexing, hide all files that don't exist in current branch
             # This ensures proper branch isolation
             # IMPORTANT: Use ALL files in current branch, not just the ones being processed
             all_files_in_branch = list(self.file_finder.find_files())
             all_relative_files = []
-            for f in all_files_in_branch:
+            for file_path in all_files_in_branch:
                 try:
-                    if f.is_absolute():
+                    if file_path.is_absolute():
                         all_relative_files.append(
-                            str(f.relative_to(self.config.codebase_dir))
+                            str(file_path.relative_to(self.config.codebase_dir))
                         )
                     else:
-                        all_relative_files.append(str(f))
+                        all_relative_files.append(str(file_path))
                 except ValueError:
-                    all_relative_files.append(str(f))
+                    all_relative_files.append(str(file_path))
 
             self.branch_aware_indexer.hide_files_not_in_branch(
                 current_branch, all_relative_files, collection_name, progress_callback
@@ -551,19 +580,19 @@ class SmartIndexer(HighThroughputProcessor):
         try:
             # Convert absolute paths to relative paths for BranchAwareIndexer
             relative_files = []
-            for f in files_to_index:
+            for file_path in files_to_index:
                 try:
                     # If path is absolute and within codebase_dir, make it relative
-                    if f.is_absolute():
+                    if file_path.is_absolute():
                         relative_files.append(
-                            str(f.relative_to(self.config.codebase_dir))
+                            str(file_path.relative_to(self.config.codebase_dir))
                         )
                     else:
                         # Already relative, use as-is
-                        relative_files.append(str(f))
+                        relative_files.append(str(file_path))
                 except ValueError:
                     # Path is not within codebase_dir, use as-is (shouldn't happen in normal usage)
-                    relative_files.append(str(f))
+                    relative_files.append(str(file_path))
 
             # Get current branch for indexing
             current_branch = self.git_topology_service.get_current_branch() or "master"
@@ -588,16 +617,16 @@ class SmartIndexer(HighThroughputProcessor):
             # IMPORTANT: Use ALL files in current branch, not just the ones being processed
             all_files_in_branch = list(self.file_finder.find_files())
             all_relative_files = []
-            for f in all_files_in_branch:
+            for file_path in all_files_in_branch:
                 try:
-                    if f.is_absolute():
+                    if file_path.is_absolute():
                         all_relative_files.append(
-                            str(f.relative_to(self.config.codebase_dir))
+                            str(file_path.relative_to(self.config.codebase_dir))
                         )
                     else:
-                        all_relative_files.append(str(f))
+                        all_relative_files.append(str(file_path))
                 except ValueError:
-                    all_relative_files.append(str(f))
+                    all_relative_files.append(str(file_path))
 
             self.branch_aware_indexer.hide_files_not_in_branch(
                 current_branch, all_relative_files, collection_name, progress_callback
@@ -914,19 +943,19 @@ class SmartIndexer(HighThroughputProcessor):
         try:
             # Convert absolute paths to relative paths for BranchAwareIndexer
             relative_files = []
-            for f in files_to_index:
+            for file_path in files_to_index:
                 try:
                     # If path is absolute and within codebase_dir, make it relative
-                    if f.is_absolute():
+                    if file_path.is_absolute():
                         relative_files.append(
-                            str(f.relative_to(self.config.codebase_dir))
+                            str(file_path.relative_to(self.config.codebase_dir))
                         )
                     else:
                         # Already relative, use as-is
-                        relative_files.append(str(f))
+                        relative_files.append(str(file_path))
                 except ValueError:
                     # Path is not within codebase_dir, use as-is (shouldn't happen in normal usage)
-                    relative_files.append(str(f))
+                    relative_files.append(str(file_path))
 
             # Get current branch for indexing
             current_branch = self.git_topology_service.get_current_branch() or "master"
