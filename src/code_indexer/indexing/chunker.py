@@ -243,12 +243,17 @@ class TextChunker:
 
             chunk_end_pos = chunk_start_pos + len(chunk_text)
 
-            # Calculate line numbers for this text segment
+            # Calculate line numbers by counting lines in the actual chunk content
             text_before_chunk = text[:chunk_start_pos]
-            text_in_chunk = text[chunk_start_pos:chunk_end_pos]
-
             line_start = text_before_chunk.count("\n") + 1
-            line_end = line_start + text_in_chunk.count("\n")
+
+            # Count lines in the chunk itself
+            chunk_lines = chunk_text.count("\n")
+            # If chunk doesn't end with newline but has content, it includes the last partial line
+            if chunk_text and not chunk_text.endswith("\n"):
+                line_end = line_start + chunk_lines
+            else:
+                line_end = line_start + chunk_lines
 
             chunk_data.append(
                 {"text": chunk_text, "line_start": line_start, "line_end": line_end}
@@ -276,12 +281,17 @@ class TextChunker:
 
             chunk_end_pos = chunk_start_pos + len(chunk_text)
 
-            # Calculate line numbers for this text segment
+            # Calculate line numbers by counting lines in the actual chunk content
             text_before_chunk = text[:chunk_start_pos]
-            text_in_chunk = text[chunk_start_pos:chunk_end_pos]
-
             line_start = text_before_chunk.count("\n") + 1
-            line_end = line_start + text_in_chunk.count("\n")
+
+            # Count lines in the chunk itself
+            chunk_lines = chunk_text.count("\n")
+            # If chunk doesn't end with newline but has content, it includes the last partial line
+            if chunk_text and not chunk_text.endswith("\n"):
+                line_end = line_start + chunk_lines
+            else:
+                line_end = line_start + chunk_lines
 
             chunk_data.append(
                 {"text": chunk_text, "line_start": line_start, "line_end": line_end}
