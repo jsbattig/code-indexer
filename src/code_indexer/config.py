@@ -212,6 +212,7 @@ class Config(BaseModel):
             "sql",
             "swift",
             "kt",
+            "kts",
             "scala",
             "dart",
             "vue",

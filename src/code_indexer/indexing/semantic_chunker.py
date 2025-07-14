@@ -100,6 +100,8 @@ class BaseSemanticParser:
             ".tsx": "typescript",
             ".java": "java",
             ".go": "go",
+            ".kt": "kotlin",
+            ".kts": "kotlin",
         }
         return language_map.get(ext, "unknown")
 
@@ -151,6 +153,13 @@ class SemanticChunker:
             from .go_parser import GoSemanticParser
 
             self.parsers["go"] = GoSemanticParser(config)
+        except ImportError:
+            pass
+
+        try:
+            from .kotlin_parser import KotlinSemanticParser
+
+            self.parsers["kotlin"] = KotlinSemanticParser(config)
         except ImportError:
             pass
 
@@ -215,6 +224,8 @@ class SemanticChunker:
             ".tsx": "typescript",
             ".java": "java",
             ".go": "go",
+            ".kt": "kotlin",
+            ".kts": "kotlin",
         }
 
         return language_map.get(ext, "unknown")

@@ -8,7 +8,7 @@ AI-powered semantic code search for your codebase. Find code by meaning, not jus
 - **Multiple Providers** - Local (Ollama) or cloud (VoyageAI) embeddings  
 - **Smart Indexing** - Incremental updates, git-aware, multi-project support
 - **Semantic Filtering** - Filter by code constructs (classes, functions), scope, language features
-- **Multi-Language Support** - AST parsing for Python, JavaScript, TypeScript, Java, Go
+- **Multi-Language Support** - AST parsing for Python, JavaScript, TypeScript, Java, Go, Kotlin
 - **CLI Interface** - Simple commands with progress indicators
 - **AI Analysis** - Integrates with Claude CLI for code analysis with semantic search
 - **Privacy Options** - Full local processing or cloud for better performance

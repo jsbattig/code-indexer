@@ -1,5 +1,22 @@
 # Code Indexer Release Notes
 
+## Version 2.1.0.0 (2025-01-14)
+
+### 🐛 Bug Fixes
+- **Watch Mode**: Fixed issue where watch mode was re-indexing already indexed files
+- **Semantic Parsing**: Fixed semantic parsing error messages appearing during indexing
+- **Text Chunker**: Major fix to simplify text chunker and prevent infinite loops
+- **Java Chunking**: Critical fix to remove infinite loop bug in Java chunking
+
+### 🚀 Performance Improvements
+- **Qdrant Optimization**: Added lazy loading optimizations for reduced startup memory usage
+
+### 🔧 Technical Improvements
+- **Debug Logging**: Added comprehensive debug logging for indexing troubleshooting
+- **E2E Tests**: Fixed E2E tests to use isolated project directories
+- **Language Filter**: Improved --language filter help text with complete list of supported languages
+- **CI Workflow**: Added CI completion requirement to development workflow
+
 ## Version 2.0.0.0 (2025-01-11)
 
 ### 🚨 BREAKING CHANGES

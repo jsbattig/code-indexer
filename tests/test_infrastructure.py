@@ -104,6 +104,7 @@ class ProjectTestConfig:
                 "sql",
                 "swift",
                 "kt",
+                "kts",
                 "scala",
                 "dart",
                 "vue",
@@ -440,6 +441,34 @@ class TestProjectInventory:
 
     DEFAULT = ProjectTestConfig(
         name="default", collection_base_name="test_default", chunk_size=1000
+    )
+
+    # Kotlin semantic search test configurations
+    kotlin_semantic_search = ProjectTestConfig(
+        name="kotlin_semantic_search",
+        collection_base_name="test_kotlin_semantic",
+        chunk_size=2000,
+        chunk_overlap=200,
+        voyage_ai_batch_size=64,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    kotlin_language_filter = ProjectTestConfig(
+        name="kotlin_language_filter",
+        collection_base_name="test_kotlin_filter",
+        chunk_size=2000,
+        chunk_overlap=200,
+        voyage_ai_batch_size=64,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
+    kotlin_semantic_types = ProjectTestConfig(
+        name="kotlin_semantic_types",
+        collection_base_name="test_kotlin_types",
+        chunk_size=2000,
+        chunk_overlap=200,
+        voyage_ai_batch_size=64,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
     )
 
     @classmethod

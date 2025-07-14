@@ -939,6 +939,7 @@ class BranchAwareIndexer:
             ".sql": "sql",
             ".swift": "swift",
             ".kt": "kotlin",
+            ".kts": "kotlin",
             ".scala": "scala",
             ".dart": "dart",
             ".vue": "vue",
