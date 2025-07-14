@@ -348,6 +348,15 @@ class TestProjectInventory:
         embedding_provider=EmbeddingProvider.VOYAGE_AI,
     )
 
+    WATCH_TIMESTAMP_UPDATE = ProjectTestConfig(
+        name="watch_timestamp_update",
+        collection_base_name="test_watch_timestamp",
+        chunk_size=500,
+        chunk_overlap=50,
+        voyage_ai_batch_size=16,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
     END_TO_END_DUAL_ENGINE = ProjectTestConfig(
         name="end_to_end_dual_engine",
         collection_base_name="test_dual_engine",

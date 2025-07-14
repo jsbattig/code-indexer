@@ -255,7 +255,7 @@ class TestGitAwareWatchHandler:
         # Verify SmartIndexer was called with correct parameters
         self.mock_smart_indexer.process_files_incrementally.assert_called_once_with(
             ["file.py"],
-            force_reprocess=True,
+            force_reprocess=False,  # Use normal timestamp-based change detection
             quiet=False,  # Relative path, quiet=False for debugging
             watch_mode=True,  # Enable verified deletion for reliability
         )

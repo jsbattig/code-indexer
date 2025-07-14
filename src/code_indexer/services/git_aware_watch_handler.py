@@ -274,7 +274,7 @@ class GitAwareWatchHandler(FileSystemEventHandler):
                     # Use SmartIndexer for git-aware processing (same as index command)
                     stats = self.smart_indexer.process_files_incrementally(
                         relative_paths,
-                        force_reprocess=True,  # Always reprocess watched files
+                        force_reprocess=False,  # Use normal timestamp-based change detection
                         quiet=False,  # Show processing output for debugging
                         watch_mode=True,  # Enable verified deletion for reliability
                     )
