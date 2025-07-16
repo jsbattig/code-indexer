@@ -12,7 +12,7 @@ semantic information for chunking. Supports:
 """
 
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import tree_sitter_language_pack as tslp
 
 from code_indexer.config import IndexingConfig
@@ -50,6 +50,9 @@ class PascalSemanticParser(BaseSemanticParser):
 
             # Extract constructs using tree-sitter AST
             constructs = self._extract_constructs(tree, content, file_path)
+
+            # Remove duplicates based on name, parent, line range, and features
+            constructs = self._deduplicate_constructs(constructs)
 
             # Create semantic chunks
             for i, construct in enumerate(constructs):
@@ -190,9 +193,17 @@ class PascalSemanticParser(BaseSemanticParser):
         # Recursively process children
         # Skip traversing children for nodes that handle their own members
         # But always traverse ERROR nodes to find constructs within them
-        # Also skip unit nodes since they have special handling
+        # Also skip unit, interface, and implementation nodes since they have special handling
         if (
-            node_type not in ["declClass", "declRecord", "declInterface", "unit"]
+            node_type
+            not in [
+                "declClass",
+                "declRecord",
+                "declInterface",
+                "unit",
+                "interface",
+                "implementation",
+            ]
             or node_type == "ERROR"
         ):
             for child in node.children:
@@ -1157,6 +1168,61 @@ class PascalSemanticParser(BaseSemanticParser):
         node_text = self._get_node_text(node, lines).lower()
         return "static" in node_text
 
+    def _deduplicate_constructs(
+        self, constructs: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Remove duplicate constructs based on exact matches only."""
+        seen_exact: Dict[Tuple[str, str, int, int, Tuple[str, ...]], Dict[str, Any]] = (
+            {}
+        )
+        deduplicated: List[Dict[str, Any]] = []
+
+        for construct in constructs:
+            # Create a key for exact duplicate detection
+            name = construct.get("name", "")
+            parent = construct.get("parent", "")
+            features = tuple(sorted(construct.get("features", [])))
+            line_start = construct.get("line_start", 0)
+            line_end = construct.get("line_end", 0)
+
+            # Create a key that identifies EXACT duplicates only
+            # Include line numbers to distinguish declarations from implementations
+            exact_key = (name, parent, line_start, line_end, features)
+
+            if exact_key in seen_exact:
+                # This is an exact duplicate - prefer non-error extracted versions
+                existing = seen_exact[exact_key]
+                existing_is_error = existing.get("context", {}).get(
+                    "extracted_from_error", False
+                )
+                current_is_error = construct.get("context", {}).get(
+                    "extracted_from_error", False
+                )
+
+                # Only replace if current is better (non-error over error)
+                if existing_is_error and not current_is_error:
+                    # Replace the error-extracted version with the regular one
+                    seen_exact[exact_key] = construct
+                    # Update the deduplicated list
+                    for i, item in enumerate(deduplicated):
+                        if (
+                            item.get("name") == existing.get("name")
+                            and item.get("parent") == existing.get("parent")
+                            and item.get("line_start") == existing.get("line_start")
+                            and item.get("line_end") == existing.get("line_end")
+                            and tuple(sorted(item.get("features", [])))
+                            == tuple(sorted(existing.get("features", [])))
+                        ):
+                            deduplicated[i] = construct
+                            break
+                # Otherwise skip this duplicate
+            else:
+                # First time seeing this exact construct
+                seen_exact[exact_key] = construct
+                deduplicated.append(construct)
+
+        return deduplicated
+
     def _extract_implementations_from_error(
         self,
         node: Any,
@@ -1279,15 +1345,28 @@ class PascalSemanticParser(BaseSemanticParser):
                 # to avoid duplicates from ERROR node extraction
                 duplicate_found = False
                 for existing in constructs:
+                    # Check for exact match (same name, parent, and overlapping lines)
                     if (
                         existing.get("name") == method_name
                         and existing.get("parent") == class_name
-                        and existing.get("line_start") == impl_start + 1
                         and f"{proc_type}_implementation"
                         in existing.get("features", [])
                     ):
-                        duplicate_found = True
-                        break
+                        # Check for overlapping line ranges
+                        existing_start = existing.get("line_start", 0)
+                        existing_end = existing.get("line_end", 0)
+                        new_start = impl_start + 1
+                        new_end = impl_end + 1
+
+                        # If lines overlap significantly, consider it a duplicate
+                        overlap = (
+                            min(existing_end, new_end)
+                            - max(existing_start, new_start)
+                            + 1
+                        )
+                        if overlap > 0:
+                            duplicate_found = True
+                            break
 
                 if not duplicate_found:
                     # Add the construct
