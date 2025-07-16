@@ -188,8 +188,21 @@ class PascalSemanticParser(BaseSemanticParser):
             self._handle_type_declaration(node, constructs, lines, scope_stack, content)
 
         # Recursively process children
-        for child in node.children:
-            self._traverse_node(child, constructs, lines, scope_stack, content)
+        # Skip traversing children for nodes that handle their own members
+        # But always traverse ERROR nodes to find constructs within them
+        # Also skip unit nodes since they have special handling
+        if (
+            node_type not in ["declClass", "declRecord", "declInterface", "unit"]
+            or node_type == "ERROR"
+        ):
+            for child in node.children:
+                self._traverse_node(child, constructs, lines, scope_stack, content)
+
+        # Special handling for ERROR nodes that might contain implementations
+        if node_type == "ERROR":
+            self._extract_implementations_from_error(
+                node, constructs, lines, scope_stack, content
+            )
 
     def _handle_unit_declaration(
         self,
@@ -217,6 +230,16 @@ class PascalSemanticParser(BaseSemanticParser):
                     "features": ["unit_declaration"],
                 }
             )
+
+        # Process interface and implementation sections
+        for child in node.children:
+            if hasattr(child, "type"):
+                if child.type in ["interface", "implementation"]:
+                    # Traverse all children in these sections
+                    for section_child in child.children:
+                        self._traverse_node(
+                            section_child, constructs, lines, scope_stack, content
+                        )
 
     def _handle_program_declaration(
         self,
@@ -284,6 +307,40 @@ class PascalSemanticParser(BaseSemanticParser):
                 }
             )
 
+            # Process class members with proper scope
+            scope_stack.append(class_name)
+            self._process_class_members(node, constructs, lines, scope_stack, content)
+            scope_stack.pop()
+
+    def _process_class_members(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Process members of a class/record/interface."""
+        # Look for declSection nodes which contain member declarations
+        for child in node.children:
+            if hasattr(child, "type"):
+                if child.type == "declSection":
+                    # Process all declarations in this section
+                    for member in child.children:
+                        if hasattr(member, "type"):
+                            self._traverse_node(
+                                member, constructs, lines, scope_stack, content
+                            )
+                elif child.type in [
+                    "declProc",
+                    "declProp",
+                    "declVar",
+                    "declConst",
+                    "declType",
+                ]:
+                    # Direct member declaration
+                    self._traverse_node(child, constructs, lines, scope_stack, content)
+
     def _handle_record_declaration(
         self,
         node: Any,
@@ -313,6 +370,11 @@ class PascalSemanticParser(BaseSemanticParser):
                     "features": ["record_declaration"],
                 }
             )
+
+            # Process record members with proper scope
+            scope_stack.append(record_name)
+            self._process_class_members(node, constructs, lines, scope_stack, content)
+            scope_stack.pop()
 
     def _handle_interface_declaration(
         self,
@@ -348,6 +410,11 @@ class PascalSemanticParser(BaseSemanticParser):
                     "features": ["interface_declaration"],
                 }
             )
+
+            # Process interface members with proper scope
+            scope_stack.append(interface_name)
+            self._process_class_members(node, constructs, lines, scope_stack, content)
+            scope_stack.pop()
 
     def _handle_procedure_declaration(
         self,
@@ -1089,3 +1156,159 @@ class PascalSemanticParser(BaseSemanticParser):
         # Look for "static" keyword in the full text of the node
         node_text = self._get_node_text(node, lines).lower()
         return "static" in node_text
+
+    def _extract_implementations_from_error(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Extract procedure/function implementations from ERROR nodes using regex fallback."""
+        import re
+
+        # Get the text of the ERROR node
+        start_line = node.start_point[0]
+        end_line = node.end_point[0]
+
+        # Look for procedure/function implementations in the error text
+        for line_idx in range(start_line, end_line + 1):
+            if line_idx >= len(lines):
+                break
+
+            line = lines[line_idx]
+
+            # Check if this line starts a procedure/function implementation
+            match = re.match(
+                r"^(procedure|function|constructor|destructor)\s+(\w+\.)?(\w+)", line
+            )
+            if match:
+                proc_type = match.group(1)
+                class_prefix = match.group(2)
+                method_name = match.group(3)
+
+                # Skip if it's not a method implementation (no class prefix)
+                if not class_prefix:
+                    continue
+
+                # Extract the class name
+                class_name = class_prefix.rstrip(".")
+
+                # Find the end of the implementation
+                impl_start = line_idx
+                impl_end = impl_start
+
+                # Collect the full signature (might span multiple lines)
+                signature_lines = [line]
+                current_line = line_idx
+
+                # Check if signature continues on next lines
+                while current_line < len(lines) - 1 and not lines[
+                    current_line
+                ].rstrip().endswith(";"):
+                    current_line += 1
+                    if current_line < len(lines):
+                        signature_lines.append(lines[current_line])
+
+                full_signature = " ".join(line.strip() for line in signature_lines)
+
+                # Extract parameters from signature
+                params_match = re.search(r"\((.*?)\)", full_signature)
+                params = params_match.group(1) if params_match else None
+
+                # Extract return type for functions
+                return_type = None
+                if proc_type == "function":
+                    return_match = re.search(r"\)\s*:\s*([^;]+)", full_signature)
+                    if return_match:
+                        return_type = return_match.group(1).strip()
+
+                # Find the implementation body (from var/begin to end)
+                # Look for the corresponding 'end' by counting begin/end pairs
+                begin_count = 0
+                found_first_begin = False
+
+                for search_idx in range(
+                    current_line + 1, min(current_line + 500, len(lines))
+                ):
+                    search_line = lines[search_idx].strip().lower()
+
+                    if search_line.startswith("begin"):
+                        begin_count += 1
+                        found_first_begin = True
+                    elif search_line.startswith("end"):
+                        if found_first_begin:
+                            begin_count -= 1
+                            if begin_count == 0:
+                                impl_end = search_idx
+                                break
+                    elif (
+                        found_first_begin
+                        and begin_count == 0
+                        and search_line
+                        and not search_line.startswith("{")
+                    ):
+                        # We've gone past the implementation
+                        break
+
+                    # Also check for next procedure/function
+                    if re.match(
+                        r"^(procedure|function|constructor|destructor)\s+",
+                        lines[search_idx],
+                    ):
+                        impl_end = search_idx - 1
+                        break
+
+                # If we didn't find an end, use a reasonable default
+                if impl_end <= impl_start:
+                    impl_end = min(impl_start + 50, len(lines) - 1)
+
+                # Build the implementation text
+                impl_lines = lines[impl_start : impl_end + 1]
+                impl_text = "\n".join(impl_lines)
+
+                # Create the semantic signature
+                semantic_sig = f"{proc_type} {method_name}"
+                if params:
+                    semantic_sig += f"({params})"
+                if return_type:
+                    semantic_sig += f": {return_type}"
+
+                # Check if we already have this implementation
+                # to avoid duplicates from ERROR node extraction
+                duplicate_found = False
+                for existing in constructs:
+                    if (
+                        existing.get("name") == method_name
+                        and existing.get("parent") == class_name
+                        and existing.get("line_start") == impl_start + 1
+                        and f"{proc_type}_implementation"
+                        in existing.get("features", [])
+                    ):
+                        duplicate_found = True
+                        break
+
+                if not duplicate_found:
+                    # Add the construct
+                    constructs.append(
+                        {
+                            "type": proc_type,
+                            "name": method_name,
+                            "path": f"{class_name}.{method_name}",
+                            "signature": semantic_sig,
+                            "parent": class_name,
+                            "scope": "function",
+                            "line_start": impl_start + 1,
+                            "line_end": impl_end + 1,
+                            "text": impl_text,
+                            "context": {
+                                "declaration_type": proc_type,
+                                "parameters": params,
+                                "return_type": return_type,
+                                "qualified_name": f"{class_name}.{method_name}",
+                                "extracted_from_error": True,
+                            },
+                            "features": [f"{proc_type}_implementation"],
+                        }
+                    )
