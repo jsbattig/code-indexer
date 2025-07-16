@@ -1,5 +1,36 @@
 # Code Indexer Release Notes
 
+## Version 2.2.0.0 (2025-07-16)
+
+### 🚀 Major Features & Enhancements
+
+#### **Enhanced Parser Robustness with ERROR Node Handling**
+- **Tree-Sitter Integration**: All parsers now use tree-sitter as primary parsing method with comprehensive ERROR node fallback
+- **Zero Content Loss**: Enhanced error handling ensures no code constructs are lost during indexing when encountering syntax errors
+- **Triple-Layer Parsing Strategy**: 
+  1. Primary tree-sitter AST parsing for accurate analysis
+  2. ERROR node regex extraction for broken syntax recovery
+  3. Original regex parser fallback for complete parsing failures
+- **Universal Base Class**: New `BaseTreeSitterParser` provides standardized ERROR node handling across all language parsers
+
+#### **Parser Enhancements**
+- **Go Parser**: New tree-sitter implementation with comprehensive Go construct support (functions, methods, structs, interfaces, generics)
+- **Kotlin Parser**: Enhanced with tree-sitter support including extension functions, data classes, and sealed classes
+- **TypeScript Parser**: Full tree-sitter integration with advanced TypeScript features (generics, namespaces, type aliases)
+- **JavaScript Parser**: Modern ES6+ support with tree-sitter parsing (arrow functions, classes, modules)
+- **Java Parser**: Complete tree-sitter implementation with annotation and package support
+- **Python Parser**: Enhanced AST parser with regex fallback for syntax error recovery
+
+### 🧪 Testing Improvements
+- **Comprehensive ERROR Node Tests**: 14 new unit tests with intentional syntax errors to verify extraction capabilities
+- **Language Coverage**: Tests cover all supported languages ensuring robust error handling
+- **Edge Case Validation**: Tests verify parser behavior with completely malformed code
+
+### 🔧 Technical Improvements
+- **Standardized Architecture**: All parsers follow consistent patterns through base class inheritance
+- **Improved Error Recovery**: Parsers can extract meaningful constructs even from partially broken code
+- **Enhanced Metadata**: ERROR node extractions include proper metadata and context information
+
 ## Version 2.1.1.0 (2025-01-16)
 
 ### 🐛 Bug Fixes

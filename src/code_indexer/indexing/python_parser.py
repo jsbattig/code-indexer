@@ -1,12 +1,14 @@
 """
-Python AST-based semantic parser.
+Python AST-based semantic parser with regex fallback.
 
 Uses Python's built-in ast module to parse Python code and create
-semantic chunks based on code structure.
+semantic chunks based on code structure. When AST parsing fails,
+falls back to regex-based parsing to ensure no content is lost.
 """
 
 import ast
-from typing import List, Optional, Tuple, Union
+import re
+from typing import List, Optional, Tuple, Union, Dict, Any
 from pathlib import Path
 
 from code_indexer.config import IndexingConfig
@@ -50,10 +52,8 @@ class PythonSemanticParser(BaseSemanticParser):
             return self.chunks
 
         except (SyntaxError, Exception):
-            # Return empty list to trigger fallback to text chunking
-            # Don't print errors for files with different Python syntax (Python 2, syntax errors, etc.)
-            # This is expected behavior - semantic chunker falls back to text chunking
-            return []
+            # Fall back to regex-based parsing to ensure no content is lost
+            return self._fallback_parse(content, file_path)
 
     def _collect_module_code(
         self, tree: ast.AST, lines: List[str]
@@ -396,3 +396,158 @@ class PythonSemanticParser(BaseSemanticParser):
         if isinstance(lineno_val, int):
             return lineno_val
         return 1
+
+    def _fallback_parse(self, content: str, file_path: str) -> List[SemanticChunk]:
+        """Fallback regex-based parsing when AST parsing fails."""
+        chunks = []
+        lines = content.split("\n")
+        file_ext = Path(file_path).suffix
+
+        # Extract constructs using regex patterns
+        constructs = self._extract_constructs_from_error_text(content, lines)
+
+        # Create semantic chunks
+        for i, construct in enumerate(constructs):
+            chunk = SemanticChunk(
+                text=construct["text"],
+                chunk_index=i,
+                total_chunks=len(constructs),
+                size=len(construct["text"]),
+                file_path=file_path,
+                file_extension=file_ext,
+                line_start=construct["line_start"],
+                line_end=construct["line_end"],
+                semantic_chunking=True,
+                semantic_type=construct["type"],
+                semantic_name=construct["name"],
+                semantic_path=construct.get("path", construct["name"]),
+                semantic_signature=construct.get("signature", ""),
+                semantic_parent=construct.get("parent"),
+                semantic_context=construct.get("context", {}),
+                semantic_scope=construct.get("scope", "global"),
+                semantic_language_features=construct.get("features", []),
+            )
+            chunks.append(chunk)
+
+        return chunks if chunks else self._create_fallback_chunk(content, file_path)
+
+    def _extract_constructs_from_error_text(
+        self, content: str, lines: List[str]
+    ) -> List[Dict[str, Any]]:
+        """Extract Python constructs from content using regex fallback."""
+        constructs = []
+
+        # Python-specific regex patterns
+        patterns = {
+            "class": r"^(\s*)class\s+(\w+)(?:\([^)]*\))?:\s*",
+            "function": r"^(\s*)(?:async\s+)?def\s+(\w+)\s*\([^)]*\):\s*",
+            "method": r"^(\s+)(?:async\s+)?def\s+(\w+)\s*\([^)]*\):\s*",
+        }
+
+        current_class = None
+        current_indent = 0
+
+        for line_idx, line in enumerate(lines):
+            for construct_type, pattern in patterns.items():
+                match = re.search(pattern, line)
+                if match:
+                    indent = len(match.group(1))
+                    name = match.group(2)
+
+                    # Determine if this is a class method or top-level function
+                    if (
+                        construct_type == "function"
+                        and current_class
+                        and indent > current_indent
+                    ):
+                        construct_type = "method"
+
+                    # Update current class context
+                    if construct_type == "class":
+                        current_class = name
+                        current_indent = indent
+                    elif indent <= current_indent:
+                        current_class = None
+                        current_indent = 0
+
+                    # Find the end of this construct
+                    end_line = self._find_python_construct_end(lines, line_idx, indent)
+
+                    # Build construct text
+                    construct_lines = lines[line_idx : end_line + 1]
+                    construct_text = "\n".join(construct_lines)
+
+                    # Build path
+                    if construct_type == "method" and current_class:
+                        path = f"{current_class}.{name}"
+                        parent = current_class
+                        scope = "class"
+                    else:
+                        path = name
+                        parent = None
+                        scope = "global"
+
+                    constructs.append(
+                        {
+                            "type": construct_type,
+                            "name": name,
+                            "path": path,
+                            "signature": line.strip(),
+                            "parent": parent,
+                            "scope": scope,
+                            "line_start": line_idx + 1,
+                            "line_end": end_line + 1,
+                            "text": construct_text,
+                            "context": {"extracted_from_error": True, "indent": indent},
+                            "features": [f"{construct_type}_implementation"],
+                        }
+                    )
+
+        return constructs
+
+    def _find_python_construct_end(
+        self, lines: List[str], start_line: int, base_indent: int
+    ) -> int:
+        """Find the end line of a Python construct based on indentation."""
+        for i in range(start_line + 1, len(lines)):
+            line = lines[i]
+
+            # Skip empty lines and comments
+            if not line.strip() or line.strip().startswith("#"):
+                continue
+
+            # Check indentation
+            line_indent = len(line) - len(line.lstrip())
+
+            # If we found a line at the same or lesser indentation, we've reached the end
+            if line_indent <= base_indent:
+                return i - 1
+
+        return len(lines) - 1
+
+    def _create_fallback_chunk(
+        self, content: str, file_path: str
+    ) -> List[SemanticChunk]:
+        """Create a single fallback chunk when no constructs are found."""
+        lines = content.split("\n")
+        return [
+            SemanticChunk(
+                text=content,
+                chunk_index=0,
+                total_chunks=1,
+                size=len(content),
+                file_path=file_path,
+                file_extension=Path(file_path).suffix,
+                line_start=1,
+                line_end=len(lines),
+                semantic_chunking=True,
+                semantic_type="module",
+                semantic_name=Path(file_path).stem,
+                semantic_path=Path(file_path).stem,
+                semantic_signature=f"module {Path(file_path).stem}",
+                semantic_parent=None,
+                semantic_context={"fallback_parsing": True},
+                semantic_scope="global",
+                semantic_language_features=["fallback_chunk"],
+            )
+        ]
