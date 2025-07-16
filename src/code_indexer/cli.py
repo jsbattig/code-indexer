@@ -1599,7 +1599,7 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
 )
 @click.option(
     "--language",
-    help="Filter by programming language. Supported: python, javascript, typescript, java, cpp, c, csharp, go, rust, ruby, php, shell, html, css, sql, swift, kotlin, scala, dart, vue, markdown, json, yaml, toml, text",
+    help="Filter by programming language. Supported: python, javascript, typescript, java, cpp, c, csharp, go, rust, ruby, php, shell, html, css, sql, swift, kotlin, scala, dart, vue, pascal, delphi, markdown, json, yaml, toml, text",
 )
 @click.option("--path", help="Filter by file path pattern (e.g., */tests/*)")
 @click.option("--min-score", type=float, help="Minimum similarity score (0.0-1.0)")
@@ -2168,7 +2168,7 @@ def query(
 )
 @click.option(
     "--language",
-    help="[RAG-first only] Filter initial search by programming language. Supported: python, javascript, typescript, java, cpp, c, csharp, go, rust, ruby, php, shell, html, css, sql, swift, kotlin, scala, dart, vue, markdown, json, yaml, toml, text",
+    help="[RAG-first only] Filter initial search by programming language. Supported: python, javascript, typescript, java, cpp, c, csharp, go, rust, ruby, php, shell, html, css, sql, swift, kotlin, scala, dart, vue, pascal, delphi, markdown, json, yaml, toml, text",
 )
 @click.option(
     "--path",

@@ -217,6 +217,11 @@ class Config(BaseModel):
             "dart",
             "vue",
             "jsx",
+            "pas",
+            "pp",
+            "dpr",
+            "dpk",
+            "inc",
         ],
         description="File extensions to index",
     )
