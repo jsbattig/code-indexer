@@ -234,6 +234,15 @@ class TestProjectInventory:
         voyage_ai_batch_size=32,
     )
 
+    RECONCILE_BRANCH_VISIBILITY = ProjectTestConfig(
+        name="reconcile_branch_visibility",
+        collection_base_name="test_reconcile_branch_visibility",
+        chunk_size=1000,
+        chunk_overlap=100,
+        voyage_ai_batch_size=32,
+        voyage_ai_parallel_requests=4,
+    )
+
     CLAUDE_E2E = ProjectTestConfig(
         name="claude_e2e",
         collection_base_name="test_claude",

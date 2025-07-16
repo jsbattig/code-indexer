@@ -843,6 +843,63 @@ class SmartIndexer(HighThroughputProcessor):
                 # File might have been deleted or is not accessible, skip it
                 continue
 
+        # NEW: For git projects, unhide up-to-date files that should be visible in current branch
+        if self.git_topology_service.is_git_available():
+            current_branch = self.git_topology_service.get_current_branch() or "master"
+            collection_name = self.qdrant_client.resolve_collection_name(
+                self.config, self.embedding_provider
+            )
+
+            # Find files that are up-to-date (exist on disk and in DB with same timestamp)
+            up_to_date_files = []
+            for file_path in all_files_to_index:
+                if (
+                    file_path in indexed_files_with_timestamps
+                    and file_path not in files_to_index
+                ):
+                    # File exists on disk and in DB, and was not marked for re-indexing
+                    try:
+                        relative_path = str(
+                            file_path.relative_to(self.config.codebase_dir)
+                        )
+                        up_to_date_files.append(relative_path)
+                    except ValueError:
+                        continue
+
+            # Check if any up-to-date files need to be unhidden in current branch
+            files_unhidden = 0
+            for relative_file_path in up_to_date_files:
+                # Check if file has the current branch in its hidden_branches
+                content_points, _ = self.qdrant_client.scroll_points(
+                    filter_conditions={
+                        "must": [
+                            {"key": "type", "match": {"value": "content"}},
+                            {"key": "path", "match": {"value": relative_file_path}},
+                        ]
+                    },
+                    limit=1,  # Just need to check one point
+                    collection_name=collection_name,
+                )
+
+                if content_points:
+                    hidden_branches = (
+                        content_points[0].get("payload", {}).get("hidden_branches", [])
+                    )
+                    if current_branch in hidden_branches:
+                        # File should be visible but is hidden - unhide it
+                        self.branch_aware_indexer._unhide_file_in_branch(
+                            relative_file_path, current_branch, collection_name
+                        )
+                        files_unhidden += 1
+
+            if files_unhidden > 0 and progress_callback:
+                progress_callback(
+                    0,
+                    0,
+                    Path(""),
+                    info=f"👁️  Made {files_unhidden} files visible in current branch '{current_branch}'",
+                )
+
         # NEW: Detect files that exist in database but were deleted from filesystem
         deleted_files = []
         disk_files_set = {

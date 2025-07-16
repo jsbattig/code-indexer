@@ -1028,6 +1028,39 @@ class BranchAwareIndexer:
         # Note: No fallback needed with hidden_branches approach
         # If no content points exist for the file, that's expected for deleted files
 
+    def _unhide_file_in_branch(self, file_path: str, branch: str, collection_name: str):
+        """Mark file as visible in branch by removing branch from hidden_branches array."""
+        # Get all content points for this file
+        content_points, _ = self.qdrant_client.scroll_points(
+            filter_conditions={
+                "must": [
+                    {"key": "type", "match": {"value": "content"}},
+                    {"key": "path", "match": {"value": file_path}},
+                ]
+            },
+            limit=1000,  # Should be enough for any file's chunks
+            collection_name=collection_name,
+        )
+
+        # Update each content point to remove branch from hidden_branches if present
+        points_to_update = []
+        for point in content_points:
+            current_hidden = point.get("payload", {}).get("hidden_branches", [])
+            if branch in current_hidden:
+                # Remove branch from hidden_branches array
+                new_hidden = [b for b in current_hidden if b != branch]
+                points_to_update.append(
+                    {"id": point["id"], "payload": {"hidden_branches": new_hidden}}
+                )
+
+        # Batch update the points with new hidden_branches arrays
+        if points_to_update:
+            return self.qdrant_client._batch_update_points(
+                points_to_update, collection_name
+            )
+
+        return True  # No updates needed
+
     def hide_files_not_in_branch(
         self,
         branch: str,

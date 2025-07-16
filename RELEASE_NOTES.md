@@ -1,5 +1,15 @@
 # Code Indexer Release Notes
 
+## Version 2.1.1.0 (2025-01-16)
+
+### 🐛 Bug Fixes
+- **Reconcile Branch Visibility**: Fixed critical bug where `--reconcile` only hid files not in current branch but failed to unhide files that exist in current branch after switching branches without watch mode
+- **Branch Awareness**: Enhanced reconcile operation to bidirectionally manage branch visibility, ensuring complete synchronization when switching branches
+
+### 🧪 Testing Improvements
+- **E2E Test Coverage**: Added comprehensive end-to-end test to reproduce and verify fix for reconcile branch visibility bug
+- **Test Infrastructure**: Improved test isolation and service management for branch-aware functionality
+
 ## Version 2.1.0.0 (2025-01-14)
 
 ### 🐛 Bug Fixes
