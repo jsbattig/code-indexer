@@ -209,8 +209,11 @@ class PascalSemanticParser(BaseSemanticParser):
             for child in node.children:
                 self._traverse_node(child, constructs, lines, scope_stack, content)
 
-        # Special handling for ERROR nodes that might contain implementations
+        # Special handling for ERROR nodes that might contain implementations and declarations
         if node_type == "ERROR":
+            self._extract_declarations_from_error(
+                node, constructs, lines, scope_stack, content
+            )
             self._extract_implementations_from_error(
                 node, constructs, lines, scope_stack, content
             )
@@ -1222,6 +1225,151 @@ class PascalSemanticParser(BaseSemanticParser):
                 deduplicated.append(construct)
 
         return deduplicated
+
+    def _extract_declarations_from_error(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Extract class/interface/record and method declarations from ERROR nodes using regex fallback."""
+        import re
+
+        # Get the text of the ERROR node
+        start_line = node.start_point[0]
+        end_line = node.end_point[0]
+
+        class_indent = 0  # Initialize to avoid undefined variable
+
+        # Look for class/interface/record declarations
+        for line_idx in range(start_line, end_line + 1):
+            if line_idx >= len(lines):
+                break
+
+            line = lines[line_idx]
+
+            # Calculate indentation
+            indent = len(line) - len(line.lstrip())
+
+            # Check for class/interface/record declaration
+            class_match = re.match(
+                r"^\s*(\w+)\s*=\s*(class|interface|record|object)(\(.*?\))?", line
+            )
+            if class_match:
+                type_name = class_match.group(1)
+                type_kind = class_match.group(2)
+                parent_class = class_match.group(3)
+
+                if parent_class:
+                    parent_class = parent_class.strip("()")
+
+                class_indent = indent
+
+                # Find the end of the class declaration
+                class_start = line_idx
+                class_end = class_start
+
+                # Look for the corresponding 'end' or next type declaration
+                for search_idx in range(line_idx + 1, min(line_idx + 200, len(lines))):
+                    search_line = lines[search_idx]
+                    search_indent = len(search_line) - len(search_line.lstrip())
+
+                    # Check if we've found the end
+                    if search_indent <= class_indent and re.match(
+                        r"^\s*(end|implementation|initialization|finalization|\w+\s*=\s*(class|interface|record|object))",
+                        search_line,
+                    ):
+                        class_end = search_idx - 1
+                        break
+
+                # Extract the full class text
+                class_lines = lines[class_start : class_end + 1]
+                class_text = "\n".join(class_lines)
+
+                # Add the class/interface/record construct
+                constructs.append(
+                    {
+                        "type": type_kind,
+                        "name": type_name,
+                        "path": type_name,
+                        "signature": f"{type_kind} {type_name}",
+                        "parent": parent_class,
+                        "scope": "type",
+                        "line_start": class_start + 1,
+                        "line_end": class_end + 1,
+                        "text": class_text,
+                        "context": {
+                            "declaration_type": type_kind,
+                            "parent_type": parent_class,
+                            "extracted_from_error": True,
+                        },
+                        "features": [f"{type_kind}_declaration"],
+                    }
+                )
+
+                # Now look for method declarations within the class
+                visibility = "public"  # default
+
+                for member_idx in range(class_start + 1, class_end + 1):
+                    if member_idx >= len(lines):
+                        break
+
+                    member_line = lines[member_idx].strip()
+
+                    # Check for visibility sections
+                    if re.match(
+                        r"^(private|protected|public|published)\s*$", member_line
+                    ):
+                        visibility = member_line.strip()
+                        continue
+
+                    # Check for method declarations
+                    method_match = re.match(
+                        r"^(procedure|function|constructor|destructor)\s+(\w+)\s*(\([^)]*\))?\s*(:\s*[^;]+)?\s*;",
+                        member_line,
+                    )
+                    if method_match:
+                        method_type = method_match.group(1)
+                        method_name = method_match.group(2)
+                        params = method_match.group(3)
+                        return_type = method_match.group(4)
+
+                        if params:
+                            params = params.strip("()")
+                        if return_type:
+                            return_type = return_type.strip(": ")
+
+                        # Build signature
+                        signature = f"{method_type} {method_name}"
+                        if params:
+                            signature += f"({params})"
+                        if return_type:
+                            signature += f": {return_type}"
+
+                        # Add the method declaration
+                        constructs.append(
+                            {
+                                "type": method_type,
+                                "name": method_name,
+                                "path": f"{type_name}.{method_name}",
+                                "signature": signature,
+                                "parent": type_name,
+                                "scope": "function",
+                                "line_start": member_idx + 1,
+                                "line_end": member_idx + 1,
+                                "text": member_line,
+                                "context": {
+                                    "declaration_type": method_type,
+                                    "parameters": params,
+                                    "return_type": return_type,
+                                    "visibility": visibility,
+                                    "extracted_from_error": True,
+                                },
+                                "features": [f"{method_type}_declaration"],
+                            }
+                        )
 
     def _extract_implementations_from_error(
         self,
