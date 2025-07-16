@@ -1818,21 +1818,31 @@ def query(
         # Get current branch for display
         current_display_branch = "unknown"
         try:
-            if (
-                hasattr(query_service, "file_identifier")
-                and query_service.file_identifier.git_available
-            ):
-                import subprocess
+            # Try to get branch from git directly since we're in a git repository
+            import subprocess
 
-                git_result = subprocess.run(
-                    ["git", "symbolic-ref", "--short", "HEAD"],
-                    cwd=config.codebase_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                if git_result.returncode == 0:
-                    current_display_branch = git_result.stdout.strip()
+            git_result = subprocess.run(
+                ["git", "symbolic-ref", "--short", "HEAD"],
+                cwd=config.codebase_dir,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if git_result.returncode == 0:
+                current_display_branch = git_result.stdout.strip()
+            else:
+                # Fallback to metadata if available
+                try:
+                    from code_indexer.services.progressive_metadata import (
+                        ProgressiveMetadata,
+                    )
+
+                    metadata = ProgressiveMetadata(config.codebase_dir)
+                    current_display_branch = metadata.get_current_branch_with_retry(
+                        fallback="unknown"
+                    )
+                except Exception:
+                    pass
         except Exception:
             pass
 

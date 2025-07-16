@@ -492,6 +492,13 @@ class SmartIndexer(HighThroughputProcessor):
                 f"Original error: {e}"
             ) from e
 
+        # Update metadata with actual processing results
+        self.progressive_metadata.update_progress(
+            files_processed=stats.files_processed,
+            chunks_added=stats.chunks_created,
+            failed_files=stats.failed_files,
+        )
+
         # Mark as completed
         self.progressive_metadata.complete_indexing()
 
@@ -649,6 +656,13 @@ class SmartIndexer(HighThroughputProcessor):
                 f"Git-aware incremental indexing failed and fallbacks are disabled. "
                 f"Original error: {e}"
             ) from e
+
+        # Update metadata with actual processing results
+        self.progressive_metadata.update_progress(
+            files_processed=stats.files_processed,
+            chunks_added=stats.chunks_created,
+            failed_files=stats.failed_files,
+        )
 
         # Mark as completed
         self.progressive_metadata.complete_indexing()
@@ -1045,6 +1059,13 @@ class SmartIndexer(HighThroughputProcessor):
                 f"Original error: {e}"
             ) from e
 
+        # Update metadata with actual processing results
+        self.progressive_metadata.update_progress(
+            files_processed=stats.files_processed,
+            chunks_added=stats.chunks_created,
+            failed_files=stats.failed_files,
+        )
+
         # Mark as completed
         self.progressive_metadata.complete_indexing()
 
@@ -1150,6 +1171,13 @@ class SmartIndexer(HighThroughputProcessor):
                 f"Git-aware resume failed and fallbacks are disabled. "
                 f"Original error: {e}"
             ) from e
+
+        # Update metadata with actual processing results
+        self.progressive_metadata.update_progress(
+            files_processed=stats.files_processed,
+            chunks_added=stats.chunks_created,
+            failed_files=stats.failed_files,
+        )
 
         # Mark as completed
         self.progressive_metadata.complete_indexing()
