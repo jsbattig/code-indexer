@@ -170,6 +170,13 @@ class SemanticChunker:
         except ImportError:
             pass
 
+        try:
+            from .groovy_parser import GroovySemanticParser
+
+            self.parsers["groovy"] = GroovySemanticParser(config)
+        except ImportError:
+            pass
+
     def chunk_file(self, file_path: Union[Path, str]) -> List[Dict[str, Any]]:
         """
         Chunk file using AST-based semantic chunking or fall back to text chunking.
@@ -238,6 +245,10 @@ class SemanticChunker:
             ".dpr": "pascal",
             ".dpk": "pascal",
             ".inc": "pascal",
+            ".groovy": "groovy",
+            ".gradle": "groovy",
+            ".gvy": "groovy",
+            ".gy": "groovy",
         }
 
         return language_map.get(ext, "unknown")

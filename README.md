@@ -8,7 +8,7 @@ AI-powered semantic code search for your codebase. Find code by meaning, not jus
 - **Multiple Providers** - Local (Ollama) or cloud (VoyageAI) embeddings  
 - **Smart Indexing** - Incremental updates, git-aware, multi-project support
 - **Semantic Filtering** - Filter by code constructs (classes, functions), scope, language features
-- **Multi-Language Support** - AST parsing for Python, JavaScript, TypeScript, Java, Go, Kotlin
+- **Multi-Language Support** - AST parsing for Python, JavaScript, TypeScript, Java, Go, Kotlin, Groovy, Pascal/Delphi
 - **CLI Interface** - Simple commands with progress indicators
 - **AI Analysis** - Integrates with Claude CLI for code analysis with semantic search
 - **Privacy Options** - Full local processing or cloud for better performance
@@ -102,6 +102,23 @@ Configuration is stored in `.code-indexer/config.json`:
 - `embedding_provider`: ollama or voyage-ai
 - `use_semantic_chunking`: Enable AST-based semantic chunking (default: true)
 - `max_file_size`: Maximum file size in bytes (default: 1MB)
+
+## Supported Languages
+
+Code Indexer provides AST-based semantic chunking for comprehensive code understanding:
+
+| Language | File Extensions | Semantic Features |
+|----------|----------------|-------------------|
+| **Python** | `.py` | Classes, functions, methods, decorators, async/await |
+| **JavaScript** | `.js`, `.jsx` | Classes, functions, arrow functions, async/await, JSX |
+| **TypeScript** | `.ts`, `.tsx` | Interfaces, types, generics, decorators, JSX |
+| **Java** | `.java` | Classes, interfaces, methods, annotations, generics |
+| **Go** | `.go` | Structs, interfaces, functions, methods, goroutines |
+| **Kotlin** | `.kt`, `.kts` | Classes, data classes, objects, extension functions |
+| **Groovy** | `.groovy`, `.gradle`, `.gvy`, `.gy` | Classes, traits, closures, DSL patterns, Gradle scripts |
+| **Pascal/Delphi** | `.pas`, `.pp`, `.dpr`, `.dpk`, `.inc` | Units, classes, procedures, functions, properties |
+
+All parsers include robust ERROR node handling to extract meaningful constructs even from malformed code.
 
 ## Requirements
 
