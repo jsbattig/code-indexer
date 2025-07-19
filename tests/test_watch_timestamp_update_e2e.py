@@ -17,7 +17,7 @@ from .test_infrastructure import (
 from .conftest import local_temporary_directory
 
 # Mark all tests in this file as e2e to exclude from ci-github.sh
-pytestmark = [pytest.mark.e2e, pytest.mark.subprocess]
+pytestmark = [pytest.mark.e2e]
 
 
 @pytest.fixture

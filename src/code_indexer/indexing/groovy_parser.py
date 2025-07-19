@@ -443,8 +443,13 @@ class GroovySemanticParser(BaseTreeSitterParser):
         else:
             return
 
-        # Extract annotations (including multiline)
+        # Extract annotations from current node and preceding annotation nodes
         annotations = re.findall(r"@(\w+)", node_text, re.MULTILINE)
+
+        # Look for preceding annotation nodes (sibling nodes that are decoration/annotation commands)
+        if hasattr(node, "parent") and node.parent:
+            preceding_annotations = self._find_preceding_annotations(node, lines)
+            annotations.extend(preceding_annotations)
 
         # Extract modifiers
         modifiers = []
@@ -604,8 +609,13 @@ class GroovySemanticParser(BaseTreeSitterParser):
         if "(" in node_text and ")" in node_text:
             return
 
-        # Extract annotations
+        # Extract annotations from current node and preceding annotation nodes
         annotations = re.findall(r"@(\w+)", node_text)
+
+        # Look for preceding annotation nodes (sibling nodes that are decoration/annotation commands)
+        if hasattr(node, "parent") and node.parent:
+            preceding_annotations = self._find_preceding_annotations(node, lines)
+            annotations.extend(preceding_annotations)
 
         # Extract modifiers
         modifiers = []
@@ -724,3 +734,55 @@ class GroovySemanticParser(BaseTreeSitterParser):
             )
 
         return chunks
+
+    def _find_preceding_annotations(self, node: Any, lines: List[str]) -> List[str]:
+        """Find annotations in preceding sibling nodes."""
+        annotations: List[str] = []
+
+        if not hasattr(node, "parent") or not node.parent:
+            return annotations
+
+        parent = node.parent
+        if not hasattr(parent, "children"):
+            return annotations
+
+        # Find the current node's position among siblings
+        node_index = -1
+        for i, sibling in enumerate(parent.children):
+            if sibling == node:
+                node_index = i
+                break
+
+        if node_index <= 0:
+            return annotations
+
+        # Look backward through preceding siblings for annotation/decoration nodes
+        for i in range(node_index - 1, -1, -1):
+            sibling = parent.children[i]
+
+            if not hasattr(sibling, "type"):
+                continue
+
+            # Check if this is an annotation/decoration command
+            if sibling.type == "command":
+                sibling_text = self._get_node_text(sibling, lines).strip()
+
+                # Check if this looks like an annotation
+                if sibling_text.startswith("@"):
+                    # Extract annotation name(s) from this node
+                    node_annotations = re.findall(r"@(\w+)", sibling_text)
+                    annotations.extend(node_annotations)
+                elif sibling_text == "" or sibling_text.isspace():
+                    # Skip whitespace nodes
+                    continue
+                else:
+                    # Stop when we hit a non-annotation, non-whitespace node
+                    break
+            elif sibling.type in ["", "\n"]:
+                # Skip whitespace/newline nodes
+                continue
+            else:
+                # Stop when we hit a non-annotation node
+                break
+
+        return annotations
