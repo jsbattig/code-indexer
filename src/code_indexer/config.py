@@ -189,6 +189,7 @@ class Config(BaseModel):
             "java",
             "c",
             "cpp",
+            "cs",
             "h",
             "hpp",
             "go",

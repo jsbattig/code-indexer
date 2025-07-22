@@ -99,6 +99,7 @@ class BaseSemanticParser:
             ".ts": "typescript",
             ".tsx": "typescript",
             ".java": "java",
+            ".cs": "csharp",
             ".go": "go",
             ".kt": "kotlin",
             ".kts": "kotlin",
@@ -177,6 +178,13 @@ class SemanticChunker:
         except ImportError:
             pass
 
+        try:
+            from .csharp_parser import CSharpSemanticParser
+
+            self.parsers["csharp"] = CSharpSemanticParser(config)
+        except ImportError:
+            pass
+
     def chunk_file(self, file_path: Union[Path, str]) -> List[Dict[str, Any]]:
         """
         Chunk file using AST-based semantic chunking or fall back to text chunking.
@@ -237,6 +245,7 @@ class SemanticChunker:
             ".ts": "typescript",
             ".tsx": "typescript",
             ".java": "java",
+            ".cs": "csharp",
             ".go": "go",
             ".kt": "kotlin",
             ".kts": "kotlin",
