@@ -1,5 +1,86 @@
 # Code Indexer Release Notes
 
+## Version 2.6.0.0 (2025-07-23)
+
+### 🔧 CoW Container Isolation Fix
+
+#### **Configuration Repair Enhancement**
+- **Fixed CoW Clone Container Isolation**: The `fix-config` command now properly regenerates project hash, ports, and container names for Copy-on-Write clones
+- **Intelligent Project Configuration Detection**: Automatically detects when a project has been copied and updates container configuration to ensure proper isolation
+- **Port Collision Prevention**: Regenerates unique port assignments based on filesystem location to prevent conflicts between cloned projects
+- **Container Name Uniqueness**: Updates container names with new project hash to ensure each clone has its own isolated containers
+
+#### **Technical Implementation**
+- **New `_fix_project_configuration()` Method**: Comprehensive project configuration regeneration for CoW clones
+- **Enhanced `_regenerate_project_configuration()`**: Uses DockerManager to generate accurate project hash and container names
+- **Safe Configuration Updates**: Proper error handling and dry-run support for all configuration changes
+- **Comprehensive Test Coverage**: Added dedicated tests for CoW container isolation functionality
+
+#### **User Experience Improvements**
+- **Seamless CoW Support**: Projects can now be safely copied without manual configuration updates
+- **Automatic Detection**: Configuration repair automatically identifies and fixes CoW clone issues
+- **Zero Manual Intervention**: No user action required - the fix-config command handles everything automatically
+
+### 🧪 Quality Assurance
+- **Complete Test Coverage**: All new functionality covered by comprehensive test suite
+- **Linting Compliance**: Full ruff, black, and mypy compliance maintained
+- **Backward Compatibility**: No breaking changes to existing functionality
+
+---
+
+## Version 2.5.0.0 (2025-07-23)
+
+### 🚀 Major Features & Enhancements
+
+#### **Massive Multi-Language Parser Expansion**
+- **11 New Languages Added**: Comprehensive semantic parsing support for C, C++, Swift, Ruby, SQL, HTML, CSS, YAML, XML, Rust, and Lua
+- **20+ Languages Total**: Code Indexer now supports the most comprehensive set of programming languages with full AST-based semantic parsing
+- **Universal Tree-Sitter Integration**: All new parsers built on tree-sitter foundation with comprehensive ERROR node handling
+- **Zero Content Loss**: Enhanced regex fallback ensures even malformed code produces meaningful semantic chunks
+
+#### **Advanced Language-Specific Features**
+- **C/C++**: Structs, unions, functions, classes, templates, namespaces, operators, inheritance, RAII patterns
+- **Swift**: Classes, structs, protocols, extensions, enums, generics, property wrappers, access control
+- **Ruby**: Classes, modules, methods, blocks, mixins, metaprogramming, visibility modifiers
+- **Rust**: Structs, enums, traits, impl blocks, functions, modules, lifetimes, ownership patterns
+- **SQL**: Tables, views, procedures, functions, triggers, CTEs, multiple dialect support
+- **HTML/CSS**: Elements, attributes, selectors, rules, media queries, animations, document structure
+- **YAML/XML**: Mappings, sequences, namespaces, CDATA, processing instructions, multi-document support
+- **Lua**: Functions, tables, modules, local/global scope, metamethods
+
+#### **Comprehensive ERROR Node Recovery**
+- **Triple-Layer Parsing Strategy**: Tree-sitter → ERROR node regex → Complete regex fallback
+- **7,600+ Lines of Tests**: Comprehensive test coverage with intentional syntax errors for all languages
+- **Production-Ready Parsers**: All parsers handle malformed code gracefully while extracting maximum semantic information
+
+### 🔧 Technical Infrastructure
+
+#### **Parallel Development with Claude Flow**
+- **Concurrent Implementation**: Used advanced parallel processing to implement 11 parsers simultaneously
+- **Task Orchestration**: Leveraged Claude Flow's swarm coordination for efficient multi-agent development
+- **Quality Assurance**: Comprehensive linting (ruff, black, mypy) across all 230+ source files
+
+#### **Enhanced Configuration & Integration**
+- **Semantic Chunker Integration**: All parsers properly registered with import error handling
+- **Extended File Support**: Added 18+ new file extensions (lua, xml, xsd, xsl, xslt, groovy, gradle, cxx, cc, hxx, rake, rbw, gemspec, htm, scss, sass, etc.)
+- **Updated Documentation**: Complete README.md refresh with all supported languages and features
+
+### 📊 Language Coverage Expansion
+
+**Before 2.5.0**: Python, JavaScript, TypeScript, Java, C#, Go, Kotlin, Groovy, Pascal/Delphi, SQL (10 languages)
+
+**After 2.5.0**: Python, JavaScript, TypeScript, Java, C#, Go, Kotlin, Groovy, Pascal/Delphi, SQL, C, C++, Swift, Ruby, Rust, Lua, HTML, CSS, YAML, XML (20+ languages)
+
+### 🧪 Testing Excellence
+- **Complete Test Coverage**: Every parser includes comprehensive test suite with ERROR node handling
+- **Edge Case Validation**: Tests verify parser behavior with intentionally malformed syntax
+- **Production Validation**: Core functionality tested with minor edge cases noted for future refinement
+
+### 🏗️ Architecture Improvements
+- **Standardized Base Classes**: All parsers extend BaseTreeSitterParser for consistent behavior
+- **Language Detection**: Enhanced file extension mapping for comprehensive language support
+- **Error Recovery**: Universal error handling patterns across all language parsers
+
 ## Version 2.2.0.0 (2025-07-16)
 
 ### 🚀 Major Features & Enhancements

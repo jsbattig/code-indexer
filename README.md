@@ -8,7 +8,7 @@ AI-powered semantic code search for your codebase. Find code by meaning, not jus
 - **Multiple Providers** - Local (Ollama) or cloud (VoyageAI) embeddings  
 - **Smart Indexing** - Incremental updates, git-aware, multi-project support
 - **Semantic Filtering** - Filter by code constructs (classes, functions), scope, language features
-- **Multi-Language Support** - AST parsing for Python, JavaScript, TypeScript, Java, C#, Go, Kotlin, Groovy, Pascal/Delphi
+- **Multi-Language Support** - AST parsing for Python, JavaScript, TypeScript, Java, C#, Go, Kotlin, Groovy, Pascal/Delphi, SQL, C, C++, Rust, Swift, Ruby, Lua, HTML, CSS, YAML, XML
 - **CLI Interface** - Simple commands with progress indicators
 - **AI Analysis** - Integrates with Claude CLI for code analysis with semantic search
 - **Privacy Options** - Full local processing or cloud for better performance
@@ -113,10 +113,22 @@ Code Indexer provides AST-based semantic chunking for comprehensive code underst
 | **JavaScript** | `.js`, `.jsx` | Classes, functions, arrow functions, async/await, JSX |
 | **TypeScript** | `.ts`, `.tsx` | Interfaces, types, generics, decorators, JSX |
 | **Java** | `.java` | Classes, interfaces, methods, annotations, generics |
+| **C#** | `.cs` | Classes, interfaces, methods, properties, namespaces, attributes |
 | **Go** | `.go` | Structs, interfaces, functions, methods, goroutines |
 | **Kotlin** | `.kt`, `.kts` | Classes, data classes, objects, extension functions |
 | **Groovy** | `.groovy`, `.gradle`, `.gvy`, `.gy` | Classes, traits, closures, DSL patterns, Gradle scripts |
 | **Pascal/Delphi** | `.pas`, `.pp`, `.dpr`, `.dpk`, `.inc` | Units, classes, procedures, functions, properties |
+| **SQL** | `.sql` | Tables, views, indexes, procedures, functions, triggers, CTEs |
+| **C** | `.c`, `.h` | Structs, unions, functions, enums, typedefs, preprocessor directives |
+| **C++** | `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx` | Classes, templates, namespaces, operators, inheritance, RAII |
+| **Rust** | `.rs` | Structs, enums, traits, impl blocks, functions, modules, lifetimes |
+| **Swift** | `.swift` | Classes, structs, protocols, extensions, enums, generics, property wrappers |
+| **Ruby** | `.rb`, `.rake`, `.gemspec` | Classes, modules, methods, blocks, mixins, metaprogramming |
+| **Lua** | `.lua` | Functions, tables, modules, methods, local/global scope |
+| **HTML** | `.html`, `.htm` | Elements, attributes, scripts, styles, comments, document structure |
+| **CSS** | `.css`, `.scss`, `.sass` | Selectors, rules, media queries, at-rules, animations, variables |
+| **YAML** | `.yaml`, `.yml` | Mappings, sequences, anchors, aliases, multi-document |
+| **XML** | `.xml`, `.xsd`, `.xsl`, `.xslt` | Elements, attributes, namespaces, CDATA, processing instructions |
 
 All parsers include robust ERROR node handling to extract meaningful constructs even from malformed code.
 

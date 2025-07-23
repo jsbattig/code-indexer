@@ -617,8 +617,9 @@ def init(
             else:
                 embedding_provider = "ollama"
 
-        # Create default config
-        config = Config(codebase_dir=target_dir.resolve())
+        # Create default config with relative path for CoW clone compatibility
+        # Use "." for current directory to ensure CoW clones work without intervention
+        config = Config(codebase_dir=Path("."))
         config_manager._config = config
 
         # Update config with provided options
@@ -802,7 +803,8 @@ def start(
         # Only create a local config if NO config exists anywhere in the directory tree
         if not config_manager.config_path.exists():
             setup_console.print("📝 Creating default configuration...")
-            config = config_manager.create_default_config(Path.cwd().resolve())
+            # Use relative path for CoW clone compatibility
+            config = config_manager.create_default_config(Path("."))
             config_manager.save_with_documentation(config)
             setup_console.print(
                 f"✅ Configuration created at {config_manager.config_path}"
@@ -816,6 +818,12 @@ def start(
         else:
             # Load existing config (found via backtracking)
             config = config_manager.load()
+
+            # Automatically migrate existing configs to relative paths for CoW support
+            if config_manager.migrate_to_relative_paths():
+                setup_console.print(
+                    "🔄 Migrated configuration to use relative paths for CoW clone compatibility"
+                )
 
         # Provider-specific configuration and validation
         if config.embedding_provider == "ollama":
@@ -2874,14 +2882,12 @@ def _status_impl(ctx, force_docker: bool):
                         collection_count = qdrant_client.count_points(collection_name)
                         collection_status = "✅ Active"
 
-                        # Get local collection path if using symlink system
+                        # Get local collection path - should be in project's .code-indexer/qdrant_collection/
+                        project_root = config.codebase_dir
                         local_collection_path = (
-                            config_manager.config_path.parent
-                            / "~"
-                            / "Dev"
-                            / "code-indexer"
+                            project_root
                             / ".code-indexer"
-                            / "collections"
+                            / "qdrant_collection"
                             / collection_name
                         )
 

@@ -103,6 +103,22 @@ class BaseSemanticParser:
             ".go": "go",
             ".kt": "kotlin",
             ".kts": "kotlin",
+            ".pas": "pascal",
+            ".pp": "pascal",
+            ".dpr": "pascal",
+            ".dpk": "pascal",
+            ".inc": "pascal",
+            ".groovy": "groovy",
+            ".gradle": "groovy",
+            ".gvy": "groovy",
+            ".gy": "groovy",
+            ".rs": "rust",
+            ".lua": "lua",
+            ".swift": "swift",
+            ".rb": "ruby",
+            ".rake": "ruby",
+            ".rbw": "ruby",
+            ".gemspec": "ruby",
         }
         return language_map.get(ext, "unknown")
 
@@ -179,9 +195,88 @@ class SemanticChunker:
             pass
 
         try:
+            from .c_parser import CSemanticParser
+
+            self.parsers["c"] = CSemanticParser(config)
+        except ImportError:
+            pass
+
+        try:
+            from .cpp_parser import CppSemanticParser
+
+            self.parsers["cpp"] = CppSemanticParser(config)
+            self.parsers["cxx"] = CppSemanticParser(config)
+            self.parsers["cc"] = CppSemanticParser(config)
+        except ImportError:
+            pass
+
+        try:
             from .csharp_parser import CSharpSemanticParser
 
             self.parsers["csharp"] = CSharpSemanticParser(config)
+        except ImportError:
+            pass
+
+        try:
+            from .rust_parser import RustSemanticParser
+
+            self.parsers["rust"] = RustSemanticParser(config)
+        except ImportError:
+            pass
+
+        try:
+            from .lua_parser import LuaSemanticParser
+
+            self.parsers["lua"] = LuaSemanticParser(config)
+        except ImportError:
+            pass
+
+        try:
+            from .swift_parser import SwiftSemanticParser
+
+            self.parsers["swift"] = SwiftSemanticParser(config)
+        except ImportError:
+            pass
+
+        try:
+            from .ruby_parser import RubySemanticParser
+
+            self.parsers["ruby"] = RubySemanticParser(config)
+        except ImportError:
+            pass
+
+        try:
+            from .sql_parser import SQLSemanticParser
+
+            self.parsers["sql"] = SQLSemanticParser(config)
+        except ImportError:
+            pass
+
+        try:
+            from .html_parser import HtmlSemanticParser
+
+            self.parsers["html"] = HtmlSemanticParser(config)
+        except ImportError:
+            pass
+
+        try:
+            from .css_parser import CssSemanticParser
+
+            self.parsers["css"] = CssSemanticParser(config)
+        except ImportError:
+            pass
+
+        try:
+            from .yaml_parser import YamlSemanticParser
+
+            self.parsers["yaml"] = YamlSemanticParser(config)
+        except ImportError:
+            pass
+
+        try:
+            from .xml_parser import XmlSemanticParser
+
+            self.parsers["xml"] = XmlSemanticParser(config)
         except ImportError:
             pass
 
@@ -258,6 +353,33 @@ class SemanticChunker:
             ".gradle": "groovy",
             ".gvy": "groovy",
             ".gy": "groovy",
+            ".rs": "rust",
+            ".lua": "lua",
+            ".swift": "swift",
+            ".rb": "ruby",
+            ".rake": "ruby",
+            ".rbw": "ruby",
+            ".gemspec": "ruby",
+            # Additional language mappings
+            ".c": "c",
+            ".h": "c",
+            ".cpp": "cpp",
+            ".cxx": "cpp",
+            ".cc": "cpp",
+            ".hpp": "cpp",
+            ".hxx": "cpp",
+            ".sql": "sql",
+            ".html": "html",
+            ".htm": "html",
+            ".css": "css",
+            ".scss": "css",
+            ".sass": "css",
+            ".yaml": "yaml",
+            ".yml": "yaml",
+            ".xml": "xml",
+            ".xsd": "xml",
+            ".xsl": "xml",
+            ".xslt": "xml",
         }
 
         return language_map.get(ext, "unknown")

@@ -622,5 +622,108 @@ class TestFixReportGeneration:
         assert "Another error" in report
 
 
+class TestProjectConfigurationFixes:
+    """Test project configuration fixes for CoW clones."""
+
+    def setup_method(self):
+        """Setup test environment."""
+        self.temp_dir = Path(str(get_local_tmp_dir() / f"test_{uuid.uuid4().hex[:8]}"))
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.config_dir = self.temp_dir / ".code-indexer"
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        self.config_file = self.config_dir / "config.json"
+        self.metadata_file = self.config_dir / "metadata.json"
+
+    def teardown_method(self):
+        """Cleanup test environment."""
+        if self.temp_dir.exists():
+            shutil.rmtree(self.temp_dir)
+
+    @patch("code_indexer.services.config_fixer.DockerManager")
+    def test_regenerate_project_configuration(self, mock_docker_manager_class):
+        """Test project configuration regeneration for CoW clones."""
+        # Mock DockerManager
+        mock_docker_manager = Mock()
+        mock_docker_manager._generate_container_names.return_value = {
+            "project_hash": "abc12345",
+            "qdrant_name": "cidx-abc12345-qdrant",
+            "ollama_name": "cidx-abc12345-ollama",
+            "data_cleaner_name": "cidx-abc12345-data-cleaner",
+        }
+        mock_docker_manager._calculate_project_ports.return_value = {
+            "qdrant_port": 6833,
+            "ollama_port": 11934,
+            "data_cleaner_port": 8591,
+        }
+        mock_docker_manager_class.return_value = mock_docker_manager
+
+        # Create a basic config for testing
+        config_data = {
+            "codebase_dir": str(self.temp_dir),
+            "embedding_provider": "voyage-ai",
+            "voyage_ai": {"model": "voyage-code-2"},
+            "qdrant": {"collection_base_name": "test-collection"},
+            "project_ports": {
+                "qdrant_port": 6333,
+                "ollama_port": 11434,
+                "data_cleaner_port": 8091,
+            },
+        }
+
+        with open(self.config_file, "w") as f:
+            json.dump(config_data, f, indent=2)
+
+        repairer = ConfigurationRepairer(self.config_dir, dry_run=True)
+
+        # Test the project configuration regeneration
+        project_info = repairer._regenerate_project_configuration()
+
+        assert project_info["project_hash"] == "abc12345"
+        assert project_info["container_names"]["qdrant_name"] == "cidx-abc12345-qdrant"
+        assert project_info["port_assignments"]["qdrant_port"] == 6833
+
+    @patch("code_indexer.services.config_fixer.DockerManager")
+    @patch("code_indexer.services.config_fixer.ConfigManager")
+    def test_fix_project_configuration_integration(
+        self, mock_config_manager_class, mock_docker_manager_class
+    ):
+        """Test the complete project configuration fix integration."""
+        # Mock DockerManager
+        mock_docker_manager = Mock()
+        mock_docker_manager._generate_container_names.return_value = {
+            "project_hash": "def67890",
+            "qdrant_name": "cidx-def67890-qdrant",
+            "ollama_name": "cidx-def67890-ollama",
+            "data_cleaner_name": "cidx-def67890-data-cleaner",
+        }
+        mock_docker_manager._calculate_project_ports.return_value = {
+            "qdrant_port": 7333,
+            "ollama_port": 12434,
+            "data_cleaner_port": 9091,
+        }
+        mock_docker_manager_class.return_value = mock_docker_manager
+
+        # Mock ConfigManager
+        mock_config_manager = Mock()
+        mock_config = Mock()
+        mock_config.project_ports = Mock()
+        mock_config.project_ports.qdrant_port = 6333  # Old port
+        mock_config.project_ports.ollama_port = 11434  # Old port
+        mock_config.project_ports.data_cleaner_port = 8091  # Old port
+        mock_config_manager.load.return_value = mock_config
+        mock_config_manager_class.return_value = mock_config_manager
+
+        repairer = ConfigurationRepairer(self.config_dir, dry_run=True)
+
+        # Test the complete fix flow
+        fixes = repairer._fix_project_configuration()
+
+        # Should detect port differences and suggest fixes
+        assert len(fixes) > 0
+        fix_types = [fix.fix_type for fix in fixes]
+        assert "port_regeneration" in fix_types
+        assert "container_name_regeneration" in fix_types
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

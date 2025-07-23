@@ -12,13 +12,14 @@ import subprocess
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, cast
 from dataclasses import dataclass
 
 from code_indexer.config import ConfigManager, Config
 from code_indexer.services.json_validator import JSONSyntaxRepairer
 from code_indexer.services.qdrant import QdrantClient
 from code_indexer.services.embedding_factory import EmbeddingProviderFactory
+from code_indexer.services.docker_manager import DockerManager
 
 
 @dataclass
@@ -465,6 +466,11 @@ class ConfigurationRepairer:
             cow_fixes = self._fix_cow_symlinks()
             all_fixes.extend(cow_fixes)
 
+            # Step 6.5: Check and fix project configuration (project hash, ports, container names)
+            print("🔍 Checking project configuration...")
+            project_fixes = self._fix_project_configuration()
+            all_fixes.extend(project_fixes)
+
             # Step 7: Check for wrong collections
             print("🔍 Checking Qdrant collections...")
             collection_warnings = self._check_collections()
@@ -813,6 +819,177 @@ class ConfigurationRepairer:
             print(f"Warning: Could not check CoW symlinks: {e}")
 
         return fixes
+
+    def _regenerate_project_configuration(self) -> Dict[str, Any]:
+        """Regenerate project configuration based on current filesystem location."""
+        try:
+            # Get the correct project root (parent of .code-indexer)
+            project_root = self.config_dir.parent.absolute()
+
+            # Initialize DockerManager to get project-specific values
+            docker_manager = DockerManager(project_name=project_root.name)
+
+            # Generate new project hash and container names
+            container_info = docker_manager._generate_container_names(project_root)
+            project_hash = container_info["project_hash"]
+
+            # Calculate new port assignments
+            port_assignments = docker_manager._calculate_project_ports(project_hash)
+
+            return {
+                "project_hash": project_hash,
+                "container_names": container_info,
+                "port_assignments": port_assignments,
+                "project_root": str(project_root),
+            }
+
+        except Exception as e:
+            print(f"Warning: Could not regenerate project configuration: {e}")
+            return {}
+
+    def _regenerate_port_assignments(self, project_hash: str) -> Dict[str, int]:
+        """Regenerate port assignments based on project hash."""
+        try:
+            docker_manager = DockerManager()
+            ports = docker_manager._calculate_project_ports(project_hash)
+            return cast(Dict[str, int], ports)
+        except Exception as e:
+            print(f"Warning: Could not regenerate port assignments: {e}")
+            return {}
+
+    def _regenerate_container_names(self, project_root: Path) -> Dict[str, str]:
+        """Regenerate container names based on project root path."""
+        try:
+            docker_manager = DockerManager()
+            names = docker_manager._generate_container_names(project_root)
+            return cast(Dict[str, str], names)
+        except Exception as e:
+            print(f"Warning: Could not regenerate container names: {e}")
+            return {}
+
+    def _clear_stale_container_references(
+        self, config: Config, project_info: Dict[str, Any]
+    ) -> List[ConfigFix]:
+        """Clear stale container references from configuration."""
+        fixes = []
+
+        try:
+            # Check if project configuration needs updating
+            if hasattr(config, "project_ports"):
+                current_ports = config.project_ports
+                new_ports = project_info.get("port_assignments", {})
+
+                # Compare current ports with calculated ports
+                ports_need_update = False
+                for service, new_port in new_ports.items():
+                    current_port = getattr(current_ports, service, 0)
+                    if current_port != new_port:
+                        ports_need_update = True
+                        break
+
+                if ports_need_update:
+                    fixes.append(
+                        ConfigFix(
+                            fix_type="port_regeneration",
+                            field="project_ports",
+                            description="Regenerate port assignments for CoW clone",
+                            old_value=str(current_ports),
+                            new_value=str(new_ports),
+                            reason="CoW clone needs unique ports based on filesystem location",
+                        )
+                    )
+
+            # Check container names if they exist in config
+            container_names = project_info.get("container_names", {})
+            if container_names:
+                fixes.append(
+                    ConfigFix(
+                        fix_type="container_name_regeneration",
+                        field="container_names",
+                        description="Regenerate container names for CoW clone",
+                        old_value="stale_references",
+                        new_value=str(container_names),
+                        reason="CoW clone needs unique container names based on filesystem location",
+                    )
+                )
+
+        except Exception as e:
+            print(f"Warning: Could not clear stale container references: {e}")
+
+        return fixes
+
+    def _fix_project_configuration(self) -> List[ConfigFix]:
+        """Fix project configuration for CoW clones (project hash, ports, container names)."""
+        fixes: List[ConfigFix] = []
+
+        try:
+            # Load current configuration
+            config_manager = ConfigManager(self.config_file)
+            config = config_manager.load()
+
+            # Regenerate project configuration based on current filesystem location
+            project_info = self._regenerate_project_configuration()
+
+            if not project_info:
+                return fixes
+
+            # Clear stale container references
+            container_fixes = self._clear_stale_container_references(
+                config, project_info
+            )
+            fixes.extend(container_fixes)
+
+            # Apply the fixes if not in dry run mode
+            if fixes and not self.dry_run:
+                updated_config = self._apply_project_config_fixes(config, project_info)
+                config_manager._config = updated_config
+                config_manager.save()
+
+        except Exception as e:
+            print(f"Warning: Could not fix project configuration: {e}")
+
+        return fixes
+
+    def _apply_project_config_fixes(
+        self, config: Config, project_info: Dict[str, Any]
+    ) -> Config:
+        """Apply project configuration fixes to the config object."""
+        try:
+            # Update port assignments
+            new_ports = project_info.get("port_assignments", {})
+            if new_ports and hasattr(config, "project_ports"):
+                # Update each port in the project_ports object
+                for service, port in new_ports.items():
+                    if hasattr(config.project_ports, service):
+                        setattr(config.project_ports, service, port)
+
+            # Update container names
+            container_names = project_info.get("container_names", {})
+            if container_names and hasattr(config, "project_containers"):
+                # Update project hash
+                if "project_hash" in container_names:
+                    config.project_containers.project_hash = container_names[
+                        "project_hash"
+                    ]
+
+                # Update individual container names
+                if "qdrant_name" in container_names:
+                    config.project_containers.qdrant_name = container_names[
+                        "qdrant_name"
+                    ]
+                if "ollama_name" in container_names:
+                    config.project_containers.ollama_name = container_names[
+                        "ollama_name"
+                    ]
+                if "data_cleaner_name" in container_names:
+                    config.project_containers.data_cleaner_name = container_names[
+                        "data_cleaner_name"
+                    ]
+
+        except Exception as e:
+            print(f"Warning: Could not apply project config fixes: {e}")
+
+        return config
 
 
 def generate_fix_report(result: FixResult, dry_run: bool = False) -> str:

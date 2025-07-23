@@ -47,14 +47,13 @@ class TestSemanticChunkerInfrastructure:
         config = IndexingConfig(use_semantic_chunking=True)
         chunker = SemanticChunker(config)
 
-        # Test with various unsupported file types
+        # Test with truly unsupported file types (no semantic parsers available)
         test_cases = [
             ("test.txt", "This is a plain text file.\nWith multiple lines."),
-            ("config.yaml", "key: value\nother_key: other_value"),
             ("data.csv", "name,age\nJohn,30\nJane,25"),
             ("script.sh", "#!/bin/bash\necho 'Hello World'"),
-            ("style.css", "body { color: red; }\n.class { margin: 10px; }"),
-            ("unknown.xyz", "Some content in an unknown format"),
+            ("unknown.xyz", "Some content in an unknown format with actual text"),
+            ("config.ini", "[section]\nkey=value\nother=setting"),
         ]
 
         for filename, content in test_cases:

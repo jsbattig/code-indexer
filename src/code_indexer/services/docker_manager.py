@@ -3593,14 +3593,24 @@ class DockerManager:
             )
         qdrant_port = int(project_config["qdrant_port"])
 
-        # Project-local Qdrant storage
+        # Project-local Qdrant storage - use relative path for CoW compatibility
         project_qdrant_dir = project_root / ".code-indexer" / "qdrant"
 
         # Ensure project Qdrant directory exists
         project_qdrant_dir.mkdir(parents=True, exist_ok=True)
 
+        # Use relative path from compose file location for CoW clone compatibility
+        # The compose file is in ~/.tmp/code-indexer/ so we need to calculate relative path
+        compose_dir = self.compose_file.parent
+        try:
+            relative_qdrant_path = project_qdrant_dir.relative_to(compose_dir)
+            volume_path = str(relative_qdrant_path)
+        except ValueError:
+            # If relative path calculation fails, fall back to absolute
+            volume_path = str(project_qdrant_dir.absolute())
+
         volumes = [
-            f"{project_qdrant_dir}:/qdrant/storage",  # All Qdrant data stored locally in project
+            f"{volume_path}:/qdrant/storage",  # Relative path for CoW clone support
         ]
 
         return {
@@ -3651,8 +3661,17 @@ class DockerManager:
         # Ensure project Qdrant directory exists
         project_qdrant_dir.mkdir(parents=True, exist_ok=True)
 
+        # Use relative path from compose file location for CoW clone compatibility
+        compose_dir = self.compose_file.parent
+        try:
+            relative_qdrant_path = project_qdrant_dir.relative_to(compose_dir)
+            qdrant_volume_path = str(relative_qdrant_path)
+        except ValueError:
+            # If relative path calculation fails, fall back to absolute
+            qdrant_volume_path = str(project_qdrant_dir.absolute())
+
         volumes = [
-            f"{project_qdrant_dir}:/data/qdrant",  # Direct access to project Qdrant data
+            f"{qdrant_volume_path}:/data/qdrant",  # Relative path for CoW clone support
         ]
 
         if include_ollama_volumes:
