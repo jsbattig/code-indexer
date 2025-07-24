@@ -790,7 +790,6 @@ class SmartIndexer(HighThroughputProcessor):
                 info=f"📊 Found {len(indexed_files_with_timestamps)} files in database collection '{collection_name}', {len(all_files_to_index)} files on disk",
             )
 
-
         # Find files that need to be indexed (missing from DB or have newer timestamps)
         files_to_index = []
         modified_files = 0
@@ -814,7 +813,6 @@ class SmartIndexer(HighThroughputProcessor):
                         # File on disk is newer than in database
                         files_to_index.append(file_path)
                         modified_files += 1
-
 
             except OSError:
                 # File might have been deleted or is not accessible, skip it
