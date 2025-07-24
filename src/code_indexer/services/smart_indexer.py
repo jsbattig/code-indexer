@@ -790,28 +790,6 @@ class SmartIndexer(HighThroughputProcessor):
                 info=f"📊 Found {len(indexed_files_with_timestamps)} files in database collection '{collection_name}', {len(all_files_to_index)} files on disk",
             )
 
-            # Debug: Show sample database timestamp format
-            if indexed_files_with_timestamps:
-                sample_file, sample_timestamp = next(
-                    iter(indexed_files_with_timestamps.items())
-                )
-                try:
-                    timestamp_str = datetime.datetime.fromtimestamp(
-                        sample_timestamp
-                    ).strftime("%Y-%m-%d %H:%M:%S")
-                    progress_callback(
-                        0,
-                        0,
-                        Path(""),
-                        info=f"DEBUG: Sample DB timestamp for {sample_file.name}: {sample_timestamp} ({timestamp_str})",
-                    )
-                except (ValueError, OSError) as e:
-                    progress_callback(
-                        0,
-                        0,
-                        Path(""),
-                        info=f"DEBUG: Invalid DB timestamp for {sample_file.name}: {sample_timestamp} - {e}",
-                    )
 
         # Find files that need to be indexed (missing from DB or have newer timestamps)
         files_to_index = []
@@ -837,21 +815,6 @@ class SmartIndexer(HighThroughputProcessor):
                         files_to_index.append(file_path)
                         modified_files += 1
 
-                        # Debug: Log first few modified file timestamp comparisons
-                        if modified_files <= 3 and progress_callback:
-                            disk_time_str = datetime.datetime.fromtimestamp(
-                                disk_mtime
-                            ).strftime("%Y-%m-%d %H:%M:%S")
-                            db_time_str = datetime.datetime.fromtimestamp(
-                                db_timestamp
-                            ).strftime("%Y-%m-%d %H:%M:%S")
-                            diff = disk_mtime - db_timestamp
-                            progress_callback(
-                                0,
-                                0,
-                                Path(""),
-                                info=f"DEBUG: {file_path.name} - disk: {disk_time_str}, db: {db_time_str}, diff: {diff:.1f}s",
-                            )
 
             except OSError:
                 # File might have been deleted or is not accessible, skip it
