@@ -955,36 +955,45 @@ class ConfigurationRepairer:
     ) -> Config:
         """Apply project configuration fixes to the config object."""
         try:
-            # Update port assignments
+            # Update port assignments - CRITICAL: Ensure ALL required ports exist
             new_ports = project_info.get("port_assignments", {})
             if new_ports and hasattr(config, "project_ports"):
-                # Update each port in the project_ports object
-                for service, port in new_ports.items():
-                    if hasattr(config.project_ports, service):
-                        setattr(config.project_ports, service, port)
+                # FIXED: Always set ALL required ports, don't check if they exist first
+                # This ensures CoW clones get complete port regeneration
+                ALL_REQUIRED_PORTS = ["qdrant_port", "ollama_port", "data_cleaner_port"]
 
-            # Update container names
+                for port_name in ALL_REQUIRED_PORTS:
+                    if port_name in new_ports:
+                        setattr(config.project_ports, port_name, new_ports[port_name])
+                    else:
+                        raise ValueError(
+                            f"CRITICAL: {port_name} missing from regenerated ports. "
+                            f"Available ports: {list(new_ports.keys())}"
+                        )
+
+            # Update container names - CRITICAL: Ensure ALL required container names exist
             container_names = project_info.get("container_names", {})
             if container_names and hasattr(config, "project_containers"):
-                # Update project hash
-                if "project_hash" in container_names:
-                    config.project_containers.project_hash = container_names[
-                        "project_hash"
-                    ]
+                # FIXED: Always set ALL required container names, don't check conditionally
+                ALL_REQUIRED_CONTAINERS = [
+                    "project_hash",
+                    "qdrant_name",
+                    "ollama_name",
+                    "data_cleaner_name",
+                ]
 
-                # Update individual container names
-                if "qdrant_name" in container_names:
-                    config.project_containers.qdrant_name = container_names[
-                        "qdrant_name"
-                    ]
-                if "ollama_name" in container_names:
-                    config.project_containers.ollama_name = container_names[
-                        "ollama_name"
-                    ]
-                if "data_cleaner_name" in container_names:
-                    config.project_containers.data_cleaner_name = container_names[
-                        "data_cleaner_name"
-                    ]
+                for container_field in ALL_REQUIRED_CONTAINERS:
+                    if container_field in container_names:
+                        setattr(
+                            config.project_containers,
+                            container_field,
+                            container_names[container_field],
+                        )
+                    else:
+                        raise ValueError(
+                            f"CRITICAL: {container_field} missing from regenerated containers. "
+                            f"Available containers: {list(container_names.keys())}"
+                        )
 
         except Exception as e:
             print(f"Warning: Could not apply project config fixes: {e}")

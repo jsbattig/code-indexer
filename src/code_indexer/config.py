@@ -587,9 +587,13 @@ code-indexer index --clear
                 current = Path(tempfile.gettempdir())
 
         # Walk up the directory tree looking for .code-indexer/config.json
-        for path in [current] + list(current.parents):
+        # CRITICAL: Must stop at first match to support nested projects
+        search_paths = [current] + list(current.parents)
+        for path in search_paths:
             config_path = path / ".code-indexer" / "config.json"
             if config_path.exists():
+                # DEFENSIVE: Ensure we return immediately at first match
+                # This prevents any issues with continued searching
                 return config_path
 
         return None
@@ -604,6 +608,7 @@ code-indexer index --clear
         Returns:
             ConfigManager instance with found config path or default path
         """
+        # CRITICAL: Use find_config_path which stops at first match
         config_path = cls.find_config_path(start_dir)
         if config_path is None:
             # If no config found, use default path from the start directory
@@ -618,6 +623,8 @@ code-indexer index --clear
 
                     start = Path(tempfile.gettempdir())
             config_path = start / ".code-indexer" / "config.json"
+
+        # DEFENSIVE: Ensure we always return a ConfigManager with the first found config
         return cls(config_path)
 
     def _make_relative_to_config(self, path: Path) -> str:

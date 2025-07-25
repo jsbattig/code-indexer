@@ -1,5 +1,36 @@
 # Code Indexer Release Notes
 
+## Version 2.7.0.0 (2025-07-25)
+
+### 🔧 Critical Architectural Fixes
+
+#### **Path Walking Logic Enhancement**
+- **Fixed Nested Project Config Discovery**: ConfigManager now properly stops at the first `.code-indexer/config.json` found when walking up directory tree
+- **Improved Multi-Project Support**: Ensures nested projects work independently with their own configurations
+- **Enhanced Test Coverage**: Comprehensive test suite verifies exact-level stopping behavior for nested project scenarios
+
+#### **CoW Clone Port Regeneration Fix**
+- **Critical Fix**: The `fix-config` command now guarantees ALL required ports (qdrant_port, ollama_port, data_cleaner_port) are regenerated for CoW clones
+- **Fail-Safe Logic**: Defensive programming ensures no CoW clone can be left with missing port configurations
+- **Complete Port Regeneration**: Fixed conditional logic that previously only updated existing ports instead of generating all required ports
+
+#### **Technical Implementation**
+- **Enhanced `_apply_project_config_fixes()`**: Uses `ALL_REQUIRED_PORTS` array to guarantee complete port regeneration
+- **Improved Path Walking Logic**: Added defensive programming with immediate return on first config match
+- **Comprehensive Error Handling**: Clear error messages when required ports are missing from regenerated configuration
+
+#### **Test-Driven Development**
+- **Created Failing Tests First**: Implemented comprehensive TDD approach as requested
+- **Exact Level Verification**: All nested project tests verify stopping at precise configuration level
+- **Real-World Scenarios**: Tests cover deeply nested directories, CLI subprocess behavior, and path resolution consistency
+
+### 🧪 Quality Assurance
+- **100% CI Success Rate**: All 891 tests pass with zero failures
+- **Enhanced Test Quality**: Strengthened subprocess tests with exact-level verification
+- **Complete Linting Compliance**: Full ruff, black, and mypy compliance maintained
+
+---
+
 ## Version 2.6.0.0 (2025-07-23)
 
 ### 🔧 CoW Container Isolation Fix

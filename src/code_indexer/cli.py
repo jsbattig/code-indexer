@@ -3127,8 +3127,11 @@ def _status_impl(ctx, force_docker: bool):
                 pass
 
         # Configuration info
-        table.add_row("Codebase", "📁", str(config.codebase_dir))
-        table.add_row("Config", "⚙️", str(config_manager.config_path))
+        codebase_value = str(config.codebase_dir)
+        config_value = str(config_manager.config_path)
+
+        table.add_row("Codebase", "📁", codebase_value)
+        table.add_row("Config", "⚙️", config_value)
         table.add_row(
             "File Limits",
             "📏",
