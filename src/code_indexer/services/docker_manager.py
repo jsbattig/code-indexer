@@ -2868,7 +2868,7 @@ class DockerManager:
                 # Use data cleaner to clean named volume contents
                 if verbose:
                     self.console.print("🧹 Using data cleaner for root-owned files...")
-                cleanup_paths = ["/data/ollama/*", "/data/qdrant/*"]
+                cleanup_paths = ["/data/ollama/*", "/qdrant/storage/*"]
                 self.clean_with_data_cleaner(cleanup_paths)
 
                 # Now stop the data cleaner too
@@ -3671,7 +3671,7 @@ class DockerManager:
             qdrant_volume_path = str(project_qdrant_dir.absolute())
 
         volumes = [
-            f"{qdrant_volume_path}:/data/qdrant",  # Relative path for CoW clone support
+            f"{qdrant_volume_path}:/qdrant/storage",  # Match qdrant service mount path
         ]
 
         if include_ollama_volumes:

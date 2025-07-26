@@ -3523,17 +3523,17 @@ def _perform_complete_system_wipe(force_docker: bool, console: Console):
         style="yellow",
     )
 
-    # Step 1: Standard cleanup first
-    console.print("\n🔧 [bold]Step 1: Standard container cleanup[/bold]")
+    # Step 1: Enhanced cleanup first
+    console.print("\n🔧 [bold]Step 1: Enhanced container cleanup[/bold]")
     try:
         docker_manager = DockerManager(force_docker=force_docker)
-        if not docker_manager.remove_containers(remove_volumes=True):
+        if not docker_manager.cleanup(remove_data=True, verbose=True):
             console.print(
-                "⚠️  Standard cleanup had issues, continuing with wipe...",
+                "⚠️  Enhanced cleanup had issues, continuing with wipe...",
                 style="yellow",
             )
         docker_manager.clean_data_only(all_projects=True)
-        console.print("✅ Standard cleanup completed")
+        console.print("✅ Enhanced cleanup completed")
     except Exception as e:
         console.print(
             f"⚠️  Standard cleanup failed: {e}, continuing with wipe...", style="yellow"
@@ -3846,14 +3846,14 @@ def uninstall(ctx, force_docker: bool, wipe_all: bool):
         if wipe_all:
             _perform_complete_system_wipe(force_docker, console)
         else:
-            # Standard uninstall
+            # Standard uninstall with orchestrated cleanup
             docker_manager = DockerManager(force_docker=force_docker)
 
-            # Remove containers and volumes completely
-            if not docker_manager.remove_containers(remove_volumes=True):
+            # Use enhanced cleanup to remove root-owned files before stopping containers
+            if not docker_manager.cleanup(remove_data=True, verbose=True):
                 sys.exit(1)
 
-            # Also clean data
+            # Also clean collections data
             docker_manager.clean_data_only(all_projects=True)
 
             console.print("✅ Complete uninstallation finished", style="green")

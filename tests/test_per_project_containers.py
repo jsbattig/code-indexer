@@ -401,7 +401,7 @@ class TestProjectLocalStorage:
         # Find the qdrant data volume mount
         qdrant_mount = None
         for volume in cleaner_service["volumes"]:
-            if "/data/qdrant" in volume:
+            if "/qdrant/storage" in volume:
                 qdrant_mount = volume
                 break
 
