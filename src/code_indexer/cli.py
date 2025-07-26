@@ -3814,10 +3814,12 @@ def uninstall(ctx, force_docker: bool, wipe_all: bool):
 
     \b
     STANDARD CLEANUP:
-      • Stops and removes all Docker containers
+      • Uses data-cleaner container to remove root-owned files
+      • Orchestrated shutdown: stops qdrant/ollama → cleans data → removes containers
+      • Removes all .code-indexer directories and qdrant storage
+      • Removes ollama model cache when applicable
       • Removes Docker volumes and networks
-      • Clears all project data and configurations
-      • Complete cleanup for fresh start
+      • Complete cleanup for fresh start with proper permission handling
 
     \b
     WITH --wipe-all (DANGEROUS):
@@ -3829,6 +3831,12 @@ def uninstall(ctx, force_docker: bool, wipe_all: bool):
       • Removes ~/.code-indexer-compose directory
       • Performs aggressive system prune
       • May require sudo for permission-protected files
+
+    \b
+    ENHANCED CLEANUP PROCESS:
+      The data-cleaner container runs with elevated privileges to safely
+      remove files created by Docker containers as root user. This ensures
+      complete cleanup without manual sudo commands or permission errors.
 
     \b
     WARNING:
