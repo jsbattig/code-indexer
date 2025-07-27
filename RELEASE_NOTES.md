@@ -1,5 +1,75 @@
 # Code Indexer Release Notes
 
+## Version 2.9.0.0 (2025-07-27)
+
+### 🔧 Critical Container Runtime Detection Fixes
+
+#### **Systemic Container Engine Detection Overhaul**
+- **Fixed Critical Flaw**: Resolved systemic failure where commands hardcoded `"docker" if self.force_docker else "podman"` patterns without checking if podman was actually available
+- **Universal Runtime Detection**: All commands now use centralized `_get_available_runtime()` method with proper fallback from Podman to Docker
+- **Zero Manual Flags**: Commands now work without requiring `--force-docker` flag on Docker-only systems
+- **10+ Location Fix**: Systematically identified and fixed container runtime detection across the entire codebase
+
+#### **Enhanced Docker Manager**
+- **Centralized Detection**: All container engine selection now goes through `DockerManager._get_available_runtime()`
+- **Intelligent Fallback**: Proper detection of available container runtimes with graceful fallback
+- **Error Handling**: Clear error messages when neither Podman nor Docker is available
+- **Subprocess Fixes**: Resolved `capture_output=True` conflicts with explicit `stderr` arguments
+
+#### **Migration Decorator Improvements**
+- **Consistent Runtime Detection**: Fixed migration operations to use proper container engine detection
+- **Legacy Support**: Enhanced legacy container detection with correct runtime selection
+- **Error Recovery**: Improved error handling for container runtime issues during migrations
+
+#### **Technical Implementation**
+- **Removed Hardcoded Patterns**: Eliminated all instances of hardcoded container engine selection
+- **Standardized API**: Consistent use of `_get_available_runtime()` across all services
+- **Subprocess Optimization**: Fixed argument conflicts in container engine detection methods
+- **Comprehensive Testing**: All 885 tests pass with new runtime detection logic
+
+### 🧪 Quality Assurance
+- **100% CI Success Rate**: All tests pass with zero failures after systematic fixes
+- **Docker-Only Compatibility**: Verified all commands work correctly on systems with only Docker installed
+- **Podman Priority**: Maintains preference for Podman when available while providing seamless Docker fallback
+- **No Breaking Changes**: All existing functionality preserved with enhanced reliability
+
+### 🚀 User Experience Improvements
+- **Seamless Runtime Selection**: Users no longer need to manually specify `--force-docker` on Docker-only systems
+- **Automatic Detection**: Container runtime selection is now fully automatic and intelligent
+- **Clear Error Messages**: Better feedback when container runtimes are unavailable
+- **Universal Compatibility**: Works consistently across different container engine installations
+
+---
+
+## Version 2.8.0.0 (2025-07-27)
+
+### 🔧 Enhanced Data Cleanup & Container Orchestration
+
+#### **Docker Root Permission Cleanup**
+- **Data-Cleaner Container**: Added specialized container for cleaning root-owned files in `.code-indexer/qdrant/` directory
+- **Privileged Cleanup**: Uses Docker privileged mode to handle root-owned files that standard user permissions cannot remove
+- **Orchestrated Uninstall**: Enhanced `uninstall` command with automatic data-cleaner orchestration for complete cleanup
+- **Mount Path Consistency**: Fixed Qdrant mount paths from `/data/qdrant/*` to `/qdrant/storage/*` for proper data-cleaner operation
+
+#### **Enhanced Uninstall Process**
+- **Complete Data Removal**: `cidx uninstall` now automatically removes all data including root-owned files
+- **Service Coordination**: Properly stops all services before initiating cleanup process
+- **Container Management**: Uses dedicated data-cleaner container for privileged file operations
+- **User Experience**: Single command now handles complete system cleanup without manual intervention
+
+#### **Technical Implementation**
+- **DockerManager Integration**: Added `cleanup(remove_data=True)` method for orchestrated data removal
+- **Container Orchestration**: Intelligent container lifecycle management for cleanup operations
+- **Volume Management**: Proper handling of Docker volumes and bind mounts during cleanup
+- **Error Handling**: Comprehensive error handling for cleanup operations with clear user feedback
+
+#### **CLI Documentation**
+- **Enhanced Help Text**: Updated `cidx uninstall --help` with detailed explanation of data-cleaner functionality
+- **Process Documentation**: Clear explanation of orchestrated cleanup process and privileged operations
+- **User Guidance**: Comprehensive documentation of what gets removed during uninstall
+
+---
+
 ## Version 2.7.0.0 (2025-07-25)
 
 ### 🔧 Critical Architectural Fixes

@@ -119,7 +119,9 @@ def requires_qdrant_service(operation_name: str):
             # Check if any qdrant container is running (new approach: find any cidx qdrant container)
             import subprocess
 
-            container_engine = "docker" if docker_manager.force_docker else "podman"
+            container_engine = docker_manager._get_available_runtime()
+            if not container_engine:
+                raise RuntimeError("Neither podman nor docker is available")
             try:
                 list_cmd = [container_engine, "ps", "--format", "{{.Names}}"]
                 result = subprocess.run(
@@ -161,7 +163,9 @@ def requires_qdrant_service(operation_name: str):
                 # Check if any qdrant container is running (new approach: find any cidx qdrant container)
                 import subprocess
 
-                container_engine = "docker" if docker_manager.force_docker else "podman"
+                container_engine = docker_manager._get_available_runtime()
+                if not container_engine:
+                    raise RuntimeError("Neither podman nor docker is available")
                 try:
                     list_cmd = [container_engine, "ps", "--format", "{{.Names}}"]
                     result = subprocess.run(

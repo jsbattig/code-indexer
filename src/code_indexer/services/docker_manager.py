@@ -227,7 +227,9 @@ class DockerManager:
     ) -> bool:
         """Check if a container exists using direct container engine commands."""
         container_name = self.get_container_name(service_name, project_config)
-        container_engine = "docker" if self.force_docker else "podman"
+        container_engine = self._get_available_runtime()
+        if not container_engine:
+            raise RuntimeError("Neither podman nor docker is available")
 
         try:
             # Use direct container engine command to check existence
@@ -254,7 +256,9 @@ class DockerManager:
     ) -> bool:
         """Check if a container is running using direct container engine commands."""
         container_name = self.get_container_name(service_name, project_config)
-        container_engine = "docker" if self.force_docker else "podman"
+        container_engine = self._get_available_runtime()
+        if not container_engine:
+            raise RuntimeError("Neither podman nor docker is available")
 
         try:
             # Use direct container engine command to check if running
@@ -421,7 +425,6 @@ class DockerManager:
                 result = subprocess.run(
                     ["docker", "--version"],
                     capture_output=True,
-                    stderr=subprocess.DEVNULL,
                 )
                 return "docker" if result.returncode == 0 else None
             except FileNotFoundError:
@@ -432,7 +435,6 @@ class DockerManager:
                 result = subprocess.run(
                     ["podman", "--version"],
                     capture_output=True,
-                    stderr=subprocess.DEVNULL,
                 )
                 if result.returncode == 0:
                     return "podman"
@@ -444,7 +446,6 @@ class DockerManager:
                 result = subprocess.run(
                     ["docker", "--version"],
                     capture_output=True,
-                    stderr=subprocess.DEVNULL,
                 )
                 return "docker" if result.returncode == 0 else None
             except FileNotFoundError:
@@ -2280,7 +2281,9 @@ class DockerManager:
         """Check if required service containers exist."""
         import subprocess
 
-        container_engine = "docker" if self.force_docker else "podman"
+        container_engine = self._get_available_runtime()
+        if not container_engine:
+            raise RuntimeError("Neither podman nor docker is available")
         container_names = [
             self.get_container_name(service, project_config)
             for service in required_services
@@ -2693,11 +2696,9 @@ class DockerManager:
         container_name = self.get_container_name(service, project_config)
 
         # Detect container engine (podman or docker)
-        container_engine = (
-            "podman"
-            if subprocess.run(["which", "podman"], capture_output=True).returncode == 0
-            else "docker"
-        )
+        container_engine = self._get_available_runtime()
+        if not container_engine:
+            raise RuntimeError("Neither podman nor docker is available")
 
         try:
             result = subprocess.run(
@@ -2974,18 +2975,9 @@ class DockerManager:
                     validation_success = True
                 else:
                     # Wait for containers to stop and ports to be released
-                    container_engine = (
-                        "docker"
-                        if self.force_docker
-                        else (
-                            "podman"
-                            if subprocess.run(
-                                ["which", "podman"], capture_output=True
-                            ).returncode
-                            == 0
-                            else "docker"
-                        )
-                    )
+                    container_engine = self._get_available_runtime()
+                    if not container_engine:
+                        raise RuntimeError("Neither podman nor docker is available")
 
                     # Find all cidx containers for validation
                     list_cmd = [container_engine, "ps", "-a", "--format", "{{.Names}}"]
@@ -3051,7 +3043,9 @@ class DockerManager:
         import subprocess
 
         success = True
-        container_engine = "docker" if self.force_docker else "podman"
+        container_engine = self._get_available_runtime()
+        if not container_engine:
+            raise RuntimeError("Neither podman nor docker is available")
 
         # Find all cidx containers system-wide
         try:
@@ -3231,7 +3225,9 @@ class DockerManager:
             # validation_success = False
 
         # Check that containers are actually gone
-        container_engine = "docker" if self.force_docker else "podman"
+        container_engine = self._get_available_runtime()
+        if not container_engine:
+            raise RuntimeError("Neither podman nor docker is available")
 
         # Find all cidx containers for validation
         list_cmd = [container_engine, "ps", "-a", "--format", "{{.Names}}"]
@@ -3362,7 +3358,9 @@ class DockerManager:
         import subprocess
 
         verification_success = True
-        container_engine = "docker" if self.force_docker else "podman"
+        container_engine = self._get_available_runtime()
+        if not container_engine:
+            raise RuntimeError("Neither podman nor docker is available")
 
         # Volume names to check
         volume_names = ["ollama_data", "qdrant_data"]
@@ -3495,7 +3493,9 @@ class DockerManager:
         import subprocess
 
         success = True
-        container_engine = "docker" if self.force_docker else "podman"
+        container_engine = self._get_available_runtime()
+        if not container_engine:
+            raise RuntimeError("Neither podman nor docker is available")
 
         # Volume names to clean up
         volume_names = ["ollama_data", "qdrant_data"]
@@ -3839,7 +3839,10 @@ class DockerManager:
                 # Fallback: search for any cidx data-cleaner container
                 import subprocess
 
-                container_engine = "docker" if self.force_docker else "podman"
+                container_engine = self._get_available_runtime()
+                if not container_engine:
+                    raise RuntimeError("Neither podman nor docker is available")
+
                 list_cmd = [container_engine, "ps", "--format", "{{.Names}}"]
                 try:
                     list_result = subprocess.run(
@@ -3875,18 +3878,9 @@ class DockerManager:
                     return False
 
             # Detect container engine (podman or docker)
-            container_engine = (
-                "docker"
-                if self.force_docker
-                else (
-                    "podman"
-                    if subprocess.run(
-                        ["which", "podman"], capture_output=True
-                    ).returncode
-                    == 0
-                    else "docker"
-                )
-            )
+            container_engine = self._get_available_runtime()
+            if not container_engine:
+                raise RuntimeError("Neither podman nor docker is available")
 
             # Check if data cleaner is running
             check_cmd = [

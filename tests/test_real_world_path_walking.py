@@ -258,10 +258,10 @@ class TestRealWorldPathWalking:
             # All should find the same microservice config
             expected_config = self.microservice_dir / ".code-indexer" / "config.json"
 
-            for test_dir, found_config in configs_found.items():
+            for test_dir_str, found_config in configs_found.items():
                 assert (
                     found_config == expected_config
-                ), f"From {test_dir}, expected {expected_config}, got {found_config}"
+                ), f"From {test_dir_str}, expected {expected_config}, got {found_config}"
 
         finally:
             os.chdir(original_cwd)

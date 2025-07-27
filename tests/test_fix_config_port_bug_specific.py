@@ -9,6 +9,7 @@ import json
 import tempfile
 import shutil
 from pathlib import Path
+from typing import Dict, Any
 
 from code_indexer.config import ConfigManager
 from code_indexer.services.config_fixer import ConfigurationRepairer
@@ -189,9 +190,11 @@ class TestFixConfigPortBugSpecific:
             json.dump(config1_data, f, indent=2)
 
         # Config 2: Missing ollama_port
-        config2_data = self.config_data.copy()
-        del config2_data["project_ports"]["ollama_port"]
-        config2_data["project_ports"]["data_cleaner_port"] = 8091  # Has this one
+        config2_data: Dict[str, Any] = dict(self.config_data)
+        project_ports: Dict[str, int] = dict(config2_data["project_ports"])
+        del project_ports["ollama_port"]
+        project_ports["data_cleaner_port"] = 8091  # Has this one
+        config2_data["project_ports"] = project_ports
         with open(config2_dir / "config.json", "w") as f:
             json.dump(config2_data, f, indent=2)
 
