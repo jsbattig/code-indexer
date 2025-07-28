@@ -2869,8 +2869,81 @@ class DockerManager:
                 # Use data cleaner to clean named volume contents
                 if verbose:
                     self.console.print("🧹 Using data cleaner for root-owned files...")
-                cleanup_paths = ["/data/ollama/*", "/qdrant/storage/*"]
-                self.clean_with_data_cleaner(cleanup_paths)
+                # Future-proof cleanup: blast entire contents of mounted directories
+                cleanup_paths = [
+                    "/data/ollama/*",  # All Ollama data
+                    "/qdrant/*",  # ALL Qdrant files and directories
+                ]
+
+                # Load project configuration for data-cleaner identification
+                try:
+                    from ..config import ConfigManager
+
+                    config_manager = ConfigManager.create_with_backtrack()
+                    project_config = config_manager.load()
+
+                    # Convert to dict format expected by clean_with_data_cleaner
+                    if (
+                        hasattr(project_config, "project_containers")
+                        and project_config.project_containers
+                    ):
+                        project_config_dict = {
+                            "qdrant_name": str(
+                                project_config.project_containers.qdrant_name or ""
+                            ),
+                            "data_cleaner_name": str(
+                                project_config.project_containers.data_cleaner_name
+                                or ""
+                            ),
+                            "ollama_name": str(
+                                getattr(
+                                    project_config.project_containers, "ollama_name", ""
+                                )
+                                or ""
+                            ),
+                        }
+                        if (
+                            hasattr(project_config, "project_ports")
+                            and project_config.project_ports
+                        ):
+                            project_config_dict.update(
+                                {
+                                    "qdrant_port": str(
+                                        project_config.project_ports.qdrant_port
+                                    ),
+                                    "data_cleaner_port": str(
+                                        project_config.project_ports.data_cleaner_port
+                                    ),
+                                    "ollama_port": str(
+                                        getattr(
+                                            project_config.project_ports,
+                                            "ollama_port",
+                                            "",
+                                        )
+                                    ),
+                                }
+                            )
+
+                    else:
+                        project_config_dict = None
+                except Exception as e:
+                    if verbose:
+                        self.console.print(
+                            f"⚠️  Could not load project config for data-cleaner: {e}",
+                            style="yellow",
+                        )
+                    project_config_dict = None
+
+                # Run data cleaner and track success
+                cleaner_success = self.clean_with_data_cleaner(
+                    cleanup_paths, project_config_dict
+                )
+                if not cleaner_success:
+                    if verbose:
+                        self.console.print(
+                            "⚠️  Data cleaner reported some failures", style="yellow"
+                        )
+                    cleanup_success = False
 
                 # Now stop the data cleaner too
                 if verbose:
@@ -3772,12 +3845,25 @@ class DockerManager:
 
         return compose_config
 
-    def start_data_cleaner(self) -> bool:
+    def start_data_cleaner(
+        self, project_config: Optional[Dict[str, str]] = None
+    ) -> bool:
         """Start only the data cleaner service for cleanup operations."""
         try:
             if not self.compose_file.exists():
                 self.console.print("❌ Compose file not found. Run setup first.")
                 return False
+
+            # Determine project name - use from config if provided, otherwise fall back to self.project_name
+            if project_config and "data_cleaner_name" in project_config:
+                # Extract project name from data_cleaner_name (remove service suffix)
+                data_cleaner_name = project_config["data_cleaner_name"]
+                if data_cleaner_name.endswith("-data-cleaner"):
+                    project_name = data_cleaner_name[:-13]  # Remove '-data-cleaner'
+                else:
+                    project_name = self.project_name
+            else:
+                project_name = self.project_name
 
             # Use docker compose to start only the data cleaner service
             compose_cmd = self.get_compose_command()
@@ -3785,7 +3871,7 @@ class DockerManager:
                 "-f",
                 str(self.compose_file),
                 "-p",
-                self.project_name,
+                project_name,
                 "up",
                 "-d",
                 "data-cleaner",
@@ -3837,7 +3923,7 @@ class DockerManager:
                 container_name = self.get_container_name("data-cleaner", project_config)
             else:
                 # Fallback: search for any cidx data-cleaner container
-                import subprocess
+                pass  # subprocess is already imported at module level
 
                 container_engine = self._get_available_runtime()
                 if not container_engine:
@@ -3895,8 +3981,29 @@ class DockerManager:
 
             if container_name not in check_result.stdout:
                 self.console.print("🧹 Data cleaner not running, starting it...")
-                if not self.start_data_cleaner():
+                if not self.start_data_cleaner(project_config):
                     return False
+
+                # Wait a moment and verify container is actually running
+                import time
+
+                time.sleep(3)
+                verify_result = subprocess.run(
+                    check_cmd, capture_output=True, text=True
+                )
+                if container_name not in verify_result.stdout:
+                    self.console.print(
+                        f"❌ Expected container {container_name} not found after start. Available containers:",
+                        style="red",
+                    )
+                    list_all_cmd = [container_engine, "ps", "--format", "{{.Names}}"]
+                    all_containers_result = subprocess.run(
+                        list_all_cmd, capture_output=True, text=True
+                    )
+                    self.console.print(f"Available: {all_containers_result.stdout}")
+                    return False
+                else:
+                    self.console.print(f"✅ Container {container_name} is now running")
 
             # Always wait for the data cleaner service to be ready (for reliability)
             # Get data cleaner URL using the same method as health checks (NO FALLBACK PORTS!)
@@ -3919,42 +4026,93 @@ class DockerManager:
                 return False
 
             # Use container exec to run cleanup commands with shell expansion
+            cleanup_success = True
             for path in paths:
                 self.console.print(f"🗑️  Cleaning path: {path}")
+
+                # First, check if path exists to avoid unnecessary errors
+                check_cmd = [
+                    container_engine,
+                    "exec",
+                    container_name,
+                    "sh",
+                    "-c",
+                    f"ls -la {path} 2>/dev/null || echo 'PATH_NOT_EXISTS'",
+                ]
+                check_result = subprocess.run(
+                    check_cmd, capture_output=True, text=True, timeout=30
+                )
+
+                if "PATH_NOT_EXISTS" in check_result.stdout:
+                    self.console.print(f"ℹ️  Path {path} does not exist, skipping")
+                    continue
+
                 # Use sh -c to enable shell expansion for wildcards
+                # Add force flag and ignore errors for thorough cleanup
                 cmd = [
                     container_engine,
                     "exec",
                     container_name,
                     "sh",
                     "-c",
-                    f"rm -rf {path}",
+                    f"rm -rf {path} 2>/dev/null || true",
                 ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
-                if result.returncode != 0:
-                    self.console.print(
-                        f"⚠️  Warning: Could not clean {path}: {result.stderr}"
+                # For critical paths like qdrant collections, verify cleanup
+                if "/qdrant/" in path:
+                    verify_cmd = [
+                        container_engine,
+                        "exec",
+                        container_name,
+                        "sh",
+                        "-c",
+                        f"find {path.replace('/*', '')} -type f 2>/dev/null | head -5 || echo 'CLEAN'",
+                    ]
+                    verify_result = subprocess.run(
+                        verify_cmd, capture_output=True, text=True, timeout=30
                     )
+
+                    if (
+                        "CLEAN" in verify_result.stdout
+                        or not verify_result.stdout.strip()
+                    ):
+                        self.console.print(f"✅ Verified clean: {path}")
+                    else:
+                        self.console.print(
+                            f"⚠️  Some files may remain in {path}: {verify_result.stdout[:100]}"
+                        )
+                        cleanup_success = False
                 else:
                     self.console.print(f"✅ Cleaned: {path}")
 
-            return True
+            return cleanup_success
 
         except Exception as e:
             self.console.print(f"❌ Error using data cleaner: {e}")
             return False
 
     def stop_main_services(self) -> bool:
-        """Stop only the main services (ollama and qdrant), leaving data cleaner running."""
+        """Stop only the main services (ollama and qdrant), leaving data cleaner running.
+
+        Ensures containers are fully stopped before data-cleaner cleanup begins.
+        """
         try:
             if not self.compose_file.exists():
                 return True  # Nothing to stop
 
             compose_cmd = self.get_compose_command()
+            container_engine = self._get_available_runtime()
 
-            # Stop ollama and qdrant services individually
+            if not container_engine:
+                self.console.print("❌ No container engine available")
+                return False
+
+            # Stop ollama and qdrant services individually with verification
             for service in ["ollama", "qdrant"]:
+                self.console.print(f"🛑 Stopping {service} service...")
+
+                # Stop the service
                 cmd = compose_cmd + [
                     "-f",
                     str(self.compose_file),
@@ -3963,14 +4121,43 @@ class DockerManager:
                     "stop",
                     service,
                 ]
-
-                self.console.print(f"🛑 Stopping {service} service...")
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
                 if result.returncode != 0:
                     self.console.print(
                         f"⚠️  Warning: Failed to stop {service}: {result.stderr}"
                     )
+
+                # Verify the container is actually stopped
+                container_name = f"{self.project_name}-{service}-1"
+                verify_cmd = [
+                    container_engine,
+                    "ps",
+                    "--filter",
+                    f"name={container_name}",
+                    "--format",
+                    "{{.Names}}",
+                ]
+
+                # Wait up to 10 seconds for container to stop
+                import time
+
+                for attempt in range(10):
+                    verify_result = subprocess.run(
+                        verify_cmd, capture_output=True, text=True
+                    )
+                    if container_name not in verify_result.stdout:
+                        self.console.print(f"✅ {service} container fully stopped")
+                        break
+                    time.sleep(1)
+                else:
+                    # Force kill if still running after 10 seconds
+                    self.console.print(
+                        f"⚠️  {service} container still running, force killing..."
+                    )
+                    kill_cmd = [container_engine, "kill", container_name]
+                    subprocess.run(kill_cmd, capture_output=True, text=True, timeout=30)
+                    self.console.print(f"🔥 Force killed {service} container")
 
             return True
 
