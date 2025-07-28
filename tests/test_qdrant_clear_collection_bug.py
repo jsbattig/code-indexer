@@ -149,14 +149,21 @@ def test_clear_collection_integration_with_real_qdrant(qdrant_test_repo):
 
         # If services are not running, skip the test
         if status_result.returncode != 0 or "✅" not in status_result.stdout:
-            # Check if it's a collection creation issue
+            # Check for various infrastructure issues that require skipping
             if (
                 "Failed to create/validate collection" in start_result.stdout
                 or "Collection creation failed" in start_result.stdout
                 or "Can't create directory for collection" in start_result.stdout
+                or "Connection refused" in start_result.stderr
+                or "Port already in use" in start_result.stderr
+                or "Address already in use" in start_result.stderr
+                or "No such container" in start_result.stderr
+                or "resource temporarily unavailable" in start_result.stderr.lower()
+                or "Cannot allocate memory" in start_result.stderr
+                or "Container failed to start" in start_result.stdout
             ):
                 pytest.skip(
-                    "Infrastructure issue: Qdrant collection creation failed - containers may need restart"
+                    f"Infrastructure issue: Resource contention or container conflict during full-automation - {start_result.stdout[:200]}...{start_result.stderr[:200]}"
                 )
             pytest.skip(
                 f"Could not start services: {start_result.stdout} | {start_result.stderr}"
@@ -187,8 +194,28 @@ def test_clear_collection_integration_with_real_qdrant(qdrant_test_repo):
         except Exception:
             pass  # Collection might not exist
 
-        # Create a test collection
-        create_result = client.create_collection(collection_name, vector_size=1024)
+        # Create a test collection with retry logic for resource contention
+        max_retries = 3
+        create_result = False
+        for attempt in range(max_retries):
+            try:
+                create_result = client.create_collection(
+                    collection_name, vector_size=1024
+                )
+                if create_result:
+                    break
+            except Exception as e:
+                if "Connection refused" in str(e) or "Connection reset" in str(e):
+                    if attempt < max_retries - 1:
+                        import time
+
+                        time.sleep(2**attempt)  # Exponential backoff
+                        continue
+                    pytest.skip(
+                        f"Infrastructure issue: Qdrant connection unavailable after {max_retries} attempts - {e}"
+                    )
+                raise
+
         assert create_result is True, "Should be able to create test collection"
 
         # Add a test point to the collection
