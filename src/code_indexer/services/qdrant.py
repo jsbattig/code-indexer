@@ -497,7 +497,19 @@ class QdrantClient:
         self.console.print(
             f"🚀 Creating collection with CoW: {collection}", style="blue"
         )
-        return self._create_collection_with_cow(collection, vector_size)
+
+        # Try CoW creation first
+        if self._create_collection_with_cow(collection, vector_size):
+            return True
+
+        # If CoW creation fails, fallback to direct creation
+        self.console.print(
+            f"⚠️  CoW creation failed, falling back to direct creation for: {collection}",
+            style="yellow",
+        )
+        return self._create_collection_direct(
+            collection, vector_size or self.config.vector_size
+        )
 
     def _create_collection_with_cow(
         self, collection_name: str, vector_size: Optional[int] = None

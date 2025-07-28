@@ -630,6 +630,10 @@ code-indexer index --clear
     def _make_relative_to_config(self, path: Path) -> str:
         """Convert an absolute path to relative path from config location."""
         try:
+            # Handle both Path objects and strings
+            if isinstance(path, str):
+                path = Path(path)
+
             # Get the directory containing the config file
             config_dir = self.config_path.parent.parent  # Parent of .code-indexer/
 
@@ -650,6 +654,8 @@ code-indexer index --clear
 
         except Exception:
             # If anything fails, fall back to absolute path
+            if isinstance(path, str):
+                path = Path(path)
             return str(path.resolve())
 
     def _resolve_relative_path(self, path_str: str) -> Path:

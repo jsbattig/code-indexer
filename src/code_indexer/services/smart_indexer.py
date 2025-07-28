@@ -818,54 +818,59 @@ class SmartIndexer(HighThroughputProcessor):
                 # File might have been deleted or is not accessible, skip it
                 continue
 
-        # NEW: For git projects, unhide up-to-date files that should be visible in current branch
+        # NEW: For git projects, unhide files that should be visible in current branch
         if self.git_topology_service.is_git_available():
             current_branch = self.git_topology_service.get_current_branch() or "master"
             collection_name = self.qdrant_client.resolve_collection_name(
                 self.config, self.embedding_provider
             )
 
-            # Find files that are up-to-date (exist on disk and in DB with same timestamp)
-            up_to_date_files = []
-            for file_path in all_files_to_index:
-                if (
-                    file_path in indexed_files_with_timestamps
-                    and file_path not in files_to_index
-                ):
-                    # File exists on disk and in DB, and was not marked for re-indexing
-                    try:
-                        relative_path = str(
-                            file_path.relative_to(self.config.codebase_dir)
-                        )
-                        up_to_date_files.append(relative_path)
-                    except ValueError:
-                        continue
+            # CRITICAL FIX: Check ALL files in database for unhiding, not just files_to_index
+            # This fixes the bug where files hidden in other branches don't get unhidden
+            # when switching back to the branch where they should be visible
+            disk_files_set = {
+                str(f.relative_to(self.config.codebase_dir)) for f in all_files_to_index
+            }
 
-            # Check if any up-to-date files need to be unhidden in current branch
             files_unhidden = 0
-            for relative_file_path in up_to_date_files:
-                # Check if file has the current branch in its hidden_branches
-                content_points, _ = self.qdrant_client.scroll_points(
-                    filter_conditions={
-                        "must": [
-                            {"key": "type", "match": {"value": "content"}},
-                            {"key": "path", "match": {"value": relative_file_path}},
-                        ]
-                    },
-                    limit=1,  # Just need to check one point
-                    collection_name=collection_name,
-                )
-
-                if content_points:
-                    hidden_branches = (
-                        content_points[0].get("payload", {}).get("hidden_branches", [])
-                    )
-                    if current_branch in hidden_branches:
-                        # File should be visible but is hidden - unhide it
-                        self.branch_aware_indexer._unhide_file_in_branch(
-                            relative_file_path, current_branch, collection_name
+            for indexed_file_path in indexed_files_with_timestamps:
+                # Convert indexed file path to relative string for comparison
+                try:
+                    if hasattr(indexed_file_path, "relative_to"):
+                        relative_file_path = str(
+                            indexed_file_path.relative_to(self.config.codebase_dir)
                         )
-                        files_unhidden += 1
+                    else:
+                        relative_file_path = str(indexed_file_path)
+                except ValueError:
+                    continue
+
+                # Check if this file exists on disk in current branch (should be visible)
+                if relative_file_path in disk_files_set:
+                    # File exists on disk, check if it's hidden for current branch
+                    content_points, _ = self.qdrant_client.scroll_points(
+                        filter_conditions={
+                            "must": [
+                                {"key": "type", "match": {"value": "content"}},
+                                {"key": "path", "match": {"value": relative_file_path}},
+                            ]
+                        },
+                        limit=1,  # Just need to check one point
+                        collection_name=collection_name,
+                    )
+
+                    if content_points:
+                        hidden_branches = (
+                            content_points[0]
+                            .get("payload", {})
+                            .get("hidden_branches", [])
+                        )
+                        if current_branch in hidden_branches:
+                            # File exists on disk but is hidden for current branch - unhide it
+                            self.branch_aware_indexer._unhide_file_in_branch(
+                                relative_file_path, current_branch, collection_name
+                            )
+                            files_unhidden += 1
 
             if files_unhidden > 0 and progress_callback:
                 progress_callback(
@@ -890,8 +895,19 @@ class SmartIndexer(HighThroughputProcessor):
             )
 
             if indexed_file_str not in disk_files_set:
-                # File exists in database but not on disk - was deleted
-                deleted_files.append(indexed_file_str)
+                # CRITICAL: Check if file genuinely deleted from filesystem vs just branch switch
+                if self.is_git_aware():
+                    # For git projects, check if file exists in current working directory
+                    # If it doesn't exist on disk at all, it was genuinely deleted
+                    file_path = self.config.codebase_dir / indexed_file_str
+                    if not file_path.exists():
+                        # File was genuinely deleted from filesystem - safe to remove from database
+                        deleted_files.append(indexed_file_str)
+                    # If file exists on disk but not in our scan, it might be excluded by filters
+                    # In that case, branch isolation will handle visibility
+                else:
+                    # File exists in database but not on disk - was deleted (non-git projects)
+                    deleted_files.append(indexed_file_str)
 
         # Handle deleted files using branch-aware strategy
         if deleted_files:

@@ -122,11 +122,14 @@ class TestCleanupValidation:
         """Test _validate_cleanup method with successful port validation."""
         mock_wait_ports.return_value = True
 
-        # Mock container checking
-        with patch(
+        # Mock container runtime detection and container checking
+        with patch.object(
+            self.docker_manager, "_get_available_runtime", return_value="podman"
+        ), patch(
             "code_indexer.services.docker_manager.subprocess.run"
         ) as mock_subprocess:
             mock_subprocess.return_value.stdout = ""  # No containers running
+            mock_subprocess.return_value.returncode = 0
 
             result = self.docker_manager._validate_cleanup(verbose=True)
 
@@ -151,11 +154,14 @@ class TestCleanupValidation:
             lambda port: port != 11434
         )  # Port 11434 still in use
 
-        # Mock container checking
-        with patch(
+        # Mock container runtime detection and container checking
+        with patch.object(
+            self.docker_manager, "_get_available_runtime", return_value="podman"
+        ), patch(
             "code_indexer.services.docker_manager.subprocess.run"
         ) as mock_subprocess:
             mock_subprocess.return_value.stdout = ""  # No containers running
+            mock_subprocess.return_value.returncode = 0
 
             result = self.docker_manager._validate_cleanup(verbose=True)
 

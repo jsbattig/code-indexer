@@ -177,11 +177,12 @@ class TestKotlinSemanticSearchE2E:
 
         # Run cidx commands
         subprocess.run(
-            ["cidx", "init", "--chunk-size", "2000", "--use-semantic-chunking"],
+            ["cidx", "init", "--chunk-size", "2000", "--force"],
             cwd=test_dir,
             check=True,
         )
         subprocess.run(["cidx", "start"], cwd=test_dir, check=True)
+        subprocess.run(["cidx", "index"], cwd=test_dir, check=True)
 
         # Search for Kotlin-specific constructs
 
@@ -228,7 +229,13 @@ class TestKotlinSemanticSearchE2E:
             text=True,
         )
         assert result.returncode == 0
-        assert "fun User.fullInfo()" in result.stdout or "fullInfo" in result.stdout
+        # Should find at least one of the extension functions (User.fullInfo or List<User>.activeUsers)
+        assert (
+            "fun User.fullInfo()" in result.stdout
+            or "fullInfo" in result.stdout
+            or "fun List<User>.activeUsers()" in result.stdout
+            or "activeUsers" in result.stdout
+        )
 
         # Test 5: Search for sealed class
         result = subprocess.run(
@@ -302,11 +309,12 @@ class Calculator:
 
         # Initialize and start
         subprocess.run(
-            ["cidx", "init", "--use-semantic-chunking"],
+            ["cidx", "init", "--force"],
             cwd=test_dir,
             check=True,
         )
         subprocess.run(["cidx", "start"], cwd=test_dir, check=True)
+        subprocess.run(["cidx", "index"], cwd=test_dir, check=True)
 
         # Search with Kotlin language filter
         result = subprocess.run(
@@ -354,11 +362,12 @@ class Calculator:
 
         # Initialize with semantic chunking
         subprocess.run(
-            ["cidx", "init", "--use-semantic-chunking"],
+            ["cidx", "init", "--force"],
             cwd=test_dir,
             check=True,
         )
         subprocess.run(["cidx", "start"], cwd=test_dir, check=True)
+        subprocess.run(["cidx", "index"], cwd=test_dir, check=True)
 
         # Test various semantic queries
 

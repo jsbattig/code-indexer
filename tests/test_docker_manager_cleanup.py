@@ -50,7 +50,9 @@ class TestDockerManagerCleanup:
 
     def test_force_cleanup_containers_success(self, docker_manager, mock_console):
         """Test successful force cleanup of containers"""
-        with patch("subprocess.run") as mock_run:
+        with patch.object(
+            docker_manager, "_get_available_runtime", return_value="podman"
+        ), patch("subprocess.run") as mock_run:
             # Mock container listing showing 2 containers
             mock_run.side_effect = [
                 Mock(
@@ -75,7 +77,9 @@ class TestDockerManagerCleanup:
 
     def test_force_cleanup_containers_failure(self, docker_manager, mock_console):
         """Test force cleanup when containers fail to remove"""
-        with patch("subprocess.run") as mock_run:
+        with patch.object(
+            docker_manager, "_get_available_runtime", return_value="podman"
+        ), patch("subprocess.run") as mock_run:
             # Mock subprocess failure
             mock_run.side_effect = subprocess.CalledProcessError(1, "podman")
 
@@ -329,7 +333,9 @@ class TestCleanupErrorHandling:
 
     def test_subprocess_timeout_handling(self, docker_manager):
         """Test handling of subprocess timeouts"""
-        with patch("subprocess.run") as mock_run:
+        with patch.object(
+            docker_manager, "_get_available_runtime", return_value="podman"
+        ), patch("subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.TimeoutExpired("podman", 10)
 
             result = docker_manager._force_cleanup_containers(verbose=True)
