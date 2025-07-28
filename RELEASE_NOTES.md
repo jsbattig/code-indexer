@@ -1,5 +1,27 @@
 # Code Indexer Release Notes
 
+## Version 2.11.1.0 (2025-07-28)
+
+### 🧪 Enhanced Test Infrastructure & Docker Utilities
+
+#### **Improved Uninstall Test Coverage**
+- **Enhanced Container Verification**: Added comprehensive container stopping verification before uninstall
+- **Better Test Documentation**: Clear test phases showing uninstall process steps
+- **Data-Cleaner Confirmation**: Test now validates data-cleaner usage in uninstall output
+- **Container Status Monitoring**: Added Docker container status checking for test reliability
+
+#### **Docker Recovery Utilities**
+- **NEW: Docker Cleanup Script**: Added `fix-docker-stuck.sh` for comprehensive Docker recovery
+- **Progressive Recovery**: Multi-stage Docker daemon recovery with timeout protection
+- **Resource Cleanup**: Complete container, network, volume, and image cleanup
+- **System-Wide Recovery**: Advanced cleanup including cgroups, namespaces, and iptables
+- **Safety Features**: Confirmation prompts and early exit when Docker recovers
+
+#### **Test Stability Improvements**
+- **Concurrent Test Support**: Better handling of multiple test runs with shared containers
+- **Resource Contention**: Graceful test behavior during high-load scenarios
+- **Container Isolation**: Improved test cleanup without affecting other running tests
+
 ## Version 2.11.0.0 (2025-07-28)
 
 ### 🧹 Complete Uninstall Cleanup Fix

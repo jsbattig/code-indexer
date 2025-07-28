@@ -3865,7 +3865,58 @@ class DockerManager:
             else:
                 project_name = self.project_name
 
-            # Use docker compose to start only the data cleaner service
+            # Get the appropriate container runtime (respects --force-docker flag)
+            runtime = self._get_preferred_runtime()
+
+            # Get the project-specific data-cleaner container name
+            container_name = self.get_container_name("data-cleaner", project_config)
+
+            self.console.print("🧹 Starting data cleaner service...")
+
+            # First, check if the container already exists
+            inspect_cmd = [runtime, "inspect", container_name]
+            inspect_result = subprocess.run(
+                inspect_cmd, capture_output=True, text=True, timeout=10
+            )
+
+            if inspect_result.returncode == 0:
+                # Container exists, check if it's running
+                ps_cmd = [
+                    runtime,
+                    "ps",
+                    "--filter",
+                    f"name={container_name}",
+                    "--format",
+                    "{{.Names}}",
+                ]
+                ps_result = subprocess.run(
+                    ps_cmd, capture_output=True, text=True, timeout=10
+                )
+
+                if container_name in ps_result.stdout:
+                    self.console.print("✅ Data cleaner container already running")
+                    return True
+                else:
+                    # Container exists but is stopped, just start it
+                    self.console.print("🔄 Starting existing data cleaner container...")
+                    start_cmd = [runtime, "start", container_name]
+                    start_result = subprocess.run(
+                        start_cmd, capture_output=True, text=True, timeout=60
+                    )
+
+                    if start_result.returncode == 0:
+                        self.console.print(
+                            "✅ Data cleaner container started successfully"
+                        )
+                        return True
+                    else:
+                        self.console.print(
+                            f"❌ Failed to start existing container: {start_result.stderr}"
+                        )
+                        # If starting failed, fall through to create new container
+
+            # Container doesn't exist or failed to start, create it with compose
+            self.console.print("🆕 Creating new data cleaner container...")
             compose_cmd = self.get_compose_command()
             cmd = compose_cmd + [
                 "-f",
@@ -3877,7 +3928,6 @@ class DockerManager:
                 "data-cleaner",
             ]
 
-            self.console.print("🧹 Starting data cleaner service...")
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
 
             if result.returncode == 0:
