@@ -1785,7 +1785,6 @@ class SmartIndexer(HighThroughputProcessor):
                         success = self.qdrant_client._batch_update_points(
                             points_to_update,
                             collection_name,
-                            trace_id="CLEANUP_MULTIPLE_VISIBLE",
                         )
                         if success:
                             hidden_count += len(points_to_update)

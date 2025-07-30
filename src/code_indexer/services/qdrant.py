@@ -1517,18 +1517,21 @@ class QdrantClient:
             return False
 
     def _batch_update_points(
-        self, points: List[Dict[str, Any]], collection_name: str
+        self,
+        points: List[Dict[str, Any]],
+        collection_name: str,
     ) -> bool:
         """Update multiple points with new payload data using merge operation."""
         try:
             # Use set payload operation to merge new fields without overwriting existing ones
             for point in points:
+                payload_data = {
+                    "payload": point["payload"],
+                    "points": [point["id"]],
+                }
                 response = self.client.post(
                     f"/collections/{collection_name}/points/payload",
-                    json={
-                        "payload": point["payload"],
-                        "points": [point["id"]],
-                    },
+                    json=payload_data,
                 )
                 response.raise_for_status()
             return True
