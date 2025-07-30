@@ -225,13 +225,19 @@ class TestDockerManagerCleanup:
             docker_manager, "_cleanup_data_directories"
         ) as mock_cleanup_data, patch.object(
             docker_manager, "_validate_cleanup"
-        ) as mock_validate:
+        ) as mock_validate, patch.object(
+            docker_manager, "stop_main_services"
+        ) as mock_stop_main, patch.object(
+            docker_manager, "clean_with_data_cleaner"
+        ) as mock_data_cleaner:
             # Setup mocks
             mock_compose_cmd.return_value = ["podman-compose"]
             mock_compose_file.exists.return_value = True
             mock_run.return_value = Mock(returncode=0)
             mock_cleanup_data.return_value = True
             mock_validate.return_value = True
+            mock_stop_main.return_value = True
+            mock_data_cleaner.return_value = True
 
             # Test cleanup with all flags
             result = docker_manager.cleanup(

@@ -687,6 +687,11 @@ class SmartIndexer(HighThroughputProcessor):
             self.config, self.embedding_provider, quiet
         )
 
+        # Get current branch early for working directory aware reconcile
+        current_branch = "master"  # Default branch name
+        if self.git_topology_service.is_git_available():
+            current_branch = self.git_topology_service.get_current_branch() or "master"
+
         # Get all files that should be indexed (from disk)
         all_files_to_index = list(self.file_finder.find_files())
 
@@ -705,81 +710,10 @@ class SmartIndexer(HighThroughputProcessor):
                 info=f"Checking database collection '{collection_name}' for indexed files...",
             )
 
-        # Get all points from the database for this collection with file timestamps
-        indexed_files_with_timestamps: Dict[Path, float] = {}  # file_path -> timestamp
-        try:
-            # Use scroll to get all points in batches
-            offset = None
-            while True:
-                points, next_offset = self.qdrant_client.scroll_points(
-                    collection_name=collection_name,
-                    limit=1000,  # Process in batches of 1000
-                    offset=offset,
-                    with_payload=True,
-                    with_vectors=False,  # We don't need vectors, just metadata
-                )
-
-                if not points:  # No more points
-                    break
-
-                # Extract file paths and timestamps from points
-                for point in points:
-                    if point.get("payload") and "path" in point["payload"]:
-                        # Path in database might be relative, need to normalize for comparison
-                        path_from_db = point["payload"]["path"]
-
-                        # Convert to absolute path for consistent comparison
-                        if Path(path_from_db).is_absolute():
-                            file_path = Path(path_from_db)
-                        else:
-                            # Relative path from database, make it absolute
-                            file_path = self.config.codebase_dir / path_from_db
-
-                        # Get timestamp from database (priority order for accuracy)
-                        db_timestamp = None
-
-                        # Priority 1: file_mtime from new architecture (most accurate)
-                        if "file_mtime" in point["payload"]:
-                            db_timestamp = point["payload"]["file_mtime"]
-                        # Priority 2: filesystem_mtime from legacy architecture
-                        elif "filesystem_mtime" in point["payload"]:
-                            db_timestamp = point["payload"]["filesystem_mtime"]
-                        # Priority 3: created_at (indexing time, less accurate for file changes)
-                        elif "created_at" in point["payload"]:
-                            db_timestamp = point["payload"]["created_at"]
-                        # Priority 4: indexed_at as last resort
-                        elif "indexed_at" in point["payload"]:
-                            # Convert indexed_at string back to timestamp for comparison
-                            try:
-                                dt = datetime.datetime.strptime(
-                                    point["payload"]["indexed_at"], "%Y-%m-%dT%H:%M:%SZ"
-                                )
-                                db_timestamp = dt.timestamp()
-                            except (ValueError, TypeError):
-                                db_timestamp = 0
-
-                        if db_timestamp is not None:
-                            # Keep the most recent timestamp if multiple chunks exist for same file
-                            if (
-                                file_path not in indexed_files_with_timestamps
-                                or db_timestamp
-                                > indexed_files_with_timestamps[file_path]
-                            ):
-                                indexed_files_with_timestamps[file_path] = db_timestamp
-
-                # Update offset for next batch
-                offset = next_offset
-                if offset is None:
-                    break
-
-        except Exception as e:
-            if progress_callback:
-                # ⚠️  CRITICAL: total=0 makes this show as ℹ️ message in CLI
-                progress_callback(
-                    0, 0, Path(""), info=f"Database query failed: {e}, doing full index"
-                )
-            # If database query fails, do full index
-            indexed_files_with_timestamps = {}
+        # Get indexed files using efficient snapshot approach (no infinite loops, minimal memory)
+        indexed_files_with_timestamps = self._get_indexed_files_snapshot(
+            collection_name, progress_callback
+        )
 
         # Show what was found in database with meaningful reconcile feedback
         if progress_callback:
@@ -790,40 +724,50 @@ class SmartIndexer(HighThroughputProcessor):
                 info=f"📊 Found {len(indexed_files_with_timestamps)} files in database collection '{collection_name}', {len(all_files_to_index)} files on disk",
             )
 
-        # Find files that need to be indexed (missing from DB or have newer timestamps)
+        # Find files that need to be indexed using working directory aware comparison
         files_to_index = []
         modified_files = 0
         missing_files = 0
 
         for file_path in all_files_to_index:
             try:
-                # Get current file modification time
-                disk_mtime = file_path.stat().st_mtime
+                # Get relative path for content ID generation
+                relative_path = str(file_path.relative_to(self.config.codebase_dir))
 
-                if file_path not in indexed_files_with_timestamps:
-                    # File exists on disk but not in database
+                # Get what the current effective content ID should be
+                current_effective_id = (
+                    self.branch_aware_indexer._get_effective_content_id_for_reconcile(
+                        relative_path
+                    )
+                )
+
+                # Check what's currently visible for this file in current branch
+                currently_visible_id = self._get_currently_visible_content_id(
+                    relative_path, current_branch, collection_name
+                )
+
+                if currently_visible_id is None:
+                    # File exists on disk but no visible content in current branch
                     files_to_index.append(file_path)
                     missing_files += 1
-                else:
-                    # File exists in both disk and database, compare timestamps
-                    db_timestamp = indexed_files_with_timestamps[file_path]
+                elif current_effective_id != currently_visible_id:
+                    # File exists but current state differs from what's visible
+                    files_to_index.append(file_path)
+                    modified_files += 1
+                    # Log the difference for debugging with more details
+                    logger.info(
+                        f"RECONCILE: Content ID mismatch for {relative_path}: current='{current_effective_id}' vs visible='{currently_visible_id}' - will re-index"
+                    )
 
-                    # Add some tolerance (1 second) to account for filesystem precision differences
-                    if disk_mtime > db_timestamp + 1.0:
-                        # File on disk is newer than in database
-                        files_to_index.append(file_path)
-                        modified_files += 1
-
-            except OSError:
-                # File might have been deleted or is not accessible, skip it
+            except Exception as e:
+                # File might have issues, log and skip
+                logger.warning(f"Failed to analyze file {file_path} for reconcile: {e}")
                 continue
 
         # NEW: For git projects, unhide files that should be visible in current branch
+        files_unhidden = 0  # Initialize for all code paths
+
         if self.git_topology_service.is_git_available():
-            current_branch = self.git_topology_service.get_current_branch() or "master"
-            collection_name = self.qdrant_client.resolve_collection_name(
-                self.config, self.embedding_provider
-            )
 
             # CRITICAL FIX: Check ALL files in database for unhiding, not just files_to_index
             # This fixes the bug where files hidden in other branches don't get unhidden
@@ -831,8 +775,6 @@ class SmartIndexer(HighThroughputProcessor):
             disk_files_set = {
                 str(f.relative_to(self.config.codebase_dir)) for f in all_files_to_index
             }
-
-            files_unhidden = 0
             for indexed_file_path in indexed_files_with_timestamps:
                 # Convert indexed file path to relative string for comparison
                 try:
@@ -879,6 +821,11 @@ class SmartIndexer(HighThroughputProcessor):
                     Path(""),
                     info=f"👁️  Made {files_unhidden} files visible in current branch '{current_branch}'",
                 )
+
+        # DIAGNOSTIC: Log reconcile progress after visibility update
+        logger.info(
+            f"Reconcile visibility update completed - made {files_unhidden} files visible in branch '{current_branch}', proceeding to deletion detection"
+        )
 
         # NEW: Detect files that exist in database but were deleted from filesystem
         deleted_files = []
@@ -987,6 +934,53 @@ class SmartIndexer(HighThroughputProcessor):
         # Store file list for resumability
         self.progressive_metadata.set_files_to_index(files_to_index)
 
+        # CRITICAL FIX: In non-git mode, delete old chunks for modified files before re-indexing
+        # This ensures old content doesn't persist alongside new content
+        if not self.is_git_aware() and files_to_index:
+            collection_name = self.qdrant_client.resolve_collection_name(
+                self.config, self.embedding_provider
+            )
+
+            # Get relative paths that are being modified (not newly added)
+            modified_relative_files = []
+            for file_path in files_to_index:
+                try:
+                    # Check if this file was previously indexed (exists in database)
+                    # indexed_files_with_timestamps has Path objects as keys
+                    if file_path in indexed_files_with_timestamps:
+                        if file_path.is_absolute():
+                            relative_path = str(
+                                file_path.relative_to(self.config.codebase_dir)
+                            )
+                        else:
+                            relative_path = str(file_path)
+                        modified_relative_files.append(relative_path)
+                except ValueError:
+                    continue
+
+            # Delete old chunks for modified files
+            if modified_relative_files:
+                deleted_count = 0
+                for relative_file_path in modified_relative_files:
+                    success = self.qdrant_client.delete_by_filter(
+                        {
+                            "must": [
+                                {"key": "path", "match": {"value": relative_file_path}}
+                            ]
+                        },
+                        collection_name,
+                    )
+                    if success:
+                        deleted_count += 1
+
+                if progress_callback and deleted_count > 0:
+                    progress_callback(
+                        0,
+                        0,
+                        Path(""),
+                        info=f"🗑️  Cleaned up old content for {deleted_count} modified files",
+                    )
+
         # Use BranchAwareIndexer for git-aware processing with parallel embeddings (SINGLE PROCESSING PATH)
         try:
             # Convert absolute paths to relative paths for BranchAwareIndexer
@@ -1042,6 +1036,16 @@ class SmartIndexer(HighThroughputProcessor):
             chunks_added=stats.chunks_created,
             failed_files=stats.failed_files,
         )
+
+        # CRITICAL FIX: After reconcile indexing is complete, clean up multiple visible content points
+        # This fixes the git restore scenario where both working_dir and committed content are visible
+        if self.is_git_aware():
+            collection_name = self.qdrant_client.resolve_collection_name(
+                self.config, self.embedding_provider
+            )
+            self._cleanup_multiple_visible_content_points(
+                collection_name, current_branch, progress_callback
+            )
 
         # Mark as completed
         self.progressive_metadata.complete_indexing()
@@ -1191,6 +1195,49 @@ class SmartIndexer(HighThroughputProcessor):
                     chunks_added=chunks_count,
                     failed_files=1 if failed else 0,
                 )
+
+        # CRITICAL: Delete old chunks for files being re-indexed during reconcile
+        # This prevents old content from remaining in the database when files are modified
+        collection_name = self.qdrant_client.resolve_collection_name(
+            self.config, self.embedding_provider
+        )
+
+        if progress_callback:
+            progress_callback(
+                0,
+                0,
+                Path(""),
+                info=f"🧹 Cleaning old chunks for {len(files)} files before re-indexing...",
+            )
+
+        files_cleaned = 0
+        for file_path in files:
+            # Convert to relative path for database lookup
+            try:
+                if file_path.is_absolute():
+                    relative_path = str(file_path.relative_to(self.config.codebase_dir))
+                else:
+                    relative_path = str(file_path)
+            except ValueError:
+                # File outside codebase_dir, use as-is
+                relative_path = str(file_path)
+
+            # Delete all existing chunks for this file
+            success = self.qdrant_client.delete_by_filter(
+                {"must": [{"key": "path", "match": {"value": relative_path}}]},
+                collection_name,
+            )
+            if success:
+                files_cleaned += 1
+                logger.debug(f"Deleted old chunks for file: {relative_path}")
+
+        if progress_callback:
+            progress_callback(
+                0,
+                0,
+                Path(""),
+                info=f"✅ Cleaned old chunks for {files_cleaned}/{len(files)} files",
+            )
 
         # Use queue-based high-throughput processing for all code paths
         if vector_thread_count is None:
@@ -1413,6 +1460,353 @@ class SmartIndexer(HighThroughputProcessor):
             self.git_topology_service is not None
             and self.git_topology_service.get_current_branch() is not None
         )
+
+    def _get_indexed_files_snapshot(
+        self, collection_name: str, progress_callback: Optional[Callable] = None
+    ) -> Dict[Path, float]:
+        """Get all indexed files with timestamps using efficient snapshot approach.
+
+        This method loads only the minimal required data (file paths + timestamps)
+        without vectors or full content, preventing memory issues and infinite loops.
+
+        Returns:
+            Dict mapping file paths to their timestamps
+        """
+        indexed_files_with_timestamps: Dict[Path, float] = {}
+
+        try:
+            if progress_callback:
+                progress_callback(
+                    0, 0, Path(""), info="📸 Taking snapshot of indexed files..."
+                )
+
+            # Get all content points in a single atomic operation
+            all_points = self._scroll_all_content_points(collection_name)
+
+            if progress_callback:
+                progress_callback(
+                    0,
+                    0,
+                    Path(""),
+                    info=f"📊 Processing {len(all_points)} points from database snapshot",
+                )
+
+            # Process all points in memory (no database access = no consistency issues)
+            for point in all_points:
+                payload = point.get("payload", {})
+
+                if "path" not in payload:
+                    continue
+
+                # Extract file path
+                path_from_db = payload["path"]
+                if Path(path_from_db).is_absolute():
+                    file_path = Path(path_from_db)
+                else:
+                    file_path = self.config.codebase_dir / path_from_db
+
+                # Extract best available timestamp
+                timestamp = self._extract_best_timestamp(payload)
+
+                # Keep the most recent timestamp per file (multiple chunks per file)
+                if (
+                    file_path not in indexed_files_with_timestamps
+                    or timestamp > indexed_files_with_timestamps[file_path]
+                ):
+                    indexed_files_with_timestamps[file_path] = timestamp
+
+            if progress_callback:
+                progress_callback(
+                    0,
+                    0,
+                    Path(""),
+                    info=f"✅ Snapshot complete: {len(indexed_files_with_timestamps)} unique files found",
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to get indexed files snapshot: {e}")
+            if progress_callback:
+                progress_callback(
+                    0,
+                    0,
+                    Path(""),
+                    info=f"⚠️ Database snapshot failed: {e}, proceeding with empty state",
+                )
+            # Return empty dict - reconcile will treat all files as new
+            indexed_files_with_timestamps = {}
+
+        return indexed_files_with_timestamps
+
+    def _scroll_all_content_points(self, collection_name: str) -> List[Dict[str, Any]]:
+        """Scroll through all content points and return them as a list.
+
+        This method uses only content points (not metadata) and excludes vectors
+        for maximum memory efficiency.
+        """
+        all_points = []
+        offset = None
+
+        while True:
+            points, next_offset = self.qdrant_client.scroll_points(
+                collection_name=collection_name,
+                filter_conditions={
+                    "must": [{"key": "type", "match": {"value": "content"}}]
+                },
+                limit=5000,  # Larger batches for efficiency
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,  # CRITICAL: No vectors = massive memory savings
+            )
+
+            if not points:
+                break
+
+            all_points.extend(points)
+
+            # Safety check to prevent infinite loops
+            if next_offset == offset:
+                logger.error(f"Pagination stuck at offset {offset} - breaking")
+                break
+
+            offset = next_offset
+            if offset is None:
+                break
+
+        return all_points
+
+    def _extract_best_timestamp(self, payload: Dict[str, Any]) -> float:
+        """Extract the best available timestamp from payload."""
+        # Priority 1: file_mtime from new architecture (most accurate)
+        if "file_mtime" in payload:
+            return float(payload["file_mtime"])
+        # Priority 2: filesystem_mtime from legacy architecture
+        elif "filesystem_mtime" in payload:
+            return float(payload["filesystem_mtime"])
+        # Priority 3: created_at (indexing time, less accurate for file changes)
+        elif "created_at" in payload:
+            return float(payload["created_at"])
+        # Priority 4: indexed_at as last resort
+        elif "indexed_at" in payload:
+            try:
+                dt = datetime.datetime.strptime(
+                    payload["indexed_at"], "%Y-%m-%dT%H:%M:%SZ"
+                )
+                return dt.timestamp()
+            except (ValueError, TypeError):
+                return 0.0
+        return 0.0
+
+    def _get_currently_visible_content_id(
+        self, file_path: str, branch: str, collection_name: str
+    ) -> Optional[str]:
+        """Get the content ID currently visible for this file in this branch."""
+        try:
+            # Query for content points for this file that are NOT hidden in this branch
+            points, _ = self.qdrant_client.scroll_points(
+                filter_conditions={
+                    "must": [
+                        {"key": "type", "match": {"value": "content"}},
+                        {"key": "path", "match": {"value": file_path}},
+                    ],
+                    "must_not": [
+                        {"key": "hidden_branches", "match": {"any": [branch]}}
+                    ],
+                },
+                limit=10,  # Should be enough to find visible content
+                collection_name=collection_name,
+            )
+
+            if not points:
+                return None
+
+            # CRITICAL FIX: Check if there are multiple visible points for this file
+            # This can happen after git restore when both working_dir and committed content are visible
+            if len(points) > 1:
+                # Multiple content points visible - this is a problem that needs reconcile
+                logger.warning(
+                    f"Found {len(points)} visible content points for {file_path} in branch {branch}"
+                )
+
+                # Look for working directory content that should be hidden
+                working_dir_points = []
+                committed_points = []
+
+                for point in points:
+                    payload = point.get("payload", {})
+                    git_commit_hash = payload.get("git_commit_hash", "unknown")
+
+                    if git_commit_hash.startswith("working_dir_"):
+                        working_dir_points.append(point)
+                    else:
+                        committed_points.append(point)
+
+                # If we have both working_dir and committed content, prioritize committed
+                # and schedule hiding of working_dir content
+                if working_dir_points and committed_points:
+                    logger.info(
+                        f"Found mixed content for {file_path}: {len(working_dir_points)} working_dir + {len(committed_points)} committed - needs cleanup"
+                    )
+
+                    # Return the first committed content point to trigger reconcile
+                    # The reconcile will detect mismatch and re-index, which will hide working_dir content
+                    first_committed = committed_points[0]
+                    payload = first_committed.get("payload", {})
+                    commit = payload.get("git_commit_hash", "unknown")
+                    return f"{file_path}:{commit}"
+
+            # Find the most relevant content point (latest or most appropriate)
+            # For now, return the first visible content point's effective ID
+            for point in points:
+                payload = point.get("payload", {})
+
+                # Reconstruct content ID from point data
+                path = payload.get("path", "")
+                if path != file_path:
+                    continue
+
+                # Check if this is working_dir content or committed content
+                if "working_dir" in str(point.get("id", "")):
+                    # This is working directory content
+                    return f"{file_path}:working_dir:{payload.get('filesystem_mtime', 'unknown')}:{payload.get('file_size', 0)}"
+                else:
+                    # This is committed content
+                    # CRITICAL: Use git_commit_hash because that's what BranchAwareIndexer stores in payload
+                    # (see branch_aware_indexer.py line 798: "git_commit_hash": commit)
+                    # The ContentMetadata.git_commit field gets stored as git_commit_hash in Qdrant
+                    commit = payload.get(
+                        "git_commit_hash", payload.get("commit_hash", "unknown")
+                    )
+                    return f"{file_path}:{commit}"
+
+            return None
+
+        except Exception as e:
+            logger.warning(
+                f"Failed to get visible content ID for {file_path} in branch {branch}: {e}"
+            )
+            return None
+
+    def _cleanup_multiple_visible_content_points(
+        self,
+        collection_name: str,
+        current_branch: str,
+        progress_callback: Optional[Callable] = None,
+    ) -> None:
+        """
+        Clean up situations where multiple content points are visible for the same file.
+
+        This handles the git restore scenario where both working_dir and committed content
+        are visible in the current branch, which should not happen.
+        """
+        try:
+            # Get all content points visible in current branch
+            all_points, _ = self.qdrant_client.scroll_points(
+                filter_conditions={
+                    "must": [
+                        {"key": "type", "match": {"value": "content"}},
+                    ],
+                    "must_not": [
+                        {"key": "hidden_branches", "match": {"any": [current_branch]}}
+                    ],
+                },
+                limit=10000,  # Get all visible content points
+                collection_name=collection_name,
+            )
+
+            if not all_points:
+                return
+
+            # Group points by file path
+            files_with_points: Dict[str, List[Dict[str, Any]]] = {}
+            for point in all_points:
+                payload = point.get("payload", {})
+                file_path = payload.get("path", "")
+                if file_path:
+                    if file_path not in files_with_points:
+                        files_with_points[file_path] = []
+                    files_with_points[file_path].append(point)
+
+            # Find files with multiple visible content points
+            files_to_cleanup = []
+            for file_path, points in files_with_points.items():
+                if len(points) > 1:
+                    files_to_cleanup.append((file_path, points))
+
+            if not files_to_cleanup:
+                logger.debug(
+                    "No multiple visible content points found - cleanup not needed"
+                )
+                return
+
+            logger.info(
+                f"Found {len(files_to_cleanup)} files with multiple visible content points - cleaning up"
+            )
+
+            # Clean up each file with multiple content points
+            hidden_count = 0
+            for file_path, points in files_to_cleanup:
+                # Separate working_dir and committed content
+                working_dir_points = []
+                committed_points = []
+
+                for point in points:
+                    payload = point.get("payload", {})
+                    git_commit_hash = payload.get("git_commit_hash", "")
+
+                    if git_commit_hash.startswith("working_dir_"):
+                        working_dir_points.append(point)
+                    else:
+                        committed_points.append(point)
+
+                # If we have both types, hide working_dir content and keep committed content
+                if working_dir_points and committed_points:
+                    logger.info(
+                        f"Hiding {len(working_dir_points)} working_dir points for {file_path} (keeping {len(committed_points)} committed)"
+                    )
+
+                    # Hide working directory content points
+                    points_to_update = []
+                    for point in working_dir_points:
+                        point_id = point["id"]
+                        payload = point.get("payload", {})
+                        hidden_branches = payload.get("hidden_branches", [])
+
+                        if current_branch not in hidden_branches:
+                            new_hidden = hidden_branches + [current_branch]
+                            points_to_update.append(
+                                {
+                                    "id": point_id,
+                                    "payload": {"hidden_branches": new_hidden},
+                                }
+                            )
+
+                    # Apply the updates
+                    if points_to_update:
+                        success = self.qdrant_client._batch_update_points(
+                            points_to_update,
+                            collection_name,
+                            trace_id="CLEANUP_MULTIPLE_VISIBLE",
+                        )
+                        if success:
+                            hidden_count += len(points_to_update)
+                            logger.debug(
+                                f"Successfully hid {len(points_to_update)} working_dir points for {file_path}"
+                            )
+                        else:
+                            logger.warning(
+                                f"Failed to hide working_dir points for {file_path}"
+                            )
+
+            if progress_callback and hidden_count > 0:
+                progress_callback(
+                    0,
+                    0,
+                    Path(""),
+                    info=f"🧹 Hidden {hidden_count} obsolete working directory content points",
+                )
+
+        except Exception as e:
+            logger.warning(f"Failed to cleanup multiple visible content points: {e}")
 
     def delete_file_branch_aware(
         self, file_path: str, collection_name: str, watch_mode: bool = False

@@ -41,12 +41,27 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ContentMetadata:
-    """Metadata for content points with branch visibility tracking."""
+    """Metadata for content points with branch visibility tracking.
+
+    CRITICAL FIELD NAMING DOCUMENTATION:
+
+    git_commit: str - The commit hash or working directory identifier for this content.
+                     This field stores either:
+                     1. Git commit hash (40 chars) for committed content
+                     2. "working_dir_{mtime}_{size}" for working directory changes
+
+                     When stored in Qdrant payload, this becomes "git_commit_hash"
+                     (see line ~798 where payload["git_commit_hash"] = commit)
+
+                     DO NOT confuse with:
+                     - git_hash: Used elsewhere for git blob hash (content hash)
+                     - git_commit_hash: The payload field name in Qdrant database
+    """
 
     path: str
     chunk_index: int
     total_chunks: int
-    git_commit: str
+    git_commit: str  # See detailed documentation above ^^^
     content_hash: str
     file_size: int
     language: str
@@ -569,6 +584,129 @@ class BranchAwareIndexer:
 
                     current_file_index += 1
 
+                    # CRITICAL: Maintain point-in-time snapshot behavior by hiding outdated content
+                    if current_commit.startswith("working_dir_"):
+                        # This is working directory content - hide the old committed version
+                        try:
+                            # Find and hide all content points for this file that are NOT working directory versions
+                            content_points, _ = self.qdrant_client.scroll_points(
+                                filter_conditions={
+                                    "must": [
+                                        {"key": "type", "match": {"value": "content"}},
+                                        {"key": "path", "match": {"value": file_path}},
+                                    ]
+                                },
+                                limit=1000,  # Should be enough for any file's chunks
+                                collection_name=collection_name,
+                            )
+
+                            # Filter out working directory versions manually (Qdrant doesn't support startswith)
+                            committed_content_points = [
+                                point
+                                for point in content_points
+                                if not point.get("payload", {})
+                                .get("git_commit", "")
+                                .startswith("working_dir_")
+                            ]
+
+                            # Hide old committed content points by adding current branch to hidden_branches
+                            points_to_update = []
+                            for point in committed_content_points:
+                                point_id = point["id"]
+                                payload = point.get("payload", {})
+                                hidden_branches = payload.get("hidden_branches", [])
+
+                                if branch not in hidden_branches:
+                                    new_hidden = hidden_branches + [branch]
+                                    points_to_update.append(
+                                        {
+                                            "id": point_id,
+                                            "payload": {"hidden_branches": new_hidden},
+                                        }
+                                    )
+
+                            # Batch update the points
+                            if points_to_update:
+                                success = self.qdrant_client._batch_update_points(
+                                    points_to_update,
+                                    collection_name,
+                                    trace_id="WORKING_DIR_HIDE_COMMITTED",
+                                )
+                                if success:
+                                    logger.debug(
+                                        f"Successfully hid {len(points_to_update)} committed content points for working directory file {file_path}"
+                                    )
+                                else:
+                                    logger.warning(
+                                        f"Failed to hide {len(points_to_update)} committed content points for file {file_path}"
+                                    )
+
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to hide old committed content for working directory file {file_path}: {e}"
+                            )
+
+                    else:
+                        # This is committed content - hide any working directory versions for this file
+                        try:
+                            # Find and hide all working directory content points for this file
+                            all_file_points, _ = self.qdrant_client.scroll_points(
+                                filter_conditions={
+                                    "must": [
+                                        {"key": "type", "match": {"value": "content"}},
+                                        {"key": "path", "match": {"value": file_path}},
+                                    ]
+                                },
+                                limit=1000,  # Should be enough for any file's chunks
+                                collection_name=collection_name,
+                            )
+
+                            # Filter for working directory versions manually
+                            working_dir_points = [
+                                point
+                                for point in all_file_points
+                                if point.get("payload", {})
+                                .get("git_commit", "")
+                                .startswith("working_dir_")
+                            ]
+
+                            # Hide working directory content points by adding current branch to hidden_branches
+                            points_to_update = []
+                            for point in working_dir_points:
+                                point_id = point["id"]
+                                payload = point.get("payload", {})
+                                hidden_branches = payload.get("hidden_branches", [])
+
+                                if branch not in hidden_branches:
+                                    new_hidden = hidden_branches + [branch]
+                                    points_to_update.append(
+                                        {
+                                            "id": point_id,
+                                            "payload": {"hidden_branches": new_hidden},
+                                        }
+                                    )
+
+                            # Batch update the points
+                            if points_to_update:
+                                success = self.qdrant_client._batch_update_points(
+                                    points_to_update,
+                                    collection_name,
+                                    trace_id="COMMITTED_HIDE_WORKING_DIR",
+                                )
+                                if success:
+                                    logger.debug(
+                                        f"Successfully hid {len(points_to_update)} working directory points for committed file {file_path}"
+                                    )
+                                else:
+                                    logger.warning(
+                                        f"Failed to hide {len(points_to_update)} working directory points for file {file_path}"
+                                    )
+
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to hide working directory content for committed file {file_path}: {e}"
+                            )
+
                     # Process batch when full
                     if len(batch_points) >= 50:
                         self.qdrant_client.upsert_points(batch_points, collection_name)
@@ -672,7 +810,10 @@ class BranchAwareIndexer:
             # Compatibility fields for GenericQueryService (branch-agnostic)
             "git_available": True,
             "file_path": file_path,  # Alias for 'path'
-            "git_commit_hash": commit,  # Alias for 'git_commit'
+            # CRITICAL: git_commit field from ContentMetadata becomes git_commit_hash in payload
+            # This is the KEY field for commit identification in queries and hiding logic
+            # Other services expect "git_commit_hash" in payload, NOT "git_commit"
+            "git_commit_hash": commit,  # Alias for ContentMetadata.git_commit field
             "content": content_text,  # Required for search results
             "indexed_at": time.strftime(
                 "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
@@ -899,8 +1040,38 @@ class BranchAwareIndexer:
             return False
 
     def _get_file_commit(self, file_path: str) -> str:
-        """Get current commit hash for file."""
+        """Get current commit hash for file, or working directory indicator if modified."""
         try:
+            # Check if this is a git repository
+            is_git_repo = self._is_git_repository()
+
+            if not is_git_repo:
+                # For non-git projects, always use timestamp-based IDs for consistency
+                try:
+                    file_path_obj = self.codebase_dir / file_path
+                    file_stat = file_path_obj.stat()
+                    return f"working_dir_{file_stat.st_mtime}_{file_stat.st_size}"
+                except Exception:
+                    # Fallback if stat fails
+                    import time
+
+                    return f"working_dir_{time.time()}_error"
+
+            # For git repositories, use the original git-aware logic
+            # Check if file differs from committed version
+            if self._file_differs_from_committed_version(file_path):
+                # File has working directory changes - generate unique ID based on mtime/size
+                try:
+                    file_path_obj = self.codebase_dir / file_path
+                    file_stat = file_path_obj.stat()
+                    return f"working_dir_{file_stat.st_mtime}_{file_stat.st_size}"
+                except Exception:
+                    # Fallback if stat fails
+                    import time
+
+                    return f"working_dir_{time.time()}_error"
+
+            # File matches committed version - use commit hash
             result = subprocess.run(
                 ["git", "log", "-1", "--format=%H", "--", file_path],
                 cwd=self.codebase_dir,
@@ -913,6 +1084,72 @@ class BranchAwareIndexer:
             return commit if commit else "unknown"
         except Exception:
             return "unknown"
+
+    def _file_differs_from_committed_version(self, file_path: str) -> bool:
+        """Check if working directory file differs from committed version."""
+        try:
+            # Use git diff to check if file differs from HEAD
+            result = subprocess.run(
+                ["git", "diff", "--quiet", "HEAD", "--", file_path],
+                cwd=self.codebase_dir,
+                capture_output=True,
+                timeout=10,
+            )
+            # git diff --quiet returns 0 if no differences, 1 if differences exist
+            differs = result.returncode != 0
+            if differs:
+                logger.debug(
+                    f"RECONCILE: File {file_path} differs from committed version (git diff returncode={result.returncode})"
+                )
+            return differs
+        except Exception as e:
+            # If git command fails, assume no differences
+            logger.debug(f"RECONCILE: Git diff failed for {file_path}: {e}")
+            return False
+
+    def _is_git_repository(self) -> bool:
+        """Check if the current directory is a git repository."""
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--git-dir"],
+                cwd=self.codebase_dir,
+                capture_output=True,
+                timeout=5,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    def _get_effective_content_id_for_reconcile(self, file_path: str) -> str:
+        """Get content ID that represents current working directory state."""
+        # Check if this is a git repository
+        is_git_repo = self._is_git_repository()
+
+        if not is_git_repo:
+            # For non-git projects, always use timestamp-based content IDs for consistency
+            # Use the same format as _get_file_commit to ensure consistency
+            try:
+                file_stat = (self.codebase_dir / file_path).stat()
+                commit = f"working_dir_{file_stat.st_mtime}_{file_stat.st_size}"
+                return f"{file_path}:{commit}"
+            except Exception:
+                # Fallback if stat fails
+                return f"{file_path}:working_dir_error"
+
+        # For git repositories, use the original git-aware logic
+        if self._file_differs_from_committed_version(file_path):
+            # File has working directory changes - use mtime/size based ID
+            try:
+                file_stat = (self.codebase_dir / file_path).stat()
+                commit = f"working_dir_{file_stat.st_mtime}_{file_stat.st_size}"
+                return f"{file_path}:{commit}"
+            except Exception:
+                # Fallback if stat fails
+                return f"{file_path}:working_dir_error"
+        else:
+            # File matches committed version - use commit-based ID
+            commit = self._get_file_commit(file_path)
+            return f"{file_path}:{commit}"
 
     def _detect_language(self, file_path: str) -> str:
         """Detect programming language from file extension."""
@@ -1152,10 +1389,41 @@ class BranchAwareIndexer:
                     )
 
         # Process files that should be visible (only if they're currently hidden)
+        # CRITICAL: Preserve point-in-time snapshot behavior - don't unhide committed content
+        # when working directory content exists for the same file
         for file_path in current_files_set:
             if file_path in file_to_point_info:  # File exists in DB
+                # Check if this file has working directory content
+                has_working_dir_content = any(
+                    point.get("payload", {})
+                    .get("git_commit", "")
+                    .startswith("working_dir_")
+                    for point in all_content_points
+                    if point.get("payload", {}).get("path") == file_path
+                )
+
                 for point_info in file_to_point_info[file_path]:
                     if branch in point_info["hidden_branches"]:
+                        # Get the actual point to check if it's committed content
+                        point_git_commit = None
+                        for point in all_content_points:
+                            if point.get("id") == point_info["id"]:
+                                point_git_commit = point.get("payload", {}).get(
+                                    "git_commit", ""
+                                )
+                                break
+
+                        # POINT-IN-TIME SNAPSHOT LOGIC:
+                        # If this is committed content and working directory content exists,
+                        # don't unhide it (preserve the snapshot behavior)
+                        is_committed_content = (
+                            point_git_commit
+                            and not point_git_commit.startswith("working_dir_")
+                        )
+                        if is_committed_content and has_working_dir_content:
+                            # Skip unhiding - preserve point-in-time snapshot
+                            continue
+
                         # Remove branch from hidden_branches array
                         new_hidden = [
                             b for b in point_info["hidden_branches"] if b != branch

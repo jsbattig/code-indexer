@@ -47,9 +47,33 @@ class TestClaudePlanE2E:
         # Clean up code-indexer data for this test project
         self._cleanup_code_indexer()
 
-        # Clean up temporary directory
+        # Clean up temporary directory with retry logic for Qdrant segment cleanup
         if self.temp_dir.exists():
-            shutil.rmtree(self.temp_dir)
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    shutil.rmtree(self.temp_dir)
+                    break
+                except OSError as e:
+                    if "Directory not empty" in str(e) and attempt < max_retries - 1:
+                        # Wait and try again - Qdrant might still be releasing files
+                        import time
+
+                        time.sleep(0.5)
+                        continue
+                    # If final attempt fails, try force removal with different method
+                    elif attempt == max_retries - 1:
+                        try:
+                            import subprocess
+
+                            subprocess.run(
+                                ["rm", "-rf", str(self.temp_dir)],
+                                check=False,
+                                capture_output=True,
+                            )
+                        except Exception:
+                            # Last resort - leave cleanup to OS
+                            pass
 
     def _create_sample_codebase(self):
         """Create a realistic sample codebase for Claude to analyze."""

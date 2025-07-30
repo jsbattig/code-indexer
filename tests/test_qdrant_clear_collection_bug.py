@@ -161,6 +161,9 @@ def test_clear_collection_integration_with_real_qdrant(qdrant_test_repo):
                 or "resource temporarily unavailable" in start_result.stderr.lower()
                 or "Cannot allocate memory" in start_result.stderr
                 or "Container failed to start" in start_result.stdout
+                or "Cannot connect to the Docker daemon" in start_result.stderr
+                or "podman" in start_result.stderr.lower()
+                and "not found" in start_result.stderr.lower()
             ):
                 pytest.skip(
                     f"Infrastructure issue: Resource contention or container conflict during full-automation - {start_result.stdout[:200]}...{start_result.stderr[:200]}"
@@ -168,6 +171,28 @@ def test_clear_collection_integration_with_real_qdrant(qdrant_test_repo):
             pytest.skip(
                 f"Could not start services: {start_result.stdout} | {start_result.stderr}"
             )
+
+    # Additional validation - ensure we can actually connect to Qdrant
+    # before attempting collection operations
+    from code_indexer.config import ConfigManager
+
+    config_manager = ConfigManager()
+    config_manager.project_root = test_dir
+    app_config = config_manager.load()
+
+    # Quick connectivity test
+    import httpx
+
+    try:
+        response = httpx.get(f"{app_config.qdrant.host}/collections", timeout=5.0)
+        if response.status_code != 200:
+            pytest.skip(
+                f"Qdrant service not responding properly: HTTP {response.status_code}"
+            )
+    except Exception as e:
+        pytest.skip(
+            f"Cannot connect to Qdrant service at {app_config.qdrant.host}: {e}"
+        )
 
     # Give services a moment to stabilize
     import time

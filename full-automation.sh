@@ -375,7 +375,7 @@ fi
 
 # Comprehensive test suite cleanup
 print_step "Performing comprehensive test suite cleanup"
-"$SCRIPT_DIR/cleanup-test-suite.sh"
+./cleanup-test-suite.sh
 print_success "Test suite cleanup completed"
 
 # Additional container cleanup
