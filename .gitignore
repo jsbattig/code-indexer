@@ -133,3 +133,5 @@ PRODUCTIVITY_ANALYSIS.md
 .env.local.new
 *.json
 /.swarm
+debug_data_cleaner/
+test_output_*/

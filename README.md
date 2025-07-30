@@ -59,6 +59,10 @@ code-indexer claude "analyze this"   # AI-powered analysis
 code-indexer status                   # Check service status
 code-indexer stop                     # Stop services
 
+# Claude Code integration
+code-indexer set-claude-prompt        # Set CIDX instructions in project CLAUDE.md
+code-indexer set-claude-prompt --user-prompt  # Set in global ~/.claude/CLAUDE.md
+
 # Additional options
 code-indexer index --clear            # Force full reindex
 code-indexer index --reconcile        # Reconcile disk vs database

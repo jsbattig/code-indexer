@@ -147,6 +147,16 @@ if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest tests/ \
     --ignore=tests/test_cow_clone_e2e_full_automation.py \
     --ignore=tests/test_cow_migration_e2e_full_automation.py \
     --ignore=tests/test_cow_clone_e2e.py \
+    --ignore=tests/test_docker_uninstall_complete_cleanup_e2e.py \
+    --ignore=tests/test_cli_progress_e2e.py \
+    --ignore=tests/test_deletion_handling_e2e.py \
+    --ignore=tests/test_git_indexing_consistency_e2e.py \
+    --ignore=tests/test_kotlin_semantic_search_e2e.py \
+    --ignore=tests/test_reconcile_branch_visibility_bug_e2e.py \
+    --ignore=tests/test_reconcile_branch_visibility_e2e.py \
+    --ignore=tests/test_reconcile_comprehensive_e2e.py \
+    --ignore=tests/test_watch_timestamp_update_e2e.py \
+    --ignore=tests/test_working_directory_reconcile_e2e.py \
     -m "not slow and not e2e and not real_api" \
     --cov=src/code_indexer --cov-report=xml --cov-report=term; then
     print_success "Unit tests passed"
@@ -191,6 +201,13 @@ echo "   • Git-aware watch E2E tests (require service dependencies)"
 echo "   • Indexing consistency/timestamp E2E tests (require services)"
 echo "   • Line number display E2E tests (require indexing services)"
 echo "   • Concurrent indexing and file chunking tests (require services)"
+echo "   • CLI progress E2E tests (require real indexing operations)"
+echo "   • Deletion handling E2E tests (require service dependencies)"
+echo "   • Reconcile branch visibility E2E tests (require indexing services)"
+echo "   • Reconcile comprehensive E2E tests (require full service stack)"
+echo "   • Working directory reconcile E2E tests (require indexing services)"
+echo "   • Kotlin semantic search E2E tests (require indexing services)"
+echo "   • Watch timestamp update E2E tests (require file system monitoring)"
 echo "   • Any tests marked as 'slow', 'e2e', or 'real_api'"
 echo ""
 echo "ℹ️  This matches the GitHub Actions workflow for fast CI execution"

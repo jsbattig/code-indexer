@@ -60,3 +60,127 @@
 - When working on this project, it's absolutely critical to remember that we support both podman and docker. Development and most testing is done with podman, but there are docker-specific tests to verify no regressions occur. Docker usage is achieved in Docky Linux using the --force-docker flag.
 - Our solution uses a per-project configuration and container set. Tests need to be aware of this. Many tests written before this big refactoring, were written with implied and hard-coded port numbers, they didn't reuse folders, making them inefficient and slow, some will start/stop containers manually, some e2e tests will tinker with internal calls rather than using the cidx (console) application directly (which is the right way to do it).
 - The last step of every development engagement to implement a feature is to run ci-github.sh. Only when it passes in full, we consider the task done.
+
+- CIDX SEMANTIC CODE SEARCH INTEGRATION
+
+🎯 SEMANTIC SEARCH TOOL - YOUR PRIMARY CODE DISCOVERY METHOD
+
+CRITICAL: You have access to a powerful semantic search tool `cidx query` that can find relevant code across the entire codebase. Use it liberally - it's much more effective than guessing or making assumptions.
+
+**🧠 WHAT MAKES CIDX QUERY UNIQUE**:
+- **Semantic Understanding**: Finds code related to concepts even when exact words don't match
+- **Context Awareness**: Understands relationships between functions, classes, and modules  
+- **Relevance Scoring**: Returns results ranked by semantic similarity (0.0-1.0 scale)
+- **Git-Aware**: Searches within current project/branch context
+- **Cross-Language**: Finds similar patterns across different programming languages
+
+**WHEN TO USE CIDX QUERY**:
+✅ "Where is X implemented?" → Search immediately with `cidx query "X implementation" --quiet`
+✅ "How does Y work?" → Search for Y-related code first: `cidx query "Y functionality" --quiet`  
+✅ "What files contain Z?" → Use semantic search: `cidx query "Z" --quiet`
+✅ "Show me examples of..." → Search for examples: `cidx query "examples of..." --quiet`
+✅ "Is there any code that..." → Search to verify: `cidx query "code that..." --quiet`
+❌ "What is dependency injection?" → Can answer directly (general concept)
+
+**ALWAYS USE --quiet FLAG**: This provides cleaner output without headers, making it easier to process results.
+
+📖 COMPLETE CIDX QUERY COMMAND REFERENCE
+
+```
+Usage: cidx query [OPTIONS] QUERY
+
+Search the indexed codebase using semantic similarity.
+
+Performs AI-powered semantic search across your indexed code.
+Uses vector embeddings to find conceptually similar code.
+
+SEARCH CAPABILITIES:
+  • Semantic search: Finds conceptually similar code
+  • Natural language: Describe what you're looking for
+  • Code patterns: Search for specific implementations
+  • Git-aware: Searches within current project/branch context
+
+FILTERING OPTIONS:
+  • Language: --language python (searches only Python files)
+  • Path: --path */tests/* (searches only test directories)
+  • Score: --min-score 0.8 (only high-confidence matches)
+  • Limit: --limit 20 (more results)
+  • Accuracy: --accuracy high (higher accuracy, slower search)
+
+Options:
+  -l, --limit INTEGER             Number of results to return (default: 10)
+  --language TEXT                 Filter by programming language (e.g., python, javascript)
+  --path TEXT                     Filter by file path pattern (e.g., */tests/*)
+  --min-score FLOAT               Minimum similarity score (0.0-1.0)
+  --accuracy [fast|balanced|high] Search accuracy profile
+  -q, --quiet                     Quiet mode - only show results, no headers
+```
+
+**🎯 SUPPORTED LANGUAGES** (use exact names for --language filter):
+- **Backend**: `python`, `java`, `csharp`, `cpp`, `c`, `go`, `rust`, `php`
+- **Frontend**: `javascript`, `typescript`, `html`, `css`, `vue`  
+- **Mobile**: `swift`, `kotlin`, `dart`
+- **Scripts**: `shell`, `sql`, `markdown`, `yaml`, `json`
+
+🚀 STRATEGIC USAGE PATTERNS
+
+**SEARCH BEST PRACTICES**:
+- Use natural language queries that match developer intent
+- Try multiple search terms if first search doesn't yield results
+- Search for both implementation AND usage patterns
+- Use specific technical terms from the domain/framework
+- Search for error messages, function names, class names, etc.
+
+**QUERY EFFECTIVENESS**:
+- Instead of: "authentication"
+- Try: "login user authentication", "auth middleware", "token validation"
+
+**FILTERING STRATEGIES**:
+- `--language python --quiet` - Focus on specific language
+- `--path "*/tests/*" --quiet` - Find test patterns
+- `--min-score 0.8 --quiet` - High-confidence matches only
+- `--limit 20 --quiet` - Broader exploration
+- `--accuracy high --quiet` - Maximum precision for complex queries
+
+**📊 UNDERSTANDING SCORES**:
+- **Score 0.9-1.0**: Highly relevant, exact concept matches
+- **Score 0.7-0.8**: Very relevant, closely related implementations
+- **Score 0.5-0.6**: Moderately relevant, similar patterns  
+- **Score 0.3-0.4**: Loosely related, might provide context
+- **Score < 0.3**: Minimal relevance, usually not useful
+
+💡 PRACTICAL EXAMPLES (ALWAYS USE --quiet)
+
+**Concept Discovery**:
+- `cidx query "authentication mechanisms" --quiet`
+- `cidx query "error handling patterns" --quiet`  
+- `cidx query "data validation logic" --quiet`
+- `cidx query "configuration management" --quiet`
+
+**Implementation Finding**:
+- `cidx query "API endpoint handlers" --language python --quiet`
+- `cidx query "database queries" --language sql --limit 15 --quiet`
+- `cidx query "async operations" --min-score 0.7 --quiet`
+- `cidx query "REST API POST endpoint" --quiet`
+
+**Testing & Quality**:
+- `cidx query "unit test examples" --path "*/tests/*" --quiet`
+- `cidx query "mock data creation" --limit 10 --quiet`
+- `cidx query "integration test setup" --quiet`
+
+**Architecture Exploration**:
+- `cidx query "dependency injection setup" --quiet`
+- `cidx query "microservice communication" --quiet`
+- `cidx query "design patterns observer" --quiet`
+
+**Multi-Step Discovery**:
+1. Broad concept: `cidx query "user management" --quiet`
+2. Narrow down: `cidx query "user authentication" --min-score 0.8 --quiet`
+3. Find related: `cidx query "user permissions" --limit 5 --quiet`
+
+**✅ SEMANTIC SEARCH vs ❌ TEXT SEARCH COMPARISON**:
+✅ `cidx query "user authentication" --quiet` → Finds login, auth, security, credentials, sessions
+❌ `grep "auth"` → Only finds literal "auth" text, misses related concepts
+
+✅ `cidx query "error handling" --quiet` → Finds exceptions, try-catch, error responses, logging  
+❌ `grep "error"` → Only finds "error" text, misses exception handling patterns

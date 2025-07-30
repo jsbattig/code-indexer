@@ -4173,6 +4173,108 @@ def clean_legacy(ctx, force_docker: bool, yes: bool):
         sys.exit(1)
 
 
+@cli.command("set-claude-prompt")
+@click.option(
+    "--user-prompt",
+    is_flag=True,
+    help="Set prompt in user's global ~/.claude/CLAUDE.md file instead of project file",
+)
+@click.pass_context
+def set_claude_prompt(ctx, user_prompt: bool):
+    """Set CIDX semantic search instructions in CLAUDE.md files.
+
+    This command injects comprehensive CIDX semantic search instructions into
+    CLAUDE.md files to improve Claude Code integration with code-indexer.
+
+    \b
+    BEHAVIOR:
+    • --user-prompt: Sets prompt in ~/.claude/CLAUDE.md (global for all projects)
+    • Default: Sets prompt in project CLAUDE.md (walks up directory tree to find it)
+
+    \b
+    FEATURES:
+    • Detects existing CIDX sections and replaces them (no duplicates)
+    • Preserves existing file content and formatting
+    • Normalizes line endings to LF (Unix style)
+    • Uses current project context to generate relevant instructions
+
+    \b
+    EXAMPLES:
+      cidx set-claude-prompt                 # Set in project CLAUDE.md
+      cidx set-claude-prompt --user-prompt  # Set in user's global CLAUDE.md
+
+    \b
+    REQUIREMENTS:
+    • For project mode: CLAUDE.md must exist in current directory or parent directories
+    • For user mode: ~/.claude/ directory will be created if needed
+    """
+    from .services.claude_prompt_setter import ClaudePromptSetter
+
+    try:
+        # Get current directory for codebase context
+        current_dir = Path.cwd()
+        setter = ClaudePromptSetter(current_dir)
+
+        if user_prompt:
+            # Set in user's global CLAUDE.md
+            console.print("🔧 Setting CIDX prompt in user's global CLAUDE.md...")
+            success = setter.set_user_prompt()
+
+            if success:
+                user_file = Path.home() / ".claude" / "CLAUDE.md"
+                console.print(f"✅ CIDX prompt set in: {user_file}", style="green")
+                console.print(
+                    "   This will apply to all your Claude Code sessions globally.",
+                    style="dim",
+                )
+            else:
+                console.print("❌ Failed to set user prompt", style="red")
+                sys.exit(1)
+        else:
+            # Set in project CLAUDE.md
+            console.print("🔧 Searching for project CLAUDE.md file...")
+            success = setter.set_project_prompt(current_dir)
+
+            if success:
+                # Find which file was updated for user feedback
+                project_file = setter._find_project_claude_file(current_dir)
+                console.print(f"✅ CIDX prompt set in: {project_file}", style="green")
+                console.print(
+                    "   This will apply to Claude Code sessions in this project.",
+                    style="dim",
+                )
+            else:
+                console.print("❌ No project CLAUDE.md file found", style="red")
+                console.print(
+                    "   Searched up directory tree from current location.", style="dim"
+                )
+                console.print(
+                    "   Create a CLAUDE.md file first, or use --user-prompt for global setting.",
+                    style="dim",
+                )
+                sys.exit(1)
+
+        # Show next steps
+        console.print("\n💡 Next steps:", style="blue")
+        console.print(
+            "   • The CIDX semantic search instructions are now available to Claude"
+        )
+        console.print(
+            "   • Claude will use 'cidx query' for intelligent code discovery"
+        )
+        console.print(
+            "   • Test with: claude 'How does authentication work in this codebase?'"
+        )
+
+    except Exception as e:
+        console.print(f"❌ Error setting Claude prompt: {e}", style="red")
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
 def main():
     """Main entry point."""
     try:
