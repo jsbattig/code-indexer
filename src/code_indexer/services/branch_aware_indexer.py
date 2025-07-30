@@ -630,7 +630,7 @@ class BranchAwareIndexer:
                                 success = self.qdrant_client._batch_update_points(
                                     points_to_update,
                                     collection_name,
-                                    trace_id="WORKING_DIR_HIDE_COMMITTED",
+                                    "WORKING_DIR_HIDE_COMMITTED",
                                 )
                                 if success:
                                     logger.debug(
@@ -691,7 +691,7 @@ class BranchAwareIndexer:
                                 success = self.qdrant_client._batch_update_points(
                                     points_to_update,
                                     collection_name,
-                                    trace_id="COMMITTED_HIDE_WORKING_DIR",
+                                    "COMMITTED_HIDE_WORKING_DIR",
                                 )
                                 if success:
                                     logger.debug(
