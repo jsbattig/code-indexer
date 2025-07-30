@@ -325,9 +325,10 @@ class TestEmbeddingProviderIntegration:
         config = Config()
         config.embedding_provider = "ollama"
 
-        with patch("httpx.Client.get") as mock_get, patch(
-            "httpx.Client.post"
-        ) as mock_post:
+        with (
+            patch("httpx.Client.get") as mock_get,
+            patch("httpx.Client.post") as mock_post,
+        ):
             # Mock health check
             mock_get.return_value.status_code = 200
 
@@ -357,9 +358,12 @@ class TestEmbeddingProviderIntegration:
         config = Config()
         config.embedding_provider = "voyage-ai"
 
-        with patch.dict(os.environ, {"VOYAGE_API_KEY": "test_key"}), patch(
-            "code_indexer.services.voyage_ai.VoyageAIClient._make_sync_request"
-        ) as mock_request:
+        with (
+            patch.dict(os.environ, {"VOYAGE_API_KEY": "test_key"}),
+            patch(
+                "code_indexer.services.voyage_ai.VoyageAIClient._make_sync_request"
+            ) as mock_request,
+        ):
             # Mock API responses
             mock_request.return_value = {
                 "data": [{"embedding": [0.1, 0.2, 0.3, 0.4]}],

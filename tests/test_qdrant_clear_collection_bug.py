@@ -326,9 +326,10 @@ def test_clean_data_failure_scenario():
         }
     }
 
-    with patch.object(client.client, "get") as mock_get, patch.object(
-        client, "clear_collection"
-    ) as mock_clear:
+    with (
+        patch.object(client.client, "get") as mock_get,
+        patch.object(client, "clear_collection") as mock_clear,
+    ):
 
         # Mock the collections list call
         mock_response = Mock()

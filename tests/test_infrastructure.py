@@ -480,6 +480,16 @@ class TestProjectInventory:
         embedding_provider=EmbeddingProvider.VOYAGE_AI,
     )
 
+    DOCKER_UNINSTALL_COMPLETE_CLEANUP = ProjectTestConfig(
+        name="docker_uninstall_complete_cleanup",
+        collection_base_name="test_docker_uninstall_cleanup",
+        chunk_size=1000,
+        chunk_overlap=100,
+        voyage_ai_batch_size=64,
+        voyage_ai_parallel_requests=4,
+        embedding_provider=EmbeddingProvider.VOYAGE_AI,
+    )
+
     @classmethod
     def create_project_space(
         cls, test_dir: Path, project_config: ProjectTestConfig

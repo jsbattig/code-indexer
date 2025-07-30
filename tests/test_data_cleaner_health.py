@@ -27,15 +27,12 @@ class TestDataCleanerHealth:
         mock_get_timeouts.return_value = {"data_cleaner_startup": 180}
 
         # Mock data cleaner running check and start
-        with patch.object(
-            self.docker_manager, "start_data_cleaner"
-        ) as mock_start, patch(
-            "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run, patch.object(
-            self.docker_manager, "_get_service_url"
-        ) as mock_get_url, patch.object(
-            self.docker_manager, "_get_available_runtime"
-        ) as mock_runtime:
+        with (
+            patch.object(self.docker_manager, "start_data_cleaner") as mock_start,
+            patch("code_indexer.services.docker_manager.subprocess.run") as mock_run,
+            patch.object(self.docker_manager, "_get_service_url") as mock_get_url,
+            patch.object(self.docker_manager, "_get_available_runtime") as mock_runtime,
+        ):
             mock_start.return_value = True
             mock_get_url.return_value = "http://localhost:8091"
             mock_runtime.return_value = "docker"  # Use docker for consistent mocking
@@ -80,15 +77,12 @@ class TestDataCleanerHealth:
         mock_get_timeouts.return_value = {"data_cleaner_startup": 180}
 
         # Mock data cleaner start
-        with patch.object(
-            self.docker_manager, "start_data_cleaner"
-        ) as mock_start, patch(
-            "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run, patch.object(
-            self.docker_manager, "_get_service_url"
-        ) as mock_get_url, patch.object(
-            self.docker_manager, "_get_available_runtime"
-        ) as mock_runtime:
+        with (
+            patch.object(self.docker_manager, "start_data_cleaner") as mock_start,
+            patch("code_indexer.services.docker_manager.subprocess.run") as mock_run,
+            patch.object(self.docker_manager, "_get_service_url") as mock_get_url,
+            patch.object(self.docker_manager, "_get_available_runtime") as mock_runtime,
+        ):
             mock_start.return_value = True
             mock_get_url.return_value = "http://localhost:8091"
             mock_runtime.return_value = "docker"  # Use docker for consistent mocking
@@ -157,10 +151,13 @@ class TestDataCleanerHealth:
 
             return mock_result
 
-        with patch(
-            "code_indexer.services.docker_manager.subprocess.run",
-            side_effect=mock_subprocess_calls,
-        ), patch.object(self.docker_manager, "_get_service_url") as mock_get_url:
+        with (
+            patch(
+                "code_indexer.services.docker_manager.subprocess.run",
+                side_effect=mock_subprocess_calls,
+            ),
+            patch.object(self.docker_manager, "_get_service_url") as mock_get_url,
+        ):
             mock_get_url.return_value = "http://localhost:8091"
 
             result = self.docker_manager.clean_with_data_cleaner(["/data/test"])
@@ -185,15 +182,12 @@ class TestDataCleanerHealth:
         mock_wait_service.return_value = True
 
         # Mock data cleaner start
-        with patch.object(
-            self.docker_manager, "start_data_cleaner"
-        ) as mock_start, patch(
-            "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run, patch.object(
-            self.docker_manager, "_get_service_url"
-        ) as mock_get_url, patch.object(
-            self.docker_manager, "_get_available_runtime"
-        ) as mock_runtime:
+        with (
+            patch.object(self.docker_manager, "start_data_cleaner") as mock_start,
+            patch("code_indexer.services.docker_manager.subprocess.run") as mock_run,
+            patch.object(self.docker_manager, "_get_service_url") as mock_get_url,
+            patch.object(self.docker_manager, "_get_available_runtime") as mock_runtime,
+        ):
             mock_start.return_value = True
             mock_get_url.return_value = "http://localhost:8091"
             mock_runtime.return_value = "docker"  # Use docker for consistent mocking
@@ -234,11 +228,10 @@ class TestDataCleanerHealth:
         mock_get_timeouts.return_value = {"data_cleaner_startup": 180}
 
         # Mock data cleaner start failure
-        with patch.object(
-            self.docker_manager, "start_data_cleaner"
-        ) as mock_start, patch(
-            "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run:
+        with (
+            patch.object(self.docker_manager, "start_data_cleaner") as mock_start,
+            patch("code_indexer.services.docker_manager.subprocess.run") as mock_run,
+        ):
             mock_start.return_value = False  # Start failed
             mock_run.return_value.returncode = 0
             mock_run.return_value.stdout = ""  # Data cleaner not running initially
@@ -312,17 +305,15 @@ class TestDataCleanerIntegration:
     def test_clean_with_data_cleaner_workflow(self):
         """Test the complete data cleaner workflow."""
         # Mock all external dependencies
-        with patch.object(
-            self.docker_manager, "start_data_cleaner"
-        ) as mock_start, patch.object(
-            self.docker_manager.health_checker, "wait_for_service_ready"
-        ) as mock_health, patch(
-            "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run, patch.object(
-            self.docker_manager, "_get_service_url"
-        ) as mock_get_url, patch.object(
-            self.docker_manager, "_get_available_runtime"
-        ) as mock_runtime:
+        with (
+            patch.object(self.docker_manager, "start_data_cleaner") as mock_start,
+            patch.object(
+                self.docker_manager.health_checker, "wait_for_service_ready"
+            ) as mock_health,
+            patch("code_indexer.services.docker_manager.subprocess.run") as mock_run,
+            patch.object(self.docker_manager, "_get_service_url") as mock_get_url,
+            patch.object(self.docker_manager, "_get_available_runtime") as mock_runtime,
+        ):
             # Setup mocks for successful workflow
             mock_start.return_value = True
             mock_health.return_value = True
@@ -359,17 +350,15 @@ class TestDataCleanerIntegration:
     def test_data_cleaner_error_propagation(self):
         """Test that data cleaner errors are properly propagated."""
         # Mock health check failure
-        with patch.object(
-            self.docker_manager, "start_data_cleaner"
-        ) as mock_start, patch.object(
-            self.docker_manager.health_checker, "wait_for_service_ready"
-        ) as mock_health, patch(
-            "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run, patch.object(
-            self.docker_manager, "_get_service_url"
-        ) as mock_get_url, patch.object(
-            self.docker_manager, "_get_available_runtime"
-        ) as mock_runtime:
+        with (
+            patch.object(self.docker_manager, "start_data_cleaner") as mock_start,
+            patch.object(
+                self.docker_manager.health_checker, "wait_for_service_ready"
+            ) as mock_health,
+            patch("code_indexer.services.docker_manager.subprocess.run") as mock_run,
+            patch.object(self.docker_manager, "_get_service_url") as mock_get_url,
+            patch.object(self.docker_manager, "_get_available_runtime") as mock_runtime,
+        ):
             mock_start.return_value = True
             mock_health.return_value = False  # Health check fails
             mock_get_url.return_value = "http://localhost:8091"

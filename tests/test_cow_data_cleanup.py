@@ -186,11 +186,11 @@ class TestCoWDataCleanup:
         mock_response.status_code = 200
 
         # Mock the CoW cleanup methods and HTTP client
-        with patch.object(self.client, "client") as mock_http_client, patch.object(
-            self.client, "_get_cow_storage_path"
-        ) as mock_get_path, patch.object(
-            self.client, "_cleanup_cow_storage_with_path"
-        ) as mock_cleanup:
+        with (
+            patch.object(self.client, "client") as mock_http_client,
+            patch.object(self.client, "_get_cow_storage_path") as mock_get_path,
+            patch.object(self.client, "_cleanup_cow_storage_with_path") as mock_cleanup,
+        ):
 
             mock_http_client.delete.return_value = mock_response
             mock_get_path.return_value = Path(str(get_local_tmp_dir() / "test/path"))
@@ -217,11 +217,11 @@ class TestCoWDataCleanup:
         mock_response.status_code = 500  # Server error
 
         # Mock the CoW cleanup methods and HTTP client
-        with patch.object(self.client, "client") as mock_http_client, patch.object(
-            self.client, "_get_cow_storage_path"
-        ) as mock_get_path, patch.object(
-            self.client, "_cleanup_cow_storage_with_path"
-        ) as mock_cleanup:
+        with (
+            patch.object(self.client, "client") as mock_http_client,
+            patch.object(self.client, "_get_cow_storage_path") as mock_get_path,
+            patch.object(self.client, "_cleanup_cow_storage_with_path") as mock_cleanup,
+        ):
 
             mock_http_client.delete.return_value = mock_response
             mock_get_path.return_value = Path(str(get_local_tmp_dir() / "test/path"))

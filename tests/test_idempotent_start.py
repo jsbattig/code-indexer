@@ -74,11 +74,12 @@ class TestIdempotentStart:
         self.create_config(test_dir, "ollama")
 
         # Mock Docker operations
-        with patch(
-            "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run, patch(
-            "code_indexer.services.docker_manager.subprocess.Popen"
-        ) as mock_popen:
+        with (
+            patch("code_indexer.services.docker_manager.subprocess.run") as mock_run,
+            patch(
+                "code_indexer.services.docker_manager.subprocess.Popen"
+            ) as mock_popen,
+        ):
             mock_run.return_value.returncode = 0
             mock_run.return_value.stdout = "Docker is available"
 
@@ -104,11 +105,10 @@ class TestIdempotentStart:
             docker_manager = DockerManager(console=None, force_docker=True)
 
             # Mock all services as healthy
-            with patch.object(
-                docker_manager, "get_service_state"
-            ) as mock_state, patch.object(
-                docker_manager, "wait_for_services"
-            ) as mock_wait:
+            with (
+                patch.object(docker_manager, "get_service_state") as mock_state,
+                patch.object(docker_manager, "wait_for_services") as mock_wait,
+            ):
                 mock_state.return_value = {
                     "exists": True,
                     "running": True,
@@ -134,13 +134,14 @@ class TestIdempotentStart:
 
         runner = CliRunner()
 
-        with patch("code_indexer.cli.DockerManager") as mock_docker_class, patch(
-            "code_indexer.cli.EmbeddingProviderFactory"
-        ) as mock_factory, patch(
-            "code_indexer.cli.QdrantClient"
-        ) as mock_qdrant_class, patch(
-            "code_indexer.services.legacy_detector.legacy_detector.check_legacy_container",
-            return_value=False,
+        with (
+            patch("code_indexer.cli.DockerManager") as mock_docker_class,
+            patch("code_indexer.cli.EmbeddingProviderFactory") as mock_factory,
+            patch("code_indexer.cli.QdrantClient") as mock_qdrant_class,
+            patch(
+                "code_indexer.services.legacy_detector.legacy_detector.check_legacy_container",
+                return_value=False,
+            ),
         ):
             # Setup mocks
             mock_docker = MagicMock()
@@ -196,13 +197,14 @@ class TestIdempotentStart:
 
         runner = CliRunner()
 
-        with patch("code_indexer.cli.DockerManager") as mock_docker_class, patch(
-            "code_indexer.cli.EmbeddingProviderFactory"
-        ) as mock_factory, patch(
-            "code_indexer.cli.QdrantClient"
-        ) as mock_qdrant_class, patch(
-            "code_indexer.services.legacy_detector.legacy_detector.check_legacy_container",
-            return_value=False,
+        with (
+            patch("code_indexer.cli.DockerManager") as mock_docker_class,
+            patch("code_indexer.cli.EmbeddingProviderFactory") as mock_factory,
+            patch("code_indexer.cli.QdrantClient") as mock_qdrant_class,
+            patch(
+                "code_indexer.services.legacy_detector.legacy_detector.check_legacy_container",
+                return_value=False,
+            ),
         ):
             # Setup mocks
             mock_docker = MagicMock()
@@ -261,11 +263,12 @@ class TestIdempotentStart:
 
         self.create_config(test_dir, "ollama")
 
-        with patch(
-            "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run, patch(
-            "code_indexer.services.docker_manager.subprocess.Popen"
-        ) as mock_popen:
+        with (
+            patch("code_indexer.services.docker_manager.subprocess.run") as mock_run,
+            patch(
+                "code_indexer.services.docker_manager.subprocess.Popen"
+            ) as mock_popen,
+        ):
             mock_run.return_value.returncode = 0
 
             # Mock Popen for Docker Compose up
@@ -297,12 +300,10 @@ class TestIdempotentStart:
             docker_manager = DockerManager(console=None, force_docker=True)
 
             # Mock additional methods to prevent hanging
-            with patch.object(
-                docker_manager, "get_service_state"
-            ) as mock_state, patch.object(
-                docker_manager, "_update_config_with_ports"
-            ), patch.object(
-                docker_manager, "wait_for_services", return_value=True
+            with (
+                patch.object(docker_manager, "get_service_state") as mock_state,
+                patch.object(docker_manager, "_update_config_with_ports"),
+                patch.object(docker_manager, "wait_for_services", return_value=True),
             ):
 
                 mock_state.return_value = {

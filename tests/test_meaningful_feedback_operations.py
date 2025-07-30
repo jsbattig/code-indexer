@@ -297,15 +297,19 @@ venv/
         }
 
         # Mock git topology service and other dependencies
-        with patch.object(
-            smart_indexer.git_topology_service,
-            "get_current_branch",
-            return_value="feature-branch",
-        ), patch.object(
-            smart_indexer.git_topology_service, "analyze_branch_change"
-        ) as mock_analyze, patch.object(
-            smart_indexer.branch_aware_indexer, "index_branch_changes"
-        ) as mock_index_changes:
+        with (
+            patch.object(
+                smart_indexer.git_topology_service,
+                "get_current_branch",
+                return_value="feature-branch",
+            ),
+            patch.object(
+                smart_indexer.git_topology_service, "analyze_branch_change"
+            ) as mock_analyze,
+            patch.object(
+                smart_indexer.branch_aware_indexer, "index_branch_changes"
+            ) as mock_index_changes,
+        ):
 
             # Set up mock analysis
             mock_analysis = Mock()

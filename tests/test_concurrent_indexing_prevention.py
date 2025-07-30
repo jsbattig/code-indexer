@@ -90,15 +90,15 @@ class TestConcurrentIndexingPrevention:
                 def run_indexing(indexer, indexer_name):
                     """Run indexing and track results."""
                     try:
-                        with patch.object(
-                            indexer.branch_aware_indexer,
-                            "index_branch_changes",
-                            side_effect=slow_index_branch_changes,
-                        ), patch.object(
-                            indexer, "get_git_status"
-                        ) as mock_git_status, patch.object(
-                            indexer, "file_finder"
-                        ) as mock_file_finder:
+                        with (
+                            patch.object(
+                                indexer.branch_aware_indexer,
+                                "index_branch_changes",
+                                side_effect=slow_index_branch_changes,
+                            ),
+                            patch.object(indexer, "get_git_status") as mock_git_status,
+                            patch.object(indexer, "file_finder") as mock_file_finder,
+                        ):
 
                             mock_git_status.return_value = {"git_available": False}
                             mock_file_finder.find_files.return_value = [
@@ -230,13 +230,13 @@ class TestConcurrentIndexingPrevention:
                 # Should be able to start indexing since heartbeat is stale
                 # This will fail initially since heartbeat mechanism doesn't exist yet
 
-                with patch.object(
-                    indexer, "get_git_status"
-                ) as mock_git_status, patch.object(
-                    indexer, "file_finder"
-                ) as mock_file_finder, patch.object(
-                    indexer.branch_aware_indexer, "index_branch_changes"
-                ) as mock_index_branch:
+                with (
+                    patch.object(indexer, "get_git_status") as mock_git_status,
+                    patch.object(indexer, "file_finder") as mock_file_finder,
+                    patch.object(
+                        indexer.branch_aware_indexer, "index_branch_changes"
+                    ) as mock_index_branch,
+                ):
 
                     mock_git_status.return_value = {"git_available": False}
                     mock_file_finder.find_files.return_value = [
@@ -309,13 +309,13 @@ class TestConcurrentIndexingPrevention:
                 for file_name in test_files:
                     (Path(tmpdir) / file_name).write_text("print('hello')")
 
-                with patch.object(
-                    indexer, "get_git_status"
-                ) as mock_git_status, patch.object(
-                    indexer, "file_finder"
-                ) as mock_file_finder, patch.object(
-                    indexer.branch_aware_indexer, "index_branch_changes"
-                ) as mock_index_branch:
+                with (
+                    patch.object(indexer, "get_git_status") as mock_git_status,
+                    patch.object(indexer, "file_finder") as mock_file_finder,
+                    patch.object(
+                        indexer.branch_aware_indexer, "index_branch_changes"
+                    ) as mock_index_branch,
+                ):
 
                     mock_git_status.return_value = {"git_available": False}
                     mock_file_finder.find_files.return_value = [

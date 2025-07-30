@@ -138,11 +138,10 @@ class TestDockerComposeValidation:
         self.create_config(test_dir, "ollama")
 
         # Mock Docker operations and ConfigManager to return ollama provider
-        with patch(
-            "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run, patch(
-            "code_indexer.config.ConfigManager"
-        ) as mock_config_manager:
+        with (
+            patch("code_indexer.services.docker_manager.subprocess.run") as mock_run,
+            patch("code_indexer.config.ConfigManager") as mock_config_manager,
+        ):
             mock_run.return_value.returncode = 0
 
             # Mock the ConfigManager to return ollama as embedding provider
@@ -273,15 +272,14 @@ class TestDockerComposeValidation:
             )
 
             # Mock individual state check methods
-            with patch.object(
-                docker_manager, "_container_exists"
-            ) as mock_exists, patch.object(
-                docker_manager, "_container_running"
-            ) as mock_running, patch.object(
-                docker_manager, "_container_healthy"
-            ) as mock_healthy, patch.object(
-                docker_manager, "_container_up_to_date"
-            ) as mock_up_to_date:
+            with (
+                patch.object(docker_manager, "_container_exists") as mock_exists,
+                patch.object(docker_manager, "_container_running") as mock_running,
+                patch.object(docker_manager, "_container_healthy") as mock_healthy,
+                patch.object(
+                    docker_manager, "_container_up_to_date"
+                ) as mock_up_to_date,
+            ):
                 # Test different scenarios
                 test_cases = [
                     # exists, running, healthy, up_to_date
@@ -330,11 +328,12 @@ class TestDockerComposeValidation:
 
             self.create_config(test_dir, provider)
 
-            with patch(
-                "code_indexer.services.docker_manager.subprocess.run"
-            ) as mock_run, patch(
-                "code_indexer.config.ConfigManager"
-            ) as mock_config_manager:
+            with (
+                patch(
+                    "code_indexer.services.docker_manager.subprocess.run"
+                ) as mock_run,
+                patch("code_indexer.config.ConfigManager") as mock_config_manager,
+            ):
                 mock_run.return_value.returncode = 0
 
                 # Mock the ConfigManager to return the current provider
@@ -385,11 +384,10 @@ class TestDockerComposeValidation:
 
         self.create_config(test_dir, "ollama")
 
-        with patch(
-            "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run, patch(
-            "code_indexer.config.ConfigManager"
-        ) as mock_config_manager:
+        with (
+            patch("code_indexer.services.docker_manager.subprocess.run") as mock_run,
+            patch("code_indexer.config.ConfigManager") as mock_config_manager,
+        ):
             mock_run.return_value.returncode = 0
 
             # Mock the ConfigManager to return ollama as embedding provider

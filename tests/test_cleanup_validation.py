@@ -72,11 +72,10 @@ class TestCleanupValidation:
         mock_wait_containers_stopped.return_value = False
 
         # Mock the compose command and subprocess to avoid actual Docker calls
-        with patch.object(
-            self.docker_manager, "get_compose_command"
-        ) as mock_compose, patch(
-            "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run:
+        with (
+            patch.object(self.docker_manager, "get_compose_command") as mock_compose,
+            patch("code_indexer.services.docker_manager.subprocess.run") as mock_run,
+        ):
             mock_compose.return_value = ["docker-compose"]
             mock_run.return_value.returncode = 0
             mock_run.return_value.stdout = ""
@@ -100,11 +99,10 @@ class TestCleanupValidation:
     def test_cleanup_validation_disabled(self, mock_wait_containers_stopped):
         """Test cleanup without validation."""
         # Mock the compose command and subprocess to avoid actual Docker calls
-        with patch.object(
-            self.docker_manager, "get_compose_command"
-        ) as mock_compose, patch(
-            "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run:
+        with (
+            patch.object(self.docker_manager, "get_compose_command") as mock_compose,
+            patch("code_indexer.services.docker_manager.subprocess.run") as mock_run,
+        ):
             mock_compose.return_value = ["docker-compose"]
             mock_run.return_value.returncode = 0
             mock_run.return_value.stdout = ""
@@ -123,11 +121,14 @@ class TestCleanupValidation:
         mock_wait_ports.return_value = True
 
         # Mock container runtime detection and container checking
-        with patch.object(
-            self.docker_manager, "_get_available_runtime", return_value="podman"
-        ), patch(
-            "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_subprocess:
+        with (
+            patch.object(
+                self.docker_manager, "_get_available_runtime", return_value="podman"
+            ),
+            patch(
+                "code_indexer.services.docker_manager.subprocess.run"
+            ) as mock_subprocess,
+        ):
             mock_subprocess.return_value.stdout = ""  # No containers running
             mock_subprocess.return_value.returncode = 0
 
@@ -155,11 +156,14 @@ class TestCleanupValidation:
         )  # Port 11434 still in use
 
         # Mock container runtime detection and container checking
-        with patch.object(
-            self.docker_manager, "_get_available_runtime", return_value="podman"
-        ), patch(
-            "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_subprocess:
+        with (
+            patch.object(
+                self.docker_manager, "_get_available_runtime", return_value="podman"
+            ),
+            patch(
+                "code_indexer.services.docker_manager.subprocess.run"
+            ) as mock_subprocess,
+        ):
             mock_subprocess.return_value.stdout = ""  # No containers running
             mock_subprocess.return_value.returncode = 0
 
@@ -187,13 +191,13 @@ class TestCleanupValidation:
             console=self.mock_console, project_name="test_shared", force_docker=True
         )
 
-        with patch.object(
-            docker_manager.health_checker, "wait_for_containers_stopped"
-        ) as mock_wait_containers_stopped, patch.object(
-            docker_manager, "get_compose_command"
-        ) as mock_compose, patch(
-            "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run:
+        with (
+            patch.object(
+                docker_manager.health_checker, "wait_for_containers_stopped"
+            ) as mock_wait_containers_stopped,
+            patch.object(docker_manager, "get_compose_command") as mock_compose,
+            patch("code_indexer.services.docker_manager.subprocess.run") as mock_run,
+        ):
             mock_compose.return_value = ["docker-compose"]
             mock_run.return_value.returncode = 0
             mock_run.return_value.stdout = ""
@@ -217,11 +221,10 @@ class TestCleanupValidation:
         mock_wait_containers_stopped.return_value = True
 
         # Mock the compose command and subprocess to avoid actual Docker calls
-        with patch.object(
-            self.docker_manager, "get_compose_command"
-        ) as mock_compose, patch(
-            "code_indexer.services.docker_manager.subprocess.run"
-        ) as mock_run:
+        with (
+            patch.object(self.docker_manager, "get_compose_command") as mock_compose,
+            patch("code_indexer.services.docker_manager.subprocess.run") as mock_run,
+        ):
             mock_compose.return_value = ["docker-compose"]
             mock_run.return_value.returncode = 0
             mock_run.return_value.stdout = ""

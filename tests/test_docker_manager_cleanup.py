@@ -50,9 +50,12 @@ class TestDockerManagerCleanup:
 
     def test_force_cleanup_containers_success(self, docker_manager, mock_console):
         """Test successful force cleanup of containers"""
-        with patch.object(
-            docker_manager, "_get_available_runtime", return_value="podman"
-        ), patch("subprocess.run") as mock_run:
+        with (
+            patch.object(
+                docker_manager, "_get_available_runtime", return_value="podman"
+            ),
+            patch("subprocess.run") as mock_run,
+        ):
             # Mock container listing showing 2 containers
             mock_run.side_effect = [
                 Mock(
@@ -77,9 +80,12 @@ class TestDockerManagerCleanup:
 
     def test_force_cleanup_containers_failure(self, docker_manager, mock_console):
         """Test force cleanup when containers fail to remove"""
-        with patch.object(
-            docker_manager, "_get_available_runtime", return_value="podman"
-        ), patch("subprocess.run") as mock_run:
+        with (
+            patch.object(
+                docker_manager, "_get_available_runtime", return_value="podman"
+            ),
+            patch("subprocess.run") as mock_run,
+        ):
             # Mock subprocess failure
             mock_run.side_effect = subprocess.CalledProcessError(1, "podman")
 
@@ -114,11 +120,13 @@ class TestDockerManagerCleanup:
 
     def test_cleanup_data_directories_success(self, docker_manager, mock_console):
         """Test successful data directory cleanup"""
-        with patch("pathlib.Path.exists") as mock_exists, patch(
-            "shutil.rmtree"
-        ) as mock_rmtree, patch.object(
-            docker_manager, "_cleanup_global_directories"
-        ) as mock_global_cleanup:
+        with (
+            patch("pathlib.Path.exists") as mock_exists,
+            patch("shutil.rmtree") as mock_rmtree,
+            patch.object(
+                docker_manager, "_cleanup_global_directories"
+            ) as mock_global_cleanup,
+        ):
             mock_exists.return_value = True
             mock_global_cleanup.return_value = True
 
@@ -130,11 +138,13 @@ class TestDockerManagerCleanup:
 
     def test_cleanup_data_directories_failure(self, docker_manager, mock_console):
         """Test data directory cleanup with failures"""
-        with patch("pathlib.Path.exists") as mock_exists, patch(
-            "shutil.rmtree"
-        ) as mock_rmtree, patch.object(
-            docker_manager, "_cleanup_global_directories"
-        ) as mock_global_cleanup:
+        with (
+            patch("pathlib.Path.exists") as mock_exists,
+            patch("shutil.rmtree") as mock_rmtree,
+            patch.object(
+                docker_manager, "_cleanup_global_directories"
+            ) as mock_global_cleanup,
+        ):
             mock_exists.return_value = True
             mock_rmtree.side_effect = PermissionError("Access denied")
             mock_global_cleanup.return_value = False
@@ -179,13 +189,14 @@ class TestDockerManagerCleanup:
 
     def test_cleanup_global_directories_test_mode(self, docker_manager, mock_console):
         """Test global directory cleanup in test mode"""
-        with patch.dict(
-            os.environ, {"CODE_INDEXER_DUAL_ENGINE_TEST_MODE": "true"}
-        ), patch("pathlib.Path.exists") as mock_exists, patch(
-            "shutil.rmtree"
-        ) as mock_rmtree, patch.object(
-            docker_manager, "_fix_directory_permissions"
-        ) as mock_fix_perms:
+        with (
+            patch.dict(os.environ, {"CODE_INDEXER_DUAL_ENGINE_TEST_MODE": "true"}),
+            patch("pathlib.Path.exists") as mock_exists,
+            patch("shutil.rmtree") as mock_rmtree,
+            patch.object(
+                docker_manager, "_fix_directory_permissions"
+            ) as mock_fix_perms,
+        ):
             mock_exists.return_value = True
 
             result = docker_manager._cleanup_global_directories(
@@ -201,9 +212,10 @@ class TestDockerManagerCleanup:
     ):
         """Test global directory cleanup in production mode"""
         # Don't clear environment variables - it breaks other tests and isn't needed here
-        with patch("pathlib.Path.exists") as mock_exists, patch(
-            "shutil.rmtree"
-        ) as mock_rmtree:
+        with (
+            patch("pathlib.Path.exists") as mock_exists,
+            patch("shutil.rmtree") as mock_rmtree,
+        ):
             mock_exists.return_value = True
 
             result = docker_manager._cleanup_global_directories(
@@ -215,21 +227,19 @@ class TestDockerManagerCleanup:
 
     def test_enhanced_cleanup_integration(self, docker_manager, mock_console):
         """Test the full enhanced cleanup process"""
-        with patch.object(
-            docker_manager, "get_compose_command"
-        ) as mock_compose_cmd, patch.object(
-            docker_manager, "compose_file"
-        ) as mock_compose_file, patch(
-            "subprocess.run"
-        ) as mock_run, patch.object(
-            docker_manager, "_cleanup_data_directories"
-        ) as mock_cleanup_data, patch.object(
-            docker_manager, "_validate_cleanup"
-        ) as mock_validate, patch.object(
-            docker_manager, "stop_main_services"
-        ) as mock_stop_main, patch.object(
-            docker_manager, "clean_with_data_cleaner"
-        ) as mock_data_cleaner:
+        with (
+            patch.object(docker_manager, "get_compose_command") as mock_compose_cmd,
+            patch.object(docker_manager, "compose_file") as mock_compose_file,
+            patch("subprocess.run") as mock_run,
+            patch.object(
+                docker_manager, "_cleanup_data_directories"
+            ) as mock_cleanup_data,
+            patch.object(docker_manager, "_validate_cleanup") as mock_validate,
+            patch.object(docker_manager, "stop_main_services") as mock_stop_main,
+            patch.object(
+                docker_manager, "clean_with_data_cleaner"
+            ) as mock_data_cleaner,
+        ):
             # Setup mocks
             mock_compose_cmd.return_value = ["podman-compose"]
             mock_compose_file.exists.return_value = True
@@ -250,23 +260,18 @@ class TestDockerManagerCleanup:
 
     def test_enhanced_cleanup_with_failures(self, docker_manager, mock_console):
         """Test enhanced cleanup when some operations fail"""
-        with patch.object(
-            docker_manager, "get_compose_command"
-        ) as mock_compose_cmd, patch.object(
-            docker_manager, "compose_file"
-        ) as mock_compose_file, patch(
-            "subprocess.run"
-        ) as mock_run, patch.object(
-            docker_manager, "_cleanup_data_directories"
-        ) as mock_cleanup_data, patch.object(
-            docker_manager, "_validate_cleanup"
-        ) as mock_validate, patch.object(
-            docker_manager, "stop_main_services"
-        ) as mock_stop_main, patch.object(
-            docker_manager, "clean_with_data_cleaner"
-        ) as mock_clean_data, patch.object(
-            docker_manager, "stop_data_cleaner"
-        ) as mock_stop_cleaner:
+        with (
+            patch.object(docker_manager, "get_compose_command") as mock_compose_cmd,
+            patch.object(docker_manager, "compose_file") as mock_compose_file,
+            patch("subprocess.run") as mock_run,
+            patch.object(
+                docker_manager, "_cleanup_data_directories"
+            ) as mock_cleanup_data,
+            patch.object(docker_manager, "_validate_cleanup") as mock_validate,
+            patch.object(docker_manager, "stop_main_services") as mock_stop_main,
+            patch.object(docker_manager, "clean_with_data_cleaner") as mock_clean_data,
+            patch.object(docker_manager, "stop_data_cleaner") as mock_stop_cleaner,
+        ):
             # Setup mocks for failure scenarios
             mock_compose_cmd.return_value = ["podman-compose"]
             mock_compose_file.exists.return_value = True
@@ -339,9 +344,12 @@ class TestCleanupErrorHandling:
 
     def test_subprocess_timeout_handling(self, docker_manager):
         """Test handling of subprocess timeouts"""
-        with patch.object(
-            docker_manager, "_get_available_runtime", return_value="podman"
-        ), patch("subprocess.run") as mock_run:
+        with (
+            patch.object(
+                docker_manager, "_get_available_runtime", return_value="podman"
+            ),
+            patch("subprocess.run") as mock_run,
+        ):
             mock_run.side_effect = subprocess.TimeoutExpired("podman", 10)
 
             result = docker_manager._force_cleanup_containers(verbose=True)
@@ -350,9 +358,10 @@ class TestCleanupErrorHandling:
 
     def test_permission_error_handling(self, docker_manager):
         """Test handling of permission errors during cleanup"""
-        with patch("pathlib.Path.exists") as mock_exists, patch(
-            "shutil.rmtree"
-        ) as mock_rmtree:
+        with (
+            patch("pathlib.Path.exists") as mock_exists,
+            patch("shutil.rmtree") as mock_rmtree,
+        ):
             mock_exists.return_value = True
             mock_rmtree.side_effect = PermissionError("Access denied")
 

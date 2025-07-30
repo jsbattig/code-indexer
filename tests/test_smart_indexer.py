@@ -236,12 +236,13 @@ class TestSmartIndexer:
             mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
         )
 
-        with patch.object(indexer, "get_git_status") as mock_git_status, patch.object(
-            indexer, "file_finder"
-        ) as mock_file_finder, patch.object(
-            indexer.branch_aware_indexer, "index_branch_changes"
-        ) as mock_branch_indexer, patch.object(
-            indexer.branch_aware_indexer, "hide_files_not_in_branch"
+        with (
+            patch.object(indexer, "get_git_status") as mock_git_status,
+            patch.object(indexer, "file_finder") as mock_file_finder,
+            patch.object(
+                indexer.branch_aware_indexer, "index_branch_changes"
+            ) as mock_branch_indexer,
+            patch.object(indexer.branch_aware_indexer, "hide_files_not_in_branch"),
         ):
             # Setup mocks
             mock_git_status.return_value = {"git_available": False}
@@ -274,12 +275,13 @@ class TestSmartIndexer:
             mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
         )
 
-        with patch.object(indexer, "get_git_status") as mock_git_status, patch.object(
-            indexer, "file_finder"
-        ) as mock_file_finder, patch.object(
-            indexer.branch_aware_indexer, "index_branch_changes"
-        ) as mock_branch_indexer, patch.object(
-            indexer.branch_aware_indexer, "hide_files_not_in_branch"
+        with (
+            patch.object(indexer, "get_git_status") as mock_git_status,
+            patch.object(indexer, "file_finder") as mock_file_finder,
+            patch.object(
+                indexer.branch_aware_indexer, "index_branch_changes"
+            ) as mock_branch_indexer,
+            patch.object(indexer.branch_aware_indexer, "hide_files_not_in_branch"),
         ):
             # Setup mocks
             mock_git_status.return_value = {"git_available": False}
@@ -323,14 +325,13 @@ class TestSmartIndexer:
             temp_file_path = Path(temp_file.name)
 
         try:
-            with patch.object(
-                indexer, "get_git_status"
-            ) as mock_git_status, patch.object(
-                indexer, "file_finder"
-            ) as mock_file_finder, patch.object(
-                indexer.branch_aware_indexer, "index_branch_changes"
-            ) as mock_branch_indexer, patch.object(
-                indexer.branch_aware_indexer, "hide_files_not_in_branch"
+            with (
+                patch.object(indexer, "get_git_status") as mock_git_status,
+                patch.object(indexer, "file_finder") as mock_file_finder,
+                patch.object(
+                    indexer.branch_aware_indexer, "index_branch_changes"
+                ) as mock_branch_indexer,
+                patch.object(indexer.branch_aware_indexer, "hide_files_not_in_branch"),
             ):
                 # Setup mocks - use the same git_status as the pre-populated metadata
                 mock_git_status.return_value = git_status
@@ -391,9 +392,10 @@ class TestSmartIndexer:
             mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
         )
 
-        with patch.object(indexer, "get_git_status") as mock_git_status, patch.object(
-            indexer, "file_finder"
-        ) as mock_file_finder:
+        with (
+            patch.object(indexer, "get_git_status") as mock_git_status,
+            patch.object(indexer, "file_finder") as mock_file_finder,
+        ):
             # Setup mocks
             mock_git_status.return_value = git_status
             mock_file_finder.find_modified_files.return_value = []  # No changes
@@ -486,12 +488,13 @@ class TestSmartIndexer:
             mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
         )
 
-        with patch.object(indexer, "get_git_status") as mock_git_status, patch.object(
-            indexer, "file_finder"
-        ) as mock_file_finder, patch.object(
-            indexer.branch_aware_indexer, "index_branch_changes"
-        ) as mock_branch_indexer, patch.object(
-            indexer.branch_aware_indexer, "hide_files_not_in_branch"
+        with (
+            patch.object(indexer, "get_git_status") as mock_git_status,
+            patch.object(indexer, "file_finder") as mock_file_finder,
+            patch.object(
+                indexer.branch_aware_indexer, "index_branch_changes"
+            ) as mock_branch_indexer,
+            patch.object(indexer.branch_aware_indexer, "hide_files_not_in_branch"),
         ):
             # Setup mocks - different provider now
             mock_git_status.return_value = git_status

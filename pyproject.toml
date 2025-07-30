@@ -76,14 +76,14 @@ path = "src/code_indexer/__init__.py"
 
 [tool.black]
 line-length = 88
-target-version = ["py38"]
+target-version = ["py39"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py38"
+target-version = "py39"
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false

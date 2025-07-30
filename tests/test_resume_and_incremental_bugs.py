@@ -100,14 +100,14 @@ class TestResumeAndIncrementalBugs:
                     )
 
                 # First indexing run - should do full index
-                with patch.object(
-                    indexer, "get_git_status"
-                ) as mock_git_status, patch.object(
-                    indexer, "file_finder"
-                ) as mock_file_finder, patch.object(
-                    indexer.branch_aware_indexer,
-                    "index_branch_changes",
-                    side_effect=track_first_run,
+                with (
+                    patch.object(indexer, "get_git_status") as mock_git_status,
+                    patch.object(indexer, "file_finder") as mock_file_finder,
+                    patch.object(
+                        indexer.branch_aware_indexer,
+                        "index_branch_changes",
+                        side_effect=track_first_run,
+                    ),
                 ):
 
                     mock_git_status.return_value = {"git_available": False}
@@ -132,14 +132,14 @@ class TestResumeAndIncrementalBugs:
                 time.sleep(0.1)
 
                 # Second indexing run - should be incremental and find NO changes
-                with patch.object(
-                    indexer, "get_git_status"
-                ) as mock_git_status, patch.object(
-                    indexer, "file_finder"
-                ) as mock_file_finder, patch.object(
-                    indexer.branch_aware_indexer,
-                    "index_branch_changes",
-                    side_effect=track_second_run,
+                with (
+                    patch.object(indexer, "get_git_status") as mock_git_status,
+                    patch.object(indexer, "file_finder") as mock_file_finder,
+                    patch.object(
+                        indexer.branch_aware_indexer,
+                        "index_branch_changes",
+                        side_effect=track_second_run,
+                    ),
                 ):
 
                     mock_git_status.return_value = {"git_available": False}
@@ -268,14 +268,14 @@ class TestResumeAndIncrementalBugs:
                     )
 
                 # First run - simulate cancellation
-                with patch.object(
-                    indexer, "get_git_status"
-                ) as mock_git_status, patch.object(
-                    indexer, "file_finder"
-                ) as mock_file_finder, patch.object(
-                    indexer.branch_aware_indexer,
-                    "index_branch_changes",
-                    side_effect=simulate_cancel_midway,
+                with (
+                    patch.object(indexer, "get_git_status") as mock_git_status,
+                    patch.object(indexer, "file_finder") as mock_file_finder,
+                    patch.object(
+                        indexer.branch_aware_indexer,
+                        "index_branch_changes",
+                        side_effect=simulate_cancel_midway,
+                    ),
                 ):
 
                     mock_git_status.return_value = {"git_available": False}
@@ -300,14 +300,14 @@ class TestResumeAndIncrementalBugs:
                 )
 
                 # Second run - should resume, not start from scratch
-                with patch.object(
-                    indexer, "get_git_status"
-                ) as mock_git_status, patch.object(
-                    indexer, "file_finder"
-                ) as mock_file_finder, patch.object(
-                    indexer.branch_aware_indexer,
-                    "index_branch_changes",
-                    side_effect=track_resume_run,
+                with (
+                    patch.object(indexer, "get_git_status") as mock_git_status,
+                    patch.object(indexer, "file_finder") as mock_file_finder,
+                    patch.object(
+                        indexer.branch_aware_indexer,
+                        "index_branch_changes",
+                        side_effect=track_resume_run,
+                    ),
                 ):
 
                     mock_git_status.return_value = {"git_available": False}
@@ -393,14 +393,14 @@ class TestResumeAndIncrementalBugs:
                     raise KeyboardInterrupt("Simulated cancellation")
 
                 # Simulate cancellation during indexing
-                with patch.object(
-                    indexer, "get_git_status"
-                ) as mock_git_status, patch.object(
-                    indexer, "file_finder"
-                ) as mock_file_finder, patch.object(
-                    indexer.branch_aware_indexer,
-                    "index_branch_changes",
-                    side_effect=simulate_cancel_after_setup,
+                with (
+                    patch.object(indexer, "get_git_status") as mock_git_status,
+                    patch.object(indexer, "file_finder") as mock_file_finder,
+                    patch.object(
+                        indexer.branch_aware_indexer,
+                        "index_branch_changes",
+                        side_effect=simulate_cancel_after_setup,
+                    ),
                 ):
 
                     mock_git_status.return_value = {"git_available": False}
