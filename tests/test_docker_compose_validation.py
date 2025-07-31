@@ -85,7 +85,10 @@ class TestDockerComposeValidation:
             config_manager = ConfigManager.create_with_backtrack(test_dir)
             config = config_manager.load()
 
-            docker_manager = DockerManager(console=None, force_docker=True)
+            project_config_dir = test_dir / ".code-indexer"
+            docker_manager = DockerManager(
+                console=None, force_docker=True, project_config_dir=project_config_dir
+            )
 
             # Test required services
             required_services = docker_manager.get_required_services(
@@ -118,7 +121,10 @@ class TestDockerComposeValidation:
             config_manager = ConfigManager.create_with_backtrack(test_dir)
             config = config_manager.load()
 
-            docker_manager = DockerManager(console=None, force_docker=True)
+            project_config_dir = test_dir / ".code-indexer"
+            docker_manager = DockerManager(
+                console=None, force_docker=True, project_config_dir=project_config_dir
+            )
 
             # Test required services
             required_services = docker_manager.get_required_services(
@@ -153,9 +159,11 @@ class TestDockerComposeValidation:
 
             from code_indexer.services.docker_manager import DockerManager
 
+            project_config_dir = test_dir / ".code-indexer"
             docker_manager = DockerManager(
                 console=None,
                 force_docker=True,
+                project_config_dir=project_config_dir,
             )
 
             # Generate compose config with proper port allocation
@@ -218,9 +226,11 @@ class TestDockerComposeValidation:
 
             from code_indexer.services.docker_manager import DockerManager
 
+            project_config_dir = test_dir / ".code-indexer"
             docker_manager = DockerManager(
                 console=None,
                 force_docker=True,
+                project_config_dir=project_config_dir,
             )
 
             # Generate compose config with proper port allocation
@@ -266,9 +276,11 @@ class TestDockerComposeValidation:
 
             from code_indexer.services.docker_manager import DockerManager
 
+            project_config_dir = test_dir / ".code-indexer"
             docker_manager = DockerManager(
                 console=None,
                 force_docker=True,
+                project_config_dir=project_config_dir,
             )
 
             # Mock individual state check methods
@@ -399,9 +411,11 @@ class TestDockerComposeValidation:
 
             from code_indexer.services.docker_manager import DockerManager
 
+            project_config_dir = test_dir / ".code-indexer"
             docker_manager = DockerManager(
                 console=None,
                 force_docker=True,
+                project_config_dir=project_config_dir,
             )
 
             # Generate compose config with proper port allocation
@@ -432,9 +446,8 @@ class TestDockerComposeValidation:
             ollama_volumes = services["ollama"]["volumes"]
 
             # Qdrant should use project-specific bind mount (CoW architecture)
-            assert any(
-                "/.code-indexer/qdrant:/qdrant/storage" in vol for vol in qdrant_volumes
-            )
+            # The volume should be relative path from project root: ./qdrant:/qdrant/storage
+            assert any("./qdrant:/qdrant/storage" in vol for vol in qdrant_volumes)
             # Ollama should use named volume
             assert any("ollama_data" in vol for vol in ollama_volumes)
 

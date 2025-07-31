@@ -268,8 +268,9 @@ class TestMultiProjectIntegration:
         original_cwd = Path.cwd()
         try:
             os.chdir(project1_path)
-            docker_manager1 = (
-                DockerManager()
+            project_config_dir1 = project1_path / ".code-indexer"
+            docker_manager1 = DockerManager(
+                project_config_dir=project_config_dir1
             )  # No explicit project name for auto-detection
             assert docker_manager1.project_name == "project1"
         finally:
@@ -278,8 +279,9 @@ class TestMultiProjectIntegration:
         # Test project 2 - auto-detection (no explicit project name)
         try:
             os.chdir(project2_path)
-            docker_manager2 = (
-                DockerManager()
+            project_config_dir2 = project2_path / ".code-indexer"
+            docker_manager2 = DockerManager(
+                project_config_dir=project_config_dir2
             )  # No explicit project name for auto-detection
             assert docker_manager2.project_name == "project2"
         finally:
@@ -294,7 +296,10 @@ class TestMultiProjectIntegration:
         original_cwd = Path.cwd()
         try:
             os.chdir(project1_path)
-            docker_manager1 = DockerManager(project_name="test_shared")
+            project_config_dir1 = project1_path / ".code-indexer"
+            docker_manager1 = DockerManager(
+                project_name="test_shared", project_config_dir=project_config_dir1
+            )
             project_config1 = docker_manager1._generate_container_names(project1_path)
             qdrant_name1 = docker_manager1.get_container_name("qdrant", project_config1)
         finally:
@@ -302,7 +307,10 @@ class TestMultiProjectIntegration:
 
         try:
             os.chdir(project2_path)
-            docker_manager2 = DockerManager(project_name="test_shared")
+            project_config_dir2 = project2_path / ".code-indexer"
+            docker_manager2 = DockerManager(
+                project_name="test_shared", project_config_dir=project_config_dir2
+            )
             project_config2 = docker_manager2._generate_container_names(project2_path)
             qdrant_name2 = docker_manager2.get_container_name("qdrant", project_config2)
         finally:
@@ -327,7 +335,10 @@ class TestMultiProjectIntegration:
         original_cwd = Path.cwd()
         try:
             os.chdir(project1_path)
-            docker_manager = DockerManager(project_name="test_shared")
+            project_config_dir = project1_path / ".code-indexer"
+            docker_manager = DockerManager(
+                project_name="test_shared", project_config_dir=project_config_dir
+            )
 
             # Generate compose configuration with mock project config to avoid port conflicts
             # This test focuses on compose structure, not actual service startup
@@ -651,8 +662,9 @@ class TestMultiProjectIntegration:
                 original_cwd = Path.cwd()
                 try:
                     os.chdir(test_dir)
-                    docker_manager = (
-                        DockerManager()
+                    project_config_dir = test_dir / ".code-indexer"
+                    docker_manager = DockerManager(
+                        project_config_dir=project_config_dir
                     )  # No explicit project name for auto-detection
                     assert docker_manager.project_name == expected_name
                 finally:

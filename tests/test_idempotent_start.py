@@ -1,6 +1,5 @@
 """Tests for idempotent start behavior."""
 
-import os
 import pytest
 
 import json
@@ -102,7 +101,10 @@ class TestIdempotentStart:
             # Save the updated config back to the config manager
             config_manager.save(config)
 
-            docker_manager = DockerManager(console=None, force_docker=True)
+            project_config_dir = test_dir / ".code-indexer"
+            docker_manager = DockerManager(
+                console=None, force_docker=True, project_config_dir=project_config_dir
+            )
 
             # Mock all services as healthy
             with (
@@ -187,6 +189,8 @@ class TestIdempotentStart:
 
     def test_idempotent_start_voyage_ai_no_ollama(self, idempotent_start_test_repo):
         """Test that VoyageAI setup doesn't involve Ollama at all."""
+        import os
+
         test_dir = idempotent_start_test_repo
 
         os.environ["VOYAGE_API_KEY"] = "test_key"
@@ -235,8 +239,15 @@ class TestIdempotentStart:
             mock_qdrant.ensure_collection.return_value = True
             mock_qdrant_class.return_value = mock_qdrant
 
-            # Run start command
-            result = runner.invoke(cli, ["start", "--quiet"])
+            # Run start command in test directory context
+            import os
+
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(test_dir)
+                result = runner.invoke(cli, ["start", "--quiet"])
+            finally:
+                os.chdir(original_cwd)
 
             assert result.exit_code == 0
 
@@ -297,7 +308,10 @@ class TestIdempotentStart:
             # Save the updated config back to the config manager
             config_manager.save(config)
 
-            docker_manager = DockerManager(console=None, force_docker=True)
+            project_config_dir = test_dir / ".code-indexer"
+            docker_manager = DockerManager(
+                console=None, force_docker=True, project_config_dir=project_config_dir
+            )
 
             # Mock additional methods to prevent hanging
             with (

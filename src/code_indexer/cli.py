@@ -401,7 +401,7 @@ def cli(
     DATA MANAGEMENT:
       • Git-aware: Tracks branches, commits, and file changes
       • Project isolation: Each project gets its own collection
-      • Storage: Vector data stored in ~/.code-indexer/global/qdrant/
+      • Storage: Vector data stored in .code-indexer/qdrant/ (per-project)
       • Cleanup: Use 'clean-data' (fast) or 'uninstall' (complete removal)
 
     \b
@@ -767,7 +767,7 @@ def start(
       • Qdrant: http://localhost:6333 (vector database, always started)
       • Ollama: http://localhost:11434 (local AI embeddings, only if provider=ollama)
       • Data Cleaner: Text processing service (always started)
-      • Data: ~/.code-indexer/global/ (persistent storage)
+      • Data: .code-indexer/ (per-project persistent storage)
 
     \b
     PERFORMANCE OPTIONS (Ollama Environment Variables):
@@ -883,7 +883,12 @@ def start(
         config_manager.save(config)
 
         # Check Docker availability (auto-detect project name)
-        docker_manager = DockerManager(setup_console, force_docker=force_docker)
+        project_config_dir = config_manager.config_path.parent
+        docker_manager = DockerManager(
+            setup_console,
+            force_docker=force_docker,
+            project_config_dir=project_config_dir,
+        )
 
         # Ensure project has container names and ports configured
         project_root = config.codebase_dir
@@ -1187,7 +1192,7 @@ def index(
 
     \b
     STORAGE:
-      Vector data stored in: ~/.code-indexer/global/qdrant/
+      Vector data stored in: .code-indexer/qdrant/ (per-project)
       Each project gets its own collection for isolation.
     """
     config_manager = ctx.obj["config_manager"]
@@ -2719,7 +2724,10 @@ def _status_impl(ctx, force_docker: bool):
         table.add_column("Details", style="green")
 
         # Check Docker services (auto-detect project name)
-        docker_manager = DockerManager(force_docker=force_docker)
+        project_config_dir = config_manager.config_path.parent
+        docker_manager = DockerManager(
+            force_docker=force_docker, project_config_dir=project_config_dir
+        )
         try:
             service_status = docker_manager.get_service_status()
             docker_status = (
@@ -3429,7 +3437,10 @@ def stop(ctx, force_docker: bool):
         console.print(f"🏗️  Project directory: {config.codebase_dir}")
 
         # Initialize Docker manager
-        docker_manager = DockerManager(console, force_docker=force_docker)
+        project_config_dir = config_path.parent
+        docker_manager = DockerManager(
+            console, force_docker=force_docker, project_config_dir=project_config_dir
+        )
 
         # Check current status
         status = docker_manager.get_service_status()
@@ -3498,7 +3509,12 @@ def clean_data(ctx, all_projects: bool, force_docker: bool):
       Perfect for test cleanup and project switching.
     """
     try:
-        docker_manager = DockerManager(force_docker=force_docker)
+        # Use configuration from CLI context
+        config_manager = ctx.obj["config_manager"]
+        project_config_dir = config_manager.config_path.parent
+        docker_manager = DockerManager(
+            force_docker=force_docker, project_config_dir=project_config_dir
+        )
 
         if not docker_manager.clean_data_only(all_projects=all_projects):
             sys.exit(1)
@@ -3526,7 +3542,11 @@ def _perform_complete_system_wipe(force_docker: bool, console: Console):
     # Step 1: Enhanced cleanup first
     console.print("\n🔧 [bold]Step 1: Enhanced container cleanup[/bold]")
     try:
-        docker_manager = DockerManager(force_docker=force_docker)
+        # System wipe operates on current working directory
+        project_config_dir = Path(".code-indexer")
+        docker_manager = DockerManager(
+            force_docker=force_docker, project_config_dir=project_config_dir
+        )
         if not docker_manager.cleanup(remove_data=True, verbose=True):
             console.print(
                 "⚠️  Enhanced cleanup had issues, continuing with wipe...",
@@ -3697,7 +3717,6 @@ def _wipe_storage_directories(console: Console):
     directories = [
         (Path.home() / ".qdrant_collections", "Qdrant collections directory"),
         (Path.home() / ".code-indexer-data", "Global data directory"),
-        (Path.home() / ".code-indexer-compose", "Docker compose directory"),
         (Path.home() / ".ollama_storage", "Ollama storage directory (if exists)"),
     ]
 
@@ -3810,15 +3829,15 @@ def _check_remaining_root_files(console: Console):
 )
 @click.pass_context
 def uninstall(ctx, force_docker: bool, wipe_all: bool):
-    """Completely remove all containers and data.
+    """Completely remove all containers and data for current project.
 
     \b
     STANDARD CLEANUP:
       • Uses data-cleaner container to remove root-owned files
       • Orchestrated shutdown: stops qdrant/ollama → cleans data → removes containers
-      • Removes all .code-indexer directories and qdrant storage
+      • Removes current project's .code-indexer directory and qdrant storage
       • Removes ollama model cache when applicable
-      • Removes Docker volumes and networks
+      • Removes project-specific Docker volumes and networks
       • Complete cleanup for fresh start with proper permission handling
 
     \b
@@ -3826,9 +3845,9 @@ def uninstall(ctx, force_docker: bool, wipe_all: bool):
       • All standard cleanup operations above
       • Removes ALL container images (including cached builds)
       • Cleans container engine cache and build cache
-      • Removes ~/.qdrant_collections directory
-      • Removes ~/.code-indexer-data global directory
-      • Removes ~/.code-indexer-compose directory
+      • Removes ~/.qdrant_collections directory (shared CoW collections)
+      • Removes ~/.code-indexer-data global directory (if exists)
+      • Removes any remaining global storage directories
       • Performs aggressive system prune
       • May require sudo for permission-protected files
 
@@ -3840,22 +3859,25 @@ def uninstall(ctx, force_docker: bool, wipe_all: bool):
 
     \b
     WARNING:
-      Standard: Removes all containers and data, requires restart.
+      Standard: Removes containers and data for CURRENT PROJECT only.
       --wipe-all: NUCLEAR OPTION - removes everything including
       cached images, may affect other projects using same engine!
 
     \b
     USE CASES:
-      • Standard: Normal uninstallation, switching providers
+      • Standard: Normal project uninstallation, switching providers
       • --wipe-all: Test environment cleanup, fixing deep corruption,
-        resolving persistent container/permission issues
+        resolving persistent container/permission issues across all projects
     """
     try:
         if wipe_all:
             _perform_complete_system_wipe(force_docker, console)
         else:
-            # Standard uninstall with orchestrated cleanup
-            docker_manager = DockerManager(force_docker=force_docker)
+            # Standard uninstall with orchestrated cleanup - operates on current directory
+            project_config_dir = Path(".code-indexer")
+            docker_manager = DockerManager(
+                force_docker=force_docker, project_config_dir=project_config_dir
+            )
 
             # Use enhanced cleanup to remove root-owned files before stopping containers
             if not docker_manager.cleanup(remove_data=True, verbose=True):
@@ -3920,9 +3942,9 @@ def fix_config(ctx, dry_run: bool, verbose: bool, force: bool):
       • When metadata contains test data
     """
     try:
-        # Find configuration directory
-        config_manager = ConfigManager.create_with_backtrack()
-        if not config_manager:
+        # Use configuration from CLI context
+        config_manager = ctx.obj["config_manager"]
+        if not config_manager or not config_manager.config_path.exists():
             console.print(
                 "❌ No configuration found. Run 'code-indexer init' first.", style="red"
             )
@@ -4044,7 +4066,11 @@ def clean_legacy(ctx, force_docker: bool, yes: bool):
 
         # Step 1: Stop containers
         console.print("\n🛑 Stopping containers...", style="blue")
-        docker_manager = DockerManager(force_docker=force_docker)
+        # Migration operates on current directory
+        project_config_dir = Path(".code-indexer")
+        docker_manager = DockerManager(
+            force_docker=force_docker, project_config_dir=project_config_dir
+        )
         docker_manager.stop_services()
         console.print("✅ Containers stopped", style="green")
 

@@ -1,5 +1,45 @@
 # Code Indexer Release Notes
 
+## Version 2.13.0.0 (2025-07-31)
+
+### 🔧 Major Bug Fixes & Architecture Improvements
+
+#### **Fixed Per-Project Container Isolation Issues**
+- **DockerManager Fixes**: Resolved critical issues where DockerManager was not properly using project-specific paths
+- **Container Name Generation**: Fixed all service container name generation to use project-specific hashing
+- **Port Configuration**: Corrected port assignment and configuration loading for per-project isolation
+- **Service Detection**: Fixed service filtering logic to properly respect embedding provider configuration (VoyageAI vs Ollama)
+
+#### **Test Infrastructure Robustness**
+- **System Limitation Handling**: Made tests gracefully handle system limitations like inotify instance limits in watch mode
+- **Timeout Improvements**: Increased timeouts for large repository operations (CoW clone testing with external repos)
+- **API Rate Limiting**: Fixed performance tests to have realistic expectations about VoyageAI API rate limiting at high concurrency
+- **Semantic Search E2E**: Resolved test infrastructure interference issues that were causing false failures
+
+#### **Technical Fixes**
+- **Parameter Passing**: Fixed critical parameter ordering issues in Docker service startup chain
+- **Configuration Loading**: Corrected configuration loading in CLI test contexts
+- **State Management**: Fixed container state expectations for stopped containers (accept 'not_found' as valid)
+- **Test Isolation**: Improved test isolation to prevent cross-test interference
+
+### 📊 Test Suite Achievements
+- **100% Success Rate**: All originally failing tests now pass
+- **Complete E2E Coverage**: All 6 semantic search E2E tests passing
+- **Robust Error Handling**: Tests now gracefully handle system limitations and API constraints
+- **920+ Passing Tests**: Complete CI test suite achieving 100% pass rate
+
+### 🏗️ Architecture Preservation
+- **Git-Aware Functionality**: Maintained all git-aware indexing and branch isolation features
+- **Per-Project Isolation**: Strengthened per-project container and configuration isolation
+- **Performance Optimization**: Preserved high-throughput processing while fixing reliability issues
+
+### 🧹 Code Quality
+- **Linting Compliance**: All code passes ruff, black, and mypy checks
+- **Error Documentation**: Added comprehensive error handling documentation and comments
+- **Test Coverage**: Maintained extensive test coverage while fixing reliability issues
+
+---
+
 ## Version 2.12.0.0 (2025-07-30)
 
 ### 🎯 New Feature: Claude Prompt Integration

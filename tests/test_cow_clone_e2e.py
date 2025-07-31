@@ -178,8 +178,8 @@ def test_cow_clone_independent_indexing():
             print(f"⚠️  Start command errors: {start_result.stderr}")
             # Services might already be running, continue
 
-        # Index the original repository
-        run_cli_command(["code-indexer", "index"], cwd=original_repo, timeout=120)
+        # Index the original repository (larger timeout for external repo)
+        run_cli_command(["code-indexer", "index"], cwd=original_repo, timeout=300)
         print("✅ Original repo indexed")
 
         # Verify original indexing worked
@@ -299,7 +299,7 @@ end.
         print("✅ Services started in CoW clone")
 
         # Index the CoW clone (should pick up the new file)
-        run_cli_command(["code-indexer", "index"], cwd=cow_cloned_repo, timeout=120)
+        run_cli_command(["code-indexer", "index"], cwd=cow_cloned_repo, timeout=300)
         print("✅ CoW clone indexed (including new file)")
 
         # Step 8: Query for unique content

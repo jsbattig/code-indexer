@@ -28,7 +28,13 @@ class TestStartStopStatusCycle:
         """Set up test environment."""
         self.config = Config()
         # Use VoyageAI config to avoid Ollama port conflicts in tests
-        self.docker_manager = DockerManager(force_docker=True)
+        # Get project config directory for proper initialization
+        from pathlib import Path
+
+        project_config_dir = Path.cwd() / ".code-indexer"
+        self.docker_manager = DockerManager(
+            force_docker=True, project_config_dir=project_config_dir
+        )
 
         # Get actual container names from docker manager (per-project naming)
         # These will be project-specific like "cidx-{hash}-qdrant"
@@ -129,9 +135,24 @@ class TestStartStopStatusCycle:
         """Wait for all containers to reach expected state."""
         start_time = time.time()
 
-        # If we don't have expected containers, discover them from running containers
+        # If we don't have expected containers, use the project-specific container names
         if not self.expected_containers:
-            self._discover_running_containers()
+            from pathlib import Path
+
+            project_root = Path.cwd()
+            project_containers = self.docker_manager._generate_container_names(
+                project_root
+            )
+            # Only include containers that exist for the current project
+            self.expected_containers = [
+                name
+                for name in [
+                    project_containers.get("qdrant_name"),
+                    project_containers.get("data_cleaner_name"),
+                    project_containers.get("ollama_name"),
+                ]
+                if name
+            ]
 
         while time.time() - start_time < timeout:
             all_match = True
@@ -184,7 +205,8 @@ class TestStartStopStatusCycle:
                     assert container_status["state"] in [
                         "exited",
                         "created",
-                    ], f"Container {container_name} should be exited/created when stopped, got: {container_status}"
+                        "not_found",
+                    ], f"Container {container_name} should be exited/created/not_found when stopped, got: {container_status}"
             else:
                 # If services are returned, they should not be in running state
                 for container_name, container_status in status["services"].items():

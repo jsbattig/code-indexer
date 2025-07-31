@@ -827,7 +827,9 @@ class ConfigurationRepairer:
             project_root = self.config_dir.parent.absolute()
 
             # Initialize DockerManager to get project-specific values
-            docker_manager = DockerManager(project_name=project_root.name)
+            docker_manager = DockerManager(
+                project_name=project_root.name, project_config_dir=self.config_dir
+            )
 
             # Generate new project hash and container names
             container_info = docker_manager._generate_container_names(project_root)
@@ -850,7 +852,7 @@ class ConfigurationRepairer:
     def _regenerate_port_assignments(self, project_hash: str) -> Dict[str, int]:
         """Regenerate port assignments based on project hash."""
         try:
-            docker_manager = DockerManager()
+            docker_manager = DockerManager(project_config_dir=self.config_dir)
             ports = docker_manager._calculate_project_ports(project_hash)
             return cast(Dict[str, int], ports)
         except Exception as e:
@@ -860,7 +862,7 @@ class ConfigurationRepairer:
     def _regenerate_container_names(self, project_root: Path) -> Dict[str, str]:
         """Regenerate container names based on project root path."""
         try:
-            docker_manager = DockerManager()
+            docker_manager = DockerManager(project_config_dir=self.config_dir)
             names = docker_manager._generate_container_names(project_root)
             return cast(Dict[str, str], names)
         except Exception as e:

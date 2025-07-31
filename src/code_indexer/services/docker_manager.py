@@ -22,11 +22,13 @@ class DockerManager:
         console: Optional[Console] = None,
         project_name: Optional[str] = None,
         force_docker: bool = False,
+        project_config_dir: Optional[Path] = None,
     ):
         self.console = console or Console()
         self.force_docker = force_docker
         self.project_name = project_name or self._detect_project_name()
-        self.compose_file = self._get_global_compose_file_path()
+        self.project_config_dir = project_config_dir or Path(".code-indexer")
+        self.compose_file = self._get_project_compose_file_path()
         self._config = self._load_service_config()
         self.health_checker = HealthChecker()
         self.indexing_root: Optional[Path] = (
@@ -89,9 +91,9 @@ class DockerManager:
 
         return sanitized
 
-    def _get_global_compose_file_path(self) -> Path:
-        """Get the path to the global compose file stored in the home directory."""
-        return get_global_compose_file_path(self.force_docker)
+    def _get_project_compose_file_path(self) -> Path:
+        """Get the path to the project-specific compose file stored in the project directory."""
+        return get_project_compose_file_path(self.project_config_dir, self.force_docker)
 
     def _load_service_config(self) -> Dict[str, Any]:
         """Load service configuration from code-indexer.yaml if it exists."""
@@ -938,6 +940,7 @@ class DockerManager:
 
         # Load project configuration using backtracking
         from ..config import ConfigManager
+        from pathlib import Path
 
         config_manager = ConfigManager.create_with_backtrack()
         config = config_manager.load()
@@ -1050,9 +1053,18 @@ class DockerManager:
                 )
                 # Ensure ALL mount directories exist before restarting containers
                 self._ensure_all_mount_paths_exist(project_root, required_services)
+
+                # Create proper project_config combining container names and ports
+                restart_project_config = {
+                    **container_names,  # Contains qdrant_name, ollama_name, etc.
+                    **{
+                        k: str(v) for k, v in actual_ports.items()
+                    },  # Convert ports to strings
+                }
+
                 return self._attempt_start_with_ports(
                     required_services,
-                    container_names,
+                    restart_project_config,
                     project_root,
                     recreate,
                     actual_ports,
@@ -1074,9 +1086,17 @@ class DockerManager:
         self._ensure_all_mount_paths_exist(project_root, required_services)
 
         # Now start containers with these permanent ports
+        # Create proper project_config combining container names and ports
+        new_start_project_config = {
+            **container_names,  # Contains qdrant_name, ollama_name, etc.
+            **{
+                k: str(v) for k, v in allocated_ports.items()
+            },  # Convert ports to strings
+        }
+
         return self._attempt_start_with_ports(
             required_services,
-            container_names,
+            new_start_project_config,
             project_root,
             recreate,
             allocated_ports,
@@ -1414,14 +1434,34 @@ class DockerManager:
                         if (
                             hasattr(project_config, "project_containers")
                             and project_config.project_containers
+                            and project_config.project_containers.project_hash  # Ensure it's not empty
                         ):
                             container_name = self.get_container_name(
                                 service, project_config.project_containers
                             )
                         else:
-                            container_name = f"unknown-{service}"
+                            # Generate project configuration from current working directory
+                            from pathlib import Path
+
+                            project_root = Path.cwd()
+                            project_container_names = self._generate_container_names(
+                                project_root
+                            )
+                            container_name = project_container_names.get(
+                                f"{service.replace('-', '_')}_name",
+                                f"unknown-{service}",
+                            )
                     except Exception:
-                        container_name = f"unknown-{service}"
+                        # Generate project configuration from current working directory as fallback
+                        from pathlib import Path
+
+                        project_root = Path.cwd()
+                        project_container_names = self._generate_container_names(
+                            project_root
+                        )
+                        container_name = project_container_names.get(
+                            f"{service.replace('-', '_')}_name", f"unknown-{service}"
+                        )
                     try:
                         start_result = subprocess.run(
                             [runtime, "start", container_name],
@@ -1589,6 +1629,7 @@ class DockerManager:
             if (
                 hasattr(project_config, "project_containers")
                 and project_config.project_containers
+                and project_config.project_containers.project_hash  # Ensure it's not empty
             ):
                 project_containers = project_config.project_containers
                 expected_containers = [
@@ -1597,16 +1638,26 @@ class DockerManager:
                     getattr(project_containers, "data_cleaner_name", "unknown"),
                 ]
             else:
+                # Generate project configuration from current working directory
+                from pathlib import Path
+
+                project_root = Path.cwd()
+                project_container_names = self._generate_container_names(project_root)
                 expected_containers = [
-                    "unknown-qdrant",
-                    "unknown-ollama",
-                    "unknown-data-cleaner",
+                    project_container_names.get("qdrant_name", "unknown"),
+                    project_container_names.get("ollama_name", "unknown"),
+                    project_container_names.get("data_cleaner_name", "unknown"),
                 ]
         except Exception:
+            # Generate project configuration from current working directory
+            from pathlib import Path
+
+            project_root = Path.cwd()
+            project_container_names = self._generate_container_names(project_root)
             expected_containers = [
-                "unknown-qdrant",
-                "unknown-ollama",
-                "unknown-data-cleaner",
+                project_container_names.get("qdrant_name", "unknown"),
+                project_container_names.get("ollama_name", "unknown"),
+                project_container_names.get("data_cleaner_name", "unknown"),
             ]
 
         # Determine runtime: use same logic as compose command selection
@@ -2057,6 +2108,7 @@ class DockerManager:
             if (
                 hasattr(project_config, "project_containers")
                 and project_config.project_containers
+                and project_config.project_containers.project_hash  # Ensure it's not empty
             ):
                 # Convert ProjectContainersConfig to Dict[str, str]
                 project_containers = project_config.project_containers.__dict__
@@ -3677,7 +3729,7 @@ class DockerManager:
         compose_dir = self.compose_file.parent
         try:
             relative_qdrant_path = project_qdrant_dir.relative_to(compose_dir)
-            volume_path = str(relative_qdrant_path)
+            volume_path = f"./{relative_qdrant_path}"  # Ensure it's treated as a path, not named volume
         except ValueError:
             # If relative path calculation fails, fall back to absolute
             volume_path = str(project_qdrant_dir.absolute())
@@ -3738,7 +3790,7 @@ class DockerManager:
         compose_dir = self.compose_file.parent
         try:
             relative_qdrant_path = project_qdrant_dir.relative_to(compose_dir)
-            qdrant_volume_path = str(relative_qdrant_path)
+            qdrant_volume_path = f"./{relative_qdrant_path}"  # Ensure it's treated as a path, not named volume
         except ValueError:
             # If relative path calculation fails, fall back to absolute
             qdrant_volume_path = str(project_qdrant_dir.absolute())
@@ -3779,8 +3831,17 @@ class DockerManager:
         data_dir: Path = Path(".code-indexer"),
     ) -> Dict[str, Any]:
         """Generate Docker Compose configuration for required services only."""
-        # Determine which services are required
-        required_services = self.get_required_services()
+        # Determine which services are required by loading config from project directory
+        try:
+            from ..config import ConfigManager
+
+            config_manager = ConfigManager.create_with_backtrack(project_root)
+            project_config_data = config_manager.load()
+            config_dict = {"embedding_provider": project_config_data.embedding_provider}
+            required_services = self.get_required_services(config_dict)
+        except Exception:
+            # Fallback to default service detection if config loading fails
+            required_services = self.get_required_services()
 
         # Project-specific network
         network_name = self.get_network_name()
@@ -4379,7 +4440,9 @@ class DockerManager:
                     raise RuntimeError(f"Service start failed: {result.stderr}")
 
             # Verify services are actually running and healthy
-            return self.wait_for_services(timeout=180)
+            return self.wait_for_services(
+                timeout=180, project_config=fixed_project_config
+            )
 
         except subprocess.TimeoutExpired:
             self.console.print("❌ Service startup timed out")
@@ -4442,22 +4505,24 @@ class DockerManager:
             self.console.print(f"⚠️  Failed to update configuration with ports: {e}")
 
 
-def get_global_compose_file_path(force_docker: bool = False) -> Path:
-    """Get the path to the global compose file stored in the home directory.
+def get_project_compose_file_path(
+    project_config_dir: Path, force_docker: bool = False
+) -> Path:
+    """Get the path to the project-specific compose file stored in the project's .code-indexer directory.
 
     This is a standalone function that can be used anywhere in the codebase
-    to get the consistent compose file location.
+    to get the consistent compose file location for a specific project.
 
     Args:
+        project_config_dir: Path to the project's .code-indexer directory
         force_docker: Whether Docker is being forced (affects test mode directory)
 
     Returns:
-        Path to the global docker-compose.yml file
+        Path to the project-specific docker-compose.yml file
     """
 
-    # Use a dedicated directory for compose files, separate from data
-    # Now that we use named volumes, we don't need the data directory structure
-    compose_dir = Path.home() / ".code-indexer-compose"
+    # Store compose file in the project's .code-indexer directory
+    compose_dir = project_config_dir
 
     # Ensure the directory exists
     compose_dir.mkdir(parents=True, exist_ok=True)

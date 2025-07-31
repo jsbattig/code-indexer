@@ -98,10 +98,12 @@ class TestDockerManager(unittest.TestCase):
 
     def test_compose_file_path(self):
         """Test that compose file path is set correctly."""
-        docker_manager = DockerManager(project_name="test_shared")
+        docker_manager = DockerManager(
+            project_name="test_shared", project_config_dir=Path(".code-indexer")
+        )
 
-        # The compose file should be in the dedicated compose directory (separated from data)
-        expected_path = Path.home() / ".code-indexer-compose" / "docker-compose.yml"
+        # The compose file should be in the project's .code-indexer directory
+        expected_path = Path(".code-indexer") / "docker-compose.yml"
         self.assertEqual(docker_manager.compose_file, expected_path)
 
     def test_docker_availability_check(self):
