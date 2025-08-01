@@ -571,6 +571,39 @@ def init(
     project_config_path = target_dir / ".code-indexer" / "config.json"
     config_manager = ConfigManager(project_config_path)
 
+    # CRITICAL: Check global port registry writeability before proceeding
+    try:
+        from .services.global_port_registry import GlobalPortRegistry
+
+        # This will test registry writeability during initialization
+        GlobalPortRegistry()
+        console.print("✅ Global port registry accessible")
+    except Exception as e:
+        if "No writable system directory available for port registry" in str(e):
+            console.print("❌ Global port registry not accessible", style="red")
+            console.print(
+                "📋 The global port registry requires write access to system directories.",
+                style="yellow",
+            )
+            console.print(
+                "🔧 Please run the setup script to configure proper permissions:",
+                style="yellow",
+            )
+            console.print("")
+            console.print("   sudo ./setup-global-registry.sh", style="bold cyan")
+            console.print("")
+            console.print(
+                "💡 This creates /var/lib/code-indexer/port-registry with proper permissions",
+                style="yellow",
+            )
+            console.print(
+                "   for multi-user port coordination across projects.", style="yellow"
+            )
+            sys.exit(1)
+        else:
+            # Re-raise other registry errors
+            raise
+
     # Check if config already exists
     if config_manager.config_path.exists() and not force:
         console.print(
@@ -2865,14 +2898,13 @@ def _status_impl(ctx, force_docker: bool):
 
         # Add Qdrant storage and collection information
         try:
-            import os
 
             # Get storage path from configuration instead of container inspection
-            # Use the project-specific storage path
-            project_storage_path = (
-                f"/home/{os.getenv('USER', 'user')}/Dev/code-indexer/.qdrant-storage"
+            # Use the actual project-specific storage path from config
+            project_qdrant_dir = (
+                Path(config.codebase_dir).resolve() / ".code-indexer" / "qdrant"
             )
-            table.add_row("Qdrant Storage", "📁", f"Host:\n{project_storage_path}")
+            table.add_row("Qdrant Storage", "📁", f"Host:\n{project_qdrant_dir}")
 
             # Add current project collection information
             if qdrant_ok and qdrant_client:

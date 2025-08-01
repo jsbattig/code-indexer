@@ -223,24 +223,31 @@ class TestFixConfigPortBugSpecific:
                 config2_after.project_ports, port_name
             ), f"Config2 missing {port_name} after fix-config"
 
-        # All ports should be properly calculated (not default values)
+        # All ports should be valid values allocated by GlobalPortRegistry
         for config_after, config_dir in [
             (config1_after, config1_dir),
             (config2_after, config2_dir),
         ]:
-            from code_indexer.services.docker_manager import DockerManager
-
-            docker_manager = DockerManager()
-            project_root = config_dir.parent.absolute()
-            expected_hash = docker_manager._generate_project_hash(project_root)
-            expected_ports = docker_manager._calculate_project_ports(expected_hash)
-
             actual_ports = {
                 "qdrant_port": config_after.project_ports.qdrant_port,
                 "ollama_port": config_after.project_ports.ollama_port,
                 "data_cleaner_port": config_after.project_ports.data_cleaner_port,
             }
 
+            # Verify ports are in the correct ranges (allocated by GlobalPortRegistry)
             assert (
-                actual_ports == expected_ports
-            ), f"All ports should be correctly calculated for {config_dir}"
+                6333 <= actual_ports["qdrant_port"] <= 7333
+            ), f"qdrant_port {actual_ports['qdrant_port']} not in valid range"
+            assert (
+                11434 <= actual_ports["ollama_port"] <= 12434
+            ), f"ollama_port {actual_ports['ollama_port']} not in valid range"
+            assert (
+                8091 <= actual_ports["data_cleaner_port"] <= 9091
+            ), f"data_cleaner_port {actual_ports['data_cleaner_port']} not in valid range"
+
+            # Verify all ports are valid integers
+            for port_name, port_value in actual_ports.items():
+                assert isinstance(port_value, int), f"{port_name} should be integer"
+                assert (
+                    1024 <= port_value <= 65535
+                ), f"{port_name} {port_value} should be valid port number"

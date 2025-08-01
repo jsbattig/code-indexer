@@ -33,10 +33,15 @@ echo "================================"
 
 # Create a shared test services project
 print_step "Preparing shared test services"
-# CRITICAL: This directory name MUST match what all tests expect in test_infrastructure.py
-# and conftest.py. Changing "shared_test_containers" will break ALL test infrastructure!
-# The name was standardized after fixing inconsistency between setup script and test files.
-SHARED_TEST_DIR="$HOME/.tmp/shared_test_containers"
+
+# Check if we need Docker-specific directory (avoid Docker/Podman permission conflicts)
+if [[ "$FORCE_DOCKER" == "true" || "$1" == "--force-docker" ]]; then
+    SHARED_TEST_DIR="$HOME/.tmp/shared_test_containers_docker"
+    echo "   Using Docker-specific test directory to avoid permission conflicts"
+else
+    SHARED_TEST_DIR="$HOME/.tmp/shared_test_containers"
+    echo "   Using Podman test directory (default)"
+fi
 mkdir -p "$SHARED_TEST_DIR"
 
 # Create minimal project structure

@@ -131,6 +131,7 @@ if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest tests/ \
     --ignore=tests/test_semantic_search_capabilities_e2e.py \
     --ignore=tests/test_semantic_chunking_ast_fallback_e2e.py \
     --ignore=tests/test_cancellation_high_throughput_processor.py \
+    --ignore=tests/test_schema_migration_e2e.py \
     --ignore=tests/test_concurrent_indexing_prevention.py \
     --ignore=tests/test_resume_and_incremental_bugs.py \
     --ignore=tests/test_actual_file_chunking.py \

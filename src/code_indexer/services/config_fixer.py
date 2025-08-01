@@ -835,8 +835,8 @@ class ConfigurationRepairer:
             container_info = docker_manager._generate_container_names(project_root)
             project_hash = container_info["project_hash"]
 
-            # Calculate new port assignments
-            port_assignments = docker_manager._calculate_project_ports(project_hash)
+            # Calculate new port assignments using global port registry
+            port_assignments = docker_manager.allocate_project_ports(project_root)
 
             return {
                 "project_hash": project_hash,
@@ -853,7 +853,7 @@ class ConfigurationRepairer:
         """Regenerate port assignments based on project hash."""
         try:
             docker_manager = DockerManager(project_config_dir=self.config_dir)
-            ports = docker_manager._calculate_project_ports(project_hash)
+            ports = docker_manager.get_project_ports(Path(self.config_dir).parent)
             return cast(Dict[str, int], ports)
         except Exception as e:
             print(f"Warning: Could not regenerate port assignments: {e}")
@@ -962,9 +962,11 @@ class ConfigurationRepairer:
             if new_ports and hasattr(config, "project_ports"):
                 # FIXED: Always set ALL required ports, don't check if they exist first
                 # This ensures CoW clones get complete port regeneration
-                ALL_REQUIRED_PORTS = ["qdrant_port", "ollama_port", "data_cleaner_port"]
+                # Note: ollama_port is only required for ollama embedding provider
+                ALWAYS_REQUIRED_PORTS = ["qdrant_port", "data_cleaner_port"]
+                CONDITIONAL_PORTS = ["ollama_port"]  # Only needed for ollama provider
 
-                for port_name in ALL_REQUIRED_PORTS:
+                for port_name in ALWAYS_REQUIRED_PORTS:
                     if port_name in new_ports:
                         setattr(config.project_ports, port_name, new_ports[port_name])
                     else:
@@ -973,18 +975,26 @@ class ConfigurationRepairer:
                             f"Available ports: {list(new_ports.keys())}"
                         )
 
+                # Handle conditional ports (only set if they exist in new_ports)
+                for port_name in CONDITIONAL_PORTS:
+                    if port_name in new_ports:
+                        setattr(config.project_ports, port_name, new_ports[port_name])
+
             # Update container names - CRITICAL: Ensure ALL required container names exist
             container_names = project_info.get("container_names", {})
             if container_names and hasattr(config, "project_containers"):
                 # FIXED: Always set ALL required container names, don't check conditionally
-                ALL_REQUIRED_CONTAINERS = [
+                # Note: ollama_name is only required for ollama embedding provider
+                ALWAYS_REQUIRED_CONTAINERS = [
                     "project_hash",
                     "qdrant_name",
-                    "ollama_name",
                     "data_cleaner_name",
                 ]
+                CONDITIONAL_CONTAINERS = [
+                    "ollama_name"
+                ]  # Only needed for ollama provider
 
-                for container_field in ALL_REQUIRED_CONTAINERS:
+                for container_field in ALWAYS_REQUIRED_CONTAINERS:
                     if container_field in container_names:
                         setattr(
                             config.project_containers,
@@ -995,6 +1005,15 @@ class ConfigurationRepairer:
                         raise ValueError(
                             f"CRITICAL: {container_field} missing from regenerated containers. "
                             f"Available containers: {list(container_names.keys())}"
+                        )
+
+                # Handle conditional containers (only set if they exist in container_names)
+                for container_field in CONDITIONAL_CONTAINERS:
+                    if container_field in container_names:
+                        setattr(
+                            config.project_containers,
+                            container_field,
+                            container_names[container_field],
                         )
 
         except Exception as e:

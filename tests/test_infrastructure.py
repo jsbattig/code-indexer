@@ -2548,9 +2548,7 @@ class TestSuiteCleanup:
             shared_config_path = shared_dir / ".code-indexer" / "config.json"
             if shared_config_path.exists():
                 try:
-                    config_manager = ConfigManager.from_directory(
-                        shared_config_path.parent.parent
-                    )
+                    config_manager = ConfigManager(shared_config_path)
                     config = config_manager.load()
 
                     qdrant_client = QdrantClient(config.qdrant)

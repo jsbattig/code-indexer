@@ -9,6 +9,7 @@ import json
 import tempfile
 import shutil
 from pathlib import Path
+from unittest.mock import patch, Mock
 
 from code_indexer.services.config_fixer import ConfigurationRepairer
 
@@ -104,15 +105,6 @@ class TestFixConfigPortRegeneration:
 
     def test_fix_config_regenerates_ports_based_on_filesystem_location(self):
         """Test that fix-config generates ports based on actual filesystem location."""
-        # Get the expected project hash based on filesystem location
-        from code_indexer.services.docker_manager import DockerManager
-
-        docker_manager = DockerManager()
-
-        project_root = self.config_dir.parent.absolute()
-        expected_hash = docker_manager._generate_project_hash(project_root)
-        expected_ports = docker_manager._calculate_project_ports(expected_hash)
-
         # Run fix-config
         repairer = ConfigurationRepairer(self.config_dir, dry_run=False)
         repairer.fix_configuration()
@@ -121,20 +113,22 @@ class TestFixConfigPortRegeneration:
         with open(self.config_dir / "config.json", "r") as f:
             fixed_config = json.load(f)
 
-        # Ports should match the calculated ports for this filesystem location
+        # Ports should be allocated by GlobalPortRegistry in valid ranges
         project_ports = fixed_config["project_ports"]
 
+        # Verify ports are in the correct ranges (allocated by GlobalPortRegistry)
         assert (
-            project_ports["qdrant_port"] == expected_ports["qdrant_port"]
-        ), "qdrant_port should be calculated from filesystem location"
+            6333 <= project_ports["qdrant_port"] <= 7333
+        ), f"qdrant_port {project_ports['qdrant_port']} not in valid range"
         assert (
-            project_ports["ollama_port"] == expected_ports["ollama_port"]
-        ), "ollama_port should be calculated from filesystem location"
+            11434 <= project_ports["ollama_port"] <= 12434
+        ), f"ollama_port {project_ports['ollama_port']} not in valid range"
         assert (
-            project_ports["data_cleaner_port"] == expected_ports["data_cleaner_port"]
-        ), "data_cleaner_port should be calculated from filesystem location"
+            8091 <= project_ports["data_cleaner_port"] <= 9091
+        ), f"data_cleaner_port {project_ports['data_cleaner_port']} not in valid range"
 
-    def test_cow_clone_port_independence(self):
+    @patch("code_indexer.services.config_fixer.DockerManager")
+    def test_cow_clone_port_independence(self, mock_docker_manager_class):
         """Test that different filesystem locations get different ports."""
         # Create two different project directories (simulating CoW clones)
         clone1_dir = self.temp_root / "clone1" / ".code-indexer"
@@ -142,6 +136,68 @@ class TestFixConfigPortRegeneration:
 
         clone1_dir.mkdir(parents=True)
         clone2_dir.mkdir(parents=True)
+
+        # Mock DockerManager to return different ports for different paths
+        def create_mock_docker_manager(*args, **kwargs):
+            mock_dm = Mock()
+            # Check project_config_dir to determine which project this is
+            if "project_config_dir" in kwargs:
+                config_dir = kwargs["project_config_dir"]
+                if "clone1" in str(config_dir):
+                    # Clone 1 gets one set of ports
+                    mock_dm._generate_container_names.return_value = {
+                        "project_hash": "clone1hash",
+                        "qdrant_name": "cidx-clone1hash-qdrant",
+                        "ollama_name": "cidx-clone1hash-ollama",
+                        "data_cleaner_name": "cidx-clone1hash-data-cleaner",
+                    }
+                    mock_dm.allocate_project_ports.return_value = {
+                        "qdrant_port": 6400,
+                        "ollama_port": 11500,
+                        "data_cleaner_port": 8200,
+                    }
+                else:
+                    # Clone 2 gets different ports
+                    mock_dm._generate_container_names.return_value = {
+                        "project_hash": "clone2hash",
+                        "qdrant_name": "cidx-clone2hash-qdrant",
+                        "ollama_name": "cidx-clone2hash-ollama",
+                        "data_cleaner_name": "cidx-clone2hash-data-cleaner",
+                    }
+                    mock_dm.allocate_project_ports.return_value = {
+                        "qdrant_port": 6500,
+                        "ollama_port": 11600,
+                        "data_cleaner_port": 8300,
+                    }
+            else:
+                # Default behavior for first creation without project_config_dir
+                if "clone1" in str(args) if args else "clone1":
+                    mock_dm._generate_container_names.return_value = {
+                        "project_hash": "clone1hash",
+                        "qdrant_name": "cidx-clone1hash-qdrant",
+                        "ollama_name": "cidx-clone1hash-ollama",
+                        "data_cleaner_name": "cidx-clone1hash-data-cleaner",
+                    }
+                    mock_dm.allocate_project_ports.return_value = {
+                        "qdrant_port": 6400,
+                        "ollama_port": 11500,
+                        "data_cleaner_port": 8200,
+                    }
+                else:
+                    mock_dm._generate_container_names.return_value = {
+                        "project_hash": "clone2hash",
+                        "qdrant_name": "cidx-clone2hash-qdrant",
+                        "ollama_name": "cidx-clone2hash-ollama",
+                        "data_cleaner_name": "cidx-clone2hash-data-cleaner",
+                    }
+                    mock_dm.allocate_project_ports.return_value = {
+                        "qdrant_port": 6500,
+                        "ollama_port": 11600,
+                        "data_cleaner_port": 8300,
+                    }
+            return mock_dm
+
+        mock_docker_manager_class.side_effect = create_mock_docker_manager
 
         # Create identical configs in both locations
         for config_dir in [clone1_dir, clone2_dir]:
@@ -271,14 +327,20 @@ class TestFixConfigPortRegeneration:
         assert project_ports["qdrant_port"] != 9999, "Old wrong port should be updated"
         assert project_ports["ollama_port"] != 8888, "Old wrong port should be updated"
 
-        # All ports should be properly calculated, not just the missing one
-        from code_indexer.services.docker_manager import DockerManager
-
-        docker_manager = DockerManager()
-        project_root = self.config_dir.parent.absolute()
-        expected_hash = docker_manager._generate_project_hash(project_root)
-        expected_ports = docker_manager._calculate_project_ports(expected_hash)
-
+        # All ports should be in correct ranges (allocated by GlobalPortRegistry)
         assert (
-            project_ports == expected_ports
-        ), "All ports should be completely regenerated, not partially updated"
+            6333 <= project_ports["qdrant_port"] <= 7333
+        ), f"qdrant_port {project_ports['qdrant_port']} not in valid range"
+        assert (
+            11434 <= project_ports["ollama_port"] <= 12434
+        ), f"ollama_port {project_ports['ollama_port']} not in valid range"
+        assert (
+            8091 <= project_ports["data_cleaner_port"] <= 9091
+        ), f"data_cleaner_port {project_ports['data_cleaner_port']} not in valid range"
+
+        # All ports should be valid integers
+        for port_name, port_value in project_ports.items():
+            assert isinstance(port_value, int), f"{port_name} should be integer"
+            assert (
+                1024 <= port_value <= 65535
+            ), f"{port_name} {port_value} should be valid port number"

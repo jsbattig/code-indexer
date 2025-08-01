@@ -42,7 +42,7 @@ def cleanup_all_collections(project_root: Path = None) -> bool:
             return False
 
         try:
-            config_manager = ConfigManager.from_directory(project_root)
+            config_manager = ConfigManager(config_path)
             config = config_manager.load()
 
             # Connect to Qdrant

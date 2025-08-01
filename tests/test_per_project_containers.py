@@ -26,8 +26,8 @@ class TestProjectContainerNaming:
         path1 = Path("/home/user/project")
         path2 = Path("/home/user/project")
 
-        hash1 = dm._generate_project_hash(path1)
-        hash2 = dm._generate_project_hash(path2)
+        hash1 = dm.port_registry._calculate_project_hash(path1)
+        hash2 = dm.port_registry._calculate_project_hash(path2)
 
         assert hash1 == hash2
         assert len(hash1) == 8  # Should be 8 characters
@@ -40,8 +40,8 @@ class TestProjectContainerNaming:
         path1 = Path("/home/user/project1")
         path2 = Path("/home/user/project2")
 
-        hash1 = dm._generate_project_hash(path1)
-        hash2 = dm._generate_project_hash(path2)
+        hash1 = dm.port_registry._calculate_project_hash(path1)
+        hash2 = dm.port_registry._calculate_project_hash(path2)
 
         assert hash1 != hash2
 
@@ -102,21 +102,49 @@ class TestPortAllocation:
         shared_test_path = Path.home() / ".tmp" / "shared_test_containers"
         shared_test_path.mkdir(parents=True, exist_ok=True)
         dm.set_indexing_root(shared_test_path)
-        ports = dm._allocate_free_ports()
 
-        # Should get deterministic ports based on current directory hash
-        assert "qdrant_port" in ports
-        assert "ollama_port" in ports
-        assert "data_cleaner_port" in ports
+        # Mock the port registry to use a temporary directory for tests
+        with tempfile.TemporaryDirectory() as temp_registry_dir:
+            with patch.object(
+                dm.port_registry,
+                "_get_registry_path",
+                return_value=Path(temp_registry_dir),
+            ):
+                # Re-initialize registry structure with temp path
+                dm.port_registry.registry_path = Path(temp_registry_dir)
+                dm.port_registry.active_projects_path = (
+                    Path(temp_registry_dir) / "active-projects"
+                )
+                dm.port_registry.port_allocations_file = (
+                    Path(temp_registry_dir) / "port-allocations.json"
+                )
+                dm.port_registry._ensure_registry_structure()
 
-        # Ports should be in reasonable ranges (base + 0-999)
-        assert 6333 <= ports["qdrant_port"] <= 7333
-        assert 11434 <= ports["ollama_port"] <= 12434
-        assert 8080 <= ports["data_cleaner_port"] <= 9080
+                ports = dm.allocate_project_ports(shared_test_path)
 
-        # Should be deterministic - calling again should return same ports
-        ports2 = dm._allocate_free_ports()
-        assert ports == ports2
+                # Should get ports for all required services
+                assert "qdrant_port" in ports
+                assert "ollama_port" in ports
+                assert "data_cleaner_port" in ports
+
+                # Ports should be in expected ranges
+                assert 6333 <= ports["qdrant_port"] <= 7333
+                assert 11434 <= ports["ollama_port"] <= 12434
+                assert 8091 <= ports["data_cleaner_port"] <= 9091
+
+                # The project should have been registered in the global registry
+                allocated_ports = dm.port_registry.get_all_allocated_ports()
+                assert (
+                    len(allocated_ports) >= 3
+                )  # At least qdrant, ollama, data_cleaner ports allocated
+
+                # Verify the ports are actually allocated to this project
+                project_hash = dm.port_registry._calculate_project_hash(
+                    shared_test_path
+                )
+                for allocated_port, hash_for_port in allocated_ports.items():
+                    if hash_for_port == project_hash:
+                        assert allocated_port in ports.values()
 
     @patch("socket.socket")
     def test_allocate_free_ports_with_conflicts(self, mock_socket):
@@ -132,11 +160,31 @@ class TestPortAllocation:
         shared_test_path.mkdir(parents=True, exist_ok=True)
         dm.set_indexing_root(shared_test_path)
 
-        # Should raise RuntimeError when all collision resolution attempts fail
-        with pytest.raises(
-            RuntimeError, match="Failed to allocate free ports after 10 attempts"
-        ):
-            dm._allocate_free_ports()
+        # Mock the port registry to use a temporary directory for tests
+        with tempfile.TemporaryDirectory() as temp_registry_dir:
+            with patch.object(
+                dm.port_registry,
+                "_get_registry_path",
+                return_value=Path(temp_registry_dir),
+            ):
+                # Re-initialize registry structure with temp path
+                dm.port_registry.registry_path = Path(temp_registry_dir)
+                dm.port_registry.active_projects_path = (
+                    Path(temp_registry_dir) / "active-projects"
+                )
+                dm.port_registry.port_allocations_file = (
+                    Path(temp_registry_dir) / "port-allocations.json"
+                )
+                dm.port_registry._ensure_registry_structure()
+
+                # Should raise PortExhaustionError when no ports are available
+                from code_indexer.services.global_port_registry import (
+                    PortExhaustionError,
+                    PortRegistryError,
+                )
+
+                with pytest.raises((PortExhaustionError, PortRegistryError)):
+                    dm.allocate_project_ports(shared_test_path)
 
     @patch("socket.socket")
     def test_allocate_free_ports_safety_limit(self, mock_socket):
@@ -152,10 +200,31 @@ class TestPortAllocation:
         shared_test_path.mkdir(parents=True, exist_ok=True)
         dm.set_indexing_root(shared_test_path)
 
-        with pytest.raises(
-            RuntimeError, match="Failed to allocate free ports after 10 attempts"
-        ):
-            dm._allocate_free_ports()
+        # Mock the port registry to use a temporary directory for tests
+        with tempfile.TemporaryDirectory() as temp_registry_dir:
+            with patch.object(
+                dm.port_registry,
+                "_get_registry_path",
+                return_value=Path(temp_registry_dir),
+            ):
+                # Re-initialize registry structure with temp path
+                dm.port_registry.registry_path = Path(temp_registry_dir)
+                dm.port_registry.active_projects_path = (
+                    Path(temp_registry_dir) / "active-projects"
+                )
+                dm.port_registry.port_allocations_file = (
+                    Path(temp_registry_dir) / "port-allocations.json"
+                )
+                dm.port_registry._ensure_registry_structure()
+
+                # Should raise PortExhaustionError when no ports are available
+                from code_indexer.services.global_port_registry import (
+                    PortExhaustionError,
+                    PortRegistryError,
+                )
+
+                with pytest.raises((PortExhaustionError, PortRegistryError)):
+                    dm.allocate_project_ports(shared_test_path)
 
 
 class TestProjectConfiguration:
@@ -326,45 +395,61 @@ class TestProjectLocalStorage:
         # Since we removed main_config, we need to use the proper configuration system
         # The container names are already generated and will be used by the methods
 
-        ports = dm._allocate_free_ports()
-        project_config = {
-            **container_names,
-            "qdrant_port": str(ports["qdrant_port"]),
-            "ollama_port": str(ports["ollama_port"]),
-            "data_cleaner_port": str(ports["data_cleaner_port"]),
-        }
+        # Use mock registry for testing
+        with tempfile.TemporaryDirectory() as temp_registry_dir:
+            with patch.object(
+                dm.port_registry,
+                "_get_registry_path",
+                return_value=Path(temp_registry_dir),
+            ):
+                dm.port_registry.registry_path = Path(temp_registry_dir)
+                dm.port_registry.active_projects_path = (
+                    Path(temp_registry_dir) / "active-projects"
+                )
+                dm.port_registry.port_allocations_file = (
+                    Path(temp_registry_dir) / "port-allocations.json"
+                )
+                dm.port_registry._ensure_registry_structure()
 
-        # Generate compose config with project root
-        compose_config = dm.generate_compose_config(
-            project_root=self.project_root, project_config=project_config
-        )
+                ports = dm.allocate_project_ports(self.project_root)
+                project_config = {
+                    **container_names,
+                    "qdrant_port": str(ports["qdrant_port"]),
+                    "ollama_port": str(ports["ollama_port"]),
+                    "data_cleaner_port": str(ports["data_cleaner_port"]),
+                }
 
-        # Check that Qdrant service exists
-        assert "services" in compose_config
-        assert "qdrant" in compose_config["services"]
+                # Generate compose config with project root
+                compose_config = dm.generate_compose_config(
+                    project_root=self.project_root, project_config=project_config
+                )
 
-        # Check volumes configuration
-        qdrant_service = compose_config["services"]["qdrant"]
-        assert "volumes" in qdrant_service
+                # Check that Qdrant service exists
+                assert "services" in compose_config
+                assert "qdrant" in compose_config["services"]
 
-        # Find the storage volume mount
-        storage_mount = None
-        for volume in qdrant_service["volumes"]:
-            if "/qdrant/storage" in volume:
-                storage_mount = volume
-                break
+                # Check volumes configuration
+                qdrant_service = compose_config["services"]["qdrant"]
+                assert "volumes" in qdrant_service
 
-        assert storage_mount is not None, "Qdrant storage mount not found"
+                # Find the storage volume mount
+                storage_mount = None
+                for volume in qdrant_service["volumes"]:
+                    if "/qdrant/storage" in volume:
+                        storage_mount = volume
+                        break
 
-        # Check that it uses project-local path (no :U suffix anymore)
-        expected_path = str(self.project_root / ".code-indexer" / "qdrant")
-        assert expected_path in storage_mount
-        # Verify no :U suffix (removed for compatibility)
-        assert ":U" not in storage_mount
+                assert storage_mount is not None, "Qdrant storage mount not found"
 
-        # Check that project qdrant directory was created
-        project_qdrant_dir = self.project_root / ".code-indexer" / "qdrant"
-        assert project_qdrant_dir.exists()
+                # Check that it uses project-local path (no :U suffix anymore)
+                expected_path = str(self.project_root / ".code-indexer" / "qdrant")
+                assert expected_path in storage_mount
+                # Verify no :U suffix (removed for compatibility)
+                assert ":U" not in storage_mount
+
+                # Check that project qdrant directory was created
+                project_qdrant_dir = self.project_root / ".code-indexer" / "qdrant"
+                assert project_qdrant_dir.exists()
 
     def test_data_cleaner_service_uses_project_local_storage(self):
         """Test that data cleaner service uses project-local storage when project root provided."""
@@ -377,7 +462,23 @@ class TestProjectLocalStorage:
         # Since we removed main_config, we need to use the proper configuration system
         # The container names are already generated and will be used by the methods
 
-        ports = dm._allocate_free_ports()
+        # Use mock registry for testing
+        with tempfile.TemporaryDirectory() as temp_registry_dir:
+            with patch.object(
+                dm.port_registry,
+                "_get_registry_path",
+                return_value=Path(temp_registry_dir),
+            ):
+                dm.port_registry.registry_path = Path(temp_registry_dir)
+                dm.port_registry.active_projects_path = (
+                    Path(temp_registry_dir) / "active-projects"
+                )
+                dm.port_registry.port_allocations_file = (
+                    Path(temp_registry_dir) / "port-allocations.json"
+                )
+                dm.port_registry._ensure_registry_structure()
+
+                ports = dm.allocate_project_ports(self.project_root)
         project_config = {
             **container_names,
             "qdrant_port": str(ports["qdrant_port"]),

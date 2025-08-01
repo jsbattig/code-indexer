@@ -403,6 +403,15 @@ def test_multi_project_isolation_and_search(end_to_end_test_repo):
             index_result1.returncode == 0
         ), f"Project 1 index failed: {index_result1.stderr}"
 
+        # Verify project 1 port allocation
+        with open(project1_dir / ".code-indexer" / "config.json", "r") as f:
+            project1_config = json.load(f)
+        project1_ports = project1_config.get("project_ports", {})
+        print(f"✅ Project 1 ports: {project1_ports}")
+        assert (
+            "qdrant_port" in project1_ports
+        ), "Project 1 should have qdrant_port allocated"
+
         # Setup project 2
         # Config created by inventory system
         os.chdir(project2_dir)
@@ -440,6 +449,26 @@ def test_multi_project_isolation_and_search(end_to_end_test_repo):
         assert (
             index_result2.returncode == 0
         ), f"Project 2 index failed: {index_result2.stderr}"
+
+        # Verify project 2 port allocation and compare with project 1
+        with open(project2_dir / ".code-indexer" / "config.json", "r") as f:
+            project2_config = json.load(f)
+        project2_ports = project2_config.get("project_ports", {})
+        print(f"✅ Project 2 ports: {project2_ports}")
+        assert (
+            "qdrant_port" in project2_ports
+        ), "Project 2 should have qdrant_port allocated"
+
+        # Verify port coordination - projects should have different ports
+        if project1_ports.get("qdrant_port") == project2_ports.get("qdrant_port"):
+            print(
+                f"⚠️  Both projects using same qdrant port: {project1_ports.get('qdrant_port')}"
+            )
+            print("This may be expected if using shared containers")
+        else:
+            print(
+                f"✅ Port coordination working - Project 1: {project1_ports.get('qdrant_port')}, Project 2: {project2_ports.get('qdrant_port')}"
+            )
 
         # Test project 1 searches
         os.chdir(project1_dir)

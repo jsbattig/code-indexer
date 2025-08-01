@@ -650,7 +650,7 @@ class TestProjectConfigurationFixes:
             "ollama_name": "cidx-abc12345-ollama",
             "data_cleaner_name": "cidx-abc12345-data-cleaner",
         }
-        mock_docker_manager._calculate_project_ports.return_value = {
+        mock_docker_manager.allocate_project_ports.return_value = {
             "qdrant_port": 6833,
             "ollama_port": 11934,
             "data_cleaner_port": 8591,
@@ -696,7 +696,7 @@ class TestProjectConfigurationFixes:
             "ollama_name": "cidx-def67890-ollama",
             "data_cleaner_name": "cidx-def67890-data-cleaner",
         }
-        mock_docker_manager._calculate_project_ports.return_value = {
+        mock_docker_manager.allocate_project_ports.return_value = {
             "qdrant_port": 7333,
             "ollama_port": 12434,
             "data_cleaner_port": 9091,
