@@ -17,8 +17,14 @@ AI-powered semantic code search for your codebase. Find code by meaning, not jus
 
 ### pipx (Recommended)
 ```bash
+# Install the package
 pipx install git+https://github.com/jsbattig/code-indexer.git
+
+# Setup global registry (required for multi-project coordination)
+cidx init --setup-global-registry
 ```
+
+**Note**: The `--setup-global-registry` flag configures system-wide port coordination, preventing conflicts when running multiple code-indexer projects simultaneously.
 
 ### pip with virtual environment
 ```bash
@@ -32,6 +38,9 @@ pip install git+https://github.com/jsbattig/code-indexer.git
 ```bash
 # Navigate to your project
 cd /path/to/your/project
+
+# Initialize with global registry setup (first time only)
+cidx init --setup-global-registry
 
 # Start services and index code
 code-indexer start

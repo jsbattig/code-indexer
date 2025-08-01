@@ -505,6 +505,11 @@ def cli(
     is_flag=True,
     help="Interactive configuration prompt",
 )
+@click.option(
+    "--setup-global-registry",
+    is_flag=True,
+    help="Setup global port registry (requires sudo)",
+)
 @click.pass_context
 def init(
     ctx,
@@ -515,6 +520,7 @@ def init(
     embedding_provider: str,
     voyage_model: str,
     interactive: bool,
+    setup_global_registry: bool,
 ):
     """Initialize code indexing in current directory (OPTIONAL).
 
@@ -579,27 +585,123 @@ def init(
         GlobalPortRegistry()
         console.print("✅ Global port registry accessible")
     except Exception as e:
-        if "No writable system directory available for port registry" in str(e):
-            console.print("❌ Global port registry not accessible", style="red")
-            console.print(
-                "📋 The global port registry requires write access to system directories.",
-                style="yellow",
-            )
-            console.print(
-                "🔧 Please run the setup script to configure proper permissions:",
-                style="yellow",
-            )
-            console.print("")
-            console.print("   sudo ./setup-global-registry.sh", style="bold cyan")
-            console.print("")
-            console.print(
-                "💡 This creates /var/lib/code-indexer/port-registry with proper permissions",
-                style="yellow",
-            )
-            console.print(
-                "   for multi-user port coordination across projects.", style="yellow"
-            )
-            sys.exit(1)
+        if "Global port registry not accessible" in str(e):
+            if setup_global_registry:
+                console.print("🔧 Setting up Code Indexer Global Port Registry", style="blue")
+                
+                registry_dir = "/var/lib/code-indexer/port-registry"
+                console.print(f"Location: {registry_dir}")
+                console.print()
+                
+                try:
+                    def setup_registry():
+                        """Setup the global port registry with proper permissions."""
+                        console.print("🔧 Using sudo for system-wide setup", style="blue")
+                        
+                        # Create the directory
+                        result = subprocess.run(['sudo', 'mkdir', '-p', registry_dir], 
+                                              capture_output=True, text=True)
+                        if result.returncode != 0:
+                            raise Exception(f"Cannot create directory {registry_dir}: {result.stderr}")
+                        
+                        # Set permissions for multi-user access (world-writable without sticky bit)
+                        # The sticky bit can interfere with atomic file operations across users
+                        subprocess.run(['sudo', 'chmod', '777', registry_dir], check=True)
+                        
+                        # Test write access (without sudo to verify regular users can access)
+                        test_file = Path(registry_dir) / "test-access"
+                        try:
+                            test_file.write_text("test")
+                            test_file.unlink()
+                        except Exception:
+                            raise Exception(f"Cannot write to {registry_dir} (even after setup)")
+                        
+                        # Create subdirectories
+                        active_projects_dir = Path(registry_dir) / "active-projects"
+                        subprocess.run(['sudo', 'mkdir', '-p', str(active_projects_dir)], check=True)
+                        
+                        # Set permissions on subdirectories (no sticky bit for atomic operations)
+                        subprocess.run(['sudo', 'chmod', '777', str(active_projects_dir)], check=True)
+                        
+                        # Create initial files with proper ownership
+                        port_alloc_file = Path(registry_dir) / "port-allocations.json"
+                        registry_log_file = Path(registry_dir) / "registry.log"
+                        
+                        # Create files as root but with world-writable permissions
+                        subprocess.run(['sudo', 'touch', str(port_alloc_file)], check=True)
+                        subprocess.run(['sudo', 'touch', str(registry_log_file)], check=True)
+                        
+                        # Set permissions for multi-user access
+                        subprocess.run(['sudo', 'chmod', '666', str(port_alloc_file)], check=True)
+                        subprocess.run(['sudo', 'chmod', '666', str(registry_log_file)], check=True)
+                        
+                        # Initialize with empty JSON object
+                        subprocess.run(['sudo', 'tee', str(port_alloc_file)], 
+                                     input='{}', text=True, capture_output=True, check=True)
+                        
+                        console.print("✅ Global port registry setup complete", style="green")
+                    
+                    # Run the setup
+                    setup_registry()
+                    
+                    # Test registry access
+                    console.print("🔍 Testing registry access...", style="blue")
+                    test_file = Path(registry_dir) / "test-access-final"
+                    try:
+                        test_file.write_text("test")
+                        test_file.unlink()
+                        console.print("✅ Registry access test passed", style="green")
+                    except Exception:
+                        console.print("❌ Registry access test failed", style="red")
+                        sys.exit(1)
+                    
+                    # Test registry functionality
+                    try:
+                        GlobalPortRegistry()
+                        console.print("✅ Global port registry setup successful!", style="green")
+                        console.print()
+                        console.print("Usage Instructions:", style="bold")
+                        console.print("==================")
+                        console.print("The global port registry is now configured for cidx.")
+                        console.print("All cidx commands will automatically coordinate port allocation.")
+                        console.print()
+                        console.print(f"Registry Location: {registry_dir}")
+                        console.print()
+                        console.print("Location Details:")
+                        console.print("  ✅ System location - optimal for multi-user access, persistent across reboots")
+                        console.print()
+                        console.print("No further action required - cidx will handle everything automatically.")
+                    except Exception as setup_ex:
+                        console.print(f"❌ Registry still not accessible after setup: {setup_ex}", style="red")
+                        sys.exit(1)
+                
+                except Exception as setup_ex:
+                    console.print(f"❌ Failed to setup global registry: {setup_ex}", style="red")
+                    console.print("This command MUST be run with sudo access for proper system-wide setup", style="red")
+                    sys.exit(1)
+            else:
+                console.print("❌ Global port registry not accessible", style="red")
+                console.print(
+                    "📋 The global port registry requires write access to system directories.",
+                    style="yellow",
+                )
+                console.print(
+                    "🔧 Run with --setup-global-registry to configure automatically:",
+                    style="yellow",
+                )
+                console.print("")
+                console.print("   cidx init --setup-global-registry", style="bold cyan")
+                console.print("")
+                console.print("   No manual setup required - use the flag above.", style="yellow")
+                console.print("")
+                console.print(
+                    "💡 This creates /var/lib/code-indexer/port-registry with proper permissions",
+                    style="yellow",
+                )
+                console.print(
+                    "   for multi-user port coordination across projects.", style="yellow"
+                )
+                sys.exit(1)
         else:
             # Re-raise other registry errors
             raise

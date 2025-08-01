@@ -1,5 +1,23 @@
 # Code Indexer Release Notes
 
+## Version 2.14.1.0 (2025-08-01)
+
+### 🔧 Minor Enhancement: Integrated Registry Setup
+
+#### **CLI Integration Improvements**
+- **Integrated Setup**: `cidx init --setup-global-registry` now contains all setup logic (no external script dependency)
+- **Streamlined Installation**: Single command handles complete registry configuration with sudo access
+- **Simplified Packaging**: Removed external shell script dependency for cleaner distribution
+- **Enhanced User Experience**: All setup functionality built into CLI tool directly
+
+#### **Technical Changes**
+- **Removed External Script**: Eliminated `setup-global-registry.sh` file dependency
+- **Python-Native Setup**: All registry configuration now handled by Python subprocess calls
+- **Updated Documentation**: All references point to CLI flag instead of external script
+- **Maintained Functionality**: Identical setup operations with same security and permission model
+
+---
+
 ## Version 2.14.0.0 (2025-08-01)
 
 ### 🚀 Major Infrastructure Overhaul: GlobalPortRegistry System
@@ -38,9 +56,9 @@
 - **Registry Coordination**: Multi-project coordination validated across different scenarios
 
 #### **System Administration Features**
-- **Setup Script**: `sudo ./setup-global-registry.sh` configures system-wide multi-user access
+- **Setup Command**: `cidx init --setup-global-registry` configures system-wide multi-user access
 - **Registry Validation**: `cidx init` now checks registry accessibility and provides setup guidance
-- **Permission Diagnostics**: Clear error messages guide users to run setup script when needed
+- **Permission Diagnostics**: Clear error messages guide users to run setup command when needed
 - **Fail-Fast Design**: Registry fails clearly when not accessible instead of silently using fallback locations
 
 ### 🏗️ Architecture Improvements

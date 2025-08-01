@@ -79,7 +79,7 @@ class GlobalPortRegistry:
         except (OSError, PermissionError) as e:
             raise PortRegistryError(
                 f"Global port registry not accessible at {registry_location}. "
-                f"Run 'sudo ./setup-global-registry.sh' to configure proper permissions. "
+                f"Run 'cidx init --setup-global-registry' to configure proper permissions. "
                 f"Error: {e}"
             )
 
