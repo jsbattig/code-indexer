@@ -103,6 +103,7 @@ jobs:
           --ignore=tests/test_working_directory_reconcile_e2e.py \
           --ignore=tests/test_git_pull_incremental_e2e.py \
           --ignore=tests/test_override_cli_integration.py \
+          --ignore=tests/test_setup_global_registry_e2e.py \
           --ignore=tests/test_cow_migration_e2e_full_automation.py \
           --ignore=tests/test_line_number_display_e2e.py \
           --ignore=tests/test_semantic_chunking_ast_fallback_e2e.py \

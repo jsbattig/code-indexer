@@ -1,5 +1,45 @@
 # Code Indexer Release Notes
 
+## Version 2.16.0.0 (2025-08-06)
+
+### 🆕 New Standalone Command: setup-global-registry
+
+#### **Dedicated Global Registry Setup Command**
+- **New Standalone Command**: `cidx setup-global-registry` - sets up global port registry without creating project files
+- **Backward Compatibility**: Existing `cidx init --setup-global-registry` continues to work (setup + project initialization)
+- **Flexible Workflow**: Users can now setup system-wide registry once, then initialize multiple projects separately
+- **Clean Separation**: System setup vs project initialization are now clearly separated commands
+
+#### **Command Features**
+- **Flexible Options**: `--quiet`, `--test-access`, and `--help` flags for different usage scenarios
+- **Directory Independent**: Works from any directory without creating project-specific files
+- **Enhanced Error Messages**: Updated error messages reference both command options for user clarity
+- **Comprehensive Help**: Detailed documentation explaining command purpose, requirements, and usage
+
+#### **Installation Workflow Improvement**
+- **Step 1**: Install package: `pipx install git+https://github.com/jsbattig/code-indexer.git`
+- **Step 2**: Setup system registry: `sudo cidx setup-global-registry`
+- **Step 3**: Initialize projects: `cidx init` (per project as needed)
+
+#### **Technical Implementation**
+- **TDD Development**: Comprehensive E2E test suite with 12 test cases covering all functionality
+- **Extracted Common Logic**: Refactored registry setup into reusable `_setup_global_registry()` function
+- **Clean Architecture**: Shared code between standalone and integrated commands
+- **CI Integration**: Proper test exclusion for system-level tests requiring sudo access
+
+#### **Available Command Options**
+```bash
+# Standalone registry setup (new)
+sudo cidx setup-global-registry                    # Basic setup
+sudo cidx setup-global-registry --quiet            # Minimal output  
+sudo cidx setup-global-registry --test-access      # With access testing
+
+# Existing combined command (backward compatibility)
+sudo cidx init --setup-global-registry             # Setup + project init
+```
+
+---
+
 ## Version 2.15.0.0 (2025-08-06)
 
 ### 🆕 Feature Enhancement: Advanced File Override System
