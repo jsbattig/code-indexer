@@ -19,17 +19,8 @@ class ProgressiveMetadata:
 
     def _load_metadata(self) -> Dict[str, Any]:
         """Load existing metadata or create empty structure."""
-        if self.metadata_path.exists():
-            try:
-                with open(self.metadata_path, "r") as f:
-                    loaded_data = json.load(f)
-                    if isinstance(loaded_data, dict):
-                        return loaded_data
-            except (json.JSONDecodeError, IOError):
-                # Corrupt metadata, start fresh
-                pass
-
-        return {
+        # Define default metadata structure
+        default_metadata = {
             "status": "not_started",
             "last_index_timestamp": 0.0,
             "indexed_at": None,
@@ -48,7 +39,25 @@ class ProgressiveMetadata:
             "completed_files": [],  # List of files that have been successfully indexed
             "failed_file_paths": [],  # List of files that failed indexing
             "current_file_index": 0,  # Index of current file being processed
+            # Git commit watermark tracking for incremental indexing
+            "branch_commit_watermarks": {},  # Per-branch last indexed commit: {branch: commit_hash}
+            "last_commit_check_timestamp": 0.0,  # When we last checked for git changes
         }
+
+        if self.metadata_path.exists():
+            try:
+                with open(self.metadata_path, "r") as f:
+                    loaded_data = json.load(f)
+                    if isinstance(loaded_data, dict):
+                        # Merge existing data with default structure to ensure new fields are present
+                        merged_metadata = default_metadata.copy()
+                        merged_metadata.update(loaded_data)
+                        return merged_metadata
+            except (json.JSONDecodeError, IOError):
+                # Corrupt metadata, start fresh
+                pass
+
+        return default_metadata
 
     def _save_metadata(self):
         """Save metadata to disk."""
@@ -209,6 +218,9 @@ class ProgressiveMetadata:
             "completed_files": [],
             "failed_file_paths": [],
             "current_file_index": 0,
+            # Git commit watermark tracking for incremental indexing
+            "branch_commit_watermarks": {},
+            "last_commit_check_timestamp": 0.0,
         }
         self._save_metadata()
 
@@ -348,3 +360,45 @@ class ProgressiveMetadata:
                     return fallback
 
         return fallback
+
+    def get_last_indexed_commit(self, branch: str) -> Optional[str]:
+        """Get the last indexed commit hash for a specific branch.
+
+        Args:
+            branch: The branch name to get the commit for
+
+        Returns:
+            The commit hash, or None if no commit has been indexed for this branch
+        """
+        watermarks = self.metadata.get("branch_commit_watermarks", {})
+        result = watermarks.get(branch)
+        return str(result) if result is not None else None
+
+    def update_commit_watermark(self, branch: str, commit_hash: str) -> None:
+        """Update the last indexed commit hash for a branch.
+
+        Args:
+            branch: The branch name
+            commit_hash: The commit hash that was just indexed
+        """
+        if "branch_commit_watermarks" not in self.metadata:
+            self.metadata["branch_commit_watermarks"] = {}
+
+        self.metadata["branch_commit_watermarks"][branch] = commit_hash
+        self.metadata["last_commit_check_timestamp"] = time.time()
+        self._save_metadata()
+
+    def clear_commit_watermarks(self) -> None:
+        """Clear all commit watermarks (for testing or forced reindex)."""
+        self.metadata["branch_commit_watermarks"] = {}
+        self.metadata["last_commit_check_timestamp"] = 0.0
+        self._save_metadata()
+
+    def get_all_commit_watermarks(self) -> Dict[str, str]:
+        """Get all branch commit watermarks.
+
+        Returns:
+            Dictionary mapping branch names to commit hashes
+        """
+        watermarks = self.metadata.get("branch_commit_watermarks", {})
+        return {str(k): str(v) for k, v in watermarks.items()}

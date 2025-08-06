@@ -10,6 +10,7 @@ See BranchAwareIndexer for file progress patterns (total>0).
 import logging
 import time
 import datetime
+import subprocess
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Callable
 from dataclasses import dataclass
@@ -42,6 +43,16 @@ class ThroughputStats:
     throttle_reason: str = ""
     average_processing_time_per_file: float = 0.0
     estimated_time_remaining_seconds: float = 0.0
+
+
+@dataclass
+class GitDelta:
+    """Represents changes between two git commits."""
+
+    added: List[str]  # Files added
+    modified: List[str]  # Files modified
+    deleted: List[str]  # Files deleted
+    renamed: List[tuple]  # Files renamed (old_path, new_path)
 
 
 @dataclass
@@ -100,6 +111,132 @@ class SmartIndexer(HighThroughputProcessor):
 
         # Initialize git hook manager for branch change detection
         self.git_hook_manager = GitHookManager(config.codebase_dir, metadata_path)
+
+    def _get_git_deltas_since_commit(
+        self, last_commit: str, current_commit: str
+    ) -> GitDelta:
+        """Get file changes between two git commits using git diff.
+
+        Args:
+            last_commit: The commit hash to compare from
+            current_commit: The commit hash to compare to
+
+        Returns:
+            GitDelta with lists of added, modified, deleted, and renamed files
+        """
+        try:
+            # Use git diff --name-status to get file changes
+            cmd = ["git", "diff", "--name-status", f"{last_commit}..{current_commit}"]
+
+            result = subprocess.run(
+                cmd,
+                cwd=self.config.codebase_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode != 0:
+                logger.error(f"Git diff failed: {result.stderr}")
+                return GitDelta(added=[], modified=[], deleted=[], renamed=[])
+
+            added = []
+            modified = []
+            deleted = []
+            renamed = []
+
+            for line in result.stdout.strip().split("\n"):
+                if not line:
+                    continue
+
+                parts = line.strip().split("\t")
+                if len(parts) < 2:
+                    continue
+
+                status = parts[0]
+                file_path = parts[1]
+
+                # Filter files based on our indexing criteria
+                if not self._should_index_file(file_path):
+                    continue
+
+                if status == "A":
+                    added.append(file_path)
+                elif status == "M":
+                    modified.append(file_path)
+                elif status == "D":
+                    deleted.append(file_path)
+                elif status.startswith("R"):
+                    # Renamed file: R100\told_path\tnew_path
+                    if len(parts) >= 3:
+                        old_path = parts[1]
+                        new_path = parts[2]
+                        renamed.append((old_path, new_path))
+                        # Treat rename as delete old + add new for indexing
+                        if self._should_index_file(old_path):
+                            deleted.append(old_path)
+                        if self._should_index_file(new_path):
+                            added.append(new_path)
+
+            logger.info(
+                f"Git delta: +{len(added)} ~{len(modified)} -{len(deleted)} R{len(renamed)}"
+            )
+            return GitDelta(
+                added=added, modified=modified, deleted=deleted, renamed=renamed
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to get git deltas: {e}")
+            return GitDelta(added=[], modified=[], deleted=[], renamed=[])
+
+    def _should_index_file(self, file_path: str) -> bool:
+        """Check if a file should be indexed based on configuration."""
+        try:
+            path = Path(file_path)
+
+            # Check file extension
+            if path.suffix.lower() not in self.config.file_extensions:
+                return False
+
+            # Check exclude patterns (simplified check)
+            path_str = str(path)
+            for exclude_dir in self.config.exclude_dirs:
+                if exclude_dir in path_str:
+                    return False
+
+            return True
+        except Exception:
+            return False
+
+    def _delete_files_from_qdrant(
+        self, deleted_files: List[str], collection_name: str
+    ) -> int:
+        """Delete files from Qdrant collection.
+
+        Args:
+            deleted_files: List of file paths to delete
+            collection_name: Qdrant collection name
+
+        Returns:
+            Number of files successfully deleted
+        """
+        deleted_count = 0
+
+        for file_path in deleted_files:
+            try:
+                # Use the existing branch-aware deletion logic
+                success = self.delete_file_branch_aware(
+                    file_path, collection_name, watch_mode=False
+                )
+                if success:
+                    deleted_count += 1
+                    logger.info(f"🗑️  Deleted from index: {file_path}")
+                else:
+                    logger.warning(f"Failed to delete from index: {file_path}")
+            except Exception as e:
+                logger.error(f"Error deleting {file_path}: {e}")
+
+        return deleted_count
 
     def smart_index(
         self,
@@ -499,6 +636,17 @@ class SmartIndexer(HighThroughputProcessor):
             failed_files=stats.failed_files,
         )
 
+        # Update commit watermark AFTER successful processing
+        current_branch = git_status.get("current_branch", "master")
+        current_commit = git_status.get("current_commit")
+        if git_status.get("git_available", False) and current_commit:
+            self.progressive_metadata.update_commit_watermark(
+                current_branch, current_commit
+            )
+            logger.info(
+                f"✅ Updated commit watermark: {current_branch} -> {current_commit[:8]}"
+            )
+
         # Mark as completed
         self.progressive_metadata.complete_indexing()
 
@@ -551,11 +699,60 @@ class SmartIndexer(HighThroughputProcessor):
                 provider_name, model_name, git_status
             )
 
-        # Find files modified since resume timestamp
-        files_to_index = list(self.file_finder.find_modified_files(resume_timestamp))
+        # DUAL-TRACK APPROACH: Git log + filesystem timestamps
+        current_branch = git_status.get("current_branch", "master")
+        current_commit = git_status.get("current_commit")
 
-        if not files_to_index:
-            # No files to update
+        committed_files = []
+        deleted_files = []
+
+        # TRACK 1: Git log for committed changes (handles deletions!)
+        if git_status.get("git_available", False) and current_commit:
+            last_indexed_commit = self.progressive_metadata.get_last_indexed_commit(
+                current_branch
+            )
+
+            if last_indexed_commit and last_indexed_commit != current_commit:
+                logger.info(
+                    f"Git commits: {last_indexed_commit[:8]} -> {current_commit[:8]}"
+                )
+
+                # Get git deltas - this is the KEY improvement for deletion detection
+                git_delta = self._get_git_deltas_since_commit(
+                    last_indexed_commit, current_commit
+                )
+
+                # Handle deletions FIRST (critical for git pull scenarios)
+                if git_delta.deleted:
+                    collection_name = self.qdrant_client.resolve_collection_name(
+                        self.config, self.embedding_provider
+                    )
+                    deleted_count = self._delete_files_from_qdrant(
+                        git_delta.deleted, collection_name
+                    )
+                    logger.info(
+                        f"🗑️  Deleted {deleted_count}/{len(git_delta.deleted)} files from index"
+                    )
+
+                # Collect committed files that need indexing
+                committed_files = git_delta.added + git_delta.modified
+                deleted_files = git_delta.deleted
+
+        # TRACK 2: Filesystem timestamp for uncommitted changes
+        working_dir_files = list(self.file_finder.find_modified_files(resume_timestamp))
+
+        # Combine both tracks, removing duplicates
+        all_files_to_index = list(
+            set([str(f) for f in committed_files] + [str(f) for f in working_dir_files])
+        )
+
+        # Convert to Path objects
+        files_to_index = [
+            Path(f) if isinstance(f, str) else f for f in all_files_to_index
+        ]
+
+        if not files_to_index and not deleted_files:
+            # No changes at all
             if progress_callback:
                 progress_callback(
                     0,
@@ -563,22 +760,26 @@ class SmartIndexer(HighThroughputProcessor):
                     Path(""),
                     info="No files modified since last index - nothing to do",
                 )
+            # Update commit watermark even if no files to index
+            if git_status.get("git_available", False) and current_commit:
+                self.progressive_metadata.update_commit_watermark(
+                    current_branch, current_commit
+                )
             self.progressive_metadata.complete_indexing()
             return ProcessingStats()
 
         # ⚠️  CRITICAL: Setup message MUST use total=0 to show as ℹ️ message, not progress bar
-        # Show what we're doing
         if progress_callback:
-            safety_time = time.strftime(
-                "%Y-%m-%d %H:%M:%S", time.localtime(resume_timestamp)
-            )
-            # ⚠️  CRITICAL: total=0 makes this show as ℹ️ message in CLI
-            progress_callback(
-                0,
-                0,
-                Path(""),
-                info=f"Incremental update: {len(files_to_index)} files modified since {safety_time}",
-            )
+            change_summary = []
+            if committed_files:
+                change_summary.append(f"{len(committed_files)} git changes")
+            if working_dir_files:
+                change_summary.append(f"{len(working_dir_files)} working dir changes")
+            if deleted_files:
+                change_summary.append(f"{len(deleted_files)} deletions")
+
+            info_msg = f"Incremental update: {' + '.join(change_summary)}"
+            progress_callback(0, 0, Path(""), info=info_msg)
 
         # Store file list for resumability
         self.progressive_metadata.set_files_to_index(files_to_index)
@@ -663,6 +864,18 @@ class SmartIndexer(HighThroughputProcessor):
             chunks_added=stats.chunks_created,
             failed_files=stats.failed_files,
         )
+
+        # Update commit watermark AFTER successful processing
+        current_branch = git_status.get("current_branch", "master")
+        current_commit = git_status.get("current_commit")
+
+        if git_status.get("git_available", False) and current_commit:
+            self.progressive_metadata.update_commit_watermark(
+                current_branch, current_commit
+            )
+            logger.info(
+                f"✅ Updated commit watermark: {current_branch} -> {current_commit[:8]}"
+            )
 
         # Mark as completed
         self.progressive_metadata.complete_indexing()

@@ -37,6 +37,63 @@ from .services.legacy_detector import legacy_detector
 from . import __version__
 
 
+def _create_default_override_file(project_dir: Path, force: bool = False) -> bool:
+    """Create default .code-indexer-override.yaml file.
+
+    Args:
+        project_dir: Project root directory
+        force: Overwrite existing file if True
+
+    Returns:
+        True if file was created, False if skipped
+    """
+    override_path = project_dir / ".code-indexer-override.yaml"
+
+    # Don't overwrite existing file unless force is True
+    if override_path.exists() and not force:
+        return False
+
+    default_content = """# Code-indexer override file
+#
+# This file allows you to override file inclusion/exclusion rules
+# at the project level, with highest precedence over gitignore and config.
+#
+# Rules are applied in this order:
+# 1. force_exclude_patterns (absolute exclusion, overrides everything)
+# 2. force_include_patterns (overrides base exclusion)
+# 3. Extension filtering (add_extensions, remove_extensions)
+# 4. Directory filtering (add_exclude_dirs, add_include_dirs)
+# 5. Base config and gitignore rules (lowest precedence)
+#
+# Patterns use gitignore syntax:
+#   *.log        - matches all .log files
+#   temp/        - matches temp directory
+#   **/*.cache   - matches .cache files in any subdirectory
+#   !important/  - negation (force include)
+
+# Additional file extensions to index (beyond config defaults)
+add_extensions: []
+
+# File extensions to exclude (overrides config whitelist)  
+remove_extensions: []
+
+# Additional directories to exclude from indexing
+add_exclude_dirs: []
+
+# Additional directories to force include
+add_include_dirs: []
+
+# Force include files matching these patterns (overrides gitignore/config)
+force_include_patterns: []
+
+# Force exclude files matching these patterns (absolute exclusion)
+force_exclude_patterns: []
+"""
+
+    override_path.write_text(default_content)
+    return True
+
+
 def _format_claude_response(response: str) -> str:
     """Format Claude response for better terminal display."""
     if not response:
@@ -511,6 +568,11 @@ def cli(
     is_flag=True,
     help="Setup global port registry (requires sudo)",
 )
+@click.option(
+    "--create-override-file",
+    is_flag=True,
+    help="Create .code-indexer-override.yaml file for project-level file filtering rules",
+)
 @click.pass_context
 def init(
     ctx,
@@ -522,6 +584,7 @@ def init(
     voyage_model: str,
     interactive: bool,
     setup_global_registry: bool,
+    create_override_file: bool,
 ):
     """Initialize code indexing in current directory (OPTIONAL).
 
@@ -765,11 +828,26 @@ def init(
 
     # Check if config already exists
     if config_manager.config_path.exists() and not force:
-        console.print(
-            f"❌ Configuration already exists at {config_manager.config_path}"
-        )
-        console.print("Use --force to overwrite")
-        sys.exit(1)
+        # Special case: if only --create-override-file is requested, allow it
+        if create_override_file:
+            # Load existing config and create override file
+            config = config_manager.load()
+            project_root = config.codebase_dir
+            if _create_default_override_file(project_root, force=False):
+                console.print(
+                    "📝 Created .code-indexer-override.yaml for project-level file filtering"
+                )
+                console.print("✅ Override file created successfully")
+            else:
+                console.print("📝 Override file already exists, not overwriting")
+                console.print("Use --force to overwrite existing override file")
+            return
+        else:
+            console.print(
+                f"❌ Configuration already exists at {config_manager.config_path}"
+            )
+            console.print("Use --force to overwrite")
+            sys.exit(1)
 
     try:
         # Interactive configuration if requested
@@ -854,6 +932,17 @@ def init(
 
         # Save with documentation
         config_manager.save_with_documentation(config)
+
+        # Create override file (by default or if explicitly requested)
+        project_root = config.codebase_dir
+        if (
+            create_override_file
+            or not (project_root / ".code-indexer-override.yaml").exists()
+        ):
+            if _create_default_override_file(project_root, force=force):
+                console.print(
+                    "📝 Created .code-indexer-override.yaml for project-level file filtering"
+                )
 
         console.print(f"✅ Initialized configuration at {config_manager.config_path}")
         console.print(

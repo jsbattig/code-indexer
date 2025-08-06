@@ -158,6 +158,7 @@ if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest tests/ \
     --ignore=tests/test_reconcile_comprehensive_e2e.py \
     --ignore=tests/test_watch_timestamp_update_e2e.py \
     --ignore=tests/test_working_directory_reconcile_e2e.py \
+    --ignore=tests/test_git_pull_incremental_e2e.py \
     -m "not slow and not e2e and not real_api" \
     --cov=src/code_indexer --cov-report=xml --cov-report=term; then
     print_success "Unit tests passed"
@@ -207,6 +208,7 @@ echo "   • Deletion handling E2E tests (require service dependencies)"
 echo "   • Reconcile branch visibility E2E tests (require indexing services)"
 echo "   • Reconcile comprehensive E2E tests (require full service stack)"
 echo "   • Working directory reconcile E2E tests (require indexing services)"
+echo "   • Git pull incremental E2E tests (require Git repository and indexing services)"
 echo "   • Kotlin semantic search E2E tests (require indexing services)"
 echo "   • Watch timestamp update E2E tests (require file system monitoring)"
 echo "   • Any tests marked as 'slow', 'e2e', or 'real_api'"

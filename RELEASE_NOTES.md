@@ -1,5 +1,34 @@
 # Code Indexer Release Notes
 
+## Version 2.15.0.0 (2025-08-06)
+
+### 🆕 Feature Enhancement: Advanced File Override System
+
+#### **New Override Configuration System**
+- **Override Filter Service**: New comprehensive system for advanced file inclusion/exclusion rules
+- **YAML Configuration**: New `.code-indexer-override.yaml` file format for detailed filtering control
+- **Fine-Grained Control**: Support for extension overrides, directory exclusions/inclusions, and pattern-based filtering
+- **Force Include/Exclude**: Priority patterns that override gitignore and default configuration rules
+
+#### **CLI Integration Enhancements**
+- **Override CLI Options**: New CLI flags for direct override configuration without YAML files
+- **Integration Testing**: Comprehensive test suite for override functionality integration with existing CLI
+- **Git Pull Incremental Processing**: Enhanced support for incremental updates with override awareness
+
+#### **Infrastructure Improvements**
+- **Enhanced Metadata Services**: Improvements to progressive metadata handling and smart indexing
+- **Qdrant Service Optimization**: Enhanced vector database service integration
+- **File Finder Enhancement**: Improved file discovery with override rule integration
+- **Testing Infrastructure**: New comprehensive test coverage for override functionality
+
+#### **Technical Changes**
+- **New Service Module**: `override_filter_service.py` with full override logic implementation
+- **Configuration Integration**: Seamless integration with existing configuration management
+- **CLI Flag Validation**: Enhanced CLI parameter validation and error handling
+- **Git Integration**: Improved git-aware processing with override rule consideration
+
+---
+
 ## Version 2.14.1.0 (2025-08-01)
 
 ### 🔧 Minor Enhancement: Integrated Registry Setup

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import yaml  # type: ignore
 from pathlib import Path
 from typing import List, Optional, Any, Literal
 
@@ -179,6 +180,34 @@ class ProjectPortsConfig(BaseModel):
     )
 
 
+class OverrideConfig(BaseModel):
+    """Override configuration for file inclusion/exclusion rules."""
+
+    add_extensions: List[str] = Field(
+        default_factory=list,
+        description="Additional file extensions to index (beyond config defaults)",
+    )
+    remove_extensions: List[str] = Field(
+        default_factory=list,
+        description="File extensions to exclude (overrides config whitelist)",
+    )
+    add_exclude_dirs: List[str] = Field(
+        default_factory=list,
+        description="Additional directories to exclude from indexing",
+    )
+    add_include_dirs: List[str] = Field(
+        default_factory=list, description="Additional directories to force include"
+    )
+    force_include_patterns: List[str] = Field(
+        default_factory=list,
+        description="Force include files matching these patterns (overrides gitignore/config)",
+    )
+    force_exclude_patterns: List[str] = Field(
+        default_factory=list,
+        description="Force exclude files matching these patterns (absolute exclusion)",
+    )
+
+
 class Config(BaseModel):
     """Main configuration for Code Indexer."""
 
@@ -293,6 +322,12 @@ class Config(BaseModel):
     )
     project_ports: ProjectPortsConfig = Field(default_factory=ProjectPortsConfig)
 
+    # Override configuration
+    override_config: Optional[OverrideConfig] = Field(
+        default=None,
+        description="Override configuration for file inclusion/exclusion rules",
+    )
+
     @field_validator("codebase_dir", mode="before")
     @classmethod
     def convert_path(cls, v: Any) -> Path:
@@ -337,6 +372,18 @@ class ConfigManager:
                 raise ValueError(f"Failed to load config from {self.config_path}: {e}")
         else:
             self._config = Config()
+
+        # Try to load override config if available
+        if self._config:
+            project_root = self._config.codebase_dir
+            override_path = _find_override_file(project_root)
+            if override_path:
+                try:
+                    self._config.override_config = _load_override_config(override_path)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to load override config from {override_path}: {e}"
+                    )
 
         return self._config
 
@@ -711,3 +758,74 @@ code-indexer index --clear
             logger.warning(f"Failed to migrate config to relative paths: {e}")
 
         return False
+
+
+def _load_override_config(override_path: Path) -> OverrideConfig:
+    """Load override configuration from YAML file.
+
+    Args:
+        override_path: Path to .code-indexer-override.yaml file
+
+    Returns:
+        OverrideConfig instance
+
+    Raises:
+        Exception: If YAML parsing fails or required fields are missing
+    """
+    try:
+        with open(override_path, "r") as f:
+            data = yaml.safe_load(f)
+
+        if not isinstance(data, dict):
+            raise ValueError("Override config must be a YAML dictionary")
+
+        # Validate required fields exist
+        required_fields = [
+            "add_extensions",
+            "remove_extensions",
+            "add_exclude_dirs",
+            "add_include_dirs",
+            "force_include_patterns",
+            "force_exclude_patterns",
+        ]
+
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            raise ValueError(
+                f"Missing required fields in override config: {missing_fields}"
+            )
+
+        return OverrideConfig(
+            add_extensions=data["add_extensions"] or [],
+            remove_extensions=data["remove_extensions"] or [],
+            add_exclude_dirs=data["add_exclude_dirs"] or [],
+            add_include_dirs=data["add_include_dirs"] or [],
+            force_include_patterns=data["force_include_patterns"] or [],
+            force_exclude_patterns=data["force_exclude_patterns"] or [],
+        )
+
+    except yaml.YAMLError as e:
+        raise Exception(f"Failed to parse override YAML file {override_path}: {e}")
+    except Exception as e:
+        raise Exception(f"Failed to load override config from {override_path}: {e}")
+
+
+def _find_override_file(start_dir: Path) -> Optional[Path]:
+    """Find .code-indexer-override.yaml by walking up the directory tree.
+
+    Args:
+        start_dir: Directory to start searching from
+
+    Returns:
+        Path to override file if found, None otherwise
+    """
+    current = start_dir
+
+    # Walk up the directory tree looking for .code-indexer-override.yaml
+    search_paths = [current] + list(current.parents)
+    for path in search_paths:
+        override_path = path / ".code-indexer-override.yaml"
+        if override_path.exists():
+            return override_path
+
+    return None

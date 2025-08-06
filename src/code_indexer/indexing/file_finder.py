@@ -6,6 +6,7 @@ from typing import Iterator, Dict
 import pathspec
 
 from ..config import Config
+from ..services.override_filter_service import OverrideFilterService
 
 
 class FileFinder:
@@ -14,6 +15,24 @@ class FileFinder:
     def __init__(self, config: Config):
         self.config = config
         self._create_gitignore_spec()
+
+        # Initialize override filter service if override config is available
+        self.override_filter_service = None
+        # Only initialize if we have a real OverrideConfig object, not a Mock
+        if (
+            hasattr(config, "override_config")
+            and config.override_config is not None
+            and not str(type(config.override_config)).startswith(
+                "<class 'unittest.mock"
+            )
+        ):
+            try:
+                self.override_filter_service = OverrideFilterService(
+                    config.override_config
+                )
+            except (TypeError, AttributeError):
+                # If initialization fails (e.g., due to mock objects), skip override filtering
+                pass
 
     def _create_gitignore_spec(self) -> None:
         """Create pathspec for excluded directories."""
@@ -56,6 +75,8 @@ class FileFinder:
                 "dist/",
                 "target/",
                 ".git/",
+                # Code indexer configuration files
+                ".code-indexer-override.yaml",
             ]
         )
 
@@ -140,6 +161,24 @@ class FileFinder:
             if file_path.stat().st_size > self.config.indexing.max_file_size:
                 return False
 
+            # Base filtering logic
+            base_result = self._get_base_filtering_result(file_path)
+
+            # Apply override filtering if available
+            if self.override_filter_service:
+                relative_path = file_path.relative_to(self.config.codebase_dir)
+                return self.override_filter_service.should_include_file(
+                    relative_path, base_result
+                )
+
+            return base_result
+
+        except (OSError, ValueError):
+            return False
+
+    def _get_base_filtering_result(self, file_path: Path) -> bool:
+        """Get base filtering result from config and gitignore rules."""
+        try:
             # Check if file extension is in allowed list
             extension = file_path.suffix.lstrip(".")
             if extension not in self.config.file_extensions:

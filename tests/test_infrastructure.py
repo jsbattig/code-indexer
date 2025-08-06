@@ -226,6 +226,15 @@ class TestProjectInventory:
         voyage_ai_parallel_requests=4,
     )
 
+    GIT_PULL_INCREMENTAL = ProjectTestConfig(
+        name="git_pull_incremental",
+        collection_base_name="test_git_pull_incremental",
+        chunk_size=800,
+        chunk_overlap=50,
+        voyage_ai_batch_size=32,
+        voyage_ai_parallel_requests=8,
+    )
+
     DELETION_HANDLING = ProjectTestConfig(
         name="deletion_handling",
         collection_base_name="test_deletion",

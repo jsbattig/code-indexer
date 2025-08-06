@@ -105,13 +105,18 @@ class QdrantClient:
             response = self.client.put(
                 f"/collections/{collection_name}", json=collection_config
             )
-            if response.status_code not in [200, 201]:
+            if response.status_code in [200, 201]:
+                return True
+            elif response.status_code == 409:
+                # Collection already exists - this is acceptable
+                # (caller will handle clearing if needed)
+                return True
+            else:
                 self.console.print(
                     f"Direct creation failed: {response.status_code} {response.text}",
                     style="red",
                 )
                 return False
-            return True
         except Exception as e:
             self.console.print(f"Direct creation exception: {e}", style="red")
             return False
