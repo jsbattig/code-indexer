@@ -58,6 +58,11 @@ class TestStartStopStatusCycle:
                 self.expected_containers.append(
                     config.project_containers.data_cleaner_name
                 )
+            if (
+                hasattr(config.project_containers, "ollama_name")
+                and config.project_containers.ollama_name
+            ):
+                self.expected_containers.append(config.project_containers.ollama_name)
 
         except Exception as e:
             # Fallback to discovering container names dynamically during test
