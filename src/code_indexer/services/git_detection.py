@@ -13,6 +13,7 @@ from typing import Dict, Any, Tuple
 
 from ..config import Config
 from .file_identifier import FileIdentifier
+from ..utils.git_runner import run_git_command
 
 
 class GitDetectionService:
@@ -141,12 +142,9 @@ class GitDetectionService:
 
         try:
             # Current commit hash
-            result = subprocess.run(
+            result = run_git_command(
                 ["git", "rev-parse", "HEAD"],
                 cwd=self.project_dir,
-                capture_output=True,
-                text=True,
-                check=True,
             )
             git_state["commit_hash"] = result.stdout.strip()
         except subprocess.CalledProcessError:
@@ -154,24 +152,18 @@ class GitDetectionService:
 
         try:
             # Current branch
-            result = subprocess.run(
+            result = run_git_command(
                 ["git", "branch", "--show-current"],
                 cwd=self.project_dir,
-                capture_output=True,
-                text=True,
-                check=True,
             )
             branch = result.stdout.strip()
 
             if not branch:
                 # Handle detached HEAD
                 try:
-                    result = subprocess.run(
+                    result = run_git_command(
                         ["git", "rev-parse", "--short", "HEAD"],
                         cwd=self.project_dir,
-                        capture_output=True,
-                        text=True,
-                        check=True,
                     )
                     branch = f"detached-{result.stdout.strip()}"
                 except subprocess.CalledProcessError:
@@ -181,12 +173,9 @@ class GitDetectionService:
         except subprocess.CalledProcessError:
             # Fallback to HEAD for detached HEAD state
             try:
-                result = subprocess.run(
+                result = run_git_command(
                     ["git", "rev-parse", "--short", "HEAD"],
                     cwd=self.project_dir,
-                    capture_output=True,
-                    text=True,
-                    check=True,
                 )
                 git_state["branch"] = f"detached-{result.stdout.strip()}"
             except subprocess.CalledProcessError:
@@ -194,12 +183,9 @@ class GitDetectionService:
 
         try:
             # Repository root
-            result = subprocess.run(
+            result = run_git_command(
                 ["git", "rev-parse", "--show-toplevel"],
                 cwd=self.project_dir,
-                capture_output=True,
-                text=True,
-                check=True,
             )
             git_state["repo_root"] = result.stdout.strip()
         except subprocess.CalledProcessError:
@@ -207,12 +193,9 @@ class GitDetectionService:
 
         try:
             # Check if there are uncommitted changes
-            result = subprocess.run(
+            result = run_git_command(
                 ["git", "status", "--porcelain"],
                 cwd=self.project_dir,
-                capture_output=True,
-                text=True,
-                check=True,
             )
             git_state["has_uncommitted_changes"] = bool(result.stdout.strip())
         except subprocess.CalledProcessError:

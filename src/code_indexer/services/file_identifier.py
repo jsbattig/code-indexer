@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from ..config import Config
+from ..utils.git_runner import run_git_command, is_git_repository
 
 
 class FileIdentifier:
@@ -45,17 +46,7 @@ class FileIdentifier:
         Returns:
             True if git repository is detected, False otherwise
         """
-        try:
-            subprocess.run(
-                ["git", "rev-parse", "--git-dir"],
-                cwd=self.project_dir,
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            return False
+        return is_git_repository(self.project_dir)
 
     def _get_project_id(self) -> str:
         """
@@ -70,12 +61,9 @@ class FileIdentifier:
         if self.git_available:
             try:
                 # Try to get git remote origin URL
-                result = subprocess.run(
+                result = run_git_command(
                     ["git", "remote", "get-url", "origin"],
                     cwd=self.project_dir,
-                    capture_output=True,
-                    text=True,
-                    check=True,
                 )
                 origin_url = result.stdout.strip()
 
@@ -216,12 +204,9 @@ class FileIdentifier:
 
         try:
             # Get git blob hash for the file
-            result = subprocess.run(
+            result = run_git_command(
                 ["git", "hash-object", str(file_path)],
                 cwd=self.project_dir,
-                capture_output=True,
-                text=True,
-                check=True,
             )
             git_metadata["git_hash"] = result.stdout.strip()
         except subprocess.CalledProcessError:
@@ -229,23 +214,17 @@ class FileIdentifier:
 
         try:
             # Get current branch
-            result = subprocess.run(
+            result = run_git_command(
                 ["git", "branch", "--show-current"],
                 cwd=self.project_dir,
-                capture_output=True,
-                text=True,
-                check=True,
             )
             git_metadata["branch"] = result.stdout.strip()
         except subprocess.CalledProcessError:
             # Fallback to HEAD for detached HEAD state
             try:
-                result = subprocess.run(
+                result = run_git_command(
                     ["git", "rev-parse", "--short", "HEAD"],
                     cwd=self.project_dir,
-                    capture_output=True,
-                    text=True,
-                    check=True,
                 )
                 git_metadata["branch"] = f"detached-{result.stdout.strip()}"
             except subprocess.CalledProcessError:
@@ -253,12 +232,9 @@ class FileIdentifier:
 
         try:
             # Get current commit hash
-            result = subprocess.run(
+            result = run_git_command(
                 ["git", "rev-parse", "HEAD"],
                 cwd=self.project_dir,
-                capture_output=True,
-                text=True,
-                check=True,
             )
             git_metadata["commit_hash"] = result.stdout.strip()
         except subprocess.CalledProcessError:
@@ -307,12 +283,9 @@ class FileIdentifier:
         files = {}
 
         try:
-            result = subprocess.run(
+            result = run_git_command(
                 ["git", "ls-tree", "-r", "--name-only", "--full-tree", "HEAD"],
                 cwd=self.project_dir,
-                capture_output=True,
-                text=True,
-                check=True,
             )
 
             for file_path_str in result.stdout.strip().split("\n"):
