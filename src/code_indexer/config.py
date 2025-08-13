@@ -375,11 +375,15 @@ class ConfigManager:
                 with open(self.config_path, "r") as f:
                     data = json.load(f)
 
-                # Handle path resolution for CoW clone compatibility
+                # Ensure absolute path for codebase_dir
                 if "codebase_dir" in data:
-                    # Resolve potentially relative path to absolute
-                    resolved_path = self._resolve_relative_path(data["codebase_dir"])
-                    data["codebase_dir"] = str(resolved_path)
+                    # Convert to absolute path if needed
+                    path = Path(data["codebase_dir"])
+                    if not path.is_absolute():
+                        # If relative, resolve relative to config directory
+                        config_dir = self.config_path.parent.parent
+                        path = (config_dir / path).resolve()
+                    data["codebase_dir"] = str(path)
 
                 self._config = Config(**data)
             except Exception as e:
@@ -402,7 +406,7 @@ class ConfigManager:
         return self._config
 
     def save(self, config: Optional[Config] = None) -> None:
-        """Save configuration to file with relative paths for CoW support."""
+        """Save configuration to file."""
         if config is None:
             config = self._config
 
@@ -412,10 +416,10 @@ class ConfigManager:
         # Ensure config directory exists
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Convert to dict and handle Path serialization with relative paths
+        # Convert to dict and handle Path serialization with absolute paths
         config_dict = config.model_dump()
-        # Store relative path for CoW clone compatibility
-        config_dict["codebase_dir"] = self._make_relative_to_config(config.codebase_dir)
+        # Store absolute path for clarity and reliability
+        config_dict["codebase_dir"] = str(config.codebase_dir.absolute())
 
         with open(self.config_path, "w") as f:
             json.dump(config_dict, f, indent=2)
@@ -433,8 +437,8 @@ class ConfigManager:
 
         # Convert to dict and handle Path serialization with relative paths
         config_dict = config.model_dump()
-        # Store relative path for CoW clone compatibility
-        config_dict["codebase_dir"] = self._make_relative_to_config(config.codebase_dir)
+        # Store absolute path for clarity and reliability
+        config_dict["codebase_dir"] = str(config.codebase_dir.absolute())
 
         # Create documentation content
         doc_content = """# Code Indexer Configuration Guide
@@ -687,91 +691,6 @@ code-indexer index --clear
 
         # DEFENSIVE: Ensure we always return a ConfigManager with the first found config
         return cls(config_path)
-
-    def _make_relative_to_config(self, path: Path) -> str:
-        """Convert an absolute path to relative path from config location."""
-        try:
-            # Handle both Path objects and strings
-            if isinstance(path, str):
-                path = Path(path)
-
-            # Get the directory containing the config file
-            config_dir = self.config_path.parent.parent  # Parent of .code-indexer/
-
-            # If path is already relative or is ".", keep it as is
-            if not path.is_absolute() or str(path) == ".":
-                return str(path)
-
-            # Try to make the path relative to the config directory
-            absolute_path = path.resolve()
-            config_root = config_dir.resolve()
-
-            try:
-                relative_path = absolute_path.relative_to(config_root)
-                return str(relative_path) if str(relative_path) != "." else "."
-            except ValueError:
-                # Path is not within config directory - store absolute for backward compatibility
-                return str(absolute_path)
-
-        except Exception:
-            # If anything fails, fall back to absolute path
-            if isinstance(path, str):
-                path = Path(path)
-            return str(path.resolve())
-
-    def _resolve_relative_path(self, path_str: str) -> Path:
-        """Resolve a potentially relative path from config to absolute path."""
-        path = Path(path_str)
-
-        # If already absolute, return as is
-        if path.is_absolute():
-            return path
-
-        # If relative, resolve relative to config directory (parent of .code-indexer/)
-        config_dir = self.config_path.parent.parent  # Parent of .code-indexer/
-        return (config_dir / path).resolve()
-
-    def migrate_to_relative_paths(self) -> bool:
-        """
-        Migrate existing configuration to use relative paths.
-
-        Returns:
-            True if migration was performed, False if no migration needed
-        """
-        if not self.config_path.exists():
-            return False
-
-        try:
-            # Load current config
-            config = self.load()
-
-            # Check if codebase_dir is absolute and within project
-            if config.codebase_dir.is_absolute():
-                config_root = self.config_path.parent.parent  # Parent of .code-indexer/
-
-                try:
-                    # Try to make relative
-                    relative_path = config.codebase_dir.resolve().relative_to(
-                        config_root.resolve()
-                    )
-
-                    # Update the config with relative path
-                    config.codebase_dir = (
-                        relative_path if str(relative_path) != "." else Path(".")
-                    )
-
-                    # Save the updated config
-                    self.save(config)
-                    return True
-
-                except ValueError:
-                    # Path is outside project root, keep absolute
-                    pass
-
-        except Exception as e:
-            logger.warning(f"Failed to migrate config to relative paths: {e}")
-
-        return False
 
 
 def _load_override_config(override_path: Path) -> OverrideConfig:

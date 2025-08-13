@@ -28,6 +28,7 @@ class ProcessingStats:
     total_size: int = 0
     start_time: float = 0.0
     end_time: float = 0.0
+    cancelled: bool = False
 
     @property
     def duration(self) -> float:

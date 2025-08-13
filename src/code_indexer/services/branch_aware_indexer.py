@@ -86,6 +86,7 @@ class BranchIndexingResult:
     content_points_reused: int
     processing_time: float
     files_processed: int
+    cancelled: bool = False
 
 
 class BranchAwareIndexer:
@@ -96,15 +97,34 @@ class BranchAwareIndexer:
     mappings to achieve efficient branch switching and accurate cleanup.
     """
 
-    def __init__(self, qdrant_client, embedding_provider, text_chunker, config):
+    def __init__(
+        self,
+        qdrant_client,
+        embedding_provider,
+        text_chunker,
+        config,
+        progress_log=None,
+        progressive_metadata=None,
+    ):
         self.qdrant_client = qdrant_client
         self.embedding_provider = embedding_provider
         self.text_chunker = text_chunker
         self.config = config
         self.codebase_dir = Path(config.codebase_dir)
 
+        # Cancellation support
+        self.cancelled = False
+
+        # Structured logging and metadata tracking
+        self.progress_log = progress_log
+        self.progressive_metadata = progressive_metadata
+
         # Will be set by smart indexer to point to metadata file
         self.metadata_file = None
+
+    def request_cancellation(self):
+        """Request cancellation of the current indexing operation."""
+        self.cancelled = True
 
     def _update_file_progress(
         self, progress_callback, current: int, total: int, info_msg: str
@@ -245,7 +265,7 @@ class BranchAwareIndexer:
                     )
                     f.flush()
                 result.content_points_created += content_result.content_points_created
-                result.files_processed += len(changed_files)
+                # files_processed is now updated per file during processing
 
             # 2. Update visibility for unchanged files - no longer needed with hidden_branches approach
             if unchanged_files:
@@ -270,6 +290,9 @@ class BranchAwareIndexer:
         except Exception as e:
             logger.error(f"Branch indexing failed: {e}")
             raise
+
+        # NOTE: Progressive metadata is updated during indexing through record_file_completion()
+        # The result object should reflect actual processing results, not cached metadata
 
         return result if result is not None else {}
 
@@ -322,6 +345,14 @@ class BranchAwareIndexer:
                 f.flush()
 
             for file_path in file_paths:
+                # Check for cancellation before processing each file
+                if self.cancelled:
+                    logger.info(
+                        f"Cancellation requested, stopping at file {current_file_index}/{total_files}"
+                    )
+                    result.cancelled = True
+                    break
+
                 try:
                     # Debug log each file
                     with open(debug_file, "a") as f:
@@ -329,6 +360,10 @@ class BranchAwareIndexer:
                             f"[{datetime.datetime.now().isoformat()}] Processing file {current_file_index+1}/{total_files}: {file_path}\n"
                         )
                         f.flush()
+
+                    # Mark file as in progress for structured logging
+                    if self.progress_log:
+                        self.progress_log.mark_file_in_progress(str(file_path))
 
                     full_path = self.codebase_dir / file_path
                     if not full_path.exists():
@@ -361,8 +396,16 @@ class BranchAwareIndexer:
                                 info_msg,
                             )
                             if callback_result == "INTERRUPT":
+                                logger.info("User requested cancellation")
+                                self.cancelled = True
+                                result.cancelled = True
                                 break
                         current_file_index += 1
+                        result.files_processed += 1  # Count processed file
+
+                        # Update progressive metadata for deleted files
+                        if self.progressive_metadata:
+                            self.progressive_metadata.update_progress(files_processed=1)
                         continue
 
                     # Get current commit for this file
@@ -420,8 +463,18 @@ class BranchAwareIndexer:
                                 info_msg,
                             )
                             if callback_result == "INTERRUPT":
+                                logger.info(
+                                    "User requested cancellation during file error"
+                                )
+                                self.cancelled = True
+                                result.cancelled = True
                                 break
                         current_file_index += 1
+                        result.files_processed += 1  # Count processed file
+
+                        # Update progressive metadata for content reuse cases
+                        if self.progressive_metadata:
+                            self.progressive_metadata.update_progress(files_processed=1)
                         continue
 
                     # Content doesn't exist - create content + visibility points
@@ -464,8 +517,18 @@ class BranchAwareIndexer:
                                 info_msg,
                             )
                             if callback_result == "INTERRUPT":
+                                logger.info(
+                                    "User requested cancellation during empty file"
+                                )
+                                self.cancelled = True
+                                result.cancelled = True
                                 break
                         current_file_index += 1
+                        result.files_processed += 1  # Count processed file
+
+                        # Update progressive metadata for empty files
+                        if self.progressive_metadata:
+                            self.progressive_metadata.update_progress(files_processed=1)
                         continue
 
                     # CRITICAL FIX: Submit ALL chunks for parallel processing, then collect results
@@ -542,6 +605,29 @@ class BranchAwareIndexer:
 
                     result.files_processed += 1
 
+                    # Track structured logging with Qdrant point IDs
+                    if self.progress_log:
+                        file_point_ids = [
+                            point["id"]
+                            for point in batch_points
+                            if str(point.get("payload", {}).get("file_path", ""))
+                            == str(file_path)
+                        ]
+                        self.progress_log.mark_file_completed(
+                            file_path=str(file_path),
+                            chunks_created=len(file_point_ids),
+                            qdrant_point_ids=file_point_ids,
+                        )
+
+                    # CRITICAL: Update progressive metadata per file for resume capability
+                    if self.progressive_metadata:
+                        chunks_added = (
+                            len(file_point_ids) if "file_point_ids" in locals() else 0
+                        )
+                        self.progressive_metadata.update_progress(
+                            files_processed=1, chunks_added=chunks_added
+                        )
+
                     # Call main progress callback for file completion with proper format
                     if progress_callback:
                         files_completed = current_file_index + 1
@@ -580,9 +666,17 @@ class BranchAwareIndexer:
                             info_msg,
                         )
                         if callback_result == "INTERRUPT":
+                            logger.info(
+                                "User requested cancellation during successful file processing"
+                            )
+                            self.cancelled = True
+                            result.cancelled = True
                             break
 
                     current_file_index += 1
+
+                    # Update files_processed count atomically for each successfully processed file
+                    result.files_processed += 1
 
                     # CRITICAL: Maintain point-in-time snapshot behavior by hiding outdated content
                     if current_commit.startswith("working_dir_"):
@@ -713,6 +807,14 @@ class BranchAwareIndexer:
                 except Exception as e:
                     logger.error(f"Failed to index changed file {file_path}: {e}")
 
+                    # Track failed file in structured logging
+                    if self.progress_log:
+                        self.progress_log.mark_file_failed(str(file_path), str(e))
+
+                    # CRITICAL: Update progressive metadata for failed files
+                    if self.progressive_metadata:
+                        self.progressive_metadata.update_progress(failed_files=1)
+
                     # Call progress callback for failed file if provided
                     if progress_callback:
                         files_completed = current_file_index + 1
@@ -739,11 +841,15 @@ class BranchAwareIndexer:
                             str(e),
                         )
                     current_file_index += 1
+                    result.files_processed += 1  # Count failed file as processed
+
+                    # Update progressive metadata already handled above for failed files
 
         # Process remaining points
         if batch_points:
             self.qdrant_client.upsert_points(batch_points, collection_name)
 
+        # Progressive metadata sync is now handled in the main index_files method
         return result if result is not None else {}
 
     # Note: _update_visibility_for_unchanged_files method removed

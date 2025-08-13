@@ -1,6 +1,5 @@
 """Command line interface for Code Indexer."""
 
-import asyncio
 import os
 import subprocess
 import sys
@@ -32,8 +31,8 @@ from .services.claude_integration import (
 from .services.config_fixer import ConfigurationRepairer, generate_fix_report
 from .services.vector_calculation_manager import get_default_thread_count
 from .services.cidx_prompt_generator import create_cidx_ai_prompt
-from .services.migration_decorator import requires_qdrant_access
-from .services.legacy_detector import legacy_detector
+
+# CoW-related imports removed as part of CoW cleanup Epic
 from . import __version__
 
 
@@ -1035,7 +1034,6 @@ def init(
     default=512,
     help="Maximum request queue size (default: 512)",
 )
-@requires_qdrant_access("start")
 @click.pass_context
 def start(
     ctx,
@@ -1134,12 +1132,6 @@ def start(
         else:
             # Load existing config (found via backtracking)
             config = config_manager.load()
-
-            # Automatically migrate existing configs to relative paths for CoW support
-            if config_manager.migrate_to_relative_paths():
-                setup_console.print(
-                    "🔄 Migrated configuration to use relative paths for CoW clone compatibility"
-                )
 
         # Provider-specific configuration and validation
         if config.embedding_provider == "ollama":
@@ -1422,7 +1414,6 @@ def start(
     is_flag=True,
     help="Detect and handle files deleted from filesystem but still in database (for standard indexing only; --reconcile includes this automatically)",
 )
-@requires_qdrant_access("index")
 @click.pass_context
 def index(
     ctx,
@@ -1735,9 +1726,20 @@ def index(
             sys.exit(1)
 
         # Show completion summary with throughput
-        console.print("✅ Indexing complete!", style="green")
-        console.print(f"📄 Files processed: {stats.files_processed}")
-        console.print(f"📦 Chunks indexed: {stats.chunks_created}")
+        if getattr(stats, "cancelled", False):
+            console.print("🛑 Indexing cancelled!", style="yellow")
+            console.print("📄 Files processed before cancellation: ", end="")
+            console.print(f"{stats.files_processed}", style="yellow")
+            console.print("📦 Chunks indexed before cancellation: ", end="")
+            console.print(f"{stats.chunks_created}", style="yellow")
+            console.print(
+                "💾 Progress saved - you can resume indexing later", style="blue"
+            )
+        else:
+            console.print("✅ Indexing complete!", style="green")
+            console.print(f"📄 Files processed: {stats.files_processed}")
+            console.print(f"📦 Chunks indexed: {stats.chunks_created}")
+
         console.print(f"⏱️  Duration: {stats.duration:.2f}s")
 
         # Calculate final throughput
@@ -1769,7 +1771,6 @@ def index(
 )
 @click.option("--batch-size", default=50, help="Batch size for processing")
 @click.option("--initial-sync", is_flag=True, help="Perform full sync before watching")
-@requires_qdrant_access("watch")
 @click.pass_context
 def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
     """Git-aware watch for file changes with branch support."""
@@ -1969,7 +1970,6 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
     is_flag=True,
     help="Quiet mode - only show results, no headers or metadata",
 )
-@requires_qdrant_access("query")
 @click.pass_context
 def query(
     ctx,
@@ -2559,7 +2559,6 @@ def query(
     is_flag=True,
     help="Include full project directory listing in Claude prompt for better project understanding (increases prompt size)",
 )
-@requires_qdrant_access("claude")
 @click.pass_context
 def claude(
     ctx,
@@ -3146,31 +3145,108 @@ def _status_impl(ctx, force_docker: bool):
                     collection_name = qdrant_client.resolve_collection_name(
                         config, embedding_provider
                     )
-                    project_count = qdrant_client.count_points(collection_name)
 
-                    # Get total documents across all collections for context
+                    # Check collection health before counting points
                     try:
-                        import requests  # type: ignore
-
-                        response = requests.get(
-                            f"{config.qdrant.host}/collections", timeout=5
+                        collection_info = qdrant_client.get_collection_info(
+                            collection_name
                         )
-                        if response.status_code == 200:
-                            collections_data = response.json()
-                            total_count = 0
-                            for collection_info in collections_data.get(
-                                "result", {}
-                            ).get("collections", []):
-                                coll_name = collection_info["name"]
-                                coll_count = qdrant_client.count_points(coll_name)
-                                total_count += coll_count
-                            qdrant_details = f"Project: {project_count} docs | Total: {total_count} docs"
+                        collection_status = collection_info.get("status", "unknown")
+
+                        if collection_status == "red":
+                            # Collection has errors - show error details
+                            optimizer_status = collection_info.get(
+                                "optimizer_status", {}
+                            )
+                            error_msg = optimizer_status.get("error", "Unknown error")
+
+                            # Translate common errors to user-friendly messages
+                            if "No such file or directory" in error_msg:
+                                friendly_error = "Storage corruption detected - collection data is damaged"
+                            elif "Permission denied" in error_msg:
+                                friendly_error = (
+                                    "Storage permission error - check file permissions"
+                                )
+                            elif "disk space" in error_msg.lower():
+                                friendly_error = (
+                                    "Insufficient disk space for collection operations"
+                                )
+                            else:
+                                friendly_error = f"Collection error: {error_msg}"
+
+                            qdrant_status = "❌ Collection Error"
+                            qdrant_details = f"🚨 {friendly_error}"
+                        elif collection_status == "yellow":
+                            qdrant_status = "⚠️ Collection Warning"
+                            qdrant_details = "Collection has warnings but is functional"
                         else:
-                            qdrant_details = f"Documents: {project_count}"
-                    except Exception:
-                        qdrant_details = f"Documents: {project_count}"
-                except Exception:
-                    qdrant_details = "Collection ready"
+                            # Collection is healthy, proceed with normal status
+                            project_count = qdrant_client.count_points(collection_name)
+
+                            # Get total documents across all collections for context
+                            try:
+                                import requests  # type: ignore
+
+                                response = requests.get(
+                                    f"{config.qdrant.host}/collections", timeout=5
+                                )
+                                if response.status_code == 200:
+                                    collections_data = response.json()
+                                    total_count = 0
+                                    for collection_info in collections_data.get(
+                                        "result", {}
+                                    ).get("collections", []):
+                                        coll_name = collection_info["name"]
+                                        coll_count = qdrant_client.count_points(
+                                            coll_name
+                                        )
+                                        total_count += coll_count
+                                    qdrant_details = f"Project: {project_count} docs | Total: {total_count} docs"
+                                else:
+                                    qdrant_details = f"Documents: {project_count}"
+                            except Exception:
+                                qdrant_details = f"Documents: {project_count}"
+
+                            # Add progressive metadata info if available and different from Qdrant count
+                            try:
+                                metadata_path = (
+                                    config_manager.config_path.parent / "metadata.json"
+                                )
+                                if metadata_path.exists():
+                                    import json
+
+                                    with open(metadata_path) as f:
+                                        metadata = json.load(f)
+                                    files_processed = metadata.get("files_processed", 0)
+                                    chunks_indexed = metadata.get("chunks_indexed", 0)
+                                    status = metadata.get("status", "unknown")
+
+                                    # Show progressive info if recent activity or if counts differ
+                                    if files_processed > 0 and (
+                                        status == "in_progress"
+                                        or chunks_indexed != project_count
+                                    ):
+                                        qdrant_details += f" | Progress: {files_processed} files, {chunks_indexed} chunks"
+                                        if status == "in_progress":
+                                            qdrant_details += " (⏸️ paused)"
+                            except Exception:
+                                pass  # Don't fail status display if metadata reading fails
+                    except Exception as e:
+                        if "doesn't exist" in str(e):
+                            qdrant_details = (
+                                "Collection not found - run 'cidx index' to create"
+                            )
+                        else:
+                            qdrant_details = (
+                                f"Error checking collection: {str(e)[:50]}..."
+                            )
+                except Exception as e:
+                    if "doesn't exist" in str(e):
+                        qdrant_details = (
+                            "Collection not found - run 'cidx index' to create"
+                        )
+                    else:
+                        qdrant_details = f"Error: {str(e)[:50]}..."
             else:
                 qdrant_details = "Service down"
         else:
@@ -3469,7 +3545,6 @@ def _status_impl(ctx, force_docker: bool):
 
 
 @cli.command()
-@requires_qdrant_access("optimize")
 @click.pass_context
 def optimize(ctx):
     """Optimize vector database storage and performance."""
@@ -3521,7 +3596,6 @@ def optimize(ctx):
     "--collection",
     help="Specific collection to flush (flushes all collections if not specified)",
 )
-@requires_qdrant_access("force-flush")
 @click.pass_context
 def force_flush(ctx, collection: Optional[str]):
     """Force flush collection data from RAM to disk for CoW operations.
@@ -4322,195 +4396,6 @@ def fix_config(ctx, dry_run: bool, verbose: bool, force: bool):
             import traceback
 
             console.print(traceback.format_exc())
-        sys.exit(1)
-
-
-@cli.command()
-@click.option(
-    "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
-)
-@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
-@click.pass_context
-def clean_legacy(ctx, force_docker: bool, yes: bool):
-    """Migrate from legacy containers to Copy-on-Write architecture.
-
-    This command performs a complete migration from legacy container setup
-    to the new Copy-on-Write (CoW) architecture:
-
-    \b
-    1. Stops all containers
-    2. Uses data-cleaner to completely wipe storage
-    3. Starts containers with proper home directory mounting
-    4. Enables CoW functionality for collections
-
-    ⚠️  WARNING: This will remove all existing collections and require re-indexing.
-    """
-    console = Console()
-
-    try:
-        console.print("🔍 Checking legacy container status...", style="blue")
-
-        # Check if we're in legacy mode
-        is_legacy = asyncio.run(legacy_detector.check_legacy_container())
-
-        if not is_legacy:
-            console.print(
-                "✅ No legacy containers detected - CoW architecture already active",
-                style="green",
-            )
-            console.print(
-                "\nℹ️  Your containers are already running with proper home directory mounting."
-            )
-            console.print(
-                "   Collections will be stored locally with CoW functionality."
-            )
-            return
-
-        console.print("⚠️  Legacy container detected", style="yellow")
-        console.print("\nThis will:")
-        console.print("  • Stop all containers")
-        console.print("  • Completely wipe existing collection storage")
-        console.print("  • Start containers with CoW architecture")
-        console.print("  • Require re-indexing all projects")
-
-        if not yes:
-            console.print("\n❗ All existing collections will be lost!", style="red")
-            if not click.confirm("Do you want to proceed with the migration?"):
-                console.print("❌ Migration cancelled", style="yellow")
-                return
-
-        # Step 1: Stop containers
-        console.print("\n🛑 Stopping containers...", style="blue")
-        # Migration operates on current directory
-        project_config_dir = Path(".code-indexer")
-        docker_manager = DockerManager(
-            force_docker=force_docker, project_config_dir=project_config_dir
-        )
-        docker_manager.stop_services()
-        console.print("✅ Containers stopped", style="green")
-
-        # Step 2: Clean storage using existing clean functionality
-        console.print("\n🧹 Cleaning legacy storage...", style="blue")
-
-        # Use the existing clean_data_only functionality
-        success = docker_manager.clean_data_only(all_projects=True)
-        if not success:
-            raise RuntimeError("Failed to clean legacy storage")
-
-        console.print("✅ Legacy storage cleaned", style="green")
-
-        # Step 3: Force remove containers and compose file
-        console.print("\n🔧 Removing old containers and compose file...", style="blue")
-
-        # Remove containers to force recreation with new mounts
-        try:
-            import subprocess
-
-            subprocess.run(
-                ["docker", "rm", "-f", "code-indexer-qdrant"],
-                capture_output=True,
-                timeout=30,
-            )
-            subprocess.run(
-                ["docker", "rm", "-f", "code-indexer-data-cleaner"],
-                capture_output=True,
-                timeout=30,
-            )
-            subprocess.run(
-                ["docker", "rm", "-f", "code-indexer-ollama"],
-                capture_output=True,
-                timeout=30,
-            )
-            console.print("✅ Old containers removed", style="green")
-        except Exception as e:
-            console.print(f"⚠️  Container removal had issues: {e}", style="yellow")
-
-        # Remove old compose file to force regeneration
-        if (
-            hasattr(docker_manager, "compose_file")
-            and docker_manager.compose_file.exists()
-        ):
-            docker_manager.compose_file.unlink()
-            console.print("✅ Old compose file removed", style="green")
-
-        # Step 4: Start containers with proper home mounting
-        console.print("\n🚀 Creating containers with CoW architecture...", style="blue")
-
-        # Start services - this will regenerate containers with home directory mounting
-        docker_manager.start_services()
-
-        # Verify services are running
-        console.print("⏳ Waiting for services to be ready...", style="blue")
-
-        # Give services time to start
-        import time
-
-        time.sleep(10)
-
-        # Check if services are healthy - legacy function checking old container names
-        # This should be removed in new mode only
-        try:
-            # Try to get project config if available
-            if hasattr(docker_manager, "main_config") and docker_manager.main_config:
-                project_config = docker_manager.main_config.get(
-                    "project_containers", {}
-                )
-                if project_config:
-                    qdrant_healthy = docker_manager._container_exists(
-                        "qdrant", project_config
-                    )
-                else:
-                    # Legacy container check - use legacy name directly
-                    import subprocess
-
-                    result = subprocess.run(
-                        ["docker", "container", "inspect", "code-indexer-qdrant"],
-                        capture_output=True,
-                        timeout=5,
-                    )
-                    qdrant_healthy = result.returncode == 0
-            else:
-                # Legacy container check - use legacy name directly
-                import subprocess
-
-                result = subprocess.run(
-                    ["docker", "container", "inspect", "code-indexer-qdrant"],
-                    capture_output=True,
-                    timeout=5,
-                )
-                qdrant_healthy = result.returncode == 0
-        except Exception:
-            qdrant_healthy = False
-        if qdrant_healthy:
-            console.print("✅ Qdrant service started successfully", style="green")
-        else:
-            console.print("⚠️  Qdrant service may still be starting", style="yellow")
-
-        # Verify CoW architecture is active
-        console.print("\n🔍 Verifying CoW architecture...", style="blue")
-        is_legacy_after = asyncio.run(legacy_detector.check_legacy_container())
-
-        if not is_legacy_after:
-            console.print("✅ CoW architecture successfully activated!", style="green")
-        else:
-            console.print(
-                "⚠️  CoW architecture verification failed - manual restart may be needed",
-                style="yellow",
-            )
-
-        console.print("\n🎉 Migration completed successfully!", style="green")
-        console.print("\nNext steps:")
-        console.print(
-            "  1. Run 'cidx index' in your projects to create local collections"
-        )
-        console.print("  2. Collections will be stored locally with CoW functionality")
-        console.print("  3. Use 'cidx status' to verify local collection setup")
-
-    except Exception as e:
-        console.print(f"❌ Migration failed: {e}", style="red")
-        console.print("\nYou may need to manually restart containers:")
-        console.print("  cidx stop")
-        console.print("  cidx start")
         sys.exit(1)
 
 

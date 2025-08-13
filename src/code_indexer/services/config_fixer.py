@@ -826,6 +826,13 @@ class ConfigurationRepairer:
             # Get the correct project root (parent of .code-indexer)
             project_root = self.config_dir.parent.absolute()
 
+            # Load current config to get embedding provider information
+            config_manager = ConfigManager(self.config_file)
+            current_config = config_manager.load()
+
+            # Prepare config dict for DockerManager
+            config_dict = {"embedding_provider": current_config.embedding_provider}
+
             # Initialize DockerManager to get project-specific values
             docker_manager = DockerManager(
                 project_name=project_root.name, project_config_dir=self.config_dir
@@ -836,7 +843,10 @@ class ConfigurationRepairer:
             project_hash = container_info["project_hash"]
 
             # Calculate new port assignments using global port registry
-            port_assignments = docker_manager.allocate_project_ports(project_root)
+            # CRITICAL: Pass embedding provider config to ensure ollama_port is allocated when needed
+            port_assignments = docker_manager.allocate_project_ports(
+                project_root, config_dict
+            )
 
             return {
                 "project_hash": project_hash,

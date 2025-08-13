@@ -42,10 +42,11 @@ class ChunkTask:
 class HighThroughputProcessor(GitAwareDocumentProcessor):
     """Processor that maximizes throughput by pre-queuing all chunks."""
 
-    def __init__(self, *args, **kwargs):
-        """Initialize the processor with cancellation support."""
+    def __init__(self, *args, progress_log=None, **kwargs):
+        """Initialize the processor with cancellation support and structured logging."""
         super().__init__(*args, **kwargs)
         self.cancelled = False
+        self.progress_log = progress_log
 
     def request_cancellation(self):
         """Request cancellation of processing."""
@@ -323,6 +324,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                                 vector_manager.request_cancellation()
                                 # Update stats to reflect actual files processed before interruption
                                 stats.files_processed = files_completed
+                                stats.cancelled = True
                                 return stats
 
                 except Exception as e:

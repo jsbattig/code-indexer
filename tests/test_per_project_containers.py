@@ -409,6 +409,17 @@ class TestProjectLocalStorage:
         self.config_dir = self.project_root / ".code-indexer"
         self.config_dir.mkdir()
 
+        # Create a minimal config to avoid ollama being included by default
+        import json
+
+        config_data = {
+            "codebase_dir": str(self.project_root),
+            "embedding_provider": "voyage-ai",  # Use voyage-ai to avoid ollama
+            "voyage_ai": {"api_key": "test_key", "model": "voyage-3"},
+        }
+        with open(self.config_dir / "config.json", "w") as f:
+            json.dump(config_data, f)
+
     def teardown_method(self):
         """Clean up temporary directory."""
         shutil.rmtree(self.temp_dir)
@@ -444,9 +455,12 @@ class TestProjectLocalStorage:
                 project_config = {
                     **container_names,
                     "qdrant_port": str(ports["qdrant_port"]),
-                    "ollama_port": str(ports["ollama_port"]),
                     "data_cleaner_port": str(ports["data_cleaner_port"]),
                 }
+
+                # Only add ollama_port if it was allocated (depends on embedding provider)
+                if "ollama_port" in ports:
+                    project_config["ollama_port"] = str(ports["ollama_port"])
 
                 # Generate compose config with project root
                 compose_config = dm.generate_compose_config(
@@ -511,9 +525,12 @@ class TestProjectLocalStorage:
         project_config = {
             **container_names,
             "qdrant_port": str(ports["qdrant_port"]),
-            "ollama_port": str(ports["ollama_port"]),
             "data_cleaner_port": str(ports["data_cleaner_port"]),
         }
+
+        # Only add ollama_port if it was allocated (depends on embedding provider)
+        if "ollama_port" in ports:
+            project_config["ollama_port"] = str(ports["ollama_port"])
 
         # Generate compose config with project root
         compose_config = dm.generate_compose_config(

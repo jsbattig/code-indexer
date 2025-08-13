@@ -584,7 +584,9 @@ class DockerManager:
 
         return result
 
-    def allocate_project_ports(self, project_root: Path) -> Dict[str, int]:
+    def allocate_project_ports(
+        self, project_root: Path, config: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, int]:
         """
         NEW: Allocate ports using global registry coordination.
 
@@ -592,6 +594,7 @@ class DockerManager:
 
         Args:
             project_root: Root directory of the project
+            config: Optional configuration dict with embedding_provider info
 
         Returns:
             Dictionary mapping service names to port numbers
@@ -605,7 +608,7 @@ class DockerManager:
             exclude_ports: set[int] = set()
 
             # Determine required services based on configuration
-            required_services = self.get_required_services()
+            required_services = self.get_required_services(config)
 
             # Map service names to registry service names
             service_mapping = {

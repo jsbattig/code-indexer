@@ -101,9 +101,21 @@ class SmartIndexer(HighThroughputProcessor):
         self.git_topology_service = GitTopologyService(config.codebase_dir)
         # Removed: SmartBranchIndexer initialization (abandoned code)
 
+        # Initialize structured progress logging
+        from .indexing_progress_log import IndexingProgressLog
+
+        self.progress_log = IndexingProgressLog(
+            config_dir=Path(config.codebase_dir) / ".code-indexer"
+        )
+
         # Initialize new branch-aware indexer with graph optimization
         self.branch_aware_indexer = BranchAwareIndexer(
-            qdrant_client, embedding_provider, self.text_chunker, config
+            qdrant_client,
+            embedding_provider,
+            self.text_chunker,
+            config,
+            progress_log=self.progress_log,
+            progressive_metadata=self.progressive_metadata,
         )
 
         # Configure branch tracking
@@ -345,6 +357,7 @@ class SmartIndexer(HighThroughputProcessor):
                         stats.failed_files = 0  # BranchAwareIndexer doesn't track failures in the same way
                         stats.start_time = time.time() - branch_result.processing_time
                         stats.end_time = time.time()
+                        stats.cancelled = branch_result.cancelled
 
                         # Update progressive metadata with new git status
                         updated_git_status = git_status.copy()
@@ -352,13 +365,19 @@ class SmartIndexer(HighThroughputProcessor):
                         self.progressive_metadata.start_indexing(
                             provider_name, model_name, updated_git_status
                         )
-                        self.progressive_metadata.complete_indexing()
 
-                        logger.info(
-                            f"Graph-optimized branch indexing completed: "
-                            f"{branch_result.content_points_created} content points created, "
-                            f"{branch_result.content_points_reused} content points reused"
-                        )
+                        # Mark as completed only if not cancelled
+                        if not stats.cancelled:
+                            self.progressive_metadata.complete_indexing()
+                            logger.info(
+                                f"Graph-optimized branch indexing completed: "
+                                f"{branch_result.content_points_created} content points created, "
+                                f"{branch_result.content_points_reused} content points reused"
+                            )
+                        else:
+                            logger.info(
+                                "Graph-optimized branch indexing was cancelled, not marking as completed for resume capability"
+                            )
 
                         return stats
 
@@ -420,6 +439,9 @@ class SmartIndexer(HighThroughputProcessor):
 
             # Determine indexing strategy
             if force_full:
+                # CRITICAL: Clear progressive metadata immediately when force_full=True (--clear flag)
+                # This ensures that even if indexing is cancelled, stale metadata is cleared
+                self.progressive_metadata.clear()
                 return self._do_full_index(
                     batch_size,
                     progress_callback,
@@ -441,6 +463,8 @@ class SmartIndexer(HighThroughputProcessor):
                         Path(""),
                         info="Configuration changed, performing full index",
                     )
+                # Clear progressive metadata for configuration-triggered full index
+                self.progressive_metadata.clear()
                 return self._do_full_index(
                     batch_size,
                     progress_callback,
@@ -525,7 +549,7 @@ class SmartIndexer(HighThroughputProcessor):
                 info=f"🗑️  Cleared collection '{collection_name}' (collection was empty)",
             )
 
-        self.progressive_metadata.clear()
+        # NOTE: progressive_metadata.clear() is now called earlier in smart_index() when force_full=True
 
         # Start indexing
         self.progressive_metadata.start_indexing(provider_name, model_name, git_status)
@@ -543,10 +567,23 @@ class SmartIndexer(HighThroughputProcessor):
 
         if not files_to_index:
             self.progressive_metadata.complete_indexing()
+            # Don't start session if no files to index
             raise ValueError("No files found to index")
 
         # Store file list for resumability
         self.progressive_metadata.set_files_to_index(files_to_index)
+
+        # Initialize structured logging session for file-by-file tracking
+        operation_type = "full"  # This is _do_full_index so it's always full
+        session_id = self.progress_log.start_session(
+            operation_type=operation_type,
+            embedding_provider=provider_name,
+            embedding_model=model_name,
+            files_to_index=[str(f) for f in files_to_index],
+            git_branch=git_status.get("current_branch"),
+            git_commit=git_status.get("current_commit"),
+        )
+        logger.info(f"Started structured logging session: {session_id}")
 
         # Get current branch for indexing
         current_branch = self.git_topology_service.get_current_branch() or "master"
@@ -618,6 +655,7 @@ class SmartIndexer(HighThroughputProcessor):
             stats.failed_files = 0
             stats.start_time = time.time() - branch_result.processing_time
             stats.end_time = time.time()
+            stats.cancelled = branch_result.cancelled
 
         except Exception as e:
             logger.error(
@@ -647,8 +685,15 @@ class SmartIndexer(HighThroughputProcessor):
                 f"✅ Updated commit watermark: {current_branch} -> {current_commit[:8]}"
             )
 
-        # Mark as completed
-        self.progressive_metadata.complete_indexing()
+        # Mark as completed only if not cancelled
+        if not stats.cancelled:
+            self.progressive_metadata.complete_indexing()
+            self.progress_log.complete_session()
+        else:
+            logger.info(
+                "Indexing was cancelled, not marking as completed for resume capability"
+            )
+            self.progress_log.mark_session_cancelled()
 
         return stats
 
@@ -665,7 +710,33 @@ class SmartIndexer(HighThroughputProcessor):
     ) -> ProcessingStats:
         """Perform incremental indexing."""
 
-        # Get resume timestamp with safety buffer
+        # 🔧 FIX: Check for interrupted operation first (before timestamp check)
+        if self.progressive_metadata.can_resume_interrupted_operation():
+            if progress_callback:
+                # Get preview stats for feedback
+                metadata_stats = self.progressive_metadata.get_stats()
+                completed = metadata_stats.get("files_processed", 0)
+                total = metadata_stats.get("total_files_to_index", 0)
+                remaining = metadata_stats.get("remaining_files", 0)
+                chunks_so_far = metadata_stats.get("chunks_indexed", 0)
+
+                progress_callback(
+                    0,
+                    0,
+                    Path(""),
+                    info=f"🔄 Resuming interrupted operation: {completed}/{total} files completed ({chunks_so_far} chunks), {remaining} files remaining",
+                )
+            return self._do_resume_interrupted(
+                batch_size,
+                progress_callback,
+                git_status,
+                provider_name,
+                model_name,
+                quiet,
+                vector_thread_count,
+            )
+
+        # Get resume timestamp with safety buffer (for completed operations)
         resume_timestamp = self.progressive_metadata.get_resume_timestamp(
             safety_buffer_seconds
         )
@@ -752,6 +823,34 @@ class SmartIndexer(HighThroughputProcessor):
         ]
 
         if not files_to_index and not deleted_files:
+            # SAFETY CHECK: Detect corrupted state before marking as completed
+            # If Qdrant has data but progressive metadata shows 0 files processed,
+            # this indicates incomplete/corrupted state - don't mark as completed!
+            try:
+                collection_name = self.qdrant_client.resolve_collection_name(
+                    self.config, self.embedding_provider
+                )
+                qdrant_points = self.qdrant_client.count_points(collection_name)
+                metadata_files = self.progressive_metadata.metadata.get(
+                    "files_processed", 0
+                )
+
+                if qdrant_points > 0 and metadata_files == 0:
+                    # CRITICAL: Inconsistent state detected - Qdrant has data but metadata shows 0 files
+                    if progress_callback:
+                        progress_callback(
+                            0,
+                            0,
+                            Path(""),
+                            info=f"🚨 Inconsistent state detected: {qdrant_points} chunks in Qdrant but metadata shows 0 files processed - forcing full reindex",
+                        )
+                    # Clear progressive metadata to force full reindex on next run
+                    self.progressive_metadata.clear()
+                    return ProcessingStats()
+            except Exception:
+                # If safety check fails, proceed with normal logic
+                pass
+
             # No changes at all
             if progress_callback:
                 progress_callback(
@@ -766,7 +865,19 @@ class SmartIndexer(HighThroughputProcessor):
                     current_branch, current_commit
                 )
             self.progressive_metadata.complete_indexing()
+            # No session started yet for no-files case
             return ProcessingStats()
+
+        # Initialize structured logging session for incremental indexing
+        session_id = self.progress_log.start_session(
+            operation_type="incremental",
+            embedding_provider=provider_name,
+            embedding_model=model_name,
+            files_to_index=[str(f) for f in files_to_index],
+            git_branch=git_status.get("current_branch"),
+            git_commit=git_status.get("current_commit"),
+        )
+        logger.info(f"Started incremental indexing session: {session_id}")
 
         # ⚠️  CRITICAL: Setup message MUST use total=0 to show as ℹ️ message, not progress bar
         if progress_callback:
@@ -847,6 +958,7 @@ class SmartIndexer(HighThroughputProcessor):
             stats.failed_files = 0
             stats.start_time = time.time() - branch_result.processing_time
             stats.end_time = time.time()
+            stats.cancelled = branch_result.cancelled
 
         except Exception as e:
             logger.error(
@@ -877,8 +989,15 @@ class SmartIndexer(HighThroughputProcessor):
                 f"✅ Updated commit watermark: {current_branch} -> {current_commit[:8]}"
             )
 
-        # Mark as completed
-        self.progressive_metadata.complete_indexing()
+        # Mark as completed only if not cancelled
+        if not stats.cancelled:
+            self.progressive_metadata.complete_indexing()
+            self.progress_log.complete_session()
+        else:
+            logger.info(
+                "Indexing was cancelled, not marking as completed for resume capability"
+            )
+            self.progress_log.mark_session_cancelled()
 
         return stats
 
@@ -1232,6 +1351,7 @@ class SmartIndexer(HighThroughputProcessor):
             stats.failed_files = 0
             stats.start_time = time.time() - branch_result.processing_time
             stats.end_time = time.time()
+            stats.cancelled = branch_result.cancelled
 
         except Exception as e:
             logger.error(
@@ -1260,8 +1380,15 @@ class SmartIndexer(HighThroughputProcessor):
                 collection_name, current_branch, progress_callback
             )
 
-        # Mark as completed
-        self.progressive_metadata.complete_indexing()
+        # Mark as completed only if not cancelled
+        if not stats.cancelled:
+            self.progressive_metadata.complete_indexing()
+            self.progress_log.complete_session()
+        else:
+            logger.info(
+                "Indexing was cancelled, not marking as completed for resume capability"
+            )
+            self.progress_log.mark_session_cancelled()
 
         return stats
 
@@ -1287,6 +1414,7 @@ class SmartIndexer(HighThroughputProcessor):
         if not remaining_file_strings:
             # No files left to process
             self.progressive_metadata.complete_indexing()
+            self.progress_log.complete_session()
             return ProcessingStats()
 
         # Convert strings back to Path objects
@@ -1298,6 +1426,7 @@ class SmartIndexer(HighThroughputProcessor):
         if not existing_files:
             # All remaining files have been deleted
             self.progressive_metadata.complete_indexing()
+            self.progress_log.complete_session()
             return ProcessingStats()
 
         # Show what we're resuming with detailed feedback
@@ -1357,6 +1486,7 @@ class SmartIndexer(HighThroughputProcessor):
             stats.failed_files = 0
             stats.start_time = time.time() - branch_result.processing_time
             stats.end_time = time.time()
+            stats.cancelled = branch_result.cancelled
 
         except Exception as e:
             logger.error(f"BranchAwareIndexer failed during resume in git project: {e}")
@@ -1373,8 +1503,15 @@ class SmartIndexer(HighThroughputProcessor):
             failed_files=stats.failed_files,
         )
 
-        # Mark as completed
-        self.progressive_metadata.complete_indexing()
+        # Mark as completed only if not cancelled
+        if not stats.cancelled:
+            self.progressive_metadata.complete_indexing()
+            self.progress_log.complete_session()
+        else:
+            logger.info(
+                "Indexing was cancelled, not marking as completed for resume capability"
+            )
+            self.progress_log.mark_session_cancelled()
 
         return stats
 
@@ -1487,6 +1624,7 @@ class SmartIndexer(HighThroughputProcessor):
         stats.files_processed = high_throughput_stats.files_processed
         stats.chunks_created = high_throughput_stats.chunks_created
         stats.failed_files = high_throughput_stats.failed_files
+        stats.cancelled = high_throughput_stats.cancelled
 
         stats.end_time = time.time()
         return stats
