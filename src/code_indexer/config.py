@@ -100,6 +100,20 @@ class QdrantConfig(BaseModel):
         description="HNSW connectivity parameter (higher = better connectivity for large datasets, more memory)",
     )
 
+    # Segment size configuration - Git-friendly storage optimization
+    max_segment_size_kb: int = Field(
+        default=102400,
+        description="Maximum segment size in KB (default: 100MB for optimal performance while staying Git-friendly)",
+    )
+
+    @field_validator("max_segment_size_kb")
+    @classmethod
+    def validate_segment_size(cls, v: int) -> int:
+        """Validate segment size is positive."""
+        if v <= 0:
+            raise ValueError("Segment size must be positive")
+        return v
+
 
 class IndexingConfig(BaseModel):
     """Configuration for indexing behavior."""

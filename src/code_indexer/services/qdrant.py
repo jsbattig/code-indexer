@@ -97,6 +97,7 @@ class QdrantClient:
                 "memmap_threshold": 20000,
                 "indexing_threshold": 10000,
                 "default_segment_number": 8,
+                "max_segment_size_kb": self.config.max_segment_size_kb,
             },
             "on_disk_payload": True,
         }
@@ -177,6 +178,7 @@ class QdrantClient:
                 "memmap_threshold": 20000,
                 "indexing_threshold": 10000,
                 "default_segment_number": 8,
+                "max_segment_size_kb": self.config.max_segment_size_kb,
             },
             "on_disk_payload": True,
             "quantization_config": {

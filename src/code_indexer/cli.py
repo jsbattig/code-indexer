@@ -718,6 +718,12 @@ def cli(
     is_flag=True,
     help="Create .code-indexer-override.yaml file for project-level file filtering rules",
 )
+@click.option(
+    "--qdrant-segment-size",
+    type=int,
+    default=100,
+    help="Qdrant segment size in MB (default: 100MB for optimal performance)",
+)
 @click.pass_context
 def init(
     ctx,
@@ -730,6 +736,7 @@ def init(
     interactive: bool,
     setup_global_registry: bool,
     create_override_file: bool,
+    qdrant_segment_size: int,
 ):
     """Initialize code indexing in current directory (OPTIONAL).
 
@@ -759,12 +766,22 @@ def init(
       • voyage-ai: VoyageAI API (requires VOYAGE_API_KEY environment variable)
 
     \b
+    QDRANT SEGMENT SIZE:
+      Controls Qdrant storage segment size (default: 100MB for optimal performance):
+      • 10MB: Git-friendly for small projects, faster indexing, more files
+      • 50MB: Balanced approach for medium projects
+      • 100MB: Default - optimal performance while staying Git-compatible
+      • 200MB: Large repositories prioritizing search performance
+
+    \b
     EXAMPLES:
       code-indexer init                                    # Basic initialization with Ollama
       code-indexer init --interactive                     # Interactive configuration
       code-indexer init --embedding-provider voyage-ai    # Use VoyageAI
       code-indexer init --voyage-model voyage-large-2     # Specify VoyageAI model
       code-indexer init --max-file-size 2000000          # 2MB file limit
+      code-indexer init --qdrant-segment-size 50         # Git-friendly 50MB segments
+      code-indexer init --qdrant-segment-size 200        # Large repos 200MB segments
       code-indexer init --force                          # Overwrite existing config
 
     \b
@@ -928,6 +945,21 @@ def init(
             if chunk_size is not None:
                 indexing_config["chunk_size"] = chunk_size
             updates["indexing"] = indexing_config
+
+        # Validate and process Qdrant segment size
+        if qdrant_segment_size <= 0:
+            console.print("❌ Qdrant segment size must be positive", style="red")
+            sys.exit(1)
+
+        # Convert MB to KB for internal storage and apply to configuration
+        segment_size_kb = qdrant_segment_size * 1024
+        if "qdrant" not in updates:
+            updates["qdrant"] = config.qdrant.model_dump()
+
+        # Ensure we have a dict type for mypy
+        qdrant_config = updates["qdrant"]
+        if isinstance(qdrant_config, dict):
+            qdrant_config["max_segment_size_kb"] = segment_size_kb
 
         # Apply updates if any
         if updates:

@@ -1,5 +1,45 @@
 # Code Indexer Release Notes
 
+## Version 2.17.0.0 (2025-08-13)
+
+### 🔧 New Feature: Configurable Qdrant Segment Size
+
+#### **Flexible Storage Optimization**
+- **New CLI Option**: `--qdrant-segment-size <MB>` in init command allows users to configure Qdrant segment size
+- **Git-Friendly Default**: 100MB default segment size balances performance with Git platform compatibility
+- **User Control**: Users can specify from 5MB (maximum Git compatibility) to 200MB+ (maximum performance)
+
+#### **Configuration Integration**
+- **QdrantConfig Enhancement**: Added `max_segment_size_kb` field with validation and documentation
+- **Seamless Integration**: Segment size applied in all Qdrant collection creation methods
+- **Backward Compatibility**: Existing configurations automatically use 100MB default with zero migration required
+
+#### **Platform Compatibility**
+- **GitHub Compatible**: 100MB default stays within GitHub's 100MB file limit
+- **GitLab Compatible**: Works with GitLab's 100MB file limit (free tier)
+- **Bitbucket Compatible**: Well within Bitbucket's repository limits
+
+#### **Usage Examples**
+```bash
+# Default (optimal performance)
+code-indexer init --qdrant-segment-size 100
+
+# Git-friendly for smaller files
+code-indexer init --qdrant-segment-size 10
+
+# Balanced approach
+code-indexer init --qdrant-segment-size 50
+
+# Large repositories prioritizing search performance
+code-indexer init --qdrant-segment-size 200
+```
+
+#### **Technical Implementation**
+- **TDD Development**: 23 comprehensive tests covering configuration, CLI, integration, and backward compatibility
+- **Input Validation**: Positive value validation with clear error messages
+- **MB to KB Conversion**: User-friendly MB input converted to KB internally for Qdrant
+- **Documentation**: Enhanced help text with performance trade-off explanations
+
 ## Version 2.16.0.0 (2025-08-06)
 
 ### 🆕 New Standalone Command: setup-global-registry

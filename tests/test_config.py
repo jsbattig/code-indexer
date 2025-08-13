@@ -1,9 +1,9 @@
 """Tests for configuration management."""
 
 from pathlib import Path
+import pytest
 
-
-from code_indexer.config import Config, ConfigManager, OllamaConfig
+from code_indexer.config import Config, ConfigManager, OllamaConfig, QdrantConfig
 from .conftest import local_temporary_directory
 
 
@@ -75,3 +75,38 @@ def test_config_manager_update():
         reloaded_config = manager.load()
         assert reloaded_config.file_extensions == ["py", "rs"]
         assert reloaded_config.ollama.model == "new-model"
+
+
+def test_qdrant_config_default_segment_size():
+    """Test QdrantConfig has default max_segment_size_kb of 102400 (100MB)."""
+    qdrant_config = QdrantConfig()
+    assert qdrant_config.max_segment_size_kb == 102400
+
+
+def test_qdrant_config_segment_size_validation():
+    """Test QdrantConfig validates segment size is positive."""
+    # Valid positive values should work
+    valid_config = QdrantConfig(max_segment_size_kb=51200)  # 50MB
+    assert valid_config.max_segment_size_kb == 51200
+
+    # Zero should be rejected
+    with pytest.raises(ValueError, match="Segment size must be positive"):
+        QdrantConfig(max_segment_size_kb=0)
+
+    # Negative values should be rejected
+    with pytest.raises(ValueError, match="Segment size must be positive"):
+        QdrantConfig(max_segment_size_kb=-1024)
+
+
+def test_qdrant_config_segment_size_field_type():
+    """Test QdrantConfig max_segment_size_kb field accepts integers."""
+    config = QdrantConfig(max_segment_size_kb=204800)  # 200MB
+    assert isinstance(config.max_segment_size_kb, int)
+    assert config.max_segment_size_kb == 204800
+
+
+def test_config_with_qdrant_segment_size():
+    """Test Config includes QdrantConfig with max_segment_size_kb field."""
+    config = Config()
+    assert hasattr(config.qdrant, "max_segment_size_kb")
+    assert config.qdrant.max_segment_size_kb == 102400
