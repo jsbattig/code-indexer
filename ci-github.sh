@@ -161,6 +161,7 @@ if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest tests/ \
     --ignore=tests/test_git_pull_incremental_e2e.py \
     --ignore=tests/test_override_cli_integration.py \
     --ignore=tests/test_setup_global_registry_e2e.py \
+    --ignore=tests/test_cli_init_segment_size.py \
     -m "not slow and not e2e and not real_api" \
     --cov=src/code_indexer --cov-report=xml --cov-report=term; then
     print_success "Unit tests passed"
@@ -213,6 +214,7 @@ echo "   • Working directory reconcile E2E tests (require indexing services)"
 echo "   • Git pull incremental E2E tests (require Git repository and indexing services)"
 echo "   • Override CLI integration tests (require /var/lib/code-indexer access)"
 echo "   • Setup global registry E2E tests (require sudo and /var/lib/code-indexer access)"
+echo "   • CLI init segment size tests (require /var/lib/code-indexer access)"
 echo "   • Kotlin semantic search E2E tests (require indexing services)"
 echo "   • Watch timestamp update E2E tests (require file system monitoring)"
 echo "   • Any tests marked as 'slow', 'e2e', or 'real_api'"
