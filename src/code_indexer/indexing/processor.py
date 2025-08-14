@@ -250,8 +250,13 @@ class DocumentProcessor:
 
                     # Process batch if full
                     if len(batch_points) >= batch_size:
-                        if not self.qdrant_client.upsert_points(batch_points):
-                            raise RuntimeError("Failed to upload batch to Qdrant")
+                        try:
+                            if not self.qdrant_client.upsert_points(batch_points):
+                                raise RuntimeError("Failed to upload batch to Qdrant")
+                        except Exception as e:
+                            raise RuntimeError(
+                                f"Failed to upload batch to Qdrant (last processed file: {file_path.name}): {e}"
+                            )
                         batch_points = []
 
                     # Call progress callback with vector stats
@@ -269,8 +274,15 @@ class DocumentProcessor:
 
             # Process remaining points
             if batch_points:
-                if not self.qdrant_client.upsert_points(batch_points):
-                    raise RuntimeError("Failed to upload final batch to Qdrant")
+                try:
+                    if not self.qdrant_client.upsert_points(batch_points):
+                        raise RuntimeError("Failed to upload final batch to Qdrant")
+                except Exception as e:
+                    # Extract filename from last processed file or batch content
+                    last_file = files[-1].name if files else "unknown"
+                    raise RuntimeError(
+                        f"Failed to upload final batch to Qdrant (last processed file: {last_file}): {e}"
+                    )
 
         stats.end_time = time.time()
         return stats

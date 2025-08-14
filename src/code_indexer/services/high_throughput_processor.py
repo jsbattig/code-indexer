@@ -198,11 +198,21 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                         logger.info(
                             f"Committing {len(completed_file_chunks)} chunks from {len(completed_files)} completed files due to cancellation"
                         )
-                        if not self.qdrant_client.upsert_points_atomic(
-                            completed_file_chunks
-                        ):
+                        try:
+                            if not self.qdrant_client.upsert_points_atomic(
+                                completed_file_chunks
+                            ):
+                                logger.error(
+                                    "Failed to commit completed files during cancellation"
+                                )
+                        except Exception as e:
+                            last_file = (
+                                list(completed_files)[-1].name
+                                if completed_files
+                                else "unknown"
+                            )
                             logger.error(
-                                "Failed to commit completed files during cancellation"
+                                f"Failed to commit completed files during cancellation (last file: {last_file}): {e}"
                             )
 
                     break
@@ -250,8 +260,15 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
 
                     # Process batch if full with enhanced atomicity
                     if len(batch_points) >= batch_size:
-                        if not self.qdrant_client.upsert_points_atomic(batch_points):
-                            raise RuntimeError("Failed to upload batch to Qdrant")
+                        try:
+                            if not self.qdrant_client.upsert_points_atomic(
+                                batch_points
+                            ):
+                                raise RuntimeError("Failed to upload batch to Qdrant")
+                        except Exception as e:
+                            raise RuntimeError(
+                                f"Failed to upload batch to Qdrant (last processed file: {file_path.name}): {e}"
+                            )
                         batch_points = []
 
                     # Smooth progress updates: call every few chunks or when file changes
@@ -333,8 +350,14 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
 
             # Process remaining points with enhanced atomicity
             if batch_points:
-                if not self.qdrant_client.upsert_points_atomic(batch_points):
-                    raise RuntimeError("Failed to upload final batch to Qdrant")
+                try:
+                    if not self.qdrant_client.upsert_points_atomic(batch_points):
+                        raise RuntimeError("Failed to upload final batch to Qdrant")
+                except Exception as e:
+                    last_file = files[-1].name if files else "unknown"
+                    raise RuntimeError(
+                        f"Failed to upload final batch to Qdrant (last processed file: {last_file}): {e}"
+                    )
 
         stats.end_time = time.time()
         # Set final files_processed count to actual completed files

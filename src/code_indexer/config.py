@@ -419,7 +419,7 @@ class ConfigManager:
         # Convert to dict and handle Path serialization with absolute paths
         config_dict = config.model_dump()
         # Store absolute path for clarity and reliability
-        config_dict["codebase_dir"] = str(config.codebase_dir.absolute())
+        config_dict["codebase_dir"] = str(Path(config.codebase_dir).absolute())
 
         with open(self.config_path, "w") as f:
             json.dump(config_dict, f, indent=2)
@@ -673,6 +673,19 @@ code-indexer index --clear
         Returns:
             ConfigManager instance with found config path or default path
         """
+        # Check for CODEBASE_DIR environment variable override
+        import os
+
+        codebase_dir_env = os.getenv("CODEBASE_DIR")
+        if codebase_dir_env:
+            # Environment variable override - use that directory for config discovery
+            override_dir = Path(codebase_dir_env).resolve()
+            logger.debug(
+                f"Using CODEBASE_DIR environment variable override: {override_dir}"
+            )
+            override_config_path = override_dir / ".code-indexer" / "config.json"
+            return cls(override_config_path)
+
         # CRITICAL: Use find_config_path which stops at first match
         config_path = cls.find_config_path(start_dir)
         if config_path is None:

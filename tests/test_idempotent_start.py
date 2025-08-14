@@ -140,10 +140,6 @@ class TestIdempotentStart:
             patch("code_indexer.cli.DockerManager") as mock_docker_class,
             patch("code_indexer.cli.EmbeddingProviderFactory") as mock_factory,
             patch("code_indexer.cli.QdrantClient") as mock_qdrant_class,
-            patch(
-                "code_indexer.services.legacy_detector.legacy_detector.check_legacy_container",
-                return_value=False,
-            ),
         ):
             # Setup mocks
             mock_docker = MagicMock()
@@ -205,10 +201,6 @@ class TestIdempotentStart:
             patch("code_indexer.cli.DockerManager") as mock_docker_class,
             patch("code_indexer.cli.EmbeddingProviderFactory") as mock_factory,
             patch("code_indexer.cli.QdrantClient") as mock_qdrant_class,
-            patch(
-                "code_indexer.services.legacy_detector.legacy_detector.check_legacy_container",
-                return_value=False,
-            ),
         ):
             # Setup mocks
             mock_docker = MagicMock()

@@ -259,13 +259,9 @@ class BranchAwareIndexer:
                     vector_thread_count,
                 )
 
-                with open(debug_file, "a") as f:
-                    f.write(
-                        f"[{datetime.datetime.now().isoformat()}] _index_changed_files completed\n"
-                    )
-                    f.flush()
+                # Debug logging removed for production
                 result.content_points_created += content_result.content_points_created
-                # files_processed is now updated per file during processing
+                result.files_processed += content_result.files_processed
 
             # 2. Update visibility for unchanged files - no longer needed with hidden_branches approach
             if unchanged_files:
@@ -293,6 +289,8 @@ class BranchAwareIndexer:
 
         # NOTE: Progressive metadata is updated during indexing through record_file_completion()
         # The result object should reflect actual processing results, not cached metadata
+
+        # Debug logging removed for production
 
         return result if result is not None else {}
 
@@ -345,6 +343,9 @@ class BranchAwareIndexer:
                 f.flush()
 
             for file_path in file_paths:
+                # Count this file as processed (examined) regardless of outcome
+                result.files_processed += 1
+
                 # Check for cancellation before processing each file
                 if self.cancelled:
                     logger.info(
@@ -401,7 +402,7 @@ class BranchAwareIndexer:
                                 result.cancelled = True
                                 break
                         current_file_index += 1
-                        result.files_processed += 1  # Count processed file
+                        # File already counted at start of loop
 
                         # Update progressive metadata for deleted files
                         if self.progressive_metadata:
@@ -470,7 +471,7 @@ class BranchAwareIndexer:
                                 result.cancelled = True
                                 break
                         current_file_index += 1
-                        result.files_processed += 1  # Count processed file
+                        # File already counted at start of loop
 
                         # Update progressive metadata for content reuse cases
                         if self.progressive_metadata:
@@ -524,7 +525,7 @@ class BranchAwareIndexer:
                                 result.cancelled = True
                                 break
                         current_file_index += 1
-                        result.files_processed += 1  # Count processed file
+                        # File already counted at start of loop
 
                         # Update progressive metadata for empty files
                         if self.progressive_metadata:
@@ -603,7 +604,7 @@ class BranchAwareIndexer:
                             logger.error(f"Failed to process chunk result: {e}")
                             continue
 
-                    result.files_processed += 1
+                    # File already counted at start of loop
 
                     # Track structured logging with Qdrant point IDs
                     if self.progress_log:
@@ -675,8 +676,7 @@ class BranchAwareIndexer:
 
                     current_file_index += 1
 
-                    # Update files_processed count atomically for each successfully processed file
-                    result.files_processed += 1
+                    # File already counted at start of loop
 
                     # CRITICAL: Maintain point-in-time snapshot behavior by hiding outdated content
                     if current_commit.startswith("working_dir_"):
@@ -801,7 +801,14 @@ class BranchAwareIndexer:
 
                     # Process batch when full
                     if len(batch_points) >= 50:
-                        self.qdrant_client.upsert_points(batch_points, collection_name)
+                        try:
+                            self.qdrant_client.upsert_points(
+                                batch_points, collection_name
+                            )
+                        except Exception as e:
+                            raise RuntimeError(
+                                f"Failed to upsert batch to Qdrant (last processed file: {Path(file_path).name}): {e}"
+                            )
                         batch_points = []
 
                 except Exception as e:
@@ -841,13 +848,20 @@ class BranchAwareIndexer:
                             str(e),
                         )
                     current_file_index += 1
-                    result.files_processed += 1  # Count failed file as processed
+                    # File already counted at start of loop
 
                     # Update progressive metadata already handled above for failed files
 
         # Process remaining points
         if batch_points:
-            self.qdrant_client.upsert_points(batch_points, collection_name)
+            try:
+                self.qdrant_client.upsert_points(batch_points, collection_name)
+            except Exception as e:
+                # Extract filename from last processed file
+                last_file = Path(file_paths[-1]).name if file_paths else "unknown"
+                raise RuntimeError(
+                    f"Failed to upsert final batch to Qdrant (last processed file: {last_file}): {e}"
+                )
 
         # Progressive metadata sync is now handled in the main index_files method
         return result if result is not None else {}

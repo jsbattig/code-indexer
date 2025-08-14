@@ -764,11 +764,7 @@ class SmartIndexer(HighThroughputProcessor):
             self.config, self.embedding_provider, quiet
         )
 
-        # Start/resume indexing
-        if self.progressive_metadata.metadata["status"] != "in_progress":
-            self.progressive_metadata.start_indexing(
-                provider_name, model_name, git_status
-            )
+        # NOTE: start_indexing() moved to after work determination to fix idempotency bug
 
         # DUAL-TRACK APPROACH: Git log + filesystem timestamps
         current_branch = git_status.get("current_branch", "master")
@@ -851,7 +847,7 @@ class SmartIndexer(HighThroughputProcessor):
                 # If safety check fails, proceed with normal logic
                 pass
 
-            # No changes at all
+            # No changes at all - system is up-to-date, don't touch metadata
             if progress_callback:
                 progress_callback(
                     0,
@@ -864,9 +860,15 @@ class SmartIndexer(HighThroughputProcessor):
                 self.progressive_metadata.update_commit_watermark(
                     current_branch, current_commit
                 )
-            self.progressive_metadata.complete_indexing()
-            # No session started yet for no-files case
+            # CRITICAL: Don't call complete_indexing() here as no indexing session was started
+            # This preserves existing metadata when system is already up-to-date
             return ProcessingStats()
+
+        # CRITICAL: Now that we know work is needed, start the indexing session
+        if self.progressive_metadata.metadata["status"] != "in_progress":
+            self.progressive_metadata.start_indexing(
+                provider_name, model_name, git_status
+            )
 
         # Initialize structured logging session for incremental indexing
         session_id = self.progress_log.start_session(
