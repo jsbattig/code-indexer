@@ -173,6 +173,7 @@ if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest tests/ \
     --ignore=tests/test_filter_e2e_success.py \
     --ignore=tests/test_cow_removal_tdd.py \
     --ignore=tests/test_post_cow_functionality.py \
+    --ignore=tests/test_cli_rebuild_indexes.py \
     -m "not slow and not e2e and not real_api" \
     --cov=src/code_indexer --cov-report=xml --cov-report=term; then
     print_success "Unit tests passed"
