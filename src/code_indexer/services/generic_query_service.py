@@ -47,7 +47,6 @@ class GenericQueryService:
         for result in search_results:
             if self._is_result_current_branch(result, current_branch_context):
                 filtered_results.append(result)
-
         logger.info(
             f"Filtered {len(search_results)} to {len(filtered_results)} results for current branch"
         )

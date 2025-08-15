@@ -74,12 +74,14 @@ class SearchEngine:
                 )
 
         # Perform search
+        print(f"DEBUG: Performing search with filter_conditions: {filter_conditions}")
         results = self.qdrant_client.search(
             query_vector=query_embedding,
             limit=limit,
             score_threshold=min_score,
             filter_conditions=filter_conditions,
         )
+        print(f"DEBUG: Search returned {len(results)} results")
 
         # Convert to SearchResult objects
         return [SearchResult.from_qdrant_result(result) for result in results]

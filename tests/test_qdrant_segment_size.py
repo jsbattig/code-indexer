@@ -31,15 +31,20 @@ class TestQdrantSegmentSize:
             # Verify the method was called and returned success
             assert result is True
 
-            # Verify the PUT request was made with correct segment size
-            mock_client.put.assert_called_once()
-            call_args = mock_client.put.call_args
+            # Verify the PUT requests were made (collection + indexes)
+            assert mock_client.put.call_count == 6  # 1 collection + 5 indexes
 
-            # Check the URL
-            assert call_args[0][0] == "/collections/test_collection"
+            # Find the collection creation call
+            collection_call = None
+            for call in mock_client.put.call_args_list:
+                if call[0][0] == "/collections/test_collection":
+                    collection_call = call
+                    break
+
+            assert collection_call is not None, "Collection creation call not found"
 
             # Check the collection config in the JSON payload
-            collection_config = call_args[1]["json"]
+            collection_config = collection_call[1]["json"]
             optimizers_config = collection_config["optimizers_config"]
 
             # This should contain our configured segment size
@@ -68,12 +73,20 @@ class TestQdrantSegmentSize:
             # Verify the method was called and returned success
             assert result is True
 
-            # Verify the PUT request was made with correct segment size
-            mock_client.put.assert_called_once()
-            call_args = mock_client.put.call_args
+            # Verify the PUT requests were made (collection + indexes)
+            assert mock_client.put.call_count == 6  # 1 collection + 5 indexes
+
+            # Find the collection creation call
+            collection_call = None
+            for call in mock_client.put.call_args_list:
+                if call[0][0] == "/collections/test_collection":
+                    collection_call = call
+                    break
+
+            assert collection_call is not None, "Collection creation call not found"
 
             # Check the collection config in the JSON payload
-            collection_config = call_args[1]["json"]
+            collection_config = collection_call[1]["json"]
             optimizers_config = collection_config["optimizers_config"]
 
             # This should contain the default segment size
@@ -115,12 +128,20 @@ class TestQdrantSegmentSize:
             # Verify the method was called and returned success
             assert result is True
 
-            # Verify the PUT request was made with correct segment size
-            mock_client.put.assert_called_once()
-            call_args = mock_client.put.call_args
+            # Verify the PUT requests were made (collection + indexes)
+            assert mock_client.put.call_count == 6  # 1 collection + 5 indexes
+
+            # Find the collection creation call
+            collection_call = None
+            for call in mock_client.put.call_args_list:
+                if call[0][0] == "/collections/test_collection":
+                    collection_call = call
+                    break
+
+            assert collection_call is not None, "Collection creation call not found"
 
             # Check the collection config in the JSON payload
-            collection_config = call_args[1]["json"]
+            collection_config = collection_call[1]["json"]
             optimizers_config = collection_config["optimizers_config"]
 
             # This should contain the default segment size
@@ -158,12 +179,20 @@ class TestQdrantSegmentSize:
                 # Verify the method was called and returned success
                 assert result is True
 
-                # Verify the PUT request was made with correct segment size
-                mock_client.put.assert_called_once()
-                call_args = mock_client.put.call_args
+                # Verify the PUT requests were made (collection + indexes)
+                assert mock_client.put.call_count == 6  # 1 collection + 5 indexes
+
+                # Find the collection creation call
+                collection_call = None
+                for call in mock_client.put.call_args_list:
+                    if f"/collections/test_collection_{description}" == call[0][0]:
+                        collection_call = call
+                        break
+
+                assert collection_call is not None, "Collection creation call not found"
 
                 # Check the collection config in the JSON payload
-                collection_config = call_args[1]["json"]
+                collection_config = collection_call[1]["json"]
                 optimizers_config = collection_config["optimizers_config"]
 
                 # This should contain our configured segment size
@@ -194,12 +223,20 @@ class TestQdrantSegmentSize:
             # Verify the method was called and returned success
             assert result is True
 
-            # Verify the PUT request was made with correct segment size
-            mock_client.put.assert_called_once()
-            call_args = mock_client.put.call_args
+            # Verify the PUT requests were made (collection + indexes)
+            assert mock_client.put.call_count == 6  # 1 collection + 5 indexes
+
+            # Find the collection creation call
+            collection_call = None
+            for call in mock_client.put.call_args_list:
+                if call[0][0] == "/collections/test_collection":
+                    collection_call = call
+                    break
+
+            assert collection_call is not None, "Collection creation call not found"
 
             # Check the collection config in the JSON payload
-            collection_config = call_args[1]["json"]
+            collection_config = collection_call[1]["json"]
             optimizers_config = collection_config["optimizers_config"]
 
             # This should contain our configured segment size
@@ -229,12 +266,20 @@ class TestQdrantSegmentSize:
             # Verify the method was called and returned success
             assert result is True
 
-            # Verify the PUT request was made with correct segment size
-            mock_client.put.assert_called_once()
-            call_args = mock_client.put.call_args
+            # Verify the PUT requests were made (collection + indexes)
+            assert mock_client.put.call_count == 6  # 1 collection + 5 indexes
+
+            # Find the collection creation call
+            collection_call = None
+            for call in mock_client.put.call_args_list:
+                if call[0][0] == "/collections/test_collection":
+                    collection_call = call
+                    break
+
+            assert collection_call is not None, "Collection creation call not found"
 
             # Check the collection config in the JSON payload
-            collection_config = call_args[1]["json"]
+            collection_config = collection_call[1]["json"]
             optimizers_config = collection_config["optimizers_config"]
 
             # This should contain our configured segment size

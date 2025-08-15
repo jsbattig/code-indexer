@@ -75,6 +75,21 @@ def test_working_directory_reconcile_workflow_e2e(working_dir_test_repo):
     """
     test_dir = working_dir_test_repo
 
+    # Clean up any existing files to ensure test isolation
+    print("=== PHASE 0: Clean up existing files ===")
+    import shutil
+
+    for item in test_dir.iterdir():
+        if item.name not in [".code-indexer", ".git"]:
+            try:
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item)
+            except (PermissionError, OSError) as e:
+                print(f"Warning: Could not remove {item}: {e}")
+                continue
+
     # Create initial files and commit them
     print("=== PHASE 1: Create and commit initial files ===")
 
@@ -279,6 +294,21 @@ def test_git_restore_reconcile_workflow_e2e(working_dir_test_repo):
     5. Query should find committed content, not working_dir content
     """
     test_dir = working_dir_test_repo
+
+    # Clean up any existing files to ensure test isolation
+    print("=== PHASE 0: Clean up existing files ===")
+    import shutil
+
+    for item in test_dir.iterdir():
+        if item.name not in [".code-indexer", ".git"]:
+            try:
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item)
+            except (PermissionError, OSError) as e:
+                print(f"Warning: Could not remove {item}: {e}")
+                continue
 
     # Setup: Create, commit, and index initial files
     print("=== PHASE 1: Setup committed and indexed files ===")

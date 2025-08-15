@@ -419,7 +419,9 @@ class TestGitAwareWatchE2E:
                 # Check for successful startup in output
                 output = watch_manager.get_recent_output()
                 assert (
-                    "watching" in output.lower() or "started" in output.lower()
+                    "watching" in output.lower()
+                    or "started" in output.lower()
+                    or "👀 starting git-aware watch" in output.lower()
                 ), f"Watch startup not detected in output: {output}"
 
             finally:

@@ -1414,6 +1414,11 @@ def start(
     is_flag=True,
     help="Detect and handle files deleted from filesystem but still in database (for standard indexing only; --reconcile includes this automatically)",
 )
+@click.option(
+    "--rebuild-indexes",
+    is_flag=True,
+    help="Rebuild payload indexes for optimal performance",
+)
 @click.pass_context
 def index(
     ctx,
@@ -1423,6 +1428,7 @@ def index(
     files_count_to_process: Optional[int],
     parallel_vector_worker_thread_count: Optional[int],
     detect_deletions: bool,
+    rebuild_indexes: bool,
 ):
     """Index the codebase for semantic search.
 
@@ -1704,6 +1710,21 @@ def index(
             with GracefulInterruptHandler(console, operation_name) as handler:
                 interrupt_handler = handler
 
+                # Ensure payload indexes exist before indexing starts
+                collection_name = qdrant_client.resolve_collection_name(
+                    config, embedding_provider
+                )
+                qdrant_client.ensure_payload_indexes(collection_name, context="index")
+
+                # Handle rebuild indexes flag
+                if rebuild_indexes:
+                    if qdrant_client.rebuild_payload_indexes(collection_name):
+                        console.print("Index rebuild completed successfully")
+                    else:
+                        console.print("Index rebuild failed - check logs for details")
+                        sys.exit(1)
+                    return
+
                 stats = smart_indexer.smart_index(
                     force_full=clear,
                     reconcile_with_database=reconcile,
@@ -1830,6 +1851,9 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
         collection_name = qdrant_client.resolve_collection_name(
             config, embedding_provider
         )
+        # Ensure payload indexes exist for watch indexing operations
+        qdrant_client.ensure_payload_indexes(collection_name, context="index")
+
         watch_metadata.start_watch_session(
             provider_name=embedding_provider.get_provider_name(),
             model_name=embedding_provider.get_current_model(),
@@ -2068,6 +2092,9 @@ def query(
         )
         qdrant_client._current_collection_name = collection_name
 
+        # Ensure payload indexes exist (read-only check for query operations)
+        qdrant_client.ensure_payload_indexes(collection_name, context="query")
+
         # Get query embedding
         if not quiet:
             with console.status("Generating query embedding..."):
@@ -2238,9 +2265,13 @@ def query(
                     if language and payload.get("language") != language:
                         continue
 
-                    # Filter by path
-                    if path and path not in payload.get("path", ""):
-                        continue
+                    # Filter by path using glob pattern matching
+                    if path:
+                        import fnmatch
+
+                        file_path = payload.get("path", "")
+                        if not fnmatch.fnmatch(file_path, path):
+                            continue
 
                     # Filter by minimum score
                     if min_score and result.get("score", 0) < min_score:
@@ -2741,6 +2772,9 @@ def claude(
             )
             qdrant_client._current_collection_name = collection_name
 
+            # Ensure payload indexes exist (read-only check for query operations)
+            qdrant_client.ensure_payload_indexes(collection_name, context="query")
+
             # Initialize query service for git-aware filtering
             query_service = GenericQueryService(config.codebase_dir, config)
 
@@ -2802,6 +2836,7 @@ def claude(
             current_model = embedding_provider.get_current_model()
 
             # Perform semantic search using model-specific filter
+            print(f"DEBUG: CLI filter_conditions: {filter_conditions}")
             raw_results = qdrant_client.search_with_model_filter(
                 query_vector=query_embedding,
                 embedding_model=current_model,
@@ -2809,9 +2844,11 @@ def claude(
                 score_threshold=min_score,
                 additional_filters=filter_conditions,
             )
+            print(f"DEBUG: Raw results from search: {len(raw_results)}")
 
             # Apply git-aware filtering
             search_results = query_service.filter_results_by_current_branch(raw_results)
+            print(f"DEBUG: Results after git filtering: {len(search_results)}")
 
             # Limit to requested number after filtering
             search_results = search_results[:limit]
@@ -3254,6 +3291,47 @@ def _status_impl(ctx, force_docker: bool):
             qdrant_details = "Qdrant container is not running"
 
         table.add_row("Qdrant", qdrant_status, qdrant_details)
+
+        # Add payload index status - only if Qdrant is running and healthy
+        if qdrant_ok and qdrant_client:
+            try:
+                embedding_provider = EmbeddingProviderFactory.create(config, console)
+                collection_name = qdrant_client.resolve_collection_name(
+                    config, embedding_provider
+                )
+                # Ensure payload indexes exist (silent for status operations)
+                qdrant_client.ensure_payload_indexes(collection_name, context="status")
+                payload_index_status = qdrant_client.get_payload_index_status(
+                    collection_name
+                )
+
+                if payload_index_status.get("healthy", False):
+                    payload_status = "✅ Healthy"
+                    payload_details = (
+                        f"{payload_index_status['total_indexes']} indexes active"
+                    )
+                    if payload_index_status.get("estimated_memory_mb", 0) > 0:
+                        payload_details += f" | ~{payload_index_status['estimated_memory_mb']}MB memory"
+                else:
+                    if "error" in payload_index_status:
+                        payload_status = "❌ Error"
+                        payload_details = (
+                            f"Error: {payload_index_status['error'][:50]}..."
+                        )
+                    else:
+                        payload_status = "⚠️ Issues"
+                        missing = payload_index_status.get("missing_indexes", [])
+                        if missing:
+                            payload_details = f"Missing: {', '.join(missing)}"
+                        else:
+                            payload_details = f"{payload_index_status.get('total_indexes', 0)}/{payload_index_status.get('expected_indexes', 0)} indexes"
+
+                table.add_row("Payload Indexes", payload_status, payload_details)
+            except Exception as e:
+                # Don't fail the entire status command if payload index check fails
+                table.add_row(
+                    "Payload Indexes", "❌ Error", f"Check failed: {str(e)[:40]}..."
+                )
 
         # Add Qdrant storage and collection information
         try:

@@ -212,8 +212,15 @@ class TestHNSWCollectionConfiguration:
             # This method should be added in Phase 2
             qdrant_client.create_collection_with_profile("large_codebase")
 
-            call_args = mock_put.call_args
-            request_data = call_args[1]["json"]
+            # Find the collection creation call (the one with hnsw_config)
+            collection_call = None
+            for call in mock_put.call_args_list:
+                if "hnsw_config" in call[1]["json"]:
+                    collection_call = call
+                    break
+
+            assert collection_call is not None, "Collection creation call not found"
+            request_data = collection_call[1]["json"]
 
             hnsw_config = request_data["hnsw_config"]
             # Large codebase profile should have optimized settings
@@ -230,8 +237,15 @@ class TestHNSWCollectionConfiguration:
 
             qdrant_client.create_collection_with_profile("small_codebase")
 
-            call_args = mock_put.call_args
-            request_data = call_args[1]["json"]
+            # Find the collection creation call (the one with hnsw_config)
+            collection_call = None
+            for call in mock_put.call_args_list:
+                if "hnsw_config" in call[1]["json"]:
+                    collection_call = call
+                    break
+
+            assert collection_call is not None, "Collection creation call not found"
+            request_data = collection_call[1]["json"]
 
             hnsw_config = request_data["hnsw_config"]
             # Small codebase can use lower settings for memory efficiency

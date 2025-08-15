@@ -4,7 +4,7 @@ import json
 import logging
 import yaml  # type: ignore
 from pathlib import Path
-from typing import List, Optional, Any, Literal
+from typing import List, Optional, Any, Literal, Tuple
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -106,12 +106,44 @@ class QdrantConfig(BaseModel):
         description="Maximum segment size in KB (default: 100MB for optimal performance while staying Git-friendly)",
     )
 
+    # Payload index configuration
+    enable_payload_indexes: bool = Field(
+        default=True,
+        description="Enable payload indexes for faster filtering (uses 100-300MB additional RAM)",
+    )
+
+    payload_indexes: List[Tuple[str, str]] = Field(
+        default=[
+            ("type", "keyword"),
+            ("path", "text"),
+            ("git_branch", "keyword"),
+            ("file_mtime", "integer"),
+            ("hidden_branches", "keyword"),
+            ("language", "keyword"),
+        ],
+        description="List of (field_name, field_schema) tuples for payload indexes",
+    )
+
     @field_validator("max_segment_size_kb")
     @classmethod
     def validate_segment_size(cls, v: int) -> int:
         """Validate segment size is positive."""
         if v <= 0:
             raise ValueError("Segment size must be positive")
+        return v
+
+    @field_validator("payload_indexes")
+    @classmethod
+    def validate_payload_indexes(
+        cls, v: List[Tuple[str, str]]
+    ) -> List[Tuple[str, str]]:
+        """Validate payload index field schemas."""
+        valid_schemas = {"keyword", "text", "integer", "geo", "bool"}
+        for field_name, field_schema in v:
+            if field_schema not in valid_schemas:
+                raise ValueError(
+                    f"Invalid field_schema '{field_schema}' for field '{field_name}'"
+                )
         return v
 
 

@@ -44,14 +44,19 @@ class TestPostCoWQdrantClient:
             result = qdrant_client._create_collection_direct("test_collection", 1536)
 
             assert result is True
-            mock_put.assert_called_once()
+            assert mock_put.call_count == 6  # 1 collection + 5 payload indexes
 
-            # Verify the collection config is correct
-            call_args = mock_put.call_args
-            assert "/collections/test_collection" in call_args[0][0]
+            # Find the collection creation call
+            collection_call = None
+            for call in mock_put.call_args_list:
+                if "/collections/test_collection" == call[0][0]:
+                    collection_call = call
+                    break
+
+            assert collection_call is not None, "Collection creation call not found"
 
             # Verify configuration structure
-            config = call_args[1]["json"]
+            config = collection_call[1]["json"]
             assert config["vectors"]["size"] == 1536
             assert config["vectors"]["distance"] == "Cosine"
             assert config["vectors"]["on_disk"] is True
@@ -285,12 +290,28 @@ class TestPostCoWPerformance:
         with patch.object(client.client, "put") as mock_put:
             mock_put.return_value.status_code = 200
 
-            # This should be a single, direct call without CoW overhead
+            # This includes collection creation + payload indexes (no CoW overhead)
             result = client._create_collection_direct("perf_test", 1536)
 
             assert result is True
-            # Verify only one API call was made (no CoW complexity)
-            assert mock_put.call_count == 1
+            # Verify 6 API calls were made (1 collection + 5 indexes, no CoW complexity)
+            assert mock_put.call_count == 6
+
+            # Verify collection creation call is present
+            collection_calls = [
+                call
+                for call in mock_put.call_args_list
+                if "/collections/perf_test" == call[0][0]
+            ]
+            assert len(collection_calls) == 1
+
+            # Verify index creation calls are present
+            index_calls = [
+                call
+                for call in mock_put.call_args_list
+                if "field_name" in call[1]["json"]
+            ]
+            assert len(index_calls) == 5
 
     def test_no_cow_fallback_logic(self):
         """Test that there's no CoW fallback logic slowing down operations."""

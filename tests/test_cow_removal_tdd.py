@@ -176,16 +176,34 @@ class TestPerformanceAfterCoWRemoval:
         )
         return QdrantClient(config=config, console=Mock())
 
-    def test_collection_creation_is_single_call_after_cow_removal(self, qdrant_client):
-        """Test that collection creation is a single API call after CoW removal."""
+    def test_collection_creation_includes_payload_indexes_after_cow_removal(
+        self, qdrant_client
+    ):
+        """Test that collection creation includes automatic payload index creation after CoW removal."""
         with patch.object(qdrant_client.client, "put") as mock_put:
             mock_put.return_value.status_code = 200
 
             result = qdrant_client._create_collection_direct("test_collection", 1536)
 
-            # Should be exactly one API call - no CoW complexity
+            # Should create collection + 5 payload indexes (6 total calls)
             assert result is True
-            assert mock_put.call_count == 1
+            assert mock_put.call_count == 6  # 1 collection + 5 indexes
+
+            # Verify collection creation call is present
+            collection_calls = [
+                call
+                for call in mock_put.call_args_list
+                if "hnsw_config" in call[1]["json"]
+            ]
+            assert len(collection_calls) == 1
+
+            # Verify index creation calls are present
+            index_calls = [
+                call
+                for call in mock_put.call_args_list
+                if "field_name" in call[1]["json"]
+            ]
+            assert len(index_calls) == 5
 
     def test_ensure_collection_no_cow_overhead(self, qdrant_client):
         """Test that ensure_collection has no CoW overhead after removal."""
