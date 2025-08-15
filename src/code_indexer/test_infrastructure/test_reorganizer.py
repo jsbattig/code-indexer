@@ -339,10 +339,18 @@ class TestFileReorganizer:
         levels_up = len(relative_path.split("/"))
         prefix = "." * (levels_up + 1)
         
-        # Pattern to match imports from tests directory
+        # Pattern to match imports from tests directory and subdirectories
         import_patterns = [
+            # Handle imports like "from tests.unit.config.conftest" -> "from ...conftest"
+            (r"from tests\.(unit|integration|e2e)\.([a-zA-Z_][a-zA-Z0-9_.]*)\.([a-zA-Z_][a-zA-Z0-9_]*)", rf"from {prefix}\3"),
+            # Handle imports like "from tests.conftest" -> "from ...conftest"
             (r"from tests\.([a-zA-Z_][a-zA-Z0-9_]*)", rf"from {prefix}\1"),
+            # Handle imports like "import tests.unit.config.conftest" -> "import ...conftest"
+            (r"import tests\.(unit|integration|e2e)\.([a-zA-Z_][a-zA-Z0-9_.]*)\.([a-zA-Z_][a-zA-Z0-9_]*)", rf"import {prefix}\3"),
+            # Handle imports like "import tests.conftest" -> "import ...conftest"
             (r"import tests\.([a-zA-Z_][a-zA-Z0-9_]*)", rf"import {prefix}\1"),
+            # Handle imports like "from .conftest" which should stay as is
+            # (no change needed for relative imports that are already correct)
         ]
         
         for pattern, replacement in import_patterns:
