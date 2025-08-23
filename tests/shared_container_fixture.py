@@ -27,7 +27,7 @@ class SharedTestContainers:
             force_docker=force_docker, project_name="test_shared"
         )
         # Use a consistent path for all test containers to avoid creating multiple container sets
-        from .test_infrastructure import get_shared_test_directory
+        from .infrastructure import get_shared_test_directory
 
         shared_test_path = get_shared_test_directory(force_docker=force_docker)
         shared_test_path.mkdir(parents=True, exist_ok=True)

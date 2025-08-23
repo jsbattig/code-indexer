@@ -233,7 +233,6 @@ class JavaSemanticParser(BaseSemanticParser):
                     kw in line
                     for kw in ["class", "interface", "enum", "import", "package"]
                 ):  # Allow abstract methods
-
                     modifiers = [
                         m
                         for m in line.split()

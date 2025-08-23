@@ -133,7 +133,6 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         with VectorCalculationManager(
             self.embedding_provider, vector_thread_count
         ) as vector_manager:
-
             # Submit ALL chunks to the vector calculation manager
             chunk_futures = []
             for chunk_task in all_chunk_tasks:

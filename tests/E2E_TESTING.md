@@ -1,15 +1,36 @@
 # End-to-End Testing Framework
 
-This directory contains the E2E testing framework for Code Indexer's embedding providers. The tests are designed to work with real API services when available, but gracefully skip tests when API tokens are not configured.
+This directory contains the E2E testing framework for Code Indexer, organized into logical workflow categories. The tests are designed to work with real API services when available, but gracefully skip tests when API tokens are not configured.
 
 ## Test Structure
 
-### Test Files
+### Organized Directory Structure
 
-- `test_e2e_embedding_providers.py` - Main E2E test suite
-- `e2e_test_setup.py` - Setup script and test runner
-- `pytest_e2e.ini` - Pytest configuration for E2E tests
-- `E2E_TESTING.md` - This documentation file
+The E2E tests are now organized into focused subdirectories:
+
+```bash
+tests/e2e/
+├── git_workflows/        # Git-aware indexing and workflow tests
+├── payload_indexes/      # Payload indexing validation tests  
+├── providers/            # Embedding provider switching tests
+├── semantic_search/      # Search capability validation tests
+├── claude_integration/   # Claude AI integration tests
+├── display/              # Progress display and UI tests
+├── infrastructure/       # Container and service e2e tests
+└── misc/                 # General end-to-end workflow tests
+```
+
+### Key E2E Test Files
+
+- **`e2e/git_workflows/`** - Git-aware incremental indexing, branch management, reconciliation
+- **`e2e/payload_indexes/`** - Comprehensive payload indexing validation with real data
+- **`e2e/providers/`** - VoyageAI and Ollama provider switching and configuration
+- **`e2e/semantic_search/`** - Semantic search capabilities across languages
+- **`e2e/claude_integration/`** - Claude CLI integration and prompt generation
+- **`e2e/display/`** - Progress bars, line numbers, and user interface
+- **`e2e/infrastructure/`** - Container management and service lifecycle
+- **`e2e_test_setup.py`** - Setup script and test runner (legacy)
+- **`pytest_e2e.ini`** - Pytest configuration for E2E tests
 
 ### Test Categories
 
@@ -62,13 +83,30 @@ pytest tests/test_e2e_embedding_providers.py -m "not slow" -v
 
 ### Test Markers
 
-The tests use pytest markers for categorization:
+The tests use pytest markers for categorization and container requirements:
 
+#### E2E Test Markers
 - `@pytest.mark.e2e` - All E2E tests
 - `@pytest.mark.voyage_ai` - Tests requiring VoyageAI API
 - `@pytest.mark.real_api` - Tests making real API calls
 - `@pytest.mark.qdrant` - Tests requiring Qdrant service
 - `@pytest.mark.slow` - Tests that take longer to run
+
+#### Container Safety Markers
+- `@pytest.mark.shared_safe` - Can use either Docker or Podman containers, data-only operations
+- `@pytest.mark.docker_only` - Requires Docker-specific features or configurations
+- `@pytest.mark.podman_only` - Requires Podman-specific features or rootless containers
+- `@pytest.mark.destructive` - Manipulates containers directly, requires isolation
+
+#### Infrastructure Test Patterns
+
+E2E tests follow specific patterns for reliable execution:
+
+- **Service Persistence**: Tests leave services running at completion for speed
+- **Setup Validation**: Each test ensures prerequisites are met before execution
+- **Clean Data Isolation**: Uses `clean-data` operations rather than service shutdown
+- **Automatic Categorization**: Tests are categorized by container requirements
+- **Shared Fixtures**: Common utilities available via `tests.shared.test_infrastructure`
 
 ## Environment Configuration
 

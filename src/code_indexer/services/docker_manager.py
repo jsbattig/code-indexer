@@ -298,36 +298,40 @@ class DockerManager:
         """Extract the actual port from a running container."""
         container_name = self.get_container_name(service_name, project_config)
 
-        # Try both docker and podman
-        for runtime in ["docker", "podman"]:
-            try:
-                # Get port mapping from docker/podman ps
-                cmd = [
-                    runtime,
-                    "ps",
-                    "--filter",
-                    f"name={container_name}",
-                    "--format",
-                    "{{.Ports}}",
-                ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        # Use the appropriate runtime based on force_docker flag
+        runtime = self._get_available_runtime()
+        if not runtime:
+            return None
 
-                if result.returncode == 0 and result.stdout.strip():
-                    ports_output = result.stdout.strip()
-                    # Parse port mapping like "0.0.0.0:7264->6333/tcp"
-                    for port_mapping in ports_output.split(", "):
-                        if "->" in port_mapping:
-                            # Extract the external port
-                            external_part = port_mapping.split("->")[0]
-                            if ":" in external_part:
-                                port_str = external_part.split(":")[-1]
-                                try:
-                                    return int(port_str)
-                                except ValueError:
-                                    continue
+        # Try the selected runtime
+        try:
+            # Get port mapping from docker/podman ps
+            cmd = [
+                runtime,
+                "ps",
+                "--filter",
+                f"name={container_name}",
+                "--format",
+                "{{.Ports}}",
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
 
-            except (subprocess.TimeoutExpired, FileNotFoundError):
-                continue
+            if result.returncode == 0 and result.stdout.strip():
+                ports_output = result.stdout.strip()
+                # Parse port mapping like "0.0.0.0:7264->6333/tcp"
+                for port_mapping in ports_output.split(", "):
+                    if "->" in port_mapping:
+                        # Extract the external port
+                        external_part = port_mapping.split("->")[0]
+                        if ":" in external_part:
+                            port_str = external_part.split(":")[-1]
+                            try:
+                                return int(port_str)
+                            except ValueError:
+                                continue
+
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
 
         return None
 
@@ -2063,6 +2067,9 @@ class DockerManager:
                     f"⚠️  Could not clear collections: {e}", style="yellow"
                 )
 
+            # Clean up corrupted WAL files that may prevent container startup
+            self._cleanup_wal_files(config_manager)
+
             # NOTE: clean-data should NOT remove local config directory
             # The config directory contains the configuration needed to stop services
             # Only `uninstall` should remove the config directory for complete cleanup
@@ -2298,15 +2305,15 @@ class DockerManager:
             "ollama" in required_services and self._check_ollama_model_exists()
         )
 
-        # If both containers and model exist, use shorter timeout
+        # If both containers and model exist, use reasonable timeout for collection recovery
         if containers_exist and ("ollama" not in required_services or model_exists):
-            adaptive_timeout = 10  # Fast startup expected
-            self.console.print("🚀 Containers ready, using fast timeout (10s)")
+            adaptive_timeout = 120  # Allow time for collection recovery
+            self.console.print("🚀 Containers ready, using recovery timeout (120s)")
             return adaptive_timeout
         elif containers_exist:
-            adaptive_timeout = 30  # Medium startup time
+            adaptive_timeout = 120  # Allow time for container setup and recovery
             self.console.print(
-                "📦 Containers exist but may need setup, using medium timeout (30s)"
+                "📦 Containers exist but may need setup, using recovery timeout (120s)"
             )
             return adaptive_timeout
         else:
@@ -4492,6 +4499,76 @@ class DockerManager:
 
         except Exception as e:
             self.console.print(f"⚠️  Failed to update configuration with ports: {e}")
+
+    def _cleanup_wal_files(self, config_manager):
+        """Clean up corrupted WAL files that may prevent Qdrant container startup.
+
+        This method removes WAL files and related lock files that can become corrupted
+        during concurrent access or improper shutdowns, preventing Qdrant from starting.
+        """
+        try:
+            import shutil
+            from pathlib import Path
+
+            config = config_manager.load()
+            project_root = Path(config.codebase_dir)
+            qdrant_storage_path = project_root / ".code-indexer" / "qdrant"
+
+            if not qdrant_storage_path.exists():
+                return
+
+            self.console.print(
+                "🧹 Cleaning up corrupted Qdrant collections to prevent startup issues...",
+                style="yellow",
+            )
+
+            # Find and remove entire collection directories that contain corrupted WAL files
+            # This is more thorough than just removing WAL files and prevents metadata inconsistencies
+            collections_removed = 0
+            collections_dir = qdrant_storage_path / "collections"
+
+            if collections_dir.exists():
+                for collection_dir in collections_dir.iterdir():
+                    if collection_dir.is_dir():
+                        try:
+                            shutil.rmtree(collection_dir)
+                            collections_removed += 1
+                            self.console.print(
+                                f"   🗑️  Removed collection: {collection_dir.name}"
+                            )
+                        except Exception as e:
+                            self.console.print(
+                                f"   ⚠️  Could not remove collection {collection_dir.name}: {e}",
+                                style="yellow",
+                            )
+
+            # Remove lock files
+            lock_files_removed = 0
+            for lock_file in qdrant_storage_path.rglob("*.lock"):
+                try:
+                    lock_file.unlink()
+                    lock_files_removed += 1
+                    self.console.print(
+                        f"   🗑️  Removed lock file: {lock_file.relative_to(project_root)}"
+                    )
+                except Exception as e:
+                    self.console.print(
+                        f"   ⚠️  Could not remove {lock_file}: {e}", style="yellow"
+                    )
+
+            if collections_removed > 0 or lock_files_removed > 0:
+                self.console.print(
+                    f"✅ Qdrant cleanup complete: {collections_removed} collections, {lock_files_removed} lock files removed",
+                    style="green",
+                )
+            else:
+                self.console.print(
+                    "✅ No corrupted collections or lock files found to clean",
+                    style="green",
+                )
+
+        except Exception as e:
+            self.console.print(f"⚠️  Could not clean WAL files: {e}", style="yellow")
 
 
 def get_project_compose_file_path(

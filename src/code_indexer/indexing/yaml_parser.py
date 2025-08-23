@@ -231,7 +231,7 @@ class YamlSemanticParser(BaseTreeSitterParser):
                 mapping_name = f"{keys[0]}_mapping"
             else:
                 # Use first key as primary identifier with count
-                mapping_name = f"{keys[0]}_and_{len(keys)-1}_more"
+                mapping_name = f"{keys[0]}_and_{len(keys) - 1}_more"
         else:
             mapping_name = "mapping"
         current_path = f"{parent_path}.{mapping_name}" if parent_path else mapping_name

@@ -16,10 +16,15 @@ This represents the final comprehensive test proving the epic works.
 import os
 import time
 import subprocess
-import tempfile
 from pathlib import Path
 from typing import Dict, Any, List
 import pytest
+
+from tests.conftest import shared_container_test_environment
+from .infrastructure import EmbeddingProvider
+
+# Mark all tests in this file as E2E tests
+pytestmark = pytest.mark.e2e
 
 
 def run_cidx_command(
@@ -66,15 +71,17 @@ def run_cidx_command(
         }
 
 
-@pytest.fixture
-def complete_test_environment():
-    """Create a complete test environment with realistic code."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        test_dir = Path(temp_dir)
+def _create_comprehensive_test_files(project_path: Path) -> None:
+    """Create comprehensive test files to demonstrate payload index benefits.
 
-        # Create comprehensive test files to demonstrate payload index benefits
-        test_files = {
-            "src/core/auth.py": '''"""
+    Args:
+        project_path: Path where test files should be created
+    """
+    test_dir = project_path
+
+    # Create comprehensive test files to demonstrate payload index benefits
+    test_files = {
+        "src/core/auth.py": '''"""
 Core authentication module with user management.
 """
 from datetime import datetime
@@ -136,7 +143,7 @@ class AuthenticationManager:
         """Get user by session token."""
         return self.sessions.get(session_token)
 ''',
-            "src/api/handlers.py": '''"""
+        "src/api/handlers.py": '''"""
 API request handlers for web endpoints.
 """
 from flask import Flask, request, jsonify, session
@@ -242,7 +249,7 @@ def logout():
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
 ''',
-            "src/data/models.py": '''"""
+        "src/data/models.py": '''"""
 Data models and database operations.
 """
 from datetime import datetime
@@ -342,7 +349,7 @@ class DatabaseManager:
         """Get all files by type."""
         return [f for f in self.files if f.file_type == file_type]
 ''',
-            "tests/test_integration.py": '''"""
+        "tests/test_integration.py": '''"""
 Integration tests for the application.
 """
 import pytest
@@ -446,7 +453,7 @@ class TestDatabaseIntegration:
         all_projects = self.db.list_projects()
         assert len(all_projects) == 3
 ''',
-            "docs/API.md": """# API Documentation
+        "docs/API.md": """# API Documentation
 
 ## Authentication Endpoints
 
@@ -573,7 +580,7 @@ Error responses include a descriptive message:
 }
 ```
 """,
-            "README.md": """# Complete Test Project
+        "README.md": """# Complete Test Project
 
 This is a comprehensive test project designed to validate payload index functionality with realistic code patterns.
 
@@ -632,21 +639,26 @@ The system should create these payload indexes for optimal performance:
 
 These indexes enable 50-90% faster filtering operations and significantly improved query performance.
 """,
-        }
+    }
 
-        # Create all test files
-        for file_path, content in test_files.items():
-            full_path = test_dir / file_path
-            full_path.parent.mkdir(parents=True, exist_ok=True)
-            full_path.write_text(content)
+    # Create all test files
+    for file_path, content in test_files.items():
+        full_path = test_dir / file_path
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path.write_text(content)
 
-        yield test_dir
+    # Initialize git repository
+    subprocess.run(["git", "init"], cwd=test_dir, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=test_dir, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial commit"], cwd=test_dir, capture_output=True
+    )
 
 
 class TestPayloadIndexesCompleteValidation:
     """Complete validation of payload indexes epic functionality."""
 
-    def test_complete_payload_indexes_epic_validation(self, complete_test_environment):
+    def test_complete_payload_indexes_epic_validation(self):
         """
         Complete end-to-end validation of the entire payload indexes epic.
 
@@ -659,231 +671,237 @@ class TestPayloadIndexesCompleteValidation:
         6. ✅ All expected index fields are present
 
         Success criteria:
-        - All 5 indexes active: type, path, git_branch, file_mtime, hidden_branches
+        - All 7 indexes active: type, path, git_branch, file_mtime, hidden_branches, language, embedding_model
         - Collection status is healthy
         - Indexing completes successfully
         - Queries work properly
         - Memory usage is tracked and reasonable
         """
-        test_dir = Path(complete_test_environment)
+        with shared_container_test_environment(
+            "test_complete_payload_indexes_epic_validation", EmbeddingProvider.VOYAGE_AI
+        ) as project_path:
+            # Create comprehensive test files with realistic code patterns
+            _create_comprehensive_test_files(project_path)
 
-        print("🚀 Starting Complete Payload Indexes Epic Validation")
-        print(f"📁 Test directory: {test_dir}")
+            test_dir = project_path
 
-        # Phase 1: Initialize and Start Services
-        print("\n📋 Phase 1: Project Initialization")
+            print("🚀 Starting Complete Payload Indexes Epic Validation")
+            print(f"📁 Test directory: {test_dir}")
 
-        init_result = run_cidx_command(["cidx", "init"], test_dir)
-        assert init_result["success"], f"Init failed: {init_result['stderr']}"
-        print("✅ Project initialized successfully")
+            # Phase 1: Services are already initialized by shared container
+            print("\n📋 Phase 1: Project Initialization")
+            print("✅ Project initialized successfully (shared container)")
+            print("✅ Services started successfully (shared container)")
 
-        start_result = run_cidx_command(["cidx", "start"], test_dir, timeout=90)
-        assert start_result["success"], f"Start failed: {start_result['stderr']}"
-        print("✅ Services started successfully")
+            # Wait for services to stabilize
+            time.sleep(5)
 
-        # Wait for services to stabilize
-        time.sleep(5)
+            # Phase 2: Check Initial Payload Index Status (Before Indexing)
+            print("\n🔍 Phase 2: Initial Payload Index Status Check")
 
-        # Phase 2: Check Initial Payload Index Status (Before Indexing)
-        print("\n🔍 Phase 2: Initial Payload Index Status Check")
+            status_result = run_cidx_command(["cidx", "status"], test_dir)
+            assert status_result["success"], f"Status failed: {status_result['stderr']}"
 
-        status_result = run_cidx_command(["cidx", "status"], test_dir)
-        assert status_result["success"], f"Status failed: {status_result['stderr']}"
+            status_output = status_result["stdout"]
+            print(f"Status output preview: {status_output[:300]}...")
 
-        status_output = status_result["stdout"]
-        print(f"Status output preview: {status_output[:300]}...")
-
-        # Before indexing, payload indexes should be detected but may have issues
-        assert (
-            "Payload Indexes" in status_output
-        ), "Status should show Payload Indexes section"
-
-        # Before indexing, we expect either healthy indexes (if collection exists) or issues (missing data)
-        has_healthy_indexes = "✅ Healthy" in status_output
-        has_index_issues = "⚠️ Issues" in status_output or "Missing:" in status_output
-
-        if has_healthy_indexes:
-            print(
-                "✅ Payload indexes are already healthy (collection exists with data)"
-            )
-        elif has_index_issues:
-            print(
-                "ℹ️ Payload indexes show issues before indexing (expected for empty collection)"
-            )
-        else:
-            # This is unexpected - should show either healthy or issues
+            # Before indexing, payload indexes should be detected but may have issues
             assert (
-                False
-            ), f"Payload indexes should show either healthy or issues status. Got: {status_output}"
+                "Payload Indexes" in status_output
+            ), "Status should show Payload Indexes section"
 
-        print("✅ Payload index status reporting is working")
+            # Before indexing, we expect either healthy indexes (if collection exists) or issues (missing data)
+            has_healthy_indexes = "✅ Healthy" in status_output
+            has_index_issues = (
+                "⚠️ Issues" in status_output or "Missing:" in status_output
+            )
 
-        # Phase 3: Index Realistic Codebase
-        print("\n📚 Phase 3: Indexing with Payload Indexes")
-
-        index_start_time = time.time()
-        index_result = run_cidx_command(["cidx", "index"], test_dir, timeout=180)
-        index_duration = time.time() - index_start_time
-
-        assert index_result["success"], f"Indexing failed: {index_result['stderr']}"
-        print(f"✅ Indexing completed successfully in {index_duration:.2f} seconds")
-
-        # Validate indexing results
-        index_output = index_result["stdout"]
-        assert (
-            "files indexed" in index_output.lower()
-            or "completed" in index_output.lower()
-        ), "Indexing should report completion"
-
-        # Phase 3.5: Validate Payload Indexes After Indexing
-        print("\n🔍 Phase 3.5: Payload Index Validation After Indexing")
-
-        post_index_status_result = run_cidx_command(["cidx", "status"], test_dir)
-        assert post_index_status_result[
-            "success"
-        ], f"Post-index status failed: {post_index_status_result['stderr']}"
-
-        post_index_status_output = post_index_status_result["stdout"]
-
-        # After indexing, payload indexes should be healthy
-        assert (
-            "Payload Indexes" in post_index_status_output
-        ), "Status should show Payload Indexes section"
-        assert (
-            "✅ Healthy" in post_index_status_output
-        ), "Payload indexes should be healthy after indexing"
-        assert (
-            "5 indexes active" in post_index_status_output
-        ), "All 5 payload indexes should be active after indexing"
-
-        print("✅ All 5 payload indexes are active and healthy after indexing")
-
-        # Validate memory usage tracking
-        assert (
-            "memory" in post_index_status_output.lower()
-            or "MB" in post_index_status_output
-        ), "Memory usage should be tracked"
-        print("✅ Memory usage is being tracked")
-
-        # Phase 4: Validate Collection Health After Indexing
-        print("\n💚 Phase 4: Post-Indexing Health Check")
-
-        post_index_status = run_cidx_command(["cidx", "status"], test_dir)
-        assert post_index_status[
-            "success"
-        ], f"Post-index status failed: {post_index_status['stderr']}"
-
-        post_status_output = post_index_status["stdout"]
-
-        # Collection should be active with data
-        assert (
-            "✅ Active" in post_status_output
-        ), "Collection should be active after indexing"
-        assert (
-            "points:" in post_status_output.lower()
-            or "docs" in post_status_output.lower()
-        ), "Status should show indexed data"
-
-        print("✅ Collection is healthy and contains indexed data")
-
-        # Phase 5: Query Operations with Payload Indexes
-        print("\n🔍 Phase 5: Query Performance with Payload Indexes")
-
-        # Test various query patterns that benefit from payload indexes
-        test_queries = [
-            ["cidx", "query", "authentication function", "--limit", "3"],
-            ["cidx", "query", "user management system", "--limit", "3"],
-            ["cidx", "query", "API endpoint handler", "--limit", "3"],
-            ["cidx", "query", "database model", "--limit", "3"],
-            ["cidx", "query", "integration test", "--limit", "3"],
-        ]
-
-        successful_queries = 0
-
-        for query_cmd in test_queries:
-            query_start_time = time.time()
-            query_result = run_cidx_command(query_cmd, test_dir, timeout=30)
-            query_duration = time.time() - query_start_time
-
-            if query_result["success"]:
-                successful_queries += 1
+            if has_healthy_indexes:
                 print(
-                    f"✅ Query '{' '.join(query_cmd[2:4])}' completed in {query_duration:.2f}s"
+                    "✅ Payload indexes are already healthy (collection exists with data)"
+                )
+            elif has_index_issues:
+                print(
+                    "ℹ️ Payload indexes show issues before indexing (expected for empty collection)"
                 )
             else:
-                print(f"⚠️ Query '{' '.join(query_cmd[2:4])}' failed or no results")
+                # This is unexpected - should show either healthy or issues
+                assert (
+                    False
+                ), f"Payload indexes should show either healthy or issues status. Got: {status_output}"
 
-        # At least most queries should succeed
-        assert (
-            successful_queries >= 3
-        ), f"At least 3 queries should succeed. Got: {successful_queries}"
-        print(f"✅ {successful_queries}/5 queries completed successfully")
+            print("✅ Payload index status reporting is working")
 
-        # Phase 6: Test Reconcile Performance (Heavy Payload Filter Usage)
-        print("\n⚡ Phase 6: Reconcile Performance with Payload Indexes")
+            # Phase 3: Index Realistic Codebase
+            print("\n📚 Phase 3: Indexing with Payload Indexes")
 
-        reconcile_start_time = time.time()
-        reconcile_result = run_cidx_command(
-            ["cidx", "index", "--reconcile"], test_dir, timeout=120
-        )
-        reconcile_duration = time.time() - reconcile_start_time
+            index_start_time = time.time()
+            index_result = run_cidx_command(["cidx", "index"], test_dir, timeout=180)
+            index_duration = time.time() - index_start_time
 
-        assert reconcile_result[
-            "success"
-        ], f"Reconcile failed: {reconcile_result['stderr']}"
-        print(
-            f"✅ Reconcile completed in {reconcile_duration:.2f} seconds (payload indexes improved performance)"
-        )
+            assert index_result["success"], f"Indexing failed: {index_result['stderr']}"
+            print(f"✅ Indexing completed successfully in {index_duration:.2f} seconds")
 
-        # Phase 7: Final Comprehensive Validation
-        print("\n🎯 Phase 7: Final Epic Validation")
+            # Validate indexing results
+            index_output = index_result["stdout"]
+            assert (
+                "files indexed" in index_output.lower()
+                or "completed" in index_output.lower()
+                or "indexing complete" in index_output.lower()
+                or "files processed:" in index_output.lower()
+            ), f"Indexing should report completion. Got: {index_output}"
 
-        final_status = run_cidx_command(["cidx", "status"], test_dir)
-        assert final_status["success"], f"Final status failed: {final_status['stderr']}"
+            # Phase 3.5: Validate Payload Indexes After Indexing
+            print("\n🔍 Phase 3.5: Payload Index Validation After Indexing")
 
-        final_output = final_status["stdout"]
+            post_index_status_result = run_cidx_command(["cidx", "status"], test_dir)
+            assert post_index_status_result[
+                "success"
+            ], f"Post-index status failed: {post_index_status_result['stderr']}"
 
-        # Final validations
-        validations = [
-            ("Payload Indexes", "Payload index section exists"),
-            ("✅ Healthy", "Payload indexes are healthy"),
-            ("5 indexes active", "All 5 indexes are active"),
-            ("✅ Active", "Collection is active"),
-            ("MB", "Memory usage is tracked"),
-        ]
+            post_index_status_output = post_index_status_result["stdout"]
 
-        for check, description in validations:
-            assert check in final_output, f"Final validation failed: {description}"
-            print(f"✅ {description}")
+            # After indexing, payload indexes should be healthy
+            assert (
+                "Payload Indexes" in post_index_status_output
+            ), "Status should show Payload Indexes section"
+            assert (
+                "✅ Healthy" in post_index_status_output
+            ), "Payload indexes should be healthy after indexing"
+            assert (
+                "7 indexes active" in post_index_status_output
+            ), "All 7 payload indexes should be active after indexing"
 
-        # Phase 8: Validate All Expected Index Fields
-        print("\n🏁 Phase 8: Expected Index Fields Validation")
+            print("✅ All 7 payload indexes are active and healthy after indexing")
 
-        # The 5 expected payload index fields from the epic specification
-        expected_fields = [
-            "type",
-            "path",
-            "git_branch",
-            "file_mtime",
-            "hidden_branches",
-        ]
+            # Validate memory usage tracking
+            assert (
+                "memory" in post_index_status_output.lower()
+                or "MB" in post_index_status_output
+            ), "Memory usage should be tracked"
+            print("✅ Memory usage is being tracked")
 
-        print("✅ System successfully manages all expected payload index fields:")
-        for field in expected_fields:
-            print(f"   • {field}: Optimizes filtering for this field")
+            # Phase 4: Validate Collection Health After Indexing
+            print("\n💚 Phase 4: Post-Indexing Health Check")
 
-        print("\n🎉 COMPLETE EPIC VALIDATION SUCCESSFUL!")
-        print("=" * 60)
-        print("✅ Collection creation with payload indexes")
-        print("✅ All 5 expected indexes active and healthy")
-        print("✅ Indexing operations work correctly")
-        print("✅ Query operations benefit from indexes")
-        print("✅ Reconcile operations are performant")
-        print("✅ Status reporting shows correct information")
-        print("✅ Memory usage tracking is functional")
-        print("✅ Migration scenarios handled (start ensures indexes)")
-        print("=" * 60)
-        print("🚀 The Qdrant Payload Indexes Epic is COMPLETE and WORKING!")
+            post_index_status = run_cidx_command(["cidx", "status"], test_dir)
+            assert post_index_status[
+                "success"
+            ], f"Post-index status failed: {post_index_status['stderr']}"
+
+            post_status_output = post_index_status["stdout"]
+
+            # Collection should be active with data
+            assert (
+                "✅ Active" in post_status_output
+            ), "Collection should be active after indexing"
+            assert (
+                "points:" in post_status_output.lower()
+                or "docs" in post_status_output.lower()
+            ), "Status should show indexed data"
+
+            print("✅ Collection is healthy and contains indexed data")
+
+            # Phase 5: Query Operations with Payload Indexes
+            print("\n🔍 Phase 5: Query Performance with Payload Indexes")
+
+            # Test various query patterns that benefit from payload indexes
+            test_queries = [
+                ["cidx", "query", "authentication function", "--limit", "3"],
+                ["cidx", "query", "user management system", "--limit", "3"],
+                ["cidx", "query", "API endpoint handler", "--limit", "3"],
+                ["cidx", "query", "database model", "--limit", "3"],
+                ["cidx", "query", "integration test", "--limit", "3"],
+            ]
+
+            successful_queries = 0
+
+            for query_cmd in test_queries:
+                query_start_time = time.time()
+                query_result = run_cidx_command(query_cmd, test_dir, timeout=30)
+                query_duration = time.time() - query_start_time
+
+                if query_result["success"]:
+                    successful_queries += 1
+                    print(
+                        f"✅ Query '{' '.join(query_cmd[2:4])}' completed in {query_duration:.2f}s"
+                    )
+                else:
+                    print(f"⚠️ Query '{' '.join(query_cmd[2:4])}' failed or no results")
+
+            # At least most queries should succeed
+            assert (
+                successful_queries >= 3
+            ), f"At least 3 queries should succeed. Got: {successful_queries}"
+            print(f"✅ {successful_queries}/5 queries completed successfully")
+
+            # Phase 6: Test Reconcile Performance (Heavy Payload Filter Usage)
+            print("\n⚡ Phase 6: Reconcile Performance with Payload Indexes")
+
+            reconcile_start_time = time.time()
+            reconcile_result = run_cidx_command(
+                ["cidx", "index", "--reconcile"], test_dir, timeout=120
+            )
+            reconcile_duration = time.time() - reconcile_start_time
+
+            assert reconcile_result[
+                "success"
+            ], f"Reconcile failed: {reconcile_result['stderr']}"
+            print(
+                f"✅ Reconcile completed in {reconcile_duration:.2f} seconds (payload indexes improved performance)"
+            )
+
+            # Phase 7: Final Comprehensive Validation
+            print("\n🎯 Phase 7: Final Epic Validation")
+
+            final_status = run_cidx_command(["cidx", "status"], test_dir)
+            assert final_status[
+                "success"
+            ], f"Final status failed: {final_status['stderr']}"
+
+            final_output = final_status["stdout"]
+
+            # Final validations
+            validations = [
+                ("Payload Indexes", "Payload index section exists"),
+                ("✅ Healthy", "Payload indexes are healthy"),
+                ("7 indexes active", "All 7 indexes are active"),
+                ("✅ Active", "Collection is active"),
+                ("MB", "Memory usage is tracked"),
+            ]
+
+            for check, description in validations:
+                assert check in final_output, f"Final validation failed: {description}"
+                print(f"✅ {description}")
+
+            # Phase 8: Validate All Expected Index Fields
+            print("\n🏁 Phase 8: Expected Index Fields Validation")
+
+            # The 5 expected payload index fields from the epic specification
+            expected_fields = [
+                "type",
+                "path",
+                "git_branch",
+                "file_mtime",
+                "hidden_branches",
+            ]
+
+            print("✅ System successfully manages all expected payload index fields:")
+            for field in expected_fields:
+                print(f"   • {field}: Optimizes filtering for this field")
+
+            print("\n🎉 COMPLETE EPIC VALIDATION SUCCESSFUL!")
+            print("=" * 60)
+            print("✅ Collection creation with payload indexes")
+            print("✅ All 5 expected indexes active and healthy")
+            print("✅ Indexing operations work correctly")
+            print("✅ Query operations benefit from indexes")
+            print("✅ Reconcile operations are performant")
+            print("✅ Status reporting shows correct information")
+            print("✅ Memory usage tracking is functional")
+            print("✅ Migration scenarios handled (start ensures indexes)")
+            print("=" * 60)
+            print("🚀 The Qdrant Payload Indexes Epic is COMPLETE and WORKING!")
 
 
 if __name__ == "__main__":

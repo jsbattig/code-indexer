@@ -310,7 +310,6 @@ venv/
                 smart_indexer.branch_aware_indexer, "index_branch_changes"
             ) as mock_index_changes,
         ):
-
             # Set up mock analysis
             mock_analysis = Mock()
             mock_analysis.files_to_reindex = ["test3.py"]  # 1 changed file

@@ -218,7 +218,7 @@ class VeryLargeClass:
     def __init__(self):
         self.state = {{}}
     
-{''.join(methods)}
+{"".join(methods)}
 """.strip()
 
         chunks = chunker.chunk_content(content, "large_class.py")

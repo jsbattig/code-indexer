@@ -306,11 +306,112 @@ Code Indexer uses the following containerized services:
 
 ## Development
 
+### Developer Onboarding
+
+Code Indexer uses a comprehensive test infrastructure organized into three main categories for optimal maintainability and execution speed:
+
+#### Test Directory Structure
+
+```bash
+tests/
+├── unit/              # Fast unit tests organized by functionality
+│   ├── parsers/       # Language parser tests
+│   ├── chunking/      # Text chunking logic tests
+│   ├── config/        # Configuration management tests
+│   ├── services/      # Service layer unit tests
+│   ├── cli/           # CLI unit tests
+│   ├── git/           # Git operations tests
+│   ├── infrastructure/ # Core infrastructure tests
+│   └── bugfixes/      # Bug fix regression tests
+├── integration/       # Integration tests with real services
+│   ├── performance/   # Performance and throughput tests
+│   ├── docker/        # Docker integration tests
+│   ├── multiproject/  # Multi-project workflow tests
+│   ├── services/      # Service integration tests
+│   └── cli/           # CLI integration tests
+├── e2e/              # End-to-end workflow tests
+│   ├── git_workflows/ # Git workflow e2e tests
+│   ├── payload_indexes/ # Payload indexing e2e tests
+│   ├── providers/     # Provider switching tests
+│   ├── semantic_search/ # Search capability tests
+│   ├── claude_integration/ # Claude integration tests
+│   ├── display/       # UI and display tests
+│   └── infrastructure/ # Infrastructure e2e tests
+├── shared/           # Shared test utilities and fixtures
+└── fixtures/         # Test data and fixtures
+```
+
+#### Test Safety and Container Categories
+
+Tests are categorized by container requirements using pytest markers:
+
+- **`@pytest.mark.shared_safe`** - Can use either Docker or Podman containers, data-only operations
+- **`@pytest.mark.docker_only`** - Requires Docker-specific features or configurations  
+- **`@pytest.mark.podman_only`** - Requires Podman-specific features or rootless containers
+- **`@pytest.mark.destructive`** - Manipulates containers directly, requires isolation
+
+#### Dual-Container Architecture
+
+Code Indexer supports both Docker and Podman with intelligent container management:
+
+- **Production containers**: `code-indexer-ollama`, `code-indexer-qdrant` (ports 11434, 6333)
+- **Test containers**: `code-indexer-test-*-docker/podman` (ports 50000+)
+- **Automatic isolation**: Test containers use different names, ports, and networks
+- **Safety measures**: Tests never interfere with production container setups
+
+### Test Running Instructions
+
+#### Quick Development Tests (Fast)
+```bash
+# Run fast unit tests and integration tests
+./ci-github.sh
+
+# Run specific test categories
+pytest tests/unit/ -v                    # Unit tests only
+pytest tests/integration/ -v             # Integration tests only
+pytest tests/e2e/ -v                     # E2E tests only
+```
+
+#### Comprehensive Testing (Slow)
+```bash
+# Run all tests including slow e2e tests
+./full-automation.sh
+
+# Run tests by container category
+pytest -m shared_safe -v                 # Shared-safe tests only
+pytest -m docker_only -v                 # Docker-specific tests only
+pytest -m "not destructive" -v           # Non-destructive tests only
+```
+
+#### Development Setup
 ```bash
 git clone https://github.com/jsbattig/code-indexer.git
 cd code-indexer
 pip install -e ".[dev]"
-pytest
+
+# Run quick tests to verify setup
+./ci-github.sh
+
+# Optional: Run comprehensive tests (requires Docker/Podman)
+./full-automation.sh
+```
+
+#### Test Infrastructure Features
+
+- **Service persistence**: Tests keep services running between executions for speed
+- **Prerequisite validation**: Tests ensure required services are available at startup
+- **Clean data isolation**: Uses `clean-data` for test isolation, not service shutdown
+- **Automatic categorization**: Tests are automatically categorized by container requirements
+- **Shared fixtures**: Common test utilities available via `tests.shared.test_infrastructure`
+
+### Linting and Code Quality
+
+```bash
+# Run linting (includes ruff, black, mypy)
+./lint.sh
+
+# Check for import issues and syntax errors
+python -m py_compile src/code_indexer/**/*.py
 ```
 
 ## License

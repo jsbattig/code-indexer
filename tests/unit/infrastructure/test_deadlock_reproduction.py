@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from ...conftest import local_temporary_directory
-from .test_infrastructure import (
+from .infrastructure import (
     TestProjectInventory,
     create_test_project_with_inventory,
 )

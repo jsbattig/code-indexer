@@ -326,18 +326,24 @@ class QdrantClient:
             return False
 
     def clear_collection(self, collection_name: Optional[str] = None) -> bool:
-        """Clear all points from collection."""
+        """Clear all points from collection by recreating it.
+
+        Note: Deleting all points with empty filter can corrupt collection state
+        and cause 400 Bad Request errors on subsequent searches. Recreating the
+        collection ensures clean state for reliable operations.
+        """
         collection = (
             collection_name
             or self._current_collection_name
             or self.config.collection_base_name
         )
         try:
-            # Use the correct Qdrant API endpoint and method
-            response = self.client.post(
-                f"/collections/{collection}/points/delete", json={"filter": {}}
-            )
-            return bool(response.status_code == 200)
+            # Instead of deleting all points (which can corrupt the collection),
+            # delete and recreate the collection for clean state
+            if self.delete_collection(collection):
+                # Recreate with same configuration
+                return self.create_collection(collection, self.config.vector_size)
+            return False
         except Exception as e:
             self.console.print(
                 f"Failed to clear collection {collection}: {e}", style="red"
@@ -1517,7 +1523,7 @@ class QdrantClient:
                 except Exception as e:
                     if attempt < 2:  # Not the last attempt
                         self.console.print(
-                            f"   ⚠️  Attempt {attempt + 1} failed ({str(e)[:50]}...), retrying in {2 ** attempt}s..."
+                            f"   ⚠️  Attempt {attempt + 1} failed ({str(e)[:50]}...), retrying in {2**attempt}s..."
                         )
                         time.sleep(2**attempt)  # Exponential backoff: 1s, 2s
                     else:
@@ -1845,7 +1851,7 @@ class QdrantClient:
                 except Exception as e:
                     if attempt < 2:  # Not the last attempt
                         self.console.print(
-                            f"   ⚠️  Attempt {attempt + 1} failed ({str(e)[:50]}...), retrying in {2 ** attempt}s..."
+                            f"   ⚠️  Attempt {attempt + 1} failed ({str(e)[:50]}...), retrying in {2**attempt}s..."
                         )
                         time.sleep(2**attempt)  # Exponential backoff
                     else:

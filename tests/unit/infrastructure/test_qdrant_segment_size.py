@@ -32,7 +32,7 @@ class TestQdrantSegmentSize:
             assert result is True
 
             # Verify the PUT requests were made (collection + indexes)
-            assert mock_client.put.call_count == 6  # 1 collection + 5 indexes
+            assert mock_client.put.call_count == 8  # 1 collection + 7 indexes
 
             # Find the collection creation call
             collection_call = None
@@ -74,7 +74,7 @@ class TestQdrantSegmentSize:
             assert result is True
 
             # Verify the PUT requests were made (collection + indexes)
-            assert mock_client.put.call_count == 6  # 1 collection + 5 indexes
+            assert mock_client.put.call_count == 8  # 1 collection + 7 indexes
 
             # Find the collection creation call
             collection_call = None
@@ -129,7 +129,7 @@ class TestQdrantSegmentSize:
             assert result is True
 
             # Verify the PUT requests were made (collection + indexes)
-            assert mock_client.put.call_count == 6  # 1 collection + 5 indexes
+            assert mock_client.put.call_count == 8  # 1 collection + 7 indexes
 
             # Find the collection creation call
             collection_call = None
@@ -180,7 +180,7 @@ class TestQdrantSegmentSize:
                 assert result is True
 
                 # Verify the PUT requests were made (collection + indexes)
-                assert mock_client.put.call_count == 6  # 1 collection + 5 indexes
+                assert mock_client.put.call_count == 8  # 1 collection + 7 indexes
 
                 # Find the collection creation call
                 collection_call = None
@@ -224,7 +224,7 @@ class TestQdrantSegmentSize:
             assert result is True
 
             # Verify the PUT requests were made (collection + indexes)
-            assert mock_client.put.call_count == 6  # 1 collection + 5 indexes
+            assert mock_client.put.call_count == 8  # 1 collection + 7 indexes
 
             # Find the collection creation call
             collection_call = None
@@ -267,7 +267,7 @@ class TestQdrantSegmentSize:
             assert result is True
 
             # Verify the PUT requests were made (collection + indexes)
-            assert mock_client.put.call_count == 6  # 1 collection + 5 indexes
+            assert mock_client.put.call_count == 8  # 1 collection + 7 indexes
 
             # Find the collection creation call
             collection_call = None

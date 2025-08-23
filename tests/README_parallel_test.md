@@ -2,7 +2,7 @@
 
 ## Overview
 
-`test_parallel_voyage_performance.py` is a comprehensive test that verifies VoyageAI parallel processing performance with the `VectorCalculationManager`.
+The `tests/integration/performance/` directory contains comprehensive performance tests that verify parallel processing capabilities with various embedding providers. These tests are part of the organized test structure and validate performance characteristics across different threading configurations.
 
 ## What It Tests
 
@@ -18,14 +18,29 @@ This test exercises the queue-based parallel embedding generation layer specific
 - VoyageAI API key in environment (`VOYAGE_API_KEY`)
 - VoyageAI service available and responsive
 
+## Test Location and Structure
+
+### File Location
+```bash
+tests/integration/performance/test_parallel_voyage_performance.py
+```
+
+### Related Performance Tests
+- `test_parallel_throughput_engine.py` - General throughput engine testing
+- `test_payload_index_performance_*.py` - Payload index performance validation
+- `test_cancellation_high_throughput_processor.py` - Cancellation under load
+
 ## Running the Test
 
 ```bash
-# Run with pytest
-pytest tests/test_parallel_voyage_performance.py -v
+# Run all performance tests
+pytest tests/integration/performance/ -v
 
-# Run directly
-python tests/test_parallel_voyage_performance.py
+# Run specific parallel performance test
+pytest tests/integration/performance/test_parallel_voyage_performance.py -v
+
+# Run with performance markers
+pytest -m performance -v
 ```
 
 ## Expected Results

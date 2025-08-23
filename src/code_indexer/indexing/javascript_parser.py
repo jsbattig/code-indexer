@@ -227,7 +227,6 @@ class JavaScriptSemanticParser(BaseSemanticParser):
                         "while",
                     ]
                 ):
-
                     modifier = method_match.group(1)
                     method_name = method_match.group(2)
                     end_line = self._find_block_end(lines, line_num - 1)
@@ -295,7 +294,6 @@ class JavaScriptSemanticParser(BaseSemanticParser):
                     )
                     and self._is_likely_object_method(lines, line_num - 1)
                 ):
-
                     method_name = obj_shorthand_match.group(1)
                     end_line = self._find_block_end(lines, line_num - 1)
 

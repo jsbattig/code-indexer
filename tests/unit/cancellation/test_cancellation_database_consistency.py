@@ -117,7 +117,6 @@ class TestDatabaseConsistencyDuringCancellation:
                 patch("code_indexer.indexing.processor.FileFinder"),
                 patch("code_indexer.indexing.processor.TextChunker") as mock_chunker,
             ):
-
                 # Configure chunker to return multiple chunks per file
                 def mock_chunk_file(file_path):
                     # Return 5 chunks per file
@@ -202,7 +201,6 @@ class TestDatabaseConsistencyDuringCancellation:
                 patch("code_indexer.indexing.processor.FileFinder"),
                 patch("code_indexer.indexing.processor.TextChunker") as mock_chunker,
             ):
-
                 # Configure chunker to return chunks
                 mock_chunker.return_value.chunk_file.return_value = [
                     {
@@ -276,7 +274,6 @@ class TestDatabaseConsistencyDuringCancellation:
                 patch("code_indexer.indexing.processor.FileFinder"),
                 patch("code_indexer.indexing.processor.TextChunker") as mock_chunker,
             ):
-
                 # Configure chunker
                 def mock_chunk_file(file_path):
                     return [

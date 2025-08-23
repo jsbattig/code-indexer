@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 
 # Import new test infrastructure
 from ...conftest import local_temporary_directory
-from .test_infrastructure import (
+from .infrastructure import (
     TestProjectInventory,
     create_test_project_with_inventory,
 )
@@ -311,7 +311,6 @@ class TestIdempotentStart:
                 patch.object(docker_manager, "_update_config_with_ports"),
                 patch.object(docker_manager, "wait_for_services", return_value=True),
             ):
-
                 mock_state.return_value = {
                     "exists": True,
                     "running": True,

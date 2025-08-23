@@ -109,7 +109,6 @@ class TestResumeAndIncrementalBugs:
                         side_effect=track_first_run,
                     ),
                 ):
-
                     mock_git_status.return_value = {"git_available": False}
                     mock_file_finder.find_files.return_value = [
                         Path(tmpdir) / f for f in test_files
@@ -141,7 +140,6 @@ class TestResumeAndIncrementalBugs:
                         side_effect=track_second_run,
                     ),
                 ):
-
                     mock_git_status.return_value = {"git_available": False}
                     mock_file_finder.find_files.return_value = [
                         Path(tmpdir) / f for f in test_files
@@ -277,7 +275,6 @@ class TestResumeAndIncrementalBugs:
                         side_effect=simulate_cancel_midway,
                     ),
                 ):
-
                     mock_git_status.return_value = {"git_available": False}
                     mock_file_finder.find_files.return_value = [
                         Path(tmpdir) / f for f in test_files
@@ -309,7 +306,6 @@ class TestResumeAndIncrementalBugs:
                         side_effect=track_resume_run,
                     ),
                 ):
-
                     mock_git_status.return_value = {"git_available": False}
                     mock_file_finder.find_files.return_value = [
                         Path(tmpdir) / f for f in test_files
@@ -402,7 +398,6 @@ class TestResumeAndIncrementalBugs:
                         side_effect=simulate_cancel_after_setup,
                     ),
                 ):
-
                     mock_git_status.return_value = {"git_available": False}
                     mock_file_finder.find_files.return_value = [
                         Path(tmpdir) / f for f in test_files

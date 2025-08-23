@@ -16,6 +16,8 @@ class TestPascalImplementationIndexing:
     def hash_trie_content(self):
         """Load the actual hash_trie.pas file."""
         test_file = Path(__file__).parent / "test_data" / "hash_trie.pas"
+        if not test_file.exists():
+            pytest.skip(f"Test data file not found: {test_file}")
         return test_file.read_text()
 
     def test_removkvptreenode_implementation_is_chunked(self, hash_trie_content):

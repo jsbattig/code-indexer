@@ -23,7 +23,7 @@ class TestSmartIndexerQueueBased:
     def setup_method(self):
         """Setup test environment."""
         # Import here to avoid circular dependency
-        from ...test_infrastructure import get_shared_test_directory
+        from .infrastructure import get_shared_test_directory
 
         # Use shared test directory to avoid creating multiple container sets
         temp_path = get_shared_test_directory(force_docker=False)

@@ -1,56 +1,37 @@
 """End-to-end tests for VoyageAI provider with cloud vectorization service.
 
-Refactored to use NEW STRATEGY with test infrastructure for better performance.
+Converted to use shared container strategy for 41% complete milestone.
+These tests validate VoyageAI-specific functionality within shared container context.
 """
 
 import os
+import subprocess
 import pytest
 
-import json
-import time
+from ...conftest import shared_container_test_environment
+from .infrastructure import EmbeddingProvider
 
-# Import new test infrastructure
-from .test_infrastructure import (
-    TestProjectInventory,
-    create_test_project_with_inventory,
-)
+# Mark all tests in this file as e2e to exclude from ci-github.sh
+pytestmark = pytest.mark.e2e
 
 
-@pytest.fixture
-def voyage_ai_test_repo():
-    """Create a test repository for VoyageAI E2E tests."""
-    from pathlib import Path
-
-    # Create a fresh temporary directory to avoid permission conflicts
-    temp_base = Path.home() / ".tmp" / f"voyage_ai_test_{int(time.time())}"
-    temp_base.mkdir(parents=True, exist_ok=True)
-
-    try:
-        # Create isolated project space using inventory system (no config tinkering)
-        create_test_project_with_inventory(
-            temp_base, TestProjectInventory.VOYAGE_AI_E2E
-        )
-        yield temp_base
-    finally:
-        # Clean up
-        import shutil
-
-        shutil.rmtree(temp_base, ignore_errors=True)
-
-
-def create_test_codebase(test_dir):
-    """Create a simple test codebase using test infrastructure."""
-    # Create test files in the test directory
+def create_voyage_ai_test_codebase(test_dir):
+    """Create VoyageAI-specific test codebase for shared container tests."""
+    # Create test files optimized for VoyageAI semantic understanding
     test_files = {
         "main.py": '''def hello_world():
     """Print hello world message."""
     print("Hello, World!")
 
 def calculate_fibonacci(n):
-    """Calculate fibonacci number."""
+    """Calculate fibonacci number recursively."""
     if n <= 1:
         return n
     return calculate_fibonacci(n-1) + calculate_fibonacci(n-2)
+
+def authenticate_user(username, password):
+    """User authentication with basic validation."""
+    return username == "admin" and password == "secret"
 
 if __name__ == "__main__":
     hello_world()
@@ -63,15 +44,36 @@ def calculate_distance(x1, y1, x2, y2):
 
 def format_number(num, decimals=2):
     """Format number with specified decimal places."""
-    return f"{num:.{decimals}f}"''',
-        "README.md": """# Test Project
+    return f"{num:.{decimals}f}"
 
-This is a test project for VoyageAI E2E testing.
+def validate_email(email):
+    """Basic email validation function."""
+    return "@" in email and "." in email.split("@")[1]''',
+        "api.py": '''from fastapi import FastAPI
+app = FastAPI()
+
+@app.post("/login")
+async def login_endpoint(username: str, password: str):
+    """REST API login endpoint for user authentication."""
+    # Authentication logic here
+    return {"status": "success", "token": "abc123"}
+
+@app.get("/users/{user_id}")
+async def get_user(user_id: int):
+    """Get user by ID endpoint."""
+    return {"id": user_id, "username": f"user_{user_id}"}''',
+        "README.md": """# VoyageAI Test Project
+
+This is a test project for VoyageAI E2E testing with shared containers.
 
 ## Features
 - Hello world function
 - Fibonacci calculation
-- Distance calculation utilities""",
+- User authentication
+- Distance calculation utilities
+- Email validation
+- REST API endpoints
+""",
     }
 
     # Create test files in the test directory
@@ -81,210 +83,240 @@ This is a test project for VoyageAI E2E testing.
         file_path.write_text(content)
 
 
-def create_voyage_ai_config(test_dir):
-    """Create configuration for VoyageAI provider."""
-    config_dir = test_dir / ".code-indexer"
-    config_dir.mkdir(exist_ok=True)
-
-    # Load existing config if it exists (preserves container ports)
-    config_file = config_dir / "config.json"
-    if config_file.exists():
-        with open(config_file, "r") as f:
-            config = json.load(f)
-    else:
-        config = {
-            "codebase_dir": str(test_dir),
-            "qdrant": {
-                "host": "http://localhost:6333",
-                "collection": f"test_collection_{int(time.time())}",
-            },
-            "exclude_patterns": [
-                "*.git*",
-                "__pycache__",
-                "node_modules",
-                ".pytest_cache",
-            ],
-        }
-
-    # Only modify test-specific settings, preserve container configuration
-    config["embedding_provider"] = "voyage-ai"
-    config["voyage_ai"] = {
-        "model": "voyage-code-3",
-        "api_key_env": "VOYAGE_API_KEY",
-        "batch_size": 32,
-        "max_retries": 3,
-        "timeout": 30,
-    }
-
-    with open(config_file, "w") as f:
-        json.dump(config, f, indent=2)
-
-    return config_file
-
-
 @pytest.mark.skipif(
     not os.getenv("VOYAGE_API_KEY"),
     reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
 )
-def test_voyage_ai_full_workflow(voyage_ai_test_repo):
-    """Test complete VoyageAI workflow with real API using test infrastructure."""
-    # Use real VoyageAI API key from environment
-    test_dir = voyage_ai_test_repo
+def test_voyage_ai_shared_container_full_workflow():
+    """Test complete VoyageAI workflow using shared container strategy."""
+    with shared_container_test_environment(
+        "test_voyage_ai_shared_container_full_workflow", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Create VoyageAI-optimized test codebase
+        create_voyage_ai_test_codebase(project_path)
 
-    # Create test codebase
-    create_test_codebase(test_dir)
+        # Step 1: Initialize project with VoyageAI provider
+        result = subprocess.run(
+            ["code-indexer", "init", "--embedding-provider", "voyage-ai", "--force"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, f"Init failed: {result.stderr}"
 
-    # Create VoyageAI configuration
-    create_voyage_ai_config(test_dir)
+        # Step 2: Verify provider configuration and status
+        result = subprocess.run(
+            ["code-indexer", "status"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"Status failed: {result.stderr}"
 
-    # Initialize project with VoyageAI provider
-    import subprocess
-
-    init_result = subprocess.run(
-        ["code-indexer", "init", "--embedding-provider", "voyage-ai", "--force"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
-
-    # Verify provider configuration
-    status_result = subprocess.run(
-        ["code-indexer", "status"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert status_result.returncode == 0, f"Status failed: {status_result.stderr}"
-
-    # Verify Voyage-AI provider is shown and Ollama shows "Not needed"
-    status_lower = status_result.stdout.lower()
-    if "ollama" in status_lower:
-        assert (
-            "not needed" in status_lower
-        ), f"Ollama should show 'Not needed' status: {status_result.stdout}"
-    assert (
-        "voyage" in status_result.stdout.lower()
-        or "voyage-ai" in status_result.stdout.lower()
-    ), f"VoyageAI should be in status: {status_result.stdout}"
-
-    # Start services before indexing (may already be running)
-    start_result = subprocess.run(
-        ["code-indexer", "start"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    # Allow start to fail if services are already running
-    if start_result.returncode != 0:
-        # Check if it's just because services are already running
-        if (
-            "already in use" in start_result.stdout
-            or "already running" in start_result.stdout
-        ):
-            print("Services already running, continuing with test...")
-        else:
+        # Verify VoyageAI provider is configured and Ollama shows "Not needed"
+        status_lower = result.stdout.lower()
+        if "ollama" in status_lower:
             assert (
-                False
-            ), f"Start failed with return code {start_result.returncode}. stderr: {start_result.stderr}, stdout: {start_result.stdout}"
+                "not needed" in status_lower
+            ), f"Ollama should show 'Not needed' status: {result.stdout}"
+        assert (
+            "voyage" in status_lower or "voyage-ai" in status_lower
+        ), f"VoyageAI should be in status: {result.stdout}"
 
-    # Test indexing workflow
-    index_result = subprocess.run(
-        ["code-indexer", "index"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    assert index_result.returncode == 0, f"Index failed: {index_result.stderr}"
-
-    # Test querying
-    query_result = subprocess.run(
-        ["code-indexer", "query", "hello world", "--quiet"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert query_result.returncode == 0, f"Query failed: {query_result.stderr}"
-    assert len(query_result.stdout.strip()) > 0, "Query should return results"
-
-
-@pytest.mark.skipif(
-    not os.getenv("VOYAGE_API_KEY"),
-    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
-)
-def test_voyage_ai_docker_compose_validation(voyage_ai_test_repo):
-    """Test Docker Compose validation for VoyageAI provider."""
-    test_dir = voyage_ai_test_repo
-
-    # Create test codebase
-    create_test_codebase(test_dir)
-
-    # Create VoyageAI configuration
-    create_voyage_ai_config(test_dir)
-
-    # Initialize project
-    import subprocess
-
-    init_result = subprocess.run(
-        ["code-indexer", "init", "--embedding-provider", "voyage-ai", "--force"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
-
-    # Test start command
-    start_result = subprocess.run(
-        ["code-indexer", "start"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
-
-
-@pytest.mark.skipif(
-    not os.getenv("VOYAGE_API_KEY"),
-    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
-)
-def test_voyage_ai_idempotent_start(voyage_ai_test_repo):
-    """Test idempotent start behavior with VoyageAI provider."""
-    test_dir = voyage_ai_test_repo
-
-    # Create test codebase
-    create_test_codebase(test_dir)
-
-    # Create VoyageAI configuration
-    create_voyage_ai_config(test_dir)
-
-    # Initialize project
-    import subprocess
-
-    init_result = subprocess.run(
-        ["code-indexer", "init", "--embedding-provider", "voyage-ai", "--force"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
-
-    # Test multiple start commands are idempotent
-    for i in range(2):
-        start_result = subprocess.run(
-            ["code-indexer", "start"],
-            cwd=test_dir,
+        # Step 3: Start services (should be fast with shared containers)
+        result = subprocess.run(
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=120,
         )
+        assert result.returncode == 0, f"Start failed: {result.stderr}"
+
+        # Step 4: Test indexing workflow with VoyageAI
+        result = subprocess.run(
+            ["code-indexer", "index"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, f"Index failed: {result.stderr}"
         assert (
-            start_result.returncode == 0
-        ), f"Start #{i+1} failed: {start_result.stderr}"
+            "Files processed:" in result.stdout
+            or "Processing complete" in result.stdout
+        ), "Index should show completion message"
+
+        # Step 5: Test semantic querying with VoyageAI
+        result = subprocess.run(
+            ["code-indexer", "query", "authentication function", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"Query failed: {result.stderr}"
+        # VoyageAI should find semantic matches for authentication
+
+        # Step 6: Test another query to verify VoyageAI functionality
+        result = subprocess.run(
+            ["code-indexer", "query", "hello world", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"Query failed: {result.stderr}"
+        assert len(result.stdout.strip()) > 0, "Query should return results"
+
+
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
+def test_voyage_ai_shared_container_service_validation():
+    """Test VoyageAI service validation within shared container environment."""
+    with shared_container_test_environment(
+        "test_voyage_ai_shared_container_service_validation",
+        EmbeddingProvider.VOYAGE_AI,
+    ) as project_path:
+        # Create test codebase for service validation
+        create_voyage_ai_test_codebase(project_path)
+
+        # Step 1: Initialize project with VoyageAI
+        result = subprocess.run(
+            ["code-indexer", "init", "--embedding-provider", "voyage-ai", "--force"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, f"Init failed: {result.stderr}"
+
+        # Step 2: Test Docker Compose/container validation via start command
+        result = subprocess.run(
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, f"Start failed: {result.stderr}"
+
+        # Step 3: Verify services are running properly for VoyageAI
+        result = subprocess.run(
+            ["code-indexer", "status"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"Status failed: {result.stderr}"
+
+        # Verify containers/services are properly configured for VoyageAI
+        status_output = result.stdout.lower()
+        assert "running" in status_output, "Services should be running"
+
+        # Step 4: Test that VoyageAI-specific services work correctly
+        # Test basic indexing to validate container setup
+        result = subprocess.run(
+            ["code-indexer", "index"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert (
+            result.returncode == 0
+        ), f"Index failed, indicating service issues: {result.stderr}"
+
+        # Step 5: Validate that containers can be restarted (idempotent start)
+        result = subprocess.run(
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, f"Restart failed: {result.stderr}"
+
+
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
+def test_voyage_ai_shared_container_idempotent_operations():
+    """Test idempotent operations with VoyageAI in shared container environment."""
+    with shared_container_test_environment(
+        "test_voyage_ai_shared_container_idempotent_operations",
+        EmbeddingProvider.VOYAGE_AI,
+    ) as project_path:
+        # Create test codebase
+        create_voyage_ai_test_codebase(project_path)
+
+        # Step 1: Initialize project with VoyageAI
+        result = subprocess.run(
+            ["code-indexer", "init", "--embedding-provider", "voyage-ai", "--force"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, f"Init failed: {result.stderr}"
+
+        # Step 2: Test multiple start commands are idempotent (critical for shared containers)
+        for i in range(3):
+            result = subprocess.run(
+                ["code-indexer", "start", "--quiet"],
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            assert result.returncode == 0, f"Start #{i + 1} failed: {result.stderr}"
+
+            # Each start should be fast due to shared containers
+            # Verify status after each start
+            status_result = subprocess.run(
+                ["code-indexer", "status"],
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            assert status_result.returncode == 0, f"Status failed after start #{i + 1}"
+
+        # Step 3: Test idempotent indexing operations
+        for i in range(2):
+            result = subprocess.run(
+                ["code-indexer", "index"],
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            assert result.returncode == 0, f"Index #{i + 1} failed: {result.stderr}"
+
+        # Step 4: Test idempotent querying
+        for i in range(2):
+            result = subprocess.run(
+                ["code-indexer", "query", "authentication", "--quiet"],
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            assert result.returncode == 0, f"Query #{i + 1} failed: {result.stderr}"
+
+        # Step 5: Verify final state is consistent
+        result = subprocess.run(
+            ["code-indexer", "status"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, f"Final status failed: {result.stderr}"
+        assert "voyage" in result.stdout.lower(), "VoyageAI should still be active"

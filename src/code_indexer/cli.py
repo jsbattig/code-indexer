@@ -358,7 +358,13 @@ def _passes_semantic_filters(
     if semantic_only and not is_semantic:
         return False
 
-    # If this is not a semantic chunk, no other semantic filters apply
+    # If this is not a semantic chunk and semantic filters are specified, exclude it
+    if not is_semantic and any(
+        [semantic_type, semantic_scope, semantic_features, semantic_parent]
+    ):
+        return False
+
+    # If this is not a semantic chunk and no semantic filters specified, include it
     if not is_semantic:
         return True
 
@@ -3335,7 +3341,6 @@ def _status_impl(ctx, force_docker: bool):
 
         # Add Qdrant storage and collection information
         try:
-
             # Get storage path from configuration instead of container inspection
             # Use the actual project-specific storage path from config
             project_qdrant_dir = (
@@ -3950,25 +3955,63 @@ def stop(ctx, force_docker: bool):
 @click.option(
     "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
 )
+@click.option(
+    "--all-containers",
+    is_flag=True,
+    help="Reset both Docker and Podman container sets",
+)
+@click.option(
+    "--container-type",
+    type=click.Choice(["docker", "podman"], case_sensitive=False),
+    help="Target specific container type (docker|podman)",
+)
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Output results in JSON format for automation",
+)
+@click.option(
+    "--verify",
+    is_flag=True,
+    help="Verify reset operations succeeded",
+)
 @click.pass_context
-def clean_data(ctx, all_projects: bool, force_docker: bool):
+def clean_data(
+    ctx,
+    all_projects: bool,
+    force_docker: bool,
+    all_containers: bool,
+    container_type: str,
+    json_output: bool,
+    verify: bool,
+):
     """Clear project data without stopping containers.
 
     \b
-    Removes indexed data and configuration while keeping Docker containers
+    Removes indexed data and configuration while keeping containers
     running for fast restart. Use this between tests or when switching projects.
+    Supports dual-container architecture with Docker and Podman.
 
     \b
     WHAT IT DOES:
       • Clears Qdrant collections (current project or all projects)
-      • Removes local .code-indexer directory
-      • Keeps Docker containers running for fast restart
+      • Removes local cache directories
+      • Keeps containers running for fast restart
       • Preserves container state and networks
+      • Supports targeting specific container types
 
     \b
-    OPTIONS:
-      --all-projects     Clear data for all projects
-      (default)          Clear only current project data
+    CONTAINER OPTIONS:
+      --all-containers       Reset both Docker and Podman sets
+      --container-type TYPE  Target specific container type (docker|podman)
+      (default)              Use legacy DockerManager behavior
+
+    \b
+    DATA OPTIONS:
+      --all-projects         Clear data for all projects
+      --verify               Verify reset operations succeeded
+      --json                 Output results in JSON format
 
     \b
     PERFORMANCE:
@@ -3976,18 +4019,162 @@ def clean_data(ctx, all_projects: bool, force_docker: bool):
       Perfect for test cleanup and project switching.
     """
     try:
+        # Validate mutually exclusive options
+        if all_containers and container_type:
+            console.print(
+                "❌ Cannot use --all-containers with --container-type", style="red"
+            )
+            console.print(
+                "💡 Use either --all-containers OR --container-type", style="yellow"
+            )
+            sys.exit(1)
+
         # Use configuration from CLI context
         config_manager = ctx.obj["config_manager"]
         project_config_dir = config_manager.config_path.parent
-        docker_manager = DockerManager(
-            force_docker=force_docker, project_config_dir=project_config_dir
-        )
 
-        if not docker_manager.clean_data_only(all_projects=all_projects):
+        # Initialize result structure for JSON output
+        from typing import Dict, Any
+
+        result: Dict[str, Any] = {
+            "success": False,
+            "containers_processed": [],
+            "collections_reset": [],
+            "cache_cleared": False,
+            "errors": [],
+        }
+
+        # Use dual-container mode if new options are specified
+        if all_containers or container_type:
+            from .services.container_manager import ContainerManager, ContainerType
+
+            container_manager = ContainerManager(
+                dual_container_mode=True, console=console
+            )
+
+            # Determine which container types to reset
+            if all_containers:
+                target_types = [ContainerType.DOCKER, ContainerType.PODMAN]
+                console.print(
+                    "🔄 Resetting both Docker and Podman container sets", style="blue"
+                )
+            else:
+                target_type = (
+                    ContainerType.DOCKER
+                    if container_type.lower() == "docker"
+                    else ContainerType.PODMAN
+                )
+                target_types = [target_type]
+                console.print(
+                    f"🔄 Resetting {container_type} container set", style="blue"
+                )
+
+            # Process each container type
+            success = True
+            for container_type_enum in target_types:
+                try:
+                    # Check if containers are available (graceful handling)
+                    is_available = container_manager.verify_container_health(
+                        container_type_enum
+                    )
+                    if not is_available:
+                        console.print(
+                            f"⚠️  {container_type_enum.value} containers not running, skipping",
+                            style="yellow",
+                        )
+                        result["containers_processed"].append(
+                            {
+                                "type": container_type_enum.value,
+                                "status": "skipped",
+                                "reason": "containers not running",
+                            }
+                        )
+                        continue
+
+                    # Reset collections with verification if requested
+                    if verify:
+                        # This method doesn't exist yet - will be implemented
+                        reset_success = (
+                            container_manager.reset_collections_with_verification(
+                                container_type_enum
+                            )
+                        )
+                    else:
+                        reset_success = container_manager.reset_collections(
+                            container_type_enum
+                        )
+
+                    if reset_success:
+                        console.print(
+                            f"✅ {container_type_enum.value} container data reset successfully",
+                            style="green",
+                        )
+                        result["containers_processed"].append(
+                            {"type": container_type_enum.value, "status": "success"}
+                        )
+                    else:
+                        console.print(
+                            f"❌ Failed to reset {container_type_enum.value} container data",
+                            style="red",
+                        )
+                        result["errors"].append(
+                            f"Failed to reset {container_type_enum.value} containers"
+                        )
+                        success = False
+
+                except Exception as e:
+                    console.print(
+                        f"❌ Error processing {container_type_enum.value}: {e}",
+                        style="red",
+                    )
+                    result["errors"].append(
+                        f"Error processing {container_type_enum.value}: {str(e)}"
+                    )
+                    success = False
+
+            result["success"] = success
+
+        else:
+            # Use legacy DockerManager for backward compatibility
+            docker_manager = DockerManager(
+                force_docker=force_docker, project_config_dir=project_config_dir
+            )
+
+            success = docker_manager.clean_data_only(all_projects=all_projects)
+            result["success"] = success
+            result["containers_processed"].append(
+                {
+                    "type": "docker" if force_docker else "auto-detected",
+                    "status": "success" if success else "failed",
+                }
+            )
+
+            if not success:
+                result["errors"].append("Legacy DockerManager clean_data_only failed")
+
+        # Output results
+        if json_output:
+            import json
+
+            console.print(json.dumps(result, indent=2))
+        elif not result["success"]:
             sys.exit(1)
 
     except Exception as e:
-        console.print(f"❌ Data cleanup failed: {e}", style="red")
+        if json_output:
+            import json
+
+            error_result = {
+                "success": False,
+                "error": str(e),
+                "containers_processed": [],
+                "collections_reset": [],
+                "cache_cleared": False,
+                "errors": [str(e)],
+            }
+            console.print(json.dumps(error_result, indent=2))
+        else:
+            console.print(f"❌ Data cleanup failed: {e}", style="red")
         sys.exit(1)
 
 

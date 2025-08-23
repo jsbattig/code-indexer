@@ -229,7 +229,6 @@ class GoSemanticParser(BaseSemanticParser):
                 and "interface" not in line
                 and "{" not in line
             ):
-
                 type_name = type_match.group(1)
                 generics = type_match.group(2)
                 type_def = type_match.group(3).strip()

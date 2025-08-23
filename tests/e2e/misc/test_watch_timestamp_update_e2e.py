@@ -10,25 +10,11 @@ import time
 import subprocess
 import pytest
 
-from .test_infrastructure import (
-    TestProjectInventory,
-    create_test_project_with_inventory,
-)
-from ...conftest import local_temporary_directory
+from ...conftest import shared_container_test_environment
+from .infrastructure import EmbeddingProvider
 
 # Mark all tests in this file as e2e to exclude from ci-github.sh
 pytestmark = [pytest.mark.e2e]
-
-
-@pytest.fixture
-def watch_timestamp_test_repo():
-    """Create a test repository for watch timestamp tests."""
-    with local_temporary_directory() as temp_dir:
-        # Create isolated project space using inventory system
-        create_test_project_with_inventory(
-            temp_dir, TestProjectInventory.WATCH_TIMESTAMP_UPDATE
-        )
-        yield temp_dir
 
 
 def create_test_files(test_dir):
@@ -118,159 +104,166 @@ class TestWatchTimestampUpdateE2E:
         os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
         reason="E2E tests require Docker services which are not available in CI",
     )
-    def test_watch_timestamp_prevents_reindexing(self, watch_timestamp_test_repo):
+    def test_watch_timestamp_prevents_reindexing(self):
         """Test that files indexed by watch are not re-indexed by incremental indexing."""
-        test_dir = watch_timestamp_test_repo
+        with shared_container_test_environment(
+            "test_watch_timestamp_prevents_reindexing", EmbeddingProvider.VOYAGE_AI
+        ) as test_dir:
+            # Create test files
+            create_test_files(test_dir)
 
-        # Create test files
-        create_test_files(test_dir)
+            # Initialize git repository
+            init_git_repo(test_dir)
 
-        # Initialize git repository
-        init_git_repo(test_dir)
+            # Initialize code-indexer
+            init_result = subprocess.run(
+                [
+                    "code-indexer",
+                    "init",
+                    "--force",
+                    "--embedding-provider",
+                    "voyage-ai",
+                ],
+                cwd=test_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
-        # Initialize code-indexer
-        init_result = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=test_dir,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
-
-        # Start services
-        start_result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
-            cwd=test_dir,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
-
-        try:
-            # Perform initial index
-            index_result = subprocess.run(
-                ["code-indexer", "index"],
+            # Start services
+            start_result = subprocess.run(
+                ["code-indexer", "start", "--quiet"],
                 cwd=test_dir,
                 capture_output=True,
                 text=True,
                 timeout=120,
             )
-            assert (
-                index_result.returncode == 0
-            ), f"Initial index failed: {index_result.stderr}"
-
-            # Extract initial indexing stats - look for "📄 Files processed: X"
-            initial_files_indexed = 0
-            import re
-
-            for line in index_result.stdout.split("\n"):
-                # Look for the pattern "📄 Files processed: X"
-                match = re.search(r"📄 Files processed:\s*(\d+)", line)
-                if match:
-                    initial_files_indexed = int(match.group(1))
-                    break
-
-            assert (
-                initial_files_indexed > 0
-            ), f"Should have indexed some files initially. Index output: {index_result.stdout}"
-
-            # Start watch process in background
-            watch_process = subprocess.Popen(
-                ["code-indexer", "watch", "--debounce", "0.5"],
-                cwd=test_dir,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
+            assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
 
             try:
-                # Wait for watch to start
-                time.sleep(3)
+                # Perform initial index
+                index_result = subprocess.run(
+                    ["code-indexer", "index"],
+                    cwd=test_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                assert (
+                    index_result.returncode == 0
+                ), f"Initial index failed: {index_result.stderr}"
 
-                # Modify a file while watch is running
-                utils_file = test_dir / "utils.py"
-                original_content = utils_file.read_text()
-                modified_content = (
-                    original_content
-                    + """
+                # Extract initial indexing stats - look for "📄 Files processed: X"
+                initial_files_indexed = 0
+                import re
+
+                for line in index_result.stdout.split("\n"):
+                    # Look for the pattern "📄 Files processed: X"
+                    match = re.search(r"📄 Files processed:\s*(\d+)", line)
+                    if match:
+                        initial_files_indexed = int(match.group(1))
+                        break
+
+                assert (
+                    initial_files_indexed > 0
+                ), f"Should have indexed some files initially. Index output: {index_result.stdout}"
+
+                # Start watch process in background
+                watch_process = subprocess.Popen(
+                    ["code-indexer", "watch", "--debounce", "0.5"],
+                    cwd=test_dir,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+
+                try:
+                    # Wait for watch to start
+                    time.sleep(3)
+
+                    # Modify a file while watch is running
+                    utils_file = test_dir / "utils.py"
+                    original_content = utils_file.read_text()
+                    modified_content = (
+                        original_content
+                        + """
 
 def new_function():
     '''Function added during watch'''
     return "watch test"
 """
+                    )
+                    utils_file.write_text(modified_content)
+
+                    # Wait for watch to process the change
+                    time.sleep(3)
+
+                    # Stop watch
+                    watch_process.terminate()
+                    watch_process.wait(timeout=5)
+
+                except Exception as e:
+                    watch_process.kill()
+                    raise e
+
+                # Now run incremental index with reconcile
+                reconcile_result = subprocess.run(
+                    ["code-indexer", "index", "--reconcile"],
+                    cwd=test_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
                 )
-                utils_file.write_text(modified_content)
+                assert (
+                    reconcile_result.returncode == 0
+                ), f"Reconcile failed: {reconcile_result.stderr}"
 
-                # Wait for watch to process the change
-                time.sleep(3)
+                # Check reconcile output for re-indexing
+                reconcile_output = reconcile_result.stdout
+                print(f"Reconcile output:\n{reconcile_output}")
 
-                # Stop watch
-                watch_process.terminate()
-                watch_process.wait(timeout=5)
+                # Look for evidence of re-indexing
+                reindexed_count = 0
+                import re
 
-            except Exception as e:
-                watch_process.kill()
-                raise e
+                for line in reconcile_output.split("\n"):
+                    # Look for "📄 Files processed: X" pattern
+                    match = re.search(r"📄 Files processed:\s*(\d+)", line)
+                    if match:
+                        reindexed_count = int(match.group(1))
 
-            # Now run incremental index with reconcile
-            reconcile_result = subprocess.run(
-                ["code-indexer", "index", "--reconcile"],
-                cwd=test_dir,
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            assert (
-                reconcile_result.returncode == 0
-            ), f"Reconcile failed: {reconcile_result.stderr}"
+                # The key assertion: verify that watch and reconcile worked together
+                # The watch process detected file changes and the reconcile handled any remaining work
+                # What matters is that the overall process completed successfully
 
-            # Check reconcile output for re-indexing
-            reconcile_output = reconcile_result.stdout
-            print(f"Reconcile output:\n{reconcile_output}")
+                # Check if reconcile completed successfully
+                assert (
+                    "✅ Indexing complete!" in reconcile_output
+                ), f"Reconcile should complete successfully. Output:\n{reconcile_output}"
 
-            # Look for evidence of re-indexing
-            reindexed_count = 0
-            import re
+                # Verify that the reconcile process found a reasonable number of files
+                # It's acceptable for reconcile to re-index files if needed for consistency
+                # The important thing is that the process doesn't hang or fail
+                assert (
+                    reindexed_count <= initial_files_indexed + 5
+                ), (  # Allow some tolerance for new files
+                    f"Reconcile processed {reindexed_count} files, which seems excessive "
+                    f"compared to initial {initial_files_indexed} files. Output:\n{reconcile_output}"
+                )
 
-            for line in reconcile_output.split("\n"):
-                # Look for "📄 Files processed: X" pattern
-                match = re.search(r"📄 Files processed:\s*(\d+)", line)
-                if match:
-                    reindexed_count = int(match.group(1))
+                # Check that the system is in a consistent state after both watch and reconcile
+                # The exact number of files processed is less important than successful completion
 
-            # The key assertion: verify that watch and reconcile worked together
-            # The watch process detected file changes and the reconcile handled any remaining work
-            # What matters is that the overall process completed successfully
-
-            # Check if reconcile completed successfully
-            assert (
-                "✅ Indexing complete!" in reconcile_output
-            ), f"Reconcile should complete successfully. Output:\n{reconcile_output}"
-
-            # Verify that the reconcile process found a reasonable number of files
-            # It's acceptable for reconcile to re-index files if needed for consistency
-            # The important thing is that the process doesn't hang or fail
-            assert (
-                reindexed_count <= initial_files_indexed + 5
-            ), (  # Allow some tolerance for new files
-                f"Reconcile processed {reindexed_count} files, which seems excessive "
-                f"compared to initial {initial_files_indexed} files. Output:\n{reconcile_output}"
-            )
-
-            # Check that the system is in a consistent state after both watch and reconcile
-            # The exact number of files processed is less important than successful completion
-
-        finally:
-            # Clean up
-            subprocess.run(
-                ["code-indexer", "clean", "--remove-data", "--quiet"],
-                cwd=test_dir,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
+            finally:
+                # Clean up
+                subprocess.run(
+                    ["code-indexer", "clean", "--remove-data", "--quiet"],
+                    cwd=test_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
 
     @pytest.mark.skipif(
         not os.getenv("VOYAGE_API_KEY"),
@@ -280,60 +273,67 @@ def new_function():
         os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
         reason="E2E tests require Docker services which are not available in CI",
     )
-    def test_watch_timestamp_with_multiple_files(self, watch_timestamp_test_repo):
+    def test_watch_timestamp_with_multiple_files(self):
         """Test timestamp update with multiple file changes during watch."""
-        test_dir = watch_timestamp_test_repo
+        with shared_container_test_environment(
+            "test_watch_timestamp_with_multiple_files", EmbeddingProvider.VOYAGE_AI
+        ) as test_dir:
+            # Create test files
+            create_test_files(test_dir)
 
-        # Create test files
-        create_test_files(test_dir)
+            # Initialize git repository
+            init_git_repo(test_dir)
 
-        # Initialize git repository
-        init_git_repo(test_dir)
-
-        # Initialize and start services
-        subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=test_dir,
-            check=True,
-            capture_output=True,
-            timeout=30,
-        )
-        subprocess.run(
-            ["code-indexer", "start", "--quiet"],
-            cwd=test_dir,
-            check=True,
-            capture_output=True,
-            timeout=120,
-        )
-
-        try:
-            # Initial index
+            # Initialize and start services
             subprocess.run(
-                ["code-indexer", "index"],
+                [
+                    "code-indexer",
+                    "init",
+                    "--force",
+                    "--embedding-provider",
+                    "voyage-ai",
+                ],
+                cwd=test_dir,
+                check=True,
+                capture_output=True,
+                timeout=30,
+            )
+            subprocess.run(
+                ["code-indexer", "start", "--quiet"],
                 cwd=test_dir,
                 check=True,
                 capture_output=True,
                 timeout=120,
             )
 
-            # Start watch
-            watch_process = subprocess.Popen(
-                ["code-indexer", "watch", "--debounce", "0.5"],
-                cwd=test_dir,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-
             try:
-                # Wait for watch to start
-                time.sleep(3)
+                # Initial index
+                subprocess.run(
+                    ["code-indexer", "index"],
+                    cwd=test_dir,
+                    check=True,
+                    capture_output=True,
+                    timeout=120,
+                )
 
-                # Create multiple new files while watch is running
-                for i in range(3):
-                    new_file = test_dir / f"module_{i}.py"
-                    new_file.write_text(
-                        f"""def module_{i}_function():
+                # Start watch
+                watch_process = subprocess.Popen(
+                    ["code-indexer", "watch", "--debounce", "0.5"],
+                    cwd=test_dir,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+
+                try:
+                    # Wait for watch to start
+                    time.sleep(3)
+
+                    # Create multiple new files while watch is running
+                    for i in range(3):
+                        new_file = test_dir / f"module_{i}.py"
+                        new_file.write_text(
+                            f"""def module_{i}_function():
     '''Function in module {i}'''
     return "module {i} result"
 
@@ -342,13 +342,13 @@ class Module{i}Class:
     def method(self):
         return {i}
 """
-                    )
-                    # Small delay between file creations
-                    time.sleep(0.5)
+                        )
+                        # Small delay between file creations
+                        time.sleep(0.5)
 
-                # Modify existing files
-                (test_dir / "main.py").write_text(
-                    """def main():
+                    # Modify existing files
+                    (test_dir / "main.py").write_text(
+                        """def main():
     '''Modified main function'''
     print("Hello Modified World")
     return 1
@@ -360,66 +360,68 @@ def additional_function():
 if __name__ == "__main__":
     main()
 """
+                    )
+
+                    # Wait for watch to process all changes
+                    time.sleep(5)
+
+                    # Stop watch
+                    watch_process.terminate()
+                    watch_process.wait(timeout=5)
+
+                except Exception as e:
+                    watch_process.kill()
+                    raise e
+
+                # Run reconcile
+                reconcile_result = subprocess.run(
+                    ["code-indexer", "index", "--reconcile"],
+                    cwd=test_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                assert (
+                    reconcile_result.returncode == 0
+                ), f"Reconcile failed: {reconcile_result.stderr}"
+
+                # Check that no files were re-indexed
+                reconcile_output = reconcile_result.stdout
+                print(
+                    f"Reconcile output after multiple file changes:\n{reconcile_output}"
                 )
 
-                # Wait for watch to process all changes
-                time.sleep(5)
+                # Extract stats
+                reindexed_count = 0
+                import re
 
-                # Stop watch
-                watch_process.terminate()
-                watch_process.wait(timeout=5)
+                for line in reconcile_output.split("\n"):
+                    # Look for "📄 Files processed: X" pattern
+                    match = re.search(r"📄 Files processed:\s*(\d+)", line)
+                    if match:
+                        reindexed_count = int(match.group(1))
+                        break
 
-            except Exception as e:
-                watch_process.kill()
-                raise e
+                # Check that the reconcile completed successfully after watch operations
+                assert (
+                    "✅ Indexing complete!" in reconcile_output
+                ), f"Reconcile should complete successfully after watch. Output:\n{reconcile_output}"
 
-            # Run reconcile
-            reconcile_result = subprocess.run(
-                ["code-indexer", "index", "--reconcile"],
-                cwd=test_dir,
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            assert (
-                reconcile_result.returncode == 0
-            ), f"Reconcile failed: {reconcile_result.stderr}"
+                # Allow some files to be re-indexed during reconcile as this ensures consistency
+                # The important thing is that the process completes without hanging or failing
+                assert (
+                    reindexed_count <= 10
+                ), (  # Allow reasonable tolerance for multiple file operations
+                    f"Reconcile processed {reindexed_count} files, which seems excessive. "
+                    f"Output:\n{reconcile_output}"
+                )
 
-            # Check that no files were re-indexed
-            reconcile_output = reconcile_result.stdout
-            print(f"Reconcile output after multiple file changes:\n{reconcile_output}")
-
-            # Extract stats
-            reindexed_count = 0
-            import re
-
-            for line in reconcile_output.split("\n"):
-                # Look for "📄 Files processed: X" pattern
-                match = re.search(r"📄 Files processed:\s*(\d+)", line)
-                if match:
-                    reindexed_count = int(match.group(1))
-                    break
-
-            # Check that the reconcile completed successfully after watch operations
-            assert (
-                "✅ Indexing complete!" in reconcile_output
-            ), f"Reconcile should complete successfully after watch. Output:\n{reconcile_output}"
-
-            # Allow some files to be re-indexed during reconcile as this ensures consistency
-            # The important thing is that the process completes without hanging or failing
-            assert (
-                reindexed_count <= 10
-            ), (  # Allow reasonable tolerance for multiple file operations
-                f"Reconcile processed {reindexed_count} files, which seems excessive. "
-                f"Output:\n{reconcile_output}"
-            )
-
-        finally:
-            # Clean up
-            subprocess.run(
-                ["code-indexer", "clean", "--remove-data", "--quiet"],
-                cwd=test_dir,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
+            finally:
+                # Clean up
+                subprocess.run(
+                    ["code-indexer", "clean", "--remove-data", "--quiet"],
+                    cwd=test_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )

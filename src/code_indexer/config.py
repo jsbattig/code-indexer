@@ -120,6 +120,10 @@ class QdrantConfig(BaseModel):
             ("file_mtime", "integer"),
             ("hidden_branches", "keyword"),
             ("language", "keyword"),
+            (
+                "embedding_model",
+                "keyword",
+            ),  # Required for model-specific filtering in non-git projects
         ],
         description="List of (field_name, field_schema) tuples for payload indexes",
     )

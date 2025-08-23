@@ -113,7 +113,7 @@ def analyze_test_directory(test_dir: Path) -> None:
     print(f"   Passed: {test_run['passed_count']}")
     print(f"   Failed: {test_run['failed_count']}")
     print(
-        f"   Success rate: {test_run['passed_count']/test_run['total_files']*100:.1f}%"
+        f"   Success rate: {test_run['passed_count'] / test_run['total_files'] * 100:.1f}%"
     )
 
     # Group failures by error type

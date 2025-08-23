@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 # Import new test infrastructure
 from ...conftest import local_temporary_directory
-from .test_infrastructure import (
+from .infrastructure import (
     TestProjectInventory,
     create_test_project_with_inventory,
 )

@@ -56,7 +56,6 @@ class TestProgressPercentageFix:
 
                 # Initialize progress bar on first call
                 if progress_bar is None:
-
                     progress_bar = Mock()  # Use mock instead of real Progress
                     progress_bar.add_task.return_value = task_id = mock_task_id
                     progress_bar.start.return_value = None
@@ -92,11 +91,11 @@ class TestProgressPercentageFix:
                 if "completed" in call:
                     percentage = (call["completed"] / total_files) * 100
                     print(
-                        f"Update {i+1}: completed={call['completed']}, percentage={percentage:.1f}%"
+                        f"Update {i + 1}: completed={call['completed']}, percentage={percentage:.1f}%"
                     )
                 else:
                     print(
-                        f"Update {i+1}: No completed value (this would cause wrong percentage!)"
+                        f"Update {i + 1}: No completed value (this would cause wrong percentage!)"
                     )
 
             # Verify the fix: all info-only updates should include completed value
@@ -112,12 +111,12 @@ class TestProgressPercentageFix:
             for i, update in enumerate(info_updates):
                 assert (
                     "completed" in update
-                ), f"Info update {i+1} missing 'completed' parameter!"
+                ), f"Info update {i + 1} missing 'completed' parameter!"
 
                 percentage = (update["completed"] / total_files) * 100
 
                 print(
-                    f"  Info update {i+1}: completed={update['completed']}, percentage={percentage:.1f}%"
+                    f"  Info update {i + 1}: completed={update['completed']}, percentage={percentage:.1f}%"
                 )
 
                 # Verify that we get reasonable percentages (not stuck at 1%)

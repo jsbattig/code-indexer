@@ -659,7 +659,7 @@ class ClaudePlanSummary:
         if total_duration > 0:
             stats_parts.append(f"• Total Execution Time: {total_duration:.2f}s")
             stats_parts.append(
-                f"• Average Duration: {total_duration/completed_count:.2f}s"
+                f"• Average Duration: {total_duration / completed_count:.2f}s"
             )
 
         # Operation breakdown with cleaner formatting

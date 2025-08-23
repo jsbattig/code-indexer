@@ -85,7 +85,9 @@ class TestHNSWSearchParameters:
 
         # Search with custom hnsw_ef
         qdrant_client.search(
-            query_vector=[0.1, 0.2, 0.3, 0.4], limit=10, hnsw_ef=128  # Custom value
+            query_vector=[0.1, 0.2, 0.3, 0.4],
+            limit=10,
+            hnsw_ef=128,  # Custom value
         )
 
         # Verify custom hnsw_ef was used

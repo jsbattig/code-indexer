@@ -188,7 +188,7 @@ class DataProcessor:
             expected_normalized = expected_content.rstrip("\n")
 
             assert chunk_text_normalized == expected_normalized, (
-                f"Chunk {i+1} content doesn't match expected content!\n"
+                f"Chunk {i + 1} content doesn't match expected content!\n"
                 f"Chunk reports lines {start_line}-{end_line}\n"
                 f"Expected length: {len(expected_normalized)}\n"
                 f"Actual length: {len(chunk_text_normalized)}\n"
@@ -267,7 +267,7 @@ def function_three():
                         and error_fragment in expected_content
                     ):
                         pytest.fail(
-                            f"Content bleeding detected in chunk {i+1}!\n"
+                            f"Content bleeding detected in chunk {i + 1}!\n"
                             f"Chunk contains both '{func_name}' and '{error_fragment}'\n"
                             f"But these should not appear together based on line range {chunk['line_start']}-{chunk['line_end']}\n"
                             f"This indicates content from different functions is bleeding together"
@@ -374,7 +374,7 @@ def process_request(request_data):
                                 original_line = chunk_lines[original_line_idx].strip()
                                 if not original_line.startswith(suspicious):
                                     pytest.fail(
-                                        f"Chunk {i+1} starts with continuation of error message!\n"
+                                        f"Chunk {i + 1} starts with continuation of error message!\n"
                                         f"First line: '{line_stripped}'\n"
                                         f"This suggests an error message was split inappropriately\n"
                                         f"and is bleeding into this chunk"
@@ -453,7 +453,7 @@ class APIError(Exception):
             if "raise ValueError(" in chunk_text:
                 # Ensure the complete error message is in the chunk
                 assert '")' in chunk_text or ")" in chunk_text, (
-                    f"Semantic chunk {i+1} contains incomplete error message!\n"
+                    f"Semantic chunk {i + 1} contains incomplete error message!\n"
                     f"Chunk type: {chunk_dict.get('semantic_type', 'unknown')}\n"
                     f"This suggests the error was split across chunk boundaries"
                 )
@@ -491,7 +491,7 @@ class APIError(Exception):
                         j += 1
 
                     assert found_closing, (
-                        f"Semantic chunk {i+1} contains incomplete APIError!\n"
+                        f"Semantic chunk {i + 1} contains incomplete APIError!\n"
                         f"The error message appears to be split across chunk boundaries"
                     )
 
@@ -545,7 +545,7 @@ def cleanup():
                     # Verify it actually exists in the original at this location
                     if phantom not in original_text:
                         pytest.fail(
-                            f"Chunk {i+1} contains phantom content '{phantom}' "
+                            f"Chunk {i + 1} contains phantom content '{phantom}' "
                             f"that doesn't exist in the original file!\n"
                             f"This indicates content generation or corruption bug"
                         )
@@ -560,7 +560,7 @@ def cleanup():
 
                         # Allow some tolerance for whitespace differences
                         assert abs(phantom_in_chunk_pos - expected_pos) < 10, (
-                            f"Chunk {i+1} contains '{phantom}' at wrong position!\n"
+                            f"Chunk {i + 1} contains '{phantom}' at wrong position!\n"
                             f"Expected at position ~{expected_pos}, found at {phantom_in_chunk_pos}\n"
                             f"This suggests content misalignment or bleeding"
                         )

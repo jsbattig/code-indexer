@@ -13,12 +13,11 @@ import subprocess
 
 import pytest
 
-# Import test infrastructure
-from .test_infrastructure import (
-    TestProjectInventory,
-    create_test_project_with_inventory,
-    get_shared_test_project_dir,
-)
+# Import shared container test environment
+from ...conftest import shared_container_test_environment
+
+# Import test infrastructure directly from where it's actually defined
+from .infrastructure import EmbeddingProvider
 
 # Mark all tests in this file as e2e to exclude from ci-github.sh
 pytestmark = pytest.mark.e2e
@@ -229,7 +228,7 @@ if True
 @pytest.mark.e2e
 @pytest.mark.integration
 @pytest.mark.voyage_ai
-def test_ast_semantic_chunking_e2e():
+def test_ast_semantic_chunking_support_e2e():
     """Test end-to-end AST semantic chunking for supported languages."""
 
     def verify_semantic_output(
@@ -248,356 +247,315 @@ def test_ast_semantic_chunking_e2e():
         else:
             return False
 
-    # Use shared project directory to reuse containers between tests
-    test_dir = get_shared_test_project_dir()
+    with shared_container_test_environment(
+        "test_ast_semantic_chunking_support", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Add test files that should trigger AST processing
+        project_files = _get_ast_vs_text_test_project()
+        for filename, content in project_files.items():
+            (project_path / filename).write_text(content)
 
-    # Create test project with inventory system (will preserve existing config)
-    create_test_project_with_inventory(test_dir, TestProjectInventory.CLI_PROGRESS)
-
-    # Add test files
-    project_files = _get_ast_vs_text_test_project()
-    for filename, content in project_files.items():
-        (test_dir / filename).write_text(content)
-
-    # Ensure services are running first (start is idempotent)
-    start_result = subprocess.run(
-        ["code-indexer", "start"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
-
-    # Index the project with --clear to ensure fresh data
-    index_result = subprocess.run(
-        ["code-indexer", "index", "--clear"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=180,
-    )
-    assert index_result.returncode == 0, f"Index failed: {index_result.stderr}"
-
-    # Test semantic chunking with verbose output to verify AST attributes
-    verbose_query_result = subprocess.run(
-        ["code-indexer", "query", "Calculator class"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert (
-        verbose_query_result.returncode == 0
-    ), f"Verbose query failed: {verbose_query_result.stderr}"
-
-    verbose_output = verbose_query_result.stdout
-    assert len(verbose_output.strip()) > 0, "Should find Calculator class"
-
-    # Verify semantic information is displayed in verbose mode
-    assert (
-        "🧠 Semantic:" in verbose_output
-    ), "Should show semantic metadata in verbose mode"
-
-    # Check for semantic attributes in the output
-    assert any(
-        keyword in verbose_output.lower()
-        for keyword in ["class", "type:", "name:", "signature:"]
-    ), "Should show semantic type, name, and signature information"
-
-    # Test semantic search filtering with type filter
-    type_filter_result = subprocess.run(
-        ["code-indexer", "query", "calculation", "--type", "class"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert (
-        type_filter_result.returncode == 0
-    ), f"Type filter query failed: {type_filter_result.stderr}"
-
-    if type_filter_result.stdout.strip():
-        type_output = type_filter_result.stdout
-        assert (
-            "🧠 Semantic:" in type_output
-        ), "Type-filtered results should show semantic info"
-
-    # Test function-specific semantic filtering
-    function_filter_result = subprocess.run(
-        ["code-indexer", "query", "add", "--type", "function"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert (
-        function_filter_result.returncode == 0
-    ), f"Function filter query failed: {function_filter_result.stderr}"
-
-    if function_filter_result.stdout.strip():
-        func_output = function_filter_result.stdout
-        # Check if we found semantically-chunked results (with 🧠 Semantic: metadata)
-        has_semantic_results = "🧠 Semantic:" in func_output
-
-        # If we have semantic results, verify they are properly formatted
-        if has_semantic_results:
-            assert (
-                "function" in func_output.lower() or "method" in func_output.lower()
-            ), "Semantic function results should indicate function or method type"
-        else:
-            # If no semantic results, verify that the search still found relevant content
-            # This is acceptable as the search may find text-chunked content that matches
-            print(
-                f"⚠️  Function search found non-semantic results: {func_output[:200]}..."
-            )
-            assert (
-                len(func_output.strip()) > 0
-            ), "Should find some results even if not semantic"
-
-    # Test method-specific semantic filtering (class methods)
-    method_filter_result = subprocess.run(
-        ["code-indexer", "query", "multiply", "--type", "method"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert (
-        method_filter_result.returncode == 0
-    ), f"Method filter query failed: {method_filter_result.stderr}"
-
-    if method_filter_result.stdout.strip():
-        method_output = method_filter_result.stdout
-        # Check if we found semantically-chunked results
-        has_semantic_results = "🧠 Semantic:" in method_output
-
-        if has_semantic_results:
-            assert (
-                "method" in method_output.lower() or "function" in method_output.lower()
-            ), "Semantic method results should indicate method or function type"
-        else:
-            # If no semantic results, this is still acceptable
-            print(
-                f"⚠️  Method search found non-semantic results: {method_output[:200]}..."
-            )
-            assert (
-                len(method_output.strip()) > 0
-            ), "Should find some results even if not semantic"
-
-    # Test scope filtering (class vs global)
-    class_scope_result = subprocess.run(
-        ["code-indexer", "query", "Calculator", "--scope", "global"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert (
-        class_scope_result.returncode == 0
-    ), f"Class scope query failed: {class_scope_result.stderr}"
-
-    # Test semantic-only filtering to exclude text chunks
-    semantic_only_result = subprocess.run(
-        ["code-indexer", "query", "function", "--semantic-only"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert (
-        semantic_only_result.returncode == 0
-    ), f"Semantic-only query failed: {semantic_only_result.stderr}"
-
-    if semantic_only_result.stdout.strip():
-        semantic_only_output = semantic_only_result.stdout
-        # Should only show results with semantic metadata
-        assert (
-            "🧠 Semantic:" in semantic_only_output
-        ), "Semantic-only should show semantic info"
-        # Should not include README.md or other text files
-        assert (
-            "README.md" not in semantic_only_output
-            or "🧠 Semantic:" in semantic_only_output
+        # Index the project
+        index_result = subprocess.run(
+            ["code-indexer", "index", "--clear"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=180,
         )
+        assert index_result.returncode == 0, f"Index failed: {index_result.stderr}"
 
-    # Test JavaScript semantic chunking with verbose output
-    js_verbose_result = subprocess.run(
-        ["code-indexer", "query", "ApiClient"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert (
-        js_verbose_result.returncode == 0
-    ), f"JS verbose query failed: {js_verbose_result.stderr}"
-
-    if js_verbose_result.stdout.strip():
-        js_verbose_output = js_verbose_result.stdout
-        has_semantic = "🧠 Semantic:" in js_verbose_output
-        has_js_file = "utils.js" in js_verbose_output
-
-        if has_semantic and has_js_file:
-            # Perfect - found semantic JS content
-            pass
-        elif has_js_file:
-            print(
-                "⚠️  Found utils.js but without semantic metadata (acceptable fallback)"
-            )
-        else:
-            print(
-                f"⚠️  ApiClient search found other results instead of utils.js: {js_verbose_output[:200]}..."
-            )
-            # This is acceptable - the search may find other content that matches the query
-
-    # Test arrow function detection in JavaScript
-    arrow_func_result = subprocess.run(
-        ["code-indexer", "query", "validateEmail", "--type", "function"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert (
-        arrow_func_result.returncode == 0
-    ), f"Arrow function query failed: {arrow_func_result.stderr}"
-
-    if arrow_func_result.stdout.strip():
-        arrow_output = arrow_func_result.stdout
+        # Test semantic chunking with verbose output to verify AST attributes
+        verbose_query_result = subprocess.run(
+            ["code-indexer", "query", "Calculator class"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
         assert (
-            "🧠 Semantic:" in arrow_output
-        ), "Arrow function should be detected as semantic construct"
+            verbose_query_result.returncode == 0
+        ), f"Verbose query failed: {verbose_query_result.stderr}"
 
-    # Verify that AST chunking produces different results than text chunking
-    # by checking that semantic metadata is present
-    all_results = [
-        verbose_output,
-        type_filter_result.stdout,
-        function_filter_result.stdout,
-    ]
-    semantic_info_found = any(
-        "🧠 Semantic:" in result for result in all_results if result.strip()
-    )
-    assert (
-        semantic_info_found
-    ), "At least one query should show semantic information from AST parsing"
+        verbose_output = verbose_query_result.stdout
+        assert len(verbose_output.strip()) > 0, "Should find Calculator class"
 
-    # Note: Don't clean up shared test directory - other tests may use it
+        # Verify semantic information is displayed in verbose mode
+        assert (
+            "🧠 Semantic:" in verbose_output
+        ), "Should show semantic metadata in verbose mode"
+
+        # Check for semantic attributes in the output
+        assert any(
+            keyword in verbose_output.lower()
+            for keyword in ["class", "type:", "name:", "signature:"]
+        ), "Should show semantic type, name, and signature information"
+
+        # Test semantic search filtering with type filter
+        type_filter_result = subprocess.run(
+            ["code-indexer", "query", "calculation", "--type", "class"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert (
+            type_filter_result.returncode == 0
+        ), f"Type filter query failed: {type_filter_result.stderr}"
+
+        if type_filter_result.stdout.strip():
+            type_output = type_filter_result.stdout
+            assert (
+                "🧠 Semantic:" in type_output
+            ), "Type-filtered results should show semantic info"
+
+        # Test function-specific semantic filtering
+        function_filter_result = subprocess.run(
+            ["code-indexer", "query", "add", "--type", "function"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert (
+            function_filter_result.returncode == 0
+        ), f"Function filter query failed: {function_filter_result.stderr}"
+
+        if function_filter_result.stdout.strip():
+            func_output = function_filter_result.stdout
+            # Check if we found semantically-chunked results (with 🧠 Semantic: metadata)
+            has_semantic_results = "🧠 Semantic:" in func_output
+
+            # If we have semantic results, verify they are properly formatted
+            if has_semantic_results:
+                assert (
+                    "function" in func_output.lower() or "method" in func_output.lower()
+                ), "Semantic function results should indicate function or method type"
+            else:
+                # If no semantic results, verify that the search still found relevant content
+                # This is acceptable as the search may find text-chunked content that matches
+                print(
+                    f"⚠️  Function search found non-semantic results: {func_output[:200]}..."
+                )
+                assert (
+                    len(func_output.strip()) > 0
+                ), "Should find some results even if not semantic"
+
+        # Test method-specific semantic filtering (class methods)
+        method_filter_result = subprocess.run(
+            ["code-indexer", "query", "multiply", "--type", "method"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert (
+            method_filter_result.returncode == 0
+        ), f"Method filter query failed: {method_filter_result.stderr}"
+
+        if method_filter_result.stdout.strip():
+            method_output = method_filter_result.stdout
+            # Check if we found semantically-chunked results
+            has_semantic_results = "🧠 Semantic:" in method_output
+
+            if has_semantic_results:
+                assert (
+                    "method" in method_output.lower()
+                    or "function" in method_output.lower()
+                ), "Semantic method results should indicate method or function type"
+            else:
+                # If no semantic results, this is still acceptable
+                print(
+                    f"⚠️  Method search found non-semantic results: {method_output[:200]}..."
+                )
+                assert (
+                    len(method_output.strip()) > 0
+                ), "Should find some results even if not semantic"
+
+        # Test scope filtering (class vs global)
+        class_scope_result = subprocess.run(
+            ["code-indexer", "query", "Calculator", "--scope", "global"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert (
+            class_scope_result.returncode == 0
+        ), f"Class scope query failed: {class_scope_result.stderr}"
+
+        # Test semantic-only filtering to exclude text chunks
+        semantic_only_result = subprocess.run(
+            ["code-indexer", "query", "function", "--semantic-only"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert (
+            semantic_only_result.returncode == 0
+        ), f"Semantic-only query failed: {semantic_only_result.stderr}"
+
+        if semantic_only_result.stdout.strip():
+            semantic_only_output = semantic_only_result.stdout
+            # Should only show results with semantic metadata
+            assert (
+                "🧠 Semantic:" in semantic_only_output
+            ), "Semantic-only should show semantic info"
+            # Should not include README.md or other text files
+            assert (
+                "README.md" not in semantic_only_output
+                or "🧠 Semantic:" in semantic_only_output
+            )
+
+        # Test JavaScript semantic chunking with verbose output
+        js_verbose_result = subprocess.run(
+            ["code-indexer", "query", "ApiClient"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert (
+            js_verbose_result.returncode == 0
+        ), f"JS verbose query failed: {js_verbose_result.stderr}"
+
+        if js_verbose_result.stdout.strip():
+            js_verbose_output = js_verbose_result.stdout
+            has_semantic = "🧠 Semantic:" in js_verbose_output
+            has_js_file = "utils.js" in js_verbose_output
+
+            if has_semantic and has_js_file:
+                # Perfect - found semantic JS content
+                pass
+            elif has_js_file:
+                print(
+                    "⚠️  Found utils.js but without semantic metadata (acceptable fallback)"
+                )
+            else:
+                print(
+                    f"⚠️  ApiClient search found other results instead of utils.js: {js_verbose_output[:200]}..."
+                )
+                # This is acceptable - the search may find other content that matches the query
+
+        # Test arrow function detection in JavaScript
+        arrow_func_result = subprocess.run(
+            ["code-indexer", "query", "validateEmail", "--type", "function"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert (
+            arrow_func_result.returncode == 0
+        ), f"Arrow function query failed: {arrow_func_result.stderr}"
+
+        if arrow_func_result.stdout.strip():
+            arrow_output = arrow_func_result.stdout
+            assert (
+                "🧠 Semantic:" in arrow_output
+            ), "Arrow function should be detected as semantic construct"
+
+        # Verify that AST chunking produces different results than text chunking
+        # by checking that semantic metadata is present
+        all_results = [
+            verbose_output,
+            type_filter_result.stdout,
+            function_filter_result.stdout,
+        ]
+        semantic_info_found = any(
+            "🧠 Semantic:" in result for result in all_results if result.strip()
+        )
+        assert (
+            semantic_info_found
+        ), "At least one query should show semantic information from AST parsing"
 
 
 @pytest.mark.e2e
 @pytest.mark.integration
 @pytest.mark.voyage_ai
-def test_text_chunking_fallback_e2e():
+def test_text_chunking_fallback_for_unsupported_files():
     """Test end-to-end fallback to text chunking for unsupported files."""
-    # Use shared project directory to reuse containers between tests
-    test_dir = get_shared_test_project_dir()
+    with shared_container_test_environment(
+        "test_text_chunking_fallback_unsupported", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Add test files that should fallback to text chunking
+        project_files = _get_ast_vs_text_test_project()
+        for filename, content in project_files.items():
+            (project_path / filename).write_text(content)
 
-    # Create test project with inventory system (will preserve existing config)
-    create_test_project_with_inventory(test_dir, TestProjectInventory.CLI_PROGRESS)
+        # Index the project
+        index_result = subprocess.run(
+            ["code-indexer", "index", "--clear"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        assert index_result.returncode == 0, f"Index failed: {index_result.stderr}"
 
-    # Add test files
-    project_files = _get_ast_vs_text_test_project()
-    for filename, content in project_files.items():
-        (test_dir / filename).write_text(content)
+        # Test that README.md content can be found (text chunking)
+        readme_query_result = subprocess.run(
+            ["code-indexer", "query", "semantic chunking behavior", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert (
+            readme_query_result.returncode == 0
+        ), f"README query failed: {readme_query_result.stderr}"
 
-    # Clear any existing data to start fresh
-    subprocess.run(
-        ["code-indexer", "index", "--clear"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
+        readme_output = readme_query_result.stdout
+        assert (
+            len(readme_output.strip()) > 0
+        ), "Should find README content using text chunking"
 
-    # Ensure services are running
-    start_result = subprocess.run(
-        ["code-indexer", "start"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
+        # Test that YAML config can be found (text chunking)
+        config_query_result = subprocess.run(
+            ["code-indexer", "query", "database configuration", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert (
+            config_query_result.returncode == 0
+        ), f"Config query failed: {config_query_result.stderr}"
 
-    # Index the project
-    index_result = subprocess.run(
-        ["code-indexer", "index"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=180,
-    )
-    assert index_result.returncode == 0, f"Index failed: {index_result.stderr}"
+        config_output = config_query_result.stdout
+        assert (
+            len(config_output.strip()) > 0
+        ), "Should find config content using text chunking"
 
-    # Test that README.md content can be found (text chunking)
-    readme_query_result = subprocess.run(
-        ["code-indexer", "query", "semantic chunking behavior", "--quiet"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert (
-        readme_query_result.returncode == 0
-    ), f"README query failed: {readme_query_result.stderr}"
+        # Test that malformed Python falls back to text chunking
+        broken_query_result = subprocess.run(
+            ["code-indexer", "query", "incomplete function", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert (
+            broken_query_result.returncode == 0
+        ), f"Broken Python query failed: {broken_query_result.stderr}"
 
-    readme_output = readme_query_result.stdout
-    assert (
-        len(readme_output.strip()) > 0
-    ), "Should find README content using text chunking"
-
-    # Test that YAML config can be found (text chunking)
-    config_query_result = subprocess.run(
-        ["code-indexer", "query", "database configuration", "--quiet"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert (
-        config_query_result.returncode == 0
-    ), f"Config query failed: {config_query_result.stderr}"
-
-    config_output = config_query_result.stdout
-    assert (
-        len(config_output.strip()) > 0
-    ), "Should find config content using text chunking"
-
-    # Test that malformed Python falls back to text chunking
-    broken_query_result = subprocess.run(
-        ["code-indexer", "query", "incomplete function", "--quiet"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert (
-        broken_query_result.returncode == 0
-    ), f"Broken Python query failed: {broken_query_result.stderr}"
-
-    broken_output = broken_query_result.stdout
-    assert (
-        len(broken_output.strip()) > 0
-    ), "Should find broken Python content using text fallback"
-
-    # Note: Don't clean up shared test directory - other tests may use it
+        broken_output = broken_query_result.stdout
+        assert (
+            len(broken_output.strip()) > 0
+        ), "Should find broken Python content using text fallback"
 
 
 @pytest.mark.e2e
 @pytest.mark.integration
 @pytest.mark.voyage_ai
-def test_semantic_vs_text_chunking_comparison_e2e():
+def test_semantic_vs_text_chunking_modes_comparison():
     """Test comparison between semantic and text chunking modes."""
-    # Use shared project directory to reuse containers between tests
-    test_dir = get_shared_test_project_dir()
-
-    # Create test project with inventory system (will preserve existing config)
-    create_test_project_with_inventory(test_dir, TestProjectInventory.CLI_PROGRESS)
-
-    # Add a simple Python file for testing
-    test_file_content = '''
+    with shared_container_test_environment(
+        "test_semantic_vs_text_chunking_comparison", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Add a simple Python file for testing
+        test_file_content = '''
 def process_data(data_list):
     """Process a list of data items."""
     results = []
@@ -616,130 +574,98 @@ class DataProcessor:
         """Transform a single value."""
         return value * self.multiplier
 '''
-    (test_dir / "processor.py").write_text(test_file_content)
+        (project_path / "processor.py").write_text(test_file_content)
 
-    # Test with semantic chunking enabled
-    subprocess.run(
-        ["code-indexer", "index", "--clear"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
+        # Test with semantic chunking enabled (first indexing)
+        index_result = subprocess.run(
+            ["code-indexer", "index", "--clear"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        assert index_result.returncode == 0
 
-    start_result = subprocess.run(
-        ["code-indexer", "start"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    assert start_result.returncode == 0
+        # Query for function - should work well with semantic chunking
+        semantic_query_result = subprocess.run(
+            ["code-indexer", "query", "process_data function", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert semantic_query_result.returncode == 0
+        semantic_output = semantic_query_result.stdout
 
-    index_result = subprocess.run(
-        ["code-indexer", "index"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=180,
-    )
-    assert index_result.returncode == 0
+        # Should find the function
+        assert (
+            len(semantic_output.strip()) > 0
+        ), "Semantic chunking should find the function"
 
-    # Query for function - should work well with semantic chunking
-    semantic_query_result = subprocess.run(
-        ["code-indexer", "query", "process_data function", "--quiet"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert semantic_query_result.returncode == 0
-    semantic_output = semantic_query_result.stdout
+        # Clean and reinitialize with semantic chunking disabled
+        subprocess.run(
+            ["code-indexer", "clean-data"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        # Clean may fail if no data exists, that's okay
 
-    # Should find the function
-    assert (
-        len(semantic_output.strip()) > 0
-    ), "Semantic chunking should find the function"
+        # Re-initialize with semantic chunking disabled
+        # Note: We need to modify the config to disable semantic chunking
+        import json
 
-    # Clean and reinitialize with semantic chunking disabled
-    subprocess.run(
-        ["code-indexer", "clean-data"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    # Clean may fail if no data exists, that's okay
+        config_file = project_path / ".code-indexer" / "config.json"
+        with open(config_file, "r") as f:
+            config = json.load(f)
 
-    # Re-initialize with semantic chunking disabled
-    # Note: We need to modify the config to disable semantic chunking
-    import json
+        config["use_semantic_chunking"] = False
 
-    config_file = test_dir / ".code-indexer" / "config.json"
-    with open(config_file, "r") as f:
-        config = json.load(f)
+        with open(config_file, "w") as f:
+            json.dump(config, f, indent=2)
 
-    config["use_semantic_chunking"] = False
+        # Re-index with text chunking using --clear to force fresh indexing
+        index_result = subprocess.run(
+            ["code-indexer", "index", "--clear"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        assert index_result.returncode == 0
 
-    with open(config_file, "w") as f:
-        json.dump(config, f, indent=2)
+        # Query again - should still work but with text chunking
+        text_query_result = subprocess.run(
+            ["code-indexer", "query", "process_data function", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert text_query_result.returncode == 0
+        text_output = text_query_result.stdout
 
-    # Re-index with text chunking using --clear to force fresh indexing
-    index_result = subprocess.run(
-        ["code-indexer", "index", "--clear"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=180,
-    )
-    assert index_result.returncode == 0
+        # Should still find content, but using text chunking
+        assert (
+            len(text_output.strip()) > 0
+        ), "Text chunking should also find the content"
 
-    # Query again - should still work but with text chunking
-    text_query_result = subprocess.run(
-        ["code-indexer", "query", "process_data function", "--quiet"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert text_query_result.returncode == 0
-    text_output = text_query_result.stdout
-
-    # Should still find content, but using text chunking
-    assert len(text_output.strip()) > 0, "Text chunking should also find the content"
-
-    # Both should find results, but potentially with different relevance
-    assert len(semantic_output.strip()) > 0
-    assert len(text_output.strip()) > 0
-
-    # Note: Don't clean up shared test directory - other tests may use it
+        # Both should find results, but potentially with different relevance
+        assert len(semantic_output.strip()) > 0
+        assert len(text_output.strip()) > 0
 
 
 @pytest.mark.e2e
 @pytest.mark.integration
 @pytest.mark.voyage_ai
-def test_ast_semantic_attributes_extraction_e2e():
+def test_ast_semantic_attributes_extraction_comprehensive():
     """Test that all expected semantic attributes are properly extracted from AST parsing."""
-    # Use isolated project directory to avoid interference with other tests
-    from .test_infrastructure import create_isolated_project_dir
-
-    test_dir = create_isolated_project_dir("ast_semantic_attributes")
-
-    # Create test project with inventory system (will preserve existing config)
-    create_test_project_with_inventory(test_dir, TestProjectInventory.CLI_PROGRESS)
-
-    # CRITICAL: Remove any existing files to ensure clean test state
-    import shutil
-
-    for item in test_dir.iterdir():
-        if item.name != ".code-indexer":  # Preserve configuration
-            if item.is_dir():
-                shutil.rmtree(item)
-            else:
-                item.unlink()
-
-    # Create a comprehensive test file with various constructs
-    comprehensive_code = '''"""
+    with shared_container_test_environment(
+        "test_ast_semantic_attributes_extraction", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Create a comprehensive test file with various constructs
+        comprehensive_code = '''"""
 Comprehensive test module for AST attribute extraction.
 """
 import asyncio
@@ -829,195 +755,268 @@ class OuterClass:
         return self.InnerClass()
 '''
 
-    (test_dir / "comprehensive.py").write_text(comprehensive_code)
+        (project_path / "comprehensive.py").write_text(comprehensive_code)
 
-    # Ensure services are started first
-    start_result = subprocess.run(
-        ["code-indexer", "start"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    assert start_result.returncode == 0
+        # Index the project with comprehensive test file
+        index_result = subprocess.run(
+            ["code-indexer", "index", "--clear"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        print(f"Indexing stdout: {index_result.stdout}")
+        print(f"Indexing stderr: {index_result.stderr}")
+        assert index_result.returncode == 0
 
-    # COMPREHENSIVE SETUP: Clear index and reindex only the new file
-    index_result = subprocess.run(
-        ["code-indexer", "index", "--clear"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=180,
-    )
-    assert index_result.returncode == 0
+        # Verify that files were actually indexed (not just that command succeeded)
+        assert (
+            "files processed:" in index_result.stdout.lower()
+            or "chunks indexed:" in index_result.stdout.lower()
+        ), f"Expected indexing output but got: {index_result.stdout}"
 
-    # Test 1: Verify function semantic attributes
-    function_result = subprocess.run(
-        ["code-indexer", "query", "global_function", "--type", "function"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert function_result.returncode == 0
+        # Wait briefly to ensure indexing is fully committed to Qdrant
+        import time
 
-    if function_result.stdout.strip():
+        time.sleep(2)
+
+        # Verify that we can query the indexed content before running detailed tests
+        verify_result = subprocess.run(
+            ["code-indexer", "query", "global_function", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert verify_result.returncode == 0
+        assert (
+            verify_result.stdout.strip()
+        ), f"Pre-test verification failed: no results for 'global_function'. Stdout: {verify_result.stdout}"
+
+        # Test 1: Verify function semantic attributes
+        function_result = subprocess.run(
+            ["code-indexer", "query", "global_function", "--type", "function"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert function_result.returncode == 0
+
         func_output = function_result.stdout
+        assert func_output.strip(), f"Query returned no output: {func_output}"
+        assert (
+            "❌ No results found" not in func_output
+        ), f"Query found no results: {func_output}"
+
         assert "🧠 Semantic:" in func_output
         assert "Type: function" in func_output or "function" in func_output.lower()
         assert "global_function" in func_output
         assert "📝 Signature:" in func_output or "def global_function" in func_output
 
-    # Test 2: Verify async function detection
-    async_func_result = subprocess.run(
-        ["code-indexer", "query", "async_global_function"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert async_func_result.returncode == 0
+        # Test 2: Verify async function detection
+        async_func_result = subprocess.run(
+            ["code-indexer", "query", "async_global_function"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert async_func_result.returncode == 0
 
-    if async_func_result.stdout.strip():
         async_output = async_func_result.stdout
+        assert (
+            async_output.strip()
+        ), f"Async function query returned no output: {async_output}"
+        assert (
+            "❌ No results found" not in async_output
+        ), f"Async function query found no results: {async_output}"
+
         assert "🧠 Semantic:" in async_output
         # Should show async features in the semantic display
         assert "async" in async_output.lower() or "Features:" in async_output
 
-    # Test 3: Verify class semantic attributes
-    class_result = subprocess.run(
-        ["code-indexer", "query", "BaseProcessor", "--type", "class"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert class_result.returncode == 0
+        # Test 3: Verify class semantic attributes
+        class_result = subprocess.run(
+            ["code-indexer", "query", "BaseProcessor", "--type", "class"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert class_result.returncode == 0
 
-    if class_result.stdout.strip():
         class_output = class_result.stdout
+        assert class_output.strip(), f"Class query returned no output: {class_output}"
+        assert (
+            "❌ No results found" not in class_output
+        ), f"Class query found no results: {class_output}"
+
         assert "🧠 Semantic:" in class_output
         assert "Type: class" in class_output or "class" in class_output.lower()
         assert "BaseProcessor" in class_output
 
-    # Test 4: Verify method semantic attributes
-    method_result = subprocess.run(
-        ["code-indexer", "query", "process_async"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert method_result.returncode == 0
+        # Test 4: Verify method semantic attributes
+        method_result = subprocess.run(
+            ["code-indexer", "query", "process_async"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert method_result.returncode == 0
 
-    if method_result.stdout.strip():
         method_output = method_result.stdout
+        assert (
+            method_output.strip()
+        ), f"Method query returned no output: {method_output}"
+        assert (
+            "❌ No results found" not in method_output
+        ), f"Method query found no results: {method_output}"
+
         assert "🧠 Semantic:" in method_output
         # Should find the method with its semantic information
         assert "process_async" in method_output
 
-    # Test 5: Verify static method detection (static method is part of BaseProcessor class chunk)
-    static_result = subprocess.run(
-        ["code-indexer", "query", "validate_input"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert static_result.returncode == 0
+        # Test 5: Verify static method detection (static method is part of BaseProcessor class chunk)
+        static_result = subprocess.run(
+            ["code-indexer", "query", "validate_input"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert static_result.returncode == 0
 
-    if static_result.stdout.strip():
         static_output = static_result.stdout
+        assert (
+            static_output.strip()
+        ), f"Static method query returned no output: {static_output}"
+        assert (
+            "❌ No results found" not in static_output
+        ), f"Static method query found no results: {static_output}"
+
         assert "🧠 Semantic:" in static_output
         # Should find the BaseProcessor class which contains the static method
         assert "BaseProcessor" in static_output
 
-    # Test 6: Verify class method detection (classmethod is part of BaseProcessor class chunk)
-    classmethod_result = subprocess.run(
-        ["code-indexer", "query", "create_default"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert classmethod_result.returncode == 0
+        # Test 6: Verify class method detection (classmethod is part of BaseProcessor class chunk)
+        classmethod_result = subprocess.run(
+            ["code-indexer", "query", "create_default"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert classmethod_result.returncode == 0
 
-    if classmethod_result.stdout.strip():
         classmethod_output = classmethod_result.stdout
+        assert (
+            classmethod_output.strip()
+        ), f"Classmethod query returned no output: {classmethod_output}"
+        assert (
+            "❌ No results found" not in classmethod_output
+        ), f"Classmethod query found no results: {classmethod_output}"
+
         assert "🧠 Semantic:" in classmethod_output
         # Should find the BaseProcessor class which contains the classmethod
         assert "BaseProcessor" in classmethod_output
 
-    # Test 7: Verify global and class scope functions exist and have semantic info
-    global_scope_result = subprocess.run(
-        ["code-indexer", "query", "global_function"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert global_scope_result.returncode == 0
+        # Test 7: Verify global and class scope functions exist and have semantic info
+        global_scope_result = subprocess.run(
+            ["code-indexer", "query", "global_function"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert global_scope_result.returncode == 0
 
-    if global_scope_result.stdout.strip():
         global_output = global_scope_result.stdout
+        assert (
+            global_output.strip()
+        ), f"Global scope query returned no output: {global_output}"
+        assert (
+            "❌ No results found" not in global_output
+        ), f"Global scope query found no results: {global_output}"
         assert "🧠 Semantic:" in global_output
 
-    class_scope_result = subprocess.run(
-        ["code-indexer", "query", "process_async"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert class_scope_result.returncode == 0
+        class_scope_result = subprocess.run(
+            ["code-indexer", "query", "process_async"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert class_scope_result.returncode == 0
 
-    if class_scope_result.stdout.strip():
         class_scope_output = class_scope_result.stdout
+        assert (
+            class_scope_output.strip()
+        ), f"Class scope query returned no output: {class_scope_output}"
+        assert (
+            "❌ No results found" not in class_scope_output
+        ), f"Class scope query found no results: {class_scope_output}"
         assert "🧠 Semantic:" in class_scope_output
 
-    # Test 8: Verify nested class detection (nested class is part of OuterClass chunk)
-    nested_result = subprocess.run(
-        ["code-indexer", "query", "InnerClass"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert nested_result.returncode == 0
+        # Test 8: Verify nested class detection (nested class is part of OuterClass chunk)
+        nested_result = subprocess.run(
+            ["code-indexer", "query", "InnerClass"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert nested_result.returncode == 0
 
-    if nested_result.stdout.strip():
         nested_output = nested_result.stdout
+        assert (
+            nested_output.strip()
+        ), f"Nested class query returned no output: {nested_output}"
+        assert (
+            "❌ No results found" not in nested_output
+        ), f"Nested class query found no results: {nested_output}"
         assert "🧠 Semantic:" in nested_output
         # Should find the OuterClass which contains the nested InnerClass
         assert "OuterClass" in nested_output
 
-    # Test 9: Verify that semantic-only filter excludes text chunks
-    semantic_only_result = subprocess.run(
-        ["code-indexer", "query", "processor", "--semantic-only"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert semantic_only_result.returncode == 0
+        # Test 9: Verify that semantic-only filter excludes text chunks
+        semantic_only_result = subprocess.run(
+            ["code-indexer", "query", "processor", "--semantic-only"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert semantic_only_result.returncode == 0
 
-    if semantic_only_result.stdout.strip():
         semantic_only_output = semantic_only_result.stdout
+        assert (
+            semantic_only_output.strip()
+        ), f"Semantic-only query returned no output: {semantic_only_output}"
+        assert (
+            "❌ No results found" not in semantic_only_output
+        ), f"Semantic-only query found no results: {semantic_only_output}"
         # Should only show semantic chunks, not text chunks
         assert "🧠 Semantic:" in semantic_only_output
 
-    # Test 10: Verify comprehensive semantic information in verbose mode
-    comprehensive_result = subprocess.run(
-        ["code-indexer", "query", "AdvancedProcessor"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert comprehensive_result.returncode == 0
+        # Test 10: Verify comprehensive semantic information in verbose mode
+        comprehensive_result = subprocess.run(
+            ["code-indexer", "query", "AdvancedProcessor"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert comprehensive_result.returncode == 0
 
-    if comprehensive_result.stdout.strip():
         comprehensive_output = comprehensive_result.stdout
+        assert (
+            comprehensive_output.strip()
+        ), f"Comprehensive query returned no output: {comprehensive_output}"
+        assert (
+            "❌ No results found" not in comprehensive_output
+        ), f"Comprehensive query found no results: {comprehensive_output}"
 
         # Verify all expected semantic information is present
         expected_semantic_info = [
@@ -1041,5 +1040,3 @@ class OuterClass:
             construct_type in comprehensive_output.lower()
             for construct_type in ["class", "method", "function"]
         ), "Should show semantic construct type information"
-
-    # Note: Don't clean up shared test directory - other tests may use it

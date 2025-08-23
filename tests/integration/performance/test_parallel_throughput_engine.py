@@ -16,7 +16,7 @@ from ...conftest import get_local_tmp_dir
 
 from code_indexer.config import Config
 from code_indexer.services.high_throughput_processor import HighThroughputProcessor
-from ...test_vector_calculation_manager import MockEmbeddingProvider
+from ...shared.mock_providers import MockEmbeddingProvider
 
 
 class TestParallelThroughputEngine:

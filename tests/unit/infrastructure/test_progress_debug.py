@@ -168,7 +168,7 @@ class TestClass_{i}:
         print("\nFirst 3 progress calls:")
         for i, call in enumerate(progress_calls[:3]):
             print(
-                f"  {i+1}: {call['current']}/{call['total']} = {call['percentage']:.1f}%"
+                f"  {i + 1}: {call['current']}/{call['total']} = {call['percentage']:.1f}%"
             )
 
         # Show last few progress calls

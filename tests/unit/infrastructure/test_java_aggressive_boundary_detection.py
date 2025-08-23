@@ -120,7 +120,7 @@ class TestJavaAggressiveBoundaryDetection:
                     and "BUSINESS_RULE_VIOLATION" in expected_content
                 ):
                     pytest.fail(
-                        f"Chunk {i+1} contains bleeding between different exception types! "
+                        f"Chunk {i + 1} contains bleeding between different exception types! "
                         f"Lines {chunk['line_start']}-{chunk['line_end']} should not contain both."
                     )
 
@@ -131,12 +131,12 @@ class TestJavaAggressiveBoundaryDetection:
             ):
                 assert (
                     "- Mobile app quick transfer" in chunk_text
-                ), f"Chunk {i+1} has incomplete INSUFFICIENT_FUNDS error message"
+                ), f"Chunk {i + 1} has incomplete INSUFFICIENT_FUNDS error message"
 
             if "Business rule violation occurred:" in chunk_text:
                 assert (
                     "This indicates a serious business logic error" in chunk_text
-                ), f"Chunk {i+1} has incomplete BUSINESS_RULE_VIOLATION error message"
+                ), f"Chunk {i + 1} has incomplete BUSINESS_RULE_VIOLATION error message"
 
     @pytest.mark.skip(
         reason="Java multi-line construct boundary detection needs enhancement"
@@ -255,7 +255,7 @@ class TestJavaAggressiveBoundaryDetection:
                         continue
                     else:
                         pytest.fail(
-                            f"Chunk {i+1} contains incomplete @ApiResponses annotation"
+                            f"Chunk {i + 1} contains incomplete @ApiResponses annotation"
                         )
 
             # Check for method signature bleeding
@@ -264,7 +264,7 @@ class TestJavaAggressiveBoundaryDetection:
                 assert (
                     ") throws ValidationException, UserAlreadyExistsException {"
                     in chunk_text
-                ), f"Chunk {i+1} has incomplete method signature"
+                ), f"Chunk {i + 1} has incomplete method signature"
 
     @pytest.mark.skip(
         reason="Java multi-line construct boundary detection needs enhancement"
@@ -385,7 +385,7 @@ class TestJavaAggressiveBoundaryDetection:
                         # This chunk should contain the complete filter lambda
                         assert (
                             "})" in chunk_text
-                        ), f"Chunk {i+1} contains incomplete filter lambda expression"
+                        ), f"Chunk {i + 1} contains incomplete filter lambda expression"
 
             # Check logging statements are complete
             if (
@@ -394,12 +394,12 @@ class TestJavaAggressiveBoundaryDetection:
             ):
                 assert (
                     "user.getCreatedDate()" in chunk_text
-                ), f"Chunk {i+1} has incomplete log.warn statement"
+                ), f"Chunk {i + 1} has incomplete log.warn statement"
 
             if "log.error(" in chunk_text and "Failed to process user:" in chunk_text:
                 assert (
                     "user.getStatus()," in chunk_text
-                ), f"Chunk {i+1} has incomplete log.error statement"
+                ), f"Chunk {i + 1} has incomplete log.error statement"
 
     def _extract_expected_content(self, original_lines, start_line, end_line):
         """Extract expected content based on line numbers."""
@@ -558,14 +558,14 @@ class TestJavaAggressiveBoundaryDetection:
             if "/**" in chunk_text and "Creates a new user in the system" in chunk_text:
                 assert (
                     "*/" in chunk_text
-                ), f"Chunk {i+1} contains incomplete Javadoc for createUser method"
+                ), f"Chunk {i + 1} contains incomplete Javadoc for createUser method"
 
             # Check that method signatures with throws clauses are complete
             if "R createUser(T userData, ExecutionContext context)" in chunk_text:
                 assert (
                     "throws ValidationException, DuplicateUserException, SecurityException, SystemException;"
                     in chunk_text
-                ), f"Chunk {i+1} has incomplete createUser method signature"
+                ), f"Chunk {i + 1} has incomplete createUser method signature"
 
             # Check that default method implementations are complete
             if "default Optional<R> getUserById(" in chunk_text:
@@ -573,10 +573,10 @@ class TestJavaAggressiveBoundaryDetection:
                     # This chunk should contain the complete error message
                     assert (
                         "Please verify the user ID and try again." in chunk_text
-                    ), f"Chunk {i+1} has incomplete InvalidParameterException message"
+                    ), f"Chunk {i + 1} has incomplete InvalidParameterException message"
 
             # Check logging statements are complete
             if "log.debug(" in chunk_text and "User not found with ID:" in chunk_text:
                 assert (
                     "- Permission restrictions apply" in chunk_text
-                ), f"Chunk {i+1} has incomplete log.debug statement"
+                ), f"Chunk {i + 1} has incomplete log.debug statement"

@@ -220,7 +220,6 @@ class GroovySemanticParser(BaseTreeSitterParser):
                 and hasattr(third_child, "type")
                 and third_child.type == "block"
             ):
-
                 # Check if third child is a block starting with = and containing {
                 block_text = self._get_node_text(third_child, lines).strip()
                 if block_text.startswith("=") and "{" in block_text:

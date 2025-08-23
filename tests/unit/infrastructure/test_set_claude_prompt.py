@@ -170,7 +170,6 @@ This should be replaced.
             patch("pathlib.Path.mkdir") as mock_mkdir,
             patch("pathlib.Path.write_text") as mock_write,
         ):
-
             setter = ClaudePromptSetter()
             result = setter.set_user_prompt()
 
@@ -187,7 +186,6 @@ This should be replaced.
             patch("pathlib.Path.read_text", return_value=existing_content),
             patch("pathlib.Path.write_text") as mock_write,
         ):
-
             setter = ClaudePromptSetter()
             result = setter.set_user_prompt()
 

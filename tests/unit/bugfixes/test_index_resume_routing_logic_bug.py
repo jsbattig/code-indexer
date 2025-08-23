@@ -145,7 +145,6 @@ class TestIndexResumeRoutingLogicBug:
                 # Mock get_resume_timestamp to return 0.0 (this is why the bug occurs)
                 # For interrupted operations, timestamp is 0.0, which triggers full index
                 with patch.object(metadata, "get_resume_timestamp", return_value=0.0):
-
                     # Capture progress messages
                     progress_messages = []
 
@@ -241,7 +240,6 @@ class TestIndexResumeRoutingLogicBug:
                 with patch.object(
                     metadata, "get_resume_timestamp", return_value=1000.0
                 ):
-
                     # Mock all the file finding logic to return empty (focus on routing logic)
                     with patch.object(
                         indexer.qdrant_client, "ensure_provider_aware_collection"
@@ -259,7 +257,6 @@ class TestIndexResumeRoutingLogicBug:
                                     "find_modified_files",
                                     return_value=[],
                                 ):
-
                                     # === PHASE 3: Call _do_incremental_index ===
                                     result = indexer._do_incremental_index(
                                         batch_size=10,
@@ -313,7 +310,6 @@ class TestIndexResumeRoutingLogicBug:
             ) as mock_resume_interrupted:
                 # Mock get_resume_timestamp to return 0.0 (no previous index)
                 with patch.object(metadata, "get_resume_timestamp", return_value=0.0):
-
                     progress_messages = []
 
                     def capture_progress(current, total, path, info=""):

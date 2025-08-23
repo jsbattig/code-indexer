@@ -61,6 +61,18 @@ class GenericQueryService:
         try:
             import subprocess
 
+            # First check if this is actually a git repository
+            check_result = subprocess.run(
+                ["git", "rev-parse", "--git-dir"],
+                cwd=self.project_dir,
+                capture_output=True,
+                text=True,
+            )
+
+            # If not a git repository, return empty context silently
+            if check_result.returncode != 0:
+                return {"branch": "unknown", "commit": "unknown", "files": set()}
+
             # Get current branch
             result = subprocess.run(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
@@ -101,8 +113,13 @@ class GenericQueryService:
                 "files": current_files,
             }
 
+        except subprocess.CalledProcessError:
+            # Git command failed - not a git repository or no commits yet
+            # This is expected in test environments, so don't log
+            return {"branch": "unknown", "commit": "unknown", "files": set()}
         except Exception as e:
-            logger.warning(f"Failed to get current branch context: {e}")
+            # Only log unexpected errors
+            logger.debug(f"Unexpected error getting branch context: {e}")
             return {"branch": "unknown", "commit": "unknown", "files": set()}
 
     def _is_result_current_branch(

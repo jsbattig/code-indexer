@@ -22,63 +22,12 @@ from pathlib import Path
 
 import pytest
 
-# Import new test infrastructure
-from ...conftest import local_temporary_directory
-from .test_infrastructure import (
-    TestProjectInventory,
-    create_test_project_with_inventory,
-)
+# Import shared container infrastructure
+from ...conftest import shared_container_test_environment
+from .infrastructure import EmbeddingProvider
 
 # Mark all tests in this file as e2e to exclude from ci-github.sh
 pytestmark = pytest.mark.e2e
-
-
-@pytest.fixture
-def branch_topology_test_repo():
-    """Create a test repository for branch topology tests."""
-    with local_temporary_directory() as temp_dir:
-        # Create isolated project space using inventory system (no config tinkering)
-        create_test_project_with_inventory(
-            temp_dir, TestProjectInventory.BRANCH_TOPOLOGY
-        )
-
-        # Create test git repository
-        subprocess.run(["git", "init"], cwd=temp_dir, check=True)
-        subprocess.run(
-            ["git", "config", "user.email", "test@example.com"],
-            cwd=temp_dir,
-            check=True,
-        )
-        subprocess.run(
-            ["git", "config", "user.name", "Test User"], cwd=temp_dir, check=True
-        )
-
-        # Create .gitignore FIRST to prevent committing .code-indexer directory
-        (temp_dir / ".gitignore").write_text(
-            """.code-indexer/
-__pycache__/
-*.pyc
-.pytest_cache/
-venv/
-.env
-"""
-        )
-
-        # Create initial test files
-        (temp_dir / "README.md").write_text(
-            "# Test Project\nThis is a test repository for branch topology testing."
-        )
-        (temp_dir / "main.py").write_text(
-            "def main():\n    print('Hello World')\n\nif __name__ == '__main__':\n    main()"
-        )
-
-        # Commit initial files
-        subprocess.run(["git", "add", "."], cwd=temp_dir, check=True)
-        subprocess.run(
-            ["git", "commit", "-m", "Initial commit"], cwd=temp_dir, check=True
-        )
-
-        yield temp_dir
 
 
 # Removed create_branch_topology_config - now using TestProjectInventory.BRANCH_TOPOLOGY
@@ -110,15 +59,54 @@ def run_cli_command(command, cwd, expect_success=True):
     os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
     reason="E2E tests require Docker services which are not available in CI",
 )
-def test_branch_topology_full_workflow(branch_topology_test_repo):
-    """Test complete branch topology workflow with content/visibility separation."""
-    test_dir = branch_topology_test_repo
-
-    try:
+def test_branch_topology_full_workflow():
+    """Test complete branch topology workflow with content/visibility separation and complete isolation."""
+    with shared_container_test_environment(
+        "test_branch_topology_full_workflow", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Use project_path as test directory
+        test_dir = project_path
         original_cwd = Path.cwd()
         os.chdir(test_dir)
 
-        # Initialize services first
+        # Setup git repository
+        subprocess.run(["git", "init"], cwd=test_dir, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=test_dir,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"], cwd=test_dir, check=True
+        )
+
+        # Create .gitignore FIRST to prevent committing .code-indexer directory
+        (test_dir / ".gitignore").write_text(
+            """.code-indexer/
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.env
+"""
+        )
+
+        # Create initial test files
+        (test_dir / "README.md").write_text(
+            "# Test Project\nThis is a test repository for branch topology testing."
+        )
+        (test_dir / "main.py").write_text(
+            "def main():\n    print('Hello World')\n\nif __name__ == '__main__':\n    main()"
+        )
+
+        # Commit initial files
+        subprocess.run(["git", "add", "."], cwd=test_dir, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Initial commit"], cwd=test_dir, check=True
+        )
+
+        # Initialize services - shared environment handles this
+        print("🚀 Initializing and starting services...")
         init_result = subprocess.run(
             ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
             cwd=test_dir,
@@ -128,57 +116,18 @@ def test_branch_topology_full_workflow(branch_topology_test_repo):
         )
         assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
-        # Start services - this will allocate dynamic ports and update config
-        print("🚀 Starting services with dynamic port allocation...")
         start_result = subprocess.run(
-            ["code-indexer", "start"],
+            ["code-indexer", "start", "--quiet"],
             cwd=test_dir,
             capture_output=True,
             text=True,
-            timeout=180,
+            timeout=120,
         )
+        assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
 
-        if start_result.returncode != 0:
-            # If start failed, check if it's due to services already running
-            stdout_text = start_result.stdout or ""
-            if "already in use" in stdout_text or "already running" in stdout_text:
-                print("⚠️ Services may already be running, checking status...")
-                status_result = subprocess.run(
-                    ["code-indexer", "status"],
-                    cwd=test_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
-                if status_result.returncode == 0 and (
-                    "✅" in status_result.stdout or "Running" in status_result.stdout
-                ):
-                    print("✅ Found existing running services")
-                else:
-                    pytest.skip(f"Could not start services: {start_result.stdout}")
-            else:
-                print(f"Start command stdout: {start_result.stdout}")
-                print(f"Start command stderr: {start_result.stderr}")
-                assert (
-                    start_result.returncode == 0
-                ), f"Start failed: stdout='{start_result.stdout}', stderr='{start_result.stderr}'"
-        else:
-            print("✅ Services started successfully")
-
-        # Verify that configuration now has dynamic ports
-        print("🔍 Verifying dynamic port configuration...")
-        from code_indexer.config import ConfigManager
-
-        config_manager = ConfigManager.create_with_backtrack(test_dir)
-        test_config = config_manager.load()
-
-        print(f"Qdrant host: {test_config.qdrant.host}")
-        if hasattr(test_config, "project_ports") and test_config.project_ports:
-            print(f"Dynamic ports - Qdrant: {test_config.project_ports.qdrant_port}")
-
-        # Verify services are healthy by checking status
+        # Verify services are running
         status_result = run_cli_command(["code-indexer", "status"], test_dir)
-        if "✅" not in status_result.stdout:
+        if "✅" not in status_result.stdout and "Running" not in status_result.stdout:
             pytest.skip("Services not healthy after start")
 
         # Step 1: Initial indexing on master branch
@@ -320,11 +269,8 @@ def helper_function():
 
         print("✅ Branch topology E2E test completed successfully!")
 
-    finally:
+        # Cleanup handled by shared environment
         try:
             os.chdir(original_cwd)
-            # Don't clean up data - let containers reuse between tests
-            # The auto_register_project_collections will handle cleanup
-            pass
         except Exception:
             pass

@@ -21,7 +21,8 @@ class TestGenericQueryService:
         temp_dir.mkdir(parents=True, exist_ok=True)
 
         # Clean only test files, preserve .code-indexer directory for containers
-        test_subdirs = ["src", ".git", "test_files"]
+        # NOTE: Don't clean .git directory here as it will be handled by git_repo fixture
+        test_subdirs = ["src", "test_files"]
         for subdir in test_subdirs:
             subdir_path = temp_dir / subdir
             if subdir_path.exists():
@@ -34,7 +35,7 @@ class TestGenericQueryService:
 
         yield temp_dir
 
-        # Clean up test files after test
+        # Clean up test files after test (but preserve .git for subsequent tests)
         for subdir in test_subdirs:
             subdir_path = temp_dir / subdir
             if subdir_path.exists():
@@ -55,6 +56,11 @@ class TestGenericQueryService:
     @pytest.fixture
     def git_repo(self, temp_dir):
         """Create a minimal git repository for testing."""
+        # Remove any existing git repository to ensure clean state
+        git_dir = temp_dir / ".git"
+        if git_dir.exists():
+            shutil.rmtree(git_dir, ignore_errors=True)
+
         # Initialize git repo
         subprocess.run(["git", "init"], cwd=temp_dir, check=True, capture_output=True)
         subprocess.run(
@@ -126,11 +132,25 @@ class TestGenericQueryService:
 
     def test_get_current_branch_context_no_git(self, query_service, temp_dir):
         """Test branch context when git is not available."""
-        context = query_service._get_current_branch_context()
+        # Temporarily remove git directory to simulate no git
+        git_dir = temp_dir / ".git"
+        git_backup = None
+        if git_dir.exists():
+            import tempfile
 
-        assert context["branch"] == "unknown"
-        assert context["commit"] == "unknown"
-        assert context["files"] == set()
+            git_backup = tempfile.mkdtemp()
+            shutil.move(str(git_dir), git_backup)
+
+        try:
+            context = query_service._get_current_branch_context()
+
+            assert context["branch"] == "unknown"
+            assert context["commit"] == "unknown"
+            assert context["files"] == set()
+        finally:
+            # Restore git directory if it was backed up
+            if git_backup and Path(git_backup).exists():
+                shutil.move(str(Path(git_backup) / ".git"), str(git_dir))
 
     def test_is_result_current_branch_filesystem(self, query_service):
         """Test that filesystem-based results are always included."""

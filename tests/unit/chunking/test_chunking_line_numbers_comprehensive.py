@@ -107,7 +107,7 @@ if __name__ == "__main__":
 
         for i, chunk in enumerate(chunks):
             self._verify_chunk_line_numbers(
-                chunk, code, f"Text chunking simple code - chunk {i+1}"
+                chunk, code, f"Text chunking simple code - chunk {i + 1}"
             )
 
     def test_text_chunking_complex_python_file(self, text_chunker):
@@ -207,7 +207,7 @@ if __name__ == "__main__":
                 chunk_dict = chunk
 
             self._verify_chunk_line_numbers(
-                chunk_dict, code, f"Semantic chunking Python classes - chunk {i+1}"
+                chunk_dict, code, f"Semantic chunking Python classes - chunk {i + 1}"
             )
 
     def test_semantic_chunking_large_class(self, semantic_chunker):
@@ -315,7 +315,7 @@ class LargeComplexClass:
                 chunk_dict = chunk
 
             self._verify_chunk_line_numbers(
-                chunk_dict, code, f"Semantic chunking large class - chunk {i+1}"
+                chunk_dict, code, f"Semantic chunking large class - chunk {i + 1}"
             )
 
     def test_text_chunking_edge_cases(self, text_chunker):
@@ -377,7 +377,7 @@ class ClassWithSpecialContent:
 
         for i, chunk in enumerate(chunks):
             self._verify_chunk_line_numbers(
-                chunk, code, f"Text chunking edge cases - chunk {i+1}"
+                chunk, code, f"Text chunking edge cases - chunk {i + 1}"
             )
 
     def test_consistency_between_chunkers(self, text_chunker, semantic_chunker):
@@ -409,12 +409,12 @@ class SimpleClass:
         # Verify line numbers for both
         for i, chunk in enumerate(text_chunks):
             self._verify_chunk_line_numbers(
-                chunk, code, f"Text chunker consistency test - chunk {i+1}"
+                chunk, code, f"Text chunker consistency test - chunk {i + 1}"
             )
 
         for i, chunk in enumerate(semantic_chunks_dict):
             self._verify_chunk_line_numbers(
-                chunk, code, f"Semantic chunker consistency test - chunk {i+1}"
+                chunk, code, f"Semantic chunker consistency test - chunk {i + 1}"
             )
 
     def test_large_file_chunking_accuracy(self, text_chunker):
@@ -444,7 +444,7 @@ class SimpleClass:
         # Verify every chunk
         for i, chunk in enumerate(chunks):
             self._verify_chunk_line_numbers(
-                chunk, code, f"Large file chunking - chunk {i+1}"
+                chunk, code, f"Large file chunking - chunk {i + 1}"
             )
 
         # Verify coverage - all lines should be covered by at least one chunk

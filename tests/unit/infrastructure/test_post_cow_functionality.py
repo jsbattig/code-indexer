@@ -44,7 +44,7 @@ class TestPostCoWQdrantClient:
             result = qdrant_client._create_collection_direct("test_collection", 1536)
 
             assert result is True
-            assert mock_put.call_count == 6  # 1 collection + 5 payload indexes
+            assert mock_put.call_count == 8  # 1 collection + 7 payload indexes
 
             # Find the collection creation call
             collection_call = None
@@ -115,7 +115,6 @@ class TestPostCoWQdrantClient:
             patch.object(qdrant_client, "collection_exists") as mock_exists,
             patch.object(qdrant_client, "_create_collection_direct") as mock_direct,
         ):
-
             mock_exists.return_value = False
             mock_direct.return_value = True
 
@@ -131,7 +130,6 @@ class TestPostCoWQdrantClient:
             patch.object(qdrant_client, "collection_exists") as mock_exists,
             patch.object(qdrant_client, "get_collection_info") as mock_get_info,
         ):
-
             mock_exists.return_value = True
             mock_get_info.return_value = {
                 "config": {"params": {"vectors": {"size": 1536}}}
@@ -294,8 +292,8 @@ class TestPostCoWPerformance:
             result = client._create_collection_direct("perf_test", 1536)
 
             assert result is True
-            # Verify 6 API calls were made (1 collection + 5 indexes, no CoW complexity)
-            assert mock_put.call_count == 6
+            # Verify 7 API calls were made (1 collection + 6 indexes, no CoW complexity)
+            assert mock_put.call_count == 8
 
             # Verify collection creation call is present
             collection_calls = [
@@ -311,7 +309,7 @@ class TestPostCoWPerformance:
                 for call in mock_put.call_args_list
                 if "field_name" in call[1]["json"]
             ]
-            assert len(index_calls) == 5
+            assert len(index_calls) == 7
 
     def test_no_cow_fallback_logic(self):
         """Test that there's no CoW fallback logic slowing down operations."""

@@ -1102,7 +1102,6 @@ class SmartIndexer(HighThroughputProcessor):
         files_unhidden = 0  # Initialize for all code paths
 
         if self.git_topology_service.is_git_available():
-
             # CRITICAL FIX: Check ALL files in database for unhiding, not just files_to_index
             # This fixes the bug where files hidden in other branches don't get unhidden
             # when switching back to the branch where they should be visible

@@ -156,7 +156,7 @@ class BaseStatusDisplay(ABC):
                     args = " ".join(parts[1:])
                     if len(args) <= remaining:
                         return text
-                    return f"{cmd} {args[:remaining-3]}..."
+                    return f"{cmd} {args[: remaining - 3]}..."
 
         # Default truncation
         return text[: max_width - 3] + "..."

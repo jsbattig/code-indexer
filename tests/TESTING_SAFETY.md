@@ -2,7 +2,42 @@
 
 ## Production Safety Measures
 
-The dual-engine tests in this repository are designed to avoid conflicts with production container setups. Here are the safety measures implemented:
+The organized test infrastructure in this repository is designed to avoid conflicts with production container setups while supporting both Docker and Podman engines. Here are the safety measures implemented:
+
+## Test Categorization and Safety
+
+### Automatic Test Categorization
+
+Tests are automatically categorized by container requirements using the `TestCategorizer` system:
+
+- **Shared-Safe Tests** (`@pytest.mark.shared_safe`) - Data-only operations that can use either container set
+- **Docker-Only Tests** (`@pytest.mark.docker_only`) - Require Docker-specific features  
+- **Podman-Only Tests** (`@pytest.mark.podman_only`) - Require Podman-specific features or rootless containers
+- **Destructive Tests** (`@pytest.mark.destructive`) - Manipulate containers directly, require isolation
+
+### Container Isolation Patterns
+
+Tests follow specific patterns based on their category:
+
+#### Shared-Safe Test Pattern
+```python
+@pytest.mark.shared_safe
+@pytest.mark.e2e
+def test_semantic_search_workflow(self):
+    """Tests that only perform data operations."""
+    # Uses existing containers, no lifecycle management
+    # Safe to run in parallel with other shared-safe tests
+```
+
+#### Destructive Test Pattern  
+```python
+@pytest.mark.destructive
+@pytest.mark.integration
+def test_container_lifecycle(self):
+    """Tests that manipulate containers directly."""
+    # Requires container isolation
+    # Cannot run in parallel with other container tests
+```
 
 ### 1. Test-Specific Container Names
 
@@ -35,10 +70,28 @@ Tests only activate dual-engine mode when `CODE_INDEXER_DUAL_ENGINE_TEST_MODE=tr
 
 ## How to Run Tests Safely
 
+### Running Tests by Category
+```bash
+# Run only shared-safe tests (can run in parallel)
+pytest -m shared_safe -v
+
+# Run only Docker-specific tests  
+pytest -m docker_only -v
+
+# Run only non-destructive tests
+pytest -m "not destructive" -v
+
+# Run organized test directories
+pytest tests/unit/ -v                    # Fast unit tests
+pytest tests/integration/ -v             # Integration tests  
+pytest tests/e2e/ -v                     # End-to-end tests
+```
+
 ### Running Individual Tests
 ```bash
-# This automatically sets the test mode
-python -m pytest tests/test_end_to_end_dual_engine.py -v
+# Run specific test files with automatic categorization
+python -m pytest tests/e2e/git_workflows/test_git_pull_incremental_e2e.py -v
+python -m pytest tests/integration/docker/test_container_manager_integration.py -v
 ```
 
 ### Manual Cleanup (if needed)

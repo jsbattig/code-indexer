@@ -358,7 +358,7 @@ class BranchAwareIndexer:
                     # Debug log each file
                     with open(debug_file, "a") as f:
                         f.write(
-                            f"[{datetime.datetime.now().isoformat()}] Processing file {current_file_index+1}/{total_files}: {file_path}\n"
+                            f"[{datetime.datetime.now().isoformat()}] Processing file {current_file_index + 1}/{total_files}: {file_path}\n"
                         )
                         f.flush()
 

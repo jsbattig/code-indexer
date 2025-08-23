@@ -120,7 +120,7 @@ class TestClass:
                 # If both lines have content, they should match
                 if chunk_line_stripped and expected_line_stripped:
                     assert chunk_line_stripped == expected_line_stripped, (
-                        f"Chunk {i+1}, line {j+1}: Content bleeding detected!\n"
+                        f"Chunk {i + 1}, line {j + 1}: Content bleeding detected!\n"
                         f"Chunk line: '{chunk_line_stripped}'\n"
                         f"Expected (original line {original_line_index + 1}): '{expected_line_stripped}'\n"
                         f"Chunk reports lines {chunk['line_start']}-{chunk['line_end']}"
@@ -179,7 +179,7 @@ class SomeClass:
                     ].strip()
 
                     assert expected_first_line == "else:", (
-                        f"BOUNDARY BLEEDING DETECTED in chunk {i+1}!\n"
+                        f"BOUNDARY BLEEDING DETECTED in chunk {i + 1}!\n"
                         f"Chunk starts with 'else:' but original line {chunk['line_start']} is: '{expected_first_line}'\n"
                         f"This indicates content is bleeding from an adjacent chunk."
                     )
@@ -216,7 +216,7 @@ class SimpleClass:
                     expected_first_line = original_lines[0].strip()
 
                     assert actual_content_line == expected_first_line, (
-                        f"Semantic chunk {i+1} has file header but wrong line numbers!\n"
+                        f"Semantic chunk {i + 1} has file header but wrong line numbers!\n"
                         f"Chunk line 2: '{actual_content_line}'\n"
                         f"Expected (original line 1): '{expected_first_line}'\n"
                         f"The file header '// File:' is being counted in line numbers incorrectly."
@@ -269,7 +269,7 @@ def function_d():
                 )
 
                 assert found_in_original, (
-                    f"Chunk {i+1} contains line '{chunk_line_stripped}' that doesn't exist in original file!\n"
+                    f"Chunk {i + 1} contains line '{chunk_line_stripped}' that doesn't exist in original file!\n"
                     f"This indicates content corruption or bleeding during chunking."
                 )
 
@@ -313,7 +313,7 @@ else:
                 chunk_reports_start = chunk["line_start"]
 
                 assert chunk_reports_start == else_line_number, (
-                    f"CRITICAL BUG: Chunk {i+1} starts with 'else:' but reports line {chunk_reports_start}\n"
+                    f"CRITICAL BUG: Chunk {i + 1} starts with 'else:' but reports line {chunk_reports_start}\n"
                     f"The actual 'else:' is at line {else_line_number} in the original file.\n"
                     f"This proves content is bleeding between chunks!"
                 )

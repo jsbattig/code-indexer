@@ -11,6 +11,11 @@ import tempfile
 from pathlib import Path
 import pytest
 
+from tests.conftest import shared_container_test_environment
+from .infrastructure import EmbeddingProvider
+
+pytestmark = pytest.mark.e2e
+
 
 class TestSetupGlobalRegistryCommand:
     """Test standalone setup-global-registry command functionality."""
@@ -269,22 +274,14 @@ class TestSetupGlobalRegistryCommand:
 
     def test_error_messages_mention_both_commands(self):
         """Test that error messages reference both init --setup-global-registry and setup-global-registry."""
-        # Run a command that might trigger registry setup instructions
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project_dir = Path(tmpdir)
-
-            # Create a basic project and try to start (which needs registry)
-            result = subprocess.run(
-                ["code-indexer", "init", "--force", "--embedding-provider", "ollama"],
-                cwd=project_dir,
-                capture_output=True,
-                text=True,
-            )
-
+        # This test needs container services since it runs 'start' command
+        with shared_container_test_environment(
+            "test_error_messages_mention_both_commands", EmbeddingProvider.OLLAMA
+        ) as project_path:
             # Now try to start services (this should mention registry setup)
             result = subprocess.run(
                 ["code-indexer", "start"],
-                cwd=project_dir,
+                cwd=project_path,
                 capture_output=True,
                 text=True,
             )

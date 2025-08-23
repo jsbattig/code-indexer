@@ -20,7 +20,7 @@ import pytest
 
 
 from ...conftest import local_temporary_directory
-from .test_infrastructure import (
+from .infrastructure import (
     TestProjectInventory,
     create_test_project_with_inventory,
 )
@@ -523,14 +523,14 @@ def test_deletion_handling_performance_benchmark(stuck_indexing_test_repo):
     print(f"   Files deleted: {len(files_to_delete)}")
     print(f"   Duration: {benchmark_result['duration']:.2f}s")
     print(
-        f"   Avg time per deletion: {benchmark_result['duration']/len(files_to_delete):.2f}s"
+        f"   Avg time per deletion: {benchmark_result['duration'] / len(files_to_delete):.2f}s"
     )
     print(f"   Timed out: {benchmark_result['timed_out']}")
 
     if benchmark_result["timed_out"]:
         pytest.fail(
             f"Performance benchmark failed: indexing timed out after 60s when processing {len(files_to_delete)} deletions. "
-            f"Average time per deletion would be > {60/len(files_to_delete):.2f}s, which is too slow."
+            f"Average time per deletion would be > {60 / len(files_to_delete):.2f}s, which is too slow."
         )
 
     # Performance assertions

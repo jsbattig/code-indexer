@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from .test_infrastructure import TestSuiteCleanup
+from .infrastructure import TestSuiteCleanup
 
 
 def test_cleanup_methods_exist():

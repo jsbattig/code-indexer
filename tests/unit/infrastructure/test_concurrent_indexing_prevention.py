@@ -99,7 +99,6 @@ class TestConcurrentIndexingPrevention:
                             patch.object(indexer, "get_git_status") as mock_git_status,
                             patch.object(indexer, "file_finder") as mock_file_finder,
                         ):
-
                             mock_git_status.return_value = {"git_available": False}
                             mock_file_finder.find_files.return_value = [
                                 Path(tmpdir) / f for f in test_files
@@ -237,7 +236,6 @@ class TestConcurrentIndexingPrevention:
                         indexer.branch_aware_indexer, "index_branch_changes"
                     ) as mock_index_branch,
                 ):
-
                     mock_git_status.return_value = {"git_available": False}
                     mock_file_finder.find_files.return_value = [
                         Path(tmpdir) / f for f in test_files
@@ -316,7 +314,6 @@ class TestConcurrentIndexingPrevention:
                         indexer.branch_aware_indexer, "index_branch_changes"
                     ) as mock_index_branch,
                 ):
-
                     mock_git_status.return_value = {"git_available": False}
                     mock_file_finder.find_files.return_value = [
                         Path(tmpdir) / f for f in test_files

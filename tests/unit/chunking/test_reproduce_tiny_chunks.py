@@ -103,7 +103,7 @@ Test module with many function definitions.
 """
 
 import pytest
-from test_infrastructure import create_fast_e2e_setup
+from .infrastructure import create_fast_e2e_setup
 
 '''
         + '''

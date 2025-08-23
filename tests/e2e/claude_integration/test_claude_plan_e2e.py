@@ -3,16 +3,16 @@
 These tests exercise the complete feature without mocks, requiring Claude CLI to be available.
 """
 
-import shutil
 import pytest
-
-from ...conftest import get_local_tmp_dir
 import time
 from pathlib import Path
-import uuid
+
+from tests.conftest import shared_container_test_environment
+from .infrastructure import EmbeddingProvider
 
 from src.code_indexer.services.claude_integration import (
     ClaudeIntegrationService,
+    ClaudeAnalysisResult,
     check_claude_sdk_availability,
 )
 from src.code_indexer.services.claude_tool_tracking import (
@@ -27,58 +27,10 @@ from src.code_indexer.services.claude_tool_tracking import (
 class TestClaudePlanE2E:
     """End-to-end tests for Claude plan feature with real Claude CLI."""
 
-    def setup_method(self):
-        """Set up test environment with temp directory and sample code."""
-
-        # Create temporary directory for test codebase
-        self.temp_dir = Path(str(get_local_tmp_dir() / f"test_{uuid.uuid4().hex[:8]}"))
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
-        self.codebase_dir = self.temp_dir / "test_codebase"
-        self.codebase_dir.mkdir(parents=True, exist_ok=True)
-
-        # Create sample code files for Claude to analyze
-        self._create_sample_codebase()
-
-        # Set up code-indexer for the test codebase so cidx query will work
-        self._setup_code_indexer()
-
-    def teardown_method(self):
-        """Clean up temporary directory and code-indexer setup."""
-        # Clean up code-indexer data for this test project
-        self._cleanup_code_indexer()
-
-        # Clean up temporary directory with retry logic for Qdrant segment cleanup
-        if self.temp_dir.exists():
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    shutil.rmtree(self.temp_dir)
-                    break
-                except OSError as e:
-                    if "Directory not empty" in str(e) and attempt < max_retries - 1:
-                        # Wait and try again - Qdrant might still be releasing files
-                        import time
-
-                        time.sleep(0.5)
-                        continue
-                    # If final attempt fails, try force removal with different method
-                    elif attempt == max_retries - 1:
-                        try:
-                            import subprocess
-
-                            subprocess.run(
-                                ["rm", "-rf", str(self.temp_dir)],
-                                check=False,
-                                capture_output=True,
-                            )
-                        except Exception:
-                            # Last resort - leave cleanup to OS
-                            pass
-
-    def _create_sample_codebase(self):
+    def _create_sample_codebase(self, codebase_dir: Path):
         """Create a realistic sample codebase for Claude to analyze."""
         # Create auth module
-        auth_file = self.codebase_dir / "auth.py"
+        auth_file = codebase_dir / "auth.py"
         auth_file.write_text(
             '''"""Authentication module for user management."""
 
@@ -144,7 +96,7 @@ class AuthService:
         )
 
         # Create API module that uses auth
-        api_file = self.codebase_dir / "api.py"
+        api_file = codebase_dir / "api.py"
         api_file.write_text(
             '''"""API endpoints for web application."""
 
@@ -237,7 +189,7 @@ class APIHandler:
         )
 
         # Create a README with project info
-        readme_file = self.codebase_dir / "README.md"
+        readme_file = codebase_dir / "README.md"
         readme_file.write_text(
             """# Test Authentication System
 
@@ -271,131 +223,6 @@ result = api.handle_protected_request({'session_id': session_id})
 """
         )
 
-    def _setup_code_indexer(self):
-        """Set up code-indexer for the test codebase so cidx query will work."""
-        import subprocess
-        import os
-
-        # Change to the test codebase directory
-        original_cwd = os.getcwd()
-        os.chdir(self.codebase_dir)
-
-        try:
-            # COMPREHENSIVE SETUP: Check if cidx command is available
-            print("🔍 Claude plan E2E: Checking cidx availability...")
-            result = subprocess.run(
-                ["cidx", "--version"], capture_output=True, text=True, timeout=10
-            )
-            if result.returncode != 0:
-                pytest.skip("cidx command not available - required for E2E test")
-
-            # COMPREHENSIVE SETUP: Clean up any existing data first
-            print("🧹 Claude plan E2E: Cleaning existing project data...")
-            cleanup_result = subprocess.run(
-                ["cidx", "clean-data", "--all-projects"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            if cleanup_result.returncode != 0:
-                print(f"Cleanup warning (non-fatal): {cleanup_result.stderr}")
-
-            # COMPREHENSIVE SETUP: Initialize code-indexer in the test directory
-            print("🔧 Claude plan E2E: Initializing cidx...")
-            result = subprocess.run(
-                ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            if result.returncode != 0:
-                pytest.skip(f"Failed to initialize cidx: {result.stderr}")
-
-            # COMPREHENSIVE SETUP: Start services with recovery
-            print("🔧 Claude plan E2E: Starting services...")
-            start_result = subprocess.run(
-                ["cidx", "start", "--quiet"],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            if start_result.returncode != 0:
-                # Try recovery - uninstall and reinitialize
-                print("⚠️ Claude plan E2E: Start failed, attempting recovery...")
-                subprocess.run(
-                    ["cidx", "uninstall"], capture_output=True, text=True, timeout=60
-                )
-
-                # Reinitialize after uninstall
-                init_recovery = subprocess.run(
-                    ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
-                if init_recovery.returncode != 0:
-                    pytest.skip(
-                        f"Failed to reinitialize cidx during recovery: {init_recovery.stderr}"
-                    )
-
-                # Try starting again
-                start_recovery = subprocess.run(
-                    ["cidx", "start", "--quiet"],
-                    capture_output=True,
-                    text=True,
-                    timeout=120,
-                )
-                if start_recovery.returncode != 0:
-                    pytest.skip(
-                        f"Failed to start cidx services after recovery: {start_recovery.stderr}"
-                    )
-
-            # COMPREHENSIVE SETUP: Index the sample codebase
-            print("🖾 Claude plan E2E: Indexing codebase...")
-            result = subprocess.run(
-                ["cidx", "index"], capture_output=True, text=True, timeout=180
-            )
-            if result.returncode != 0:
-                pytest.skip(f"Failed to index codebase: {result.stderr}")
-
-            print(
-                "✅ Claude plan E2E: Comprehensive setup complete - cidx ready for testing"
-            )
-
-        except subprocess.TimeoutExpired as e:
-            pytest.skip(
-                f"Timeout setting up code-indexer - services may not be responding: {e}"
-            )
-        except Exception as e:
-            pytest.skip(f"Error setting up code-indexer: {e}")
-        finally:
-            os.chdir(original_cwd)
-
-    def _cleanup_code_indexer(self):
-        """Clean up code-indexer setup for the test."""
-        import subprocess
-        import os
-
-        # Change to the test codebase directory
-        original_cwd = os.getcwd()
-
-        try:
-            os.chdir(self.codebase_dir)
-
-            # Clean up the project data (but don't stop services as other tests might use them)
-            # Use the project-specific cleanup by targeting this directory
-            result = subprocess.run(
-                ["cidx", "clean-data"], capture_output=True, text=True, timeout=30
-            )
-            # Don't fail on cleanup errors, just log them
-            if result.returncode != 0:
-                print(f"Warning: Failed to clean cidx data: {result.stderr}")
-
-        except Exception as e:
-            print(f"Warning: Error during cidx cleanup: {e}")
-        finally:
-            os.chdir(original_cwd)
-
     @pytest.mark.skipif(
         not check_claude_sdk_availability(),
         reason="Claude CLI not available (required for E2E tests)",
@@ -403,79 +230,97 @@ result = api.handle_protected_request({'session_id': session_id})
     @pytest.mark.e2e
     def test_claude_plan_real_analysis_with_tool_tracking(self):
         """Test real Claude analysis with --show-claude-plan feature end-to-end."""
-        # Create Claude integration service
-        claude_service = ClaudeIntegrationService(
-            codebase_dir=self.codebase_dir, project_name="test_auth_system"
-        )
+        with shared_container_test_environment(
+            "test_claude_plan_real_analysis_with_tool_tracking",
+            EmbeddingProvider.VOYAGE_AI,
+        ) as project_path:
+            # Create sample codebase in project_path
+            self._create_sample_codebase(project_path)
 
-        # Prepare a realistic query that should trigger tool usage
-        user_query = (
-            "How does the authentication system work? Show me the complete login flow."
-        )
+            # Index the sample codebase
+            import subprocess
 
-        # Provide minimal search results to encourage Claude to explore
-        # This will trigger tool usage as Claude needs to discover the code
-        mock_search_results = [
-            {
-                "path": "README.md",
-                "content": "A simple authentication system",
-                "score": 0.6,
-                "line_start": 1,
-                "line_end": 1,
-            }
-        ]
+            index_result = subprocess.run(
+                ["cidx", "index"],
+                capture_output=True,
+                text=True,
+                timeout=180,
+                cwd=project_path,
+            )
+            if index_result.returncode != 0:
+                pytest.skip(f"Failed to index codebase: {index_result.stderr}")
 
-        # Run Claude analysis with show_claude_plan enabled
-        result = claude_service.run_analysis(
-            user_query=user_query,
-            search_results=mock_search_results,
-            stream=True,
-            show_claude_plan=True,
-            quiet=True,  # Suppress console output for testing
-            project_info={"git_available": False, "project_id": "test_auth_system"},
-        )
+            # Create Claude integration service
+            claude_service = ClaudeIntegrationService(
+                codebase_dir=project_path, project_name="test_auth_system"
+            )
 
-        # Verify the analysis succeeded
-        assert result.success, f"Claude analysis failed: {result.error}"
-        assert result.response, "Claude response should not be empty"
-        assert len(result.response) > 100, "Response should be substantial"
+            # Prepare a realistic query that should trigger tool usage
+            user_query = "How does the authentication system work? Show me the complete login flow."
 
-        # Verify tool usage tracking data is present
-        assert (
-            result.tool_usage_summary is not None
-        ), "Tool usage summary should be generated"
-        assert (
-            result.tool_usage_stats is not None
-        ), "Tool usage stats should be generated"
+            # Provide minimal search results to encourage Claude to explore
+            # This will trigger tool usage as Claude needs to discover the code
+            mock_search_results = [
+                {
+                    "path": "README.md",
+                    "content": "A simple authentication system",
+                    "score": 0.6,
+                    "line_start": 1,
+                    "line_end": 1,
+                }
+            ]
 
-        # Verify tool usage stats contain expected fields
-        stats = result.tool_usage_stats
-        assert "total_events" in stats
-        assert "tools_used" in stats
-        assert "operation_counts" in stats
+            # Run Claude analysis with show_claude_plan enabled
+            result: ClaudeAnalysisResult = claude_service.run_analysis(
+                user_query=user_query,
+                search_results=mock_search_results,
+                stream=True,
+                show_claude_plan=True,
+                quiet=True,  # Suppress console output for testing
+                project_info={"git_available": False, "project_id": "test_auth_system"},
+            )
 
-        # Verify summary is generated (even if no tools were used)
-        summary = result.tool_usage_summary
-        assert summary is not None, "Tool usage summary should always be generated"
+            # Verify the analysis succeeded
+            assert result.success, f"Claude analysis failed: {result.error}"
+            assert result.response, "Claude response should not be empty"
+            assert len(result.response) > 100, "Response should be substantial"
 
-        # Claude might not use additional tools if sufficient context is provided
-        # The important thing is that tracking infrastructure works
-        if stats["total_events"] > 0:
-            # If tools were used, verify summary content
-            assert "Claude used" in summary, "Summary should mention tool usage"
+            # Verify tool usage tracking data is present
             assert (
-                "Tool Usage Statistics" in summary
-            ), "Summary should contain statistics section"
-        else:
-            # If no tools were used, verify we get the "no tool usage" message
-            assert "No tool usage" in summary or "Tool Usage Statistics" in summary
+                result.tool_usage_summary is not None
+            ), "Tool usage summary should be generated"
+            assert (
+                result.tool_usage_stats is not None
+            ), "Tool usage stats should be generated"
 
-        print("\n=== E2E Test Results ===")
-        print(f"Query: {user_query}")
-        print(f"Response length: {len(result.response)} characters")
-        print(f"Tool events recorded: {stats['total_events']}")
-        print(f"Tools used: {stats.get('tools_used', [])}")
-        print(f"Summary preview: {summary[:200]}...")
+            # Verify tool usage stats contain expected fields
+            stats = result.tool_usage_stats
+            assert "total_events" in stats
+            assert "tools_used" in stats
+            assert "operation_counts" in stats
+
+            # Verify summary is generated (even if no tools were used)
+            summary = result.tool_usage_summary
+            assert summary is not None, "Tool usage summary should always be generated"
+
+            # Claude might not use additional tools if sufficient context is provided
+            # The important thing is that tracking infrastructure works
+            if stats["total_events"] > 0:
+                # If tools were used, verify summary content
+                assert "Claude used" in summary, "Summary should mention tool usage"
+                assert (
+                    "Tool Usage Statistics" in summary
+                ), "Summary should contain statistics section"
+            else:
+                # If no tools were used, verify we get the "no tool usage" message
+                assert "No tool usage" in summary or "Tool Usage Statistics" in summary
+
+            print("\n=== E2E Test Results ===")
+            print(f"Query: {user_query}")
+            print(f"Response length: {len(result.response)} characters")
+            print(f"Tool events recorded: {stats['total_events']}")
+            print(f"Tools used: {stats.get('tools_used', [])}")
+            print(f"Summary preview: {summary[:200]}...")
 
     @pytest.mark.skipif(
         not check_claude_sdk_availability(),

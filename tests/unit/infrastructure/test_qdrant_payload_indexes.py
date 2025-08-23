@@ -46,11 +46,13 @@ class TestQdrantPayloadIndexes:
 
             assert result is True
 
-            # Verify all 5 required indexes were created
-            assert mock_put.call_count == 5
+            # Verify all 7 required indexes were created
+            assert mock_put.call_count == 7
 
             # Verify the correct API endpoints were called
             expected_calls = [
+                f"/collections/{collection_name}/index",
+                f"/collections/{collection_name}/index",
                 f"/collections/{collection_name}/index",
                 f"/collections/{collection_name}/index",
                 f"/collections/{collection_name}/index",
@@ -68,6 +70,8 @@ class TestQdrantPayloadIndexes:
                 "git_branch": "keyword",
                 "file_mtime": "integer",
                 "hidden_branches": "keyword",
+                "language": "keyword",
+                "embedding_model": "keyword",
             }
 
             for call_args in mock_put.call_args_list:
@@ -81,9 +85,9 @@ class TestQdrantPayloadIndexes:
         """Test partial failure scenario where some indexes succeed and some fail."""
         collection_name = "test_collection"
 
-        # Mock responses: first 3 succeed, last 2 fail
+        # Mock responses: first 3 succeed, last 3 fail
         mock_responses = []
-        for i in range(5):
+        for i in range(6):
             mock_response = Mock()
             if i < 3:
                 mock_response.status_code = 201
@@ -167,7 +171,7 @@ class TestQdrantPayloadIndexes:
 
             # Should display failure summary
             self.mock_console.print.assert_any_call(
-                "   📊 Created 0/5 payload indexes (5 failed)"
+                "   📊 Created 0/7 payload indexes (7 failed)"
             )
 
     def test_create_collection_direct_calls_payload_indexes(self):
@@ -299,7 +303,8 @@ class TestQdrantPayloadIndexesIntegration:
                 "   • Creating index for 'git_branch' field (keyword type)...",
                 "   • Creating index for 'file_mtime' field (integer type)...",
                 "   • Creating index for 'hidden_branches' field (keyword type)...",
-                "   📊 Successfully created all 5 payload indexes",
+                "   • Creating index for 'language' field (keyword type)...",
+                "   📊 Successfully created all 7 payload indexes",
             ]
 
             for message in expected_messages:
@@ -323,6 +328,7 @@ class TestQdrantPayloadIndexStatus:
                 ("git_branch", "keyword"),
                 ("file_mtime", "integer"),
                 ("hidden_branches", "keyword"),
+                ("language", "keyword"),
             ],
         )
         self.client = QdrantClient(self.config, self.mock_console)
@@ -451,6 +457,7 @@ class TestQdrantPayloadIndexStatus:
             {"field": "git_branch", "schema": "keyword"},
             {"field": "file_mtime", "schema": "integer"},
             {"field": "hidden_branches", "schema": "keyword"},
+            {"field": "language", "schema": "keyword"},
         ]
 
         with patch.object(
@@ -464,8 +471,8 @@ class TestQdrantPayloadIndexStatus:
 
                 assert isinstance(result, dict)
                 assert result["indexes_enabled"] is True
-                assert result["total_indexes"] == 5
-                assert result["expected_indexes"] == 5
+                assert result["total_indexes"] == 6
+                assert result["expected_indexes"] == 6
                 assert result["missing_indexes"] == []
                 assert result["extra_indexes"] == []
                 assert result["healthy"] is True
@@ -493,11 +500,12 @@ class TestQdrantPayloadIndexStatus:
                 assert isinstance(result, dict)
                 assert result["indexes_enabled"] is True
                 assert result["total_indexes"] == 2
-                assert result["expected_indexes"] == 5
+                assert result["expected_indexes"] == 6
                 assert set(result["missing_indexes"]) == {
                     "git_branch",
                     "file_mtime",
                     "hidden_branches",
+                    "language",
                 }
                 assert result["extra_indexes"] == []
                 assert result["healthy"] is False
@@ -514,6 +522,7 @@ class TestQdrantPayloadIndexStatus:
             {"field": "git_branch", "schema": "keyword"},
             {"field": "file_mtime", "schema": "integer"},
             {"field": "hidden_branches", "schema": "keyword"},
+            {"field": "language", "schema": "keyword"},
             {"field": "extra_field", "schema": "keyword"},  # Extra index
         ]
 
@@ -527,8 +536,8 @@ class TestQdrantPayloadIndexStatus:
 
                 assert isinstance(result, dict)
                 assert result["indexes_enabled"] is True
-                assert result["total_indexes"] == 6
-                assert result["expected_indexes"] == 5
+                assert result["total_indexes"] == 7
+                assert result["expected_indexes"] == 6
                 assert result["missing_indexes"] == []
                 assert result["extra_indexes"] == ["extra_field"]
                 assert (
@@ -594,6 +603,7 @@ class TestQdrantPayloadIndexRebuild:
                 ("git_branch", "keyword"),
                 ("file_mtime", "integer"),
                 ("hidden_branches", "keyword"),
+                ("language", "keyword"),
             ],
         )
         self.client = QdrantClient(self.config, self.mock_console)

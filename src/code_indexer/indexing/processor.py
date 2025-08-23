@@ -233,7 +233,6 @@ class DocumentProcessor:
         with VectorCalculationManager(
             self.embedding_provider, vector_thread_count
         ) as vector_manager:
-
             batch_points = []
 
             for i, file_path in enumerate(files):

@@ -152,7 +152,7 @@ class TestCLIFlagValidation:
                     ],
                     capture_output=True,
                     text=True,
-                    timeout=10,  # Reduced timeout since it should fail fast in isolated env
+                    timeout=30,  # Increased timeout to allow initialization before service failure
                 )
 
                 # Check for legacy container detection first

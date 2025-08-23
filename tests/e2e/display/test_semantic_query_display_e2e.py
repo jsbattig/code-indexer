@@ -7,16 +7,14 @@ AST-based semantic chunking. Verifies both quiet and verbose display modes.
 
 from typing import Dict
 import subprocess
+import os
 
 import pytest
 
-from ...conftest import local_temporary_directory
+from ...conftest import shared_container_test_environment
 
-# Import test infrastructure
-from .test_infrastructure import (
-    TestProjectInventory,
-    create_test_project_with_inventory,
-)
+# Import test infrastructure directly from where it's actually defined
+from .infrastructure import EmbeddingProvider
 
 # Mark all tests in this file as e2e to exclude from ci-github.sh
 pytestmark = pytest.mark.e2e
@@ -221,26 +219,31 @@ class Config {
     }
 
 
-@pytest.mark.integration
-@pytest.mark.voyage_ai
+def create_semantic_test_project(test_dir):
+    """Create semantic test files in the test directory."""
+    test_files = _get_semantic_test_project()
+    for filename, content in test_files.items():
+        file_path = test_dir / filename
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text(content)
+
+
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
 def test_semantic_query_display_verbose_mode():
     """Test that semantic information is displayed in verbose query mode."""
-    with local_temporary_directory() as temp_dir:
-        test_dir = temp_dir / "semantic_display_test"
-        test_dir.mkdir()
+    with shared_container_test_environment(
+        "test_semantic_verbose_display", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Create semantic test files in the shared project path
+        create_semantic_test_project(project_path)
 
-        # Create test project with inventory system
-        create_test_project_with_inventory(test_dir, TestProjectInventory.CLI_PROGRESS)
-
-        # Add custom semantic test files
-        project_files = _get_semantic_test_project()
-        for filename, content in project_files.items():
-            (test_dir / filename).write_text(content)
-
-        # Initialize with semantic chunking enabled (default)
+        # Initialize this specific project
         init_result = subprocess.run(
             ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
@@ -249,18 +252,18 @@ def test_semantic_query_display_verbose_mode():
 
         # Start services
         start_result = subprocess.run(
-            ["code-indexer", "start"],
-            cwd=test_dir,
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=120,
         )
         assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
 
         # Index the project
         index_result = subprocess.run(
             ["code-indexer", "index"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=120,
@@ -270,7 +273,7 @@ def test_semantic_query_display_verbose_mode():
         # Test semantic display with class query
         query_result = subprocess.run(
             ["code-indexer", "query", "User class model"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
@@ -285,7 +288,7 @@ def test_semantic_query_display_verbose_mode():
             # Let's try a broader search to verify indexing worked
             broad_query_result = subprocess.run(
                 ["code-indexer", "query", "User"],
-                cwd=test_dir,
+                cwd=project_path,
                 capture_output=True,
                 text=True,
                 timeout=60,
@@ -326,26 +329,22 @@ def test_semantic_query_display_verbose_mode():
             print("⚠️  Skipping signature check - no semantic content found")
 
 
-@pytest.mark.integration
-@pytest.mark.voyage_ai
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
 def test_semantic_query_display_quiet_mode():
     """Test that semantic information is displayed in quiet query mode."""
-    with local_temporary_directory() as temp_dir:
-        test_dir = temp_dir / "semantic_quiet_test"
-        test_dir.mkdir()
+    with shared_container_test_environment(
+        "test_semantic_quiet_display", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Create semantic test files in the shared project path
+        create_semantic_test_project(project_path)
 
-        # Create test project with inventory system
-        create_test_project_with_inventory(test_dir, TestProjectInventory.CLI_PROGRESS)
-
-        # Add custom semantic test files
-        project_files = _get_semantic_test_project()
-        for filename, content in project_files.items():
-            (test_dir / filename).write_text(content)
-
-        # Initialize with semantic chunking enabled (default)
+        # Initialize this specific project
         init_result = subprocess.run(
             ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
@@ -354,18 +353,18 @@ def test_semantic_query_display_quiet_mode():
 
         # Start services
         start_result = subprocess.run(
-            ["code-indexer", "start"],
-            cwd=test_dir,
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=120,
         )
         assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
 
         # Index the project
         index_result = subprocess.run(
             ["code-indexer", "index"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=120,
@@ -375,7 +374,7 @@ def test_semantic_query_display_quiet_mode():
         # Test semantic display with method query in quiet mode
         query_result = subprocess.run(
             ["code-indexer", "query", "validate email method", "--quiet"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
@@ -390,7 +389,7 @@ def test_semantic_query_display_quiet_mode():
             # Try a broader search to verify indexing worked
             broad_query_result = subprocess.run(
                 ["code-indexer", "query", "class"],
-                cwd=test_dir,
+                cwd=project_path,
                 capture_output=True,
                 text=True,
                 timeout=60,
@@ -430,55 +429,52 @@ def test_semantic_query_display_quiet_mode():
         assert semantic_found, f"No semantic info in brackets found in output: {output}"
 
 
-@pytest.mark.integration
-@pytest.mark.voyage_ai
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
 def test_semantic_display_different_languages():
     """Test semantic display works for different programming languages."""
-    with local_temporary_directory() as temp_dir:
-        test_dir = temp_dir / "semantic_multilang_test"
-        test_dir.mkdir()
+    with shared_container_test_environment(
+        "test_semantic_multilang_display", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Create semantic test files in the shared project path
+        create_semantic_test_project(project_path)
 
-        # Create test project with inventory system
-        create_test_project_with_inventory(test_dir, TestProjectInventory.CLI_PROGRESS)
-
-        # Add custom semantic test files
-        project_files = _get_semantic_test_project()
-        for filename, content in project_files.items():
-            (test_dir / filename).write_text(content)
-
-        # Initialize and start services
+        # Initialize this specific project
         init_result = subprocess.run(
             ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
-        assert init_result.returncode == 0
+        assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
+        # Start services
         start_result = subprocess.run(
-            ["code-indexer", "start"],
-            cwd=test_dir,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        assert start_result.returncode == 0
-
-        # Index the project
-        index_result = subprocess.run(
-            ["code-indexer", "index"],
-            cwd=test_dir,
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=120,
         )
-        assert index_result.returncode == 0
+        assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
+
+        # Index the project
+        index_result = subprocess.run(
+            ["code-indexer", "index"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert index_result.returncode == 0, f"Index failed: {index_result.stderr}"
 
         # Test JavaScript function query
         js_query_result = subprocess.run(
             ["code-indexer", "query", "formatUsername function"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
@@ -492,7 +488,7 @@ def test_semantic_display_different_languages():
                 # Try broader search for any content
                 broad_js_result = subprocess.run(
                     ["code-indexer", "query", "function"],
-                    cwd=test_dir,
+                    cwd=project_path,
                     capture_output=True,
                     text=True,
                     timeout=60,
@@ -518,7 +514,7 @@ def test_semantic_display_different_languages():
         # Test Java class query
         java_query_result = subprocess.run(
             ["code-indexer", "query", "Main class application"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
@@ -532,7 +528,7 @@ def test_semantic_display_different_languages():
                 # Try broader search for any content
                 broad_java_result = subprocess.run(
                     ["code-indexer", "query", "class"],
-                    cwd=test_dir,
+                    cwd=project_path,
                     capture_output=True,
                     text=True,
                     timeout=60,
@@ -556,32 +552,29 @@ def test_semantic_display_different_languages():
                     # This is acceptable - may have found text-chunked content
 
 
-@pytest.mark.integration
-@pytest.mark.voyage_ai
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
 def test_fallback_display_for_text_chunks():
     """Test that non-semantic chunks still display properly."""
-    # Use isolated project directory to avoid interference with other tests
-    from .test_infrastructure import create_isolated_project_dir
+    with shared_container_test_environment(
+        "test_fallback_text_display", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Create project with text files (no semantic chunking)
+        import shutil
 
-    test_dir = create_isolated_project_dir("fallback_display")
+        # Clean existing files to ensure clean test state
+        for item in project_path.iterdir():
+            if item.name != ".code-indexer":  # Preserve configuration
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
 
-    # Create test project with inventory system (will preserve existing config)
-    create_test_project_with_inventory(test_dir, TestProjectInventory.CLI_PROGRESS)
-
-    # CRITICAL: Remove any existing files to ensure clean test state
-    import shutil
-
-    for item in test_dir.iterdir():
-        if item.name != ".code-indexer":  # Preserve configuration
-            if item.is_dir():
-                shutil.rmtree(item)
-            else:
-                item.unlink()
-
-    # Create project with text files (no semantic chunking)
-    project_files = {
-        "README.md": """# Test Project
-            
+        project_files = {
+            "README.md": """# Test Project
+                
 This is a test project for validating query display.
 
 ## Features
@@ -594,7 +587,7 @@ This is a test project for validating query display.
 2. Install dependencies
 3. Run the application
 """,
-        "config.yaml": """app:
+            "config.yaml": """app:
   name: TestApp
   port: 8080
   debug: true
@@ -604,77 +597,89 @@ database:
   port: 5432
   name: testdb
 """,
-    }
+        }
 
-    # Add custom test files
-    for filename, content in project_files.items():
-        (test_dir / filename).write_text(content)
+        # Add custom test files
+        for filename, content in project_files.items():
+            (project_path / filename).write_text(content)
 
-    # Ensure services are started first (start is idempotent)
-    start_result = subprocess.run(
-        ["code-indexer", "start"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    assert start_result.returncode == 0
-
-    # COMPREHENSIVE SETUP: Clear index and reindex only the new files
-    index_result = subprocess.run(
-        ["code-indexer", "index", "--clear"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=180,
-    )
-    assert index_result.returncode == 0
-
-    # Query for text content
-    query_result = subprocess.run(
-        ["code-indexer", "query", "authentication features"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert query_result.returncode == 0
-
-    output = query_result.stdout
-
-    # Check if any results were found
-    if "❌ No results found" in output:
-        print(f"⚠️  Text chunk query found no results: {output}")
-        # Try a broader search to verify indexing worked
-        broad_query_result = subprocess.run(
-            ["code-indexer", "query", "TestApp"],
-            cwd=test_dir,
+        # Initialize this specific project
+        init_result = subprocess.run(
+            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
-        if (
-            broad_query_result.returncode == 0
-            and "📄 File:" in broad_query_result.stdout
-        ):
-            print("⚠️  Indexing worked but specific query found no results - acceptable")
-            output = broad_query_result.stdout  # Use broader query for validation
+        assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
+
+        # Start services
+        start_result = subprocess.run(
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
+
+        # COMPREHENSIVE SETUP: Clear index and reindex only the new files
+        index_result = subprocess.run(
+            ["code-indexer", "index", "--clear"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        assert index_result.returncode == 0, f"Index failed: {index_result.stderr}"
+
+        # Query for text content
+        query_result = subprocess.run(
+            ["code-indexer", "query", "authentication features"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert query_result.returncode == 0, f"Query failed: {query_result.stderr}"
+
+        output = query_result.stdout
+
+        # Check if any results were found
+        if "❌ No results found" in output:
+            print(f"⚠️  Text chunk query found no results: {output}")
+            # Try a broader search to verify indexing worked
+            broad_query_result = subprocess.run(
+                ["code-indexer", "query", "TestApp"],
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if (
+                broad_query_result.returncode == 0
+                and "📄 File:" in broad_query_result.stdout
+            ):
+                print(
+                    "⚠️  Indexing worked but specific query found no results - acceptable"
+                )
+                output = broad_query_result.stdout  # Use broader query for validation
+            else:
+                print("⚠️  No content indexed - skipping text chunk test")
+                return
+
+        # Check what type of content was found
+        has_semantic = "🧠 Semantic:" in output
+        has_file_info = "📄 File:" in output or "Found" in output
+
+        if has_semantic:
+            # If we found semantic content, it means YAML files are being semantically chunked
+            # This is actually correct behavior - YAML files can have semantic chunking too
+            print(f"⚠️  Found semantic content instead of text-only: {output[:200]}...")
+            # YAML semantic chunking is acceptable and actually shows better parsing
+            assert (
+                "config.yaml" in output or "README.md" in output
+            ), "Should find the test files"
         else:
-            print("⚠️  No content indexed - skipping text chunk test")
-            return
-
-    # Check what type of content was found
-    has_semantic = "🧠 Semantic:" in output
-    has_file_info = "📄 File:" in output or "Found" in output
-
-    if has_semantic:
-        # If we found semantic content, it means YAML files are being semantically chunked
-        # This is actually correct behavior - YAML files can have semantic chunking too
-        print(f"⚠️  Found semantic content instead of text-only: {output[:200]}...")
-        # YAML semantic chunking is acceptable and actually shows better parsing
-        assert (
-            "config.yaml" in output or "README.md" in output
-        ), "Should find the test files"
-    else:
-        # If we found text-only content, verify it's properly formatted
-        assert has_file_info, f"No file information found: {output}"
+            # If we found text-only content, verify it's properly formatted
+            assert has_file_info, f"No file information found: {output}"

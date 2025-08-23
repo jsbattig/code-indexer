@@ -17,11 +17,10 @@ from pathlib import Path
 from typing import List, Optional
 import pytest
 
-from .test_infrastructure import (
-    TestProjectInventory,
-    create_test_project_with_inventory,
+from .infrastructure import (
+    EmbeddingProvider,
 )
-from ...conftest import local_temporary_directory
+from ...conftest import shared_container_test_environment
 
 # Mark all tests in this file as e2e to exclude from ci-github.sh
 pytestmark = pytest.mark.e2e
@@ -30,9 +29,9 @@ pytestmark = pytest.mark.e2e
 class WatchSubprocessManager:
     """Manages watch subprocess for E2E testing."""
 
-    def __init__(self, codebase_dir: Path, config_dir: Path):
-        self.codebase_dir = codebase_dir
-        self.config_dir = config_dir
+    def __init__(self, project_path: Path):
+        self.project_path = project_path
+        self.config_dir = project_path / ".code-indexer"
         self.process: Optional[subprocess.Popen] = None
         self.stdout_lines: List[str] = []
         self.stderr_lines: List[str] = []
@@ -44,8 +43,6 @@ class WatchSubprocessManager:
             sys.executable,
             "-m",
             "code_indexer.cli",
-            "--config",
-            str(self.config_dir / "config.json"),
             "watch",
             "--debounce",
             str(debounce),
@@ -53,7 +50,7 @@ class WatchSubprocessManager:
 
         self.process = subprocess.Popen(
             cmd,
-            cwd=self.codebase_dir,
+            cwd=self.project_path,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -169,72 +166,20 @@ class WatchSubprocessManager:
         print("DEBUG: Proceeding with test despite watch readiness timeout")
 
 
-@pytest.fixture
-def git_aware_watch_test_repo():
-    """Create a test repository for git-aware watch tests."""
-    with local_temporary_directory() as temp_dir:
-        # Create isolated project space using inventory system (no config tinkering)
-        create_test_project_with_inventory(
-            temp_dir, TestProjectInventory.GIT_AWARE_WATCH_E2E_ADDITIONAL
-        )
-
-        yield temp_dir
+# Removed old git_aware_watch_test_repo fixture - using shared container strategy
 
 
-def create_watch_test_config(test_dir):
-    """Create configuration for git-aware watch test."""
-    import json
-
-    config_dir = test_dir / ".code-indexer"
-    config_file = config_dir / "config.json"
-
-    # Load existing config if it exists (preserves container ports)
-    if config_file.exists():
-        with open(config_file, "r") as f:
-            config = json.load(f)
-    else:
-        # Use port detection helper to find running Qdrant service
-        from ...conftest import detect_running_qdrant_port
-
-        qdrant_port = detect_running_qdrant_port() or 6333
-
-        config = {
-            "codebase_dir": str(test_dir),
-            "qdrant": {
-                "host": f"http://localhost:{qdrant_port}",
-                "collection": "test_watch",
-                "vector_size": 1024,
-                "use_provider_aware_collections": True,
-                "collection_base_name": "test_watch",
-            },
-        }
-
-    # Only modify test-specific settings, preserve container configuration
-    config["embedding_provider"] = "voyage-ai"
-    config["voyage_ai"] = {
-        "model": "voyage-code-3",
-        "api_key_env": "VOYAGE_API_KEY",
-        "batch_size": 16,
-        "max_retries": 3,
-        "timeout": 30,
-        "parallel_requests": 4,
-    }
-    config["indexing"] = {
-        "chunk_size": 500,
-        "chunk_overlap": 50,
-        "file_extensions": [".py", ".md", ".txt"],
-    }
-
-    with open(config_file, "w") as f:
-        json.dump(config, f, indent=2)
-
-    return config_file
+# Removed create_watch_test_config - using shared container environment
 
 
-def create_test_project(test_dir):
-    """Create test project structure."""
+# Removed create_test_project and init_git_repo - handled by setup_git_repo_and_initial_content
+
+
+def setup_git_repo_and_initial_content(project_path):
+    """Set up git repository and initial content for watch tests."""
+    # Create test project structure
     # Create main.py
-    (test_dir / "main.py").write_text(
+    (project_path / "main.py").write_text(
         """
 def main():
     '''Main application entry point'''
@@ -247,7 +192,7 @@ if __name__ == "__main__":
     )
 
     # Create utils.py
-    (test_dir / "utils.py").write_text(
+    (project_path / "utils.py").write_text(
         """
 def utility_function(data):
     '''Utility function for data processing'''
@@ -261,7 +206,7 @@ class Helper:
     )
 
     # Create README.md
-    (test_dir / "README.md").write_text(
+    (project_path / "README.md").write_text(
         """
 # Test Project
 
@@ -275,18 +220,16 @@ This is a test project for git-aware watch functionality.
 """
     )
 
-
-def init_git_repo(test_dir):
-    """Initialize git repository."""
+    # Initialize git repository
     original_cwd = Path.cwd()
     try:
-        os.chdir(test_dir)
+        os.chdir(project_path)
         subprocess.run(["git", "init"], check=True, capture_output=True)
         subprocess.run(["git", "config", "user.name", "Test User"], check=True)
         subprocess.run(["git", "config", "user.email", "test@example.com"], check=True)
 
         # Create .gitignore to prevent committing .code-indexer directory
-        (test_dir / ".gitignore").write_text(
+        (project_path / ".gitignore").write_text(
             """.code-indexer/
 __pycache__/
 *.pyc
@@ -301,59 +244,10 @@ venv/
     finally:
         os.chdir(original_cwd)
 
-
-def setup_watch_test_environment(test_dir):
-    """Set up test environment for watch tests using simple working pattern."""
-    # Create test project structure
-    create_test_project(test_dir)
-
-    # Initialize git repository
-    init_git_repo(test_dir)
-
-    # Simple, direct setup that actually works (like debug script)
-    # Initialize code-indexer
-    init_result = subprocess.run(
-        ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    if init_result.returncode != 0:
-        raise RuntimeError(f"Init failed: {init_result.stderr}")
-
-    # Start services directly
-    start_result = subprocess.run(
-        ["code-indexer", "start", "--quiet"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    if start_result.returncode != 0:
-        # In quiet mode, error messages might be suppressed
-        error_msg = (
-            start_result.stderr or start_result.stdout or "No error message available"
-        )
-        raise RuntimeError(
-            f"Start failed with exit code {start_result.returncode}: {error_msg}"
-        )
-
-    # Verify services are actually ready
-    status_result = subprocess.run(
-        ["code-indexer", "status"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    if status_result.returncode != 0 or "✅ Ready" not in status_result.stdout:
-        raise RuntimeError(f"Services not ready: {status_result.stdout}")
-
     # Perform initial index - watch needs a baseline to detect changes
     index_result = subprocess.run(
         ["code-indexer", "index"],
-        cwd=test_dir,
+        cwd=project_path,
         capture_output=True,
         text=True,
         timeout=120,
@@ -361,8 +255,7 @@ def setup_watch_test_environment(test_dir):
     if index_result.returncode != 0:
         raise RuntimeError(f"Initial index failed: {index_result.stderr}")
 
-    print("✅ Services confirmed ready with simple setup")
-    return test_dir / ".code-indexer"
+    print("✅ Git repo and initial content ready for watch test")
 
 
 class TestGitAwareWatchE2E:
@@ -388,23 +281,16 @@ class TestGitAwareWatchE2E:
         os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
         reason="E2E tests require Docker services which are not available in CI",
     )
-    def test_watch_starts_successfully(self, git_aware_watch_test_repo):
+    def test_watch_starts_successfully(self):
         """Test that watch command starts without errors."""
-        test_dir = git_aware_watch_test_repo
+        with shared_container_test_environment(
+            "test_watch_starts_successfully", EmbeddingProvider.VOYAGE_AI
+        ) as project_path:
+            # Set up git repository and initial content
+            setup_git_repo_and_initial_content(project_path)
 
-        # Skip if no VoyageAI key
-        if not os.getenv("VOYAGE_API_KEY"):
-            pytest.skip("VoyageAI API key required")
-
-        # Set up test environment with proper services
-        config_dir = setup_watch_test_environment(test_dir)
-
-        try:
-            original_cwd = Path.cwd()
-            os.chdir(test_dir)
-
-            # Services are already started by setup_watch_test_environment
-            watch_manager = WatchSubprocessManager(test_dir, config_dir)
+            # Create watch manager with shared container setup
+            watch_manager = WatchSubprocessManager(project_path)
 
             try:
                 watch_manager.start_watch(timeout=15)
@@ -427,20 +313,6 @@ class TestGitAwareWatchE2E:
             finally:
                 watch_manager.stop_watch()
 
-        finally:
-            try:
-                os.chdir(original_cwd)
-                # Clean up
-                subprocess.run(
-                    ["code-indexer", "clean", "--remove-data", "--quiet"],
-                    cwd=test_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
-            except Exception:
-                pass
-
     @pytest.mark.skipif(
         not os.getenv("VOYAGE_API_KEY"),
         reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
@@ -449,23 +321,16 @@ class TestGitAwareWatchE2E:
         os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
         reason="E2E tests require Docker services which are not available in CI",
     )
-    def test_watch_detects_file_changes(self, git_aware_watch_test_repo):
+    def test_watch_detects_file_changes(self):
         """Test that watch starts successfully and handles basic file operations."""
-        test_dir = git_aware_watch_test_repo
+        with shared_container_test_environment(
+            "test_watch_detects_file_changes", EmbeddingProvider.VOYAGE_AI
+        ) as project_path:
+            # Set up git repository and initial content
+            setup_git_repo_and_initial_content(project_path)
 
-        # Skip if no VoyageAI key
-        if not os.getenv("VOYAGE_API_KEY"):
-            pytest.skip("VoyageAI API key required")
-
-        # Set up test environment with proper services
-        config_dir = setup_watch_test_environment(test_dir)
-
-        try:
-            original_cwd = Path.cwd()
-            os.chdir(test_dir)
-
-            # Services are already started by setup_watch_test_environment
-            watch_manager = WatchSubprocessManager(test_dir, config_dir)
+            # Create watch manager with shared container setup
+            watch_manager = WatchSubprocessManager(project_path)
 
             try:
                 watch_manager.start_watch()
@@ -474,7 +339,7 @@ class TestGitAwareWatchE2E:
                 time.sleep(4.0)
 
                 # Create a new file during watch operation (simulates development)
-                new_test_file = test_dir / f"test_change_{time.time()}.py"
+                new_test_file = project_path / f"test_change_{time.time()}.py"
                 new_content = """
 def test_function():
     '''This is a test function created during watch test'''
@@ -488,7 +353,7 @@ class TestClass:
                 new_test_file.write_text(new_content)
 
                 # Modify an existing file (simulates development)
-                test_file = test_dir / "main.py"
+                test_file = project_path / "main.py"
                 modified_content = f"""
 # Modified at {time.time()}
 def main():
@@ -536,20 +401,6 @@ if __name__ == "__main__":
             finally:
                 watch_manager.stop_watch()
 
-        finally:
-            try:
-                os.chdir(original_cwd)
-                # Clean up
-                subprocess.run(
-                    ["code-indexer", "clean", "--remove-data", "--quiet"],
-                    cwd=test_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
-            except Exception:
-                pass
-
     @pytest.mark.skipif(
         not os.getenv("VOYAGE_API_KEY"),
         reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
@@ -558,17 +409,16 @@ if __name__ == "__main__":
         os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
         reason="E2E tests require Docker services which are not available in CI",
     )
-    def test_watch_handles_new_files(self, git_aware_watch_test_repo):
+    def test_watch_handles_new_files(self):
         """Test that watch operates correctly during new file creation."""
-        test_dir = git_aware_watch_test_repo
+        with shared_container_test_environment(
+            "test_watch_handles_new_files", EmbeddingProvider.VOYAGE_AI
+        ) as project_path:
+            # Set up git repository and initial content
+            setup_git_repo_and_initial_content(project_path)
 
-        try:
-            config_dir = setup_watch_test_environment(test_dir)
-
-            original_cwd = Path.cwd()
-            os.chdir(test_dir)
-
-            watch_manager = WatchSubprocessManager(test_dir, config_dir)
+            # Create watch manager with shared container setup
+            watch_manager = WatchSubprocessManager(project_path)
 
             try:
                 watch_manager.start_watch()
@@ -577,7 +427,7 @@ if __name__ == "__main__":
                 time.sleep(4.0)
 
                 # Create a new file (simulates development)
-                new_file = test_dir / "new_module.py"
+                new_file = project_path / "new_module.py"
                 new_file.write_text(
                     """
 def new_module_function():
@@ -606,20 +456,6 @@ class NewClass:
             finally:
                 watch_manager.stop_watch()
 
-        finally:
-            try:
-                os.chdir(original_cwd)
-                # Clean up
-                subprocess.run(
-                    ["code-indexer", "clean", "--remove-data", "--quiet"],
-                    cwd=test_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
-            except Exception:
-                pass
-
     @pytest.mark.skipif(
         not os.getenv("VOYAGE_API_KEY"),
         reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
@@ -628,17 +464,16 @@ class NewClass:
         os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
         reason="E2E tests require Docker services which are not available in CI",
     )
-    def test_watch_handles_file_deletion(self, git_aware_watch_test_repo):
+    def test_watch_handles_file_deletion(self):
         """Test that watch operates correctly during file deletion."""
-        test_dir = git_aware_watch_test_repo
+        with shared_container_test_environment(
+            "test_watch_handles_file_deletion", EmbeddingProvider.VOYAGE_AI
+        ) as project_path:
+            # Set up git repository and initial content
+            setup_git_repo_and_initial_content(project_path)
 
-        try:
-            config_dir = setup_watch_test_environment(test_dir)
-
-            original_cwd = Path.cwd()
-            os.chdir(test_dir)
-
-            watch_manager = WatchSubprocessManager(test_dir, config_dir)
+            # Create watch manager with shared container setup
+            watch_manager = WatchSubprocessManager(project_path)
 
             try:
                 watch_manager.start_watch()
@@ -647,7 +482,7 @@ class NewClass:
                 time.sleep(4.0)
 
                 # Delete a file (simulates development)
-                utils_file = test_dir / "utils.py"
+                utils_file = project_path / "utils.py"
                 utils_file.unlink()
 
                 # Wait for any processing
@@ -665,20 +500,6 @@ class NewClass:
             finally:
                 watch_manager.stop_watch()
 
-        finally:
-            try:
-                os.chdir(original_cwd)
-                # Clean up
-                subprocess.run(
-                    ["code-indexer", "clean", "--remove-data", "--quiet"],
-                    cwd=test_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
-            except Exception:
-                pass
-
     @pytest.mark.skipif(
         not os.getenv("VOYAGE_API_KEY"),
         reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
@@ -687,17 +508,16 @@ class NewClass:
         os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
         reason="E2E tests require Docker services which are not available in CI",
     )
-    def test_watch_basic_branch_change(self, git_aware_watch_test_repo):
+    def test_watch_basic_branch_change(self):
         """Test watch handles basic branch changes."""
-        test_dir = git_aware_watch_test_repo
+        with shared_container_test_environment(
+            "test_watch_basic_branch_change", EmbeddingProvider.VOYAGE_AI
+        ) as project_path:
+            # Set up git repository and initial content
+            setup_git_repo_and_initial_content(project_path)
 
-        try:
-            config_dir = setup_watch_test_environment(test_dir)
-
-            original_cwd = Path.cwd()
-            os.chdir(test_dir)
-
-            watch_manager = WatchSubprocessManager(test_dir, config_dir)
+            # Create watch manager with shared container setup
+            watch_manager = WatchSubprocessManager(project_path)
 
             try:
                 # Start watch with shorter timeout to prevent hanging
@@ -729,14 +549,14 @@ class NewClass:
                 # Create and switch to new branch (with error handling)
                 try:
                     self._run_git_command(
-                        ["checkout", "-b", "feature-branch"], test_dir
+                        ["checkout", "-b", "feature-branch"], project_path
                     )
                 except Exception as e:
                     print(f"DEBUG: Git command failed: {e}")
                     pytest.skip(f"Git operations failed: {e}")
 
                 # Modify file on new branch
-                test_file = test_dir / "feature.py"
+                test_file = project_path / "feature.py"
                 test_file.write_text(
                     """
 def feature_function():
@@ -765,7 +585,7 @@ def feature_function():
 
                 # Switch back to master (with error handling)
                 try:
-                    self._run_git_command(["checkout", "master"], test_dir)
+                    self._run_git_command(["checkout", "master"], project_path)
                 except Exception as e:
                     print(f"DEBUG: Git checkout master failed: {e}")
                     pytest.skip(f"Git checkout failed: {e}")
@@ -786,188 +606,173 @@ def feature_function():
             finally:
                 watch_manager.stop_watch()
 
-        finally:
-            try:
-                os.chdir(original_cwd)
-                # Clean up
-                subprocess.run(
-                    ["code-indexer", "clean", "--remove-data", "--quiet"],
-                    cwd=test_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
-            except Exception:
-                pass
-
-    def test_watch_timestamp_persistence(self, git_aware_watch_test_repo):
+    def test_watch_timestamp_persistence(self):
         """Test that watch persists timestamps between runs."""
-        test_dir = git_aware_watch_test_repo
+        with shared_container_test_environment(
+            "test_watch_timestamp_persistence", EmbeddingProvider.VOYAGE_AI
+        ) as project_path:
+            # Set up git repository and initial content
+            setup_git_repo_and_initial_content(project_path)
 
-        # Skip if no VoyageAI key
-        if not os.getenv("VOYAGE_API_KEY"):
-            pytest.skip("VoyageAI API key required")
+            # Create watch manager with shared container setup
+            watch_manager = WatchSubprocessManager(project_path)
+            metadata_path = project_path / ".code-indexer" / "watch_metadata.json"
 
-        # Set up test environment with proper services
-        config_dir = setup_watch_test_environment(test_dir)
-        watch_manager = WatchSubprocessManager(test_dir, config_dir)
-        metadata_path = config_dir / "watch_metadata.json"
+            try:
+                # First watch session
+                watch_manager.start_watch()
+                time.sleep(3.0)
 
-        try:
-            # First watch session
-            watch_manager.start_watch()
-            time.sleep(3.0)
-
-            # Create a file to trigger timestamp update
-            test_file = test_dir / "timestamp_test.py"
-            test_file.write_text(
-                """
+                # Create a file to trigger timestamp update
+                test_file = project_path / "timestamp_test.py"
+                test_file.write_text(
+                    """
 def timestamp_test():
     '''Test function for timestamp persistence'''
     return "timestamp test"
 """
-            )
+                )
 
-            time.sleep(2.0)
-            watch_manager.stop_watch()
+                time.sleep(2.0)
+                watch_manager.stop_watch()
 
-            # Check that metadata file was created
-            assert metadata_path.exists(), "Watch metadata should be persisted"
+                # Check that metadata file was created
+                assert metadata_path.exists(), "Watch metadata should be persisted"
 
-            # Load metadata and verify timestamp is recorded
-            with open(metadata_path, "r") as f:
-                metadata = json.loads(f.read())
+                # Load metadata and verify timestamp is recorded
+                with open(metadata_path, "r") as f:
+                    metadata = json.loads(f.read())
 
-            first_session_timestamp = metadata.get("last_sync_timestamp", 0)
-            assert first_session_timestamp > 0, "Timestamp should be recorded"
+                first_session_timestamp = metadata.get("last_sync_timestamp", 0)
+                assert first_session_timestamp > 0, "Timestamp should be recorded"
 
-            # Small delay to ensure different timestamp
-            time.sleep(1.0)
+                # Small delay to ensure different timestamp
+                time.sleep(1.0)
 
-            # Second watch session
-            watch_manager2 = WatchSubprocessManager(test_dir, config_dir)
-            watch_manager2.start_watch()
-            time.sleep(2.0)
+                # Second watch session
+                watch_manager2 = WatchSubprocessManager(project_path)
+                watch_manager2.start_watch()
+                time.sleep(2.0)
 
-            # Modify file again
-            test_file.write_text(
-                """
+                # Modify file again
+                test_file.write_text(
+                    """
 def timestamp_test():
     '''Updated test function for timestamp persistence'''
     return "updated timestamp test"
 """
-            )
+                )
 
-            time.sleep(2.0)
-            watch_manager2.stop_watch()
-
-            # Verify timestamp was updated
-            with open(metadata_path, "r") as f:
-                updated_metadata = json.loads(f.read())
-
-            second_session_timestamp = updated_metadata.get("last_sync_timestamp", 0)
-            assert (
-                second_session_timestamp > first_session_timestamp
-            ), "Timestamp should be updated in second session"
-
-        finally:
-            if (
-                watch_manager.process is not None
-                and watch_manager.process.poll() is None
-            ):
-                watch_manager.stop_watch()
-            if (
-                "watch_manager2" in locals()
-                and watch_manager2.process is not None
-                and watch_manager2.process.poll() is None
-            ):
+                time.sleep(2.0)
                 watch_manager2.stop_watch()
-            # Clean up metadata file
-            if metadata_path.exists():
-                metadata_path.unlink()
 
-    def test_watch_race_condition_handling(self, git_aware_watch_test_repo):
+                # Verify timestamp was updated
+                with open(metadata_path, "r") as f:
+                    updated_metadata = json.loads(f.read())
+
+                second_session_timestamp = updated_metadata.get(
+                    "last_sync_timestamp", 0
+                )
+                assert (
+                    second_session_timestamp > first_session_timestamp
+                ), "Timestamp should be updated in second session"
+
+            finally:
+                if (
+                    watch_manager.process is not None
+                    and watch_manager.process.poll() is None
+                ):
+                    watch_manager.stop_watch()
+                if (
+                    "watch_manager2" in locals()
+                    and watch_manager2.process is not None
+                    and watch_manager2.process.poll() is None
+                ):
+                    watch_manager2.stop_watch()
+
+    def test_watch_race_condition_handling(self):
         """Test watch handles race conditions during branch changes."""
-        test_dir = git_aware_watch_test_repo
+        with shared_container_test_environment(
+            "test_watch_race_condition_handling", EmbeddingProvider.VOYAGE_AI
+        ) as project_path:
+            # Set up git repository and initial content
+            setup_git_repo_and_initial_content(project_path)
 
-        # Skip if no VoyageAI key
-        if not os.getenv("VOYAGE_API_KEY"):
-            pytest.skip("VoyageAI API key required")
+            # Create watch manager with shared container setup
+            watch_manager = WatchSubprocessManager(project_path)
 
-        # Set up test environment with proper services
-        config_dir = setup_watch_test_environment(test_dir)
-        watch_manager = WatchSubprocessManager(test_dir, config_dir)
+            try:
+                watch_manager.start_watch()
+                time.sleep(3.0)
 
-        try:
-            watch_manager.start_watch()
-            time.sleep(3.0)
+                # Simulate rapid branch switching and file changes
+                test_files = []
+                for i in range(3):
+                    # Create branch
+                    branch_name = f"feature-{i}"
+                    self._run_git_command(["checkout", "-b", branch_name], project_path)
 
-            # Simulate rapid branch switching and file changes
-            test_files = []
-            for i in range(3):
-                # Create branch
-                branch_name = f"feature-{i}"
-                self._run_git_command(["checkout", "-b", branch_name], test_dir)
-
-                # Quickly create file
-                test_file = test_dir / f"feature_{i}.py"
-                test_file.write_text(
-                    f"""
+                    # Quickly create file
+                    test_file = project_path / f"feature_{i}.py"
+                    test_file.write_text(
+                        f"""
 def feature_{i}_function():
     '''Feature {i} function'''
     return "feature {i} implementation"
 """
-                )
-                test_files.append(test_file)
+                    )
+                    test_files.append(test_file)
 
-                # Small delay between operations
-                time.sleep(0.5)
+                    # Small delay between operations
+                    time.sleep(0.5)
 
-                # Add and commit to avoid warnings
-                self._run_git_command(["add", f"feature_{i}.py"], test_dir)
-                self._run_git_command(["commit", "-m", f"Add feature {i}"], test_dir)
+                    # Add and commit to avoid warnings
+                    self._run_git_command(["add", f"feature_{i}.py"], project_path)
+                    self._run_git_command(
+                        ["commit", "-m", f"Add feature {i}"], project_path
+                    )
 
-            # Switch back to master rapidly
-            self._run_git_command(["checkout", "master"], test_dir)
-            time.sleep(1.0)
+                # Switch back to master rapidly
+                self._run_git_command(["checkout", "master"], project_path)
+                time.sleep(1.0)
 
-            # Create file on master while potentially processing previous changes
-            main_file = test_dir / "main_feature.py"
-            main_file.write_text(
-                """
+                # Create file on master while potentially processing previous changes
+                main_file = project_path / "main_feature.py"
+                main_file.write_text(
+                    """
 def main_feature():
     '''Master branch feature'''
     return "master feature implementation"
 """
-            )
-
-            # Wait for all processing to settle
-            time.sleep(5.0)
-
-            # Verify watch is still running after rapid changes
-            assert (
-                watch_manager.process is not None
-                and watch_manager.process.poll() is None
-            ), "Watch should handle rapid branch changes without crashing"
-
-            # Verify master file was created (feature files are on other branches)
-            assert main_file.exists(), "Master file should exist"
-
-            # Verify feature files exist on their respective branches by checking git log
-            for i in range(3):
-                # Check that the feature branch exists
-                result = subprocess.run(
-                    ["git", "branch", "--list", f"feature-{i}"],
-                    cwd=test_dir,
-                    capture_output=True,
-                    text=True,
                 )
-                assert (
-                    f"feature-{i}" in result.stdout
-                ), f"Branch feature-{i} should exist"
 
-        finally:
-            watch_manager.stop_watch()
+                # Wait for all processing to settle
+                time.sleep(5.0)
+
+                # Verify watch is still running after rapid changes
+                assert (
+                    watch_manager.process is not None
+                    and watch_manager.process.poll() is None
+                ), "Watch should handle rapid branch changes without crashing"
+
+                # Verify master file was created (feature files are on other branches)
+                assert main_file.exists(), "Master file should exist"
+
+                # Verify feature files exist on their respective branches by checking git log
+                for i in range(3):
+                    # Check that the feature branch exists
+                    result = subprocess.run(
+                        ["git", "branch", "--list", f"feature-{i}"],
+                        cwd=project_path,
+                        capture_output=True,
+                        text=True,
+                    )
+                    assert (
+                        f"feature-{i}" in result.stdout
+                    ), f"Branch feature-{i} should exist"
+
+            finally:
+                watch_manager.stop_watch()
 
 
 # Unit tests for watch components (to be implemented alongside production code)
@@ -1304,32 +1109,33 @@ class TestGitStateMonitor:
 class TestWatchPerformance(TestGitAwareWatchE2E):
     """Performance tests for watch functionality."""
 
-    def test_watch_performance_many_files(self, git_aware_watch_test_repo):
+    def test_watch_performance_many_files(self):
         """Test watch performance with many file changes."""
-        test_dir = git_aware_watch_test_repo
+        with shared_container_test_environment(
+            "test_watch_performance_many_files", EmbeddingProvider.VOYAGE_AI
+        ) as project_path:
+            # Set up git repository and initial content
+            setup_git_repo_and_initial_content(project_path)
 
-        # Skip if no VoyageAI key
-        if not os.getenv("VOYAGE_API_KEY"):
-            pytest.skip("VoyageAI API key required")
+            # Create watch manager with shared container setup
+            watch_manager = WatchSubprocessManager(project_path)
 
-        # Set up test environment with proper services
-        config_dir = setup_watch_test_environment(test_dir)
-        watch_manager = WatchSubprocessManager(test_dir, config_dir)
+            try:
+                watch_manager.start_watch()
+                time.sleep(3.0)
 
-        try:
-            watch_manager.start_watch()
-            time.sleep(3.0)
+                # Create many files quickly to test performance
+                import time as perf_time
 
-            # Create many files quickly to test performance
-            import time as perf_time
+                start_time = perf_time.time()
 
-            start_time = perf_time.time()
-
-            test_files = []
-            for i in range(10):  # Reduced from larger number for reasonable test time
-                test_file = test_dir / f"perf_test_{i}.py"
-                test_file.write_text(
-                    f"""
+                test_files = []
+                for i in range(
+                    10
+                ):  # Reduced from larger number for reasonable test time
+                    test_file = project_path / f"perf_test_{i}.py"
+                    test_file.write_text(
+                        f"""
 def perf_test_function_{i}():
     '''Performance test function {i}'''
     return "performance test {i}"
@@ -1339,92 +1145,93 @@ class PerfTestClass{i}:
     def method_{i}(self):
         return "method {i}"
 """
-                )
-                test_files.append(test_file)
+                    )
+                    test_files.append(test_file)
 
-                # Small delay between file creations
-                time.sleep(0.1)
+                    # Small delay between file creations
+                    time.sleep(0.1)
 
-            # Wait for processing
-            time.sleep(5.0)
+                # Wait for processing
+                time.sleep(5.0)
 
-            end_time = perf_time.time()
-            total_time = end_time - start_time
+                end_time = perf_time.time()
+                total_time = end_time - start_time
 
-            # Verify watch is still running after many file operations
-            assert (
-                watch_manager.process is not None
-                and watch_manager.process.poll() is None
-            ), "Watch should handle many file changes without crashing"
+                # Verify watch is still running after many file operations
+                assert (
+                    watch_manager.process is not None
+                    and watch_manager.process.poll() is None
+                ), "Watch should handle many file changes without crashing"
 
-            # Verify all files were created
-            for test_file in test_files:
-                assert test_file.exists(), f"File {test_file} should exist"
+                # Verify all files were created
+                for test_file in test_files:
+                    assert test_file.exists(), f"File {test_file} should exist"
 
-            # Basic performance check - should handle 10 files in reasonable time
-            assert total_time < 30.0, f"Performance test took too long: {total_time}s"
+                # Basic performance check - should handle 10 files in reasonable time
+                assert (
+                    total_time < 30.0
+                ), f"Performance test took too long: {total_time}s"
 
-        finally:
-            watch_manager.stop_watch()
+            finally:
+                watch_manager.stop_watch()
 
-    def test_watch_memory_usage(self, git_aware_watch_test_repo):
+    def test_watch_memory_usage(self):
         """Test watch memory usage over time."""
-        test_dir = git_aware_watch_test_repo
+        with shared_container_test_environment(
+            "test_watch_memory_usage", EmbeddingProvider.VOYAGE_AI
+        ) as project_path:
+            # Set up git repository and initial content
+            setup_git_repo_and_initial_content(project_path)
 
-        # Skip if no VoyageAI key
-        if not os.getenv("VOYAGE_API_KEY"):
-            pytest.skip("VoyageAI API key required")
+            # Create watch manager with shared container setup
+            watch_manager = WatchSubprocessManager(project_path)
 
-        # Set up test environment with proper services
-        config_dir = setup_watch_test_environment(test_dir)
-        watch_manager = WatchSubprocessManager(test_dir, config_dir)
+            try:
+                watch_manager.start_watch()
+                time.sleep(3.0)
 
-        try:
-            watch_manager.start_watch()
-            time.sleep(3.0)
-
-            # Create and modify files over time to test memory usage
-            for cycle in range(3):  # Reduced cycles for reasonable test time
-                # Create some files
-                for i in range(3):
-                    test_file = test_dir / f"memory_test_{cycle}_{i}.py"
-                    test_file.write_text(
-                        f"""
+                # Create and modify files over time to test memory usage
+                for cycle in range(3):  # Reduced cycles for reasonable test time
+                    # Create some files
+                    for i in range(3):
+                        test_file = project_path / f"memory_test_{cycle}_{i}.py"
+                        test_file.write_text(
+                            f"""
 def memory_test_function_{cycle}_{i}():
     '''Memory test function for cycle {cycle}, file {i}'''
     return "memory test data {cycle}-{i}"
 """
-                    )
+                        )
 
-                # Wait for processing
-                time.sleep(2.0)
+                    # Wait for processing
+                    time.sleep(2.0)
 
-                # Modify existing files
-                for i in range(3):
-                    test_file = test_dir / f"memory_test_{cycle}_{i}.py"
-                    if test_file.exists():
-                        test_file.write_text(
-                            f"""
+                    # Modify existing files
+                    for i in range(3):
+                        test_file = project_path / f"memory_test_{cycle}_{i}.py"
+                        if test_file.exists():
+                            test_file.write_text(
+                                f"""
 def memory_test_function_{cycle}_{i}_updated():
     '''Updated memory test function for cycle {cycle}, file {i}'''
     return "updated memory test data {cycle}-{i}"
 """
-                        )
+                            )
 
-                # Wait for processing
-                time.sleep(2.0)
+                    # Wait for processing
+                    time.sleep(2.0)
 
-            # Final wait for all processing to complete
-            time.sleep(3.0)
+                # Final wait for all processing to complete
+                time.sleep(3.0)
 
-            # Verify watch is still running after extended operation
-            assert (
-                watch_manager.process is not None
-                and watch_manager.process.poll() is None
-            ), "Watch should handle extended operation without memory issues"
+                # Verify watch is still running after extended operation
+                assert (
+                    watch_manager.process is not None
+                    and watch_manager.process.poll() is None
+                ), "Watch should handle extended operation without memory issues"
 
-        finally:
-            watch_manager.stop_watch()
+            finally:
+                watch_manager.stop_watch()
 
 
 def pytest_collection_modifyitems(config, items):

@@ -10,34 +10,32 @@ Marked as e2e tests to exclude from CI due to dependency on real services.
 """
 
 import pytest
-
-import shutil
+import subprocess
 import time
 
-# Import test infrastructure for proper isolation
-from .test_infrastructure import (
+# Import shared container infrastructure
+from tests.conftest import shared_container_test_environment
+from .infrastructure import EmbeddingProvider
+
+# Import test infrastructure for inventory system
+from .infrastructure import (
     TestProjectInventory,
     create_test_project_with_inventory,
-    create_isolated_project_dir,
 )
 
 
 pytestmark = [pytest.mark.e2e, pytest.mark.slow]
 
 
-@pytest.fixture
-def temp_project_dir():
-    """Create a temporary project directory with test files."""
-    # Use isolated project directory for this test to avoid pollution
-    temp_dir = create_isolated_project_dir("timestamp_comparison")
-
+def _setup_test_files(project_path):
+    """Create test files for timestamp comparison tests."""
     # Register the test in inventory
     create_test_project_with_inventory(
-        temp_dir, TestProjectInventory.TIMESTAMP_COMPARISON
+        project_path, TestProjectInventory.TIMESTAMP_COMPARISON
     )
 
     # Create a simple test project structure
-    (temp_dir / "src").mkdir()
+    (project_path / "src").mkdir()
 
     # Add test files
     test_files = {
@@ -47,101 +45,9 @@ def temp_project_dir():
     }
 
     for file_path, content in test_files.items():
-        full_path = temp_dir / file_path
+        full_path = project_path / file_path
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(content)
-
-    yield temp_dir
-
-    # Clean up the test directory after test
-    # Since we're using isolated directory, we can safely clean it
-    if temp_dir.exists():
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
-
-def setup_timestamp_test_environment(test_dir):
-    """Set up test environment for timestamp tests using simple working pattern."""
-    import subprocess
-
-    # Simple, direct setup that actually works (like debug script)
-    # Initialize code-indexer
-    init_result = subprocess.run(
-        ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    if init_result.returncode != 0:
-        raise RuntimeError(f"Init failed: {init_result.stderr}")
-
-    # Start services directly with resource contention handling
-    start_result = subprocess.run(
-        ["code-indexer", "start", "--quiet"],
-        cwd=test_dir,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    if start_result.returncode != 0:
-        # Check for resource contention issues
-        if any(
-            error in (start_result.stdout + start_result.stderr).lower()
-            for error in [
-                "connection refused",
-                "port already in use",
-                "address already in use",
-                "no such container",
-                "resource temporarily unavailable",
-                "cannot allocate memory",
-            ]
-        ):
-            import pytest
-
-            pytest.skip(
-                f"Infrastructure issue: Resource contention during full-automation - {start_result.stderr[:200]}"
-            )
-        raise RuntimeError(f"Start failed: {start_result.stderr}")
-
-    # Verify services are actually ready with retry logic
-    max_retries = 3
-    for attempt in range(max_retries):
-        status_result = subprocess.run(
-            ["code-indexer", "status"],
-            cwd=test_dir,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if status_result.returncode == 0 and "✅ Ready" in status_result.stdout:
-            break
-
-        if attempt < max_retries - 1:
-            import time
-
-            time.sleep(2**attempt)  # Exponential backoff
-        else:
-            # Check for resource issues before failing
-            if any(
-                error in status_result.stdout.lower()
-                for error in [
-                    "connection refused",
-                    "not available",
-                    "timeout",
-                    "failed to connect",
-                ]
-            ):
-                import pytest
-
-                pytest.skip(
-                    f"Infrastructure issue: Service connectivity problems during full-automation - {status_result.stdout[:200]}"
-                )
-            raise RuntimeError(
-                f"Services not ready after {max_retries} attempts: {status_result.stdout}"
-            )
-
-    print("✅ Services confirmed ready with simple setup")
-    return test_dir / ".code-indexer"
 
 
 # smart_indexer fixture removed - all tests now use CLI commands instead of direct function calls
@@ -153,21 +59,45 @@ def setup_timestamp_test_environment(test_dir):
 class TestTimestampComparison:
     """Test timestamp comparison accuracy in reconcile operations."""
 
-    def test_reconcile_correctly_identifies_modified_files(self, temp_project_dir):
+    def _ensure_services_started(self, project_path):
+        """Ensure services are started before running tests."""
+        start_result = subprocess.run(
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        # Services may already be running, so check status if start fails
+        if start_result.returncode != 0:
+            status_result = subprocess.run(
+                ["code-indexer", "status", "--quiet"],
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            assert (
+                "✅" in status_result.stdout or start_result.returncode == 0
+            ), f"Cannot start services: {start_result.stderr}"
+
+    def test_reconcile_correctly_identifies_modified_files(self):
         """Test that reconcile identifies files that have been modified since indexing."""
-        # Set up test environment with services
-        setup_timestamp_test_environment(temp_project_dir)
+        with shared_container_test_environment(
+            "test_reconcile_correctly_identifies_modified_files",
+            EmbeddingProvider.VOYAGE_AI,
+        ) as project_path:
+            _setup_test_files(project_path)
+            self._test_reconcile_correctly_identifies_modified_files(project_path)
 
-        self._test_reconcile_correctly_identifies_modified_files(temp_project_dir)
-
-    def _test_reconcile_correctly_identifies_modified_files(self, temp_project_dir):
-        import subprocess
-
+    def _test_reconcile_correctly_identifies_modified_files(self, project_path):
         # ✅ Use CLI commands instead of direct function calls (no cheating!)
+        self._ensure_services_started(project_path)
+
         # Perform initial index via CLI
         initial_result = subprocess.run(
             ["code-indexer", "index", "--clear"],
-            cwd=temp_project_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=180,
@@ -189,7 +119,7 @@ class TestTimestampComparison:
         time.sleep(1.2)
 
         # Modify one file
-        modified_file = temp_project_dir / "src" / "modified.py"
+        modified_file = project_path / "src" / "modified.py"
         original_mtime = modified_file.stat().st_mtime
 
         modified_file.write_text("def modified():\n    return 'modified content'\n")
@@ -198,13 +128,13 @@ class TestTimestampComparison:
         assert new_mtime > original_mtime, "File modification time should increase"
 
         # Add a completely new file
-        new_file = temp_project_dir / "src" / "brand_new.py"
+        new_file = project_path / "src" / "brand_new.py"
         new_file.write_text("def brand_new():\n    return 'brand new'\n")
 
         # ✅ Perform reconcile via CLI (no cheating!)
         reconcile_result = subprocess.run(
             ["code-indexer", "index", "--reconcile"],
-            cwd=temp_project_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=180,
@@ -227,21 +157,22 @@ class TestTimestampComparison:
             f"but processed {reconcile_files_processed}"
         )
 
-    def test_reconcile_skips_unchanged_files(self, temp_project_dir):
+    def test_reconcile_skips_unchanged_files(self):
         """Test that reconcile skips files that haven't been modified."""
-        # Set up test environment with services
-        setup_timestamp_test_environment(temp_project_dir)
+        with shared_container_test_environment(
+            "test_reconcile_skips_unchanged_files", EmbeddingProvider.VOYAGE_AI
+        ) as project_path:
+            _setup_test_files(project_path)
+            self._test_reconcile_skips_unchanged_files(project_path)
 
-        self._test_reconcile_skips_unchanged_files(temp_project_dir)
-
-    def _test_reconcile_skips_unchanged_files(self, temp_project_dir):
-        import subprocess
-
+    def _test_reconcile_skips_unchanged_files(self, project_path):
         # ✅ Use CLI commands instead of direct function calls (no cheating!)
+        self._ensure_services_started(project_path)
+
         # Perform initial index via CLI with resource contention handling
         initial_result = subprocess.run(
             ["code-indexer", "index", "--clear"],
-            cwd=temp_project_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=180,
@@ -286,7 +217,7 @@ class TestTimestampComparison:
         # Don't modify any files, just perform reconcile via CLI
         reconcile_result = subprocess.run(
             ["code-indexer", "index", "--reconcile"],
-            cwd=temp_project_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=180,
@@ -308,21 +239,22 @@ class TestTimestampComparison:
             f"but processed {reconcile_files_processed}"
         )
 
-    def test_reconcile_handles_timestamp_edge_cases(self, temp_project_dir):
+    def test_reconcile_handles_timestamp_edge_cases(self):
         """Test reconcile handles edge cases in timestamp comparison."""
-        # Set up test environment with services
-        setup_timestamp_test_environment(temp_project_dir)
+        with shared_container_test_environment(
+            "test_reconcile_handles_timestamp_edge_cases", EmbeddingProvider.VOYAGE_AI
+        ) as project_path:
+            _setup_test_files(project_path)
+            self._test_reconcile_handles_timestamp_edge_cases(project_path)
 
-        self._test_reconcile_handles_timestamp_edge_cases(temp_project_dir)
-
-    def _test_reconcile_handles_timestamp_edge_cases(self, temp_project_dir):
-        import subprocess
-
+    def _test_reconcile_handles_timestamp_edge_cases(self, project_path):
         # ✅ Use CLI commands instead of direct function calls (no cheating!)
+        self._ensure_services_started(project_path)
+
         # Perform initial index via CLI with resource contention handling
         initial_result = subprocess.run(
             ["code-indexer", "index", "--clear"],
-            cwd=temp_project_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=180,
@@ -366,13 +298,13 @@ class TestTimestampComparison:
         time.sleep(1.2)
 
         # Modify a file with a very recent timestamp (edge case)
-        test_file = temp_project_dir / "src" / "unchanged.py"
+        test_file = project_path / "src" / "unchanged.py"
         test_file.write_text("def unchanged():\n    return 'slightly changed'\n")
 
         # ✅ Perform reconcile via CLI (no cheating!)
         reconcile_result = subprocess.run(
             ["code-indexer", "index", "--reconcile"],
-            cwd=temp_project_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=180,
@@ -394,23 +326,23 @@ class TestTimestampComparison:
             reconcile_files_processed >= 1
         ), "Should have detected the modified file despite small timestamp difference"
 
-    def test_new_architecture_points_have_comparable_timestamps(self, temp_project_dir):
+    def test_new_architecture_points_have_comparable_timestamps(self):
         """Test that new architecture points have timestamps that can be compared."""
-        # Set up test environment with services
-        setup_timestamp_test_environment(temp_project_dir)
+        with shared_container_test_environment(
+            "test_new_architecture_points_have_comparable_timestamps",
+            EmbeddingProvider.VOYAGE_AI,
+        ) as project_path:
+            _setup_test_files(project_path)
+            self._test_new_architecture_points_have_comparable_timestamps(project_path)
 
-        self._test_new_architecture_points_have_comparable_timestamps(temp_project_dir)
-
-    def _test_new_architecture_points_have_comparable_timestamps(
-        self, temp_project_dir
-    ):
-        import subprocess
-
+    def _test_new_architecture_points_have_comparable_timestamps(self, project_path):
         # ✅ Use CLI commands instead of direct function calls (no cheating!)
+        self._ensure_services_started(project_path)
+
         # Perform initial index via CLI
         initial_result = subprocess.run(
             ["code-indexer", "index", "--clear"],
-            cwd=temp_project_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=180,
@@ -432,7 +364,7 @@ class TestTimestampComparison:
         # This is an indirect test - if timestamps weren't comparable, reconcile would fail
         reconcile_result = subprocess.run(
             ["code-indexer", "index", "--reconcile"],
-            cwd=temp_project_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=180,

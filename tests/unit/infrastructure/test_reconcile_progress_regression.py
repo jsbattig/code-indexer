@@ -258,7 +258,6 @@ class TestReconcileProgressRegression:
                         "_determine_working_dir_status",
                         return_value="committed",
                     ):
-
                         # Call index_branch_changes
                         indexer.index_branch_changes(
                             old_branch="",

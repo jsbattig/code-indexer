@@ -1,103 +1,83 @@
 """
-Simple integration test for dry-run functionality.
+Integration tests for dry-run functionality using shared containers.
 
-This test validates that the --dry-run-show-claude-prompt flag works correctly.
+Converted to use shared_container_test_environment for better performance.
+These tests validate that the --dry-run-show-claude-prompt flag works correctly.
 """
 
-from ...conftest import local_temporary_directory
-
-from click.testing import CliRunner
 import subprocess
 import os
-from pathlib import Path
+import pytest
 from unittest.mock import patch
+from click.testing import CliRunner
 
+from ...conftest import shared_container_test_environment
+from .infrastructure import EmbeddingProvider
 from src.code_indexer.cli import cli
 
+# Mark tests as integration to exclude from ci-github.sh when needed
+pytestmark = pytest.mark.integration
 
-def test_dry_run_simple_integration():
-    """Test dry-run flag with services setup to verify it shows prompt without executing Claude."""
 
-    # Create a temporary directory structure that would be a valid codebase
-    with local_temporary_directory() as temp_dir:
-        temp_path = Path(temp_dir)
-        # Safely get current working directory
-        try:
-            original_cwd = os.getcwd()
-        except FileNotFoundError:
-            # If current directory was deleted, use a safe fallback
-            original_cwd = str(Path.home())
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for integration tests (set VOYAGE_API_KEY environment variable)",
+)
+def test_shared_container_dry_run_simple_integration():
+    """Test dry-run flag with shared containers to verify it shows prompt without executing Claude."""
+    with shared_container_test_environment(
+        "test_shared_container_dry_run_simple", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Create a simple Python file to make it look like a real codebase
+        (project_path / "main.py").write_text("print('hello world')")
 
-        try:
-            # Create a simple Python file to make it look like a real codebase
-            (temp_path / "main.py").write_text("print('hello world')")
+        # Initialize with voyage-ai (containers should already be running)
+        init_result = subprocess.run(
+            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
-            # Change to the test directory
-            os.chdir(temp_path)
+        # Ensure services are running (should be fast since containers are shared)
+        start_result = subprocess.run(
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
 
-            # Initialize with voyage-ai to avoid service dependencies
-            init_result = subprocess.run(
-                [
-                    "python",
-                    "-m",
-                    "code_indexer.cli",
-                    "init",
-                    "--force",
-                    "--embedding-provider",
-                    "voyage-ai",
-                ],
+        # Services should start successfully or already be running
+        if start_result.returncode != 0:
+            # Check if services are already running
+            status_result = subprocess.run(
+                ["code-indexer", "status"],
+                cwd=project_path,
                 capture_output=True,
                 text=True,
                 timeout=30,
-                cwd=temp_path,
+            )
+            if "✅" not in status_result.stdout:
+                assert (
+                    False
+                ), f"Cannot start services for integration test: {start_result.stderr}"
+
+        runner = CliRunner()
+
+        # Mock just the Claude dependency check since dry-run shouldn't need Claude installed
+        with patch(
+            "src.code_indexer.cli.check_claude_sdk_availability", return_value=True
+        ):
+            result = runner.invoke(
+                cli,
+                ["claude", "Test question", "--dry-run-show-claude-prompt"],
+                catch_exceptions=False,
             )
 
-            # If init fails, that's a setup issue
-            assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
-
-            # Ensure services are running (VoyageAI + Qdrant)
-            start_result = subprocess.run(
-                ["python", "-m", "code_indexer.cli", "start", "--quiet"],
-                capture_output=True,
-                text=True,
-                timeout=120,  # Give more time for service startup
-                cwd=temp_path,
-            )
-
-            # Services should start successfully or we need to handle it
-            if start_result.returncode != 0:
-                # Check if services are already running
-                status_result = subprocess.run(
-                    ["python", "-m", "code_indexer.cli", "status"],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                    cwd=temp_path,
-                )
-                if "✅" not in status_result.stdout:
-                    # If services can't start and aren't running, we need to handle this
-                    # For integration tests in full-automation.sh, services should be manageable
-                    assert (
-                        False
-                    ), f"Cannot start services for integration test: {start_result.stderr}"
-
-            runner = CliRunner()
-
-            # Mock just the Claude dependency check since dry-run shouldn't need Claude installed
-            with patch(
-                "src.code_indexer.cli.check_claude_sdk_availability", return_value=True
-            ):
-                result = runner.invoke(
-                    cli,
-                    ["claude", "Test question", "--dry-run-show-claude-prompt"],
-                    catch_exceptions=False,
-                )
-
-        finally:
-            # Always restore original directory
-            os.chdir(original_cwd)
-
-        # Now dry-run should work since services are available
+        # Dry-run should work since services are available
         assert (
             result.exit_code == 0
         ), f"Dry-run should succeed with services available. Output: {result.output}"
@@ -132,66 +112,45 @@ def test_dry_run_simple_integration():
         assert "test question" in output_lower, "Should show our specific test question"
 
 
-def test_normal_execution_differs_from_dry_run():
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for integration tests (set VOYAGE_API_KEY environment variable)",
+)
+def test_shared_container_normal_execution_differs_from_dry_run():
     """Test that normal execution attempts to actually run Claude (vs dry-run which doesn't)."""
+    with shared_container_test_environment(
+        "test_shared_container_normal_execution", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Create a simple Python file to make it look like a real codebase
+        (project_path / "main.py").write_text("print('hello world')")
 
-    # Create a temporary directory structure that would be a valid codebase
-    with local_temporary_directory() as temp_dir:
-        temp_path = Path(temp_dir)
-        # Safely get current working directory
-        try:
-            original_cwd = os.getcwd()
-        except FileNotFoundError:
-            # If current directory was deleted, use a safe fallback
-            original_cwd = str(Path.home())
+        # Initialize the project for testing with voyage-ai (containers should already be running)
+        init_result = subprocess.run(
+            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
-        try:
-            # Create a simple Python file to make it look like a real codebase
-            (temp_path / "main.py").write_text("print('hello world')")
+        # Ensure services are running (should be fast since containers are shared)
+        subprocess.run(
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
 
-            # Change to the test directory
-            os.chdir(temp_path)
+        runner = CliRunner()
 
-            # Initialize the project for testing with voyage-ai
-            init_result = subprocess.run(
-                [
-                    "python",
-                    "-m",
-                    "code_indexer.cli",
-                    "init",
-                    "--force",
-                    "--embedding-provider",
-                    "voyage-ai",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                cwd=temp_path,
-            )
-
-            assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
-
-            # Ensure services are running
-            subprocess.run(
-                ["python", "-m", "code_indexer.cli", "start", "--quiet"],
-                capture_output=True,
-                text=True,
-                timeout=120,
-                cwd=temp_path,
-            )
-
-            runner = CliRunner()
-
-            # Mock just the Claude dependency check
-            with patch(
-                "src.code_indexer.cli.check_claude_sdk_availability", return_value=True
-            ):
-                # Run the command WITHOUT dry-run flag
-                result = runner.invoke(cli, ["claude", "Test question"])
-
-        finally:
-            # Always restore original directory
-            os.chdir(original_cwd)
+        # Mock just the Claude dependency check
+        with patch(
+            "src.code_indexer.cli.check_claude_sdk_availability", return_value=True
+        ):
+            # Run the command WITHOUT dry-run flag
+            result = runner.invoke(cli, ["claude", "Test question"])
 
         # Normal execution will either:
         # 1. Try to execute Claude (and may fail due to no Claude installed, but that's expected)
@@ -231,6 +190,6 @@ def test_normal_execution_differs_from_dry_run():
 
 if __name__ == "__main__":
     # Allow running this test standalone for quick validation
-    test_dry_run_simple_integration()
-    test_normal_execution_differs_from_dry_run()
-    print("✅ All dry-run integration tests passed!")
+    test_shared_container_dry_run_simple_integration()
+    test_shared_container_normal_execution_differs_from_dry_run()
+    print("✅ All shared container dry-run integration tests passed!")

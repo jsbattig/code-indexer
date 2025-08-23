@@ -91,7 +91,7 @@ def local_temporary_directory(prefix: str = "test_", force_docker: bool = False)
         force_docker: If True, use Docker-specific shared directory
     """
     # Import here to avoid circular dependency
-    from tests.test_infrastructure import get_shared_test_directory
+    from code_indexer.services.container_manager import get_shared_test_directory
 
     # Use shared test directory to avoid creating multiple container sets
     # Docker and Podman get separate directories to avoid permission conflicts
@@ -117,6 +117,76 @@ def local_temporary_directory(prefix: str = "test_", force_docker: bool = False)
         pass
 
 
+@contextmanager
+def isolated_temporary_directory(test_name: str):
+    """Create completely isolated temp directory per test.
+
+    This fixture provides complete test isolation with zero shared state.
+    Each test gets a unique directory with timestamp and UUID.
+
+    DEPRECATED: Use shared_container_test_environment for better performance.
+
+    Args:
+        test_name: Name of the test (will be made unique)
+
+    Yields:
+        Path: Unique temporary directory for this test
+    """
+    import uuid
+    import time
+
+    test_id = f"{test_name}_{uuid.uuid4().hex[:8]}_{int(time.time())}"
+    temp_path = Path.home() / ".tmp" / "isolated_tests" / test_id
+    temp_path.mkdir(parents=True, exist_ok=True)
+
+    try:
+        yield temp_path
+    finally:
+        # Complete cleanup - no sharing
+        if temp_path.exists():
+            shutil.rmtree(temp_path, ignore_errors=True)
+
+
+@contextmanager
+def shared_container_test_environment(test_name: str, embedding_provider=None):
+    """Create shared container test environment with complete state cleanup.
+
+    This is the preferred approach for test isolation that provides:
+    - Container reuse for performance (same provider = same containers)
+    - Complete state cleanup between tests (collections + files)
+    - Containers stay running for next test
+
+    Args:
+        test_name: Name of the test (for debugging)
+        embedding_provider: EmbeddingProvider enum (default: VOYAGE_AI)
+
+    Yields:
+        Path: Shared test directory for this embedding provider
+    """
+    # Import here to avoid circular imports
+    from .unit.infrastructure.infrastructure import (
+        SharedContainerManager,
+        EmbeddingProvider,
+    )
+
+    if embedding_provider is None:
+        embedding_provider = EmbeddingProvider.VOYAGE_AI
+
+    manager = SharedContainerManager()
+    test_folder = manager.get_shared_folder_for_provider(embedding_provider, test_name)
+
+    # Complete cleanup BEFORE test runs (not after)
+    manager.complete_cleanup_between_tests(test_folder)
+
+    # Setup shared environment (reuses containers if available)
+    manager.setup_shared_test_environment(test_folder, embedding_provider)
+
+    yield test_folder
+
+    # Note: No cleanup in finally block - leave environment for next test
+    # The next test will clean up before it starts
+
+
 @pytest.fixture
 def local_tmp_path() -> Generator[Path, None, None]:
     """Pytest fixture that provides a temporary directory in local .tmp (accessible to containers)."""
@@ -139,7 +209,7 @@ class E2EServiceManager:
                 project_name="test_shared", force_docker=force_docker
             )
             # Import here to avoid circular dependency
-            from tests.test_infrastructure import get_shared_test_directory
+            from .unit.infrastructure.infrastructure import get_shared_test_directory
 
             # Use a consistent path for all test containers to avoid creating multiple container sets
             shared_test_path = get_shared_test_directory(force_docker)

@@ -142,8 +142,8 @@ class TestQdrantServiceConfigIntegration:
             result = client._create_payload_indexes_with_retry("test_collection")
 
             assert result is True
-            # Should make 5 API calls for the default indexes
-            assert mock_put.call_count == 5
+            # Should make 6 API calls for the default indexes
+            assert mock_put.call_count == 7
 
             # Verify the default fields were sent (same as hardcoded in current implementation)
             call_args_list = mock_put.call_args_list
@@ -158,6 +158,7 @@ class TestQdrantServiceConfigIntegration:
                 ("git_branch", "keyword"),
                 ("file_mtime", "integer"),
                 ("hidden_branches", "keyword"),
+                ("language", "keyword"),
             ]
 
             for field_name, field_schema in expected_defaults:
@@ -202,7 +203,8 @@ class TestQdrantServiceConfigIntegration:
     def test_collection_creation_methods_use_config(self):
         """Test that collection creation methods respect payload index configuration."""
         config = QdrantConfig(
-            host="http://localhost:6333", enable_payload_indexes=False  # Disabled
+            host="http://localhost:6333",
+            enable_payload_indexes=False,  # Disabled
         )
         client = QdrantClient(config, self.mock_console)
 
@@ -214,7 +216,6 @@ class TestQdrantServiceConfigIntegration:
             with patch.object(
                 client, "_create_payload_indexes_with_retry", return_value=True
             ) as mock_create_indexes:
-
                 # Test _create_collection_direct
                 result = client._create_collection_direct("test_collection", 768)
                 assert result is True
@@ -244,7 +245,7 @@ class TestQdrantServiceConfigIntegration:
 
         # Should have default values
         assert config.enable_payload_indexes is True
-        assert len(config.payload_indexes) == 5  # Default indexes
+        assert len(config.payload_indexes) == 7  # Default indexes
 
         mock_response = Mock()
         mock_response.status_code = 201
@@ -253,5 +254,5 @@ class TestQdrantServiceConfigIntegration:
             result = client._create_payload_indexes_with_retry("test_collection")
 
             assert result is True
-            # Should create all 5 default indexes
-            assert mock_put.call_count == 5
+            # Should create all 6 default indexes
+            assert mock_put.call_count == 7

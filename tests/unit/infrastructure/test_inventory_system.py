@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 
-from .test_infrastructure import (
+from .infrastructure import (
     TestProjectInventory,
     create_test_project_with_inventory,
 )

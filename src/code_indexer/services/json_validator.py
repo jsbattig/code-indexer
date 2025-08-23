@@ -140,7 +140,6 @@ class JSONSyntaxValidator:
                 and self._starts_with_key(next_line)
                 and not current_line.endswith(",")
             ):
-
                 fixes.append(
                     JSONFix(
                         fix_type="missing_comma",

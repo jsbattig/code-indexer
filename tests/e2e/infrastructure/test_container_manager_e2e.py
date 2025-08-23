@@ -54,7 +54,6 @@ class TestContainerManagerE2EWorkflow:
             patch.object(manager, "_check_container_health") as mock_health,
             patch.object(manager, "_reset_qdrant_collections") as mock_reset,
         ):
-
             mock_start.return_value = True
             mock_health.return_value = True
             mock_reset.return_value = True
@@ -116,7 +115,6 @@ class TestContainerManagerE2EWorkflow:
                 manager, "_check_container_health", side_effect=mock_health_side_effect
             ),
         ):
-
             mock_start.return_value = True
 
             # Initialize containers
@@ -146,7 +144,6 @@ class TestContainerManagerE2EWorkflow:
             patch.object(manager, "_check_container_health") as mock_health,
             patch.object(manager, "_reset_qdrant_collections") as mock_reset,
         ):
-
             mock_start.return_value = True
             mock_health.return_value = True
             mock_reset.return_value = True
@@ -199,7 +196,6 @@ class TestContainerManagerE2EWorkflow:
                 manager, "_reset_qdrant_collections", side_effect=mock_reset_side_effect
             ),
         ):
-
             mock_start.return_value = True
             mock_health.return_value = True
 
@@ -233,7 +229,6 @@ class TestContainerManagerE2EWorkflow:
             patch.object(manager, "_check_container_health") as mock_health,
             patch.object(manager, "_reset_qdrant_collections") as mock_reset,
         ):
-
             mock_start.return_value = True
             mock_health.return_value = True
             mock_reset.return_value = True
@@ -410,7 +405,6 @@ class TestContainerManagerCollectionReset:
             patch.object(manager, "_start_containers") as mock_start,
             patch.object(manager, "_check_container_health") as mock_health,
         ):
-
             mock_start.return_value = True
             mock_health.return_value = True
 

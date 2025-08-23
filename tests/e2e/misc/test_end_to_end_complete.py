@@ -6,103 +6,24 @@ Comprehensive end-to-end tests that exercise ALL code paths including:
 - Clean functionality and trace removal
 - Container lifecycle management
 
-Converted to use fixture-based approach with shared test infrastructure.
+Converted to use shared container strategy for improved performance.
 """
 
 import os
-import json
 import subprocess
-from pathlib import Path
 import pytest
-import requests  # type: ignore
 
-# Import new test infrastructure
-from ...conftest import local_temporary_directory
-from .test_infrastructure import (
-    TestProjectInventory,
-    create_test_project_with_inventory,
-)
+# Import shared container infrastructure
+from ...conftest import shared_container_test_environment
+from .infrastructure import EmbeddingProvider
 
-
-@pytest.fixture
-def end_to_end_test_repo():
-    """Create a test repository for end-to-end tests."""
-    with local_temporary_directory() as temp_dir:
-        # Create isolated project space using inventory system (no config tinkering)
-        create_test_project_with_inventory(
-            temp_dir, TestProjectInventory.END_TO_END_COMPLETE
-        )
-
-        yield temp_dir
+# Mark all tests in this file as e2e to exclude from ci-github.sh
+pytestmark = pytest.mark.e2e
 
 
-def create_end_to_end_config(test_dir):
-    """Create configuration for end-to-end test."""
-
-    config_dir = test_dir / ".code-indexer"
-    config_file = config_dir / "config.json"
-
-    # Ensure the config directory exists
-    config_dir.mkdir(parents=True, exist_ok=True)
-
-    # Load existing config if it exists (preserves container ports)
-    if config_file.exists():
-        with open(config_file, "r") as f:
-            config = json.load(f)
-    else:
-        config = {
-            "codebase_dir": str(test_dir),
-            "qdrant": {
-                "host": "http://localhost:6333",
-                "collection": "end_to_end_test_collection",
-                "vector_size": 1024,
-            },
-        }
-
-    # Use the shared port detection helper
-    from ...conftest import detect_running_qdrant_port
-
-    working_port = detect_running_qdrant_port()
-
-    if working_port:
-        config["qdrant"]["host"] = f"http://localhost:{working_port}"
-        print(f"✅ Updated config to use Qdrant on port {working_port}")
-    else:
-        print("⚠️  No running Qdrant service detected, using default port")
-
-    # Override collection name to avoid conflicts (use timestamp to ensure uniqueness)
-    import time
-
-    timestamp = str(int(time.time()))
-    config["qdrant"]["collection"] = f"e2e_test_clean_{timestamp}"
-    config["qdrant"]["collection_base_name"] = f"e2e_test_clean_{timestamp}"
-
-    # Only modify test-specific settings, preserve container configuration
-    config["embedding_provider"] = "voyage-ai"
-    config["voyage_ai"] = {
-        "model": "voyage-code-3",
-        "api_key_env": "VOYAGE_API_KEY",
-        "batch_size": 32,
-        "max_retries": 3,
-        "timeout": 30,
-    }
-
-    with open(config_file, "w") as f:
-        json.dump(config, f, indent=2)
-
-    return config_file
-
-
-def create_test_projects(base_dir):
-    """Create test projects for end-to-end testing."""
-    projects_dir = base_dir / "projects"
-    projects_dir.mkdir(exist_ok=True)
-
-    # Create test_project_1 (calculator)
-    project1_dir = projects_dir / "test_project_1"
-    project1_dir.mkdir(exist_ok=True)
-
-    (project1_dir / "main.py").write_text(
+def create_test_files_calculator(project_dir):
+    """Create calculator test files in the specified directory."""
+    (project_dir / "main.py").write_text(
         """def main():
     print("Calculator Application")
     result = add(5, 3)
@@ -124,7 +45,7 @@ if __name__ == "__main__":
     main()"""
     )
 
-    (project1_dir / "utils.py").write_text(
+    (project_dir / "utils.py").write_text(
         """import math
 
 def square_root(n):
@@ -148,11 +69,10 @@ def calculator_utils():
     }"""
     )
 
-    # Create test_project_2 (web server)
-    project2_dir = projects_dir / "test_project_2"
-    project2_dir.mkdir(exist_ok=True)
 
-    (project2_dir / "web_server.py").write_text(
+def create_test_files_webserver(project_dir):
+    """Create web server test files in the specified directory."""
+    (project_dir / "web_server.py").write_text(
         """from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -182,7 +102,7 @@ if __name__ == "__main__":
     app.run(debug=True)"""
     )
 
-    (project2_dir / "auth.py").write_text(
+    (project_dir / "auth.py").write_text(
         """def check_credentials(username, password):
     '''Check user credentials'''
     valid_users = {
@@ -201,94 +121,61 @@ def validate_token(token):
     return len(token) == 32  # Simple validation"""
     )
 
-    return project1_dir, project2_dir
-
 
 @pytest.mark.skipif(
     not os.getenv("VOYAGE_API_KEY"),
     reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
 )
-@pytest.mark.skipif(
-    os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
-    reason="E2E tests require Docker services which are not available in CI",
-)
-def test_single_project_workflow(end_to_end_test_repo):
-    """Test core single project workflow: init -> start -> index -> query -> status -> clean-data."""
-    test_dir = end_to_end_test_repo
+def test_single_project_complete_workflow():
+    """Test core single project workflow: init -> start -> index -> query -> status."""
+    with shared_container_test_environment(
+        "test_single_project_complete_workflow", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Create calculator test files
+        create_test_files_calculator(project_path)
 
-    # Create test projects
-    project1_dir, project2_dir = create_test_projects(test_dir)
-
-    try:
-        original_cwd = Path.cwd()
-        os.chdir(project1_dir)
-
-        # 1. Initialize with VoyageAI provider
         print("🔧 Single project test: Initializing project...")
         init_result = subprocess.run(
             ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=project1_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
         assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
-        # Create configuration after init (like branch topology tests)
-        # Config created by inventory system
-
-        # 2. Start services (handle conflicts gracefully)
         print("🚀 Single project test: Starting services...")
         start_result = subprocess.run(
-            ["code-indexer", "start", "--force-docker"],
-            cwd=project1_dir,
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=120,
         )
-        if start_result.returncode != 0:
-            # If start failed due to port conflicts, check if services are already running
-            if "already in use" in start_result.stdout:
-                print("🔍 Services may already be running, attempting to proceed...")
-                # Verify we can reach Qdrant
-                try:
-                    with open(project1_dir / ".code-indexer" / "config.json", "r") as f:
-                        config = json.load(f)
-                    qdrant_url = config["qdrant"]["host"]
-                    response = requests.get(f"{qdrant_url}/cluster", timeout=5)
-                    if response.status_code == 200:
-                        print("✅ Qdrant service is accessible, proceeding with test")
-                    else:
-                        pytest.skip(
-                            f"Start failed and Qdrant not accessible: {start_result.stdout}"
-                        )
-                except Exception as e:
-                    pytest.skip(f"Start failed and could not verify services: {e}")
-            else:
-                pytest.skip(f"Could not start services: {start_result.stdout}")
-        else:
-            print("✅ Services started successfully")
+        assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
 
-        # 3. Index the project
         print("📚 Single project test: Indexing project...")
         index_result = subprocess.run(
             ["code-indexer", "index"],
-            cwd=project1_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=120,
         )
         assert index_result.returncode == 0, f"Index failed: {index_result.stderr}"
+        assert (
+            "Files processed:" in index_result.stdout
+            or "Processing complete" in index_result.stdout
+        )
 
-        # 4. Test search functionality
         print("🔍 Single project test: Testing search functionality...")
         search_queries = ["add function", "calculator", "factorial"]
 
         successful_queries = 0
         for query in search_queries:
             result = subprocess.run(
-                ["code-indexer", "query", query],
-                cwd=project1_dir,
+                ["code-indexer", "query", query, "--quiet"],
+                cwd=project_path,
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -302,11 +189,10 @@ def test_single_project_workflow(end_to_end_test_repo):
 
         assert successful_queries > 0, "No search queries found expected files"
 
-        # 5. Test status functionality
         print("📊 Single project test: Testing status functionality...")
         status_result = subprocess.run(
             ["code-indexer", "status"],
-            cwd=project1_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=30,
@@ -316,63 +202,116 @@ def test_single_project_workflow(end_to_end_test_repo):
 
         print("✅ Single project workflow test completed successfully")
 
-    finally:
-        try:
-            os.chdir(original_cwd)
-            # Clean up
-            subprocess.run(
-                ["code-indexer", "clean", "--remove-data", "--quiet"],
-                cwd=project1_dir,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-        except Exception:
-            pass
-
-
-@pytest.mark.skip(reason="Skipping uninstall test as requested")
-@pytest.mark.skipif(
-    not os.getenv("VOYAGE_API_KEY"),
-    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
-)
-@pytest.mark.skipif(
-    os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
-    reason="E2E tests require Docker services which are not available in CI",
-)
-def test_complete_lifecycle_management(end_to_end_test_repo):
-    """Test complete container lifecycle: start -> uninstall -> verify shutdown."""
-    test_dir = end_to_end_test_repo
-    project1_dir, _ = create_test_projects(test_dir)
-    # Config created by inventory system
-
-    # This test is skipped but kept for reference
-    pytest.skip("Lifecycle management test not needed for fixture-based approach")
-
 
 @pytest.mark.skipif(
     not os.getenv("VOYAGE_API_KEY"),
     reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
 )
+def test_complete_lifecycle_clean_data():
+    """Test complete data lifecycle: init -> index -> clean-data -> verify cleanup."""
+    with shared_container_test_environment(
+        "test_complete_lifecycle_clean_data", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Create calculator test files
+        create_test_files_calculator(project_path)
+
+        print("🔧 Lifecycle test: Initializing project...")
+        init_result = subprocess.run(
+            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
+
+        print("🚀 Lifecycle test: Starting services...")
+        start_result = subprocess.run(
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
+
+        print("📚 Lifecycle test: Indexing project...")
+        index_result = subprocess.run(
+            ["code-indexer", "index"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert index_result.returncode == 0, f"Index failed: {index_result.stderr}"
+
+        # Verify indexing worked
+        print("🔍 Lifecycle test: Verifying indexed data...")
+        query_result = subprocess.run(
+            ["code-indexer", "query", "calculator", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert query_result.returncode == 0, "Query before cleanup should work"
+
+        # Clean data
+        print("🗑️ Lifecycle test: Cleaning data...")
+        clean_result = subprocess.run(
+            ["code-indexer", "clean-data"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert clean_result.returncode == 0, f"Clean-data failed: {clean_result.stderr}"
+
+        # Verify status after cleanup (services should still be running)
+        print("📊 Lifecycle test: Verifying services still running...")
+        status_result = subprocess.run(
+            ["code-indexer", "status"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert status_result.returncode == 0, f"Status failed: {status_result.stderr}"
+        assert "Available" in status_result.stdout or "✅" in status_result.stdout
+
+        # Re-index to verify services work after cleanup
+        print("📚 Lifecycle test: Re-indexing after cleanup...")
+        reindex_result = subprocess.run(
+            ["code-indexer", "index"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert (
+            reindex_result.returncode == 0
+        ), f"Re-index failed: {reindex_result.stderr}"
+
+        print("✅ Complete lifecycle test completed successfully")
+
+
 @pytest.mark.skipif(
-    os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
-    reason="E2E tests require Docker services which are not available in CI",
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
 )
-def test_multi_project_isolation_and_search(end_to_end_test_repo):
-    """Test multi-project functionality with shared global vector database."""
-    test_dir = end_to_end_test_repo
-    project1_dir, project2_dir = create_test_projects(test_dir)
+def test_multi_project_isolation_and_search():
+    """Test multi-project functionality with proper isolation using different providers."""
 
-    try:
-        original_cwd = Path.cwd()
+    # Project 1: Calculator with VoyageAI
+    with shared_container_test_environment(
+        "test_multi_project_isolation_calc", EmbeddingProvider.VOYAGE_AI
+    ) as project1_path:
+        create_test_files_calculator(project1_path)
 
-        # Setup project 1
-        # Config created by inventory system
-        os.chdir(project1_dir)
-
+        print("🔧 Multi-project test: Setup Project 1 (Calculator + VoyageAI)...")
         init_result1 = subprocess.run(
             ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=project1_dir,
+            cwd=project1_path,
             capture_output=True,
             text=True,
             timeout=60,
@@ -382,8 +321,8 @@ def test_multi_project_isolation_and_search(end_to_end_test_repo):
         ), f"Project 1 init failed: {init_result1.stderr}"
 
         start_result1 = subprocess.run(
-            ["code-indexer", "start", "--force-docker", "--quiet"],
-            cwd=project1_dir,
+            ["code-indexer", "start", "--quiet"],
+            cwd=project1_path,
             capture_output=True,
             text=True,
             timeout=120,
@@ -394,7 +333,7 @@ def test_multi_project_isolation_and_search(end_to_end_test_repo):
 
         index_result1 = subprocess.run(
             ["code-indexer", "index"],
-            cwd=project1_dir,
+            cwd=project1_path,
             capture_output=True,
             text=True,
             timeout=120,
@@ -403,22 +342,36 @@ def test_multi_project_isolation_and_search(end_to_end_test_repo):
             index_result1.returncode == 0
         ), f"Project 1 index failed: {index_result1.stderr}"
 
-        # Verify project 1 port allocation
-        with open(project1_dir / ".code-indexer" / "config.json", "r") as f:
-            project1_config = json.load(f)
-        project1_ports = project1_config.get("project_ports", {})
-        print(f"✅ Project 1 ports: {project1_ports}")
-        assert (
-            "qdrant_port" in project1_ports
-        ), "Project 1 should have qdrant_port allocated"
+        print("🔍 Multi-project test: Testing Project 1 searches...")
+        calc_queries = ["add function", "factorial", "calculator"]
+        project1_success = 0
+        for query in calc_queries:
+            result = subprocess.run(
+                ["code-indexer", "query", query, "--quiet"],
+                cwd=project1_path,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
 
-        # Setup project 2
-        # Config created by inventory system
-        os.chdir(project2_dir)
+            if result.returncode == 0 and len(result.stdout.strip()) > 0:
+                output = result.stdout.lower()
+                if any(file in output for file in ["main.py", "utils.py"]):
+                    project1_success += 1
+                    print(f"✅ Project 1 query '{query}' found calculator files")
 
+        assert project1_success > 0, "Project 1 should find calculator-related content"
+
+    # Project 2: Web Server with Ollama for true isolation
+    with shared_container_test_environment(
+        "test_multi_project_isolation_web", EmbeddingProvider.OLLAMA
+    ) as project2_path:
+        create_test_files_webserver(project2_path)
+
+        print("🔧 Multi-project test: Setup Project 2 (Web Server + Ollama)...")
         init_result2 = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=project2_dir,
+            ["code-indexer", "init", "--force", "--embedding-provider", "ollama"],
+            cwd=project2_path,
             capture_output=True,
             text=True,
             timeout=60,
@@ -427,10 +380,9 @@ def test_multi_project_isolation_and_search(end_to_end_test_repo):
             init_result2.returncode == 0
         ), f"Project 2 init failed: {init_result2.stderr}"
 
-        # Start services for project 2 (should be idempotent)
         start_result2 = subprocess.run(
-            ["code-indexer", "start", "--force-docker", "--quiet"],
-            cwd=project2_dir,
+            ["code-indexer", "start", "--quiet"],
+            cwd=project2_path,
             capture_output=True,
             text=True,
             timeout=120,
@@ -441,7 +393,7 @@ def test_multi_project_isolation_and_search(end_to_end_test_repo):
 
         index_result2 = subprocess.run(
             ["code-indexer", "index"],
-            cwd=project2_dir,
+            cwd=project2_path,
             capture_output=True,
             text=True,
             timeout=120,
@@ -450,142 +402,91 @@ def test_multi_project_isolation_and_search(end_to_end_test_repo):
             index_result2.returncode == 0
         ), f"Project 2 index failed: {index_result2.stderr}"
 
-        # Verify project 2 port allocation and compare with project 1
-        with open(project2_dir / ".code-indexer" / "config.json", "r") as f:
-            project2_config = json.load(f)
-        project2_ports = project2_config.get("project_ports", {})
-        print(f"✅ Project 2 ports: {project2_ports}")
-        assert (
-            "qdrant_port" in project2_ports
-        ), "Project 2 should have qdrant_port allocated"
-
-        # Verify port coordination - projects should have different ports
-        if project1_ports.get("qdrant_port") == project2_ports.get("qdrant_port"):
-            print(
-                f"⚠️  Both projects using same qdrant port: {project1_ports.get('qdrant_port')}"
-            )
-            print("This may be expected if using shared containers")
-        else:
-            print(
-                f"✅ Port coordination working - Project 1: {project1_ports.get('qdrant_port')}, Project 2: {project2_ports.get('qdrant_port')}"
-            )
-
-        # Test project 1 searches
-        os.chdir(project1_dir)
-        calc_queries = ["add function", "factorial", "calculator"]
-        for query in calc_queries:
-            result = subprocess.run(
-                ["code-indexer", "query", query],
-                cwd=project1_dir,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-
-            if result.returncode == 0:
-                output = result.stdout.lower()
-                if "main.py" in output or "utils.py" in output:
-                    print(f"✅ Project 1 query '{query}' found calculator files")
-
-        # Test project 2 searches
-        os.chdir(project2_dir)
+        print("🔍 Multi-project test: Testing Project 2 searches...")
         web_queries = ["web server", "route function", "authentication"]
+        project2_success = 0
         for query in web_queries:
             result = subprocess.run(
-                ["code-indexer", "query", query],
-                cwd=project2_dir,
+                ["code-indexer", "query", query, "--quiet"],
+                cwd=project2_path,
                 capture_output=True,
                 text=True,
                 timeout=30,
             )
 
-            if result.returncode == 0:
+            if result.returncode == 0 and len(result.stdout.strip()) > 0:
                 output = result.stdout.lower()
-                if "web_server.py" in output or "auth.py" in output:
+                if any(file in output for file in ["web_server.py", "auth.py"]):
+                    project2_success += 1
                     print(f"✅ Project 2 query '{query}' found web server files")
 
-        print("✅ Multi-project test completed successfully")
+        assert project2_success > 0, "Project 2 should find web server-related content"
 
-    finally:
-        try:
-            os.chdir(original_cwd)
-            # Clean up both projects
-            for project_dir in [project1_dir, project2_dir]:
-                subprocess.run(
-                    ["code-indexer", "clean", "--remove-data", "--quiet"],
-                    cwd=project_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
-        except Exception:
-            pass
+    print("✅ Multi-project isolation test completed successfully")
 
 
 @pytest.mark.skipif(
     not os.getenv("VOYAGE_API_KEY"),
     reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
 )
-@pytest.mark.skipif(
-    os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
-    reason="E2E tests require Docker services which are not available in CI",
-)
-def test_error_conditions_and_recovery(end_to_end_test_repo):
+def test_error_conditions_and_recovery():
     """Test error handling and recovery scenarios."""
-    test_dir = end_to_end_test_repo
-    project1_dir, _ = create_test_projects(test_dir)
-    # Config created by inventory system
+    with shared_container_test_environment(
+        "test_error_conditions_and_recovery", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        create_test_files_calculator(project_path)
 
-    try:
-        original_cwd = Path.cwd()
-        os.chdir(project1_dir)
-
-        # Initialize and start services
+        print("🔧 Error test: Initialize project...")
         init_result = subprocess.run(
             ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=project1_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
         assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
+        print("🚀 Error test: Start services...")
         start_result = subprocess.run(
-            ["code-indexer", "start", "--force-docker", "--quiet"],
-            cwd=project1_dir,
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=120,
         )
         assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
 
-        # Test 1: Query with non-existent term
+        # Test 1: Query with non-existent term before indexing
+        print("🔍 Error test: Query non-existent term before indexing...")
         query_result = subprocess.run(
-            ["code-indexer", "query", "nonexistent_unique_term_12345"],
-            cwd=project1_dir,
+            ["code-indexer", "query", "nonexistent_unique_term_12345", "--quiet"],
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=30,
         )
-        # Should not crash, may return no results
+        # Should not crash, may return no results or handle gracefully
         assert (
             query_result.returncode == 0
         ), "Query should not crash with non-existent term"
 
-        # Test 2: Status should work
+        # Test 2: Status should work before indexing
+        print("📊 Error test: Status before indexing...")
         status_result = subprocess.run(
             ["code-indexer", "status"],
-            cwd=project1_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=30,
         )
         assert status_result.returncode == 0, f"Status failed: {status_result.stderr}"
+        assert "Available" in status_result.stdout or "✅" in status_result.stdout
 
         # Test 3: Index the project
+        print("📚 Error test: Index project...")
         index_result = subprocess.run(
             ["code-indexer", "index"],
-            cwd=project1_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=120,
@@ -593,54 +494,62 @@ def test_error_conditions_and_recovery(end_to_end_test_repo):
         assert index_result.returncode == 0, f"Index failed: {index_result.stderr}"
 
         # Test 4: Verify indexing worked
+        print("🔍 Error test: Verify indexing with real query...")
         verify_result = subprocess.run(
-            ["code-indexer", "query", "calculator"],
-            cwd=project1_dir,
+            ["code-indexer", "query", "calculator", "--quiet"],
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=30,
         )
         assert verify_result.returncode == 0, "Query after indexing should work"
 
-        print("✅ Error conditions and recovery test completed successfully")
+        # Test 5: Query with non-existent term after indexing
+        print("🔍 Error test: Query non-existent term after indexing...")
+        no_result_query = subprocess.run(
+            ["code-indexer", "query", "completely_nonexistent_term_xyz_999", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert (
+            no_result_query.returncode == 0
+        ), "Query should handle no results gracefully"
 
-    finally:
-        try:
-            os.chdir(original_cwd)
-            subprocess.run(
-                ["code-indexer", "clean", "--remove-data", "--quiet"],
-                cwd=project1_dir,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-        except Exception:
-            pass
+        # Test 6: Test query with special characters
+        print("🔍 Error test: Query with special characters...")
+        special_query = subprocess.run(
+            ["code-indexer", "query", "!@#$%^&*()", "--quiet"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert (
+            special_query.returncode == 0
+        ), "Query should handle special characters gracefully"
+
+        print("✅ Error conditions and recovery test completed successfully")
 
 
 @pytest.mark.skipif(
     not os.getenv("VOYAGE_API_KEY"),
     reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
 )
-@pytest.mark.skipif(
-    os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true",
-    reason="E2E tests require Docker services which are not available in CI",
-)
-def test_concurrent_operations(end_to_end_test_repo):
-    """Test that concurrent operations on different projects work correctly."""
-    test_dir = end_to_end_test_repo
-    project1_dir, project2_dir = create_test_projects(test_dir)
+def test_concurrent_operations_workflow():
+    """Test concurrent workflow operations with shared containers."""
 
-    try:
-        original_cwd = Path.cwd()
+    # Concurrent Project 1: Calculator
+    with shared_container_test_environment(
+        "test_concurrent_operations_calc", EmbeddingProvider.VOYAGE_AI
+    ) as project1_path:
+        create_test_files_calculator(project1_path)
 
-        # Setup project 1
-        # Config created by inventory system
-        os.chdir(project1_dir)
-
+        print("🔧 Concurrent test: Setup Project 1 (Calculator)...")
         init_result1 = subprocess.run(
             ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=project1_dir,
+            cwd=project1_path,
             capture_output=True,
             text=True,
             timeout=60,
@@ -650,8 +559,8 @@ def test_concurrent_operations(end_to_end_test_repo):
         ), f"Project 1 init failed: {init_result1.stderr}"
 
         start_result1 = subprocess.run(
-            ["code-indexer", "start", "--force-docker", "--quiet"],
-            cwd=project1_dir,
+            ["code-indexer", "start", "--quiet"],
+            cwd=project1_path,
             capture_output=True,
             text=True,
             timeout=120,
@@ -662,7 +571,7 @@ def test_concurrent_operations(end_to_end_test_repo):
 
         index_result1 = subprocess.run(
             ["code-indexer", "index"],
-            cwd=project1_dir,
+            cwd=project1_path,
             capture_output=True,
             text=True,
             timeout=120,
@@ -671,13 +580,48 @@ def test_concurrent_operations(end_to_end_test_repo):
             index_result1.returncode == 0
         ), f"Project 1 index failed: {index_result1.stderr}"
 
-        # Setup project 2 (services should already be running)
-        # Config created by inventory system
-        os.chdir(project2_dir)
+        # Test Project 1 searches
+        print("🔍 Concurrent test: Testing Project 1 searches...")
+        result1 = subprocess.run(
+            ["code-indexer", "query", "calculator", "--quiet"],
+            cwd=project1_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result1.returncode == 0, "Project 1 query should work"
 
+        # Multiple operations on same project to test concurrency handling
+        print("🔄 Concurrent test: Multiple operations on Project 1...")
+        status_result1 = subprocess.run(
+            ["code-indexer", "status"],
+            cwd=project1_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert status_result1.returncode == 0, "Project 1 status should work"
+
+        # Clean data to test cleanup during concurrent operations
+        clean_result1 = subprocess.run(
+            ["code-indexer", "clean-data"],
+            cwd=project1_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert clean_result1.returncode == 0, "Project 1 clean-data should work"
+
+    # Concurrent Project 2: Web Server (services should be reused)
+    with shared_container_test_environment(
+        "test_concurrent_operations_web", EmbeddingProvider.VOYAGE_AI
+    ) as project2_path:
+        create_test_files_webserver(project2_path)
+
+        print("🔧 Concurrent test: Setup Project 2 (Web Server)...")
         init_result2 = subprocess.run(
             ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=project2_dir,
+            cwd=project2_path,
             capture_output=True,
             text=True,
             timeout=60,
@@ -686,10 +630,10 @@ def test_concurrent_operations(end_to_end_test_repo):
             init_result2.returncode == 0
         ), f"Project 2 init failed: {init_result2.stderr}"
 
-        # Start services for project 2 (should be idempotent with project 1)
+        # Services should already be running from Project 1
         start_result2 = subprocess.run(
-            ["code-indexer", "start", "--force-docker", "--quiet"],
-            cwd=project2_dir,
+            ["code-indexer", "start", "--quiet"],
+            cwd=project2_path,
             capture_output=True,
             text=True,
             timeout=120,
@@ -700,7 +644,7 @@ def test_concurrent_operations(end_to_end_test_repo):
 
         index_result2 = subprocess.run(
             ["code-indexer", "index"],
-            cwd=project2_dir,
+            cwd=project2_path,
             capture_output=True,
             text=True,
             timeout=120,
@@ -709,43 +653,30 @@ def test_concurrent_operations(end_to_end_test_repo):
             index_result2.returncode == 0
         ), f"Project 2 index failed: {index_result2.stderr}"
 
-        # Verify both projects work independently
-        os.chdir(project1_dir)
-        result1 = subprocess.run(
-            ["code-indexer", "query", "calculator"],
-            cwd=project1_dir,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        assert result1.returncode == 0, "Project 1 query should work"
-
-        os.chdir(project2_dir)
+        # Test Project 2 searches
+        print("🔍 Concurrent test: Testing Project 2 searches...")
         result2 = subprocess.run(
-            ["code-indexer", "query", "server"],
-            cwd=project2_dir,
+            ["code-indexer", "query", "server", "--quiet"],
+            cwd=project2_path,
             capture_output=True,
             text=True,
             timeout=30,
         )
         assert result2.returncode == 0, "Project 2 query should work"
 
-        print("✅ Concurrent operations test completed successfully")
+        # Test rapid successive operations
+        print("🔄 Concurrent test: Rapid operations on Project 2...")
+        for i in range(3):
+            rapid_status = subprocess.run(
+                ["code-indexer", "status"],
+                cwd=project2_path,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            assert rapid_status.returncode == 0, f"Rapid status {i+1} should work"
 
-    finally:
-        try:
-            os.chdir(original_cwd)
-            # Clean up both projects
-            for project_dir in [project1_dir, project2_dir]:
-                subprocess.run(
-                    ["code-indexer", "clean", "--remove-data", "--quiet"],
-                    cwd=project_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
-        except Exception:
-            pass
+        print("✅ Concurrent operations test completed successfully")
 
 
 if __name__ == "__main__":

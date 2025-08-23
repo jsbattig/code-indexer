@@ -10,7 +10,7 @@ from code_indexer.services.embedding_factory import EmbeddingProviderFactory
 from code_indexer.services.qdrant import QdrantClient
 from code_indexer.services.smart_indexer import SmartIndexer
 from ...suite_setup import register_test_collection
-from .test_infrastructure import (
+from .infrastructure import (
     CLIHelper,
     TestProjectInventory,
     create_test_project_with_inventory,

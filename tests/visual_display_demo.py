@@ -225,7 +225,7 @@ def demo_streaming_behavior():
             # Occasionally add tool activity
             if i % 2 == 0:
                 manager.update(
-                    message=f"Processing chunk {i+1}",
+                    message=f"Processing chunk {i + 1}",
                     visual_cue="📖",
                     event_type="tool_activity",
                 )
@@ -271,14 +271,14 @@ def demo_performance_test():
             # Update status rapidly
             display.update_status_info(
                 [
-                    f"⏱️ Rapid test: {elapsed:.1f}s | Update #{i+1}",
-                    f"📊 Updates per second: {(i+1)/elapsed:.1f}",
+                    f"⏱️ Rapid test: {elapsed:.1f}s | Update #{i + 1}",
+                    f"📊 Updates per second: {(i + 1) / elapsed:.1f}",
                 ]
             )
 
             # Add tool activity
             event = StatusEvent(
-                message=f"Rapid activity {i+1}",
+                message=f"Rapid activity {i + 1}",
                 visual_cue=(
                     VisualCues.FILE_READ if i % 2 == 0 else VisualCues.SEMANTIC_SEARCH
                 ),
@@ -292,7 +292,7 @@ def demo_performance_test():
         display.update_status_info(
             [
                 f"✅ Performance test completed in {final_time:.1f}s",
-                f"📊 Average: {30/final_time:.1f} updates/sec",
+                f"📊 Average: {30 / final_time:.1f} updates/sec",
             ]
         )
 

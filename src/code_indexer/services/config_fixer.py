@@ -246,7 +246,6 @@ class ConfigurationValidator:
 
         # Always fix tilde paths or paths that don't match exactly
         if current_path_str != correct_path_str or current_path_str.startswith("~"):
-
             # Handle tilde expansion for validation
             expanded_path = Path(current_path_str).expanduser().resolve()
 

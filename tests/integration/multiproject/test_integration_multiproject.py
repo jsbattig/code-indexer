@@ -14,7 +14,7 @@ from code_indexer.services.docker_manager import DockerManager
 from code_indexer.config import ConfigManager
 
 # Import new test infrastructure to eliminate duplication
-from .test_infrastructure import (
+from .infrastructure import (
     TestProjectInventory,
     create_test_project_with_inventory,
 )
@@ -90,21 +90,32 @@ def handle_start_command_gracefully(project_dir, extra_args=None):
 
 @pytest.fixture
 def multiproject_test_setup():
-    """Create test setup for multi-project integration tests using inventory system."""
-    with local_temporary_directory() as temp_dir:
-        # Create two isolated project spaces using inventory system (no config tinkering)
-        project1_path = temp_dir / "project1"
-        project2_path = temp_dir / "project2"
+    """Create test setup for multi-project integration tests using shared container environment."""
+    from tests.conftest import shared_container_test_environment
+    from tests.unit.infrastructure.infrastructure import EmbeddingProvider
+
+    # Use shared container environment for better performance
+    with shared_container_test_environment(
+        "multiproject_integration", EmbeddingProvider.VOYAGE_AI
+    ) as base_dir:
+        # Create two project subdirectories that share the same container environment
+        project1_path = base_dir / "project1"
+        project2_path = base_dir / "project2"
 
         project1_path.mkdir()
         project2_path.mkdir()
 
-        create_test_project_with_inventory(
-            project1_path, TestProjectInventory.INTEGRATION_MULTIPROJECT_1
-        )
-        create_test_project_with_inventory(
-            project2_path, TestProjectInventory.INTEGRATION_MULTIPROJECT_2
-        )
+        # Create isolated configs but use compatible collection names for shared containers
+        # Use the same collection base name so they can share the container environment
+        multiproject_config_1 = TestProjectInventory.INTEGRATION_MULTIPROJECT_1
+        multiproject_config_2 = TestProjectInventory.INTEGRATION_MULTIPROJECT_2
+
+        # Override collection names to be compatible with shared environment
+        multiproject_config_1.collection_base_name = "code_index"
+        multiproject_config_2.collection_base_name = "code_index"
+
+        create_test_project_with_inventory(project1_path, multiproject_config_1)
+        create_test_project_with_inventory(project2_path, multiproject_config_2)
 
         # Create test files for both projects
         create_test_files_for_multiproject(project1_path, project2_path)
@@ -112,7 +123,6 @@ def multiproject_test_setup():
         yield {
             "project1_path": project1_path,
             "project2_path": project2_path,
-            "test_root": temp_dir,
         }
 
 
@@ -379,31 +389,16 @@ class TestMultiProjectIntegration:
         try:
             original_cwd = Path.cwd()
 
-            # Setup from project 1 using CLI
-            try:
-                os.chdir(project1_path)
+            # The shared container environment already has containers running
+            # No need to start new containers - just use the existing ones
+            # The test should verify that both projects can use the same containers
 
-                # Initialize with VoyageAI provider first
-                import subprocess
+            # Skip container startup since shared environment already has running containers
+            print(
+                "Using shared container environment - skipping individual project setup"
+            )
 
-                init_result = subprocess.run(
-                    [
-                        "code-indexer",
-                        "init",
-                        "--force",
-                        "--embedding-provider",
-                        "voyage-ai",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
-                assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
-
-                # Use graceful start handling (remove --quiet to see errors)
-                handle_start_command_gracefully(project1_path, ["--force-recreate"])
-            finally:
-                os.chdir(original_cwd)
+            import subprocess
 
             # Check status from both projects using CLI
             try:

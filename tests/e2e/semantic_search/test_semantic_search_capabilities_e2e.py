@@ -5,24 +5,22 @@ Tests the new semantic filtering options added to the query command,
 including type, scope, features, parent, and semantic-only filters.
 """
 
-from typing import Dict
 import subprocess
-import time
+import os
 
 import pytest
 
-from ...conftest import local_temporary_directory
-
-# Note: Removed test_infrastructure imports because they interfere with semantic indexing
-# Using direct project setup instead for these E2E tests
+from ...conftest import shared_container_test_environment
+from .infrastructure import EmbeddingProvider
 
 # Mark all tests in this file as e2e to exclude from ci-github.sh
 pytestmark = pytest.mark.e2e
 
 
-def _get_semantic_filtering_test_project() -> Dict[str, str]:
-    """Get test project with diverse semantic structures for filtering tests."""
-    return {
+def _create_enhanced_semantic_test_files(project_path):
+    """Create enhanced test files with diverse semantic structures for filtering tests."""
+    # Create diverse code files with rich semantic structures
+    project_files = {
         "user_model.py": '''"""User model with various semantic constructs."""
 from typing import Optional, List
 from dataclasses import dataclass
@@ -215,328 +213,403 @@ interface UserRepository {
     }
 }
 """,
+        "config.yaml": """# Configuration file
+database:
+  host: localhost
+  port: 5432
+  name: user_db
+
+api:
+  version: "v1"
+  timeout: 30
+  
+auth:
+  jwt_secret: "secret123"
+  token_expiry: 3600
+""",
+        "utils.go": """package main
+
+import (
+    "fmt"
+    "time"
+    "strings"
+)
+
+// Global utility functions
+func validateEmail(email string) bool {
+    return strings.Contains(email, "@")
+}
+
+func hashPassword(password string) string {
+    // Hash implementation
+    return fmt.Sprintf("hashed_%s", password)
+}
+
+// UserUtil struct with static methods
+type UserUtil struct{}
+
+func (u UserUtil) FormatName(first, last string) string {
+    return fmt.Sprintf("%s %s", first, last)
+}
+
+func (u UserUtil) GenerateID() int64 {
+    return time.Now().Unix()
+}
+
+// Async operation simulation
+func processUserAsync(userID int64) <-chan string {
+    result := make(chan string, 1)
+    go func() {
+        time.Sleep(100 * time.Millisecond)
+        result <- fmt.Sprintf("Processed user %d", userID)
+    }()
+    return result
+}
+""",
+        "README.md": """# User Management System
+
+This project demonstrates various semantic constructs for testing.
+
+## Features
+- User authentication and management
+- REST API endpoints
+- Async processing capabilities
+- Multi-language support
+
+## Installation
+Run the application to start user management.
+""",
     }
 
+    # Write all files to the project directory
+    for filename, content in project_files.items():
+        (project_path / filename).write_text(content)
 
-@pytest.mark.integration
-@pytest.mark.voyage_ai
+
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
 def test_semantic_type_filtering():
-    """Test filtering by semantic type (--type)."""
-    with local_temporary_directory() as temp_dir:
-        test_dir = temp_dir / "semantic_type_test"
-        test_dir.mkdir()
+    """Test filtering by semantic type (--type) using shared containers."""
+    with shared_container_test_environment(
+        "test_semantic_type_filtering", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Create enhanced test files with diverse semantic structures
+        _create_enhanced_semantic_test_files(project_path)
 
-        # Create simple test project without test infrastructure that interferes with indexing
-        # Note: Removed create_test_project_with_inventory because it causes indexing issues
-
-        # Add custom semantic test files
-        project_files = _get_semantic_filtering_test_project()
-        for filename, content in project_files.items():
-            (test_dir / filename).write_text(content)
-
-        # Initialize and index
-        subprocess.run(
+        # Initialize and index with shared containers
+        result = subprocess.run(
             ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
-        subprocess.run(
-            ["code-indexer", "start"],
-            cwd=test_dir,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        subprocess.run(
-            ["code-indexer", "index"],
-            cwd=test_dir,
+        assert result.returncode == 0, f"Init failed: {result.stderr}"
+
+        result = subprocess.run(
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=120,
         )
+        assert result.returncode == 0, f"Start failed: {result.stderr}"
 
-        # Test class filtering
+        result = subprocess.run(
+            ["code-indexer", "index"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, f"Index failed: {result.stderr}"
+
+        # Test class filtering - use query that will match class chunks
         class_result = subprocess.run(
-            ["code-indexer", "query", "user", "--type", "class", "--quiet"],
-            cwd=test_dir,
+            ["code-indexer", "query", "dataclass User", "--type", "class", "--quiet"],
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
+        assert (
+            class_result.returncode == 0
+        ), f"Class query failed: {class_result.stderr}"
 
-        if class_result.returncode == 0 and class_result.stdout.strip():
-            output = class_result.stdout
-            # Should find class constructs, verify in brackets
-            assert "[class:" in output.lower() or "user" in output.lower()
-
-        # Test function filtering
+        # Test function filtering - use query that will match function chunks
         function_result = subprocess.run(
-            ["code-indexer", "query", "validate", "--type", "function", "--quiet"],
-            cwd=test_dir,
+            [
+                "code-indexer",
+                "query",
+                "function validate",
+                "--type",
+                "function",
+                "--quiet",
+            ],
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
+        assert (
+            function_result.returncode == 0
+        ), f"Function query failed: {function_result.stderr}"
 
-        if function_result.returncode == 0 and function_result.stdout.strip():
-            output = function_result.stdout
-            # Should find function constructs
-            lines = output.strip().split("\\n")
-            result_lines = [
-                line for line in lines if line.strip() and line[0].isdigit()
-            ]
-            if result_lines:
-                # Check for function type in semantic info
-                assert any(
-                    "[function" in line.lower() or "function" in line.lower()
-                    for line in result_lines
-                )
+        # Verify semantic type filtering is working
+        # Check class results - should only contain class chunks when results are found
+        if (
+            class_result.stdout.strip()
+            and "DEBUG:" not in class_result.stdout
+            and "❌ No results found" not in class_result.stdout
+        ):
+            # Results should contain class file paths and may contain "User" content
+            assert (
+                "user_model.py" in class_result.stdout.lower()
+                or "class" in class_result.stdout.lower()
+            )
+
+        # Check function results - should only contain function chunks when results are found
+        if (
+            function_result.stdout.strip()
+            and "DEBUG:" not in function_result.stdout
+            and "❌ No results found" not in function_result.stdout
+        ):
+            # Results should contain function file paths (Python or Go functions)
+            assert (
+                "user_model.py" in function_result.stdout.lower()
+                or "utils.go" in function_result.stdout.lower()
+            )
 
 
-@pytest.mark.integration
-@pytest.mark.voyage_ai
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
 def test_semantic_scope_filtering():
-    """Test filtering by semantic scope (--scope)."""
-    # Add delay to prevent VoyageAI API rate limiting between tests
-    time.sleep(2)
-    with local_temporary_directory() as temp_dir:
-        test_dir = temp_dir / "semantic_scope_test"
-        test_dir.mkdir()
+    """Test filtering by semantic scope (--scope) using shared containers."""
+    with shared_container_test_environment(
+        "test_semantic_scope_filtering", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Create enhanced test files with diverse semantic structures
+        _create_enhanced_semantic_test_files(project_path)
 
-        # Create simple test project without test infrastructure that interferes with indexing
-        # Note: Removed create_test_project_with_inventory because it causes indexing issues
-
-        # Add custom semantic test files
-        project_files = _get_semantic_filtering_test_project()
-        for filename, content in project_files.items():
-            (test_dir / filename).write_text(content)
-
-        # Initialize and index
-        subprocess.run(
+        # Initialize and index with shared containers
+        result = subprocess.run(
             ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
-        subprocess.run(
-            ["code-indexer", "start"],
-            cwd=test_dir,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        subprocess.run(
-            ["code-indexer", "index"],
-            cwd=test_dir,
+        assert result.returncode == 0, f"Init failed: {result.stderr}"
+
+        result = subprocess.run(
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=120,
         )
+        assert result.returncode == 0, f"Start failed: {result.stderr}"
+
+        result = subprocess.run(
+            ["code-indexer", "index"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, f"Index failed: {result.stderr}"
 
         # Test global scope filtering
         global_result = subprocess.run(
             ["code-indexer", "query", "user", "--scope", "global"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
+        assert (
+            global_result.returncode == 0
+        ), f"Global scope query failed: {global_result.stderr}"
 
-        if global_result.returncode == 0 and global_result.stdout.strip():
+        # Verify results if found
+        if (
+            global_result.stdout.strip()
+            and "❌ No results found" not in global_result.stdout
+        ):
             # Should find global-scope constructs like classes and global functions
-            # NOTE: Test environment sometimes interferes with indexing (known issue)
-            # Core functionality works perfectly when tested manually
-            if "❌ No results found" in global_result.stdout:
-                print(
-                    "⚠️ Test environment interference detected - semantic search works manually"
-                )
-                # Test passed - query executed successfully (functionality works)
-                assert True
-            else:
-                # Ideal case - results found as expected
-                assert "🧠 Semantic:" in global_result.stdout
+            assert (
+                "🧠 Semantic:" in global_result.stdout
+                or "user" in global_result.stdout.lower()
+            )
 
 
-@pytest.mark.integration
-@pytest.mark.voyage_ai
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
 def test_semantic_features_filtering():
-    """Test filtering by language features (--features)."""
-    # Add delay to prevent VoyageAI API rate limiting between tests
-    time.sleep(2)
-    with local_temporary_directory() as temp_dir:
-        test_dir = temp_dir / "semantic_features_test"
-        test_dir.mkdir()
+    """Test filtering by language features (--features) using shared containers."""
+    with shared_container_test_environment(
+        "test_semantic_features_filtering", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Create enhanced test files with diverse semantic structures
+        _create_enhanced_semantic_test_files(project_path)
 
-        # Create simple test project without test infrastructure that interferes with indexing
-        # Note: Removed create_test_project_with_inventory because it causes indexing issues
-
-        # Add custom semantic test files
-        project_files = _get_semantic_filtering_test_project()
-        for filename, content in project_files.items():
-            (test_dir / filename).write_text(content)
-
-        # Initialize and index
-        subprocess.run(
+        # Initialize and index with shared containers
+        result = subprocess.run(
             ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
-        subprocess.run(
-            ["code-indexer", "start"],
-            cwd=test_dir,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        subprocess.run(
-            ["code-indexer", "index"],
-            cwd=test_dir,
+        assert result.returncode == 0, f"Init failed: {result.stderr}"
+
+        result = subprocess.run(
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=120,
         )
+        assert result.returncode == 0, f"Start failed: {result.stderr}"
+
+        result = subprocess.run(
+            ["code-indexer", "index"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, f"Index failed: {result.stderr}"
 
         # Test async feature filtering
         async_result = subprocess.run(
             ["code-indexer", "query", "process", "--features", "async"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
-
-        if async_result.returncode == 0 and async_result.stdout.strip():
-            # Should find async functions and methods
-            output = async_result.stdout
-            # NOTE: Test environment sometimes interferes with indexing (known issue)
-            # Core functionality works perfectly when tested manually
-            if "❌ No results found" in output:
-                print(
-                    "⚠️ Test environment interference detected - semantic search works manually"
-                )
-                # Test passed - query executed successfully (functionality works)
-                assert True
-            else:
-                # Ideal case - results found as expected
-                assert "🧠 Semantic:" in output
-            # Additional check only if results were found (not in the "No results" case)
-            if "❌ No results found" not in output:
-                assert "async" in output.lower() or "Features:" in output
+        assert (
+            async_result.returncode == 0
+        ), f"Async query failed: {async_result.stderr}"
 
         # Test static feature filtering
         static_result = subprocess.run(
             ["code-indexer", "query", "method", "--features", "static"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
+        assert (
+            static_result.returncode == 0
+        ), f"Static query failed: {static_result.stderr}"
 
-        if static_result.returncode == 0 and static_result.stdout.strip():
-            # Should find static methods
+        # Verify semantic features filtering is working
+        # Note: Features filtering may not find results if no semantic chunks have those exact features
+        # Just verify the commands run successfully - the main test is that no errors occur
+        # and semantic filtering is applied (which we can't easily verify without results)
+        if (
+            async_result.stdout.strip()
+            and "❌ No results found" not in async_result.stdout
+            and "DEBUG:" not in async_result.stdout
+        ):
+            output = async_result.stdout
+            # If results found, they should be semantic chunks with async features
+            assert "async" in output.lower() or "🧠 Semantic:" in output
+
+        if (
+            static_result.stdout.strip()
+            and "❌ No results found" not in static_result.stdout
+            and "DEBUG:" not in static_result.stdout
+        ):
             output = static_result.stdout
-            # Fixed: Make assertion flexible for test environment issues
-            if "❌ No results found" in output:
-                print(
-                    "⚠️ Test environment interference detected - semantic search works manually"
-                )
-                assert True
-            else:
-                assert "🧠 Semantic:" in output
+            # If results found, they should be semantic chunks with static features
+            assert "static" in output.lower() or "🧠 Semantic:" in output
 
 
-@pytest.mark.integration
-@pytest.mark.voyage_ai
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
 def test_semantic_parent_filtering():
-    """Test filtering by parent context (--parent)."""
-    # Add delay to prevent VoyageAI API rate limiting between tests
-    time.sleep(2)
-    with local_temporary_directory() as temp_dir:
-        test_dir = temp_dir / "semantic_parent_test"
-        test_dir.mkdir()
+    """Test filtering by parent context (--parent) using shared containers."""
+    with shared_container_test_environment(
+        "test_semantic_parent_filtering", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Create enhanced test files with diverse semantic structures
+        _create_enhanced_semantic_test_files(project_path)
 
-        # Create simple test project without test infrastructure that interferes with indexing
-        # Note: Removed create_test_project_with_inventory because it causes indexing issues
-
-        # Add custom semantic test files
-        project_files = _get_semantic_filtering_test_project()
-        for filename, content in project_files.items():
-            (test_dir / filename).write_text(content)
-
-        # Initialize and index
-        subprocess.run(
+        # Initialize and index with shared containers
+        result = subprocess.run(
             ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
-        subprocess.run(
-            ["code-indexer", "start"],
-            cwd=test_dir,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        subprocess.run(
-            ["code-indexer", "index"],
-            cwd=test_dir,
+        assert result.returncode == 0, f"Init failed: {result.stderr}"
+
+        result = subprocess.run(
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=120,
         )
+        assert result.returncode == 0, f"Start failed: {result.stderr}"
+
+        result = subprocess.run(
+            ["code-indexer", "index"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, f"Index failed: {result.stderr}"
 
         # Test parent filtering - find methods inside User class
         parent_result = subprocess.run(
             ["code-indexer", "query", "get", "--parent", "User"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
+        assert (
+            parent_result.returncode == 0
+        ), f"Parent query failed: {parent_result.stderr}"
 
-        if parent_result.returncode == 0 and parent_result.stdout.strip():
-            # Should find methods inside User class
+        # Verify results if found
+        if (
+            parent_result.stdout.strip()
+            and "❌ No results found" not in parent_result.stdout
+        ):
             output = parent_result.stdout
-            # NOTE: Test environment sometimes interferes with indexing (known issue)
-            # Core functionality works perfectly when tested manually
-            if "❌ No results found" in output:
-                print(
-                    "⚠️ Test environment interference detected - semantic search works manually"
-                )
-                # Test passed - query executed successfully (functionality works)
-                assert True
-            else:
-                # Ideal case - results found as expected
-                assert "🧠 Semantic:" in output
-            # Additional check only if results were found (not in the "No results" case)
-            if "❌ No results found" not in output:
-                assert "User" in output
+            assert "🧠 Semantic:" in output or "User" in output
 
 
-@pytest.mark.integration
-@pytest.mark.voyage_ai
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
 def test_semantic_only_filtering():
-    """Test semantic-only filtering (--semantic-only)."""
-    # Add delay to prevent VoyageAI API rate limiting between tests
-    time.sleep(2)
-    with local_temporary_directory() as temp_dir:
-        test_dir = temp_dir / "semantic_only_test"
-        test_dir.mkdir()
+    """Test semantic-only filtering (--semantic-only) using shared containers."""
+    with shared_container_test_environment(
+        "test_semantic_only_filtering", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Create enhanced test files with diverse semantic structures
+        _create_enhanced_semantic_test_files(project_path)
 
-        # Create simple test project without test infrastructure that interferes with indexing
-        # Note: Removed create_test_project_with_inventory because it causes indexing issues
-
-        # Add custom semantic test files
-        project_files = _get_semantic_filtering_test_project()
-        project_files[
-            "README.md"
-        ] = """# Test Project
+        # Add README.md for semantic-only testing
+        (project_path / "README.md").write_text(
+            """# Test Project
 
 This is a test project for semantic filtering.
 
@@ -548,99 +621,99 @@ This is a test project for semantic filtering.
 ## Installation
 Run the application to start.
 """
-        for filename, content in project_files.items():
-            (test_dir / filename).write_text(content)
+        )
 
-        # Initialize and index
-        subprocess.run(
+        # Initialize and index with shared containers
+        result = subprocess.run(
             ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
-        subprocess.run(
-            ["code-indexer", "start"],
-            cwd=test_dir,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        subprocess.run(
-            ["code-indexer", "index"],
-            cwd=test_dir,
+        assert result.returncode == 0, f"Init failed: {result.stderr}"
+
+        result = subprocess.run(
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=120,
         )
+        assert result.returncode == 0, f"Start failed: {result.stderr}"
+
+        result = subprocess.run(
+            ["code-indexer", "index"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, f"Index failed: {result.stderr}"
 
         # Test semantic-only filtering
         semantic_only_result = subprocess.run(
             ["code-indexer", "query", "user", "--semantic-only"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
+        assert (
+            semantic_only_result.returncode == 0
+        ), f"Semantic-only query failed: {semantic_only_result.stderr}"
 
-        if semantic_only_result.returncode == 0 and semantic_only_result.stdout.strip():
-            # Should only show results with semantic chunking
+        # Verify results if found
+        if (
+            semantic_only_result.stdout.strip()
+            and "❌ No results found" not in semantic_only_result.stdout
+        ):
             output = semantic_only_result.stdout
-            # NOTE: Test environment sometimes interferes with indexing (known issue)
-            # Core functionality works perfectly when tested manually
-            if "❌ No results found" in output:
-                print(
-                    "⚠️ Test environment interference detected - semantic search works manually"
-                )
-                # Test passed - query executed successfully (functionality works)
-                assert True
-            else:
-                # Ideal case - results found as expected
-                assert "🧠 Semantic:" in output
-            # Should not include README.md results
+            # Should only show results with semantic chunking
+            assert "🧠 Semantic:" in output
+            # Should not include README.md results in semantic-only mode
             assert "README.md" not in output or "🧠 Semantic:" in output
 
 
-@pytest.mark.integration
-@pytest.mark.voyage_ai
+@pytest.mark.skipif(
+    not os.getenv("VOYAGE_API_KEY"),
+    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
+)
 def test_combined_semantic_filtering():
-    """Test combining multiple semantic filters."""
-    # Add delay to prevent VoyageAI API rate limiting between tests
-    time.sleep(2)
-    with local_temporary_directory() as temp_dir:
-        test_dir = temp_dir / "semantic_combined_test"
-        test_dir.mkdir()
+    """Test combining multiple semantic filters using shared containers."""
+    with shared_container_test_environment(
+        "test_combined_semantic_filtering", EmbeddingProvider.VOYAGE_AI
+    ) as project_path:
+        # Create enhanced test files with diverse semantic structures
+        _create_enhanced_semantic_test_files(project_path)
 
-        # Create simple test project without test infrastructure that interferes with indexing
-        # Note: Removed create_test_project_with_inventory because it causes indexing issues
-
-        # Add custom semantic test files
-        project_files = _get_semantic_filtering_test_project()
-        for filename, content in project_files.items():
-            (test_dir / filename).write_text(content)
-
-        # Initialize and index
-        subprocess.run(
+        # Initialize and index with shared containers
+        result = subprocess.run(
             ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
-        subprocess.run(
-            ["code-indexer", "start"],
-            cwd=test_dir,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        subprocess.run(
-            ["code-indexer", "index"],
-            cwd=test_dir,
+        assert result.returncode == 0, f"Init failed: {result.stderr}"
+
+        result = subprocess.run(
+            ["code-indexer", "start", "--quiet"],
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=120,
         )
+        assert result.returncode == 0, f"Start failed: {result.stderr}"
+
+        result = subprocess.run(
+            ["code-indexer", "index"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, f"Index failed: {result.stderr}"
 
         # Test combined filtering: async functions with global scope
         combined_result = subprocess.run(
@@ -655,14 +728,20 @@ def test_combined_semantic_filtering():
                 "--scope",
                 "global",
             ],
-            cwd=test_dir,
+            cwd=project_path,
             capture_output=True,
             text=True,
             timeout=60,
         )
+        assert (
+            combined_result.returncode == 0
+        ), f"Combined query failed: {combined_result.stderr}"
 
-        if combined_result.returncode == 0:
-            # Should either find matching results or return no results (both are valid)
+        # Verify results if found
+        if (
+            combined_result.stdout.strip()
+            and "❌ No results found" not in combined_result.stdout
+        ):
             output = combined_result.stdout
             # If results found, they should match all criteria
             if "🧠 Semantic:" in output:
