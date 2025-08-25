@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# GitHub CI script that emulates GitHub Actions workflow
-# Runs the same checks as GitHub Actions but locally (without publishing)
+# Fast automation script - comprehensive local testing
+# Runs all unit tests that don't require external services or special permissions
+# More comprehensive than GitHub Actions CI but faster than full-automation.sh
 
 set -e  # Exit on any error
 
@@ -13,7 +14,7 @@ if [[ -f ".env" ]]; then
     source .env
 fi
 
-echo "🚀 Starting GitHub CI pipeline (local)..."
+echo "🚀 Starting fast automation pipeline (local unit tests)..."
 echo "==========================================="
 
 # Colors for output
@@ -90,15 +91,10 @@ print_step "Running unit tests only (excluding E2E/integration tests)"
 echo "ℹ️  This matches GitHub Actions - only unit tests that don't require external services"
 echo "ℹ️  Using new organized test structure: tests/unit/ directory only"
 
-# Run ALL unit tests except those with global port registry permission issues
+# Run ALL unit tests that don't require external services
 if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest \
     tests/unit/ \
     -m "not slow and not e2e and not real_api and not integration" \
-    --ignore=tests/unit/infrastructure/test_data_cleaner_health.py \
-    --ignore=tests/unit/infrastructure/test_cleanup_validation.py \
-    --ignore=tests/unit/infrastructure/test_global_port_registry.py \
-    --ignore=tests/unit/infrastructure/test_broken_softlink_cleanup.py \
-    --ignore=tests/unit/infrastructure/test_real_world_path_walking.py \
     --cov=code_indexer \
     --cov-report=xml --cov-report=term; then
     print_success "Unit tests passed"
