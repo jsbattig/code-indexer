@@ -86,7 +86,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                     )
                     f.flush()
                 # Chunk the file
-                chunks = self.text_chunker.chunk_file(file_path)
+                chunks = self.fixed_size_chunker.chunk_file(file_path)
 
                 # Debug: Log completion of chunking
                 with open(debug_file, "a") as f:

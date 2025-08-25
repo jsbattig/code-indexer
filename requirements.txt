@@ -26,5 +26,3 @@ watchdog>=3.0.0
 # JSON schema validation
 jsonschema>=4.0.0
 
-# Tree-sitter language support for code parsing
-tree-sitter-language-pack==0.9.0

@@ -51,7 +51,7 @@ class TestFileReorganizer:
         self.directory_structure = {
             "unit": {
                 "parsers": "Language parsers and parsing logic",
-                "chunking": "Chunking and semantic chunking logic",
+                "chunking": "Fixed-size chunking logic",
                 "config": "Configuration management",
                 "cancellation": "Cancellation and interruption handling",
                 "services": "Service layer unit tests",
@@ -87,13 +87,11 @@ class TestFileReorganizer:
             # Unit test patterns
             "unit": {
                 "parsers": [
-                    r".*_semantic_parser\.py$",
                     r".*parser.*\.py$",
                     r"test_.*_parser\.py$",
                 ],
                 "chunking": [
                     r"test_.*chunk.*\.py$",
-                    r"test_semantic_chunk.*\.py$",
                     r"test_.*chunking.*\.py$",
                 ],
                 "config": [

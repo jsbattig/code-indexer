@@ -98,16 +98,16 @@ Controls indexing behavior and chunking strategies.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `chunk_size` | int | 1500 | Text chunk size in characters |
+| `chunk_size` | int | 1000 | Fixed chunk size in characters |
 | `chunk_overlap` | int | 150 | Overlap between chunks |
 | `max_file_size` | int | 1048576 | Max file size in bytes (1MB) |
 | `index_comments` | bool | True | Include comments in indexing |
-| `use_semantic_chunking` | bool | True | Use AST-based semantic chunking |
 
-**Chunking Strategy:**
-- Semantic chunking: Splits at function/class boundaries when possible
-- Character chunking: Falls back to character-based splitting
-- Overlap ensures context continuity
+**Fixed-Size Chunking Strategy:**
+- **Fixed chunk size**: Every chunk is exactly 1000 characters (except final chunk per file)
+- **Consistent overlap**: 150 characters overlap between adjacent chunks (15%)
+- **Simple arithmetic**: Next chunk starts 850 characters from current start (1000 - 150)
+- **Universal processing**: Works identically across all programming languages
 
 ## Timeout Configuration
 
@@ -326,8 +326,8 @@ Handles configuration loading, saving, and discovery.
     "max_queue": 256
   },
   "indexing": {
-    "chunk_size": 1500,
-    "use_semantic_chunking": true
+    "chunk_size": 1000,
+    "chunk_overlap": 150
   }
 }
 ```
@@ -341,7 +341,8 @@ Handles configuration loading, saving, and discovery.
     "hnsw_m": 48
   },
   "indexing": {
-    "chunk_size": 2000,
+    "chunk_size": 1000,
+    "chunk_overlap": 150,
     "max_file_size": 5242880
   }
 }
@@ -408,11 +409,10 @@ Handles configuration loading, saving, and discovery.
     "hnsw_m": 32
   },
   "indexing": {
-    "chunk_size": 1500,
+    "chunk_size": 1000,
     "chunk_overlap": 150,
     "max_file_size": 1048576,
-    "index_comments": true,
-    "use_semantic_chunking": true
+    "index_comments": true
   },
   "timeouts": {
     "service_startup": 240,

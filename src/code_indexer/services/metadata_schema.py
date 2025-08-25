@@ -16,9 +16,9 @@ class MetadataSchemaVersion:
     LEGACY = "1.0"  # Original file-based metadata
     GIT_AWARE = "2.0"  # Git-aware metadata with branch/commit info
     BRANCH_TOPOLOGY = "3.0"  # Branch topology with working directory support
-    SEMANTIC_AWARE = "4.0"  # Semantic chunking with AST-based metadata
+    FIXED_SIZE = "5.0"  # Fixed-size chunking with consistent metadata
 
-    CURRENT = SEMANTIC_AWARE
+    CURRENT = FIXED_SIZE
 
 
 class GitAwareMetadataSchema:
@@ -72,22 +72,13 @@ class GitAwareMetadataSchema:
         "filesystem_size",  # File size from filesystem
     }
 
-    # Semantic chunking fields (optional, when semantic_chunking=True)
-    SEMANTIC_FIELDS = {
-        "semantic_chunking",  # Boolean: whether this chunk uses semantic chunking
-        "semantic_type",  # String: "function", "class", "method", "interface", etc.
-        "semantic_name",  # String: name of the semantic unit
-        "semantic_path",  # String: full path like "ClassName.methodName"
-        "semantic_signature",  # String: function/method signature
-        "semantic_parent",  # String: parent context
-        "semantic_context",  # Dict: additional context (decorators, imports, etc.)
-        "semantic_scope",  # String: "global", "class", "function", "module"
-        "semantic_language_features",  # List: language-specific features
-        # Split tracking for large objects
-        "is_split_object",  # Boolean: whether this is part of a split object
-        "part_number",  # Integer: part number if split
-        "total_parts",  # Integer: total parts if split
-        "part_of_total",  # String: "1 of 3" format
+    # Fixed-size chunking fields (consistent metadata for all chunks)
+    CHUNKING_FIELDS = {
+        "chunk_size",  # Integer: actual size of the chunk in characters
+        "chunk_start_pos",  # Integer: start position in the file
+        "chunk_end_pos",  # Integer: end position in the file
+        "overlap_start",  # Integer: overlap start position (if any)
+        "overlap_end",  # Integer: overlap end position (if any)
     }
 
     # All possible fields
@@ -97,7 +88,7 @@ class GitAwareMetadataSchema:
         | WORKING_DIR_FIELDS
         | FILESYSTEM_FIELDS
         | LINE_NUMBER_FIELDS
-        | SEMANTIC_FIELDS
+        | CHUNKING_FIELDS
     )
 
     @classmethod

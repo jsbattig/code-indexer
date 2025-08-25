@@ -162,10 +162,6 @@ class IndexingConfig(BaseModel):
     index_comments: bool = Field(
         default=True, description="Include comments in indexing"
     )
-    use_semantic_chunking: bool = Field(
-        default=True,
-        description="Use AST-based semantic chunking for supported languages",
-    )
 
 
 class TimeoutsConfig(BaseModel):

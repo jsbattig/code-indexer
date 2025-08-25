@@ -351,55 +351,21 @@ def _passes_semantic_filters(
     semantic_only: bool,
 ) -> bool:
     """Check if a search result passes semantic filtering criteria."""
-    # Get semantic metadata from payload
-    is_semantic = payload.get("semantic_chunking", False)
+    # Note: With fixed-size chunking, no chunks have semantic metadata
+    # This function now serves as backward compatibility for old indexes
+    # and will always return True for fixed-size chunks
 
-    # If semantic_only is True, exclude non-semantic chunks
-    if semantic_only and not is_semantic:
+    # If structured filters are requested, return False since fixed-size chunking
+    # doesn't provide structured metadata
+    if semantic_only:
         return False
 
-    # If this is not a semantic chunk and semantic filters are specified, exclude it
-    if not is_semantic and any(
-        [semantic_type, semantic_scope, semantic_features, semantic_parent]
-    ):
+    # If any structured filters are specified, return False since fixed-size chunking
+    # doesn't provide structured metadata
+    if any([semantic_type, semantic_scope, semantic_features, semantic_parent]):
         return False
 
-    # If this is not a semantic chunk and no semantic filters specified, include it
-    if not is_semantic:
-        return True
-
-    # Filter by semantic type
-    if semantic_type:
-        result_type = payload.get("semantic_type", "")
-        if not result_type or result_type.lower() != semantic_type.lower():
-            return False
-
-    # Filter by semantic scope
-    if semantic_scope:
-        result_scope = payload.get("semantic_scope", "")
-        if not result_scope or result_scope.lower() != semantic_scope.lower():
-            return False
-
-    # Filter by semantic parent
-    if semantic_parent:
-        result_parent = payload.get("semantic_parent", "")
-        if not result_parent or semantic_parent.lower() not in result_parent.lower():
-            return False
-
-    # Filter by semantic features
-    if semantic_features:
-        result_features = payload.get("semantic_language_features", [])
-        if not result_features:
-            return False
-
-        # Parse requested features (comma-separated)
-        requested_features = [f.strip().lower() for f in semantic_features.split(",")]
-        result_features_lower = [f.lower() for f in result_features]
-
-        # Check if any of the requested features are present
-        if not any(feature in result_features_lower for feature in requested_features):
-            return False
-
+    # All fixed-size chunks pass when no structured filters are specified
     return True
 
 
@@ -601,7 +567,7 @@ def cli(
       • exclude_dirs: Folders to skip (e.g., ["node_modules", "dist"])
       • file_extensions: File types to index (e.g., ["py", "js", "ts"])
       • max_file_size: Maximum file size in bytes (default: 1MB)
-      • chunk_size: Text chunk size for processing (default: 1500)
+      • chunking: Fixed 1000-character chunks with 150-character overlap
 
       Exclusions also respect .gitignore patterns automatically.
 
@@ -693,9 +659,6 @@ def cli(
     help="Maximum file size to index (bytes, default: 1048576)",
 )
 @click.option(
-    "--chunk-size", type=int, help="Text chunk size in characters (default: 1500)"
-)
-@click.option(
     "--embedding-provider",
     type=click.Choice(["ollama", "voyage-ai"]),
     default="ollama",
@@ -735,7 +698,6 @@ def init(
     codebase_dir: Optional[str],
     force: bool,
     max_file_size: Optional[int],
-    chunk_size: Optional[int],
     embedding_provider: str,
     voyage_model: str,
     interactive: bool,
@@ -758,7 +720,7 @@ def init(
       • Exclude directories: Edit exclude_dirs in config.json
       • File types: Modify file_extensions array
       • Size limits: Use --max-file-size or edit config.json
-      • Chunking: Use --chunk-size for text processing
+      • Chunking: Fixed 1000-character chunks (not configurable)
 
     \b
     DEFAULT EXCLUSIONS:
@@ -943,12 +905,9 @@ def init(
             updates["qdrant"] = qdrant_config
 
         # Indexing configuration updates
-        if max_file_size is not None or chunk_size is not None:
+        if max_file_size is not None:
             indexing_config = config.indexing.model_dump()
-            if max_file_size is not None:
-                indexing_config["max_file_size"] = max_file_size
-            if chunk_size is not None:
-                indexing_config["chunk_size"] = chunk_size
+            indexing_config["max_file_size"] = max_file_size
             updates["indexing"] = indexing_config
 
         # Validate and process Qdrant segment size
@@ -990,7 +949,9 @@ def init(
         )
         console.print(f"📁 Codebase directory: {config.codebase_dir}")
         console.print(f"📏 Max file size: {config.indexing.max_file_size:,} bytes")
-        console.print(f"📦 Chunk size: {config.indexing.chunk_size:,} characters")
+        console.print(
+            "📦 Chunking: Fixed 1000-character chunks with 150-character overlap"
+        )
 
         # Show configured embedding provider
         provider_name = config.embedding_provider
@@ -2006,7 +1967,7 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
 @click.option(
     "--semantic-only",
     is_flag=True,
-    help="Only show results from semantic chunking (exclude text chunks)",
+    help="Only show results with structured code metadata (exclude plain text matches)",
 )
 @click.option(
     "--quiet",
@@ -2052,12 +2013,12 @@ def query(
       • Accuracy: --accuracy high (higher accuracy, slower search)
 
     \b
-    SEMANTIC FILTERING (AST-based):
-      • Type: --type class (only classes)
-      • Scope: --scope global (only global-level constructs)
-      • Features: --features async,static (functions with specific features)
-      • Parent: --parent User (only code inside User class)
-      • Semantic only: --semantic-only (exclude text chunks)
+    RESULT FILTERING (Code Structure):
+      • Type: --type class (filter to only classes/functions/etc)
+      • Scope: --scope global (filter by code scope level)
+      • Features: --features async,static (filter by language features)
+      • Parent: --parent User (filter by parent context like class name)
+      • Structured only: --semantic-only (exclude plain text matches)
 
     \b
     QUERY EXAMPLES:
@@ -2068,7 +2029,7 @@ def query(
       "unit test mock"                   # Find mocking in tests
 
     \b
-    SEMANTIC SEARCH EXAMPLES:
+    FILTERED SEARCH EXAMPLES:
       code-indexer query "login" --type function
       code-indexer query "user" --type class --scope global
       code-indexer query "save" --parent User --features async
@@ -2076,7 +2037,7 @@ def query(
       code-indexer query "api" --features static,public
 
     \b
-    TRADITIONAL EXAMPLES:
+    BASIC EXAMPLES:
       code-indexer query "user login"
       code-indexer query "database" --language python
       code-indexer query "test" --path */tests/* --limit 5
@@ -2136,9 +2097,7 @@ def query(
         # Check if project uses git-aware indexing
         from .services.git_topology_service import GitTopologyService
         from .services.branch_aware_indexer import BranchAwareIndexer
-        from .indexing.chunker import TextChunker
-        from .indexing.semantic_chunker import SemanticChunker
-        from typing import Union
+        from .indexing.fixed_size_chunker import FixedSizeChunker
 
         git_topology_service = GitTopologyService(config.codebase_dir)
         is_git_aware = git_topology_service.is_git_available()
@@ -2146,14 +2105,10 @@ def query(
         # Initialize query service based on project type
         if is_git_aware:
             # Use branch-aware indexer for git projects
-            # Use semantic chunker if enabled, otherwise text chunker
-            text_chunker: Union[TextChunker, SemanticChunker]
-            if config.indexing.use_semantic_chunking:
-                text_chunker = SemanticChunker(config.indexing)
-            else:
-                text_chunker = TextChunker(config.indexing)
+            # Use fixed-size chunker for all processing
+            fixed_size_chunker = FixedSizeChunker(config.indexing)
             branch_aware_indexer = BranchAwareIndexer(
-                qdrant_client, embedding_provider, text_chunker, config
+                qdrant_client, embedding_provider, fixed_size_chunker, config
             )
             current_branch = git_topology_service.get_current_branch() or "master"
             use_branch_aware_query = True
@@ -2388,20 +2343,8 @@ def query(
                 file_path_with_lines = file_path
 
             if quiet:
-                # Quiet mode - minimal output: score, path with line numbers, semantic info (if available)
-                semantic_chunking = payload.get("semantic_chunking", False)
-                semantic_info_quiet = ""
-                if semantic_chunking:
-                    semantic_type = payload.get("semantic_type", "")
-                    semantic_name = payload.get("semantic_name", "")
-                    if semantic_type and semantic_name:
-                        semantic_info_quiet = f" [{semantic_type}: {semantic_name}]"
-                    elif semantic_type:
-                        semantic_info_quiet = f" [{semantic_type}]"
-
-                console.print(
-                    f"{score:.3f} {file_path_with_lines}{semantic_info_quiet}"
-                )
+                # Quiet mode - minimal output: score, path with line numbers
+                console.print(f"{score:.3f} {file_path_with_lines}")
                 if content:
                     # Show content with line numbers in quiet mode
                     content_to_display = content[:500]
@@ -2454,42 +2397,7 @@ def query(
                 metadata_info += f" | 🏗️  Project: {project_id}"
                 console.print(metadata_info)
 
-                # Semantic information display (when available)
-                semantic_chunking = payload.get("semantic_chunking", False)
-                if semantic_chunking:
-                    semantic_type = payload.get("semantic_type", "unknown")
-                    semantic_name = payload.get("semantic_name", "")
-                    semantic_parent = payload.get("semantic_parent", "")
-                    semantic_scope = payload.get("semantic_scope", "")
-                    semantic_signature = payload.get("semantic_signature", "")
-                    semantic_features = payload.get("semantic_language_features", [])
-
-                    # Create semantic info display
-                    semantic_info = f"🧠 Semantic: {semantic_type}"
-                    if semantic_name:
-                        semantic_info += f" '{semantic_name}'"
-                    if semantic_parent:
-                        semantic_info += f" in {semantic_parent}"
-                    if semantic_scope and semantic_scope != "global":
-                        semantic_info += f" | 🔍 Scope: {semantic_scope}"
-                    if semantic_features:
-                        features_str = ", ".join(
-                            semantic_features[:3]
-                        )  # Show first 3 features
-                        if len(semantic_features) > 3:
-                            features_str += f" (+{len(semantic_features) - 3} more)"
-                        semantic_info += f" | 🏷️ Features: {features_str}"
-
-                    console.print(f"[bold green]{semantic_info}[/bold green]")
-
-                    # Show semantic signature if available and different from name
-                    if semantic_signature and semantic_signature != semantic_name:
-                        signature_display = semantic_signature
-                        if len(signature_display) > 80:
-                            signature_display = signature_display[:77] + "..."
-                        console.print(
-                            f"📝 Signature: [italic]{signature_display}[/italic]"
-                        )
+                # Note: Fixed-size chunking no longer provides semantic metadata
 
                 # Content preview with line numbers
                 if content:
@@ -3631,7 +3539,7 @@ def _status_impl(ctx, force_docker: bool):
         table.add_row(
             "File Limits",
             "📏",
-            f"Max size: {config.indexing.max_file_size:,} bytes | Chunk: {config.indexing.chunk_size:,} chars",
+            f"Max size: {config.indexing.max_file_size:,} bytes | Fixed 1000-char chunks",
         )
 
         console.print(table)

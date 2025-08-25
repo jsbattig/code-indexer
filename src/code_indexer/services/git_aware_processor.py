@@ -51,7 +51,7 @@ class GitAwareDocumentProcessor(DocumentProcessor):
         """Process a single file with git-aware metadata using parallel vector calculation."""
         try:
             # Step 1: File reading & chunking (main thread)
-            chunks = self.text_chunker.chunk_file(file_path)
+            chunks = self.fixed_size_chunker.chunk_file(file_path)
 
             if not chunks:
                 return []

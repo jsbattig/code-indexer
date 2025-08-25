@@ -4,11 +4,11 @@ AI-powered semantic code search for your codebase. Find code by meaning, not jus
 
 ## Features
 
-- **Semantic Search** - Find code by meaning using vector embeddings and AST-based semantic chunking
+- **Semantic Search** - Find code by meaning using vector embeddings and fixed-size chunking
 - **Multiple Providers** - Local (Ollama) or cloud (VoyageAI) embeddings  
 - **Smart Indexing** - Incremental updates, git-aware, multi-project support
 - **Semantic Filtering** - Filter by code constructs (classes, functions), scope, language features
-- **Multi-Language Support** - AST parsing for Python, JavaScript, TypeScript, Java, C#, Go, Kotlin, Groovy, Pascal/Delphi, SQL, C, C++, Rust, Swift, Ruby, Lua, HTML, CSS, YAML, XML
+- **Multi-Language Support** - Universal text processing for Python, JavaScript, TypeScript, Java, C#, Go, Kotlin, Groovy, Pascal/Delphi, SQL, C, C++, Rust, Swift, Ruby, Lua, HTML, CSS, YAML, XML
 - **CLI Interface** - Simple commands with progress indicators
 - **AI Analysis** - Integrates with Claude CLI for code analysis with semantic search
 - **Privacy Options** - Full local processing or cloud for better performance
@@ -151,7 +151,7 @@ code-indexer query "save" --path "*/models/*" # Filter by path pattern
 code-indexer query "class" --type class       # Filter by code construct
 code-indexer query "async" --features async   # Filter by language feature
 code-indexer query "auth" --scope global      # Filter by scope
-code-indexer query "function" --semantic-only # Only semantic chunks
+code-indexer query "function" --min-score 0.7  # Higher confidence matches
 code-indexer query "test" --min-score 0.8     # High-confidence matches
 
 # Short alias
@@ -262,39 +262,67 @@ The system runs at full speed by default and only backs off when rate limits are
 Configuration is stored in `.code-indexer/config.json`:
 - `file_extensions`: File types to index
 - `exclude_dirs`: Directories to skip  
-- `chunk_size`: Text chunk size
+- `chunk_size`: Text chunk size (default: 1000 characters)
+- `chunk_overlap`: Text chunk overlap in characters (default: 150)
 - `embedding_provider`: ollama or voyage-ai
-- `use_semantic_chunking`: Enable AST-based semantic chunking (default: true)
 - `max_file_size`: Maximum file size in bytes (default: 1MB)
+
+### Text Chunking Strategy
+
+Code Indexer uses a **fixed-size chunking approach** with smart overlap for optimal search results:
+
+**How it works:**
+- **Fixed chunk size**: Every chunk contains exactly 1000 characters
+- **Consistent overlap**: 150 characters overlap between adjacent chunks (15%)
+- **Simple arithmetic**: Next chunk starts 850 characters from current start position
+- **Predictable results**: No complex parsing, just reliable text segmentation
+
+**Example chunking:**
+```
+Chunk 1: characters 0-999     (1000 chars)
+Chunk 2: characters 850-1849  (1000 chars, overlaps 150 chars with Chunk 1)
+Chunk 3: characters 1700-2699 (1000 chars, overlaps 150 chars with Chunk 2)
+```
+
+**Benefits:**
+- **Fast processing**: No AST parsing overhead, pure text operations
+- **Consistent quality**: Every chunk provides meaningful context
+- **Universal compatibility**: Works identically across all programming languages
+- **Reliable search**: Returns complete code sections, not fragments
 
 ## Supported Languages
 
-Code Indexer provides AST-based semantic chunking for comprehensive code understanding:
+Code Indexer provides fixed-size chunking with intelligent text processing for all supported languages:
 
-| Language | File Extensions | Semantic Features |
+| Language | File Extensions | Text Processing |
 |----------|----------------|-------------------|
-| **Python** | `.py` | Classes, functions, methods, decorators, async/await |
-| **JavaScript** | `.js`, `.jsx` | Classes, functions, arrow functions, async/await, JSX |
-| **TypeScript** | `.ts`, `.tsx` | Interfaces, types, generics, decorators, JSX |
-| **Java** | `.java` | Classes, interfaces, methods, annotations, generics |
-| **C#** | `.cs` | Classes, interfaces, methods, properties, namespaces, attributes |
-| **Go** | `.go` | Structs, interfaces, functions, methods, goroutines |
-| **Kotlin** | `.kt`, `.kts` | Classes, data classes, objects, extension functions |
-| **Groovy** | `.groovy`, `.gradle`, `.gvy`, `.gy` | Classes, traits, closures, DSL patterns, Gradle scripts |
-| **Pascal/Delphi** | `.pas`, `.pp`, `.dpr`, `.dpk`, `.inc` | Units, classes, procedures, functions, properties |
-| **SQL** | `.sql` | Tables, views, indexes, procedures, functions, triggers, CTEs |
-| **C** | `.c`, `.h` | Structs, unions, functions, enums, typedefs, preprocessor directives |
-| **C++** | `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx` | Classes, templates, namespaces, operators, inheritance, RAII |
-| **Rust** | `.rs` | Structs, enums, traits, impl blocks, functions, modules, lifetimes |
-| **Swift** | `.swift` | Classes, structs, protocols, extensions, enums, generics, property wrappers |
-| **Ruby** | `.rb`, `.rake`, `.gemspec` | Classes, modules, methods, blocks, mixins, metaprogramming |
-| **Lua** | `.lua` | Functions, tables, modules, methods, local/global scope |
-| **HTML** | `.html`, `.htm` | Elements, attributes, scripts, styles, comments, document structure |
-| **CSS** | `.css`, `.scss`, `.sass` | Selectors, rules, media queries, at-rules, animations, variables |
-| **YAML** | `.yaml`, `.yml` | Mappings, sequences, anchors, aliases, multi-document |
-| **XML** | `.xml`, `.xsd`, `.xsl`, `.xslt` | Elements, attributes, namespaces, CDATA, processing instructions |
+| **Python** | `.py` | Fixed-size chunks with consistent overlap |
+| **JavaScript** | `.js`, `.jsx` | Fixed-size chunks with consistent overlap |
+| **TypeScript** | `.ts`, `.tsx` | Fixed-size chunks with consistent overlap |
+| **Java** | `.java` | Fixed-size chunks with consistent overlap |
+| **C#** | `.cs` | Fixed-size chunks with consistent overlap |
+| **Go** | `.go` | Fixed-size chunks with consistent overlap |
+| **Kotlin** | `.kt`, `.kts` | Fixed-size chunks with consistent overlap |
+| **Groovy** | `.groovy`, `.gradle`, `.gvy`, `.gy` | Fixed-size chunks with consistent overlap |
+| **Pascal/Delphi** | `.pas`, `.pp`, `.dpr`, `.dpk`, `.inc` | Fixed-size chunks with consistent overlap |
+| **SQL** | `.sql` | Fixed-size chunks with consistent overlap |
+| **C** | `.c`, `.h` | Fixed-size chunks with consistent overlap |
+| **C++** | `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx` | Fixed-size chunks with consistent overlap |
+| **Rust** | `.rs` | Fixed-size chunks with consistent overlap |
+| **Swift** | `.swift` | Fixed-size chunks with consistent overlap |
+| **Ruby** | `.rb`, `.rake`, `.gemspec` | Fixed-size chunks with consistent overlap |
+| **Lua** | `.lua` | Fixed-size chunks with consistent overlap |
+| **HTML** | `.html`, `.htm` | Fixed-size chunks with consistent overlap |
+| **CSS** | `.css`, `.scss`, `.sass` | Fixed-size chunks with consistent overlap |
+| **YAML** | `.yaml`, `.yml` | Fixed-size chunks with consistent overlap |
+| **XML** | `.xml`, `.xsd`, `.xsl`, `.xslt` | Fixed-size chunks with consistent overlap |
 
-All parsers include robust ERROR node handling to extract meaningful constructs even from malformed code.
+**Fixed-Size Chunking Benefits:**
+- **Consistent chunk sizes**: Every chunk is exactly 1000 characters (except final chunk per file)
+- **Predictable overlap**: 150 characters overlap between adjacent chunks (15%)
+- **Fast processing**: No complex parsing overhead
+- **Reliable search results**: Complete code sections, not fragments
+- **Universal support**: Works identically across all programming languages
 
 ### Containerized Services
 

@@ -13,9 +13,7 @@ from ..services.vector_calculation_manager import (
     get_default_thread_count,
 )
 from .file_finder import FileFinder
-from .chunker import TextChunker
-from .semantic_chunker import SemanticChunker
-from typing import Union
+from .fixed_size_chunker import FixedSizeChunker
 
 
 @dataclass
@@ -56,13 +54,8 @@ class DocumentProcessor:
         self.embedding_provider = embedding_provider
         self.qdrant_client = qdrant_client
         self.file_finder = FileFinder(config)
-        # Use semantic chunker if enabled, otherwise text chunker
-        # Note: We assign to self.text_chunker for compatibility, but it may be a SemanticChunker
-        self.text_chunker: Union[TextChunker, SemanticChunker]
-        if config.indexing.use_semantic_chunking:
-            self.text_chunker = SemanticChunker(config.indexing)
-        else:
-            self.text_chunker = TextChunker(config.indexing)
+        # Use fixed-size chunker for all processing
+        self.fixed_size_chunker = FixedSizeChunker(config.indexing)
 
     def process_file(self, file_path: Path) -> List[Dict[str, Any]]:
         """DEPRECATED: Use process_files_high_throughput instead."""
@@ -76,7 +69,7 @@ class DocumentProcessor:
         """Process a single file using parallel vector calculation."""
         try:
             # Step 1: File reading & chunking (main thread)
-            chunks = self.text_chunker.chunk_file(file_path)
+            chunks = self.fixed_size_chunker.chunk_file(file_path)
 
             if not chunks:
                 return []
@@ -99,25 +92,7 @@ class DocumentProcessor:
                     "line_end": chunk["line_end"],  # Line number metadata
                 }
 
-                # Add semantic metadata if available
-                if chunk.get("semantic_chunking", False):
-                    chunk_metadata.update(
-                        {
-                            "semantic_chunking": chunk["semantic_chunking"],
-                            "semantic_type": chunk.get("semantic_type"),
-                            "semantic_name": chunk.get("semantic_name"),
-                            "semantic_path": chunk.get("semantic_path"),
-                            "semantic_signature": chunk.get("semantic_signature"),
-                            "semantic_parent": chunk.get("semantic_parent"),
-                            "semantic_context": chunk.get("semantic_context", {}),
-                            "semantic_scope": chunk.get("semantic_scope"),
-                            "semantic_language_features": chunk.get(
-                                "semantic_language_features", []
-                            ),
-                        }
-                    )
-                else:
-                    chunk_metadata["semantic_chunking"] = False
+                # Note: Fixed-size chunking doesn't require structured metadata
 
                 # Submit to vector calculation manager
                 future = vector_manager.submit_chunk(chunk["text"], chunk_metadata)
@@ -147,41 +122,9 @@ class DocumentProcessor:
                         "indexed_at": vector_result.metadata["indexed_at"],
                         "line_start": vector_result.metadata["line_start"],
                         "line_end": vector_result.metadata["line_end"],
-                        "semantic_chunking": vector_result.metadata.get(
-                            "semantic_chunking", False
-                        ),
                     }
 
-                    # Add semantic metadata if available
-                    if vector_result.metadata.get("semantic_chunking", False):
-                        payload.update(
-                            {
-                                "semantic_type": vector_result.metadata.get(
-                                    "semantic_type"
-                                ),
-                                "semantic_name": vector_result.metadata.get(
-                                    "semantic_name"
-                                ),
-                                "semantic_path": vector_result.metadata.get(
-                                    "semantic_path"
-                                ),
-                                "semantic_signature": vector_result.metadata.get(
-                                    "semantic_signature"
-                                ),
-                                "semantic_parent": vector_result.metadata.get(
-                                    "semantic_parent"
-                                ),
-                                "semantic_context": vector_result.metadata.get(
-                                    "semantic_context", {}
-                                ),
-                                "semantic_scope": vector_result.metadata.get(
-                                    "semantic_scope"
-                                ),
-                                "semantic_language_features": vector_result.metadata.get(
-                                    "semantic_language_features", []
-                                ),
-                            }
-                        )
+                    # Note: Fixed-size chunking provides consistent metadata only
 
                     point = self.qdrant_client.create_point(
                         vector=vector_result.embedding,

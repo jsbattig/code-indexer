@@ -101,14 +101,14 @@ class BranchAwareIndexer:
         self,
         qdrant_client,
         embedding_provider,
-        text_chunker,
+        fixed_size_chunker,
         config,
         progress_log=None,
         progressive_metadata=None,
     ):
         self.qdrant_client = qdrant_client
         self.embedding_provider = embedding_provider
-        self.text_chunker = text_chunker
+        self.fixed_size_chunker = fixed_size_chunker
         self.config = config
         self.codebase_dir = Path(config.codebase_dir)
 
@@ -485,7 +485,7 @@ class BranchAwareIndexer:
                         )
                         f.flush()
 
-                    chunks = self.text_chunker.chunk_file(full_path)
+                    chunks = self.fixed_size_chunker.chunk_file(full_path)
 
                     with open(debug_file, "a") as f:
                         f.write(
@@ -538,33 +538,11 @@ class BranchAwareIndexer:
 
                     # Always use parallel processing - no fallbacks needed
                     for chunk_idx, chunk in enumerate(chunks):
-                        # Prepare metadata including semantic data
+                        # Prepare metadata for fixed-size chunks
                         chunk_metadata = {
                             "file_path": file_path,
                             "chunk_index": chunk_idx,
-                            "semantic_chunking": chunk.get("semantic_chunking", False),
                         }
-
-                        # Add semantic metadata if available
-                        if chunk.get("semantic_chunking", False):
-                            chunk_metadata.update(
-                                {
-                                    "semantic_type": chunk.get("semantic_type"),
-                                    "semantic_name": chunk.get("semantic_name"),
-                                    "semantic_path": chunk.get("semantic_path"),
-                                    "semantic_signature": chunk.get(
-                                        "semantic_signature"
-                                    ),
-                                    "semantic_parent": chunk.get("semantic_parent"),
-                                    "semantic_context": chunk.get(
-                                        "semantic_context", {}
-                                    ),
-                                    "semantic_scope": chunk.get("semantic_scope"),
-                                    "semantic_language_features": chunk.get(
-                                        "semantic_language_features", []
-                                    ),
-                                }
-                            )
 
                         # Submit chunk for parallel processing (don't wait for result yet)
                         future = vector_manager.submit_chunk(
@@ -940,25 +918,7 @@ class BranchAwareIndexer:
             "project_id": project_id,  # Project identifier
         }
 
-        # Add semantic metadata if available
-        if vector_metadata and vector_metadata.get("semantic_chunking", False):
-            payload.update(
-                {
-                    "semantic_chunking": vector_metadata["semantic_chunking"],
-                    "semantic_type": vector_metadata.get("semantic_type"),
-                    "semantic_name": vector_metadata.get("semantic_name"),
-                    "semantic_path": vector_metadata.get("semantic_path"),
-                    "semantic_signature": vector_metadata.get("semantic_signature"),
-                    "semantic_parent": vector_metadata.get("semantic_parent"),
-                    "semantic_context": vector_metadata.get("semantic_context", {}),
-                    "semantic_scope": vector_metadata.get("semantic_scope"),
-                    "semantic_language_features": vector_metadata.get(
-                        "semantic_language_features", []
-                    ),
-                }
-            )
-        else:
-            payload["semantic_chunking"] = False
+        # Note: Fixed-size chunks don't have structured metadata
 
         # Get embedding model name for metadata
         embedding_model = self.embedding_provider.get_current_model()

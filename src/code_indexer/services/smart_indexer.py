@@ -112,7 +112,7 @@ class SmartIndexer(HighThroughputProcessor):
         self.branch_aware_indexer = BranchAwareIndexer(
             qdrant_client,
             embedding_provider,
-            self.text_chunker,
+            self.fixed_size_chunker,
             config,
             progress_log=self.progress_log,
             progressive_metadata=self.progressive_metadata,
