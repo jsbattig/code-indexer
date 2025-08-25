@@ -264,7 +264,7 @@ venv/
 
         # Mock chunker to raise an exception
         with patch.object(
-            processor.text_chunker,
+            processor.fixed_size_chunker,
             "chunk_file",
             side_effect=Exception("Chunking failed"),
         ):

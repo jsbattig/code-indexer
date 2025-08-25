@@ -242,7 +242,7 @@ class TestClass_{i}:
         branch_indexer = BranchAwareIndexer(
             qdrant_client=self.mock_qdrant,
             embedding_provider=self.mock_embedding_provider,
-            text_chunker=Mock(),  # We'll mock chunking
+            fixed_size_chunker=Mock(),  # We'll mock chunking
             config=self.config,
         )
 
@@ -259,7 +259,7 @@ class TestClass_{i}:
                 }
             )
 
-        branch_indexer.text_chunker.chunk_file.return_value = mock_chunks
+        branch_indexer.fixed_size_chunker.chunk_file.return_value = mock_chunks
 
         # Also mock other required dependencies
         branch_indexer.file_identifier = Mock()

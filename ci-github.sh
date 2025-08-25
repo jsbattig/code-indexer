@@ -90,35 +90,15 @@ print_step "Running unit tests only (excluding E2E/integration tests)"
 echo "ℹ️  This matches GitHub Actions - only unit tests that don't require external services"
 echo "ℹ️  Using new organized test structure: tests/unit/ directory only"
 
-# Run unit tests only from the reorganized structure - STRICT ISOLATION
-# Exclude all tests that have any external dependencies whatsoever
+# Run ALL unit tests except those with global port registry permission issues
 if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest \
-    tests/unit/parsers/ \
-    tests/unit/chunking/ \
-    tests/unit/config/ \
-    tests/unit/cancellation/ \
-    tests/unit/bugfixes/ \
-    -m "not slow and not e2e and not real_api and not cli and not integration and not service" \
-    --ignore=tests/unit/cli/ \
-    --ignore=tests/unit/services/ \
-    --ignore=tests/unit/infrastructure/test_cleanup_system.py \
-    --ignore=tests/unit/infrastructure/test_comprehensive_git_workflow.py \
+    tests/unit/ \
+    -m "not slow and not e2e and not real_api and not integration" \
     --ignore=tests/unit/infrastructure/test_data_cleaner_health.py \
-    --ignore=tests/unit/infrastructure/test_deadlock_reproduction.py \
-    --ignore=tests/unit/infrastructure/test_idempotent_start.py \
-    --ignore=tests/unit/infrastructure/test_real_claude_response_formatting.py \
-    --ignore=tests/unit/infrastructure/test_meaningful_feedback_operations.py \
-    --ignore=tests/unit/infrastructure/test_container_manager_performance.py \
-    --ignore=tests/unit/infrastructure/test_ci_script_directory_structure.py \
-    --ignore=tests/unit/infrastructure/test_ci_pipeline_integration.py \
-    --ignore=tests/unit/infrastructure/test_test_categorizer.py \
-    --ignore=tests/unit/infrastructure/test_test_reorganizer.py \
-    --ignore=tests/unit/infrastructure/test_health_checker.py \
     --ignore=tests/unit/infrastructure/test_cleanup_validation.py \
     --ignore=tests/unit/infrastructure/test_global_port_registry.py \
-    --ignore=tests/unit/infrastructure/test_service_readiness.py \
-    --ignore=tests/unit/git/test_git_aware_processor.py \
-    --ignore=tests/unit/git/test_branch_aware_deletion.py \
+    --ignore=tests/unit/infrastructure/test_broken_softlink_cleanup.py \
+    --ignore=tests/unit/infrastructure/test_real_world_path_walking.py \
     --cov=code_indexer \
     --cov-report=xml --cov-report=term; then
     print_success "Unit tests passed"

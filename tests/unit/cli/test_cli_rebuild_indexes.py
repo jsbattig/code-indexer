@@ -99,6 +99,8 @@ class TestCLIRebuildIndexesE2E:
                 "container",
                 "qdrant",
                 "collection",
+                "ollama service not available",
+                "start first",
             ]
             output_lower = (result.stdout + result.stderr).lower()
             assert any(

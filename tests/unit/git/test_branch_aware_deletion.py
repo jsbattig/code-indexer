@@ -50,13 +50,13 @@ class TestBranchAwareDeletion:
         mock_embedding_provider = MagicMock()
         mock_embedding_provider.get_embedding_dimensions.return_value = 768
 
-        # Mock text chunker
-        mock_text_chunker = MagicMock()
+        # Mock fixed size chunker
+        mock_fixed_size_chunker = MagicMock()
 
         indexer = BranchAwareIndexer(
             qdrant_client=mock_qdrant_client,
             embedding_provider=mock_embedding_provider,
-            text_chunker=mock_text_chunker,
+            fixed_size_chunker=mock_fixed_size_chunker,
             config=config,
         )
 
