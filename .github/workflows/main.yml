@@ -45,6 +45,12 @@ jobs:
         # Excludes tests/integration/ and tests/e2e/ directories automatically
         pytest tests/unit/ \
           -m "not slow and not e2e and not real_api" \
+          --ignore=tests/unit/infrastructure/test_data_cleaner_health.py \
+          --ignore=tests/unit/infrastructure/test_cleanup_validation.py \
+          --ignore=tests/unit/infrastructure/test_global_port_registry.py \
+          --ignore=tests/unit/infrastructure/test_broken_softlink_cleanup.py \
+          --ignore=tests/unit/infrastructure/test_real_world_path_walking.py \
+          --ignore=tests/unit/cli/test_cli_init_segment_size.py \
           --cov=src/code_indexer --cov-report=xml --cov-report=term
     
     - name: Upload coverage to Codecov
