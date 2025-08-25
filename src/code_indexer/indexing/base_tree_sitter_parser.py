@@ -232,7 +232,12 @@ class BaseTreeSitterParser(BaseSemanticParser):
     def _get_identifier_from_node(self, node: Any, lines: List[str]) -> Optional[str]:
         """Extract identifier name from a node."""
         for child in node.children:
-            if hasattr(child, "type") and child.type == "identifier":
+            if hasattr(child, "type") and child.type in (
+                "identifier",
+                "simple_identifier",
+                "type_identifier",
+                "field_identifier",  # Go methods use field_identifier
+            ):
                 return str(self._get_node_text(child, lines))
         return None
 

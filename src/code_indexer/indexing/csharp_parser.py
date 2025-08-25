@@ -199,7 +199,7 @@ class CSharpSemanticParser(BaseTreeSitterParser):
         return constructs
 
     def _extract_namespace_name(self, node: Any, lines: List[str]) -> Optional[str]:
-        """Extract namespace name from namespace declaration node."""
+        """Extract namespace name from namespace declaration node using AST."""
         try:
             # Find the identifier node within the namespace declaration
             for child in node.children:
@@ -208,29 +208,38 @@ class CSharpSemanticParser(BaseTreeSitterParser):
                 elif hasattr(child, "type") and child.type == "identifier":
                     return self._get_node_text(child, lines).strip()
         except Exception:
-            pass
-
-        # Fallback to regex
-        node_text = self._get_node_text(node, lines)
-        match = re.search(r"namespace\s+([A-Za-z_][A-Za-z0-9_.]*)", node_text)
-        return match.group(1) if match else None
+            # Only use text fallback if AST extraction completely fails
+            node_text = self._get_node_text(node, lines)
+            # Extract from first line only
+            first_line = node_text.split("\n")[0]
+            if "namespace" in first_line:
+                # Simple extraction without regex
+                parts = first_line.replace("{", "").strip().split()
+                if len(parts) >= 2 and parts[0] == "namespace":
+                    return parts[1]
+        return None
 
     def _extract_using_name(self, node: Any, lines: List[str]) -> Optional[str]:
-        """Extract using name from using directive node."""
+        """Extract using name from using directive node using AST."""
         try:
-            # Find the qualified_name node within the using directive
+            # Find the qualified_name or identifier node within the using directive
             for child in node.children:
                 if hasattr(child, "type") and child.type == "qualified_name":
                     return self._get_node_text(child, lines).strip()
                 elif hasattr(child, "type") and child.type == "identifier":
                     return self._get_node_text(child, lines).strip()
         except Exception:
-            pass
-
-        # Fallback to regex
-        node_text = self._get_node_text(node, lines)
-        match = re.search(r"using\s+([A-Za-z_][A-Za-z0-9_.]*)", node_text)
-        return match.group(1) if match else None
+            # Only use text fallback if AST extraction completely fails
+            node_text = self._get_node_text(node, lines)
+            # Extract from first line only
+            first_line = node_text.split("\n")[0]
+            if "using" in first_line and ";" in first_line:
+                # Simple extraction without regex
+                using_part = first_line.replace(";", "").strip()
+                parts = using_part.split()
+                if len(parts) >= 2 and parts[0] == "using":
+                    return parts[1]
+        return None
 
     def _handle_class_declaration(
         self,
@@ -612,34 +621,326 @@ class CSharpSemanticParser(BaseTreeSitterParser):
                 )
 
     def _extract_method_signature(self, node: Any, lines: List[str]) -> str:
-        """Extract method signature including modifiers, return type, name, and parameters."""
+        """Extract method signature including modifiers, return type, name, and parameters using AST."""
         try:
-            node_text = self._get_node_text(node, lines)
-            # Find the signature part (before the opening brace)
-            signature_match = re.match(r"([^{]*)", node_text.strip())
-            if signature_match:
-                return signature_match.group(1).strip()
+            return self._build_method_signature_from_ast(node, lines)
         except Exception:
-            pass
+            # Only fall back to text extraction if AST parsing fails
+            return self._get_node_text(node, lines).split("{")[0].strip()
 
-        return self._get_node_text(node, lines).split("{")[0].strip()
+    def _build_method_signature_from_ast(self, node: Any, lines: List[str]) -> str:
+        """Build method signature from AST nodes."""
+        parts = []
+
+        # Extract modifiers (public, private, static, async, etc.)
+        modifiers = self._extract_modifiers(node, lines)
+        if modifiers:
+            parts.extend(modifiers)
+
+        # For constructors, handle differently
+        if node.type == "constructor_declaration":
+            # Constructor name is the class name
+            constructor_name = self._extract_identifier(node, lines)
+            if constructor_name:
+                parts.append(constructor_name)
+                # Add parameters
+                parameters = self._extract_parameter_list(node, lines)
+                if parameters:
+                    parts.append(parameters)
+            return " ".join(parts)
+
+        # For conversion operators
+        if node.type == "conversion_operator_declaration":
+            return self._extract_operator_signature(node, lines)
+
+        # Extract return type for regular methods
+        return_type = self._extract_return_type(node, lines)
+        if return_type:
+            parts.append(return_type)
+
+        # Extract method name
+        method_name = self._extract_identifier(node, lines)
+        if method_name:
+            parts.append(method_name)
+
+        # Extract generic type parameters
+        type_params = self._extract_type_parameter_list(node, lines)
+        if type_params:
+            parts.append(type_params)
+
+        # Extract parameter list
+        parameters = self._extract_parameter_list(node, lines)
+        if parameters:
+            parts.append(parameters)
+
+        # Extract type constraints (where clauses)
+        constraints = self._extract_type_constraints(node, lines)
+        if constraints:
+            parts.append(constraints)
+
+        return " ".join(parts) if parts else "unknown method"
+
+    def _extract_modifiers(self, node: Any, lines: List[str]) -> List[str]:
+        """Extract all modifiers from AST node."""
+        modifiers = []
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "modifier":
+                modifier_text = self._get_node_text(child, lines).strip()
+                if modifier_text:
+                    modifiers.append(modifier_text)
+        return modifiers
+
+    def _extract_return_type(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract return type from method declaration."""
+        # Skip modifiers and find the return type
+        for child in node.children:
+            if hasattr(child, "type"):
+                if child.type in [
+                    "predefined_type",
+                    "identifier",
+                    "generic_name",
+                    "nullable_type",
+                    "array_type",
+                ]:
+                    return self._get_node_text(child, lines).strip()
+                elif child.type == "qualified_name":
+                    return self._get_node_text(child, lines).strip()
+        return None
+
+    def _extract_parameter_list(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract parameter list from method/constructor declaration."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "parameter_list":
+                return self._get_node_text(child, lines).strip()
+        return None
+
+    def _extract_type_parameter_list(
+        self, node: Any, lines: List[str]
+    ) -> Optional[str]:
+        """Extract generic type parameter list from method declaration."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "type_parameter_list":
+                return self._get_node_text(child, lines).strip()
+        return None
+
+    def _extract_type_constraints(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract type constraints (where clauses) from method declaration."""
+        constraints = []
+        for child in node.children:
+            if (
+                hasattr(child, "type")
+                and child.type == "type_parameter_constraints_clause"
+            ):
+                constraint_text = self._get_node_text(child, lines).strip()
+                if constraint_text:
+                    constraints.append(constraint_text)
+        return " ".join(constraints) if constraints else None
+
+    def _extract_operator_signature(self, node: Any, lines: List[str]) -> str:
+        """Extract operator signature from conversion operator declaration."""
+        parts = []
+
+        # Extract modifiers
+        modifiers = self._extract_modifiers(node, lines)
+        if modifiers:
+            parts.extend(modifiers)
+
+        # Find implicit/explicit keyword
+        for child in node.children:
+            if hasattr(child, "type") and child.type in ["implicit", "explicit"]:
+                parts.append(self._get_node_text(child, lines).strip())
+                break
+
+        # Add operator keyword
+        parts.append("operator")
+
+        # Extract target type
+        for child in node.children:
+            if hasattr(child, "type") and child.type in [
+                "predefined_type",
+                "identifier",
+                "generic_name",
+            ]:
+                parts.append(self._get_node_text(child, lines).strip())
+                break
+
+        # Extract parameter list
+        parameters = self._extract_parameter_list(node, lines)
+        if parameters:
+            parts.append(parameters)
+
+        return " ".join(parts)
 
     def _extract_signature(
         self, node: Any, lines: List[str], construct_type: str
     ) -> str:
-        """Extract signature for various construct types."""
+        """Extract signature for various construct types using AST."""
         try:
-            node_text = self._get_node_text(node, lines)
-            # For most constructs, the signature is the first line
-            first_line = node_text.split("\n")[0].strip()
+            if construct_type == "property":
+                return self._extract_property_signature(node, lines)
+            elif construct_type == "event":
+                return self._extract_event_signature(node, lines)
+            else:
+                # For other constructs, use improved text extraction
+                return self._extract_declaration_signature(node, lines, construct_type)
+        except Exception:
+            return f"{construct_type} [unknown]"
 
+    def _extract_property_signature(self, node: Any, lines: List[str]) -> str:
+        """Extract property signature including modifiers, type, name, and accessors."""
+        parts = []
+
+        # Extract modifiers
+        modifiers = self._extract_modifiers(node, lines)
+        if modifiers:
+            parts.extend(modifiers)
+
+        # Extract property type
+        prop_type = self._extract_property_type(node, lines)
+        if prop_type:
+            parts.append(prop_type)
+
+        # Extract property name
+        prop_name = self._extract_identifier(node, lines)
+        if prop_name:
+            parts.append(prop_name)
+
+        # Check for expression-bodied property
+        if self._has_expression_body(node):
+            parts.append("=>")
+            # Don't include the full expression, just indicate it's expression-bodied
+        else:
+            # Extract accessor information
+            accessors = self._extract_property_accessors(node, lines)
+            if accessors:
+                parts.append(accessors)
+
+        return " ".join(parts) if parts else "property [unknown]"
+
+    def _extract_property_type(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract property type from property declaration."""
+        for child in node.children:
+            if hasattr(child, "type"):
+                if child.type in [
+                    "predefined_type",
+                    "identifier",
+                    "generic_name",
+                    "nullable_type",
+                    "array_type",
+                ]:
+                    return self._get_node_text(child, lines).strip()
+                elif child.type == "qualified_name":
+                    return self._get_node_text(child, lines).strip()
+        return None
+
+    def _extract_property_accessors(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract property accessor information (get/set)."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "accessor_list":
+                # Extract accessor types
+                accessors = []
+                for accessor_child in child.children:
+                    if (
+                        hasattr(accessor_child, "type")
+                        and accessor_child.type == "accessor_declaration"
+                    ):
+                        for acc_part in accessor_child.children:
+                            if hasattr(acc_part, "type") and acc_part.type in [
+                                "get",
+                                "set",
+                                "init",
+                            ]:
+                                accessor_text = self._get_node_text(
+                                    acc_part, lines
+                                ).strip()
+                                # Check if it has a body or is auto-implemented
+                                has_body = self._accessor_has_body(accessor_child)
+                                if has_body:
+                                    accessors.append(f"{accessor_text} {{ ... }}")
+                                else:
+                                    accessors.append(f"{accessor_text};")
+
+                if accessors:
+                    return "{ " + " ".join(accessors) + " }"
+        return None
+
+    def _accessor_has_body(self, accessor_node: Any) -> bool:
+        """Check if accessor has a body block."""
+        for child in accessor_node.children:
+            if hasattr(child, "type") and child.type == "block":
+                return True
+        return False
+
+    def _has_expression_body(self, node: Any) -> bool:
+        """Check if node has an expression body (=>)."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "arrow_expression_clause":
+                return True
+        return False
+
+    def _extract_event_signature(self, node: Any, lines: List[str]) -> str:
+        """Extract event signature including modifiers, type, and name."""
+        parts = []
+
+        # Extract modifiers
+        modifiers = self._extract_modifiers(node, lines)
+        if modifiers:
+            parts.extend(modifiers)
+
+        # Add event keyword
+        parts.append("event")
+
+        # Extract event type from variable_declaration
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "variable_declaration":
+                # Find the type
+                for var_child in child.children:
+                    if hasattr(var_child, "type"):
+                        if var_child.type in [
+                            "predefined_type",
+                            "identifier",
+                            "generic_name",
+                            "qualified_name",
+                        ]:
+                            parts.append(self._get_node_text(var_child, lines).strip())
+                            break
+
+                # Find the variable name
+                for var_child in child.children:
+                    if (
+                        hasattr(var_child, "type")
+                        and var_child.type == "variable_declarator"
+                    ):
+                        event_name = self._extract_identifier(var_child, lines)
+                        if event_name:
+                            parts.append(event_name)
+                        break
+                break
+
+        return " ".join(parts) if parts else "event [unknown]"
+
+    def _extract_declaration_signature(
+        self, node: Any, lines: List[str], construct_type: str
+    ) -> str:
+        """Extract signature for general declarations using improved text extraction."""
+        node_text = self._get_node_text(node, lines)
+
+        # For expression-bodied members, include the => but not the full expression
+        if "=>" in node_text:
+            parts = node_text.split("=>")
+            if len(parts) >= 2:
+                return f"{parts[0].strip()} => ..."
+
+        # For block-based constructs, extract just the declaration part
+        lines_text = node_text.split("\n")
+        if lines_text:
+            first_line = lines_text[0].strip()
             # Clean up common patterns
             if "{" in first_line:
                 first_line = first_line.split("{")[0].strip()
-
             return first_line
-        except Exception:
-            return f"{construct_type} [unknown]"
+
+        return f"{construct_type} [unknown]"
 
     def _fallback_parse(self, content: str, file_path: str) -> List[SemanticChunk]:
         """Complete fallback parsing when tree-sitter fails entirely."""

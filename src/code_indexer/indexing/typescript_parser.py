@@ -1,436 +1,743 @@
 """
-TypeScript semantic parser using regex-based parsing.
+TypeScript semantic parser using tree-sitter with regex fallback.
 
-Extends the JavaScript parser to handle TypeScript-specific constructs
-like interfaces, types, enums, and decorators.
+This implementation uses tree-sitter as the primary parsing method,
+with comprehensive regex fallback for ERROR nodes to ensure no content is lost.
 """
 
 import re
-from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from code_indexer.config import IndexingConfig
-from code_indexer.indexing.javascript_parser import JavaScriptSemanticParser
-from code_indexer.indexing.semantic_chunker import SemanticChunk
+from .base_tree_sitter_parser import BaseTreeSitterParser
+from .semantic_chunker import SemanticChunk
 
 
-class TypeScriptSemanticParser(JavaScriptSemanticParser):
-    """Semantic parser for TypeScript files."""
+class TypeScriptSemanticParser(BaseTreeSitterParser):
+    """Semantic parser for TypeScript files using tree-sitter with regex fallback."""
 
     def __init__(self, config: IndexingConfig):
-        super().__init__(config)
-        self.language = "typescript"
+        super().__init__(config, "typescript")
 
-    def chunk(self, content: str, file_path: str) -> List[SemanticChunk]:
-        """Parse TypeScript content and create semantic chunks."""
-        chunks = []
-        lines = content.split("\n")
-        file_ext = Path(file_path).suffix
+    def _extract_file_level_constructs(
+        self,
+        root_node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+    ):
+        """Extract file-level constructs (imports, exports, namespaces)."""
+        for child in root_node.children:
+            if hasattr(child, "type"):
+                if child.type == "import_statement":
+                    self._handle_import_statement(child, constructs, lines)
+                elif child.type == "export_statement":
+                    self._handle_export_statement(child, constructs, lines)
+                elif child.type == "namespace_declaration":
+                    self._handle_namespace_declaration(
+                        child, constructs, lines, scope_stack
+                    )
 
-        # Find all constructs including TypeScript-specific ones
-        js_constructs = self._find_constructs(content, lines, file_path)
-        ts_constructs = self._find_typescript_constructs(content, lines)
-
-        # Filter out the generic "module" construct if we have specific constructs
-        filtered_js_constructs = []
-        for construct in js_constructs:
-            if construct["type"] == "module" and (
-                ts_constructs or len(js_constructs) > 1
-            ):
-                continue  # Skip module construct if we have other specific constructs
-            filtered_js_constructs.append(construct)
-
-        # Combine and sort by line number
-        all_constructs = filtered_js_constructs + ts_constructs
-        all_constructs.sort(key=lambda x: x["line_start"])
-
-        # Associate decorators with all constructs (both JS and TS)
-        self._associate_decorators(lines, all_constructs)
-
-        # If still no constructs, create a module chunk
-        if not all_constructs:
-            all_constructs = [
-                {
-                    "type": "module",
-                    "name": Path(file_path).stem,
-                    "text": content,
-                    "line_start": 1,
-                    "line_end": len(lines),
-                    "signature": f"module {Path(file_path).stem}",
-                    "scope": "global",
-                    "features": ["typescript"],
-                    "context": {},
-                }
-            ]
-
-        # Create chunks from constructs
-        for i, construct in enumerate(all_constructs):
-            chunk = SemanticChunk(
-                text=construct["text"],
-                chunk_index=i,
-                total_chunks=len(all_constructs),
-                size=len(construct["text"]),
-                file_path=file_path,
-                file_extension=file_ext,
-                line_start=construct["line_start"],
-                line_end=construct["line_end"],
-                semantic_chunking=True,
-                semantic_type=construct["type"],
-                semantic_name=construct["name"],
-                semantic_path=construct.get("path", construct["name"]),
-                semantic_signature=construct.get("signature", ""),
-                semantic_parent=construct.get("parent"),
-                semantic_context=construct.get("context", {}),
-                semantic_scope=construct.get("scope", "global"),
-                semantic_language_features=construct.get("features", []),
+    def _handle_language_constructs(
+        self,
+        node: Any,
+        node_type: str,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle TypeScript-specific AST node types."""
+        if node_type == "function_declaration":
+            self._handle_function_declaration(
+                node, constructs, lines, scope_stack, content
             )
-            chunks.append(chunk)
+        elif node_type == "arrow_function":
+            self._handle_arrow_function(node, constructs, lines, scope_stack, content)
+        elif node_type == "class_declaration":
+            self._handle_class_declaration(
+                node, constructs, lines, scope_stack, content
+            )
+        elif node_type == "abstract_class_declaration":
+            self._handle_class_declaration(
+                node, constructs, lines, scope_stack, content
+            )
+        elif node_type == "interface_declaration":
+            self._handle_interface_declaration(
+                node, constructs, lines, scope_stack, content
+            )
+        elif node_type == "type_alias_declaration":
+            self._handle_type_alias_declaration(
+                node, constructs, lines, scope_stack, content
+            )
+        elif node_type == "enum_declaration":
+            self._handle_enum_declaration(node, constructs, lines, scope_stack, content)
+        elif node_type == "method_definition":
+            self._handle_method_definition(
+                node, constructs, lines, scope_stack, content
+            )
+        elif node_type == "variable_declaration":
+            self._handle_variable_declaration(
+                node, constructs, lines, scope_stack, content
+            )
+        elif node_type == "namespace_declaration":
+            self._handle_namespace_declaration(node, constructs, lines, scope_stack)
+        elif node_type == "internal_module":
+            # TypeScript might use "internal_module" for namespace declarations
+            self._handle_namespace_declaration(node, constructs, lines, scope_stack)
+        elif node_type == "module_declaration":
+            # Another possible AST node type for namespaces
+            self._handle_namespace_declaration(node, constructs, lines, scope_stack)
 
-        return chunks
-
-    def _find_typescript_constructs(
-        self, content: str, lines: List[str]
-    ) -> List[Dict[str, Any]]:
-        """Find TypeScript-specific constructs."""
-        constructs = []
-
-        # Patterns for TypeScript constructs
-        patterns = {
-            "interface": [
-                r"^\s*interface\s+(\w+)(?:<[^>]*>)?\s*(?:extends\s+[^{]+)?\s*\{",
-            ],
-            "type": [
-                r"^\s*type\s+(\w+)(?:<[^>]*>)?\s*=",
-            ],
-            "enum": [
-                r"^\s*enum\s+(\w+)\s*\{",
-                r"^\s*const\s+enum\s+(\w+)\s*\{",
-            ],
-            "decorator": [
-                r"^\s*@(\w+)(?:\([^)]*\))?\s*$",
-            ],
-        }
-
-        for line_num, line in enumerate(lines, 1):
-            # Check for interfaces
-            for pattern in patterns["interface"]:
-                match = re.search(pattern, line)
-                if match:
-                    interface_name = match.group(1)
-                    end_line = self._find_block_end(lines, line_num - 1)
-
-                    # Extract generic parameters if present
-                    generics = []
-                    if "<" in line and ">" in line:
-                        generic_match = re.search(r"<([^>]+)>", line)
-                        if generic_match:
-                            generics = [
-                                g.strip() for g in generic_match.group(1).split(",")
-                            ]
-
-                    signature = line.strip()
-                    if "{" in signature:
-                        signature = signature[: signature.index("{")].strip()
-
-                    construct = {
-                        "type": "interface",
-                        "name": interface_name,
-                        "text": "\n".join(lines[line_num - 1 : end_line]),
-                        "line_start": line_num,
-                        "line_end": end_line,
-                        "signature": signature,
-                        "scope": "global",
-                        "features": ["typescript"] + (["generic"] if generics else []),
-                        "context": {"generics": generics},
-                    }
-                    constructs.append(construct)
-                    break
-
-            # Check for type aliases
-            for pattern in patterns["type"]:
-                match = re.search(pattern, line)
-                if match:
-                    type_name = match.group(1)
-
-                    # Find the complete type definition (may span multiple lines)
-                    end_line = self._find_type_end(lines, line_num - 1)
-
-                    # Extract generic parameters if present
-                    generics = []
-                    if "<" in line and ">" in line:
-                        generic_match = re.search(r"<([^>]+)>", line)
-                        if generic_match:
-                            generics = [
-                                g.strip() for g in generic_match.group(1).split(",")
-                            ]
-
-                    construct = {
-                        "type": "type",
-                        "name": type_name,
-                        "text": "\n".join(lines[line_num - 1 : end_line]),
-                        "line_start": line_num,
-                        "line_end": end_line,
-                        "signature": f"type {type_name}",
-                        "scope": "global",
-                        "features": ["typescript"] + (["generic"] if generics else []),
-                        "context": {"generics": generics},
-                    }
-                    constructs.append(construct)
-                    break
-
-            # Check for enums
-            for pattern in patterns["enum"]:
-                match = re.search(pattern, line)
-                if match:
-                    enum_name = match.group(1)
-                    end_line = self._find_block_end(lines, line_num - 1)
-
-                    features = ["typescript"]
-                    if "const enum" in line:
-                        features.append("const")
-
-                    signature = line.strip()
-                    if "{" in signature:
-                        signature = signature[: signature.index("{")].strip()
-
-                    construct = {
-                        "type": "enum",
-                        "name": enum_name,
-                        "text": "\n".join(lines[line_num - 1 : end_line]),
-                        "line_start": line_num,
-                        "line_end": end_line,
-                        "signature": signature,
-                        "scope": "global",
-                        "features": features,
-                        "context": {},
-                    }
-                    constructs.append(construct)
-                    break
-
-        return constructs
-
-    def _find_type_end(self, lines: List[str], start_line: int) -> int:
-        """Find the end of a type definition."""
-        line = lines[start_line]
-
-        # Simple type (one line)
-        if ";" in line:
-            return start_line + 1
-
-        # Multi-line type definition
-        brace_count = line.count("{") - line.count("}")
-        paren_count = line.count("(") - line.count(")")
-        angle_count = line.count("<") - line.count(">")
-
-        if brace_count == 0 and paren_count == 0 and angle_count == 0:
-            return start_line + 1
-
-        for i in range(start_line + 1, len(lines)):
-            line = lines[i]
-            brace_count += line.count("{") - line.count("}")
-            paren_count += line.count("(") - line.count(")")
-            angle_count += line.count("<") - line.count(">")
-
-            if (
-                brace_count <= 0
-                and paren_count <= 0
-                and angle_count <= 0
-                and (";" in line or "}" in line)
-            ):
-                return i + 1
-
-        return len(lines)
-
-    def _associate_decorators(
-        self, lines: List[str], constructs: List[Dict[str, Any]]
-    ) -> None:
-        """Associate decorators with their target constructs."""
-        # More flexible decorator patterns
-        decorator_patterns = [
-            r"^\s*@(\w+)\s*$",  # Simple decorator: @Input
-            r"^\s*@(\w+)\([^)]*\)\s*$",  # Single-line decorator with args: @Input()
-            r"^\s*@(\w+)\(",  # Multi-line decorator start: @Component({
+    def _should_skip_children(self, node_type: str) -> bool:
+        """Determine if children should be skipped for certain node types."""
+        return node_type in [
+            "class_declaration",
+            "abstract_class_declaration",
+            "interface_declaration",
+            "function_declaration",
         ]
 
-        for line_num, line in enumerate(lines, 1):
-            decorator_name = None
-
-            # Check each pattern
-            for pattern in decorator_patterns:
-                match = re.search(pattern, line)
-                if match:
-                    decorator_name = match.group(1)
-                    break
-
-            # Also check for decorators followed by property/method declarations
-            inline_decorator_match = re.search(
-                r"^\s*@(\w+)(?:\([^)]*\))?\s+(\w+)", line
-            )
-            if inline_decorator_match:
-                decorator_name = inline_decorator_match.group(1)
-
-            if decorator_name:
-                # Find the target construct
-                target_line = None
-
-                # For inline decorators (like @Input() user: User;), the target is on the same line
-                if inline_decorator_match:
-                    target_line = line_num
-                else:
-                    # Find the next non-decorator, non-empty line that looks like a construct
-                    for i in range(line_num, len(lines)):
-                        next_line = lines[i].strip()
-                        if (
-                            next_line
-                            and not next_line.startswith("@")
-                            and next_line not in ["})", "}", "})"]
-                            and not next_line.endswith(",")
-                            and not next_line.endswith(":")
-                            and not next_line.startswith("'")
-                            and not next_line.startswith('"')
-                        ):
-                            # Check if this line looks like a construct definition
-                            if any(
-                                keyword in next_line
-                                for keyword in [
-                                    "class",
-                                    "function",
-                                    "interface",
-                                    "enum",
-                                    "type",
-                                ]
-                            ):
-                                target_line = i + 1
-                                break
-
-                if target_line:
-                    # Find the construct that starts at or contains this line
-                    for construct in constructs:
-                        if (
-                            construct["line_start"]
-                            <= target_line
-                            <= construct["line_end"]
-                            or construct["line_start"] == target_line
-                        ):
-                            if "decorators" not in construct["context"]:
-                                construct["context"]["decorators"] = []
-                            if decorator_name not in construct["context"]["decorators"]:
-                                construct["context"]["decorators"].append(
-                                    decorator_name
-                                )
-
-                            # Add decorator to language features
-                            if "decorator" not in construct["features"]:
-                                construct["features"].append("decorator")
-                            break
-
-    def _find_constructs(
-        self, content: str, lines: List[str], file_path: str = "unknown"
+    def _extract_constructs_from_error_text(
+        self, error_text: str, start_line: int, scope_stack: List[str]
     ) -> List[Dict[str, Any]]:
-        """Override to handle TypeScript-specific method signatures."""
-        constructs = super()._find_constructs(content, lines, file_path)
-
-        # Add TypeScript-specific method detection
-        ts_methods = self._find_typescript_methods(content, lines)
-        constructs.extend(ts_methods)
-
-        # Enhance constructs with TypeScript type information
-        for construct in constructs:
-            if construct["type"] in ["function", "method"]:
-                # Extract parameter and return types
-                signature = construct.get("signature", "")
-                if ": " in signature:
-                    construct["features"].append("typed")
-
-                # Extract generic parameters
-                if "<" in signature and ">" in signature:
-                    construct["features"].append("generic")
-
-        return constructs  # type: ignore[no-any-return]
-
-    def _find_typescript_methods(
-        self, content: str, lines: List[str]
-    ) -> List[Dict[str, Any]]:
-        """Find TypeScript methods with return type annotations."""
+        """Extract TypeScript constructs from ERROR node text using regex fallback."""
         constructs = []
 
-        # Find class boundaries to detect methods inside classes
-        class_boundaries = self._find_class_boundaries(lines)
+        # TypeScript-specific regex patterns
+        patterns = {
+            "function": r"^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)(?:\s*<[^>]*>)?(?:\s*\([^)]*\))?",
+            "arrow_function": r"^\s*(?:const|let|var)\s+(\w+)\s*:\s*[^=]*=\s*(?:\([^)]*\)|[^=])\s*=>\s*",
+            "class": r"^\s*(?:export\s+)?(?:abstract\s+)?class\s+(\w+)(?:<[^>]*>)?(?:\s+extends\s+\w+)?(?:\s+implements\s+[\w,\s]+)?\s*{",
+            "interface": r"^\s*(?:export\s+)?interface\s+(\w+)(?:<[^>]*>)?\s*(?:extends\s+[\w,\s]+)?\s*{",
+            "type": r"^\s*(?:export\s+)?type\s+(\w+)(?:<[^>]*>)?\s*=",
+            "enum": r"^\s*(?:export\s+)?enum\s+(\w+)\s*{",
+            "namespace": r"^\s*(?:export\s+)?namespace\s+(\w+)\s*{",
+            "method": r"^\s*(?:public|private|protected|static|async)?\s*(\w+)\s*<[^>]*>?\s*\([^)]*\)\s*:\s*[^{]*{",
+            "variable": r"^\s*(?:const|let|var)\s+(\w+)\s*:\s*[^=]*=",
+            "import": r"^\s*import\s+(?:\{[^}]+\}|\w+)\s+from\s+['\"]([^'\"]+)['\"]",
+            "export": r"^\s*export\s+(?:default\s+)?(?:function|class|interface|type|enum|const|let|var)\s+(\w+)",
+        }
 
-        current_class = None
-        current_class_end = 0
+        lines = error_text.split("\n")
 
-        for line_num, line in enumerate(lines, 1):
-            # Update current class context
-            for class_info in class_boundaries:
-                if class_info["start"] <= line_num <= class_info["end"]:
-                    current_class = class_info["name"]
-                    current_class_end = class_info["end"]
-                    break
-            else:
-                if line_num > current_class_end:
-                    current_class = None
+        for line_idx, line in enumerate(lines):
+            for construct_type, pattern in patterns.items():
+                match = re.search(pattern, line)
+                if match:
+                    name = match.group(1)
 
-            # Only look for methods inside classes
-            if current_class:
-                # TypeScript method pattern with return types
-                ts_method_match = re.search(
-                    r"^\s*(?:(async|static|private|public|protected)\s+)?(async\s+)?(\w+)\s*\([^)]*\)\s*:\s*[^{]+\{",
-                    line,
-                )
-                if ts_method_match and not any(
-                    kw in line
-                    for kw in [
-                        "function",
-                        "class",
-                        "const",
-                        "let",
-                        "var",
-                        "if",
-                        "for",
-                        "while",
-                        "constructor",  # Skip constructor, handled by JS parser
-                    ]
-                ):
-                    # Extract modifiers and method name
-                    modifier1 = ts_method_match.group(
-                        1
-                    )  # async/static/private/public/protected
-                    modifier2 = ts_method_match.group(
-                        2
-                    )  # async (if first group wasn't async)
-                    method_name = ts_method_match.group(3)
+                    # Find the end of this construct
+                    end_line = self._find_ts_construct_end(
+                        lines, line_idx, construct_type
+                    )
 
-                    end_line = self._find_block_end(lines, line_num - 1)
+                    # Build construct text
+                    construct_lines = lines[line_idx : end_line + 1]
+                    construct_text = "\n".join(construct_lines)
 
-                    features = []
-                    if modifier1 == "async" or modifier2:
-                        features.append("async")
-                    if modifier1 == "static":
-                        features.append("static")
-                    if modifier1 in ["private", "public", "protected"]:
-                        features.append(modifier1)
+                    parent = scope_stack[-1] if scope_stack else None
+                    full_path = f"{parent}.{name}" if parent else name
 
-                    # Always add typed since TypeScript methods have type annotations
-                    features.append("typed")
-
-                    signature = line.strip()
-                    if "{" in signature:
-                        signature = signature[: signature.index("{")].strip()
-
-                    construct = {
-                        "type": "method",
-                        "name": method_name,
-                        "path": f"{current_class}.{method_name}",
-                        "text": "\n".join(lines[line_num - 1 : end_line]),
-                        "line_start": line_num,
-                        "line_end": end_line,
-                        "signature": signature,
-                        "scope": "class",
-                        "parent": current_class,
-                        "features": features,
-                        "context": {},
-                    }
-                    constructs.append(construct)
+                    constructs.append(
+                        {
+                            "type": construct_type,
+                            "name": name,
+                            "path": full_path,
+                            "signature": line.strip(),
+                            "parent": parent,
+                            "scope": (
+                                "class" if construct_type == "method" else "global"
+                            ),
+                            "line_start": start_line + line_idx + 1,
+                            "line_end": start_line + end_line + 1,
+                            "text": construct_text,
+                            "context": {"extracted_from_error": True},
+                            "features": [f"{construct_type}_implementation"],
+                        }
+                    )
 
         return constructs
+
+    def _fallback_parse(self, content: str, file_path: str) -> List[SemanticChunk]:
+        """Complete fallback parsing using text chunking when all else fails."""
+        from .semantic_chunker import TextChunker
+        from pathlib import Path
+
+        text_chunker = TextChunker(self.config)
+        chunk_dicts = text_chunker.chunk_text(content, Path(file_path))
+
+        # Convert dictionary chunks to SemanticChunk objects
+        semantic_chunks = []
+        for chunk_dict in chunk_dicts:
+            semantic_chunk = SemanticChunk(
+                text=chunk_dict["text"],
+                chunk_index=chunk_dict.get("chunk_index", 0),
+                total_chunks=chunk_dict.get("total_chunks", len(chunk_dicts)),
+                size=chunk_dict.get("size", len(chunk_dict["text"])),
+                file_path=file_path,
+                file_extension=chunk_dict.get(
+                    "file_extension", Path(file_path).suffix.lstrip(".")
+                ),
+                line_start=chunk_dict.get("line_start", 1),
+                line_end=chunk_dict.get("line_end", 1),
+                semantic_chunking=False,  # This is fallback, not semantic
+            )
+            semantic_chunks.append(semantic_chunk)
+
+        return semantic_chunks
+
+    # Helper methods for TypeScript constructs
+
+    def _handle_import_statement(
+        self, node: Any, constructs: List[Dict[str, Any]], lines: List[str]
+    ):
+        """Handle import statement."""
+        import_text = self._get_node_text(node, lines)
+        constructs.append(
+            {
+                "type": "import",
+                "name": "import",
+                "path": "import",
+                "signature": import_text,
+                "parent": None,
+                "scope": "global",
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "text": import_text,
+                "context": {"declaration_type": "import"},
+                "features": ["import_statement"],
+            }
+        )
+
+    def _handle_export_statement(
+        self, node: Any, constructs: List[Dict[str, Any]], lines: List[str]
+    ):
+        """Handle export statement."""
+        export_text = self._get_node_text(node, lines)
+        constructs.append(
+            {
+                "type": "export",
+                "name": "export",
+                "path": "export",
+                "signature": export_text,
+                "parent": None,
+                "scope": "global",
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "text": export_text,
+                "context": {"declaration_type": "export"},
+                "features": ["export_statement"],
+            }
+        )
+
+    def _handle_namespace_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+    ):
+        """Handle namespace declaration."""
+        namespace_name = self._get_identifier_from_node(node, lines)
+        if namespace_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = (
+                f"{parent_path}.{namespace_name}" if parent_path else namespace_name
+            )
+
+            constructs.append(
+                {
+                    "type": "namespace",
+                    "name": namespace_name,
+                    "path": full_path,
+                    "signature": f"namespace {namespace_name}",
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "namespace",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": self._get_node_text(node, lines),
+                    "context": {"declaration_type": "namespace"},
+                    "features": ["namespace_declaration"],
+                }
+            )
+
+            # Process nested elements within the namespace (including nested namespaces)
+            scope_stack.append(namespace_name)
+            self._process_namespace_members(node, constructs, lines, scope_stack, "")
+            scope_stack.pop()
+
+    def _process_namespace_members(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Process members of a namespace including nested namespaces."""
+        for child in node.children:
+            if hasattr(child, "type"):
+                if child.type == "namespace_body":
+                    # Process all declarations in the namespace body
+                    for member in child.children:
+                        self._traverse_node(
+                            member, constructs, lines, scope_stack, content
+                        )
+
+    def _handle_function_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle function declaration."""
+        function_name = self._get_identifier_from_node(node, lines)
+        if function_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = (
+                f"{parent_path}.{function_name}" if parent_path else function_name
+            )
+
+            params = self._extract_ts_parameters(node, lines)
+            return_type = self._extract_ts_return_type(node, lines)
+            generics = self._extract_ts_generics(node, lines)
+
+            signature = f"function {function_name}"
+            if generics:
+                signature += f"<{generics}>"
+            if params:
+                signature += f"({params})"
+            if return_type:
+                signature += f": {return_type}"
+
+            constructs.append(
+                {
+                    "type": "function",
+                    "name": function_name,
+                    "path": full_path,
+                    "signature": signature,
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "function",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": self._get_node_text(node, lines),
+                    "context": {
+                        "declaration_type": "function",
+                        "parameters": params,
+                        "return_type": return_type,
+                        "generics": generics,
+                    },
+                    "features": ["function_declaration"],
+                }
+            )
+
+    def _handle_class_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle class declaration."""
+        class_name = self._get_identifier_from_node(node, lines)
+        if class_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = f"{parent_path}.{class_name}" if parent_path else class_name
+
+            generics = self._extract_ts_generics(node, lines)
+            extends = self._extract_ts_extends(node, lines)
+            implements = self._extract_ts_implements(node, lines)
+
+            signature = f"class {class_name}"
+            if generics:
+                signature += f"<{generics}>"
+            if extends:
+                signature += f" extends {extends}"
+            if implements:
+                signature += f" implements {implements}"
+
+            constructs.append(
+                {
+                    "type": "class",
+                    "name": class_name,
+                    "path": full_path,
+                    "signature": signature,
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "class",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": self._get_node_text(node, lines),
+                    "context": {
+                        "declaration_type": "class",
+                        "generics": generics,
+                        "extends": extends,
+                        "implements": implements,
+                    },
+                    "features": ["class_declaration"],
+                }
+            )
+
+            # Process class members
+            scope_stack.append(class_name)
+            self._process_class_members(node, constructs, lines, scope_stack, content)
+            scope_stack.pop()
+
+    def _handle_interface_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle interface declaration."""
+        interface_name = self._get_identifier_from_node(node, lines)
+        if interface_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = (
+                f"{parent_path}.{interface_name}" if parent_path else interface_name
+            )
+
+            generics = self._extract_ts_generics(node, lines)
+            extends = self._extract_ts_extends(node, lines)
+
+            signature = f"interface {interface_name}"
+            if generics:
+                signature += f"<{generics}>"
+            if extends:
+                signature += f" extends {extends}"
+
+            constructs.append(
+                {
+                    "type": "interface",
+                    "name": interface_name,
+                    "path": full_path,
+                    "signature": signature,
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "interface",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": self._get_node_text(node, lines),
+                    "context": {
+                        "declaration_type": "interface",
+                        "generics": generics,
+                        "extends": extends,
+                    },
+                    "features": ["interface_declaration"],
+                }
+            )
+
+    def _handle_type_alias_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle type alias declaration."""
+        type_name = self._get_identifier_from_node(node, lines)
+        if type_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = f"{parent_path}.{type_name}" if parent_path else type_name
+
+            generics = self._extract_ts_generics(node, lines)
+
+            signature = f"type {type_name}"
+            if generics:
+                signature += f"<{generics}>"
+
+            constructs.append(
+                {
+                    "type": "type",
+                    "name": type_name,
+                    "path": full_path,
+                    "signature": signature,
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "type",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": self._get_node_text(node, lines),
+                    "context": {
+                        "declaration_type": "type",
+                        "generics": generics,
+                    },
+                    "features": ["type_declaration"],
+                }
+            )
+
+    def _handle_enum_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle enum declaration."""
+        enum_name = self._get_identifier_from_node(node, lines)
+        if enum_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = f"{parent_path}.{enum_name}" if parent_path else enum_name
+
+            constructs.append(
+                {
+                    "type": "enum",
+                    "name": enum_name,
+                    "path": full_path,
+                    "signature": f"enum {enum_name}",
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "enum",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": self._get_node_text(node, lines),
+                    "context": {"declaration_type": "enum"},
+                    "features": ["enum_declaration"],
+                }
+            )
+
+    def _handle_method_definition(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle method definition."""
+        method_name = self._get_identifier_from_node(node, lines)
+        if method_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = f"{parent_path}.{method_name}" if parent_path else method_name
+
+            params = self._extract_ts_parameters(node, lines)
+            return_type = self._extract_ts_return_type(node, lines)
+            generics = self._extract_ts_generics(node, lines)
+
+            signature = f"{method_name}"
+            if generics:
+                signature += f"<{generics}>"
+            if params:
+                signature += f"({params})"
+            if return_type:
+                signature += f": {return_type}"
+
+            constructs.append(
+                {
+                    "type": "method",
+                    "name": method_name,
+                    "path": full_path,
+                    "signature": signature,
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "function",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": self._get_node_text(node, lines),
+                    "context": {
+                        "declaration_type": "method",
+                        "parameters": params,
+                        "return_type": return_type,
+                        "generics": generics,
+                    },
+                    "features": ["method_declaration"],
+                }
+            )
+
+    def _handle_variable_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle variable declaration."""
+        var_name = self._get_identifier_from_node(node, lines)
+        if var_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = f"{parent_path}.{var_name}" if parent_path else var_name
+
+            var_type = self._extract_ts_variable_type(node, lines)
+
+            signature = f"variable {var_name}"
+            if var_type:
+                signature += f": {var_type}"
+
+            constructs.append(
+                {
+                    "type": "variable",
+                    "name": var_name,
+                    "path": full_path,
+                    "signature": signature,
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "variable",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": self._get_node_text(node, lines),
+                    "context": {
+                        "declaration_type": "variable",
+                        "type": var_type,
+                    },
+                    "features": ["variable_declaration"],
+                }
+            )
+
+    def _handle_arrow_function(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle arrow function."""
+        # Try to find the function name from parent assignment
+        function_name = self._extract_arrow_function_name(node, lines)
+        if function_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = (
+                f"{parent_path}.{function_name}" if parent_path else function_name
+            )
+
+            params = self._extract_ts_parameters(node, lines)
+            return_type = self._extract_ts_return_type(node, lines)
+
+            signature = f"const {function_name} = "
+            if params:
+                signature += f"({params}) => "
+            if return_type:
+                signature += return_type
+
+            constructs.append(
+                {
+                    "type": "arrow_function",
+                    "name": function_name,
+                    "path": full_path,
+                    "signature": signature,
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "function",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": self._get_node_text(node, lines),
+                    "context": {
+                        "declaration_type": "arrow_function",
+                        "parameters": params,
+                        "return_type": return_type,
+                    },
+                    "features": ["arrow_function_declaration"],
+                }
+            )
+
+    def _process_class_members(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Process members of a class/interface."""
+        for child in node.children:
+            if hasattr(child, "type"):
+                if child.type == "class_body":
+                    for member in child.children:
+                        self._traverse_node(
+                            member, constructs, lines, scope_stack, content
+                        )
+
+    # TypeScript-specific helper methods
+
+    def _extract_ts_parameters(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract TypeScript parameters with types."""
+        for child in node.children:
+            if hasattr(child, "type") and "parameter" in child.type:
+                return self._get_node_text(child, lines)
+        return None
+
+    def _extract_ts_return_type(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract TypeScript return type."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "type_annotation":
+                return self._get_node_text(child, lines)
+        return None
+
+    def _extract_ts_generics(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract TypeScript generic parameters."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "type_parameters":
+                return self._get_node_text(child, lines)
+        return None
+
+    def _extract_ts_extends(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract extends clause."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "class_heritage":
+                return self._get_node_text(child, lines)
+        return None
+
+    def _extract_ts_implements(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract implements clause."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "implements_clause":
+                return self._get_node_text(child, lines)
+        return None
+
+    def _extract_ts_variable_type(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract variable type annotation."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "type_annotation":
+                return self._get_node_text(child, lines)
+        return None
+
+    def _extract_arrow_function_name(
+        self, node: Any, lines: List[str]
+    ) -> Optional[str]:
+        """Extract name from arrow function assignment."""
+        parent = getattr(node, "parent", None)
+        if parent and hasattr(parent, "type") and "assignment" in parent.type:
+            return self._get_identifier_from_node(parent, lines)
+        return None
+
+    def _get_identifier_from_node(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract identifier name from a TypeScript node."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type in [
+                "identifier",
+                "type_identifier",
+                "property_identifier",  # TypeScript methods use property_identifier
+            ]:
+                return str(self._get_node_text(child, lines))
+        return None
+
+    def _find_ts_construct_end(
+        self, lines: List[str], start_line: int, construct_type: str
+    ) -> int:
+        """Find the end line of a TypeScript construct."""
+        if construct_type in [
+            "function",
+            "class",
+            "interface",
+            "enum",
+            "namespace",
+            "method",
+        ]:
+            # Find matching braces
+            brace_count = 0
+            for i in range(start_line, len(lines)):
+                line = lines[i]
+                brace_count += line.count("{") - line.count("}")
+                if brace_count == 0 and "{" in line:
+                    return i
+        elif construct_type in ["type", "variable", "arrow_function"]:
+            # Single line or until semicolon
+            for i in range(start_line, min(start_line + 5, len(lines))):
+                if ";" in lines[i] or (
+                    i > start_line and not lines[i].strip().endswith(",")
+                ):
+                    return i
+
+        return min(start_line + 10, len(lines) - 1)

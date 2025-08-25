@@ -1712,15 +1712,17 @@ def index(
         elif clear:
             operation_name = "Full reindexing"
 
+        # Initialize stats with default values to handle early cancellation
+        stats = None
+
         try:
             with GracefulInterruptHandler(console, operation_name) as handler:
                 interrupt_handler = handler
 
-                # Ensure payload indexes exist before indexing starts
+                # Get collection name for operations
                 collection_name = qdrant_client.resolve_collection_name(
                     config, embedding_provider
                 )
-                qdrant_client.ensure_payload_indexes(collection_name, context="index")
 
                 # Handle rebuild indexes flag
                 if rebuild_indexes:
@@ -1730,6 +1732,13 @@ def index(
                         console.print("Index rebuild failed - check logs for details")
                         sys.exit(1)
                     return
+
+                # For non-clear operations, ensure payload indexes exist before indexing
+                # For --clear operations, skip this since collection will be recreated fresh
+                if not clear:
+                    qdrant_client.ensure_payload_indexes(
+                        collection_name, context="index"
+                    )
 
                 stats = smart_indexer.smart_index(
                     force_full=clear,
@@ -1752,7 +1761,12 @@ def index(
             console.print(f"❌ Indexing failed: {e}", style="red")
             sys.exit(1)
 
-        # Show completion summary with throughput
+        # Show completion summary with throughput (if stats available)
+        if stats is None:
+            # Early cancellation before stats were initialized
+            console.print("🛑 Operation cancelled before completion", style="yellow")
+            return
+
         if getattr(stats, "cancelled", False):
             console.print("🛑 Indexing cancelled!", style="yellow")
             console.print("📄 Files processed before cancellation: ", end="")

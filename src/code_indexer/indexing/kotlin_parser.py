@@ -1,620 +1,635 @@
 """
-Kotlin semantic parser using regex-based parsing.
+Kotlin semantic parser using tree-sitter with regex fallback.
 
-This implementation uses regex patterns to identify common Kotlin constructs
-for semantic chunking. While not as robust as a full AST parser,
-it covers the most common patterns for semantic chunking.
+This implementation uses tree-sitter as the primary parsing method,
+with comprehensive regex fallback for ERROR nodes to ensure no content is lost.
 """
 
 import re
-from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from code_indexer.config import IndexingConfig
-from code_indexer.indexing.semantic_chunker import BaseSemanticParser, SemanticChunk
+from .base_tree_sitter_parser import BaseTreeSitterParser
+from .semantic_chunker import SemanticChunk
 
 
-class KotlinSemanticParser(BaseSemanticParser):
-    """Semantic parser for Kotlin files using regex patterns."""
+class KotlinSemanticParser(BaseTreeSitterParser):
+    """Semantic parser for Kotlin files using tree-sitter with regex fallback."""
 
     def __init__(self, config: IndexingConfig):
-        super().__init__(config)
-        self.language = "kotlin"
+        super().__init__(config, "kotlin")
 
-    def chunk(self, content: str, file_path: str) -> List[SemanticChunk]:
-        """Parse Kotlin content and create semantic chunks."""
-        chunks = []
-        lines = content.split("\n")
-        file_ext = Path(file_path).suffix
-
-        # Find all constructs in the file
-        constructs = self._find_constructs(content, lines, file_path)
-
-        # Create chunks from constructs
-        for i, construct in enumerate(constructs):
-            chunk = SemanticChunk(
-                text=construct["text"],
-                chunk_index=i,
-                total_chunks=len(constructs),
-                size=len(construct["text"]),
-                file_path=file_path,
-                file_extension=file_ext,
-                line_start=construct["line_start"],
-                line_end=construct["line_end"],
-                semantic_chunking=True,
-                semantic_type=construct["type"],
-                semantic_name=construct["name"],
-                semantic_path=construct.get("path", construct["name"]),
-                semantic_signature=construct.get("signature", ""),
-                semantic_parent=construct.get("parent"),
-                semantic_context=construct.get("context", {}),
-                semantic_scope=construct.get("scope", "global"),
-                semantic_language_features=construct.get("features", []),
-            )
-            chunks.append(chunk)
-
-        return chunks
-
-    def _find_constructs(
-        self, content: str, lines: List[str], file_path: str = "unknown"
-    ) -> List[Dict[str, Any]]:
-        """Find Kotlin constructs using regex patterns."""
-        constructs = []
-
-        # Check for obviously malformed content
-        if self._is_malformed_kotlin(content):
-            return []
-
-        # Extract package information
-        package_name = self._extract_package(lines)
-
-        # Find all classes and their boundaries first
-        class_boundaries = self._find_class_boundaries(lines)
-
-        # Process each line to find constructs
-        current_class = None
-        current_class_end = 0
-        current_annotations = []
-
-        for line_num, line in enumerate(lines, 1):
-            line_stripped = line.strip()
-
-            # Skip empty lines and comments
-            if (
-                not line_stripped
-                or line_stripped.startswith("//")
-                or line_stripped.startswith("/*")
-            ):
-                continue
-
-            # Update current class context
-            for class_info in class_boundaries:
-                if class_info["start"] <= line_num <= class_info["end"]:
-                    current_class = class_info["name"]
-                    current_class_end = class_info["end"]
-                    break
-            else:
-                if line_num > current_class_end:
-                    current_class = None
-
-            # Check for annotations
-            annotation_match = re.search(r"^\s*@(\w+)(?:\([^)]*\))?\s*$", line)
-            if annotation_match:
-                current_annotations.append(annotation_match.group(1))
-                continue
-
-            # Check for class definitions
-            class_match = re.search(
-                r"^\s*(?:(public|private|protected|internal|abstract|final|open|sealed|data|inner|enum|annotation|inline|value)\s+)*"
-                r"(class|interface|object)\s+(\w+)(?:<[^>]*>)?"
-                r"(?:\s*\()?",  # Optional opening parenthesis
-                line,
-            )
-            if class_match:
-                modifiers = [
-                    m
-                    for m in line.split()
-                    if m
-                    in [
-                        "public",
-                        "private",
-                        "protected",
-                        "internal",
-                        "abstract",
-                        "final",
-                        "open",
-                        "sealed",
-                        "data",
-                        "inner",
-                        "enum",
-                        "annotation",
-                        "inline",
-                        "value",
-                    ]
-                ]
-                class_type = class_match.group(2)
-                class_name = class_match.group(3)
-
-                # Find where the class body actually starts (handle multi-line constructors)
-                body_start_line = line_num - 1
-                for i in range(line_num - 1, len(lines)):
-                    if "{" in lines[i]:
-                        body_start_line = i
-                        break
-
-                end_line = self._find_block_end(lines, body_start_line)
-
-                # Extract generics if present
-                generics = []
-                if "<" in line and ">" in line:
-                    generic_match = re.search(r"<([^>]+)>", line)
-                    if generic_match:
-                        generics = [
-                            g.strip() for g in generic_match.group(1).split(",")
-                        ]
-
-                features = []
-                if modifiers:
-                    features.extend(modifiers)
-                if generics:
-                    features.append("generic")
-                if current_annotations:
-                    features.append("annotation")
-
-                # Determine if this is a nested class
-                parent_class = None
-                scope = "global"
-
-                for class_info in class_boundaries:
-                    if (
-                        class_info["start"] < line_num < class_info["end"]
-                        and class_info["name"] != class_name
-                    ):
-                        parent_class = class_info["name"]
-                        scope = "class"
-                        break
-
-                construct: Dict[str, Any] = {
-                    "type": class_type,
-                    "name": class_name,
-                    "text": "\n".join(lines[line_num - 1 : end_line]),
-                    "line_start": line_num,
-                    "line_end": end_line,
-                    "signature": line.strip().rstrip("{").strip(),
-                    "scope": scope,
-                    "parent": parent_class,
-                    "features": features,
-                    "context": {
-                        "package": package_name,
-                        "generics": generics,
-                        "annotations": current_annotations.copy(),
-                        "modifiers": modifiers,
-                    },
-                }
-                constructs.append(construct)
-                current_annotations = []
-                continue
-
-            # Check for companion object
-            companion_match = re.search(
-                r"^\s*companion\s+object(?:\s+(\w+))?\s*\{", line
-            )
-            if companion_match:
-                companion_name = companion_match.group(1) or "Companion"
-                end_line = self._find_block_end(lines, line_num - 1)
-
-                construct = {
-                    "type": "companion_object",
-                    "name": companion_name,
-                    "text": "\n".join(lines[line_num - 1 : end_line]),
-                    "line_start": line_num,
-                    "line_end": end_line,
-                    "signature": line.strip().rstrip("{").strip(),
-                    "scope": "class" if current_class else "global",
-                    "parent": current_class,
-                    "features": [],
-                    "context": {"annotations": current_annotations.copy()},
-                }
-                constructs.append(construct)
-                current_annotations = []
-                continue
-
-            # Check for function definitions
-            func_match = re.search(
-                r"^\s*(?:(public|private|protected|internal|abstract|final|open|override|suspend|inline|infix|operator|tailrec)\s+)*"
-                r"fun\s+(?:<[^>]+>\s+)?(\w+)\s*\([^)]*\)"
-                r"(?:\s*:\s*[^{=]+)?"  # Return type
-                r"\s*[{=]",  # Function body or expression
-                line,
-            )
-            if func_match:
-                modifiers = [
-                    m
-                    for m in line.split()
-                    if m
-                    in [
-                        "public",
-                        "private",
-                        "protected",
-                        "internal",
-                        "abstract",
-                        "final",
-                        "open",
-                        "override",
-                        "suspend",
-                        "inline",
-                        "infix",
-                        "operator",
-                        "tailrec",
-                    ]
-                ]
-                func_name = func_match.group(2)
-
-                # Check if it's an expression function (single line with =)
-                if "=" in line and "{" not in line:
-                    end_line = line_num
-                else:
-                    end_line = self._find_block_end(lines, line_num - 1)
-
-                features = []
-                if modifiers:
-                    features.extend(modifiers)
-                if "suspend" in modifiers:
-                    features.append("coroutine")
-                if current_annotations:
-                    features.append("annotation")
-
-                signature = line.strip().rstrip("{").rstrip("=").strip()
-
-                construct = {
-                    "type": "function" if not current_class else "method",
-                    "name": func_name,
-                    "path": (
-                        f"{current_class}.{func_name}" if current_class else func_name
-                    ),
-                    "text": "\n".join(lines[line_num - 1 : end_line]),
-                    "line_start": line_num,
-                    "line_end": end_line,
-                    "signature": signature,
-                    "scope": "class" if current_class else "global",
-                    "parent": current_class,
-                    "features": features,
-                    "context": {
-                        "annotations": current_annotations.copy(),
-                        "modifiers": modifiers,
-                    },
-                }
-                constructs.append(construct)
-                current_annotations = []
-                continue
-
-            # Check for property definitions with custom getters/setters
-            property_match = re.search(
-                r"^\s*(?:(public|private|protected|internal|open|override|const|lateinit)\s+)*"
-                r"(?:val|var)\s+(\w+)\s*:\s*[^=]+(?:\s*=\s*[^{]+)?\s*$",
-                line,
-            )
-            if property_match and current_class:
-                # Check if next lines contain get() or set()
-                has_accessor = False
-                for i in range(line_num, min(line_num + 3, len(lines))):
-                    if i < len(lines):
-                        next_line = lines[i].strip()
-                        if next_line.startswith("get()") or next_line.startswith(
-                            "set("
+    def _extract_file_level_constructs(
+        self,
+        root_node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+    ):
+        """Extract file-level constructs (package, imports)."""
+        for child in root_node.children:
+            if hasattr(child, "type"):
+                if child.type == "package_header":
+                    package_name = self._extract_package_name(child, lines)
+                    if package_name:
+                        scope_stack.append(package_name)
+                        constructs.append(
+                            {
+                                "type": "package",
+                                "name": package_name,
+                                "path": package_name,
+                                "signature": f"package {package_name}",
+                                "parent": None,
+                                "scope": "global",
+                                "line_start": child.start_point[0] + 1,
+                                "line_end": child.end_point[0] + 1,
+                                "text": self._get_node_text(child, lines),
+                                "context": {"declaration_type": "package"},
+                                "features": ["package_declaration"],
+                            }
+                        )
+                elif child.type == "import_list":
+                    for import_child in child.children:
+                        if (
+                            hasattr(import_child, "type")
+                            and import_child.type == "import_header"
                         ):
-                            has_accessor = True
-                            break
+                            self._handle_import_header(import_child, constructs, lines)
 
-                if has_accessor:
-                    prop_name = property_match.group(2)
-                    end_line = line_num
-                    # Find the end of the property accessor block
-                    for i in range(line_num, len(lines)):
-                        if i < len(lines):
-                            check_line = lines[i].strip()
-                            if check_line and not (
-                                check_line.startswith("get")
-                                or check_line.startswith("set")
-                                or check_line == "}"
-                            ):
-                                end_line = i
-                                break
-
-                    modifiers = [
-                        m
-                        for m in line.split()
-                        if m
-                        in [
-                            "public",
-                            "private",
-                            "protected",
-                            "internal",
-                            "open",
-                            "override",
-                            "const",
-                            "lateinit",
-                        ]
-                    ]
-
-                    features = ["property"]
-                    if modifiers:
-                        features.extend(modifiers)
-
-                    construct = {
-                        "type": "property",
-                        "name": prop_name,
-                        "path": f"{current_class}.{prop_name}",
-                        "text": "\n".join(lines[line_num - 1 : end_line]),
-                        "line_start": line_num,
-                        "line_end": end_line,
-                        "signature": line.strip(),
-                        "scope": "class",
-                        "parent": current_class,
-                        "features": features,
-                        "context": {
-                            "annotations": current_annotations.copy(),
-                            "modifiers": modifiers,
-                        },
-                    }
-                    constructs.append(construct)
-                    current_annotations = []
-                    continue
-
-            # Check for extension functions
-            ext_func_match = re.search(
-                r"^\s*(?:(public|private|protected|internal|inline|infix|operator)\s+)*"
-                r"fun\s+(?:<[^>]+>\s+)?"  # Optional generic parameters
-                r"([^.\s]+(?:<[^>]+>)?)\s*\.\s*(\w+)\s*\([^)]*\)"
-                r"(?:\s*:\s*[^{=]+)?"
-                r"\s*[{=]",
-                line,
+    def _handle_language_constructs(
+        self,
+        node: Any,
+        node_type: str,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle Kotlin-specific AST node types."""
+        if node_type == "class_declaration":
+            self._handle_class_declaration(
+                node, constructs, lines, scope_stack, content
             )
-            if ext_func_match:
-                modifiers = [
-                    m
-                    for m in line.split()
-                    if m
-                    in [
-                        "public",
-                        "private",
-                        "protected",
-                        "internal",
-                        "inline",
-                        "infix",
-                        "operator",
-                    ]
-                ]
-                receiver_type = ext_func_match.group(2)
-                func_name = ext_func_match.group(3)
+        elif node_type == "object_declaration":
+            self._handle_object_declaration(
+                node, constructs, lines, scope_stack, content
+            )
+        elif node_type == "function_declaration":
+            self._handle_function_declaration(
+                node, constructs, lines, scope_stack, content
+            )
+        elif node_type == "property_declaration":
+            self._handle_property_declaration(
+                node, constructs, lines, scope_stack, content
+            )
+        elif node_type == "interface_declaration":
+            self._handle_interface_declaration(
+                node, constructs, lines, scope_stack, content
+            )
+        elif node_type == "type_alias":
+            self._handle_type_alias(node, constructs, lines, scope_stack, content)
 
-                # Check if it's an expression function
-                if "=" in line and "{" not in line:
-                    end_line = line_num
-                else:
-                    end_line = self._find_block_end(lines, line_num - 1)
+    def _handle_type_alias(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle type alias declaration."""
+        alias_name = self._get_identifier_from_node(node, lines)
+        if alias_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = f"{parent_path}.{alias_name}" if parent_path else alias_name
 
-                features = ["extension"]
-                if modifiers:
-                    features.extend(modifiers)
+            node_text = self._get_node_text(node, lines)
+            signature = node_text.split("\n")[0].strip()  # Get first line as signature
 
-                signature = line.strip().rstrip("{").rstrip("=").strip()
-
-                construct = {
-                    "type": "extension_function",
-                    "name": func_name,
-                    "path": f"{receiver_type}.{func_name}",
-                    "text": "\n".join(lines[line_num - 1 : end_line]),
-                    "line_start": line_num,
-                    "line_end": end_line,
-                    "signature": signature,
-                    "scope": "global",
-                    "parent": None,
-                    "features": features,
-                    "context": {
-                        "receiver_type": receiver_type,
-                        "annotations": current_annotations.copy(),
-                        "modifiers": modifiers,
-                    },
-                }
-                constructs.append(construct)
-                current_annotations = []
-                continue
-
-            # Reset annotations if we didn't use them
-            if not line_stripped.startswith("@"):
-                current_annotations = []
-
-        # If no constructs found, treat as one large chunk
-        if not constructs:
             constructs.append(
                 {
-                    "type": "module",
-                    "name": Path(file_path).stem,
-                    "text": content,
-                    "line_start": 1,
-                    "line_end": len(lines),
-                    "signature": f"module {Path(file_path).stem}",
+                    "type": "typealias",
+                    "name": alias_name,
+                    "path": full_path,
+                    "signature": signature,
+                    "parent": scope_stack[-1] if scope_stack else None,
                     "scope": "global",
-                    "features": [],
-                    "context": {"package": package_name},
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": node_text,
+                    "context": {"declaration_type": "typealias"},
+                    "features": ["typealias_declaration"],
                 }
             )
+
+    def _is_kotlin_interface(self, node: Any, node_text: str) -> bool:
+        """Check if a class_declaration node is actually an interface."""
+        # Check node children for 'interface' keyword
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "interface":
+                return True
+        # Fallback to text-based detection
+        return node_text.strip().startswith("interface ")
+
+    def _should_skip_children(self, node_type: str) -> bool:
+        """Determine if children should be skipped for certain node types."""
+        return node_type in [
+            "class_declaration",
+            "object_declaration",
+            "interface_declaration",
+            "function_declaration",
+        ]
+
+    def _extract_constructs_from_error_text(
+        self, error_text: str, start_line: int, scope_stack: List[str]
+    ) -> List[Dict[str, Any]]:
+        """Extract Kotlin constructs from ERROR node text using regex fallback."""
+        constructs = []
+
+        # Kotlin-specific regex patterns
+        patterns = {
+            "class": r"^\s*(?:(?:public|private|protected|internal|abstract|final|open|sealed|data|inner|enum|annotation|inline|value)\s+)*class\s+(\w+)(?:<[^>]*>)?",
+            "interface": r"^\s*(?:(?:public|private|protected|internal)\s+)*interface\s+(\w+)(?:<[^>]*>)?",
+            "object": r"^\s*(?:(?:public|private|protected|internal)\s+)*object\s+(\w+)",
+            "function": r"^\s*(?:(?:public|private|protected|internal|abstract|final|open|override|suspend|inline|infix|operator|tailrec)\s+)*fun\s+(?:<[^>]+>\s+)?(\w+)\s*\([^)]*\)",
+            "property": r"^\s*(?:(?:public|private|protected|internal|open|override|const|lateinit)\s+)*(?:val|var)\s+(\w+)\s*:",
+            "extension_function": r"^\s*(?:(?:public|private|protected|internal|inline|infix|operator)\s+)*fun\s+(?:<[^>]+>\s+)?([^.\s]+(?:<[^>]+>)?)\s*\.\s*(\w+)\s*\([^)]*\)",
+        }
+
+        lines = error_text.split("\n")
+
+        for line_idx, line in enumerate(lines):
+            for construct_type, pattern in patterns.items():
+                match = re.search(pattern, line)
+                if match:
+                    # Extract name based on construct type
+                    receiver_type: Optional[str] = None
+                    if construct_type == "extension_function":
+                        receiver_type = str(match.group(1))
+                        name = str(match.group(2))
+                    else:
+                        name = str(match.group(1))
+
+                    # Find the end of this construct
+                    end_line = self._find_kotlin_construct_end(
+                        lines, line_idx, construct_type
+                    )
+
+                    # Build construct text
+                    construct_lines = lines[line_idx : end_line + 1]
+                    construct_text = "\n".join(construct_lines)
+
+                    parent = scope_stack[-1] if scope_stack else None
+                    full_path = f"{parent}.{name}" if parent else name
+
+                    context_dict: Dict[str, Any] = {"extracted_from_error": True}
+
+                    # Add extra context for extension functions
+                    if (
+                        construct_type == "extension_function"
+                        and receiver_type is not None
+                    ):
+                        context_dict["receiver_type"] = receiver_type
+
+                    construct_dict = {
+                        "type": construct_type,
+                        "name": name,
+                        "path": full_path,
+                        "signature": line.strip(),
+                        "parent": parent,
+                        "scope": "global",
+                        "line_start": start_line + line_idx + 1,
+                        "line_end": start_line + end_line + 1,
+                        "text": construct_text,
+                        "context": context_dict,
+                        "features": [f"{construct_type}_implementation"],
+                    }
+
+                    constructs.append(construct_dict)
 
         return constructs
 
-    def _extract_package(self, lines: List[str]) -> str:
-        """Extract package declaration from Kotlin file."""
-        for line in lines:
-            package_match = re.search(r"^\s*package\s+([\w.]+)\s*$", line)
-            if package_match:
-                return package_match.group(1)
-        return ""
+    def _fallback_parse(self, content: str, file_path: str) -> List[SemanticChunk]:
+        """Complete fallback parsing using text chunking when all else fails."""
+        from .semantic_chunker import TextChunker
+        from pathlib import Path
 
-    def _find_class_boundaries(self, lines: List[str]) -> List[Dict[str, Any]]:
-        """Find class boundaries to help with method detection."""
-        classes = []
+        text_chunker = TextChunker(self.config)
+        chunk_dicts = text_chunker.chunk_text(content, Path(file_path))
 
-        for line_num, line in enumerate(lines, 1):
-            class_match = re.search(
-                r"^\s*(?:(?:public|private|protected|internal|abstract|final|open|sealed|data|inner|enum|annotation|inline|value)\s+)*"
-                r"(class|interface|object)\s+(\w+)(?:<[^>]*>)?",
-                line,
+        # Convert dictionary chunks to SemanticChunk objects
+        semantic_chunks = []
+        for chunk_dict in chunk_dicts:
+            semantic_chunk = SemanticChunk(
+                text=chunk_dict["text"],
+                chunk_index=chunk_dict.get("chunk_index", 0),
+                total_chunks=chunk_dict.get("total_chunks", len(chunk_dicts)),
+                size=chunk_dict.get("size", len(chunk_dict["text"])),
+                file_path=file_path,
+                file_extension=chunk_dict.get(
+                    "file_extension", Path(file_path).suffix.lstrip(".")
+                ),
+                line_start=chunk_dict.get("line_start", 1),
+                line_end=chunk_dict.get("line_end", 1),
+                semantic_chunking=False,  # This is fallback, not semantic
             )
-            if class_match:
-                class_type = class_match.group(1)
-                class_name = class_match.group(2)
+            semantic_chunks.append(semantic_chunk)
 
-                # Find where the class body actually starts (handle multi-line constructors)
-                body_start_line = line_num - 1
-                for i in range(line_num - 1, len(lines)):
-                    if "{" in lines[i]:
-                        body_start_line = i
-                        break
+        return semantic_chunks
 
-                end_line = self._find_block_end(lines, body_start_line)
-                classes.append(
-                    {
-                        "name": class_name,
-                        "type": class_type,
-                        "start": line_num,
-                        "end": end_line,
-                    }
-                )
+    # Helper methods for Kotlin constructs
 
-        return classes
+    def _extract_package_name(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract package name from package header."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "identifier":
+                return self._get_node_text(child, lines)
+        return None
 
-    def _find_block_end(self, lines: List[str], start_line: int) -> int:
-        """Find the end of a code block starting from start_line."""
-        brace_count = 0
-        found_opening = False
+    def _handle_import_header(
+        self, node: Any, constructs: List[Dict[str, Any]], lines: List[str]
+    ):
+        """Handle import header."""
+        import_text = self._get_node_text(node, lines)
+        constructs.append(
+            {
+                "type": "import",
+                "name": "import",
+                "path": "import",
+                "signature": import_text,
+                "parent": None,
+                "scope": "global",
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "text": import_text,
+                "context": {"declaration_type": "import"},
+                "features": ["import_declaration"],
+            }
+        )
 
-        for i in range(start_line, len(lines)):
-            line = lines[i]
-            # Skip string literals and comments to avoid counting braces inside them
-            line_cleaned = self._remove_strings_and_comments(line)
+    def _handle_class_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle class declaration."""
+        class_name = self._get_identifier_from_node(node, lines)
+        if class_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = f"{parent_path}.{class_name}" if parent_path else class_name
 
-            brace_count += line_cleaned.count("{")
-            brace_count -= line_cleaned.count("}")
+            modifiers = self._extract_kotlin_modifiers(node, lines)
+            type_params = self._extract_kotlin_type_parameters(node, lines)
+            supertype = self._extract_kotlin_supertype(node, lines)
 
-            if brace_count > 0:
-                found_opening = True
-            elif found_opening and brace_count == 0:
-                return i + 1
+            # Extract full signature from the node text
+            node_text = self._get_node_text(node, lines)
 
-        return len(lines)
+            # Check if this is actually an interface
+            is_interface = self._is_kotlin_interface(node, node_text)
+            construct_type = "interface" if is_interface else "class"
 
-    def _remove_strings_and_comments(self, line: str) -> str:
-        """Remove string literals and comments from a line to avoid counting braces inside them."""
-        # Simple approach: remove quoted strings and line comments
-        result = ""
-        in_string = False
-        in_char = False
-        in_template = False
-        escape_next = False
-        i = 0
+            signature = self._extract_kotlin_class_signature(
+                node_text, class_name, construct_type
+            )
 
-        while i < len(line):
-            char = line[i]
+            constructs.append(
+                {
+                    "type": construct_type,
+                    "name": class_name,
+                    "path": full_path,
+                    "signature": signature,
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "class",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": node_text,
+                    "context": {
+                        "declaration_type": "class",
+                        "modifiers": modifiers,
+                        "type_parameters": type_params,
+                        "supertype": supertype,
+                    },
+                    "features": ["class_declaration"],
+                }
+            )
 
-            if escape_next:
-                escape_next = False
-                i += 1
-                continue
+            # Process class members
+            scope_stack.append(class_name)
+            self._process_class_members(node, constructs, lines, scope_stack, content)
+            scope_stack.pop()
 
-            if char == "\\" and (in_string or in_char or in_template):
-                escape_next = True
-                i += 1
-                continue
+    def _handle_object_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle object declaration."""
+        object_name = self._get_identifier_from_node(node, lines)
+        if object_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = f"{parent_path}.{object_name}" if parent_path else object_name
 
-            # Handle template strings in Kotlin
-            if char == "$" and i + 1 < len(line) and line[i + 1] == "{" and in_string:
-                in_template = True
-                i += 2
-                continue
+            constructs.append(
+                {
+                    "type": "object",
+                    "name": object_name,
+                    "path": full_path,
+                    "signature": f"object {object_name}",
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "object",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": self._get_node_text(node, lines),
+                    "context": {"declaration_type": "object"},
+                    "features": ["object_declaration"],
+                }
+            )
 
-            if in_template and char == "}":
-                in_template = False
-                i += 1
-                continue
+            # Process object members
+            scope_stack.append(object_name)
+            self._process_class_members(node, constructs, lines, scope_stack, content)
+            scope_stack.pop()
 
-            if char == '"' and not in_char and not in_template:
-                in_string = not in_string
-                i += 1
-                continue
+    def _handle_interface_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle interface declaration."""
+        interface_name = self._get_identifier_from_node(node, lines)
+        if interface_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = (
+                f"{parent_path}.{interface_name}" if parent_path else interface_name
+            )
 
-            if char == "'" and not in_string and not in_template:
-                in_char = not in_char
-                i += 1
-                continue
+            constructs.append(
+                {
+                    "type": "interface",
+                    "name": interface_name,
+                    "path": full_path,
+                    "signature": f"interface {interface_name}",
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "interface",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": self._get_node_text(node, lines),
+                    "context": {"declaration_type": "interface"},
+                    "features": ["interface_declaration"],
+                }
+            )
 
-            if not in_string and not in_char and not in_template:
-                if char == "/" and i + 1 < len(line) and line[i + 1] == "/":
-                    # Rest of line is comment
-                    break
-                result += char
+            # Process interface members
+            scope_stack.append(interface_name)
+            self._process_class_members(node, constructs, lines, scope_stack, content)
+            scope_stack.pop()
 
-            i += 1
+    def _handle_function_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle function declaration."""
+        function_name = self._get_identifier_from_node(node, lines)
+        if function_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = (
+                f"{parent_path}.{function_name}" if parent_path else function_name
+            )
 
-        return result
+            modifiers = self._extract_kotlin_modifiers(node, lines)
+            params = self._extract_kotlin_parameters(node, lines)
+            return_type = self._extract_kotlin_return_type(node, lines)
+            type_params = self._extract_kotlin_type_parameters(node, lines)
+            receiver = self._extract_kotlin_receiver(node, lines)
 
-    def _is_malformed_kotlin(self, content: str) -> bool:
-        """Detect obviously malformed Kotlin content that should fall back to text chunking."""
-        lines = content.split("\n")
+            signature = "fun "
+            if type_params:
+                signature += f"<{type_params}> "
+            if receiver:
+                signature += f"{receiver}."
+            signature += function_name
+            if params:
+                signature += f"({params})"
+            if return_type:
+                signature += f": {return_type}"
 
-        # Look for lines that have obvious non-Kotlin syntax
-        for line in lines:
-            line_stripped = line.strip()
-            if (
-                not line_stripped
-                or line_stripped.startswith("//")
-                or line_stripped.startswith("/*")
-            ):
-                continue
+            # Determine if this is an extension function, method, or function
+            if receiver:
+                construct_type = "extension_function"
+            else:
+                # Check if we're inside a class/object scope by looking at the immediate parent
+                # If parent contains a dot, it's likely a package (com.example)
+                # If parent is a simple name, it's likely a class/object
+                current_parent = scope_stack[-1] if scope_stack else None
+                if current_parent and "." not in current_parent:
+                    # Simple name parent suggests class/object scope
+                    construct_type = "method"
+                else:
+                    # No parent or package-like parent suggests top-level function
+                    construct_type = "function"
 
-            # Skip package/import/class declarations which are valid
-            if any(
-                line_stripped.startswith(keyword)
-                for keyword in [
-                    "package",
-                    "import",
-                    "class",
-                    "interface",
-                    "object",
-                    "fun",
-                    "val",
-                    "var",
-                    "enum",
-                    "sealed",
-                    "data",
-                ]
-            ):
-                continue
+            constructs.append(
+                {
+                    "type": construct_type,
+                    "name": function_name,
+                    "path": full_path,
+                    "signature": signature,
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "function",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": self._get_node_text(node, lines),
+                    "context": {
+                        "declaration_type": construct_type,
+                        "modifiers": modifiers,
+                        "parameters": params,
+                        "return_type": return_type,
+                        "type_parameters": type_params,
+                        "receiver": receiver,
+                    },
+                    "features": ["function_declaration"],
+                }
+            )
 
-            # Look for lines that are clearly not Kotlin syntax
-            if line_stripped and not any(
-                char in line_stripped
-                for char in [
-                    ";",
-                    "{",
-                    "}",
-                    "(",
-                    ")",
-                    "=",
-                    "+",
-                    "-",
-                    "*",
-                    "/",
-                    ":",
-                    ".",
-                    ",",
-                ]
-            ):
-                # Check if it's just random words (common in test malformed content)
-                words = line_stripped.split()
-                if len(words) >= 3 and all(
-                    word.isalpha() and word.islower() for word in words
+    def _handle_property_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle property declaration."""
+        property_name = self._get_identifier_from_node(node, lines)
+        if property_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = (
+                f"{parent_path}.{property_name}" if parent_path else property_name
+            )
+
+            modifiers = self._extract_kotlin_modifiers(node, lines)
+            prop_type = self._extract_kotlin_property_type(node, lines)
+
+            constructs.append(
+                {
+                    "type": "property",
+                    "name": property_name,
+                    "path": full_path,
+                    "signature": f"property {property_name}: {prop_type}",
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "property",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": self._get_node_text(node, lines),
+                    "context": {
+                        "declaration_type": "property",
+                        "modifiers": modifiers,
+                        "property_type": prop_type,
+                    },
+                    "features": ["property_declaration"],
+                }
+            )
+
+    def _process_class_members(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Process members of a class/interface/object."""
+        for child in node.children:
+            if hasattr(child, "type"):
+                if child.type == "class_body":
+                    for member in child.children:
+                        self._traverse_node(
+                            member, constructs, lines, scope_stack, content
+                        )
+
+    # Kotlin-specific helper methods
+
+    def _extract_kotlin_modifiers(self, node: Any, lines: List[str]) -> List[str]:
+        """Extract modifiers from a Kotlin declaration."""
+        modifiers = []
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "modifiers":
+                modifier_text = self._get_node_text(child, lines)
+                modifiers.extend(modifier_text.split())
+        return modifiers
+
+    def _extract_kotlin_type_parameters(
+        self, node: Any, lines: List[str]
+    ) -> Optional[str]:
+        """Extract type parameters from declaration."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "type_parameters":
+                return self._get_node_text(child, lines)
+        return None
+
+    def _extract_kotlin_supertype(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract supertype from class declaration."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "delegation_specifiers":
+                return self._get_node_text(child, lines)
+        return None
+
+    def _extract_kotlin_parameters(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract parameters from function."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "function_value_parameters":
+                params_text = self._get_node_text(child, lines)
+                # Strip outer parentheses if present
+                if (
+                    params_text
+                    and params_text.startswith("(")
+                    and params_text.endswith(")")
                 ):
-                    return True
+                    params_text = params_text[1:-1]
+                return params_text
+        return None
 
-        return False
+    def _extract_kotlin_return_type(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract return type from function."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "type":
+                return self._get_node_text(child, lines)
+        return None
+
+    def _extract_kotlin_receiver(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract receiver type from extension function."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "receiver_type":
+                return self._get_node_text(child, lines)
+        return None
+
+    def _extract_kotlin_property_type(
+        self, node: Any, lines: List[str]
+    ) -> Optional[str]:
+        """Extract property type from property declaration."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "type":
+                return self._get_node_text(child, lines)
+        return None
+
+    def _find_kotlin_construct_end(
+        self, lines: List[str], start_line: int, construct_type: str
+    ) -> int:
+        """Find the end line of a Kotlin construct."""
+        if construct_type in ["class", "interface", "object", "function"]:
+            # Find matching braces
+            brace_count = 0
+            for i in range(start_line, len(lines)):
+                line = lines[i]
+                brace_count += line.count("{") - line.count("}")
+                if brace_count == 0 and "{" in line:
+                    return i
+        elif construct_type in ["property", "extension_function"]:
+            # Single line or until we find a complete statement
+            for i in range(start_line, min(start_line + 5, len(lines))):
+                if lines[i].strip().endswith(";") or (
+                    i > start_line and not lines[i].strip().endswith(",")
+                ):
+                    return i
+
+        return min(start_line + 10, len(lines) - 1)
+
+    def _extract_kotlin_class_signature(
+        self, node_text: str, class_name: str, construct_type: str = "class"
+    ) -> str:
+        """Extract the Kotlin class/interface signature from node text."""
+        # Get the class/interface declaration line
+        lines = node_text.split("\n")
+        keyword = "interface" if construct_type == "interface" else "class"
+
+        for line in lines:
+            if keyword in line and class_name in line:
+                # Extract everything up to the opening brace or end of line
+                signature = line.split("{")[0].strip()
+                return signature
+        return f"{keyword} {class_name}"
+
+    def _get_identifier_from_node(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract identifier name from a Kotlin node."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type in (
+                "identifier",
+                "simple_identifier",
+                "type_identifier",
+            ):
+                return str(self._get_node_text(child, lines))
+        return None

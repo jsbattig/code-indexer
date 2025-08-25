@@ -145,11 +145,8 @@ class RustSemanticParser(BaseTreeSitterParser):
             (r"^\s*(?:pub\s+)?union\s+([A-Za-z_][A-Za-z0-9_]*)", "union"),
             # Trait patterns
             (r"^\s*(?:pub\s+)?trait\s+([A-Za-z_][A-Za-z0-9_]*)", "trait"),
-            # Impl patterns
-            (
-                r"^\s*impl(?:\s*<[^>]*>)?\s+(?:[A-Za-z_][A-Za-z0-9_:]*\s+for\s+)?([A-Za-z_][A-Za-z0-9_]*)",
-                "impl",
-            ),
+            # Impl patterns - simplified without complex regex
+            (r"^\s*impl\s+", "impl"),
             # Function patterns
             (r"^\s*(?:pub\s+)?(?:async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)", "function"),
             # Macro patterns
@@ -171,7 +168,24 @@ class RustSemanticParser(BaseTreeSitterParser):
             for pattern, construct_type in patterns:
                 match = re.search(pattern, line)
                 if match:
-                    name = match.group(1)
+                    # Handle impl pattern differently as it has no capture group
+                    if construct_type == "impl":
+                        # Extract impl target from the line
+                        impl_line = line.strip()
+                        if " for " in impl_line:
+                            # Try to extract "impl Trait for Type"
+                            parts = impl_line.replace("impl", "").strip().split(" for ")
+                            if len(parts) == 2:
+                                name = f"impl {parts[0].strip()} for {parts[1].strip()}"
+                            else:
+                                name = "impl [unknown]"
+                        else:
+                            # Simple impl
+                            target = impl_line.replace("impl", "").strip().rstrip("{")
+                            name = f"impl {target}" if target else "impl [unknown]"
+                    else:
+                        name = match.group(1)
+
                     full_path = f"{current_parent}::{name}" if current_parent else name
 
                     constructs.append(
@@ -251,6 +265,38 @@ class RustSemanticParser(BaseTreeSitterParser):
         if "pub" in node_text:
             features.append("public")
 
+        # Check for default type parameters
+        if "=" in node_text and "<" in node_text:
+            features.append("default_type_params")
+
+        # Check for where clause
+        if "where" in node_text:
+            features.append("where_clause")
+
+        # Check for derive attributes - look for attributes in the lines preceding this struct
+        line_start = node.start_point[0]
+        preceding_lines = lines[max(0, line_start - 10) : line_start]
+        preceding_text = "\n".join(preceding_lines).lower()
+
+        if "#[derive(" in preceding_text:
+            if "debug" in preceding_text:
+                features.append("derive_debug")
+            if "clone" in preceding_text:
+                features.append("derive_clone")
+            if "partialeq" in preceding_text:
+                features.append("derive_partialeq")
+            if "eq" in preceding_text:
+                features.append("derive_eq")
+            if "serialize" in preceding_text:
+                features.append("derive_serialize")
+            if "deserialize" in preceding_text:
+                features.append("derive_deserialize")
+
+        if "serde" in preceding_text:
+            features.append("serde_attributes")
+        if "repr(c)" in preceding_text:
+            features.append("repr_c")
+
         signature = self._extract_signature(node, lines, "struct")
 
         constructs.append(
@@ -292,6 +338,30 @@ class RustSemanticParser(BaseTreeSitterParser):
             features.append("generic")
         if "pub" in node_text:
             features.append("public")
+
+        # Check for derive attributes - look for attributes in the lines preceding this enum
+        line_start = node.start_point[0]
+        preceding_lines = lines[max(0, line_start - 10) : line_start]
+        preceding_text = "\n".join(preceding_lines).lower()
+
+        if "#[derive(" in preceding_text:
+            if "debug" in preceding_text:
+                features.append("derive_debug")
+            if "clone" in preceding_text:
+                features.append("derive_clone")
+            if "partialeq" in preceding_text:
+                features.append("derive_partialeq")
+            if "eq" in preceding_text:
+                features.append("derive_eq")
+            if "serialize" in preceding_text:
+                features.append("derive_serialize")
+            if "deserialize" in preceding_text:
+                features.append("derive_deserialize")
+
+        if "serde" in preceding_text:
+            features.append("serde_attributes")
+        if "repr(c)" in preceding_text:
+            features.append("repr_c")
 
         signature = self._extract_signature(node, lines, "enum")
 
@@ -377,6 +447,14 @@ class RustSemanticParser(BaseTreeSitterParser):
         if "pub" in node_text:
             features.append("public")
 
+        # Check for associated types
+        if self._has_associated_types_ast(node, lines):
+            features.append("associated_types")
+
+        # Check for lifetime parameters
+        if "'" in node_text and ("'static" in node_text or "'a" in node_text):
+            features.append("lifetime_bounds")
+
         signature = self._extract_signature(node, lines, "trait")
 
         constructs.append(
@@ -408,28 +486,24 @@ class RustSemanticParser(BaseTreeSitterParser):
         scope_stack: List[str],
         content: str,
     ):
-        """Handle Rust impl declaration."""
-        impl_target = self._extract_impl_target(node, lines)
-        if not impl_target:
+        """Handle Rust impl declaration using pure AST parsing."""
+        impl_info = self._parse_impl_block_ast(node, lines)
+        if not impl_info:
             return
 
         current_scope = "::".join(scope_stack)
-        full_path = f"{current_scope}::{impl_target}" if current_scope else impl_target
-
-        # Check for features
-        features = []
-        node_text = self._get_node_text(node, lines)
-        if "<" in node_text and ">" in node_text:
-            features.append("generic")
-        if " for " in node_text:
-            features.append("trait_impl")
+        full_path = (
+            f"{current_scope}::{impl_info['name']}"
+            if current_scope
+            else impl_info["name"]
+        )
 
         signature = self._extract_signature(node, lines, "impl")
 
         constructs.append(
             {
                 "type": "impl",
-                "name": f"impl {impl_target}",
+                "name": impl_info["name"],
                 "path": full_path,
                 "signature": signature,
                 "parent": current_scope if current_scope else None,
@@ -437,13 +511,18 @@ class RustSemanticParser(BaseTreeSitterParser):
                 "line_start": node.start_point[0] + 1,
                 "line_end": node.end_point[0] + 1,
                 "text": self._get_node_text(node, lines),
-                "context": {"declaration_type": "impl", "target": impl_target},
-                "features": features,
+                "context": {
+                    "declaration_type": "impl",
+                    "target": impl_info["target"],
+                    "parsed_via_ast": True,
+                    **impl_info["context"],
+                },
+                "features": impl_info["features"],
             }
         )
 
         # Process impl methods
-        scope_stack.append(f"impl {impl_target}")
+        scope_stack.append(impl_info["name"])
         self._process_impl_items(node, constructs, lines, scope_stack, content)
         scope_stack.pop()
 
@@ -463,17 +542,8 @@ class RustSemanticParser(BaseTreeSitterParser):
         current_scope = "::".join(scope_stack)
         full_path = f"{current_scope}::{func_name}" if current_scope else func_name
 
-        # Check for features
-        features = []
-        node_text = self._get_node_text(node, lines)
-        if "<" in node_text and ">" in node_text:
-            features.append("generic")
-        if "pub" in node_text:
-            features.append("public")
-        if "async" in node_text:
-            features.append("async")
-        if "unsafe" in node_text:
-            features.append("unsafe")
+        # Check for features using AST
+        features = self._parse_function_features_ast(node, lines)
 
         signature = self._extract_function_signature(node, lines)
 
@@ -509,17 +579,8 @@ class RustSemanticParser(BaseTreeSitterParser):
         current_scope = "::".join(scope_stack)
         full_path = f"{current_scope}::{func_name}" if current_scope else func_name
 
-        # Check for features
-        features = []
-        node_text = self._get_node_text(node, lines)
-        if "<" in node_text and ">" in node_text:
-            features.append("generic")
-        if "pub" in node_text:
-            features.append("public")
-        if "async" in node_text:
-            features.append("async")
-        if "unsafe" in node_text:
-            features.append("unsafe")
+        # Check for features using AST
+        features = self._parse_function_features_ast(node, lines)
 
         signature = self._extract_function_signature(node, lines)
 
@@ -819,44 +880,74 @@ class RustSemanticParser(BaseTreeSitterParser):
                     )
 
     def _extract_impl_target(self, node: Any, lines: List[str]) -> Optional[str]:
-        """Extract the target type/trait for an impl block."""
+        """Extract the target type/trait for an impl block using pure AST parsing."""
         try:
-            node_text = self._get_node_text(node, lines)
-            # Get just the first line (signature) to avoid matching 'for' in comments/code
-            first_line = node_text.split("\n")[0].strip()
+            # Find impl_item structure: impl [generic_params] [trait] for [type] { ... }
+            # or: impl [generic_params] [type] { ... }
 
-            # Handle "impl Trait for Type" and "impl Type" patterns
-            if " for " in first_line:
-                # Updated regex to handle generics in impl target
-                match = re.search(
-                    r"impl\s*(?:<[^>]*>)?\s*([^<\s]+(?:<[^>]*>)?)\s+for\s+([^<\s{]+(?:<[^>]*>)?)",
-                    first_line,
-                )
-                if match:
-                    return f"{match.group(1)} for {match.group(2)}"
-            else:
-                # Updated regex to handle generics in impl target
-                match = re.search(
-                    r"impl\s*(?:<[^>]*>)?\s*([^<\s{]+(?:<[^>]*>)?)", first_line
-                )
-                if match:
-                    return match.group(1)
+            trait_name = None
+            target_type = None
+
+            for child in node.children:
+                if hasattr(child, "type"):
+                    # Look for type_identifier or generic_type that represents the target
+                    if child.type in [
+                        "type_identifier",
+                        "generic_type",
+                        "scoped_type_identifier",
+                    ]:
+                        if target_type is None:  # First type found
+                            target_type = self._get_node_text(child, lines).strip()
+                        elif (
+                            trait_name is None
+                        ):  # Second type found means first was trait
+                            trait_name = target_type
+                            target_type = self._get_node_text(child, lines).strip()
+
+                    # Check if this is a trait implementation (has 'for' keyword)
+                    elif child.type == "for":
+                        # If we found 'for', previous type was the trait
+                        if target_type and not trait_name:
+                            trait_name = target_type
+                            target_type = None
+
+            # Build the result string
+            if trait_name and target_type:
+                return f"{trait_name} for {target_type}"
+            elif target_type:
+                return target_type
+
         except Exception:
+            # AST parsing failed - should not use regex fallback
             pass
+
         return None
 
     def _extract_function_signature(self, node: Any, lines: List[str]) -> str:
-        """Extract function signature including modifiers, name, and parameters."""
+        """Extract function signature including modifiers, name, and parameters using pure AST."""
         try:
-            node_text = self._get_node_text(node, lines)
-            # Find the signature part (before the opening brace)
-            signature_match = re.match(r"([^{]*)", node_text.strip())
-            if signature_match:
-                return signature_match.group(1).strip()
-        except Exception:
-            pass
+            # Build signature from AST components
+            signature_parts = []
 
-        return self._get_node_text(node, lines).split("{")[0].strip()
+            for child in node.children:
+                if hasattr(child, "type"):
+                    # Stop at the block (function body)
+                    if child.type == "block":
+                        break
+
+                    # Add all signature components before the body
+                    child_text = self._get_node_text(child, lines).strip()
+                    if child_text:
+                        signature_parts.append(child_text)
+
+            return " ".join(signature_parts)
+
+        except Exception:
+            # Fallback to splitting at brace
+            node_text = self._get_node_text(node, lines)
+            if "{" in node_text:
+                return node_text.split("{")[0].strip()
+            return node_text.strip()
 
     def _extract_signature(
         self, node: Any, lines: List[str], construct_type: str
@@ -921,3 +1012,219 @@ class RustSemanticParser(BaseTreeSitterParser):
                 return str(self._get_node_text(child, lines)).strip()
 
         return None
+
+    def _parse_impl_block_ast(
+        self, node: Any, lines: List[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Parse impl block using pure AST to extract all relevant information."""
+        try:
+            trait_name = None
+            target_type = None
+            features = []
+            context = {}
+
+            # Analyze the impl block structure
+            for child in node.children:
+                if hasattr(child, "type"):
+                    child_type = child.type
+                    child_text = self._get_node_text(child, lines).strip()
+
+                    if child_type == "type_parameters":
+                        features.append("generic")
+                    elif child_type == "where_clause":
+                        features.append("where_clause")
+                    elif child_type in [
+                        "type_identifier",
+                        "generic_type",
+                        "scoped_type_identifier",
+                    ]:
+                        if target_type is None:
+                            target_type = child_text
+                        else:
+                            # Second type found, means first was trait
+                            trait_name = target_type
+                            target_type = child_text
+                    elif child_type == "for":
+                        # This confirms it's a trait impl
+                        features.append("trait_impl")
+                        if target_type and not trait_name:
+                            trait_name = target_type
+                            target_type = None
+
+            # Determine final target and name
+            if trait_name and target_type:
+                name = f"impl {trait_name} for {target_type}"
+                context["trait"] = trait_name
+                context["target"] = target_type
+                if "trait_impl" not in features:
+                    features.append("trait_impl")
+
+                # Check if this trait impl has associated type implementations
+                node_text = self._get_node_text(node, lines)
+                if "type " in node_text and "=" in node_text:
+                    features.append("associated_type_impl")
+
+            elif target_type:
+                name = f"impl {target_type}"
+                context["target"] = target_type
+            else:
+                # Fallback - extract from text
+                first_line = self._get_node_text(node, lines).split("\n")[0].strip()
+                if " for " in first_line:
+                    # Try to parse "impl X for Y"
+                    parts = first_line.replace("impl", "").strip().split(" for ")
+                    if len(parts) == 2:
+                        trait_part = parts[0].strip()
+                        type_part = parts[1].strip().rstrip("{")
+                        name = f"impl {trait_part} for {type_part}"
+                        context["trait"] = trait_part
+                        context["target"] = type_part
+                        features.append("trait_impl")
+                    else:
+                        return None
+                else:
+                    # Simple impl block
+                    impl_text = first_line.replace("impl", "").strip().rstrip("{")
+                    if impl_text:
+                        name = f"impl {impl_text}"
+                        context["target"] = impl_text
+                    else:
+                        return None
+
+            return {
+                "name": name,
+                "target": context.get("target", ""),
+                "features": features,
+                "context": context,
+            }
+
+        except Exception:
+            return None
+
+    def _parse_function_features_ast(self, node: Any, lines: List[str]) -> List[str]:
+        """Parse function features using AST analysis."""
+        features = []
+
+        # Check the full text for keywords as backup
+        node_text = self._get_node_text(node, lines)
+
+        for child in node.children:
+            if hasattr(child, "type"):
+                child_type = child.type
+                child_text = self._get_node_text(child, lines).strip()
+
+                if child_type == "visibility_modifier" and "pub" in child_text:
+                    features.append("public")
+                elif child_type == "type_parameters":
+                    features.append("generic")
+                elif child_type == "where_clause":
+                    features.append("where_clause")
+
+        # Check for keywords in the text as AST might not capture them correctly
+        if "async" in node_text and "async" not in features:
+            features.append("async")
+        if "unsafe" in node_text and "unsafe" not in features:
+            features.append("unsafe")
+        if "pub" in node_text and "public" not in features:
+            features.append("public")
+
+        # Check for complex bounds patterns
+        if "where" in node_text and "where_clause" in features:
+            # Count the number of bounds
+            bound_indicators = [
+                "+",
+                ":",
+                "Send",
+                "Sync",
+                "Clone",
+                "Debug",
+                "Into",
+                "From",
+            ]
+            bound_count = sum(
+                node_text.count(indicator) for indicator in bound_indicators
+            )
+            if bound_count >= 3:  # Multiple complex bounds
+                features.append("multiple_bounds")
+
+        # Check for lifetime parameters
+        if "'" in node_text and ("'static" in node_text or "'a" in node_text):
+            features.append("lifetime_bounds")
+
+        # Check for default type parameters
+        if "=" in node_text and "<" in node_text:
+            features.append("default_type_params")
+
+        return features
+
+    def _parse_derive_attributes_ast(self, node: Any, lines: List[str]) -> List[str]:
+        """Parse derive attributes from AST."""
+        features = []
+
+        # Check the full text for derive attributes as backup
+        node_text = self._get_node_text(node, lines).lower()
+
+        # Look for attribute nodes before the main declaration
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "attribute_item":
+                attr_text = self._get_node_text(child, lines).lower()
+
+                if "derive" in attr_text:
+                    # Extract individual derives
+                    if "debug" in attr_text:
+                        features.append("derive_debug")
+                    if "clone" in attr_text:
+                        features.append("derive_clone")
+                    if "partialeq" in attr_text:
+                        features.append("derive_partialeq")
+                    if "eq" in attr_text:
+                        features.append("derive_eq")
+                    if "serialize" in attr_text:
+                        features.append("derive_serialize")
+                    if "deserialize" in attr_text:
+                        features.append("derive_deserialize")
+
+                if "serde" in attr_text:
+                    features.append("serde_attributes")
+                if "repr(c)" in attr_text:
+                    features.append("repr_c")
+
+        # Fallback to text parsing if AST didn't capture attributes
+        if "#[derive(" in node_text:
+            if "debug" in node_text:
+                features.append("derive_debug")
+            if "clone" in node_text:
+                features.append("derive_clone")
+            if "partialeq" in node_text:
+                features.append("derive_partialeq")
+            if "eq" in node_text:
+                features.append("derive_eq")
+            if "serialize" in node_text:
+                features.append("derive_serialize")
+            if "deserialize" in node_text:
+                features.append("derive_deserialize")
+
+        if "serde" in node_text:
+            features.append("serde_attributes")
+        if "repr(c)" in node_text:
+            features.append("repr_c")
+
+        return features
+
+    def _has_associated_types_ast(self, node: Any, lines: List[str]) -> bool:
+        """Check if a trait has associated types using AST."""
+        # Check AST structure
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "declaration_list":
+                for item in child.children:
+                    if hasattr(item, "type") and item.type == "type_item":
+                        return True
+
+        # Fallback to text parsing
+        node_text = self._get_node_text(node, lines)
+        if "type " in node_text and (
+            "type Item" in node_text or "type Output" in node_text
+        ):
+            return True
+
+        return False

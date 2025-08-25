@@ -488,11 +488,8 @@ class LuaSemanticParser(BaseTreeSitterParser):
                 return  # Don't process as other assignment types
 
         # Check if this is a direct function assignment (var = function)
-        direct_func_match = re.search(
-            r"^\s*([A-Za-z_][A-Za-z0-9_.:]*)\s*=\s*function", node_text
-        )
-        if direct_func_match:
-            func_name = direct_func_match.group(1)
+        func_name = self._extract_function_assignment_name(node, lines)
+        if func_name:
             current_scope = ".".join(scope_stack)
             full_path = f"{current_scope}.{func_name}" if current_scope else func_name
 
@@ -537,10 +534,9 @@ class LuaSemanticParser(BaseTreeSitterParser):
                 }
             )
         # Check if this is a table assignment
-        elif "{" in node_text and "=" in node_text:
-            var_match = re.search(r"^\s*([A-Za-z_][A-Za-z0-9_.:]*)\s*=\s*\{", node_text)
-            if var_match:
-                table_name = var_match.group(1)
+        else:
+            table_name = self._extract_table_assignment_name(node, lines)
+            if table_name:
                 current_scope = ".".join(scope_stack)
                 full_path = (
                     f"{current_scope}.{table_name}" if current_scope else table_name
@@ -733,41 +729,32 @@ class LuaSemanticParser(BaseTreeSitterParser):
         node_text = self._get_node_text(node, lines)
 
         # Check if this is a local function assignment
-        if "function" in node_text:
-            var_match = re.search(
-                r"local\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*function", node_text
+        func_name = self._extract_local_function_name(node, lines)
+        if func_name:
+            current_scope = ".".join(scope_stack)
+            full_path = f"{current_scope}.{func_name}" if current_scope else func_name
+
+            signature = node_text.split("\n")[0].strip()
+
+            constructs.append(
+                {
+                    "type": "local_function",
+                    "name": func_name,
+                    "path": full_path,
+                    "signature": signature,
+                    "parent": current_scope if current_scope else None,
+                    "scope": "local",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": self._get_node_text(node, lines),
+                    "context": {"declaration_type": "local_function_assignment"},
+                    "features": ["local"],
+                }
             )
-            if var_match:
-                func_name = var_match.group(1)
-                current_scope = ".".join(scope_stack)
-                full_path = (
-                    f"{current_scope}.{func_name}" if current_scope else func_name
-                )
-
-                signature = node_text.split("\n")[0].strip()
-
-                constructs.append(
-                    {
-                        "type": "local_function",
-                        "name": func_name,
-                        "path": full_path,
-                        "signature": signature,
-                        "parent": current_scope if current_scope else None,
-                        "scope": "local",
-                        "line_start": node.start_point[0] + 1,
-                        "line_end": node.end_point[0] + 1,
-                        "text": self._get_node_text(node, lines),
-                        "context": {"declaration_type": "local_function_assignment"},
-                        "features": ["local"],
-                    }
-                )
         # Check if this is a local table
-        elif "{" in node_text:
-            var_match = re.search(
-                r"local\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\{", node_text
-            )
-            if var_match:
-                table_name = var_match.group(1)
+        else:
+            table_name = self._extract_local_table_name(node, lines)
+            if table_name:
                 current_scope = ".".join(scope_stack)
                 full_path = (
                     f"{current_scope}.{table_name}" if current_scope else table_name
@@ -820,9 +807,8 @@ class LuaSemanticParser(BaseTreeSitterParser):
 
         # Check if this looks like a module return
         if len(scope_stack) == 0:  # Top-level return
-            return_match = re.search(r"return\s+([A-Za-z_][A-Za-z0-9_.:]*)", node_text)
-            if return_match:
-                module_name = return_match.group(1)
+            module_name = self._extract_module_return_name(node, lines)
+            if module_name:
 
                 constructs.append(
                     {
@@ -1030,34 +1016,63 @@ class LuaSemanticParser(BaseTreeSitterParser):
         return f"{func_name} = {first_line}"
 
     def _extract_function_name(self, node: Any, lines: List[str]) -> Optional[str]:
-        """Extract function name from function declaration node."""
+        """Extract function name from function declaration node using pure AST approach."""
         try:
             # Look for the function name in various node structures
             for child in node.children:
                 if hasattr(child, "type"):
                     if child.type == "identifier":
                         return self._get_node_text(child, lines).strip()
-                    elif child.type == "dot_index_expression" or child.type == "field":
+                    elif child.type == "method_index_expression":
+                        # For MyClass:new style methods, return full path
+                        return self._get_node_text(child, lines).strip()
+                    elif child.type == "dot_index_expression":
+                        # For MyClass.new style methods
                         return self._get_node_text(child, lines).strip()
         except Exception:
             pass
 
-        # Fallback to regex
-        node_text = self._get_node_text(node, lines)
-        match = re.search(r"function\s+([A-Za-z_][A-Za-z0-9_.:]*)", node_text)
-        return match.group(1) if match else None
+        return None
 
     def _extract_function_signature(self, node: Any, lines: List[str]) -> str:
-        """Extract function signature including name and parameters."""
+        """Extract function signature including name and parameters using pure AST approach."""
         try:
-            node_text = self._get_node_text(node, lines)
-            # Find the signature part (before the function body)
-            signature_match = re.match(
-                r"([^\n]*(?:function[^\n]*|[^\n]*=\s*function[^\n]*))",
-                node_text.strip(),
-            )
-            if signature_match:
-                return signature_match.group(1).strip()
+            signature_parts = []
+
+            # Check if it's a local function
+            is_local = False
+            for child in node.children:
+                if hasattr(child, "type") and child.type == "local":
+                    is_local = True
+                    break
+
+            if is_local:
+                signature_parts.append("local")
+
+            # Add function keyword
+            signature_parts.append("function")
+
+            # Extract function name and parameters
+            func_name = None
+            params = None
+
+            for child in node.children:
+                if hasattr(child, "type"):
+                    if child.type in [
+                        "identifier",
+                        "method_index_expression",
+                        "dot_index_expression",
+                    ]:
+                        func_name = self._get_node_text(child, lines).strip()
+                    elif child.type == "parameters":
+                        params = self._get_node_text(child, lines).strip()
+
+            if func_name:
+                signature_parts.append(func_name)
+            if params:
+                signature_parts.append(params)
+
+            return " ".join(signature_parts)
         except Exception:
             pass
 
@@ -1097,17 +1112,135 @@ class LuaSemanticParser(BaseTreeSitterParser):
         return chunks
 
     def _is_local_function(self, node: Any, lines: List[str]) -> bool:
-        """Check if a function declaration is local."""
-        # Check if the first child is 'local'
-        if hasattr(node, "children") and node.children:
-            first_child = node.children[0]
-            if hasattr(first_child, "type") and first_child.type == "local":
-                return True
+        """Check if a function declaration is local using pure AST approach."""
+        # Check if any child is 'local' (it should be first, but be thorough)
+        if hasattr(node, "children"):
+            for child in node.children:
+                if hasattr(child, "type") and child.type == "local":
+                    return True
         return False
 
     def _extract_identifier(self, node: Any, lines: List[str]) -> Optional[str]:
         """Extract identifier name from a node."""
         return self._get_identifier_from_node(node, lines)
+
+    def _extract_function_assignment_name(
+        self, assignment_node: Any, lines: List[str]
+    ) -> Optional[str]:
+        """Extract function name from assignment statement using pure AST approach."""
+        try:
+            # Look for: variable_list -> identifier and expression_list -> function_definition
+            variable_name = None
+            has_function = False
+
+            for child in assignment_node.children:
+                if hasattr(child, "type"):
+                    if child.type == "variable_list":
+                        # Get the identifier from variable_list (can be identifier or dot_index_expression)
+                        for grandchild in child.children:
+                            if hasattr(grandchild, "type") and grandchild.type in [
+                                "identifier",
+                                "dot_index_expression",
+                            ]:
+                                variable_name = self._get_node_text(
+                                    grandchild, lines
+                                ).strip()
+                                break
+                    elif child.type == "expression_list":
+                        # Check if it contains a function_definition
+                        for grandchild in child.children:
+                            if (
+                                hasattr(grandchild, "type")
+                                and grandchild.type == "function_definition"
+                            ):
+                                has_function = True
+                                break
+
+            return variable_name if (variable_name and has_function) else None
+        except Exception:
+            return None
+
+    def _extract_table_assignment_name(
+        self, assignment_node: Any, lines: List[str]
+    ) -> Optional[str]:
+        """Extract table name from assignment statement using pure AST approach."""
+        try:
+            # Look for: variable_list -> identifier and expression_list -> table_constructor
+            variable_name = None
+            has_table = False
+
+            for child in assignment_node.children:
+                if hasattr(child, "type"):
+                    if child.type == "variable_list":
+                        # Get the identifier from variable_list (can be identifier or dot_index_expression)
+                        for grandchild in child.children:
+                            if hasattr(grandchild, "type") and grandchild.type in [
+                                "identifier",
+                                "dot_index_expression",
+                            ]:
+                                variable_name = self._get_node_text(
+                                    grandchild, lines
+                                ).strip()
+                                break
+                    elif child.type == "expression_list":
+                        # Check if it contains a table_constructor
+                        for grandchild in child.children:
+                            if (
+                                hasattr(grandchild, "type")
+                                and grandchild.type == "table_constructor"
+                            ):
+                                has_table = True
+                                break
+
+            return variable_name if (variable_name and has_table) else None
+        except Exception:
+            return None
+
+    def _extract_local_function_name(
+        self, local_var_node: Any, lines: List[str]
+    ) -> Optional[str]:
+        """Extract function name from local variable declaration using pure AST approach."""
+        try:
+            # This is for patterns like: local funcname = function(...)
+            # We need to find assignment_statement with function_definition
+            for child in local_var_node.children:
+                if hasattr(child, "type") and child.type == "assignment_statement":
+                    return self._extract_function_assignment_name(child, lines)
+            return None
+        except Exception:
+            return None
+
+    def _extract_local_table_name(
+        self, local_var_node: Any, lines: List[str]
+    ) -> Optional[str]:
+        """Extract table name from local variable declaration using pure AST approach."""
+        try:
+            # This is for patterns like: local tablename = {...}
+            # We need to find assignment_statement with table_constructor
+            for child in local_var_node.children:
+                if hasattr(child, "type") and child.type == "assignment_statement":
+                    return self._extract_table_assignment_name(child, lines)
+            return None
+        except Exception:
+            return None
+
+    def _extract_module_return_name(
+        self, return_node: Any, lines: List[str]
+    ) -> Optional[str]:
+        """Extract module name from return statement using pure AST approach."""
+        try:
+            # Look for: return_statement -> expression_list -> identifier
+            for child in return_node.children:
+                if hasattr(child, "type") and child.type == "expression_list":
+                    for grandchild in child.children:
+                        if (
+                            hasattr(grandchild, "type")
+                            and grandchild.type == "identifier"
+                        ):
+                            return self._get_node_text(grandchild, lines).strip()
+            return None
+        except Exception:
+            return None
 
     def _is_duplicate_construct(
         self, new_construct: Dict[str, Any], existing_constructs: List[Dict[str, Any]]

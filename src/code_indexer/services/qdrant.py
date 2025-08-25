@@ -338,12 +338,27 @@ class QdrantClient:
             or self.config.collection_base_name
         )
         try:
-            # Instead of deleting all points (which can corrupt the collection),
-            # delete and recreate the collection for clean state
-            if self.delete_collection(collection):
-                # Recreate with same configuration
-                return self.create_collection(collection, self.config.vector_size)
-            return False
+            # First, try to delete the collection
+            # We don't check the result because deletion might timeout but still succeed
+            self.delete_collection(collection)
+
+            # Always attempt to recreate, even if deletion timed out or failed
+            # This handles cases where the collection was actually deleted but
+            # the API call timed out, returning False
+            recreate_result = self.create_collection(
+                collection, self.config.vector_size
+            )
+
+            if not recreate_result:
+                self.console.print(
+                    f"❌ Failed to recreate collection '{collection}' after clearing",
+                    style="red",
+                )
+                return False
+
+            # Success if recreation worked, regardless of deletion result
+            return True
+
         except Exception as e:
             self.console.print(
                 f"Failed to clear collection {collection}: {e}", style="red"

@@ -526,13 +526,24 @@ class RubySemanticParser(BaseTreeSitterParser):
         scope_stack: List[str],
         content: str,
     ):
-        """Handle Ruby variable assignments (instance, class variables)."""
-        var_name = self._extract_assignment_variable_name(node, lines)
+        """Handle Ruby variable assignments (instance, class variables).
+
+        CRITICAL FIX: Only create separate chunks for assignments at CLASS/MODULE level.
+        Do NOT create separate chunks for assignments inside methods - they should be
+        part of the method chunk to maintain cohesion.
+        """
+        var_name = self._extract_assignment_variable_name_ast(node)
         if not var_name:
             return
 
-        # Determine variable type
-        var_type = self._determine_variable_type(var_name)
+        # Determine variable type using AST node properties
+        var_type = self._determine_variable_type_ast(node)
+
+        # COHESION FIX: Only create separate chunks for class/module level assignments
+        # Skip method-internal assignments - they'll be part of method chunk
+        if self._is_inside_method_scope(scope_stack):
+            # Skip - let method handle its internal assignments
+            return
 
         if var_type in ["instance_variable", "class_variable"]:
             # Build signature
@@ -828,54 +839,122 @@ class RubySemanticParser(BaseTreeSitterParser):
 
     # Override base class methods for Ruby-specific behavior
 
-    def _get_identifier_from_node(self, node: Any, lines: List[str]) -> Optional[str]:
-        """Extract identifier name from a Ruby node."""
+    def _get_identifier_from_node(
+        self, node: Any, lines: Optional[List[str]] = None
+    ) -> Optional[str]:
+        """Extract identifier name from a Ruby node using pure AST."""
         # Ruby uses different node types for names:
         # - classes/modules use "constant"
         # - methods use "identifier"
         for child in node.children:
             if hasattr(child, "type"):
                 if child.type in ["identifier", "constant"]:
-                    return str(self._get_node_text(child, lines)).strip()
+                    # Use AST text property directly instead of regex
+                    if hasattr(child, "text"):
+                        return str(child.text.decode("utf-8")).strip()
+                    elif lines:
+                        return str(self._get_node_text(child, lines)).strip()
         return None
 
     # Helper methods for extracting Ruby-specific constructs
 
-    def _is_require_statement(self, node: Any, lines: List[str]) -> bool:
-        """Check if a call node is a require statement."""
-        node_text = self._get_node_text(node, lines).lower()
-        return node_text.strip().startswith("require")
+    def _is_require_statement(
+        self, node: Any, lines: Optional[List[str]] = None
+    ) -> bool:
+        """Check if a call node is a require statement using AST."""
+        # Look for method call with identifier 'require'
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "identifier":
+                if hasattr(child, "text"):
+                    method_name = str(child.text.decode("utf-8"))
+                    return method_name in ["require", "require_relative", "load"]
+                elif lines:
+                    method_name = str(self._get_node_text(child, lines))
+                    return method_name in ["require", "require_relative", "load"]
+        return False
 
-    def _extract_require_name(self, node: Any, lines: List[str]) -> Optional[str]:
-        """Extract the name from a require statement."""
-        node_text = self._get_node_text(node, lines)
-        match = re.search(r"require\s+['\"]([^'\"]+)['\"]", node_text)
-        return match.group(1) if match else None
+    def _extract_require_name(
+        self, node: Any, lines: Optional[List[str]] = None
+    ) -> Optional[str]:
+        """Extract the name from a require statement using AST."""
+        # Look for string argument in the call
+        for child in node.children:
+            if hasattr(child, "type"):
+                if child.type == "string":
+                    if hasattr(child, "text"):
+                        # Remove quotes from string
+                        text = str(child.text.decode("utf-8"))
+                        return text.strip("\"'")
+                    elif lines:
+                        text = str(self._get_node_text(child, lines))
+                        return text.strip("\"'")
+                elif child.type == "argument_list":
+                    # Look inside argument list for string
+                    for grandchild in child.children:
+                        if hasattr(grandchild, "type") and grandchild.type == "string":
+                            if hasattr(grandchild, "text"):
+                                text = str(grandchild.text.decode("utf-8"))
+                                return text.strip("\"'")
+                            elif lines:
+                                text = str(self._get_node_text(grandchild, lines))
+                                return text.strip("\"'")
+        return None
 
-    def _is_global_variable(self, node: Any, lines: List[str]) -> bool:
-        """Check if an assignment is to a global variable."""
-        node_text = self._get_node_text(node, lines)
-        return re.search(r"^\s*\$\w+\s*=", node_text) is not None
+    def _is_global_variable(self, node: Any, lines: Optional[List[str]] = None) -> bool:
+        """Check if an assignment is to a global variable using AST."""
+        # Look for global_variable node type in assignment
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "global_variable":
+                return True
+        return False
 
     def _extract_global_variable_name(
-        self, node: Any, lines: List[str]
+        self, node: Any, lines: Optional[List[str]] = None
     ) -> Optional[str]:
-        """Extract global variable name from assignment."""
-        node_text = self._get_node_text(node, lines)
-        match = re.search(r"^\s*(\$\w+)", node_text)
-        return match.group(1) if match else None
+        """Extract global variable name from assignment using AST."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "global_variable":
+                if hasattr(child, "text"):
+                    return str(child.text.decode("utf-8"))
+                elif lines:
+                    return str(self._get_node_text(child, lines))
+        return None
 
-    def _extract_superclass(self, node: Any, lines: List[str]) -> Optional[str]:
-        """Extract superclass from class declaration."""
-        node_text = self._get_node_text(node, lines)
-        match = re.search(r"class\s+\w+\s*<\s*(\w+)", node_text)
-        return match.group(1) if match else None
+    def _extract_superclass(
+        self, node: Any, lines: Optional[List[str]] = None
+    ) -> Optional[str]:
+        """Extract superclass from class declaration using AST."""
+        # Look for superclass node in class declaration
+        for child in node.children:
+            if hasattr(child, "type"):
+                if child.type == "superclass":
+                    # Superclass node contains the parent class name
+                    for grandchild in child.children:
+                        if (
+                            hasattr(grandchild, "type")
+                            and grandchild.type == "constant"
+                        ):
+                            if hasattr(grandchild, "text"):
+                                return str(grandchild.text.decode("utf-8"))
+                            elif lines:
+                                return str(self._get_node_text(grandchild, lines))
+        return None
 
-    def _extract_method_parameters(self, node: Any, lines: List[str]) -> Optional[str]:
-        """Extract method parameter list."""
-        node_text = self._get_node_text(node, lines)
-        match = re.search(r"def\s+(?:self\.)?[^(]*(\([^)]*\))", node_text)
-        return match.group(1) if match else None
+    def _extract_method_parameters(
+        self, node: Any, lines: Optional[List[str]] = None
+    ) -> Optional[str]:
+        """Extract method parameter list using AST."""
+        # Look for method_parameters or parameters node
+        for child in node.children:
+            if hasattr(child, "type"):
+                if child.type in ["method_parameters", "parameters", "parameter_list"]:
+                    if hasattr(child, "text"):
+                        text = str(child.text.decode("utf-8"))
+                        return f"({text})" if not text.startswith("(") else text
+                    elif lines:
+                        text = str(self._get_node_text(child, lines))
+                        return f"({text})" if not text.startswith("(") else text
+        return None
 
     def _extract_method_visibility(
         self, node: Any, lines: List[str], content: str
@@ -890,62 +969,173 @@ class RubySemanticParser(BaseTreeSitterParser):
                     return line
         return "public"  # Default visibility
 
-    def _is_class_method(self, node: Any, lines: List[str]) -> bool:
-        """Check if method is a class method (self.method_name)."""
-        node_text = self._get_node_text(node, lines)
-        return "def self." in node_text
+    def _is_class_method(self, node: Any, lines: Optional[List[str]] = None) -> bool:
+        """Check if method is a class method (self.method_name) using AST."""
+        # Check if this is a singleton_method node type
+        if hasattr(node, "type") and node.type == "singleton_method":
+            return True
 
-    def _extract_block_parameters(self, node: Any, lines: List[str]) -> Optional[str]:
-        """Extract block parameters."""
-        node_text = self._get_node_text(node, lines)
-        match = re.search(r"\{\s*\|([^|]*)\|", node_text)
-        return match.group(1).strip() if match else None
+        # Look for 'self' receiver in method definition
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "self":
+                return True
+        return False
 
-    def _extract_lambda_parameters(self, node: Any, lines: List[str]) -> Optional[str]:
-        """Extract lambda parameters."""
-        node_text = self._get_node_text(node, lines)
-        match = re.search(r"lambda\s*\{\s*\|([^|]*)\|", node_text)
-        return match.group(1).strip() if match else None
-
-    def _extract_proc_parameters(self, node: Any, lines: List[str]) -> Optional[str]:
-        """Extract Proc parameters."""
-        node_text = self._get_node_text(node, lines)
-        match = re.search(r"Proc\.new\s*\{\s*\|([^|]*)\|", node_text)
-        return match.group(1).strip() if match else None
-
-    def _is_mixin_call(self, node: Any, lines: List[str]) -> bool:
-        """Check if call is a mixin (include, extend, prepend)."""
-        node_text = self._get_node_text(node, lines).strip()
-        return any(
-            node_text.startswith(keyword)
-            for keyword in ["include", "extend", "prepend"]
-        )
-
-    def _extract_mixin_type(self, node: Any, lines: List[str]) -> Optional[str]:
-        """Extract mixin type (include, extend, prepend)."""
-        node_text = self._get_node_text(node, lines).strip()
-        for mixin_type in ["include", "extend", "prepend"]:
-            if node_text.startswith(mixin_type):
-                return mixin_type
+    def _extract_block_parameters(
+        self, node: Any, lines: Optional[List[str]] = None
+    ) -> Optional[str]:
+        """Extract block parameters using AST."""
+        # Look for block_parameters node
+        for child in node.children:
+            if hasattr(child, "type"):
+                if child.type in ["block_parameters", "lambda_parameters"]:
+                    if hasattr(child, "text"):
+                        text = str(child.text.decode("utf-8"))
+                        # Remove the pipe characters
+                        return text.strip("|").strip()
+                    elif lines:
+                        text = str(self._get_node_text(child, lines))
+                        return text.strip("|").strip()
         return None
 
-    def _extract_mixin_module_name(self, node: Any, lines: List[str]) -> Optional[str]:
-        """Extract module name from mixin call."""
-        node_text = self._get_node_text(node, lines)
-        match = re.search(r"(?:include|extend|prepend)\s+(\w+)", node_text)
-        return match.group(1) if match else None
+    def _extract_lambda_parameters(
+        self, node: Any, lines: Optional[List[str]] = None
+    ) -> Optional[str]:
+        """Extract lambda parameters using AST."""
+        # Same as block parameters - lambdas use similar parameter structure
+        return self._extract_block_parameters(node, lines)
+
+    def _extract_proc_parameters(
+        self, node: Any, lines: Optional[List[str]] = None
+    ) -> Optional[str]:
+        """Extract Proc parameters using AST."""
+        # Same as block parameters - Procs use similar parameter structure
+        return self._extract_block_parameters(node, lines)
+
+    def _is_mixin_call(self, node: Any, lines: Optional[List[str]] = None) -> bool:
+        """Check if call is a mixin (include, extend, prepend) using AST."""
+        # Look for method call with specific identifiers
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "identifier":
+                if hasattr(child, "text"):
+                    method_name = child.text.decode("utf-8")
+                    return method_name in ["include", "extend", "prepend"]
+                elif lines:
+                    method_name = self._get_node_text(child, lines)
+                    return method_name in ["include", "extend", "prepend"]
+        return False
+
+    def _extract_mixin_type(
+        self, node: Any, lines: Optional[List[str]] = None
+    ) -> Optional[str]:
+        """Extract mixin type (include, extend, prepend) using AST."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "identifier":
+                if hasattr(child, "text"):
+                    method_name = str(child.text.decode("utf-8"))
+                    if method_name in ["include", "extend", "prepend"]:
+                        return method_name
+                elif lines:
+                    method_name = str(self._get_node_text(child, lines))
+                    if method_name in ["include", "extend", "prepend"]:
+                        return method_name
+        return None
+
+    def _extract_mixin_module_name(
+        self, node: Any, lines: Optional[List[str]] = None
+    ) -> Optional[str]:
+        """Extract module name from mixin call using AST."""
+        # Look for constant argument after the mixin method
+        for child in node.children:
+            if hasattr(child, "type"):
+                if child.type == "constant":
+                    if hasattr(child, "text"):
+                        return str(child.text.decode("utf-8"))
+                    elif lines:
+                        return str(self._get_node_text(child, lines))
+                elif child.type == "argument_list":
+                    # Look inside argument list for constant
+                    for grandchild in child.children:
+                        if (
+                            hasattr(grandchild, "type")
+                            and grandchild.type == "constant"
+                        ):
+                            if hasattr(grandchild, "text"):
+                                return str(grandchild.text.decode("utf-8"))
+                            elif lines:
+                                return str(self._get_node_text(grandchild, lines))
+        return None
+
+    def _extract_assignment_variable_name_ast(self, node: Any) -> Optional[str]:
+        """Extract variable name from assignment using AST node properties."""
+        # Use AST structure instead of regex
+        for child in node.children:
+            if hasattr(child, "type"):
+                if child.type == "instance_variable":
+                    return (
+                        str(child.text.decode("utf-8"))
+                        if hasattr(child, "text")
+                        else None
+                    )
+                elif child.type == "class_variable":
+                    return (
+                        str(child.text.decode("utf-8"))
+                        if hasattr(child, "text")
+                        else None
+                    )
+                elif child.type == "global_variable":
+                    return (
+                        str(child.text.decode("utf-8"))
+                        if hasattr(child, "text")
+                        else None
+                    )
+        return None
+
+    def _determine_variable_type_ast(self, node: Any) -> str:
+        """Determine variable type using AST node properties instead of regex."""
+        for child in node.children:
+            if hasattr(child, "type"):
+                if child.type == "instance_variable":
+                    return "instance_variable"
+                elif child.type == "class_variable":
+                    return "class_variable"
+                elif child.type == "global_variable":
+                    return "global_variable"
+                elif child.type == "constant":
+                    return "constant"
+        return "local_variable"
+
+    def _is_inside_method_scope(self, scope_stack: List[str]) -> bool:
+        """Check if current scope is inside a method using scope stack analysis."""
+        # Look for method-like scope names in the stack
+        for scope in scope_stack:
+            # Method scopes contain method names or self.method names
+            if not scope or scope == "global":
+                continue
+            # If scope contains a method indicator or is a simple name (likely method)
+            # and is not a class/module name (those typically start with capital)
+            if (
+                not scope[0].isupper()
+                or "." in scope
+                or any(
+                    method_name in scope
+                    for method_name in ["initialize", "new", "create"]
+                )
+            ):
+                return True
+        return False
 
     def _extract_assignment_variable_name(
         self, node: Any, lines: List[str]
     ) -> Optional[str]:
-        """Extract variable name from assignment."""
+        """Extract variable name from assignment - LEGACY METHOD for fallback."""
         node_text = self._get_node_text(node, lines)
         # Look for instance or class variables
         match = re.search(r"(@@?\w+)", node_text)
         return match.group(1) if match else None
 
     def _determine_variable_type(self, var_name: str) -> str:
-        """Determine the type of variable based on its name."""
+        """Determine the type of variable based on its name - LEGACY METHOD."""
         if var_name.startswith("@@"):
             return "class_variable"
         elif var_name.startswith("@"):
@@ -957,23 +1147,50 @@ class RubySemanticParser(BaseTreeSitterParser):
         else:
             return "local_variable"
 
-    def _extract_constant_name(self, node: Any, lines: List[str]) -> Optional[str]:
-        """Extract constant name from constant assignment."""
-        node_text = self._get_node_text(node, lines)
-        match = re.search(r"([A-Z][A-Z_]*)\s*=", node_text)
-        return match.group(1) if match else None
+    def _extract_constant_name(
+        self, node: Any, lines: Optional[List[str]] = None
+    ) -> Optional[str]:
+        """Extract constant name from constant assignment using AST."""
+        # Look for constant node on left side of assignment
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "constant":
+                if hasattr(child, "text"):
+                    return str(child.text.decode("utf-8"))
+                elif lines:
+                    return str(self._get_node_text(child, lines))
+        return None
 
-    def _extract_alias_info(self, node: Any, lines: List[str]) -> Optional[tuple]:
-        """Extract alias information (new_name, original_name)."""
-        node_text = self._get_node_text(node, lines)
-        match = re.search(r"alias\s+(\w+)\s+(\w+)", node_text)
-        return (match.group(1), match.group(2)) if match else None
+    def _extract_alias_info(
+        self, node: Any, lines: Optional[List[str]] = None
+    ) -> Optional[tuple]:
+        """Extract alias information (new_name, original_name) using AST."""
+        # Alias nodes typically have two identifier children
+        identifiers = []
+        for child in node.children:
+            if hasattr(child, "type") and child.type in ["identifier", "symbol"]:
+                if hasattr(child, "text"):
+                    text = str(child.text.decode("utf-8"))
+                    identifiers.append(text.lstrip(":"))  # Remove : from symbols
+                elif lines:
+                    text = str(self._get_node_text(child, lines))
+                    identifiers.append(text.lstrip(":"))
 
-    def _extract_symbol_name(self, node: Any, lines: List[str]) -> Optional[str]:
-        """Extract symbol name."""
-        node_text = self._get_node_text(node, lines)
-        match = re.search(r":(\w+)", node_text)
-        return match.group(1) if match else None
+        if len(identifiers) >= 2:
+            return (identifiers[0], identifiers[1])
+        return None
+
+    def _extract_symbol_name(
+        self, node: Any, lines: Optional[List[str]] = None
+    ) -> Optional[str]:
+        """Extract symbol name using AST."""
+        if hasattr(node, "type") and node.type == "symbol":
+            if hasattr(node, "text"):
+                text = str(node.text.decode("utf-8"))
+                return text.lstrip(":")  # Remove the colon prefix
+            elif lines:
+                text = str(self._get_node_text(node, lines))
+                return text.lstrip(":")
+        return None
 
     def _is_significant_symbol(self, symbol_name: str) -> bool:
         """Determine if a symbol is significant enough to track."""

@@ -1,460 +1,547 @@
 """
-Java semantic parser using regex-based parsing.
+Java semantic parser using tree-sitter with regex fallback.
 
-This implementation uses regex patterns to identify common Java constructs
-for semantic chunking. While not as robust as a full AST parser,
-it covers the most common patterns for semantic chunking.
+This implementation uses tree-sitter as the primary parsing method,
+with comprehensive regex fallback for ERROR nodes to ensure no content is lost.
 """
 
 import re
-from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from code_indexer.config import IndexingConfig
-from code_indexer.indexing.semantic_chunker import BaseSemanticParser, SemanticChunk
+from .base_tree_sitter_parser import BaseTreeSitterParser
+from .semantic_chunker import SemanticChunk
 
 
-class JavaSemanticParser(BaseSemanticParser):
-    """Semantic parser for Java files using regex patterns."""
+class JavaSemanticParser(BaseTreeSitterParser):
+    """Semantic parser for Java files using tree-sitter with regex fallback."""
 
     def __init__(self, config: IndexingConfig):
-        super().__init__(config)
-        self.language = "java"
+        super().__init__(config, "java")
 
-    def chunk(self, content: str, file_path: str) -> List[SemanticChunk]:
-        """Parse Java content and create semantic chunks."""
-        chunks = []
-        lines = content.split("\n")
-        file_ext = Path(file_path).suffix
+    def _extract_file_level_constructs(
+        self,
+        root_node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+    ):
+        """Extract file-level constructs (package, imports)."""
+        # Find package declaration
+        for child in root_node.children:
+            if hasattr(child, "type"):
+                if child.type == "package_declaration":
+                    package_name = self._extract_package_name(child, lines)
+                    if package_name:
+                        scope_stack.append(package_name)
+                        constructs.append(
+                            {
+                                "type": "package",
+                                "name": package_name,
+                                "path": package_name,
+                                "signature": f"package {package_name};",
+                                "parent": None,
+                                "scope": "global",
+                                "line_start": child.start_point[0] + 1,
+                                "line_end": child.end_point[0] + 1,
+                                "text": self._get_node_text(child, lines),
+                                "context": {"declaration_type": "package"},
+                                "features": ["package_declaration"],
+                            }
+                        )
 
-        # Find all constructs in the file
-        constructs = self._find_constructs(content, lines, file_path)
-
-        # Create chunks from constructs
-        for i, construct in enumerate(constructs):
-            chunk = SemanticChunk(
-                text=construct["text"],
-                chunk_index=i,
-                total_chunks=len(constructs),
-                size=len(construct["text"]),
-                file_path=file_path,
-                file_extension=file_ext,
-                line_start=construct["line_start"],
-                line_end=construct["line_end"],
-                semantic_chunking=True,
-                semantic_type=construct["type"],
-                semantic_name=construct["name"],
-                semantic_path=construct.get("path", construct["name"]),
-                semantic_signature=construct.get("signature", ""),
-                semantic_parent=construct.get("parent"),
-                semantic_context=construct.get("context", {}),
-                semantic_scope=construct.get("scope", "global"),
-                semantic_language_features=construct.get("features", []),
+    def _handle_language_constructs(
+        self,
+        node: Any,
+        node_type: str,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle Java-specific AST node types."""
+        if node_type == "class_declaration":
+            self._handle_class_declaration(
+                node, constructs, lines, scope_stack, content
             )
-            chunks.append(chunk)
+        elif node_type == "interface_declaration":
+            self._handle_interface_declaration(
+                node, constructs, lines, scope_stack, content
+            )
+        elif node_type == "method_declaration":
+            self._handle_method_declaration(
+                node, constructs, lines, scope_stack, content
+            )
+        elif node_type == "constructor_declaration":
+            self._handle_constructor_declaration(
+                node, constructs, lines, scope_stack, content
+            )
+        elif node_type == "field_declaration":
+            self._handle_field_declaration(
+                node, constructs, lines, scope_stack, content
+            )
+        elif node_type == "enum_declaration":
+            self._handle_enum_declaration(node, constructs, lines, scope_stack, content)
 
-        return chunks
+    def _should_skip_children(self, node_type: str) -> bool:
+        """Determine if children should be skipped for certain node types."""
+        # Classes and interfaces handle their own members
+        return node_type in [
+            "class_declaration",
+            "interface_declaration",
+            "enum_declaration",
+        ]
 
-    def _find_constructs(
-        self, content: str, lines: List[str], file_path: str = "unknown"
+    def _extract_constructs_from_error_text(
+        self, error_text: str, start_line: int, scope_stack: List[str]
     ) -> List[Dict[str, Any]]:
-        """Find Java constructs using regex patterns."""
+        """Extract Java constructs from ERROR node text using regex fallback."""
         constructs = []
 
-        # Check for obviously malformed content that looks like it starts with valid Java
-        # but has obvious syntax errors
-        if self._is_malformed_java(content):
-            return []
+        # Java-specific regex patterns
+        patterns = {
+            "class": r"^\s*(?:(?:public|private|protected|abstract|final|static)\s+)*class\s+(\w+)",
+            "interface": r"^\s*(?:(?:public|private|protected)\s+)*interface\s+(\w+)",
+            "enum": r"^\s*(?:(?:public|private|protected)\s+)*enum\s+(\w+)",
+            "method": r"^\s*(?:(?:public|private|protected|static|final|abstract)\s+)*(?:\w+\s+)*(\w+)\s*\([^)]*\)\s*(?:throws[^{]*)?{",
+            "constructor": r"^\s*(?:(?:public|private|protected)\s+)*(\w+)\s*\([^)]*\)\s*(?:throws[^{]*)?{",
+            "field": r"^\s*(?:(?:public|private|protected|static|final)\s+)*\w+(?:\[\])?\s+(\w+)\s*[=;]",
+        }
 
-        # Extract package information
-        package_name = self._extract_package(lines)
+        lines = error_text.split("\n")
 
-        # Find all classes and their boundaries first
-        class_boundaries = self._find_class_boundaries(lines)
+        for line_idx, line in enumerate(lines):
+            for construct_type, pattern in patterns.items():
+                match = re.search(pattern, line, re.MULTILINE)
+                if match:
+                    name = match.group(1)
 
-        # Process each line to find constructs
-        current_class = None
-        current_class_end = 0
-        current_annotations = []
+                    # Find the end of this construct
+                    end_line = self._find_construct_end(lines, line_idx, construct_type)
 
-        for line_num, line in enumerate(lines, 1):
-            line_stripped = line.strip()
+                    # Build construct text
+                    construct_lines = lines[line_idx : end_line + 1]
+                    construct_text = "\n".join(construct_lines)
 
-            # Skip empty lines and comments
-            if (
-                not line_stripped
-                or line_stripped.startswith("//")
-                or line_stripped.startswith("/*")
-            ):
-                continue
+                    parent = scope_stack[-1] if scope_stack else None
+                    full_path = f"{parent}.{name}" if parent else name
 
-            # Update current class context
-            for class_info in class_boundaries:
-                if class_info["start"] <= line_num <= class_info["end"]:
-                    current_class = class_info["name"]
-                    current_class_end = class_info["end"]
-                    break
-            else:
-                if line_num > current_class_end:
-                    current_class = None
-
-            # Check for annotations
-            annotation_match = re.search(r"^\s*@(\w+)(?:\([^)]*\))?\s*$", line)
-            if annotation_match:
-                current_annotations.append(annotation_match.group(1))
-                continue
-
-            # Check for class definitions
-            class_match = re.search(
-                r"^\s*(?:(public|private|protected|abstract|final|static)\s+)*"
-                r"(class|interface|enum)\s+(\w+)(?:<[^>]*>)?"
-                r"(?:\s+(?:extends|implements)\s+[^{]+)?\s*\{",
-                line,
-            )
-            if class_match:
-                modifiers = [
-                    m
-                    for m in line.split()
-                    if m
-                    in ["public", "private", "protected", "abstract", "final", "static"]
-                ]
-                class_type = class_match.group(2)
-                class_name = class_match.group(3)
-                end_line = self._find_block_end(lines, line_num - 1)
-
-                # Extract generics if present
-                generics = []
-                if "<" in line and ">" in line:
-                    generic_match = re.search(r"<([^>]+)>", line)
-                    if generic_match:
-                        generics = [
-                            g.strip() for g in generic_match.group(1).split(",")
-                        ]
-
-                features = []
-                if modifiers:
-                    features.extend(modifiers)
-                if generics:
-                    features.append("generic")
-                if current_annotations:
-                    features.append("annotation")
-
-                # Determine if this is a nested class by checking if we're inside another class
-                parent_class = None
-                scope = "global"
-
-                # Find the innermost class that contains this line (excluding itself)
-                for class_info in class_boundaries:
-                    if (
-                        class_info["start"] < line_num < class_info["end"]
-                        and class_info["name"] != class_name
-                    ):
-                        # This class is nested inside class_info
-                        parent_class = class_info["name"]
-                        scope = "class"
-                        break
-
-                construct: Dict[str, Any] = {
-                    "type": class_type,
-                    "name": class_name,
-                    "text": "\n".join(lines[line_num - 1 : end_line]),
-                    "line_start": line_num,
-                    "line_end": end_line,
-                    "signature": line.strip().rstrip("{").strip(),
-                    "scope": scope,
-                    "parent": parent_class,
-                    "features": features,
-                    "context": {
-                        "package": package_name,
-                        "generics": generics,
-                        "annotations": current_annotations.copy(),
-                        "modifiers": modifiers,
-                    },
-                }
-                constructs.append(construct)
-                current_annotations = []
-                continue
-
-            # Check for method definitions (inside classes)
-            if current_class:
-                # Constructor
-                constructor_match = re.search(
-                    rf"^\s*(?:(public|private|protected)\s+)?"
-                    rf"{re.escape(current_class)}\s*\([^)]*\)\s*(?:throws\s+[^{{]+)?\s*\{{",
-                    line,
-                )
-                if constructor_match:
-                    modifiers = [
-                        m
-                        for m in line.split()
-                        if m in ["public", "private", "protected"]
-                    ]
-                    end_line = self._find_block_end(lines, line_num - 1)
-
-                    features = []
-                    if modifiers:
-                        features.extend(modifiers)
-                    if current_annotations:
-                        features.append("annotation")
-
-                    signature = line.strip().rstrip("{").strip()
-
-                    construct = {
-                        "type": "method",
-                        "name": current_class,  # Constructor name same as class
-                        "path": f"{current_class}.{current_class}",
-                        "text": "\n".join(lines[line_num - 1 : end_line]),
-                        "line_start": line_num,
-                        "line_end": end_line,
-                        "signature": signature,
-                        "scope": "class",
-                        "parent": current_class,
-                        "features": features,
-                        "context": {
-                            "annotations": current_annotations.copy(),
-                            "modifiers": modifiers,
-                            "is_constructor": True,
-                        },
-                    }
-                    constructs.append(construct)
-                    current_annotations = []
-                    continue
-
-                # Regular methods (including abstract method declarations)
-                method_match = re.search(
-                    r"^\s*(?:(public|private|protected|static|abstract|final|synchronized|default)\s+)*"
-                    r"(?:(<[^>]+>)\s+)?"  # Generic parameters
-                    r"([a-zA-Z_$][\w$]*(?:\[\])*|\w+(?:<[^>]*>)?)\s+"  # Return type
-                    r"(\w+)\s*\([^)]*\)\s*"  # Method name and parameters
-                    r"(?:throws\s+[^{]+)?\s*[{;]",  # Optional throws clause
-                    line,
-                )
-                if method_match and not any(
-                    kw in line
-                    for kw in ["class", "interface", "enum", "import", "package"]
-                ):  # Allow abstract methods
-                    modifiers = [
-                        m
-                        for m in line.split()
-                        if m
-                        in [
-                            "public",
-                            "private",
-                            "protected",
-                            "static",
-                            "abstract",
-                            "final",
-                            "synchronized",
-                            "default",
-                        ]
-                    ]
-                    generic_params = method_match.group(2)
-                    return_type = method_match.group(3)
-                    method_name = method_match.group(4)
-
-                    # Skip if this looks like a field declaration
-                    if "=" in line and "(" not in line.split("=")[0]:
-                        continue
-
-                    # For abstract methods (ending with ;), the method is just one line
-                    # For concrete methods (ending with {), find the block end
-                    if line.strip().endswith(";"):
-                        end_line = line_num
-                        method_text = line
-                    else:
-                        end_line = self._find_block_end(lines, line_num - 1)
-                        method_text = "\n".join(lines[line_num - 1 : end_line])
-
-                    features = []
-                    if modifiers:
-                        features.extend(modifiers)
-                    if generic_params:
-                        features.append("generic")
-                    if current_annotations:
-                        features.append("annotation")
-
-                    signature = line.strip().rstrip("{").rstrip(";").strip()
-
-                    construct = {
-                        "type": "method",
-                        "name": method_name,
-                        "path": f"{current_class}.{method_name}",
-                        "text": method_text,
-                        "line_start": line_num,
-                        "line_end": end_line,
-                        "signature": signature,
-                        "scope": "class",
-                        "parent": current_class,
-                        "features": features,
-                        "context": {
-                            "annotations": current_annotations.copy(),
-                            "modifiers": modifiers,
-                            "return_type": return_type,
-                            "generic_params": generic_params,
-                        },
-                    }
-                    constructs.append(construct)
-                    current_annotations = []
-                    continue
-
-            # Reset annotations if we didn't use them
-            if not line_stripped.startswith("@"):
-                current_annotations = []
-
-        # If no constructs found, treat as one large chunk
-        if not constructs:
-            constructs.append(
-                {
-                    "type": "module",
-                    "name": Path(file_path).stem,
-                    "text": content,
-                    "line_start": 1,
-                    "line_end": len(lines),
-                    "signature": f"module {Path(file_path).stem}",
-                    "scope": "global",
-                    "features": [],
-                    "context": {"package": package_name},
-                }
-            )
+                    constructs.append(
+                        {
+                            "type": construct_type,
+                            "name": name,
+                            "path": full_path,
+                            "signature": line.strip(),
+                            "parent": parent,
+                            "scope": (
+                                "class"
+                                if construct_type in ["method", "constructor", "field"]
+                                else "global"
+                            ),
+                            "line_start": start_line + line_idx + 1,
+                            "line_end": start_line + end_line + 1,
+                            "text": construct_text,
+                            "context": {"extracted_from_error": True},
+                            "features": [f"{construct_type}_implementation"],
+                        }
+                    )
 
         return constructs
 
-    def _extract_package(self, lines: List[str]) -> str:
-        """Extract package declaration from Java file."""
-        for line in lines:
-            package_match = re.search(r"^\s*package\s+([\w.]+)\s*;", line)
-            if package_match:
-                return package_match.group(1)
-        return ""
+    def _fallback_parse(self, content: str, file_path: str) -> List[SemanticChunk]:
+        """Complete fallback parsing using text chunking when all else fails."""
+        # Fallback to basic text chunking
+        from .semantic_chunker import TextChunker
+        from pathlib import Path
 
-    def _find_class_boundaries(self, lines: List[str]) -> List[Dict[str, Any]]:
-        """Find class boundaries to help with method detection."""
-        classes = []
+        text_chunker = TextChunker(self.config)
+        chunk_dicts = text_chunker.chunk_text(content, Path(file_path))
 
-        for line_num, line in enumerate(lines, 1):
-            class_match = re.search(
-                r"^\s*(?:(?:public|private|protected|abstract|final)\s+)*"
-                r"(class|interface|enum)\s+(\w+)(?:<[^>]*>)?"
-                r"(?:\s+(?:extends|implements)\s+[^{]+)?\s*\{",
-                line,
+        # Convert dictionary chunks to SemanticChunk objects
+        semantic_chunks = []
+        for chunk_dict in chunk_dicts:
+            semantic_chunk = SemanticChunk(
+                text=chunk_dict["text"],
+                chunk_index=chunk_dict.get("chunk_index", 0),
+                total_chunks=chunk_dict.get("total_chunks", len(chunk_dicts)),
+                size=chunk_dict.get("size", len(chunk_dict["text"])),
+                file_path=file_path,
+                file_extension=chunk_dict.get(
+                    "file_extension", Path(file_path).suffix.lstrip(".")
+                ),
+                line_start=chunk_dict.get("line_start", 1),
+                line_end=chunk_dict.get("line_end", 1),
+                semantic_chunking=False,  # This is fallback, not semantic
             )
-            if class_match:
-                class_type = class_match.group(1)
-                class_name = class_match.group(2)
-                end_line = self._find_block_end(lines, line_num - 1)
-                classes.append(
-                    {
-                        "name": class_name,
-                        "type": class_type,
-                        "start": line_num,
-                        "end": end_line,
-                    }
-                )
+            semantic_chunks.append(semantic_chunk)
 
-        return classes
+        return semantic_chunks
 
-    def _find_block_end(self, lines: List[str], start_line: int) -> int:
-        """Find the end of a code block starting from start_line."""
-        brace_count = 0
-        found_opening = False
+    # Helper methods
 
-        for i in range(start_line, len(lines)):
-            line = lines[i]
-            # Skip string literals and comments to avoid counting braces inside them
-            line_cleaned = self._remove_strings_and_comments(line)
+    def _extract_package_name(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract package name from package declaration node."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "scoped_identifier":
+                return self._get_node_text(child, lines)
+        return None
 
-            brace_count += line_cleaned.count("{")
-            brace_count -= line_cleaned.count("}")
+    def _handle_class_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle class declaration."""
+        class_name = self._get_identifier_from_node(node, lines)
+        if class_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = f"{parent_path}.{class_name}" if parent_path else class_name
 
-            if brace_count > 0:
-                found_opening = True
-            elif found_opening and brace_count == 0:
-                return i + 1
+            # Extract full signature from the node text
+            node_text = self._get_node_text(node, lines)
+            signature = self._extract_class_signature(node_text, class_name)
+            modifiers = self._extract_modifiers_from_signature(signature)
 
-        return len(lines)
+            constructs.append(
+                {
+                    "type": "class",
+                    "name": class_name,
+                    "path": full_path,
+                    "signature": signature,
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "class",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": node_text,
+                    "context": {"declaration_type": "class"},
+                    "features": ["class_declaration"] + modifiers,
+                }
+            )
 
-    def _remove_strings_and_comments(self, line: str) -> str:
-        """Remove string literals and comments from a line to avoid counting braces inside them."""
-        # Simple approach: remove quoted strings and line comments
-        # This is not perfect but handles most cases
-        result = ""
-        in_string = False
-        in_char = False
-        escape_next = False
-        i = 0
+            # Process class members with proper scope
+            scope_stack.append(class_name)
+            self._process_class_members(node, constructs, lines, scope_stack, content)
+            scope_stack.pop()
 
-        while i < len(line):
-            char = line[i]
+    def _handle_interface_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle interface declaration."""
+        interface_name = self._get_identifier_from_node(node, lines)
+        if interface_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = (
+                f"{parent_path}.{interface_name}" if parent_path else interface_name
+            )
 
-            if escape_next:
-                escape_next = False
-                i += 1
-                continue
+            # Extract full signature from the node text instead of constructing it
+            node_text = self._get_node_text(node, lines)
+            signature = self._extract_interface_signature(node_text, interface_name)
+            modifiers = self._extract_modifiers_from_signature(signature)
 
-            if char == "\\" and (in_string or in_char):
-                escape_next = True
-                i += 1
-                continue
+            constructs.append(
+                {
+                    "type": "interface",
+                    "name": interface_name,
+                    "path": full_path,
+                    "signature": signature,
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "interface",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": node_text,
+                    "context": {"declaration_type": "interface"},
+                    "features": ["interface_declaration"] + modifiers,
+                }
+            )
 
-            if char == '"' and not in_char:
-                in_string = not in_string
-                i += 1
-                continue
+            # Process interface members
+            scope_stack.append(interface_name)
+            self._process_class_members(node, constructs, lines, scope_stack, content)
+            scope_stack.pop()
 
-            if char == "'" and not in_string:
-                in_char = not in_char
-                i += 1
-                continue
+    def _handle_method_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle method declaration."""
+        method_name = self._get_java_method_name(node, lines)
+        if method_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = f"{parent_path}.{method_name}" if parent_path else method_name
 
-            if not in_string and not in_char:
-                if char == "/" and i + 1 < len(line) and line[i + 1] == "/":
-                    # Rest of line is comment
-                    break
-                result += char
+            # Extract full signature from the node text
+            node_text = self._get_node_text(node, lines)
+            signature = self._extract_method_signature(node_text, method_name)
+            modifiers = self._extract_modifiers_from_signature(signature)
 
-            i += 1
+            # Extract parameters and return type for context
+            params = self._extract_parameters(node, lines)
+            return_type = self._extract_return_type(node, lines)
 
-        return result
+            constructs.append(
+                {
+                    "type": "method",
+                    "name": method_name,
+                    "path": full_path,
+                    "signature": signature,
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "function",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": node_text,
+                    "context": {
+                        "declaration_type": "method",
+                        "parameters": params,
+                        "return_type": return_type,
+                    },
+                    "features": ["method_declaration"] + modifiers,
+                }
+            )
 
-    def _is_malformed_java(self, content: str) -> bool:
-        """Detect obviously malformed Java content that should fall back to text chunking."""
-        lines = content.split("\n")
+    def _handle_constructor_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle constructor declaration."""
+        constructor_name = self._get_identifier_from_node(node, lines)
+        if constructor_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = (
+                f"{parent_path}.{constructor_name}" if parent_path else constructor_name
+            )
 
-        # Look for lines that have obvious non-Java syntax
+            # Extract full signature from the node text
+            node_text = self._get_node_text(node, lines)
+            signature = self._extract_constructor_signature(node_text, constructor_name)
+            modifiers = self._extract_modifiers_from_signature(signature)
+
+            # Extract parameters for context
+            params = self._extract_parameters(node, lines)
+
+            constructs.append(
+                {
+                    "type": "constructor",  # Comprehensive tests expect constructor type
+                    "name": constructor_name,
+                    "path": full_path,
+                    "signature": signature,
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "function",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": node_text,
+                    "context": {
+                        "declaration_type": "constructor",
+                        "parameters": params,
+                    },
+                    "features": ["constructor_declaration"] + modifiers,
+                }
+            )
+
+    def _handle_field_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle field declaration."""
+        field_name = self._get_identifier_from_node(node, lines)
+        if field_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = f"{parent_path}.{field_name}" if parent_path else field_name
+
+            constructs.append(
+                {
+                    "type": "field",
+                    "name": field_name,
+                    "path": full_path,
+                    "signature": f"field {field_name}",
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "field",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": self._get_node_text(node, lines),
+                    "context": {"declaration_type": "field"},
+                    "features": ["field_declaration"],
+                }
+            )
+
+    def _handle_enum_declaration(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Handle enum declaration."""
+        enum_name = self._get_identifier_from_node(node, lines)
+        if enum_name:
+            parent_path = ".".join(scope_stack) if scope_stack else None
+            full_path = f"{parent_path}.{enum_name}" if parent_path else enum_name
+
+            constructs.append(
+                {
+                    "type": "enum",
+                    "name": enum_name,
+                    "path": full_path,
+                    "signature": f"enum {enum_name}",
+                    "parent": scope_stack[-1] if scope_stack else None,
+                    "scope": "enum",
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "text": self._get_node_text(node, lines),
+                    "context": {"declaration_type": "enum"},
+                    "features": ["enum_declaration"],
+                }
+            )
+
+    def _process_class_members(
+        self,
+        node: Any,
+        constructs: List[Dict[str, Any]],
+        lines: List[str],
+        scope_stack: List[str],
+        content: str,
+    ):
+        """Process members of a class/interface."""
+        for child in node.children:
+            if hasattr(child, "type"):
+                if child.type in ["class_body", "interface_body"]:
+                    # Process all declarations in the class/interface body
+                    for member in child.children:
+                        self._traverse_node(
+                            member, constructs, lines, scope_stack, content
+                        )
+
+    def _extract_return_type(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract return type from method declaration."""
+        for child in node.children:
+            if hasattr(child, "type") and child.type in [
+                "type_identifier",
+                "generic_type",
+                "array_type",
+            ]:
+                return self._get_node_text(child, lines)
+        return None
+
+    def _find_construct_end(
+        self, lines: List[str], start_line: int, construct_type: str
+    ) -> int:
+        """Find the end line of a construct starting from start_line."""
+        if construct_type in ["class", "interface", "enum", "method", "constructor"]:
+            # Find matching braces
+            brace_count = 0
+            for i in range(start_line, len(lines)):
+                line = lines[i]
+                brace_count += line.count("{") - line.count("}")
+                if brace_count == 0 and "{" in line:
+                    return i
+        elif construct_type == "field":
+            # Field ends at semicolon
+            for i in range(start_line, min(start_line + 5, len(lines))):
+                if ";" in lines[i]:
+                    return i
+
+        return min(start_line + 10, len(lines) - 1)  # Default fallback
+
+    def _extract_class_signature(self, node_text: str, class_name: str) -> str:
+        """Extract the class signature from node text."""
+        # Get the class declaration line
+        lines = node_text.split("\n")
         for line in lines:
-            line_stripped = line.strip()
-            if (
-                not line_stripped
-                or line_stripped.startswith("//")
-                or line_stripped.startswith("/*")
-            ):
-                continue
+            if "class" in line and class_name in line:
+                # Extract everything up to the opening brace or end of line
+                signature = line.split("{")[0].strip()
+                return signature
+        return f"class {class_name}"
 
-            # Skip package/import/class declarations which are valid
-            if any(
-                line_stripped.startswith(keyword)
-                for keyword in [
-                    "package",
-                    "import",
-                    "public class",
-                    "class",
-                    "interface",
-                    "enum",
-                ]
-            ):
-                continue
+    def _extract_method_signature(self, node_text: str, method_name: str) -> str:
+        """Extract the method signature from node text."""
+        lines = node_text.split("\n")
+        for line in lines:
+            if method_name in line and "(" in line:
+                # Extract everything up to the opening brace
+                signature = line.split("{")[0].strip()
+                return signature
+        return f"{method_name}()"
 
-            # Look for lines that are clearly not Java syntax
-            # This is a simple heuristic - words without proper Java syntax
-            if line_stripped and not any(
-                char in line_stripped
-                for char in [";", "{", "}", "(", ")", "=", "+", "-", "*", "/"]
-            ):
-                # Check if it's just random words (common in test malformed content)
-                words = line_stripped.split()
-                if len(words) >= 3 and all(
-                    word.isalpha() and word.islower() for word in words
-                ):
-                    return True
+    def _extract_constructor_signature(
+        self, node_text: str, constructor_name: str
+    ) -> str:
+        """Extract the constructor signature from node text."""
+        lines = node_text.split("\n")
+        for line in lines:
+            if constructor_name in line and "(" in line:
+                # Extract everything up to the opening brace
+                signature = line.split("{")[0].strip()
+                return signature
+        return f"{constructor_name}()"
 
-        return False
+    def _extract_interface_signature(self, node_text: str, interface_name: str) -> str:
+        """Extract the interface signature from node text."""
+        # Get the interface declaration line
+        lines = node_text.split("\n")
+        for line in lines:
+            if "interface" in line and interface_name in line:
+                # Extract everything up to the opening brace or end of line
+                signature = line.split("{")[0].strip()
+                return signature
+        return f"interface {interface_name}"
+
+    def _get_java_method_name(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract method name from Java method declaration node.
+        Java method declaration structure: modifiers + return_type + identifier + parameters
+        We need to find the identifier that comes after the return type.
+        """
+        identifiers = []
+        for child in node.children:
+            if hasattr(child, "type") and child.type == "identifier":
+                identifier_text = self._get_node_text(child, lines)
+                identifiers.append(identifier_text)
+
+        # For methods, the method name is typically the last identifier
+        # (after modifiers and return type)
+        if identifiers:
+            return identifiers[-1]
+        return None
+
+    def _extract_modifiers_from_signature(self, signature: str) -> List[str]:
+        """Extract Java modifiers from signature."""
+        java_modifiers = [
+            "public",
+            "private",
+            "protected",
+            "static",
+            "final",
+            "abstract",
+            "synchronized",
+            "native",
+            "strictfp",
+            "transient",
+            "volatile",
+        ]
+        modifiers = []
+        words = signature.split()
+        for word in words:
+            if word in java_modifiers:
+                modifiers.append(word)
+        return modifiers

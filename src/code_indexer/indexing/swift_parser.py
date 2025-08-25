@@ -1034,16 +1034,165 @@ class SwiftSemanticParser(BaseTreeSitterParser):
         return None
 
     def _extract_return_type(self, node: Any, lines: List[str]) -> Optional[str]:
-        """Extract function return type."""
-        node_text = self._get_node_text(node, lines)
-        match = re.search(r"->\s*([^{]+)", node_text)
-        return match.group(1).strip() if match else None
+        """Extract function return type using pure AST traversal."""
+        # Look for function_type or direct return type nodes
+        for child in node.children:
+            if hasattr(child, "type"):
+                # Look for return type after arrow
+                if child.type == "->":
+                    # The next sibling should be the return type
+                    child_index = node.children.index(child)
+                    if child_index + 1 < len(node.children):
+                        return_type_node = node.children[child_index + 1]
+                        if hasattr(return_type_node, "type"):
+                            return self._extract_type_from_node(return_type_node, lines)
+                elif child.type == "function_type":
+                    # For function types, look for the return type within
+                    return self._extract_type_from_function_type(child, lines)
+                elif child.type in ["user_type", "type_annotation", "type_identifier"]:
+                    # Check if this comes after parameters (indicating return type)
+                    preceding_nodes = node.children[: node.children.index(child)]
+                    has_params = any(
+                        hasattr(n, "type") and n.type == "parameter_clause"
+                        for n in preceding_nodes
+                    )
+                    has_arrow = any(
+                        hasattr(n, "type") and n.type == "->" for n in preceding_nodes
+                    )
+                    if has_params and has_arrow:
+                        return self._extract_type_from_node(child, lines)
+        return None
 
     def _extract_property_type(self, node: Any, lines: List[str]) -> Optional[str]:
-        """Extract property type."""
-        node_text = self._get_node_text(node, lines)
-        match = re.search(r":\s*([^=\n{]+)", node_text)
-        return match.group(1).strip() if match else None
+        """Extract property type using pure AST traversal."""
+        # Look for type annotation or explicit type specification
+        for child in node.children:
+            if hasattr(child, "type"):
+                if child.type == "type_annotation":
+                    # Type annotation contains the actual type
+                    return self._extract_type_from_type_annotation(child, lines)
+                elif child.type == ":":
+                    # The next sibling after colon should be the type
+                    child_index = node.children.index(child)
+                    if child_index + 1 < len(node.children):
+                        type_node = node.children[child_index + 1]
+                        if hasattr(type_node, "type"):
+                            return self._extract_type_from_node(type_node, lines)
+                elif child.type in [
+                    "user_type",
+                    "type_identifier",
+                    "array_type",
+                    "optional_type",
+                    "dictionary_type",
+                ]:
+                    # Check if this type comes after a colon (indicating property type)
+                    preceding_nodes = node.children[: node.children.index(child)]
+                    has_colon = any(
+                        hasattr(n, "type") and n.type == ":" for n in preceding_nodes
+                    )
+                    if has_colon:
+                        return self._extract_type_from_node(child, lines)
+                # Handle pattern binding with type annotation
+                elif child.type in ["pattern", "value_binding_pattern"]:
+                    type_result = self._extract_type_from_pattern(child, lines)
+                    if type_result:
+                        return type_result
+        return None
+
+    def _extract_type_from_node(self, node: Any, lines: List[str]) -> Optional[str]:
+        """Extract type information from any type-related AST node."""
+        if not hasattr(node, "type"):
+            return None
+
+        node_type = node.type
+
+        # Handle different Swift type node types
+        if node_type == "type_identifier":
+            return self._get_node_text(node, lines)
+        elif node_type == "user_type":
+            # User-defined types, may include generic parameters
+            return self._get_node_text(node, lines)
+        elif node_type == "optional_type":
+            # Optional types (Type?)
+            inner_type = self._extract_inner_type(node, lines)
+            return f"{inner_type}?" if inner_type else None
+        elif node_type == "array_type":
+            # Array types ([Type])
+            element_type = self._extract_inner_type(node, lines)
+            return f"[{element_type}]" if element_type else None
+        elif node_type == "dictionary_type":
+            # Dictionary types ([Key: Value])
+            return self._get_node_text(node, lines)
+        elif node_type == "function_type":
+            # Function types ((Args) -> Return)
+            return self._get_node_text(node, lines)
+        elif node_type == "tuple_type":
+            # Tuple types ((Type1, Type2))
+            return self._get_node_text(node, lines)
+        elif node_type == "generic_type":
+            # Generic types (Type<Generic>)
+            return self._get_node_text(node, lines)
+        else:
+            # Fallback to text extraction for unknown type nodes
+            return self._get_node_text(node, lines)
+
+    def _extract_type_from_type_annotation(
+        self, node: Any, lines: List[str]
+    ) -> Optional[str]:
+        """Extract type from a type_annotation node."""
+        # Type annotations typically contain the actual type as a child
+        for child in node.children:
+            if hasattr(child, "type"):
+                type_result = self._extract_type_from_node(child, lines)
+                if type_result:
+                    return type_result
+        return None
+
+    def _extract_type_from_function_type(
+        self, node: Any, lines: List[str]
+    ) -> Optional[str]:
+        """Extract return type from function_type node."""
+        # Function types have format: (params) -> return_type
+        # Look for the return type after the arrow
+        arrow_found = False
+        for child in node.children:
+            if hasattr(child, "type"):
+                if child.type == "->" or child.type == "->":
+                    arrow_found = True
+                elif arrow_found:
+                    # This should be the return type
+                    return self._extract_type_from_node(child, lines)
+        return None
+
+    def _extract_type_from_pattern(
+        self, pattern_node: Any, lines: List[str]
+    ) -> Optional[str]:
+        """Extract type from pattern nodes (pattern, value_binding_pattern)."""
+        # Look for type annotation within the pattern
+        for child in pattern_node.children:
+            if hasattr(child, "type"):
+                if child.type == "type_annotation":
+                    return self._extract_type_from_type_annotation(child, lines)
+                elif child.type in [
+                    "user_type",
+                    "type_identifier",
+                    "optional_type",
+                    "array_type",
+                ]:
+                    return self._extract_type_from_node(child, lines)
+        return None
+
+    def _extract_inner_type(
+        self, container_node: Any, lines: List[str]
+    ) -> Optional[str]:
+        """Extract inner type from container types like optional or array."""
+        # Look for the first type child
+        for child in container_node.children:
+            if hasattr(child, "type") and child.type not in ["[", "]", "?", "(", ")"]:
+                type_result = self._extract_type_from_node(child, lines)
+                if type_result:
+                    return type_result
+        return None
 
     def _extract_enum_cases(self, node: Any, lines: List[str]) -> List[str]:
         """Extract enum cases from Swift enum body."""
