@@ -2346,9 +2346,8 @@ def query(
                 # Quiet mode - minimal output: score, path with line numbers
                 console.print(f"{score:.3f} {file_path_with_lines}")
                 if content:
-                    # Show content with line numbers in quiet mode
-                    content_to_display = content[:500]
-                    content_lines = content_to_display.split("\n")
+                    # Show full content with line numbers in quiet mode (no truncation)
+                    content_lines = content.split("\n")
 
                     # Add line number prefixes if we have line start info
                     if line_start is not None:
@@ -2359,10 +2358,7 @@ def query(
                         content_with_line_numbers = "\n".join(numbered_lines)
                         console.print(content_with_line_numbers)
                     else:
-                        console.print(content_to_display)
-
-                    if len(content) > 500:
-                        console.print("... [truncated]")
+                        console.print(content)
                 console.print()  # Empty line between results
             else:
                 # Normal verbose mode
@@ -2399,7 +2395,7 @@ def query(
 
                 # Note: Fixed-size chunking no longer provides semantic metadata
 
-                # Content preview with line numbers
+                # Content display with line numbers (full chunk, no truncation)
                 if content:
                     # Create content header with line range
                     if line_start is not None and line_end is not None:
@@ -2415,9 +2411,8 @@ def query(
                     console.print(f"\n{content_header}")
                     console.print("─" * 50)
 
-                    # Add line number prefixes to content
-                    content_to_display = content[:500]
-                    content_lines = content_to_display.split("\n")
+                    # Add line number prefixes to full content (no truncation)
+                    content_lines = content.split("\n")
 
                     # Add line number prefixes if we have line start info
                     if line_start is not None:
@@ -2427,7 +2422,7 @@ def query(
                             numbered_lines.append(f"{line_num:3}: {line}")
                         content_with_line_numbers = "\n".join(numbered_lines)
                     else:
-                        content_with_line_numbers = content_to_display
+                        content_with_line_numbers = content
 
                     # Syntax highlighting if possible (note: syntax highlighting with line numbers is complex)
                     if language and language != "unknown":
@@ -2439,9 +2434,6 @@ def query(
                             console.print(content_with_line_numbers)
                     else:
                         console.print(content_with_line_numbers)
-
-                    if len(content) > 500:
-                        console.print("\n... [truncated]")
 
                 console.print("─" * 50)
 
