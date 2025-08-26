@@ -1424,8 +1424,7 @@ def index(
       • Error reporting for failed files
       • Throttling status indicators (VoyageAI only):
         ⚡ Full speed - no throttling detected
-        🟡 CIDX throttling - our rate limiter is slowing requests
-        🔴 Server throttling - API rate limits or slowness detected
+        🔴 Server throttling - API rate limits detected, backing off automatically
 
     \b
     SMART INDEXING:
