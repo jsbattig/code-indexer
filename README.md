@@ -255,12 +255,11 @@ code-indexer init --embedding-provider voyage-ai
 
 During indexing, VoyageAI shows real-time performance status in the progress bar:
 - ⚡ **Full speed** - Running at maximum throughput
-- 🟡 **CIDX throttling** - Internal rate limiter active
-- 🔴 **Server throttling** - VoyageAI API rate limits detected, automatically backing off
+- 🔴 **Server throttling** - VoyageAI API rate limits detected
 
 Example: `15/100 files (15%) | 8.3 emb/s ⚡ | 8 threads | main.py`
 
-The system runs at full speed by default and only backs off when rate limits are encountered.
+The system runs at full speed by default. If rate limits are encountered, an error is displayed asking to reduce parallel_requests.
 
 ### Configuration File
 Configuration is stored in `.code-indexer/config.json`:
