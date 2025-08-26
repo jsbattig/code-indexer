@@ -2,12 +2,18 @@
 
 AI-powered semantic code search for your codebase. Find code by meaning, not just keywords.
 
+## ⚠️ Version 3.0+ Breaking Changes
+
+- **Semantic filtering temporarily disabled**: `--type`, `--scope`, `--features` flags don't function with current chunking system
+- **Chunking system changed**: All files now use model-aware fixed-size chunking instead of previous approach
+- **Re-indexing recommended**: Existing indexes should be rebuilt for optimal chunk sizes
+
 ## Features
 
 - **Semantic Search** - Find code by meaning using vector embeddings and fixed-size chunking
 - **Multiple Providers** - Local (Ollama) or cloud (VoyageAI) embeddings  
 - **Smart Indexing** - Incremental updates, git-aware, multi-project support
-- **Semantic Filtering** - Filter by code constructs (classes, functions), scope, language features
+- **Search Filtering** - Filter by programming language, file paths, and similarity scores
 - **Multi-Language Support** - Universal text processing for Python, JavaScript, TypeScript, Java, C#, Go, Kotlin, Groovy, Pascal/Delphi, SQL, C, C++, Rust, Swift, Ruby, Lua, HTML, CSS, YAML, XML
 - **CLI Interface** - Simple commands with progress indicators
 - **AI Analysis** - Integrates with Claude CLI for code analysis with semantic search
@@ -68,9 +74,9 @@ code-indexer index     # Smart incremental indexing
 # 4. Search semantically
 code-indexer query "authentication logic"
 
-# 5. Search with semantic filtering
-code-indexer query "user" --type class --scope global
-code-indexer query "save" --features async --language python
+# 5. Search with filtering
+code-indexer query "user" --language python --min-score 0.7
+code-indexer query "save" --path "*/models/*" --limit 20
 
 # 6. AI-powered analysis (requires Claude CLI)
 code-indexer claude "How does auth work in this app?"
@@ -148,10 +154,8 @@ code-indexer query "function" --quiet  # Only results, no headers
 # Advanced filtering
 code-indexer query "user" --language python  # Filter by language
 code-indexer query "save" --path "*/models/*" # Filter by path pattern
-code-indexer query "class" --type class       # Filter by code construct
-code-indexer query "async" --features async   # Filter by language feature
-code-indexer query "auth" --scope global      # Filter by scope
 code-indexer query "function" --min-score 0.7  # Higher confidence matches
+code-indexer query "database" --limit 15     # More results
 code-indexer query "test" --min-score 0.8     # High-confidence matches
 
 # Short alias
@@ -275,12 +279,12 @@ Code Indexer uses a **model-aware fixed-size chunking approach** optimized for d
 - **Model-optimized chunk sizes**: Automatically selects optimal chunk size based on embedding model capabilities
 - **Consistent overlap**: 15% overlap between adjacent chunks (across all models)
 - **Simple arithmetic**: Next chunk starts at (chunk_size - overlap_size) from current start position
-- **Research-based optimization**: Uses proven optimal token counts per model
+- **Token optimization**: Uses larger chunk sizes for models with higher token capacity
 
 **Model-Specific Chunk Sizes:**
-- **voyage-code-3**: 4,096 characters (1,024 tokens - research optimal)
-- **voyage-code-2**: 4,096 characters (1,024 tokens - research optimal)  
-- **voyage-large-2**: 4,096 characters (1,024 tokens - research optimal)
+- **voyage-code-3**: 4,096 characters (leverages 32K token capacity)
+- **voyage-code-2**: 4,096 characters (leverages 16K token capacity)  
+- **voyage-large-2**: 4,096 characters (leverages large context capacity)
 - **nomic-embed-text**: 2,048 characters (512 tokens - Ollama limitation)
 - **Unknown models**: 1,000 characters (conservative fallback)
 
@@ -292,10 +296,10 @@ Chunk 3: characters 6964-11059 (4096 chars, overlaps 614 chars with Chunk 2)
 ```
 
 **Benefits:**
-- **Optimal performance**: Leverages each model's full capabilities (4x larger chunks for VoyageAI)
-- **Better context**: Significantly more code context per chunk for improved search results
-- **Faster indexing**: Fewer total chunks reduce processing time and storage
-- **Model efficiency**: Uses research-proven optimal token counts per embedding model
+- **Model optimization**: Uses larger chunks for high-capacity models (VoyageAI: 4096, Ollama: 2048)
+- **Better context**: More complete code sections per chunk
+- **Efficiency**: Fewer total chunks reduce storage requirements
+- **Model utilization**: Takes advantage of each model's token capacity
 
 ## Supported Languages
 
