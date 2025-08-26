@@ -2105,8 +2105,8 @@ def query(
         # Initialize query service based on project type
         if is_git_aware:
             # Use branch-aware indexer for git projects
-            # Use fixed-size chunker for all processing
-            fixed_size_chunker = FixedSizeChunker(config.indexing)
+            # Use model-aware fixed-size chunker for all processing
+            fixed_size_chunker = FixedSizeChunker(config)
             branch_aware_indexer = BranchAwareIndexer(
                 qdrant_client, embedding_provider, fixed_size_chunker, config
             )

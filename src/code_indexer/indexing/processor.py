@@ -54,8 +54,8 @@ class DocumentProcessor:
         self.embedding_provider = embedding_provider
         self.qdrant_client = qdrant_client
         self.file_finder = FileFinder(config)
-        # Use fixed-size chunker for all processing
-        self.fixed_size_chunker = FixedSizeChunker(config.indexing)
+        # Use model-aware fixed-size chunker for all processing
+        self.fixed_size_chunker = FixedSizeChunker(config)
 
     def process_file(self, file_path: Path) -> List[Dict[str, Any]]:
         """DEPRECATED: Use process_files_high_throughput instead."""

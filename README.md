@@ -267,28 +267,35 @@ Configuration is stored in `.code-indexer/config.json`:
 - `embedding_provider`: ollama or voyage-ai
 - `max_file_size`: Maximum file size in bytes (default: 1MB)
 
-### Text Chunking Strategy
+### Model-Aware Chunking Strategy
 
-Code Indexer uses a **fixed-size chunking approach** with smart overlap for optimal search results:
+Code Indexer uses a **model-aware fixed-size chunking approach** optimized for different embedding models:
 
 **How it works:**
-- **Fixed chunk size**: Every chunk contains exactly 1000 characters
-- **Consistent overlap**: 150 characters overlap between adjacent chunks (15%)
-- **Simple arithmetic**: Next chunk starts 850 characters from current start position
-- **Predictable results**: No complex parsing, just reliable text segmentation
+- **Model-optimized chunk sizes**: Automatically selects optimal chunk size based on embedding model capabilities
+- **Consistent overlap**: 15% overlap between adjacent chunks (across all models)
+- **Simple arithmetic**: Next chunk starts at (chunk_size - overlap_size) from current start position
+- **Research-based optimization**: Uses proven optimal token counts per model
 
-**Example chunking:**
+**Model-Specific Chunk Sizes:**
+- **voyage-code-3**: 4,096 characters (1,024 tokens - research optimal)
+- **voyage-code-2**: 4,096 characters (1,024 tokens - research optimal)  
+- **voyage-large-2**: 4,096 characters (1,024 tokens - research optimal)
+- **nomic-embed-text**: 2,048 characters (512 tokens - Ollama limitation)
+- **Unknown models**: 1,000 characters (conservative fallback)
+
+**Example chunking (voyage-code-3):**
 ```
-Chunk 1: characters 0-999     (1000 chars)
-Chunk 2: characters 850-1849  (1000 chars, overlaps 150 chars with Chunk 1)
-Chunk 3: characters 1700-2699 (1000 chars, overlaps 150 chars with Chunk 2)
+Chunk 1: characters 0-4095     (4096 chars)
+Chunk 2: characters 3482-7577  (4096 chars, overlaps 614 chars with Chunk 1) 
+Chunk 3: characters 6964-11059 (4096 chars, overlaps 614 chars with Chunk 2)
 ```
 
 **Benefits:**
-- **Fast processing**: No AST parsing overhead, pure text operations
-- **Consistent quality**: Every chunk provides meaningful context
-- **Universal compatibility**: Works identically across all programming languages
-- **Reliable search**: Returns complete code sections, not fragments
+- **Optimal performance**: Leverages each model's full capabilities (4x larger chunks for VoyageAI)
+- **Better context**: Significantly more code context per chunk for improved search results
+- **Faster indexing**: Fewer total chunks reduce processing time and storage
+- **Model efficiency**: Uses research-proven optimal token counts per embedding model
 
 ## Supported Languages
 

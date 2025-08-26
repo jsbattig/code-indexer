@@ -1,5 +1,28 @@
 # Code Indexer Release Notes
 
+## Version 3.1.0.0 (2025-08-25) - MODEL-AWARE CHUNKING OPTIMIZATION
+
+### 🚀 **MAJOR IMPROVEMENT: Model-Aware Dynamic Chunking**
+
+#### **Intelligent Chunk Size Selection**
+- **NEW**: Chunker automatically selects optimal chunk size based on embedding model capabilities
+- **voyage-code-3**: 4,096 characters (4x larger chunks, leverages 32K token capacity)
+- **nomic-embed-text**: 2,048 characters (2x larger chunks, respects Ollama limitations)
+- **Research-based**: Uses proven 1,024 token optimal size for VoyageAI models
+- **Backward compatible**: Existing configurations continue to work
+
+#### **Performance Benefits**
+- **VoyageAI users**: 4x larger chunks = significantly better search context
+- **Ollama users**: 2x larger chunks = improved search results
+- **Fewer total chunks**: Faster indexing and reduced storage requirements
+- **Better search quality**: More complete code sections in search results
+
+#### **Technical Implementation**
+- **Model detection**: Automatically detects embedding provider and specific model
+- **Dynamic sizing**: voyage-code-3 (4096 chars), voyage-code-2 (4096 chars), nomic-embed-text (2048 chars)
+- **Consistent overlap**: 15% overlap maintained across all models
+- **Fallback support**: Unknown models use 1000 characters (conservative)
+
 ## Version 3.0.0.0 (2025-08-25) - MAJOR INTERNAL REFACTOR
 
 ### 🔄 **INTERNAL ARCHITECTURE: AST-Based Semantic Chunking Replaced with Fixed-Size Chunking**

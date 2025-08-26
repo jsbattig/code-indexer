@@ -103,11 +103,14 @@ Controls indexing behavior and chunking strategies.
 | `max_file_size` | int | 1048576 | Max file size in bytes (1MB) |
 | `index_comments` | bool | True | Include comments in indexing |
 
-**Fixed-Size Chunking Strategy:**
-- **Fixed chunk size**: Every chunk is exactly 1000 characters (except final chunk per file)
-- **Consistent overlap**: 150 characters overlap between adjacent chunks (15%)
-- **Simple arithmetic**: Next chunk starts 850 characters from current start (1000 - 150)
-- **Universal processing**: Works identically across all programming languages
+**Model-Aware Chunking Strategy:**
+- **Optimized chunk sizes**: Automatically selects optimal chunk size based on embedding model
+- **Consistent overlap**: 15% overlap between adjacent chunks (across all models)
+- **Research-based**: Uses proven optimal token counts per model for best performance
+- **Model-specific examples**:
+  - voyage-code-3: 4,096 characters (1,024 tokens)
+  - nomic-embed-text: 2,048 characters (512 tokens)
+  - Unknown models: 1,000 characters (fallback)
 
 ## Timeout Configuration
 

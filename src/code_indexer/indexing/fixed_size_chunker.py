@@ -1,41 +1,83 @@
-"""Ultra-simple fixed-size chunker with fixed overlap.
+"""Model-aware fixed-size chunker with optimized chunk sizes.
 
-This module implements the simplest possible fixed-size chunking algorithm:
-- Fixed chunk size: exactly 1000 characters per chunk
-- Fixed overlap: exactly 150 characters between adjacent chunks
+This module implements model-aware fixed-size chunking algorithm:
+- Dynamic chunk size: optimized per embedding model (voyage-code-3: 4096, nomic-embed-text: 2048)
+- Fixed overlap: 15% of chunk size between adjacent chunks
 - Pure arithmetic: no parsing, no regex, no string analysis
-- Pattern: next_start = current_start + 850 (1000 - 150 overlap)
+- Pattern: next_start = current_start + (chunk_size - overlap_size)
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from pathlib import Path
 
-from ..config import IndexingConfig
+from ..config import IndexingConfig, Config
 
 
 class FixedSizeChunker:
-    """Ultra-simple fixed-size chunker with no boundary detection complexity.
+    """Model-aware fixed-size chunker optimized for different embedding providers.
 
     Algorithm:
-    1. Every chunk is exactly 1000 characters (except final chunk)
-    2. 150 characters overlap between adjacent chunks (15%)
-    3. Simple math: next_start = current_start + 850
+    1. Determine optimal chunk size based on embedding model
+    2. 15% overlap between adjacent chunks (consistent across models)
+    3. Simple math: next_start = current_start + step_size
     4. No boundary detection - cuts at exact character positions
     5. No parsing - pure arithmetic operations
+
+    Model-specific chunk sizes:
+    - voyage-code-3: 4096 characters (1024 tokens, research optimal)
+    - voyage-code-2: 4096 characters (1024 tokens, research optimal)
+    - voyage-large-2: 4096 characters (1024 tokens, research optimal)
+    - nomic-embed-text: 2048 characters (512 tokens, Ollama limitation)
+    - default: 1000 characters (conservative fallback)
     """
 
-    # Fixed algorithm constants
-    CHUNK_SIZE = 1000
-    OVERLAP_SIZE = 150
-    STEP_SIZE = CHUNK_SIZE - OVERLAP_SIZE  # 850
+    # Model-aware chunk size mapping based on research and model capabilities
+    MODEL_CHUNK_SIZES = {
+        "voyage-code-3": 4096,  # 32K token capacity, 1024 tokens optimal
+        "voyage-code-2": 4096,  # 16K token capacity, 1024 tokens optimal
+        "voyage-large-2": 4096,  # Large context models, 1024 tokens optimal
+        "voyage-3": 4096,  # General purpose, 1024 tokens optimal
+        "voyage-3-large": 4096,  # Large model, 1024 tokens optimal
+        "nomic-embed-text": 2048,  # Ollama 2K token limitation, 512 tokens safe
+        "default": 1000,  # Conservative fallback for unknown models
+    }
 
-    def __init__(self, config: IndexingConfig):
-        """Initialize the fixed-size chunker.
+    # Fixed overlap percentage (15% of chunk size)
+    OVERLAP_PERCENTAGE = 0.15
+
+    def __init__(self, config: Union[IndexingConfig, Config]):
+        """Initialize the model-aware fixed-size chunker.
 
         Args:
-            config: Indexing configuration (not used, kept for interface compatibility)
+            config: Indexing configuration or full Config with embedding provider info
         """
         self.config = config
+
+        # Determine chunk size based on embedding model
+        if hasattr(config, "embedding_provider"):
+            # Full Config passed - can determine model-aware chunk size
+            embedding_provider = config.embedding_provider
+            if embedding_provider == "voyage-ai":
+                # Get specific VoyageAI model
+                model_name = config.voyage_ai.model
+                self.chunk_size = self.MODEL_CHUNK_SIZES.get(
+                    model_name, self.MODEL_CHUNK_SIZES["default"]
+                )
+            elif embedding_provider == "ollama":
+                # Get specific Ollama model
+                model_name = config.ollama.model
+                self.chunk_size = self.MODEL_CHUNK_SIZES.get(
+                    model_name, self.MODEL_CHUNK_SIZES["default"]
+                )
+            else:
+                self.chunk_size = self.MODEL_CHUNK_SIZES["default"]
+        else:
+            # IndexingConfig only - use default for backward compatibility
+            self.chunk_size = self.MODEL_CHUNK_SIZES["default"]
+
+        # Calculate derived values
+        self.overlap_size = int(self.chunk_size * self.OVERLAP_PERCENTAGE)
+        self.step_size = self.chunk_size - self.overlap_size
 
     def _calculate_line_numbers(
         self, text: str, start_pos: int, end_pos: int
@@ -89,14 +131,14 @@ class FixedSizeChunker:
         # Process text using fixed-size algorithm
         while current_start < len(text):
             # Calculate chunk boundaries
-            chunk_end = current_start + self.CHUNK_SIZE
+            chunk_end = current_start + self.chunk_size
 
             # Extract chunk text
             if chunk_end >= len(text):
                 # Last chunk - take remaining text
                 chunk_text = text[current_start:]
             else:
-                # Regular chunk - exactly CHUNK_SIZE characters
+                # Regular chunk - exactly chunk_size characters
                 chunk_text = text[current_start:chunk_end]
 
             # Calculate line numbers for this chunk
@@ -122,8 +164,8 @@ class FixedSizeChunker:
                 break
 
             # Move to next chunk start position
-            # Pattern: next_start = current_start + STEP_SIZE (850)
-            current_start += self.STEP_SIZE
+            # Pattern: next_start = current_start + step_size
+            current_start += self.step_size
             chunk_index += 1
 
         # Update total_chunks in all chunk metadata
@@ -238,8 +280,8 @@ class FixedSizeChunker:
                 chunk_index += len(processed_chunks)
 
                 # Keep overlap for next iteration
-                # We need CHUNK_SIZE + OVERLAP_SIZE characters to ensure proper overlap
-                required_buffer_size = self.CHUNK_SIZE + self.OVERLAP_SIZE
+                # We need chunk_size + overlap_size characters to ensure proper overlap
+                required_buffer_size = self.chunk_size + self.overlap_size
 
                 if len(remaining_text) >= required_buffer_size:
                     # Keep the last required_buffer_size characters for overlap
@@ -264,8 +306,8 @@ class FixedSizeChunker:
         current_pos = 0
 
         # Extract chunks while we have enough text
-        while current_pos + self.CHUNK_SIZE <= len(text_buffer):
-            chunk_end = current_pos + self.CHUNK_SIZE
+        while current_pos + self.chunk_size <= len(text_buffer):
+            chunk_end = current_pos + self.chunk_size
             chunk_text = text_buffer[current_pos:chunk_end]
 
             # Calculate line numbers (simplified for streaming)
@@ -288,7 +330,7 @@ class FixedSizeChunker:
             chunks.append(chunk)
 
             # Move to next chunk position
-            current_pos += self.STEP_SIZE
+            current_pos += self.step_size
             chunk_index += 1
 
         # Return chunks and remaining text
@@ -307,7 +349,7 @@ class FixedSizeChunker:
             return []
 
         # For final buffer, create one chunk with remaining text
-        if final_buffer and len(text_buffer) < self.CHUNK_SIZE:
+        if final_buffer and len(text_buffer) < self.chunk_size:
             file_extension = file_path.suffix.lstrip(".") if file_path else ""
 
             chunk = {
@@ -338,13 +380,13 @@ class FixedSizeChunker:
             return 0
 
         # Simple arithmetic estimation
-        # First chunk: CHUNK_SIZE characters
-        # Each additional chunk: STEP_SIZE new characters (accounting for overlap)
-        if len(text) <= self.CHUNK_SIZE:
+        # First chunk: chunk_size characters
+        # Each additional chunk: step_size new characters (accounting for overlap)
+        if len(text) <= self.chunk_size:
             return 1
 
-        remaining_after_first = len(text) - self.CHUNK_SIZE
+        remaining_after_first = len(text) - self.chunk_size
         additional_chunks = (
-            remaining_after_first + self.STEP_SIZE - 1
-        ) // self.STEP_SIZE  # Ceiling division
+            remaining_after_first + self.step_size - 1
+        ) // self.step_size  # Ceiling division
         return 1 + additional_chunks

@@ -23,20 +23,19 @@ class TestFixedSizeChunkerConfigIntegration:
         assert chunker.config.chunk_size == 1500  # default
         assert chunker.config.chunk_overlap == 150  # default
 
-    def test_chunker_uses_fixed_constants_per_epic_story_3(self):
-        """Verify chunker uses fixed constants as specified in Epic Story 3."""
-        # Per Epic Story 3: "Fixed chunk size: Every chunk is exactly 1000 characters"
-        # "Fixed overlap: 150 characters overlap between adjacent chunks (15%)"
+    def test_chunker_uses_model_aware_chunk_sizes(self):
+        """Verify chunker uses model-aware chunk sizes, not config values."""
+        # With IndexingConfig only, should use default (1000) for backward compatibility
 
         config = IndexingConfig(chunk_size=2000, chunk_overlap=500)  # Different values
         chunker = FixedSizeChunker(config)
 
-        # Chunker should use its own constants, not config values
-        assert chunker.CHUNK_SIZE == 1000  # Per epic specification
-        assert chunker.OVERLAP_SIZE == 150  # Per epic specification
-        assert chunker.STEP_SIZE == 850  # 1000 - 150
+        # With IndexingConfig only, should use default size
+        assert chunker.chunk_size == 1000  # Default for IndexingConfig
+        assert chunker.overlap_size == 150  # 15% of 1000
+        assert chunker.step_size == 850  # 1000 - 150
 
-        # Config values should be preserved but not used by this chunker
+        # Config values should be preserved but not used by model-aware chunker
         assert chunker.config.chunk_size == 2000
         assert chunker.config.chunk_overlap == 500
 
@@ -207,3 +206,79 @@ class TestDocumentationConsistency:
         assert config.chunk_size > 0
         assert config.chunk_overlap >= 0
         assert config.chunk_overlap < config.chunk_size
+
+
+class TestModelAwareChunking:
+    """Test model-aware chunk size selection."""
+
+    def test_voyage_code_3_uses_4096_chunk_size(self):
+        """Verify voyage-code-3 uses optimized 4096 character chunks."""
+        config = Config()
+        config.embedding_provider = "voyage-ai"
+        config.voyage_ai.model = "voyage-code-3"
+
+        chunker = FixedSizeChunker(config)
+
+        assert chunker.chunk_size == 4096  # Optimized for voyage-code-3
+        assert chunker.overlap_size == 614  # 15% of 4096
+        assert chunker.step_size == 3482  # 4096 - 614
+
+    def test_nomic_embed_text_uses_2048_chunk_size(self):
+        """Verify nomic-embed-text uses 2048 character chunks."""
+        config = Config()
+        config.embedding_provider = "ollama"
+        config.ollama.model = "nomic-embed-text"
+
+        chunker = FixedSizeChunker(config)
+
+        assert chunker.chunk_size == 2048  # Optimized for nomic-embed-text
+        assert chunker.overlap_size == 307  # 15% of 2048
+        assert chunker.step_size == 1741  # 2048 - 307
+
+    def test_unknown_model_uses_default_size(self):
+        """Verify unknown models use default 1000 character chunks."""
+        config = Config()
+        config.embedding_provider = "voyage-ai"
+        config.voyage_ai.model = "unknown-model"
+
+        chunker = FixedSizeChunker(config)
+
+        assert chunker.chunk_size == 1000  # Default fallback
+        assert chunker.overlap_size == 150  # 15% of 1000
+        assert chunker.step_size == 850  # 1000 - 150
+
+    def test_backward_compatibility_with_indexing_config(self):
+        """Verify IndexingConfig still works with default chunk size."""
+        config = IndexingConfig()
+        chunker = FixedSizeChunker(config)
+
+        assert chunker.chunk_size == 1000  # Default for backward compatibility
+        assert chunker.overlap_size == 150  # 15% of 1000
+        assert chunker.step_size == 850  # 1000 - 150
+
+    def test_model_aware_chunking_actually_produces_different_sizes(self):
+        """Verify that different models actually produce different chunk sizes."""
+        test_text = "a" * 10000  # Large enough for multiple chunks
+
+        # VoyageAI config
+        config_voyage = Config()
+        config_voyage.embedding_provider = "voyage-ai"
+        config_voyage.voyage_ai.model = "voyage-code-3"
+        chunker_voyage = FixedSizeChunker(config_voyage)
+
+        # Ollama config
+        config_ollama = Config()
+        config_ollama.embedding_provider = "ollama"
+        config_ollama.ollama.model = "nomic-embed-text"
+        chunker_ollama = FixedSizeChunker(config_ollama)
+
+        # Get chunks from both
+        voyage_chunks = chunker_voyage.chunk_text(test_text)
+        ollama_chunks = chunker_ollama.chunk_text(test_text)
+
+        # VoyageAI should produce larger chunks
+        assert len(voyage_chunks[0]["text"]) == 4096
+        assert len(ollama_chunks[0]["text"]) == 2048
+
+        # VoyageAI should produce fewer total chunks (larger chunk size)
+        assert len(voyage_chunks) < len(ollama_chunks)
