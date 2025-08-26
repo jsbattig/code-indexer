@@ -40,8 +40,7 @@ class TestFixedSizeChunkingDocumentation:
 
         # Must contain model-aware chunking descriptions
         assert (
-            "model-aware" in content.lower()
-            and "chunking" in content.lower()
+            "model-aware" in content.lower() and "chunking" in content.lower()
         ), "README.md must describe the model-aware chunking approach"
 
         # Must mention model-aware chunk sizes
