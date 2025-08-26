@@ -262,10 +262,10 @@ The system runs at full speed by default and only backs off when rate limits are
 Configuration is stored in `.code-indexer/config.json`:
 - `file_extensions`: File types to index
 - `exclude_dirs`: Directories to skip  
-- `chunk_size`: Text chunk size (default: 1000 characters)
-- `chunk_overlap`: Text chunk overlap in characters (default: 150)
-- `embedding_provider`: ollama or voyage-ai
+- `embedding_provider`: ollama or voyage-ai (determines chunk size automatically)
 - `max_file_size`: Maximum file size in bytes (default: 1MB)
+- `chunk_size`: Legacy setting (ignored, chunker uses model-aware sizing)
+- `chunk_overlap`: Legacy setting (ignored, chunker uses 15% of chunk size)
 
 ### Model-Aware Chunking Strategy
 
@@ -324,12 +324,12 @@ Code Indexer provides fixed-size chunking with intelligent text processing for a
 | **YAML** | `.yaml`, `.yml` | Fixed-size chunks with consistent overlap |
 | **XML** | `.xml`, `.xsd`, `.xsl`, `.xslt` | Fixed-size chunks with consistent overlap |
 
-**Fixed-Size Chunking Benefits:**
-- **Consistent chunk sizes**: Every chunk is exactly 1000 characters (except final chunk per file)
-- **Predictable overlap**: 150 characters overlap between adjacent chunks (15%)
-- **Fast processing**: No complex parsing overhead
-- **Reliable search results**: Complete code sections, not fragments
-- **Universal support**: Works identically across all programming languages
+**Model-Aware Chunking Benefits:**
+- **Optimized chunk sizes**: Each model gets its optimal chunk size (voyage-code-3: 4096, nomic-embed-text: 2048)
+- **Consistent overlap**: 15% overlap between adjacent chunks (across all models)
+- **Fast processing**: No complex parsing overhead, pure arithmetic operations
+- **Complete search results**: Full code sections without truncation
+- **Model efficiency**: Leverages each embedding model's capabilities
 
 ### Containerized Services
 

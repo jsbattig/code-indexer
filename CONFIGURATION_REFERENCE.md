@@ -98,8 +98,8 @@ Controls indexing behavior and chunking strategies.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `chunk_size` | int | 1000 | Fixed chunk size in characters |
-| `chunk_overlap` | int | 150 | Overlap between chunks |
+| `chunk_size` | int | 1000 | Legacy setting (ignored, chunker uses model-aware sizing) |
+| `chunk_overlap` | int | 150 | Legacy setting (ignored, chunker uses 15% of chunk size) |
 | `max_file_size` | int | 1048576 | Max file size in bytes (1MB) |
 | `index_comments` | bool | True | Include comments in indexing |
 
@@ -329,8 +329,8 @@ Handles configuration loading, saving, and discovery.
     "max_queue": 256
   },
   "indexing": {
-    "chunk_size": 1000,
-    "chunk_overlap": 150
+    "max_file_size": 1048576,
+    "index_comments": true
   }
 }
 ```
@@ -344,9 +344,8 @@ Handles configuration loading, saving, and discovery.
     "hnsw_m": 48
   },
   "indexing": {
-    "chunk_size": 1000,
-    "chunk_overlap": 150,
-    "max_file_size": 5242880
+    "max_file_size": 5242880,
+    "index_comments": true
   }
 }
 ```
@@ -412,8 +411,6 @@ Handles configuration loading, saving, and discovery.
     "hnsw_m": 32
   },
   "indexing": {
-    "chunk_size": 1000,
-    "chunk_overlap": 150,
     "max_file_size": 1048576,
     "index_comments": true
   },

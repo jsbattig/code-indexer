@@ -34,18 +34,20 @@ class TestFixedSizeChunkingDocumentation:
         """Get the RELEASE_NOTES.md file path."""
         return project_root / "RELEASE_NOTES.md"
 
-    def test_readme_contains_fixed_size_chunking_description(self, readme_path):
-        """README.md must contain clear description of fixed-size chunking."""
+    def test_readme_contains_model_aware_chunking_description(self, readme_path):
+        """README.md must contain clear description of model-aware chunking."""
         content = readme_path.read_text()
 
-        # Must contain fixed-size chunking descriptions
+        # Must contain model-aware chunking descriptions
         assert (
-            "fixed-size chunking" in content.lower()
-            or "fixed size chunking" in content.lower()
-        ), "README.md must describe the fixed-size chunking approach"
+            "model-aware" in content.lower()
+            and "chunking" in content.lower()
+        ), "README.md must describe the model-aware chunking approach"
 
-        # Must mention the 1000 character chunk size
-        assert "1000" in content, "README.md must mention the 1000 character chunk size"
+        # Must mention model-aware chunk sizes
+        assert "4096" in content, "README.md must mention VoyageAI chunk sizes"
+        assert "2048" in content, "README.md must mention Ollama chunk sizes"
+        # Note: Fallback size (1000) may not be mentioned in user documentation
 
         # Should mention overlap functionality
         assert (

@@ -567,7 +567,7 @@ def cli(
       • exclude_dirs: Folders to skip (e.g., ["node_modules", "dist"])
       • file_extensions: File types to index (e.g., ["py", "js", "ts"])
       • max_file_size: Maximum file size in bytes (default: 1MB)
-      • chunking: Fixed 1000-character chunks with 150-character overlap
+      • chunking: Model-aware chunk sizes (voyage-code-3: 4096, nomic-embed-text: 2048)
 
       Exclusions also respect .gitignore patterns automatically.
 
@@ -720,7 +720,7 @@ def init(
       • Exclude directories: Edit exclude_dirs in config.json
       • File types: Modify file_extensions array
       • Size limits: Use --max-file-size or edit config.json
-      • Chunking: Fixed 1000-character chunks (not configurable)
+      • Chunking: Model-aware sizing (voyage-code-3: 4096, nomic-embed-text: 2048)
 
     \b
     DEFAULT EXCLUSIONS:
@@ -950,7 +950,7 @@ def init(
         console.print(f"📁 Codebase directory: {config.codebase_dir}")
         console.print(f"📏 Max file size: {config.indexing.max_file_size:,} bytes")
         console.print(
-            "📦 Chunking: Fixed 1000-character chunks with 150-character overlap"
+            "📦 Chunking: Model-aware sizing (voyage-code-3: 4096, nomic-embed-text: 2048)"
         )
 
         # Show configured embedding provider
@@ -3531,7 +3531,7 @@ def _status_impl(ctx, force_docker: bool):
         table.add_row(
             "File Limits",
             "📏",
-            f"Max size: {config.indexing.max_file_size:,} bytes | Fixed 1000-char chunks",
+            f"Max size: {config.indexing.max_file_size:,} bytes | Model-aware chunk sizing",
         )
 
         console.print(table)

@@ -1,6 +1,6 @@
 # Code Indexer Release Notes
 
-## Version 3.1.0.0 (2025-08-25) - MODEL-AWARE CHUNKING OPTIMIZATION
+## Version 3.1.2.0 (2025-08-25) - MODEL-AWARE CHUNKING OPTIMIZATION
 
 ### 🚀 **MAJOR IMPROVEMENT: Model-Aware Dynamic Chunking**
 
@@ -29,22 +29,22 @@
 
 #### **Complete Chunking Strategy Overhaul**
 - **INTERNAL CHANGE**: Removed all AST-based semantic chunking infrastructure including tree-sitter dependencies
-- **NEW APPROACH**: Implemented ultra-simple fixed-size chunking with consistent 1000-character chunks and 150-character overlap
+- **NEW APPROACH**: Implemented model-aware fixed-size chunking with optimized chunk sizes per embedding model
 - **PERFORMANCE**: 2x+ faster indexing with no complex AST parsing overhead
-- **QUALITY**: Eliminates over-segmentation issues (76.5% chunks under 300 chars → 100% chunks at 1000 chars)
+- **QUALITY**: Eliminates over-segmentation issues (76.5% chunks under 300 chars → optimized chunks per model)
 
 #### **What Changed**
 - **Dependencies Removed**: `tree-sitter-language-pack` and all AST parsing dependencies
 - **Source Files Deleted**: 23 parser files (`*_parser.py`) and `semantic_chunker.py` completely removed
 - **Test Suite Cleaned**: 62+ semantic chunking tests removed, new fixed-size chunking tests added
-- **Configuration Updated**: `use_semantic_chunking` option removed, `chunk_size` now defaults to 1000 chars
+- **Configuration Updated**: `use_semantic_chunking` option removed, chunker now uses model-aware sizing
 
-#### **Fixed-Size Chunking Benefits**
-- **Consistent Quality**: Every chunk exactly 1000 characters (except final chunk per file)
-- **Predictable Overlap**: 150 characters overlap between adjacent chunks (15%)
-- **Universal Processing**: Works identically across all programming languages
-- **Better Search Results**: Complete code sections instead of meaningless fragments
-- **Fast Performance**: Pure text operations, no parsing complexity
+#### **Model-Aware Chunking Benefits**
+- **Optimized Sizing**: Each model gets optimal chunk size (voyage-code-3: 4096, nomic-embed-text: 2048)
+- **Consistent Overlap**: 15% overlap between adjacent chunks (across all models)
+- **Research-Based**: Uses proven optimal token counts per embedding model
+- **Complete Search Results**: Full code sections without truncation
+- **Fast Performance**: Pure arithmetic operations, no parsing complexity
 
 #### **User Impact**
 - **⚠️ RE-INDEXING RECOMMENDED**: Existing codebases should be re-indexed to benefit from improved chunking quality
@@ -54,10 +54,11 @@
 
 #### **Algorithm Details**
 ```
-Chunk 1: characters 0-999     (1000 chars)
-Chunk 2: characters 850-1849  (1000 chars, overlaps 150 chars)
-Chunk 3: characters 1700-2699 (1000 chars, overlaps 150 chars)
-Pattern: next_start = current_start + 850
+Model-Aware Algorithm (example with voyage-code-3):
+Chunk 1: characters 0-4095     (4096 chars)
+Chunk 2: characters 3482-7577  (4096 chars, overlaps 614 chars)
+Chunk 3: characters 6964-11059 (4096 chars, overlaps 614 chars)
+Pattern: next_start = current_start + step_size
 ```
 
 #### **Files Removed**
