@@ -32,7 +32,7 @@ class TestFixedSizeChunkingDocumentation:
     @pytest.fixture
     def release_notes_path(self, project_root):
         """Get the RELEASE_NOTES.md file path."""
-        return project_root / "RELEASE_NOTES.md"
+        return project_root / "docs/CHANGELOG.md"
 
     def test_readme_contains_model_aware_chunking_description(self, readme_path):
         """README.md must contain clear description of model-aware chunking."""
@@ -327,8 +327,8 @@ class TestFixedSizeChunkingDocumentation:
             try:
                 content = doc_file.read_text().lower()
 
-                # Special case: RELEASE_NOTES.md can contain these terms when documenting breaking changes
-                if "release_notes.md" in str(doc_file).lower():
+                # Special case: CHANGELOG.md can contain these terms when documenting breaking changes
+                if "changelog.md" in str(doc_file).lower():
                     # Only allow these terms if they're in the context of documenting the breaking change
                     if "breaking change" in content and (
                         "semantic chunking replaced" in content

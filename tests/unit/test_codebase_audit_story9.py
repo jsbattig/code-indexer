@@ -380,7 +380,7 @@ class TestCodebaseAuditStory9:
                 # Allow references in historical documentation files
                 is_historical_doc = str(file_path).endswith(".md") and (
                     "backlog/" in str(file_path)
-                    or "RELEASE_NOTES.md" in str(file_path)
+                    or "docs/CHANGELOG.md" in str(file_path)
                     or "migration" in line.lower()
                     or "STORY" in str(file_path)
                     or "changelog" in line.lower()
@@ -569,7 +569,7 @@ class TestCodebaseAuditStory9:
                 # Use the same filtering logic as test_no_semantic_references_in_text
                 is_historical_doc = str(file_path).endswith(".md") and (
                     "backlog/" in str(file_path)
-                    or "RELEASE_NOTES.md" in str(file_path)
+                    or "docs/CHANGELOG.md" in str(file_path)
                     or "migration" in line.lower()
                     or "STORY" in str(file_path)
                     or "changelog" in line.lower()

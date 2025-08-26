@@ -3184,7 +3184,7 @@ def _status_impl(ctx, force_docker: bool):
                                     ):
                                         qdrant_details += f" | Progress: {files_processed} files, {chunks_indexed} chunks"
                                         if status == "in_progress":
-                                            qdrant_details += " (⏸️ paused)"
+                                            qdrant_details += " (🔄 not complete)"
                             except Exception:
                                 pass  # Don't fail status display if metadata reading fails
                     except Exception as e:
@@ -3229,8 +3229,6 @@ def _status_impl(ctx, force_docker: bool):
                     payload_details = (
                         f"{payload_index_status['total_indexes']} indexes active"
                     )
-                    if payload_index_status.get("estimated_memory_mb", 0) > 0:
-                        payload_details += f" | ~{payload_index_status['estimated_memory_mb']}MB memory"
                 else:
                     if "error" in payload_index_status:
                         payload_status = "❌ Error"
@@ -3453,8 +3451,8 @@ def _status_impl(ctx, force_docker: bool):
                 git_available = metadata.get("git_available", False)
                 project_id = metadata.get("project_id", "unknown")
 
-                # Check resume capability
-                can_resume_interrupted = (
+                # Check if indexing is incomplete (regardless of whether it's running or stopped)
+                has_incomplete_indexing = (
                     metadata.get("status") == "in_progress"
                     and len(metadata.get("files_to_index", [])) > 0
                     and metadata.get("current_file_index", 0)
@@ -3467,11 +3465,22 @@ def _status_impl(ctx, force_docker: bool):
                     index_details += f" | Branch: {current_branch}"
                 index_details += f" | Project: {project_id}"
 
-                if can_resume_interrupted:
-                    remaining = len(metadata.get("files_to_index", [])) - metadata.get(
-                        "current_file_index", 0
+                if has_incomplete_indexing:
+                    total_files = metadata.get(
+                        "total_files_to_index", len(metadata.get("files_to_index", []))
                     )
-                    index_details += f" | ⏸️ Resumable ({remaining} files remaining)"
+                    files_processed = metadata.get("files_processed", 0)
+                    remaining = max(
+                        0, total_files - files_processed
+                    )  # Ensure non-negative
+
+                    if remaining > 0:
+                        index_details += (
+                            f" | 🔄 Not complete ({remaining} files remaining)"
+                        )
+                    else:
+                        # Edge case: files_processed >= total files but status still in_progress
+                        index_details += " | 🔄 Not complete (finishing up)"
 
             except Exception:
                 index_status = "⚠️  Corrupted"
@@ -3496,8 +3505,6 @@ def _status_impl(ctx, force_docker: bool):
             if git_status["git_available"]:
                 git_info = f"Branch: {git_status['current_branch']}"
                 commit_hash = git_status.get("current_commit", "unknown")
-                if commit_hash != "unknown" and len(commit_hash) > 8:
-                    commit_hash = commit_hash[:8] + "..."
                 git_info += f" | Commit: {commit_hash}"
 
                 table.add_row("Git Repository", "✅ Available", git_info)

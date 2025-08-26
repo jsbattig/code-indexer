@@ -21,23 +21,23 @@ By cleaning collections before shutdown, we ensure:
 
 ```bash
 # Basic cleanup with collection removal
-./cleanup-with-collections.sh
+./scripts/cleanup/cleanup-with-collections.sh
 
 # Force cleanup (skip confirmation, remove all containers)
-./cleanup-with-collections.sh --force
+./scripts/cleanup/cleanup-with-collections.sh --force
 ```
 
 ### 2. Python Script (Direct Collection Cleanup)
 
 ```bash
 # Interactive mode (asks for confirmation)
-python cleanup-all-collections.py
+python scripts/cleanup/cleanup-all-collections.py
 
 # Force mode (no confirmation)
-python cleanup-all-collections.py --force
+python scripts/cleanup/cleanup-all-collections.py --force
 
 # Specify project root
-python cleanup-all-collections.py --project-root /path/to/project
+python scripts/cleanup/cleanup-all-collections.py --project-root /path/to/project
 ```
 
 ### 3. Integration with DockerManager
@@ -90,7 +90,7 @@ Add to `full-automation.sh` before final cleanup:
 
 ```bash
 # Clean collections before shutting down containers
-"$SCRIPT_DIR/cleanup-with-collections.sh" --force
+"$SCRIPT_DIR/scripts/cleanup/cleanup-with-collections.sh" --force
 ```
 
 ### For CI/CD
@@ -99,7 +99,7 @@ Set environment variable to skip confirmation:
 
 ```bash
 export FORCE_CLEANUP=1
-python cleanup-all-collections.py
+python scripts/cleanup/cleanup-all-collections.py
 ```
 
 ### For Development
@@ -107,7 +107,7 @@ python cleanup-all-collections.py
 Use interactively when you want a fresh start:
 
 ```bash
-./cleanup-with-collections.sh
+./scripts/cleanup/cleanup-with-collections.sh
 ```
 
 ## Benefits
