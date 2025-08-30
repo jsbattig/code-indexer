@@ -607,7 +607,7 @@ class DataProcessor:
         ]
 
         total_chunks = 0
-        total_time = 0
+        total_time = 0.0
 
         with patch(
             "src.code_indexer.indexing.processor.VectorCalculationManager"
@@ -632,7 +632,7 @@ class DataProcessor:
                 file_time = end_time - start_time
 
                 total_chunks += len(chunks)
-                total_time += file_time
+                total_time = float(total_time) + file_time
 
                 # Per-file performance assertions
                 assert (

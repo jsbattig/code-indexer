@@ -4,7 +4,7 @@ This module provides utilities to analyze chunk distribution and quality
 to validate the improvements from fixed-size chunking over the old AST approach.
 """
 
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 import statistics
 from pathlib import Path
 from dataclasses import dataclass
@@ -326,7 +326,7 @@ class ChunkAnalyzer:
         return distribution, quality
 
     def analyze_directory_chunking(
-        self, directory: Path, file_patterns: List[str] = None
+        self, directory: Path, file_patterns: Optional[List[str]] = None
     ) -> Tuple[ChunkDistributionAnalysis, SearchQualityMetrics]:
         """Analyze chunking quality for all files in a directory.
 
@@ -448,7 +448,7 @@ class ChunkAnalyzer:
         self,
         analysis: ChunkDistributionAnalysis,
         quality: SearchQualityMetrics,
-        comparison: Dict[str, Any] = None,
+        comparison: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate a comprehensive report of the chunk analysis.
 

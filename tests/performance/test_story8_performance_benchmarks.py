@@ -22,7 +22,7 @@ import tempfile
 import gc
 from pathlib import Path
 from contextlib import contextmanager
-from typing import Dict, List
+from typing import Dict, List, Optional, Any
 
 from src.code_indexer.indexing.fixed_size_chunker import FixedSizeChunker
 from src.code_indexer.config import IndexingConfig
@@ -82,7 +82,7 @@ class SimulatedASTChunker:
 
         # Simulate over-segmentation (76.5% chunks under 300 chars)
         # This creates many small chunks, increasing processing overhead
-        chunks = []
+        chunks: List[str] = []
         pos = 0
         while pos < len(text):
             # Simulate variable chunk sizes (mostly very small)
@@ -99,7 +99,9 @@ class SimulatedASTChunker:
 
         return chunks
 
-    def chunk_text(self, text: str, file_path: Path = None) -> List[Dict[str, any]]:
+    def chunk_text(
+        self, text: str, file_path: Optional[Path] = None
+    ) -> List[Dict[str, Any]]:
         """Simulate AST-based chunking with realistic performance overhead."""
         if not text or not text.strip():
             return []
@@ -173,7 +175,7 @@ class SimulatedASTChunker:
 
         return chunks
 
-    def chunk_file(self, file_path: Path) -> List[Dict[str, any]]:
+    def chunk_file(self, file_path: Path) -> List[Dict[str, Any]]:
         """Simulate file reading and chunking with AST overhead."""
         try:
             # Simulate file reading with encoding detection overhead
