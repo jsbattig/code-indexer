@@ -7,7 +7,7 @@ name = "code-indexer"
 dynamic = ["version"]
 description = "AI-powered semantic code search with local models"
 authors = [
-    {name = "Code Indexer Team", email = "team@example.com"}
+    {name = "Seba Battig", email = "jsbattig@gmail.com"}
 ]
 readme = "README.md"
 license = {text = "MIT"}
@@ -39,6 +39,11 @@ dependencies = [
     "watchdog>=3.0.0",
     "jsonschema>=4.0.0",
     "tree-sitter-language-pack==0.9.0",
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "python-multipart>=0.0.6",
 ]
 
 [project.optional-dependencies]

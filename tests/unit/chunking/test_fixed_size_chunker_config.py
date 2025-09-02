@@ -88,10 +88,8 @@ class TestConfigurationCleanness:
 
     def test_indexing_config_has_no_semantic_fields(self):
         """Verify IndexingConfig has no semantic chunking fields."""
-        config = IndexingConfig()
-
         # Get all field names
-        field_names = set(config.model_fields.keys())
+        field_names = set(IndexingConfig.model_fields.keys())
 
         # Should not have any semantic-related fields
         semantic_fields = [
@@ -114,13 +112,13 @@ class TestConfigurationCleanness:
         all_field_names = set()
 
         # Check main config fields
-        all_field_names.update(config.model_fields.keys())
+        all_field_names.update(Config.model_fields.keys())
 
         # Check nested config fields
-        all_field_names.update(config.indexing.model_fields.keys())
-        all_field_names.update(config.qdrant.model_fields.keys())
-        all_field_names.update(config.ollama.model_fields.keys())
-        all_field_names.update(config.voyage_ai.model_fields.keys())
+        all_field_names.update(type(config.indexing).model_fields.keys())
+        all_field_names.update(type(config.qdrant).model_fields.keys())
+        all_field_names.update(type(config.ollama).model_fields.keys())
+        all_field_names.update(type(config.voyage_ai).model_fields.keys())
 
         # Should not have any semantic-related fields
         semantic_fields = [

@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 import pytest
 
-from code_indexer.test_infrastructure.test_reorganizer import TestFileReorganizer
+from code_indexer.test_infrastructure.test_reorganizer import FileReorganizer
 
 
 class TestTestReorganizer:
@@ -62,7 +62,7 @@ class TestTestReorganizer:
 
     def test_reorganizer_initialization(self):
         """Test TestReorganizer initializes with correct parameters."""
-        reorganizer = TestFileReorganizer(self.test_root)
+        reorganizer = FileReorganizer(self.test_root)
 
         assert reorganizer.test_root == self.test_root
         assert reorganizer.dry_run is False
@@ -70,7 +70,7 @@ class TestTestReorganizer:
 
     def test_categorize_unit_tests(self):
         """Test categorization of unit tests by functionality."""
-        reorganizer = TestFileReorganizer(self.test_root)
+        reorganizer = FileReorganizer(self.test_root)
 
         # These should be categorized as unit tests in parsers subdirectory
         parser_tests = reorganizer.categorize_test_file(
@@ -91,7 +91,7 @@ class TestTestReorganizer:
 
     def test_categorize_integration_tests(self):
         """Test categorization of integration tests."""
-        reorganizer = TestFileReorganizer(self.test_root)
+        reorganizer = FileReorganizer(self.test_root)
 
         # Service integration tests
         service_tests = reorganizer.categorize_test_file(
@@ -114,7 +114,7 @@ class TestTestReorganizer:
 
     def test_categorize_e2e_tests(self):
         """Test categorization of end-to-end tests."""
-        reorganizer = TestFileReorganizer(self.test_root)
+        reorganizer = FileReorganizer(self.test_root)
 
         # Claude integration e2e tests
         claude_tests = reorganizer.categorize_test_file("test_claude_e2e.py")
@@ -149,7 +149,7 @@ class TestTestReorganizer:
 
     def test_create_directory_structure(self):
         """Test creation of the new directory structure."""
-        reorganizer = TestFileReorganizer(self.test_root)
+        reorganizer = FileReorganizer(self.test_root)
 
         reorganizer.create_directory_structure()
 
@@ -191,7 +191,7 @@ class TestTestReorganizer:
 
     def test_move_files_dry_run(self):
         """Test moving files in dry run mode."""
-        reorganizer = TestFileReorganizer(self.test_root, dry_run=True)
+        reorganizer = FileReorganizer(self.test_root, dry_run=True)
         reorganizer.create_directory_structure()
 
         move_plan = reorganizer.reorganize_tests()
@@ -212,7 +212,7 @@ class TestTestReorganizer:
 
     def test_move_files_actual(self):
         """Test actual file moving without dry run."""
-        reorganizer = TestFileReorganizer(self.test_root, dry_run=False)
+        reorganizer = FileReorganizer(self.test_root, dry_run=False)
         reorganizer.create_directory_structure()
 
         reorganizer.reorganize_tests()
@@ -236,7 +236,7 @@ class TestTestReorganizer:
 
     def test_update_import_paths(self):
         """Test updating import paths in moved test files."""
-        reorganizer = TestFileReorganizer(self.test_root, dry_run=False)
+        reorganizer = FileReorganizer(self.test_root, dry_run=False)
 
         # Create a test file with imports that need updating
         test_file = self.test_root / "test_sample_with_imports.py"
@@ -269,7 +269,7 @@ def test_sample():
 
     def test_backup_original_structure(self):
         """Test backup of original test structure."""
-        reorganizer = TestFileReorganizer(self.test_root, backup_original=True)
+        reorganizer = FileReorganizer(self.test_root, backup_original=True)
 
         backup_path = reorganizer.create_backup()
 
@@ -282,7 +282,7 @@ def test_sample():
 
     def test_validation_after_reorganization(self):
         """Test validation that all tests can still be discovered and run."""
-        reorganizer = TestFileReorganizer(self.test_root, dry_run=False)
+        reorganizer = FileReorganizer(self.test_root, dry_run=False)
         reorganizer.create_directory_structure()
         reorganizer.reorganize_tests()
 
@@ -295,7 +295,7 @@ def test_sample():
 
     def test_get_file_statistics(self):
         """Test getting statistics about file categorization."""
-        reorganizer = TestFileReorganizer(self.test_root)
+        reorganizer = FileReorganizer(self.test_root)
 
         stats = reorganizer.get_file_statistics()
 
@@ -314,11 +314,11 @@ def test_sample():
         invalid_path = Path("/nonexistent/path")
 
         with pytest.raises(FileNotFoundError):
-            TestFileReorganizer(invalid_path)
+            FileReorganizer(invalid_path)
 
     def test_error_handling_permission_denied(self):
         """Test error handling when unable to create directories due to permissions."""
-        reorganizer = TestFileReorganizer(self.test_root)
+        reorganizer = FileReorganizer(self.test_root)
 
         # Mock Path.mkdir to raise PermissionError
         with patch(
@@ -329,7 +329,7 @@ def test_sample():
 
     def test_rollback_functionality(self):
         """Test rollback functionality in case of errors during reorganization."""
-        reorganizer = TestFileReorganizer(self.test_root, backup_original=True)
+        reorganizer = FileReorganizer(self.test_root, backup_original=True)
         backup_path = reorganizer.create_backup()
 
         reorganizer.create_directory_structure()

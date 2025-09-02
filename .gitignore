@@ -123,16 +123,25 @@ test_collections.txt
 tests/projects/*/data/
 tests/projects/*/.code-indexer/
 tests/projects/*/docker-compose.yml
-=4.0.0
-/test_backtrack
-/test_index
-PRODUCTIVITY_ANALYSIS.md
-/debug
-/.local
+# Root level temporary and debug files
+/debug/
+dev/debug/
+/test_server_validation.py
+/cleanup_test_containers.py  
+/parse_test_results.py
+/.tmp/
+/.local/
+
+# Test data directories (regeneratable)
+/test-data/
+
+# More specific JSON ignores instead of *.json
+**/.code-indexer/*.json
+**/qdrant/**/*.json
+config.json
+docker-compose.yml
 *.lock
 .env.local.new
-*.json
 /.swarm
 debug_data_cleaner/
 test_output_*/
-dev/debug/reconcile_test/

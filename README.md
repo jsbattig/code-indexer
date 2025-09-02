@@ -2,19 +2,30 @@
 
 AI-powered semantic code search for your codebase. Find code by meaning, not just keywords.
 
-## ⚠️ Version 3.0+ Breaking Changes
+## Version 4.0.0
 
-- **Semantic filtering temporarily disabled**: `--type`, `--scope`, `--features` flags don't function with current chunking system
-- **Chunking system changed**: All files now use model-aware fixed-size chunking instead of previous approach
-- **Re-indexing recommended**: Existing indexes should be rebuilt for optimal chunk sizes
+Multi-user server functionality with FastAPI, JWT authentication, and role-based access control.
 
 ## Features
 
+### Core Search Capabilities
 - **Semantic Search** - Find code by meaning using vector embeddings and fixed-size chunking
 - **Multiple Providers** - Local (Ollama) or cloud (VoyageAI) embeddings  
 - **Smart Indexing** - Incremental updates, git-aware, multi-project support
-- **Search Filtering** - Filter by programming language, file paths, and similarity scores
+- **Search Filtering** - Filter by programming language, file paths, file extensions, and similarity scores
 - **Multi-Language Support** - Universal text processing for Python, JavaScript, TypeScript, Java, C#, Go, Kotlin, Groovy, Pascal/Delphi, SQL, C, C++, Rust, Swift, Ruby, Lua, HTML, CSS, YAML, XML
+
+### Multi-User Server
+- **REST API** - FastAPI-based web service
+- **JWT Authentication** - Token-based authentication
+- **User Management** - Admin-controlled user creation and role assignment
+- **Golden Repositories** - Centralized code repository management
+- **Repository Activation** - Copy-on-Write cloning for user workspaces
+- **Semantic Query Endpoints** - Search with filtering capabilities
+- **Background Processing** - Async job system for heavy operations
+- **Health Monitoring** - System status and performance metrics
+
+### Traditional CLI Interface
 - **CLI Interface** - Simple commands with progress indicators
 - **AI Analysis** - Integrates with Claude CLI for code analysis with semantic search
 - **Privacy Options** - Full local processing or cloud for better performance
@@ -24,7 +35,7 @@ AI-powered semantic code search for your codebase. Find code by meaning, not jus
 ### pipx (Recommended)
 ```bash
 # Install the package
-pipx install git+https://github.com/jsbattig/code-indexer.git
+pipx install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.0
 
 # Setup global registry (standalone command - requires sudo)
 cidx setup-global-registry
@@ -34,7 +45,7 @@ cidx setup-global-registry
 ```bash
 python3 -m venv code-indexer-env
 source code-indexer-env/bin/activate
-pip install git+https://github.com/jsbattig/code-indexer.git
+pip install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.0
 
 # Setup global registry (standalone command - requires sudo)
 code-indexer setup-global-registry
@@ -89,6 +100,90 @@ code-indexer claude "How does auth work in this app?"
 code-indexer init --embedding-provider voyage-ai --max-file-size 2000000
 code-indexer start
 code-indexer index
+```
+
+## Multi-User Server
+
+The CIDX server provides a FastAPI-based multi-user semantic code search service with JWT authentication and role-based access control.
+
+### Server Quick Start
+
+```bash
+# 1. Install and setup (same as CLI)
+pipx install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.0
+cidx setup-global-registry
+
+# 2. Start the server
+cd /path/to/your/server/data/directory
+python -m src.code_indexer.server.main --host 127.0.0.1 --port 8090
+
+# 3. Access the API documentation
+# Visit: http://localhost:8090/docs
+```
+
+### Server Features
+
+- **JWT Authentication**: Token-based authentication system
+- **User Roles**: Admin, power_user, and normal_user with different permissions
+- **Golden Repositories**: Centralized repository management
+- **Repository Activation**: Copy-on-Write cloning for user workspaces  
+- **Advanced Search**: Semantic search with file extension filtering
+- **Background Jobs**: Async processing for indexing and heavy operations
+- **Health Monitoring**: System status and performance endpoints
+
+### API Endpoints Overview
+
+- **Authentication**: `POST /auth/login` - JWT token authentication
+- **User Management**: `POST /users/create` - Admin-only user creation
+- **Golden Repos**: `GET|POST|DELETE /repositories/golden/*` - Repository management
+- **Activation**: `POST|DELETE /repositories/activate/*` - User repository activation
+- **Search**: `POST /query/*` - Semantic search with filtering
+- **Jobs**: `GET /jobs/*` - Background job status monitoring
+- **Health**: `GET /health` - System health and metrics
+
+### Authentication & Roles
+
+```bash
+# Login and get JWT token
+curl -X POST http://localhost:8090/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin123"}'
+
+# Use token in subsequent requests
+curl -X GET http://localhost:8090/repositories/golden \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+**Default Users** (for testing):
+- **Admin**: `admin` / `admin123` - Full system access
+- **Power User**: `power_user` / `power123` - Repository and search access
+- **Normal User**: `normal_user` / `normal123` - Search-only access
+
+### Example Usage
+
+```bash
+# 1. Login as admin
+TOKEN=$(curl -s -X POST http://localhost:8090/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin123"}' | jq -r '.access_token')
+
+# 2. Add a golden repository
+curl -X POST http://localhost:8090/repositories/golden \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"repository_path": "/path/to/your/repo", "alias": "my-repo"}'
+
+# 3. Activate repository for user
+curl -X POST http://localhost:8090/repositories/activate \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"golden_alias": "my-repo", "user_alias": "my-workspace"}'
+
+# 4. Semantic search
+curl -X POST http://localhost:8090/query/repositories \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query_text": "authentication logic", "file_extensions": [".py", ".js"]}'
 ```
 
 ## Complete CLI Reference

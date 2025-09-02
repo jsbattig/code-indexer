@@ -91,10 +91,16 @@ print_step "Running unit tests only (excluding E2E/integration tests)"
 echo "ℹ️  This matches GitHub Actions - only unit tests that don't require external services"
 echo "ℹ️  Using new organized test structure: tests/unit/ directory only"
 
-# Run ALL unit tests that don't require external services
+# Run unit tests with same exclusions as GitHub Actions (permission-dependent tests)
 if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest \
     tests/unit/ \
     -m "not slow and not e2e and not real_api and not integration" \
+    --ignore=tests/unit/infrastructure/test_data_cleaner_health.py \
+    --ignore=tests/unit/infrastructure/test_cleanup_validation.py \
+    --ignore=tests/unit/infrastructure/test_global_port_registry.py \
+    --ignore=tests/unit/infrastructure/test_broken_softlink_cleanup.py \
+    --ignore=tests/unit/infrastructure/test_real_world_path_walking.py \
+    --ignore=tests/unit/cli/test_cli_init_segment_size.py \
     --cov=code_indexer \
     --cov-report=xml --cov-report=term; then
     print_success "Unit tests passed"

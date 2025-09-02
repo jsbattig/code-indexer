@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Dict, List, Any
 
 
-class TestFileReorganizer:
+class FileReorganizer:
     """
     Reorganizes test files from flat structure into logical directory hierarchies.
 

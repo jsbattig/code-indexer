@@ -2819,6 +2819,56 @@ class DockerManager:
 
         return f"cidx-{project_hash}-network"
 
+    def get_network_config(self) -> Dict[str, Any]:
+        """
+        Generate network configuration with explicit subnet assignment to prevent Docker subnet exhaustion.
+
+        Uses project hash to calculate deterministic subnet in private IP ranges.
+        Supports both Docker and Podman with explicit IPAM configuration.
+
+        Returns:
+            Dict containing network configuration with explicit subnet assignment
+        """
+        network_name = self.get_network_name()
+
+        try:
+            # Extract project hash from network name
+            project_hash = network_name.split("-")[1]  # cidx-{hash}-network
+
+            # Convert first 4 characters of hash to integer for subnet calculation
+            # This ensures deterministic, unique subnets per project
+            subnet_id = int(project_hash[:4], 16) % 4000  # 0-3999 range
+
+            # Calculate subnet in 172.16-83.x.x range (avoiding Docker defaults)
+            # Docker typically uses 172.17-31.x.x, so we use 172.16.x.x and 172.32+
+            base_second_octet = 16 + (subnet_id // 256)  # 16-31 range
+            base_third_octet = subnet_id % 256  # 0-255 range
+
+            # Ensure we don't conflict with common Docker ranges
+            if base_second_octet >= 17 and base_second_octet <= 31:
+                base_second_octet += 16  # Move to 32-47 range
+
+            subnet = f"172.{base_second_octet}.{base_third_octet}.0/24"
+            gateway = f"172.{base_second_octet}.{base_third_octet}.1"
+
+            return {
+                network_name: {
+                    "name": network_name,
+                    "driver": "bridge",
+                    "ipam": {
+                        "driver": "default",
+                        "config": [{"subnet": subnet, "gateway": gateway}],
+                    },
+                }
+            }
+
+        except (ValueError, IndexError, Exception) as e:
+            # Fallback to simple network configuration if hash calculation fails
+            logging.warning(
+                f"Failed to calculate explicit subnet for {network_name}, using default: {e}"
+            )
+            return {network_name: {"name": network_name, "driver": "bridge"}}
+
     def stop(self) -> bool:
         """Stop all services."""
         return self.stop_services()
@@ -3867,10 +3917,11 @@ class DockerManager:
             local_cleanup_script = local_docker_dir / "cleanup.sh"
             shutil.copy2(cleanup_script, local_cleanup_script)
 
-        # Build compose configuration
+        # Build compose configuration with explicit subnet management
+        network_config = self.get_network_config()
         compose_config = {
             "services": {},
-            "networks": {network_name: {"name": network_name}},
+            "networks": network_config,
             "volumes": {
                 "qdrant_metadata": {"driver": "local"}
             },  # For qdrant metadata only

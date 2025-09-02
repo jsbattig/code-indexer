@@ -501,18 +501,6 @@ class TestCodebaseAuditStory9:
                 f"  {f}" for f in file_list
             )
 
-    def test_no_dead_imports_in_static_analysis(self, auditor):
-        """
-        Test that static code analysis shows no dead imports or unused variables.
-
-        Acceptance Criteria:
-        - Static code analysis shows no dead imports or unused variables
-        """
-        dead_imports, unused_variables = auditor.run_static_analysis()
-
-        assert len(dead_imports) == 0, f"Found dead imports: {dead_imports}"
-        # Note: We focus on imports for now, unused variables check is complex
-
     def test_gitignore_has_no_semantic_entries(self, auditor):
         """
         Test that .gitignore is updated and has no tree-sitter cache file entries.

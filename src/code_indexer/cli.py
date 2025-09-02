@@ -342,33 +342,6 @@ def _is_markdown_content(text: str) -> bool:
     return indicator_count >= 2 or "```" in text or text.count("#") >= 2
 
 
-def _passes_semantic_filters(
-    payload: dict,
-    semantic_type: Optional[str],
-    semantic_scope: Optional[str],
-    semantic_features: Optional[str],
-    semantic_parent: Optional[str],
-    semantic_only: bool,
-) -> bool:
-    """Check if a search result passes semantic filtering criteria."""
-    # Note: With fixed-size chunking, no chunks have semantic metadata
-    # This function now serves as backward compatibility for old indexes
-    # and will always return True for fixed-size chunks
-
-    # If structured filters are requested, return False since fixed-size chunking
-    # doesn't provide structured metadata
-    if semantic_only:
-        return False
-
-    # If any structured filters are specified, return False since fixed-size chunking
-    # doesn't provide structured metadata
-    if any([semantic_type, semantic_scope, semantic_features, semantic_parent]):
-        return False
-
-    # All fixed-size chunks pass when no structured filters are specified
-    return True
-
-
 class GracefulInterruptHandler:
     """Handler for graceful interruption of long-running operations with timeout protection."""
 
@@ -1944,31 +1917,6 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
     help="Search accuracy profile: fast (lower accuracy, faster), balanced (default), high (higher accuracy, slower)",
 )
 @click.option(
-    "--semantic-type",
-    "--type",
-    help="Filter by semantic type (e.g., class, function, method, interface)",
-)
-@click.option(
-    "--semantic-scope",
-    "--scope",
-    help="Filter by semantic scope (e.g., global, class, function, module)",
-)
-@click.option(
-    "--semantic-features",
-    "--features",
-    help="Filter by language features (comma-separated, e.g., async,static,generic)",
-)
-@click.option(
-    "--semantic-parent",
-    "--parent",
-    help="Filter by parent context (e.g., ClassName, ModuleName)",
-)
-@click.option(
-    "--semantic-only",
-    is_flag=True,
-    help="Only show results with structured code metadata (exclude plain text matches)",
-)
-@click.option(
     "--quiet",
     "-q",
     is_flag=True,
@@ -1983,11 +1931,6 @@ def query(
     path: Optional[str],
     min_score: Optional[float],
     accuracy: str,
-    semantic_type: Optional[str],
-    semantic_scope: Optional[str],
-    semantic_features: Optional[str],
-    semantic_parent: Optional[str],
-    semantic_only: bool,
     quiet: bool,
 ):
     """Search the indexed codebase using semantic similarity.
@@ -2012,28 +1955,12 @@ def query(
       • Accuracy: --accuracy high (higher accuracy, slower search)
 
     \b
-    RESULT FILTERING (Code Structure):
-      • Type: --type class (filter to only classes/functions/etc)
-      • Scope: --scope global (filter by code scope level)
-      • Features: --features async,static (filter by language features)
-      • Parent: --parent User (filter by parent context like class name)
-      • Structured only: --semantic-only (exclude plain text matches)
-
-    \b
     QUERY EXAMPLES:
       "authentication function"           # Find auth-related code
       "database connection setup"        # Find DB setup code
       "error handling try catch"         # Find error handling patterns
       "REST API endpoint POST"           # Find POST API endpoints
       "unit test mock"                   # Find mocking in tests
-
-    \b
-    FILTERED SEARCH EXAMPLES:
-      code-indexer query "login" --type function
-      code-indexer query "user" --type class --scope global
-      code-indexer query "save" --parent User --features async
-      code-indexer query "validation" --semantic-only
-      code-indexer query "api" --features static,public
 
     \b
     BASIC EXAMPLES:
@@ -2207,30 +2134,7 @@ def query(
             )
 
             # Apply additional filters manually for now
-            if (
-                language
-                or path
-                or min_score
-                or any(
-                    [
-                        semantic_type,
-                        semantic_scope,
-                        semantic_features,
-                        semantic_parent,
-                        semantic_only,
-                    ]
-                )
-            ):
-                if not quiet and any(
-                    [
-                        semantic_type,
-                        semantic_scope,
-                        semantic_features,
-                        semantic_parent,
-                        semantic_only,
-                    ]
-                ):
-                    console.print("🧠 Applying semantic filtering...")
+            if language or path or min_score:
                 filtered_results = []
                 for result in results:
                     payload = result.get("payload", {})
@@ -2251,17 +2155,6 @@ def query(
                     if min_score and result.get("score", 0) < min_score:
                         continue
 
-                    # Apply semantic filters
-                    if not _passes_semantic_filters(
-                        payload,
-                        semantic_type,
-                        semantic_scope,
-                        semantic_features,
-                        semantic_parent,
-                        semantic_only,
-                    ):
-                        continue
-
                     filtered_results.append(result)
 
                 results = filtered_results
@@ -2280,32 +2173,6 @@ def query(
             if not quiet:
                 console.print("🔍 Applying git-aware filtering...")
             results = query_service.filter_results_by_current_branch(raw_results)
-
-            # Apply semantic filtering to non-git results
-            if any(
-                [
-                    semantic_type,
-                    semantic_scope,
-                    semantic_features,
-                    semantic_parent,
-                    semantic_only,
-                ]
-            ):
-                if not quiet:
-                    console.print("🧠 Applying semantic filtering...")
-                filtered_results = []
-                for result in results:
-                    payload = result.get("payload", {})
-                    if _passes_semantic_filters(
-                        payload,
-                        semantic_type,
-                        semantic_scope,
-                        semantic_features,
-                        semantic_parent,
-                        semantic_only,
-                    ):
-                        filtered_results.append(result)
-                results = filtered_results
 
         # Limit to requested number after filtering
         results = results[:limit]
@@ -4749,6 +4616,421 @@ def setup_global_registry(ctx, test_access: bool, quiet: bool):
             import traceback
 
             console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@cli.command("install-server")
+@click.option(
+    "--port",
+    type=int,
+    help="Preferred port for server (will find next available if busy)",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Reinstall even if already installed",
+)
+@click.pass_context
+def install_server(ctx, port: Optional[int], force: bool):
+    """Install and configure CIDX multi-user server.
+
+    Sets up the CIDX multi-user server with JWT authentication, role-based
+    access control, and creates the necessary directory structure and startup scripts.
+
+    \b
+    INSTALLATION PROCESS:
+    • Creates ~/.cidx-server/ directory structure
+    • Finds available port starting from 8090 (or --port if specified)
+    • Generates server configuration (config.json)
+    • Creates executable startup script (start-server.sh)
+    • Seeds initial admin user (admin/admin)
+    • Displays startup instructions
+
+    \b
+    WHAT IT CREATES:
+    • ~/.cidx-server/config.json           # Server configuration
+    • ~/.cidx-server/users.json            # User database with hashed passwords
+    • ~/.cidx-server/logs/                 # Server logs directory
+    • ~/.cidx-server/start-server.sh       # Executable startup script
+
+    \b
+    DEFAULT CONFIGURATION:
+    • JWT tokens: 10-minute expiration, extend on API activity
+    • User roles: admin, power_user, normal_user
+    • Max golden repos: 20 system-wide
+    • Max concurrent queries: 5 per repository
+    • Repository idle timeout: 10 minutes
+
+    \b
+    INITIAL CREDENTIALS:
+    Username: admin
+    Password: admin
+    Role: admin (full access to all features)
+
+    \b
+    STARTING THE SERVER:
+    After installation, start the server with:
+      ~/.cidx-server/start-server.sh
+
+    Or manually:
+      python -m code_indexer.server.main --port <allocated-port>
+
+    \b
+    API DOCUMENTATION:
+    Once running, access Swagger UI at: http://localhost:<port>/docs
+
+    \b
+    EXAMPLES:
+      cidx install-server                    # Install with auto port allocation
+      cidx install-server --port 8080       # Try specific port first
+      cidx install-server --force           # Reinstall over existing installation
+
+    \b
+    NOTE:
+    The server runs in console mode (blocking) and requires Ctrl+C to stop.
+    All user passwords are securely hashed using bcrypt.
+    """
+    from .server.installer import ServerInstaller
+
+    try:
+        # Initialize installer
+        base_port = port if port else 8090
+        installer = ServerInstaller(base_port=base_port)
+
+        # Check existing installation
+        install_info = installer.get_installation_info()
+
+        if install_info.get("installed") and not force:
+            console.print("🔍 Checking existing installation...", style="cyan")
+
+            if install_info.get("configured"):
+                existing_port = install_info.get("port")
+                console.print(
+                    "✅ CIDX Server is already installed!", style="green bold"
+                )
+                console.print(
+                    f"📂 Server directory: {installer.server_dir}", style="dim"
+                )
+                console.print(f"🌐 Configured port: {existing_port}", style="dim")
+                console.print(
+                    f"⏰ Installed: {install_info.get('installation_time', 'Unknown')}",
+                    style="dim",
+                )
+                console.print()
+                console.print("🚀 To start the server:", style="cyan bold")
+                console.print(
+                    f"   {installer.server_dir / 'start-server.sh'}", style="white"
+                )
+                console.print()
+                console.print(
+                    "📚 API Documentation will be available at:", style="cyan bold"
+                )
+                console.print(
+                    f"   http://127.0.0.1:{existing_port}/docs", style="white"
+                )
+                console.print()
+                console.print("💡 Use --force to reinstall", style="dim yellow")
+                return
+            else:
+                console.print(
+                    "⚠️  Installation directory exists but is incomplete", style="yellow"
+                )
+                console.print(
+                    "🔧 Proceeding with installation to fix configuration...",
+                    style="cyan",
+                )
+
+        if force and install_info.get("installed"):
+            console.print(
+                "🔄 Reinstalling CIDX Server (--force specified)...", style="yellow"
+            )
+        else:
+            console.print("🚀 Installing CIDX Server...", style="cyan bold")
+
+        console.print()
+
+        # Perform installation
+        with console.status("⚙️  Setting up server installation..."):
+            allocated_port, config_path, script_path, is_new = installer.install()
+
+        # Display success message
+        console.print("✅ CIDX Server installed successfully!", style="green bold")
+        console.print()
+
+        # Installation details
+        console.print("📋 Installation Details:", style="cyan bold")
+        console.print(f"   📂 Server directory: {installer.server_dir}", style="white")
+        console.print(f"   🌐 Allocated port: {allocated_port}", style="white")
+        console.print(f"   ⚙️  Configuration: {config_path.name}", style="white")
+        console.print(f"   🚀 Startup script: {script_path.name}", style="white")
+        console.print()
+
+        # Initial credentials
+        console.print("🔑 Initial Admin Credentials:", style="cyan bold")
+        console.print("   Username: admin", style="white")
+        console.print("   Password: admin", style="white")
+        console.print("   Role: admin (full access)", style="white")
+        console.print()
+
+        # Startup instructions
+        console.print("🚀 Starting the Server:", style="cyan bold")
+        console.print("   Run the startup script:", style="white")
+        console.print(f"   {script_path}", style="green")
+        console.print()
+        console.print("   Or start manually:", style="white")
+        console.print(
+            f"   python -m code_indexer.server.main --port {allocated_port}",
+            style="dim",
+        )
+        console.print()
+
+        # API documentation
+        console.print("📚 API Documentation:", style="cyan bold")
+        console.print(
+            f"   Swagger UI: http://127.0.0.1:{allocated_port}/docs", style="green"
+        )
+        console.print(
+            f"   OpenAPI spec: http://127.0.0.1:{allocated_port}/openapi.json",
+            style="dim",
+        )
+        console.print()
+
+        # Security notes
+        console.print("🔒 Security Notes:", style="yellow bold")
+        console.print("   • Change admin password after first login", style="yellow")
+        console.print(
+            "   • JWT tokens expire in 10 minutes (extend on API activity)",
+            style="yellow",
+        )
+        console.print(
+            "   • All passwords are securely hashed with bcrypt", style="yellow"
+        )
+        console.print("   • Server runs on localhost only (127.0.0.1)", style="yellow")
+        console.print()
+
+        console.print(
+            "🎉 Installation complete! Start the server to begin using CIDX multi-user features.",
+            style="green bold",
+        )
+
+    except Exception as e:
+        console.print(f"❌ Server installation failed: {e}", style="red")
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+# Server lifecycle management commands
+@cli.group("server")
+@click.pass_context
+def server_group(ctx):
+    """Manage CIDX multi-user server lifecycle.
+
+    Control server start, stop, status, and restart operations with
+    proper graceful shutdown and health monitoring.
+    """
+    pass
+
+
+@server_group.command("start")
+@click.option(
+    "--server-dir",
+    type=click.Path(),
+    help="Server directory path (default: ~/.cidx-server)",
+)
+@click.pass_context
+def server_start(ctx, server_dir: Optional[str]):
+    """Start the CIDX multi-user server.
+
+    Validates configuration, starts the FastAPI server process, and
+    returns success confirmation with server URL.
+    """
+    try:
+        from code_indexer.server.lifecycle.server_lifecycle_manager import (
+            ServerLifecycleManager,
+        )
+
+        manager = ServerLifecycleManager(server_dir)
+        result = manager.start_server()
+
+        console.print("✅ " + result["message"], style="green bold")
+        console.print(f"🌐 Server URL: {result['server_url']}", style="cyan")
+        console.print(f"🔢 Process ID: {result['pid']}", style="dim")
+        console.print()
+        console.print("📚 API Documentation:", style="cyan")
+        console.print(f"   {result['server_url']}/docs", style="white")
+
+    except Exception as e:
+        console.print(f"❌ Error: {str(e)}", style="red")
+        if "already running" in str(e).lower():
+            console.print(
+                "💡 Use 'cidx server status' to check current status", style="dim"
+            )
+        elif "configuration" in str(e).lower():
+            console.print(
+                "💡 Use 'cidx install-server' to set up configuration", style="dim"
+            )
+        sys.exit(1)
+
+
+@server_group.command("stop")
+@click.option(
+    "--force",
+    "-f",
+    is_flag=True,
+    help="Force shutdown (send SIGKILL instead of graceful SIGTERM)",
+)
+@click.option(
+    "--server-dir",
+    type=click.Path(),
+    help="Server directory path (default: ~/.cidx-server)",
+)
+@click.pass_context
+def server_stop(ctx, force: bool, server_dir: Optional[str]):
+    """Stop the CIDX multi-user server gracefully.
+
+    Performs graceful shutdown by default, waiting for background jobs
+    to complete and saving pending data. Use --force for immediate shutdown.
+    """
+    try:
+        from code_indexer.server.lifecycle.server_lifecycle_manager import (
+            ServerLifecycleManager,
+        )
+
+        manager = ServerLifecycleManager(server_dir)
+        result = manager.stop_server(force=force)
+
+        console.print("✅ " + result["message"], style="green bold")
+        if "shutdown_time" in result:
+            console.print(
+                f"⏱️ Shutdown time: {result['shutdown_time']:.1f}s", style="dim"
+            )
+
+    except Exception as e:
+        console.print(f"❌ Error: {str(e)}", style="red")
+        if "not running" in str(e).lower():
+            console.print(
+                "💡 Use 'cidx server status' to check current status", style="dim"
+            )
+        sys.exit(1)
+
+
+@server_group.command("status")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed health information")
+@click.option(
+    "--server-dir",
+    type=click.Path(),
+    help="Server directory path (default: ~/.cidx-server)",
+)
+@click.pass_context
+def server_status(ctx, verbose: bool, server_dir: Optional[str]):
+    """Check CIDX multi-user server status and health.
+
+    Shows server status, uptime, port, active jobs, and recent errors.
+    Use --verbose for detailed health information including resource usage.
+    """
+    try:
+        from code_indexer.server.lifecycle.server_lifecycle_manager import (
+            ServerLifecycleManager,
+        )
+
+        manager = ServerLifecycleManager(server_dir)
+        status = manager.get_status()
+
+        # Status display
+        status_color = "green" if status.status.value == "running" else "red"
+        console.print(
+            f"Status: {status.status.value.upper()}", style=f"{status_color} bold"
+        )
+
+        if status.status.value == "running":
+            console.print(f"PID: {status.pid}", style="dim")
+            if status.uptime:
+                hours = status.uptime // 3600
+                minutes = (status.uptime % 3600) // 60
+                if hours > 0:
+                    uptime_str = f"{hours} hour{'s' if hours != 1 else ''}, {minutes} minute{'s' if minutes != 1 else ''}"
+                else:
+                    uptime_str = f"{minutes} minute{'s' if minutes != 1 else ''}"
+                console.print(f"Uptime: {uptime_str}", style="dim")
+            if status.port:
+                console.print(f"Port: {status.port}", style="dim")
+                console.print(f"Host: {status.host or '127.0.0.1'}", style="dim")
+            console.print(f"Active Jobs: {status.active_jobs}", style="dim")
+
+            # Verbose health information
+            if verbose:
+                try:
+                    health = manager.get_server_health()
+                    console.print()
+                    console.print("📊 Health Information:", style="cyan bold")
+                    console.print(
+                        f"Health: {health.get('status', 'unknown')}", style="dim"
+                    )
+                    if "memory_usage" in health:
+                        console.print(
+                            f"Memory Usage: {health['memory_usage']}", style="dim"
+                        )
+                    if "recent_errors" in health:
+                        errors = health["recent_errors"]
+                        if errors:
+                            console.print(
+                                f"Recent Errors: {len(errors)}", style="yellow"
+                            )
+                        else:
+                            console.print("Recent Errors: None", style="dim")
+                except Exception:
+                    console.print(
+                        "Health: Unable to retrieve detailed health info",
+                        style="yellow",
+                    )
+
+            sys.exit(0)  # Running = exit code 0
+        else:
+            console.print("The server is not currently running.", style="dim")
+            sys.exit(1)  # Stopped = exit code 1
+
+    except Exception as e:
+        console.print(f"❌ Error checking server status: {str(e)}", style="red")
+        sys.exit(1)
+
+
+@server_group.command("restart")
+@click.option(
+    "--server-dir",
+    type=click.Path(),
+    help="Server directory path (default: ~/.cidx-server)",
+)
+@click.pass_context
+def server_restart(ctx, server_dir: Optional[str]):
+    """Restart the CIDX multi-user server.
+
+    Gracefully stops the server if running, waits for proper shutdown,
+    then starts with updated configuration. If not running, simply starts.
+    """
+    try:
+        from code_indexer.server.lifecycle.server_lifecycle_manager import (
+            ServerLifecycleManager,
+        )
+
+        manager = ServerLifecycleManager(server_dir)
+        result = manager.restart_server()
+
+        console.print("✅ " + result["message"], style="green bold")
+        console.print(f"🌐 Server URL: {result['server_url']}", style="cyan")
+        if "restart_time" in result:
+            console.print(f"⏱️ Restart time: {result['restart_time']:.1f}s", style="dim")
+        console.print()
+        console.print("📚 API Documentation:", style="cyan")
+        console.print(f"   {result['server_url']}/docs", style="white")
+
+    except KeyboardInterrupt:
+        console.print("\n❌ Operation cancelled by user", style="red")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"❌ Error: {str(e)}", style="red")
         sys.exit(1)
 
 

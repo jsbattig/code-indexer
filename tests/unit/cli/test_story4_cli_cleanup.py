@@ -75,35 +75,34 @@ class TestCLIHelpTextCleanup:
 
 
 class TestSemanticQueryOptions:
-    """Test that semantic query options are still present (they refer to search filtering, not chunking)."""
+    """Test that deprecated semantic query options have been removed (Story 1 cleanup)."""
 
-    def test_query_semantic_options_exist_for_search_filtering(self):
-        """Verify semantic query options exist for search result filtering."""
+    def test_query_semantic_options_removed_per_story1_cleanup(self):
+        """Verify semantic query options were removed as part of Story 1 cleanup."""
         runner = CliRunner()
         result = runner.invoke(query, ["--help"])
 
         assert result.exit_code == 0
         help_text = result.output.lower()
 
-        # These options are for filtering search results, not for chunking
-        # They should still exist as they help filter results from the vector database
-        assert "--semantic-type" in help_text
-        assert "--semantic-scope" in help_text
-        assert "--semantic-features" in help_text
-        assert "--semantic-parent" in help_text
-        assert "--semantic-only" in help_text
+        # These options were removed as part of Story 1 cleanup of failed AST implementation
+        assert "--semantic-type" not in help_text
+        assert "--semantic-scope" not in help_text
+        assert "--semantic-features" not in help_text
+        assert "--semantic-parent" not in help_text
+        assert "--semantic-only" not in help_text
 
-    def test_semantic_query_options_describe_search_filtering(self):
-        """Verify semantic query options clearly describe search result filtering."""
+    def test_semantic_query_options_no_longer_describe_search_filtering(self):
+        """Verify semantic query options are no longer mentioned in help text."""
         runner = CliRunner()
         result = runner.invoke(query, ["--help"])
 
         assert result.exit_code == 0
         help_text = result.output
 
-        # Should mention filtering, not chunking
-        assert "filter by semantic type" in help_text.lower()
-        assert "filter by semantic scope" in help_text.lower()
+        # Should not mention semantic filtering after Story 1 cleanup
+        assert "filter by semantic type" not in help_text.lower()
+        assert "filter by semantic scope" not in help_text.lower()
 
 
 class TestFixedSizeChunkingDescription:
@@ -156,15 +155,15 @@ class TestCLIConsistency:
         assert "--ast-parsing" not in index_help
         assert "--tree-sitter" not in index_help
 
-    def test_query_semantic_flags_are_for_filtering_only(self):
-        """Verify query semantic flags are clearly for result filtering, not chunking."""
+    def test_query_semantic_flags_removed_per_story1(self):
+        """Verify query semantic flags were removed as part of Story 1 cleanup."""
         runner = CliRunner()
         result = runner.invoke(query, ["--help"])
 
         assert result.exit_code == 0
         help_text = result.output
 
-        # Semantic flags should be present but described as filters
+        # Semantic flags should be removed per Story 1
         semantic_flags = [
             "--semantic-type",
             "--semantic-scope",
@@ -174,10 +173,11 @@ class TestCLIConsistency:
         ]
 
         for flag in semantic_flags:
-            assert flag in help_text
+            assert flag not in help_text
 
-        # Should mention filtering behavior
-        assert "filter by" in help_text.lower()
+        # Still has valid filter options
+        assert "--language" in help_text.lower()
+        assert "--path" in help_text.lower()
 
 
 class TestConfigurationDocumentation:
