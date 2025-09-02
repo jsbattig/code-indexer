@@ -39,6 +39,9 @@ pipx install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.0
 
 # Setup global registry (standalone command - requires sudo)
 cidx setup-global-registry
+
+# If cidx command is not found, add pipx bin directory to PATH:
+# export PATH="$HOME/.local/bin:$PATH"
 ```
 
 ### pip with virtual environment
