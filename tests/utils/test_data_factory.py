@@ -414,25 +414,47 @@ class TestDataFactory:
                 capture_output=True,
             )
 
+            # Ensure there are files to commit - create a README if nothing exists
+            files_exist = any(repo_path.iterdir())
+            if not files_exist:
+                readme_path = repo_path / "README.md"
+                readme_path.write_text(
+                    f"# {repo_name}\n\nTest repository for CIDX testing.\n"
+                )
+                self.logger.debug(
+                    f"Created README.md for empty repository: {repo_name}"
+                )
+
             # Add all files
             subprocess.run(
                 ["git", "add", "."], cwd=repo_path, check=True, capture_output=True
             )
 
-            # Initial commit
-            subprocess.run(
-                [
-                    "git",
-                    "commit",
-                    "-m",
-                    f"Initial commit for test repository: {repo_name}",
-                ],
+            # Check if there are staged changes before committing
+            status_result = subprocess.run(
+                ["git", "diff", "--cached", "--name-only"],
                 cwd=repo_path,
-                check=True,
                 capture_output=True,
+                text=True,
+                check=True,
             )
 
-            self.logger.debug(f"Initialized git repository at: {repo_path}")
+            if status_result.stdout.strip():
+                # There are staged changes, proceed with commit
+                subprocess.run(
+                    [
+                        "git",
+                        "commit",
+                        "-m",
+                        f"Initial commit for test repository: {repo_name}",
+                    ],
+                    cwd=repo_path,
+                    check=True,
+                    capture_output=True,
+                )
+                self.logger.debug(f"Initialized git repository at: {repo_path}")
+            else:
+                self.logger.warning(f"No files to commit in repository: {repo_name}")
 
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to initialize git repository: {e}")
