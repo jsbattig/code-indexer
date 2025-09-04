@@ -398,18 +398,30 @@ class TestAuthTestHelper:
         """Test token expiry simulation utilities."""
         helper = AuthTestHelper("http://localhost:8080")
 
-        # Create token that expires quickly
+        # Create an expired token manually using JWT library
+        from datetime import datetime, timezone, timedelta
+        import jwt
+
+        past_time = datetime.now(timezone.utc) - timedelta(hours=2)
+        payload = {
+            "sub": "testuser",
+            "user_id": "123",
+            "role": "admin",
+            "iat": int(past_time.timestamp()),
+            "exp": int((past_time + timedelta(minutes=30)).timestamp()),
+        }
+
+        expired_token = jwt.encode(
+            payload, helper.jwt_manager.secret_key, algorithm="HS256"
+        )
+
+        # Test that expired token is detected as expired
+        assert helper.jwt_manager.is_token_expired(expired_token)
+
+        # Test with a valid token for comparison
         user_data = {"username": "testuser", "user_id": "123", "role": "admin"}
-        token = helper.create_test_jwt_token(
-            user_data, expires_minutes=1  # 1 minute
-        )  # ~3 seconds
+        valid_token = helper.create_test_jwt_token(
+            user_data, expires_minutes=60  # Valid for 60 minutes
+        )
 
-        # Token should be valid initially
-        assert not helper.jwt_manager.is_token_expired(token)
-
-        # Wait and check expiry
-        import time
-
-        time.sleep(4)
-
-        assert helper.jwt_manager.is_token_expired(token)
+        assert not helper.jwt_manager.is_token_expired(valid_token)
