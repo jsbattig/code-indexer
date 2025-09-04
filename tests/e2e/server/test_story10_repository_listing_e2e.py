@@ -14,7 +14,7 @@ import tempfile
 import time
 
 import pytest
-import requests
+import requests  # type: ignore[import-untyped]
 
 from code_indexer.server.lifecycle.server_lifecycle_manager import (
     ServerLifecycleManager,

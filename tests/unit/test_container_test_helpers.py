@@ -170,7 +170,7 @@ class TestContainerTestManager:
     @patch("requests.get")
     def test_wait_for_service_ready_timeout(self, mock_get, tmp_path):
         """Test service ready timeout."""
-        import requests
+        import requests  # type: ignore[import-untyped]
 
         mock_get.side_effect = requests.exceptions.RequestException("Connection failed")
 

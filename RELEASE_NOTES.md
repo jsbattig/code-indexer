@@ -1,5 +1,29 @@
 # Release Notes
 
+## Version 4.0.0.1 - Bug Fixes and Improvements
+
+**Release Date**: September 4, 2025
+
+### 🐛 Bug Fixes
+
+- **Fixed cidx query permission issues**: Resolved silent failures when running queries as different users due to Git "dubious ownership" protection
+- **Improved error messages**: Query operations now provide clearer feedback when git permission issues occur
+- **Enhanced git-aware functionality**: All git operations now use the proper git_runner utility to handle ownership issues automatically
+
+### 🔧 Technical Improvements
+
+- **Type Safety**: Fixed all mypy type checking errors across the codebase (50+ errors resolved)
+- **Code Quality**: Added proper type annotations and None checks throughout test and production code
+- **Linting**: All files now pass ruff, black, and mypy checks without errors
+- **Dependencies**: Updated development dependencies to include proper type stubs
+
+### 📖 Documentation
+
+- **Installation Instructions**: Updated with version 4.0.0.1
+- **Troubleshooting**: Improved error handling provides better user guidance
+
+---
+
 ## Version 4.0.0.0 - Multi-User Server Release
 
 **Release Date**: September 2, 2025

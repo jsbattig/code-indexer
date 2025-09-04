@@ -6,7 +6,7 @@ management, user session handling, and role-based access control testing.
 """
 
 import logging
-import requests
+import requests  # type: ignore[import-untyped]
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone, timedelta
 
@@ -70,7 +70,7 @@ class JWTTokenManager:
         token = jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
 
         self.logger.debug(f"Generated JWT token for user: {user_data['username']}")
-        return token
+        return token  # type: ignore[no-any-return]
 
     def validate_token(self, token: str) -> Dict[str, Any]:
         """
@@ -90,7 +90,7 @@ class JWTTokenManager:
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
 
             self.logger.debug(f"Validated token for user: {payload.get('sub')}")
-            return payload
+            return payload  # type: ignore[no-any-return]
 
         except jwt.ExpiredSignatureError:
             self.logger.warning("Token validation failed: Token expired")
@@ -510,7 +510,7 @@ class AuthTestHelper:
         )
 
         self.logger.debug(f"Created expired token for user: {username}")
-        return expired_token
+        return expired_token  # type: ignore[no-any-return]
 
     def make_authenticated_request(
         self,
@@ -693,6 +693,6 @@ def verify_jwt_token_structure(token: str) -> Dict[str, Any]:
             analysis["payload"] = payload
 
         except Exception as e:
-            analysis["decode_error"] = str(e)
+            analysis["decode_error"] = str(e)  # type: ignore[assignment]
 
     return analysis

@@ -11,7 +11,7 @@ Tests complete user lifecycle including:
 """
 
 import pytest
-import requests
+import requests  # type: ignore[import-untyped]
 import os
 import shutil
 import time
@@ -156,7 +156,7 @@ class TestStory3UserManagementE2E:
         )
 
         assert response.status_code == 200, f"Admin login failed: {response.text}"
-        return response.json()["access_token"]
+        return response.json()["access_token"]  # type: ignore[no-any-return]
 
     def get_auth_headers(self, token: str) -> dict:
         """Helper to create Authorization headers."""
@@ -679,7 +679,7 @@ class TestStory3UserManagementE2E:
                 ], f"Admin should access {method} {endpoint}"
 
                 # Power user should NOT have access to admin endpoints
-                if endpoint.startswith("/api/admin"):
+                if isinstance(endpoint, str) and endpoint.startswith("/api/admin"):
                     power_response = requests.request(
                         method,
                         f"{server_url}{endpoint}",

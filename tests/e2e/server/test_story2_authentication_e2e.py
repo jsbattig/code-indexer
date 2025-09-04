@@ -13,7 +13,7 @@ Tests complete authentication flow including:
 """
 
 import pytest
-import requests
+import requests  # type: ignore[import-untyped]
 import json
 import os
 import shutil

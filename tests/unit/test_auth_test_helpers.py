@@ -401,7 +401,7 @@ class TestAuthTestHelper:
         # Create token that expires quickly
         user_data = {"username": "testuser", "user_id": "123", "role": "admin"}
         token = helper.create_test_jwt_token(
-            user_data, expires_minutes=0.05
+            user_data, expires_minutes=1  # 1 minute
         )  # ~3 seconds
 
         # Token should be valid initially

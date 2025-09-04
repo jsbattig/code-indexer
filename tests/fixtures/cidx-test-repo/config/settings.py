@@ -254,7 +254,7 @@ class ConfigLoader:
                     return json.load(f)
             elif config_path.suffix.lower() in ['.yml', '.yaml']:
                 try:
-                    import yaml
+                    import yaml  # type: ignore
                     with open(config_path, 'r') as f:
                         return yaml.safe_load(f)
                 except ImportError:

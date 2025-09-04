@@ -27,6 +27,7 @@ class TestJWTSecretPersistence:
                 # Get the JWT manager from the first instance
                 from src.code_indexer.server.app import jwt_manager as jwt_manager1
 
+                assert jwt_manager1 is not None, "JWT manager should be initialized"
                 secret_key1 = jwt_manager1.secret_key
 
                 # Verify secret was saved to file
@@ -47,6 +48,7 @@ class TestJWTSecretPersistence:
                 # Get the JWT manager from the second instance
                 from src.code_indexer.server.app import jwt_manager as jwt_manager2
 
+                assert jwt_manager2 is not None, "JWT manager should be initialized"
                 secret_key2 = jwt_manager2.secret_key
 
                 # Verify secret keys are the same
@@ -95,6 +97,7 @@ class TestJWTSecretPersistence:
                 # Verify the known secret was used
                 from src.code_indexer.server.app import jwt_manager
 
+                assert jwt_manager is not None, "JWT manager should be initialized"
                 assert jwt_manager.secret_key == known_secret
 
     def test_jwt_secret_fallback_to_env_var(self):
@@ -109,6 +112,7 @@ class TestJWTSecretPersistence:
                     # Verify environment variable was used and saved to file
                     from src.code_indexer.server.app import jwt_manager
 
+                    assert jwt_manager is not None, "JWT manager should be initialized"
                     assert jwt_manager.secret_key == env_secret
 
                     # Verify secret was saved to file for future use

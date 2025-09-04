@@ -55,6 +55,7 @@ dev = [
     "pytest-cov>=4.0.0",
     "mypy>=1.0.0",
     "types-PyYAML>=6.0.0",
+    "types-requests>=2.28.0",
     "black>=23.0.0",
     "ruff>=0.0.280",
     "pre-commit>=3.0.0",
@@ -96,6 +97,9 @@ warn_unused_configs = true
 disallow_untyped_defs = false
 ignore_missing_imports = true
 no_site_packages = true
+exclude = [
+    "tests/fixtures/cidx-test-repo/.*"
+]
 
 [[tool.mypy.overrides]]
 module = "pydantic.*"

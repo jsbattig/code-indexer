@@ -35,7 +35,7 @@ Multi-user server functionality with FastAPI, JWT authentication, and role-based
 ### pipx (Recommended)
 ```bash
 # Install the package
-pipx install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.0
+pipx install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.1
 
 # Setup global registry (standalone command - requires sudo)
 cidx setup-global-registry
@@ -48,7 +48,7 @@ cidx setup-global-registry
 ```bash
 python3 -m venv code-indexer-env
 source code-indexer-env/bin/activate
-pip install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.0
+pip install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.1
 
 # Setup global registry (standalone command - requires sudo)
 code-indexer setup-global-registry
@@ -113,7 +113,7 @@ The CIDX server provides a FastAPI-based multi-user semantic code search service
 
 ```bash
 # 1. Install and setup (same as CLI)
-pipx install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.0
+pipx install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.1
 cidx setup-global-registry
 
 # 2. Start the server

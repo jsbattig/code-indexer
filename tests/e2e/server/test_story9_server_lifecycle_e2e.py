@@ -11,7 +11,7 @@ NO MOCKING - These are true end-to-end tests with real server operations.
 import json
 import tempfile
 import time
-import requests
+import requests  # type: ignore[import-untyped]
 import signal
 import os
 from pathlib import Path

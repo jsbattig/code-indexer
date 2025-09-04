@@ -10,13 +10,16 @@ import os
 import time
 import subprocess
 import logging
-import yaml
+import yaml  # type: ignore[import-untyped]
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from code_indexer.services.docker_manager import DockerManager
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +62,7 @@ class ContainerTestManager:
         self.force_docker = force_docker
 
         self.services: Dict[str, ContainerService] = {}
-        self.docker_manager = None
+        self.docker_manager: Optional["DockerManager"] = None
 
         self.logger = logging.getLogger(f"{__name__}.ContainerTestManager")
 
@@ -76,7 +79,8 @@ class ContainerTestManager:
             )
 
             # Set indexing root to our base path
-            self.docker_manager.set_indexing_root(self.base_path)
+            if self.docker_manager is not None:
+                self.docker_manager.set_indexing_root(self.base_path)
 
             self.logger.info(
                 f"Initialized Docker manager for project: {self.project_name}"
@@ -160,11 +164,11 @@ class ContainerTestManager:
                 "container_name": f"{self.project_name}_{service.name}",
                 "ports": [f"{service.port}:{service.port}"],
                 "networks": ["cidx_test_network"],
-                "restart": service.restart_policy,
+                "restart": service.restart_policy,  # type: ignore[assignment]
             }
 
             if service.environment:
-                service_config["environment"] = service.environment
+                service_config["environment"] = service.environment  # type: ignore[assignment]
 
             if service.volumes:
                 service_config["volumes"] = [
@@ -176,10 +180,10 @@ class ContainerTestManager:
                 service_config["command"] = service.command
 
             if service.depends_on:
-                service_config["depends_on"] = service.depends_on
+                service_config["depends_on"] = service.depends_on  # type: ignore[assignment]
 
             # Add health check
-            service_config["healthcheck"] = {
+            service_config["healthcheck"] = {  # type: ignore[assignment]
                 "test": f"curl -f http://localhost:{service.port}{service.healthcheck_path} || exit 1",
                 "interval": "10s",
                 "timeout": "5s",
@@ -187,7 +191,7 @@ class ContainerTestManager:
                 "start_period": "30s",
             }
 
-            config["services"][service.name] = service_config
+            config["services"][service.name] = service_config  # type: ignore[index]
 
         return config
 
@@ -710,11 +714,11 @@ class EnvironmentManager:
         """
         env_info = self.get_environment_info(environment_id)
         if not env_info:
-            return None
+            return None  # type: ignore[no-any-return]
 
         container_manager = env_info.get("container_manager")
         if container_manager:
-            return container_manager.get_service_url(service_name)
+            return container_manager.get_service_url(service_name)  # type: ignore[no-any-return]
 
         return None
 

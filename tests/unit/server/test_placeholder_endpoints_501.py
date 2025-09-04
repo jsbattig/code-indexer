@@ -67,7 +67,7 @@ class TestPlaceholderEndpoints501:
 
     def test_placeholder_responses_maintain_consistent_structure(self):
         """Test remaining placeholder endpoints return consistent response structure."""
-        endpoints = [
+        endpoints: list[tuple[str, str]] = [
             # No endpoints currently return 501 - all major endpoints have been implemented
         ]  # /api/query endpoint is now implemented
 

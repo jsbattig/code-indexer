@@ -14,7 +14,7 @@ from tests.utils import (
     TestDataFactory,
     ServerLifecycleManager,
     AuthTestHelper,
-    TestEnvironmentManager,
+    EnvironmentManager,
 )
 
 
@@ -51,7 +51,7 @@ class TestCompleteUserWorkflows:
             )
 
             # Create container environment manager
-            container_manager = TestEnvironmentManager(
+            container_manager = EnvironmentManager(
                 environment_name="e2e_test_env", base_path=base_path / "containers"
             )
 

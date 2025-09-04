@@ -6,7 +6,7 @@ E2E testing of the multi-user CIDX server.
 """
 
 import time
-import requests
+import requests  # type: ignore[import-untyped]
 from unittest.mock import patch, MagicMock
 
 from tests.utils.server_test_helpers import ServerTestHelper, ServerLifecycleManager

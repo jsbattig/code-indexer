@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 
-import requests
+import requests  # type: ignore[import-untyped]
 from passlib.context import CryptContext
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ class ServerTestHelper:
 
     def __init__(
         self,
-        server_dir: Path = None,
+        server_dir: Optional[Path] = None,
         port: int = 8080,
         timeout: int = 30,
         config_override: Optional[Dict[str, Any]] = None,
@@ -60,7 +60,7 @@ class ServerTestHelper:
         """
         try:
             response = requests.get(f"{self.server_url}/health", timeout=2)
-            return response.status_code == 200
+            return response.status_code == 200  # type: ignore[no-any-return]
         except requests.exceptions.RequestException:
             return False
 
@@ -359,7 +359,9 @@ class ServerTestHelper:
 class ServerLifecycleManager:
     """Manager for multiple test server instances."""
 
-    def __init__(self, base_path: Path = None, port_range: tuple = (8000, 9999)):
+    def __init__(
+        self, base_path: Optional[Path] = None, port_range: tuple = (8000, 9999)
+    ):
         """
         Initialize server lifecycle manager.
 
@@ -599,7 +601,7 @@ class ServerLifecycleManager:
 
 # Convenience functions
 def create_test_server_environment(
-    server_count: int = 1, base_path: Path = None, auto_start: bool = True
+    server_count: int = 1, base_path: Optional[Path] = None, auto_start: bool = True
 ) -> ServerLifecycleManager:
     """
     Create a complete test server environment with multiple servers.

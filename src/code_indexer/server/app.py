@@ -775,11 +775,11 @@ def create_app() -> FastAPI:
 
             # Add database health if available
             if database_health:
-                health_response["database"] = database_health
+                health_response["database"] = database_health  # type: ignore[assignment]
 
             # Add recent errors if available
             if recent_errors:
-                health_response["recent_errors"] = recent_errors
+                health_response["recent_errors"] = recent_errors  # type: ignore[assignment]
 
             return health_response
 

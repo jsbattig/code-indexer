@@ -38,7 +38,7 @@ class TestUser:
 
     def verify_password(self, password: str) -> bool:
         """Verify password against stored hash."""
-        return self._pwd_context.verify(password, self.password_hash)
+        return self._pwd_context.verify(password, self.password_hash)  # type: ignore[no-any-return]
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert user to dictionary for API requests."""
@@ -489,7 +489,7 @@ class TestDataFactory:
         }
 
     def create_search_query_data(
-        self, user_id: str, repository_id: str = None
+        self, user_id: str, repository_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Create sample search query data for testing.

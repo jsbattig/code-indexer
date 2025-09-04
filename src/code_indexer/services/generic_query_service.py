@@ -8,6 +8,7 @@ import logging
 
 from code_indexer.config import Config
 from code_indexer.services.file_identifier import FileIdentifier
+from code_indexer.utils.git_runner import run_git_command
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +62,11 @@ class GenericQueryService:
         try:
             import subprocess
 
-            # First check if this is actually a git repository
-            check_result = subprocess.run(
+            # First check if this is actually a git repository using the proper git runner
+            check_result = run_git_command(
                 ["git", "rev-parse", "--git-dir"],
                 cwd=self.project_dir,
+                check=False,
                 capture_output=True,
                 text=True,
             )
@@ -73,8 +75,8 @@ class GenericQueryService:
             if check_result.returncode != 0:
                 return {"branch": "unknown", "commit": "unknown", "files": set()}
 
-            # Get current branch
-            result = subprocess.run(
+            # Get current branch using git runner
+            result = run_git_command(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
                 cwd=self.project_dir,
                 capture_output=True,
@@ -83,8 +85,8 @@ class GenericQueryService:
             )
             current_branch = result.stdout.strip()
 
-            # Get current commit hash
-            result = subprocess.run(
+            # Get current commit hash using git runner
+            result = run_git_command(
                 ["git", "rev-parse", "HEAD"],
                 cwd=self.project_dir,
                 capture_output=True,
@@ -93,8 +95,8 @@ class GenericQueryService:
             )
             current_commit = result.stdout.strip()
 
-            # Get list of files in current branch
-            result = subprocess.run(
+            # Get list of files in current branch using git runner
+            result = run_git_command(
                 ["git", "ls-tree", "-r", "--name-only", "HEAD"],
                 cwd=self.project_dir,
                 capture_output=True,
@@ -113,9 +115,18 @@ class GenericQueryService:
                 "files": current_files,
             }
 
-        except subprocess.CalledProcessError:
-            # Git command failed - not a git repository or no commits yet
-            # This is expected in test environments, so don't log
+        except subprocess.CalledProcessError as e:
+            # Git command failed - provide more helpful error message
+            if "dubious ownership" in str(e.stderr):
+                logger.warning(
+                    f"Git repository ownership issue detected at {self.project_dir}. "
+                    "This typically occurs when running as a different user than the repository owner. "
+                    "Consider adding the directory to Git's safe directories with: "
+                    f"git config --global --add safe.directory {self.project_dir}"
+                )
+            else:
+                # Not a git repository or no commits yet - this is expected in test environments
+                logger.debug(f"Git command failed: {e}")
             return {"branch": "unknown", "commit": "unknown", "files": set()}
         except Exception as e:
             # Only log unexpected errors
@@ -169,9 +180,7 @@ class GenericQueryService:
             True if commit is reachable from current HEAD
         """
         try:
-            import subprocess
-
-            result = subprocess.run(
+            result = run_git_command(
                 ["git", "merge-base", "--is-ancestor", commit_hash, "HEAD"],
                 cwd=self.project_dir,
                 capture_output=True,
@@ -179,7 +188,7 @@ class GenericQueryService:
             )
 
             # Return code 0 means commit is ancestor (reachable)
-            return result.returncode == 0
+            return bool(result.returncode == 0)
 
         except Exception as e:
             logger.warning(f"Error checking commit reachability: {e}")
