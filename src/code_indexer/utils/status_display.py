@@ -20,6 +20,7 @@ import logging
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, Dict, Any, List, Union, Callable
 
 from rich.console import Console
@@ -489,6 +490,7 @@ class FreeScrollStreamDisplay(BaseStatusDisplay):
         console: Optional[Console] = None,
         max_status_lines: int = 3,
         max_info_lines: int = 2,
+        enable_file_tracking: bool = False,
     ):
         super().__init__(console)
         self.max_status_lines = max_status_lines
@@ -499,6 +501,13 @@ class FreeScrollStreamDisplay(BaseStatusDisplay):
         self.showing_tool_panel = False
         self.current_info_lines = 0
         self._last_status_lines = 0
+        self.enable_file_tracking = enable_file_tracking
+        self.file_tracker = None
+
+        if enable_file_tracking:
+            from .file_line_tracker import FileLineTracker
+
+            self.file_tracker = FileLineTracker(console)
 
     def start(self, operation_name: str) -> None:
         """Start free scroll display with clean interface."""
@@ -758,12 +767,17 @@ class FreeScrollStreamDisplay(BaseStatusDisplay):
 
     def _show_bottom_tool_panel(self) -> None:
         """Show persistent tool panel pinned to bottom using Live display."""
-        # Show panel if we have any content (status or tool activities)
-        if not self.tool_activities and not self.status_info:
+        # Get current file lines if file tracking is enabled
+        file_lines = []
+        if self.enable_file_tracking and self.file_tracker:
+            file_lines = self.file_tracker.get_active_file_lines()
+
+        # Show panel if we have any content (status, tool activities, or file lines)
+        if not self.tool_activities and not self.status_info and not file_lines:
             return
 
         try:
-            # Combine status info and tool activities in one panel
+            # Combine all content types in one panel
             panel_content_lines = []
 
             # Add status info at the top if available
@@ -772,16 +786,28 @@ class FreeScrollStreamDisplay(BaseStatusDisplay):
                     panel_content_lines.append(f"📊 {line}")
                 panel_content_lines.append("")  # Separator line
 
+            # Add individual file tracking lines if enabled
+            if file_lines:
+                panel_content_lines.extend(file_lines)
+                if self.tool_activities:
+                    panel_content_lines.append("")  # Separator line
+
             # Add tool activities
             panel_content_lines.extend(self.tool_activities)
 
             # Create combined content
             combined_content = "\n".join(panel_content_lines)
 
-            # Create a compact panel with both status and activities
+            # Create a compact panel with status, file tracking, and activities
+            panel_title = "Progress"
+            if self.enable_file_tracking and file_lines:
+                panel_title = f"Progress & File Tracking ({len(file_lines)} active)"
+            elif self.tool_activities or self.status_info:
+                panel_title = "Status & Tool Activity"
+
             panel = Panel(
                 combined_content,
-                title="Status & Tool Activity",
+                title=panel_title,
                 border_style="green",
                 padding=(0, 1),
             )
@@ -864,6 +890,25 @@ class FreeScrollStreamDisplay(BaseStatusDisplay):
         self._hide_tool_panel()
         self.is_active = False
 
+    # File tracking methods
+    def start_file_processing(self, file_path: Path, file_size: int) -> None:
+        """Start tracking processing for a file (if file tracking is enabled)."""
+        if self.enable_file_tracking and self.file_tracker:
+            self.file_tracker.start_file_processing(file_path, file_size)
+            self._show_bottom_tool_panel()  # Update display
+
+    def update_file_status(self, file_path: Path, status: str) -> None:
+        """Update file processing status (if file tracking is enabled)."""
+        if self.enable_file_tracking and self.file_tracker:
+            self.file_tracker.update_file_status(file_path, status)
+            self._show_bottom_tool_panel()  # Update display
+
+    def complete_file_processing(self, file_path: Path) -> None:
+        """Mark file processing as complete (if file tracking is enabled)."""
+        if self.enable_file_tracking and self.file_tracker:
+            self.file_tracker.complete_file_processing(file_path)
+            self._show_bottom_tool_panel()  # Update display
+
 
 # TextualStreamDisplay removed - using FreeScrollStreamDisplay instead
 
@@ -876,10 +921,12 @@ class StatusDisplayManager:
         mode: str = StatusDisplayMode.ACTIVITY_LOG,
         console: Optional[Console] = None,
         handle_interrupts: bool = True,
+        enable_file_tracking: bool = False,
     ):
         self.console = console or Console()
         self.mode = mode
         self.handle_interrupts = handle_interrupts
+        self.enable_file_tracking = enable_file_tracking
         self.display: Optional[BaseStatusDisplay] = None
         self.operation_name = ""
         self.interrupted = False
@@ -899,7 +946,9 @@ class StatusDisplayManager:
         elif self.mode == StatusDisplayMode.SPLIT_STREAM:
             return SplitStreamDisplay(self.console)
         elif self.mode == StatusDisplayMode.FREE_SCROLL_STREAM:
-            return FreeScrollStreamDisplay(self.console)
+            return FreeScrollStreamDisplay(
+                self.console, enable_file_tracking=self.enable_file_tracking
+            )
         else:
             raise ValueError(f"Unknown status display mode: {self.mode}")
 
@@ -1017,6 +1066,22 @@ class StatusDisplayManager:
 
         if self.handle_interrupts:
             self._restore_interrupt_handler()
+
+    # File tracking methods (delegate to display if supported)
+    def start_file_processing(self, file_path: Path, file_size: int) -> None:
+        """Start tracking processing for a file (if supported by display)."""
+        if self.display and hasattr(self.display, "start_file_processing"):
+            self.display.start_file_processing(file_path, file_size)
+
+    def update_file_status(self, file_path: Path, status: str) -> None:
+        """Update file processing status (if supported by display)."""
+        if self.display and hasattr(self.display, "update_file_status"):
+            self.display.update_file_status(file_path, status)
+
+    def complete_file_processing(self, file_path: Path) -> None:
+        """Mark file processing as complete (if supported by display)."""
+        if self.display and hasattr(self.display, "complete_file_processing"):
+            self.display.complete_file_processing(file_path)
 
     def format_summary(
         self, summary_text: str, title: str = "Summary", render_markdown: bool = True
@@ -1138,6 +1203,7 @@ def create_split_stream_status(
 
 def create_free_scroll_stream_status(
     console: Optional[Console] = None,
+    enable_file_tracking: bool = False,
 ) -> StatusDisplayManager:
     """Create a free scroll stream status display with dynamic status band.
 
@@ -1145,8 +1211,18 @@ def create_free_scroll_stream_status(
     - Free scrolling content area (top)
     - Dynamic status info band (middle) - for clocks, progress, etc.
     - Fixed tool activities panel (bottom) - boxed display
+    - Optional individual file tracking (Feature 3)
+
+    Args:
+        console: Rich console instance (optional)
+        enable_file_tracking: Enable individual file line tracking with
+                             ├─ filename (size, elapsed) status format
     """
-    return StatusDisplayManager(StatusDisplayMode.FREE_SCROLL_STREAM, console)
+    return StatusDisplayManager(
+        StatusDisplayMode.FREE_SCROLL_STREAM,
+        console,
+        enable_file_tracking=enable_file_tracking,
+    )
 
 
 def create_textual_stream_status(

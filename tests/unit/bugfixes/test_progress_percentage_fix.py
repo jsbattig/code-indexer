@@ -1,134 +1,124 @@
 """
-Test to verify the progress percentage fix works correctly.
+Test to verify the progress percentage fix works correctly with Rich Progress Display.
 """
 
-from pathlib import Path
-from unittest.mock import Mock, patch
+# pathlib import removed - no longer needed
+from unittest.mock import Mock
 import pytest
+
+from code_indexer.progress.multi_threaded_display import MultiThreadedProgressManager
 
 
 class TestProgressPercentageFix:
-    """Test that progress percentages are calculated correctly."""
+    """Test that progress percentages are calculated correctly with new Rich Progress Display."""
 
     @pytest.mark.unit
-    def test_cli_progress_percentage_calculation(self):
-        """Test that CLI progress callback correctly updates progress percentages."""
+    def test_rich_progress_percentage_calculation(self):
+        """Test that Rich Progress Display correctly calculates and displays progress percentages."""
 
-        # Mock the Rich Progress bar
-        mock_progress_bar = Mock()
-        mock_task_id = "test-task"
+        # Create console mock
+        console_mock = Mock()
+        console_mock.__enter__ = Mock(return_value=console_mock)
+        console_mock.__exit__ = Mock(return_value=None)
 
-        # Track all update calls to the progress bar
-        update_calls = []
+        # Create Rich Progress Display manager
+        progress_manager = MultiThreadedProgressManager(console=console_mock)
 
-        def track_update(**kwargs):
-            update_calls.append(kwargs)
+        # Simulate the pattern that was causing percentage calculation issues
+        total_files = 134
 
-        mock_progress_bar.update.side_effect = track_update
-        mock_progress_bar.add_task.return_value = mock_task_id
+        print("\n=== Testing Rich Progress Display Percentage Calculation ===")
 
-        # Simulate the CLI progress callback behavior
-        with patch("code_indexer.cli.Progress") as mock_progress_class:
-            mock_progress_class.return_value = mock_progress_bar
+        # Test various progress levels to ensure percentages are calculated correctly
+        test_scenarios = [
+            (1, total_files, 1.0),  # ~0.7%
+            (10, total_files, 7.5),  # ~7.5%
+            (14, total_files, 10.4),  # ~10.4% (this was the problematic case)
+            (50, total_files, 37.3),  # ~37.3%
+            (100, total_files, 74.6),  # ~74.6%
+            (134, total_files, 100.0),  # 100%
+        ]
 
-            # Create the progress callback from CLI (simulate the exact same logic)
-            progress_bar = None
-            task_id = None
-            interrupt_handler = None
-
-            def progress_callback(current, total, file_path, error=None, info=None):
-                nonlocal progress_bar, task_id, interrupt_handler
-
-                # Check if we've been interrupted and signal to stop processing
-                if interrupt_handler and interrupt_handler.interrupted:
-                    return "INTERRUPT"
-
-                # Handle info messages (like strategy selection)
-                if info and not progress_bar:
-                    return
-
-                # Handle info-only updates (for status messages during processing)
-                if file_path == Path("") and info and progress_bar:
-                    progress_bar.update(
-                        task_id, completed=current, description=f"ℹ️  {info}"
-                    )
-                    return
-
-                # Initialize progress bar on first call
-                if progress_bar is None:
-                    progress_bar = Mock()  # Use mock instead of real Progress
-                    progress_bar.add_task.return_value = task_id = mock_task_id
-                    progress_bar.start.return_value = None
-
-                # Update progress
-                progress_bar.update(
-                    task_id,
-                    completed=current,
-                    description=f"Processing {file_path.name}",
-                )
-
-            # Simulate the exact pattern that causes the issue:
-            # 1. First call initializes with real file path
-            # 2. Subsequent calls use Path("") with info (this is where the bug was)
-
-            total_files = 134
-
-            print("\n=== Simulating CLI Progress Pattern ===")
-
-            # Call 1: Initialize progress bar (real file path)
-            progress_callback(1, total_files, Path("/project/file1.py"))
-
-            # Calls 2-14: Info-only updates (Path("") + info) - this is where the bug was
-            for i in range(2, 15):
-                file_name = f"file{i}.py"
-                info_msg = f"{i}/{total_files} files | Processing {file_name} (50%)"
-                progress_callback(i, total_files, Path(""), info=info_msg)
-
-            print(f"Total update calls made: {len(update_calls)}")
-
-            # Analyze the update calls
-            for i, call in enumerate(update_calls):
-                if "completed" in call:
-                    percentage = (call["completed"] / total_files) * 100
-                    print(
-                        f"Update {i + 1}: completed={call['completed']}, percentage={percentage:.1f}%"
-                    )
-                else:
-                    print(
-                        f"Update {i + 1}: No completed value (this would cause wrong percentage!)"
-                    )
-
-            # Verify the fix: all info-only updates should include completed value
-            info_updates = [
-                call
-                for call in update_calls
-                if call.get("description", "").startswith("ℹ️")
-            ]
-
-            print(f"\nInfo-only updates: {len(info_updates)}")
-
-            # Check that info updates include completed value (this is the fix)
-            for i, update in enumerate(info_updates):
-                assert (
-                    "completed" in update
-                ), f"Info update {i + 1} missing 'completed' parameter!"
-
-                percentage = (update["completed"] / total_files) * 100
-
-                print(
-                    f"  Info update {i + 1}: completed={update['completed']}, percentage={percentage:.1f}%"
-                )
-
-                # Verify that we get reasonable percentages (not stuck at 1%)
-                if update["completed"] >= 14:  # When 14 files are processed
-                    assert (
-                        percentage >= 10
-                    ), f"Expected ~10% when 14 files processed, got {percentage:.1f}%"
-
-            print("\n✅ Progress percentage fix verified!")
-            print(
-                f"   When 14/{total_files} files are processed, progress shows ~10% (not 1%)"
+        for current, total, expected_percentage in test_scenarios:
+            # Update the progress manager
+            progress_manager.update_complete_state(
+                current=current,
+                total=total,
+                files_per_second=2.5,
+                kb_per_second=512.0,
+                active_threads=4,
+                concurrent_files=[],
             )
+
+            # Get the integrated display
+            display = progress_manager.get_integrated_display()
+
+            # Verify display is not empty
+            assert (
+                len(display) > 0
+            ), f"Display should not be empty for {current}/{total}"
+
+            # Verify it contains the correct progress information
+            assert (
+                f"{current}/{total} files" in display
+            ), f"Should show '{current}/{total} files' in display"
+
+            # Calculate actual percentage from display
+            calculated_percentage = (current / total * 100) if total > 0 else 0
+
+            # Verify the percentage in the display content
+            percentage_text = f"({calculated_percentage:.0f}%)"
+            assert (
+                percentage_text in display
+            ), f"Should show correct percentage {percentage_text} in display"
+
+            print(
+                f"  ✅ {current}/{total} files -> {calculated_percentage:.1f}% (expected ~{expected_percentage:.1f}%)"
+            )
+
+        print("\n✅ Rich Progress Display percentage calculation verified!")
+        print(
+            "   All progress levels show correct percentages (no longer stuck at low values)"
+        )
+
+    @pytest.mark.unit
+    def test_info_updates_maintain_progress_state(self):
+        """Test that info-only updates maintain the correct progress state."""
+
+        console_mock = Mock()
+        console_mock.__enter__ = Mock(return_value=console_mock)
+        console_mock.__exit__ = Mock(return_value=None)
+
+        progress_manager = MultiThreadedProgressManager(console=console_mock)
+
+        total_files = 134
+
+        # Set initial progress state
+        progress_manager.update_complete_state(
+            current=14,
+            total=total_files,
+            files_per_second=2.5,
+            kb_per_second=512.0,
+            active_threads=4,
+            concurrent_files=[],
+        )
+
+        # Get display before and after (should maintain state)
+        display1 = progress_manager.get_integrated_display()
+        display2 = progress_manager.get_integrated_display()
+
+        # Both displays should show the same progress information
+        assert "14/134 files" in display1, "First display should show correct progress"
+        assert (
+            "14/134 files" in display2
+        ), "Second display should maintain progress state"
+
+        # Both should show the correct percentage (10.4%)
+        assert "(10%" in display1, "First display should show ~10%"
+        assert "(10%" in display2, "Second display should maintain ~10%"
+
+        print("\n✅ Info updates correctly maintain progress state!")
+        print("   Progress state is preserved across multiple display calls")
 
 
 if __name__ == "__main__":

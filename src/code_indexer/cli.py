@@ -10,15 +10,8 @@ from typing import Optional, Union, Callable
 import click
 from rich.console import Console
 from rich.table import Table
-from rich.progress import (
-    Progress,
-    TextColumn,
-    BarColumn,
-    TaskProgressColumn,
-    TimeElapsedColumn,
-    TimeRemainingColumn,
-)
-from rich.table import Column
+
+# Rich progress imports removed - using MultiThreadedProgressManager instead
 
 from .config import ConfigManager, Config
 from .services import QdrantClient, DockerManager, EmbeddingProviderFactory
@@ -31,6 +24,8 @@ from .services.claude_integration import (
 from .services.config_fixer import ConfigurationRepairer, generate_fix_report
 from .services.vector_calculation_manager import get_default_thread_count
 from .services.cidx_prompt_generator import create_cidx_ai_prompt
+
+# MultiThreadedProgressManager imported locally where needed
 
 # CoW-related imports removed as part of CoW cleanup Epic
 from . import __version__
@@ -1535,56 +1530,75 @@ def index(
                 console.print("🆕 No previous index found, performing full index")
 
         # Create progress tracking with graceful interrupt handling
-        progress_bar = None
-        task_id = None
         interrupt_handler = None
+
+        # Initialize progress managers for rich display
+        from .progress import MultiThreadedProgressManager
+        from .progress.progress_display import RichLiveProgressManager
+
+        # Create Rich Live progress manager for bottom-anchored display
+        rich_live_manager = RichLiveProgressManager(console=console)
+        progress_manager = MultiThreadedProgressManager(
+            console=console, live_manager=rich_live_manager
+        )
+        display_initialized = False
 
         def show_setup_message(message: str):
             """Display setup/informational messages as scrolling cyan text."""
-            console.print(f"ℹ️  {message}", style="cyan")
+            rich_live_manager.handle_setup_message(message)
 
         def show_error_message(file_path, error_msg: str):
             """Display error messages appropriately based on context."""
             if ctx.obj["verbose"]:
-                if progress_bar is not None:
-                    progress_bar.console.print(
-                        f"❌ Failed to process {file_path}: {error_msg}", style="red"
+                rich_live_manager.handle_error_message(file_path, error_msg)
+
+        def update_file_progress_with_concurrent_files(
+            current: int, total: int, info: str, concurrent_files=None
+        ):
+            """Update file processing with concurrent file tracking."""
+            nonlocal display_initialized
+
+            # Initialize Rich Live display on first call
+            if not display_initialized:
+                rich_live_manager.start_bottom_display()
+                display_initialized = True
+
+            # ALWAYS use MultiThreadedProgressManager - NO FALLBACKS
+            # Parse progress info for metrics if available
+            try:
+                parts = info.split(" | ")
+                if len(parts) >= 4:
+                    files_per_second = float(parts[1].replace(" files/s", ""))
+                    kb_per_second = float(parts[2].replace(" KB/s", ""))
+                    threads_text = parts[3]
+                    active_threads = (
+                        int(threads_text.split()[0])
+                        if threads_text.split()
+                        else thread_count
                     )
                 else:
-                    console.print(
-                        f"❌ Failed to process {file_path}: {error_msg}", style="red"
-                    )
+                    files_per_second = 0.0
+                    kb_per_second = 0.0
+                    active_threads = thread_count
+            except (ValueError, IndexError):
+                files_per_second = 0.0
+                kb_per_second = 0.0
+                active_threads = thread_count
 
-        def update_file_progress(current: int, total: int, info: str):
-            """Update file processing progress bar with current status."""
-            nonlocal progress_bar, task_id
+            # Update MultiThreadedProgressManager with rich display
+            # Use empty list for concurrent_files if not provided - display will handle it gracefully
+            progress_manager.update_complete_state(
+                current=current,
+                total=total,
+                files_per_second=files_per_second,
+                kb_per_second=kb_per_second,
+                active_threads=active_threads,
+                concurrent_files=concurrent_files or [],
+            )
 
-            # Initialize progress bar on first call
-            if progress_bar is None:
-                progress_bar = Progress(
-                    TextColumn("[bold blue]Indexing", justify="right"),
-                    BarColumn(bar_width=30),
-                    TaskProgressColumn(),
-                    "•",
-                    TimeElapsedColumn(),
-                    "•",
-                    TimeRemainingColumn(),
-                    "•",
-                    TextColumn(
-                        "[cyan]{task.description}",
-                        table_column=Column(no_wrap=False, overflow="fold"),
-                    ),
-                    console=console,
-                )
-                progress_bar.start()
-                task_id = progress_bar.add_task("Starting...", total=total)
-
-                # Register progress bar with interrupt handler
-                if interrupt_handler:
-                    interrupt_handler.set_progress_bar(progress_bar)
-
-            # Update progress bar with current info
-            progress_bar.update(task_id, completed=current, description=info)
+            # Get integrated display content (Rich Table) and update Rich Live bottom-anchored display
+            rich_table = progress_manager.get_integrated_display()
+            rich_live_manager.handle_progress_update(rich_table)
 
         def check_for_interruption():
             """Check if operation was interrupted and return signal."""
@@ -1592,8 +1606,10 @@ def index(
                 return "INTERRUPT"
             return None
 
-        def progress_callback(current, total, file_path, error=None, info=None):
-            """Legacy progress callback - delegates to appropriate method based on parameters."""
+        def progress_callback(
+            current, total, file_path, error=None, info=None, concurrent_files=None
+        ):
+            """Multi-threaded progress callback - uses Rich Live progress display."""
             # Check for interruption first
             interrupt_result = check_for_interruption()
             if interrupt_result:
@@ -1608,11 +1624,14 @@ def index(
             if total > 0 and info:
                 # Add cancellation indicator to progress info if interrupted
                 if interrupt_handler and interrupt_handler.interrupted:
-                    # Modify info to show cancellation status
                     cancellation_info = f"🛑 CANCELLING - {info}"
-                    update_file_progress(current, total, cancellation_info)
+                    update_file_progress_with_concurrent_files(
+                        current, total, cancellation_info, concurrent_files
+                    )
                 else:
-                    update_file_progress(current, total, info)
+                    update_file_progress_with_concurrent_files(
+                        current, total, info, concurrent_files
+                    )
                 return
 
             # Show errors
@@ -1620,7 +1639,7 @@ def index(
                 show_error_message(file_path, error)
                 return
 
-            # Fallback: if somehow no progress bar exists, just print info (should rarely happen)
+            # Fallback: if somehow no display exists, just print info (should rarely happen)
             if info:
                 show_setup_message(info)
 
@@ -1628,7 +1647,8 @@ def index(
         # Note: mypy doesn't like adding attributes to functions, but this works at runtime
         progress_callback.show_setup_message = show_setup_message  # type: ignore
         progress_callback.update_file_progress = lambda current, total, info: (  # type: ignore
-            check_for_interruption() or update_file_progress(current, total, info)
+            check_for_interruption()
+            or update_file_progress_with_concurrent_files(current, total, info)
         )
         progress_callback.show_error_message = show_error_message  # type: ignore
         progress_callback.check_for_interruption = check_for_interruption  # type: ignore
@@ -1684,15 +1704,25 @@ def index(
                     detect_deletions=detect_deletions,
                 )
 
-                # Stop progress bar with completion message (if not interrupted)
-                if progress_bar and task_id is not None and not handler.interrupted:
-                    # Update final status
-                    progress_bar.update(task_id, description="✅ Completed")
-                    progress_bar.stop()
+                # Show final completion state (if not interrupted)
+                if display_initialized and not handler.interrupted:
+                    # Stop progress manager and Rich Live display before showing completion message
+                    progress_manager.stop_progress()
+                    rich_live_manager.stop_display()
+                    console.print("\n✅ Completed")
 
         except Exception as e:
+            # Clean up progress manager and Rich Live display before error message
+            if display_initialized:
+                progress_manager.stop_progress()
+                rich_live_manager.stop_display()
             console.print(f"❌ Indexing failed: {e}", style="red")
             sys.exit(1)
+
+        # Clean up progress manager and Rich Live display before completion summary
+        if display_initialized:
+            progress_manager.stop_progress()
+            rich_live_manager.stop_display()
 
         # Show completion summary with throughput (if stats available)
         if stats is None:

@@ -103,7 +103,9 @@ class TestClass_{i}:
         progress_calls = []
         thread_counts_seen = set()
 
-        def capture_progress(current, total, file_path, error=None, info=None):
+        def capture_progress(
+            current, total, file_path, error=None, info=None, concurrent_files=None
+        ):
             if info and total > 0:  # File progress calls
                 progress_calls.append(
                     {
@@ -215,24 +217,24 @@ class TestClass_{i}:
         progress_calls = []
         completion_indicators_found = []
 
-        def capture_progress(current, total, file_path, error=None, info=None):
+        def capture_progress(
+            current, total, file_path, error=None, info=None, concurrent_files=None
+        ):
             if info and total > 0:
                 progress_calls.append(
                     {"current": current, "total": total, "info": info}
                 )
 
-                # Look for completion indicators in filename part
-                # Expected format: "files completed/total (%) | files/s | KB/s | threads | filename ✓"
-                # or: "files completed/total (%) | files/s | KB/s | threads | filename (67%)"
+                # Look for completion indicators in status part
+                # Expected format: "files completed/total (%) | files/s | KB/s | threads | status"
+                # New format shows "✅ Completed" instead of "filename ✓"
                 parts = info.split("|")
                 if len(parts) >= 5:  # Now need 5 parts due to KB/s addition
-                    filename_part = parts[4].strip()  # Filename moved to index 4
-                    if "✓" in filename_part:
-                        completion_indicators_found.append(("completed", filename_part))
-                    elif "(" in filename_part and "%)" in filename_part:
-                        completion_indicators_found.append(
-                            ("in_progress", filename_part)
-                        )
+                    status_part = parts[4].strip()  # Status moved to index 4
+                    if "✅ Completed" in status_part:
+                        completion_indicators_found.append(("completed", status_part))
+                    elif "processing" in status_part and "%" in status_part:
+                        completion_indicators_found.append(("in_progress", status_part))
 
             return None
 
@@ -273,7 +275,9 @@ class TestClass_{i}:
         # Track files per second values
         files_per_sec_values = []
 
-        def capture_progress(current, total, file_path, error=None, info=None):
+        def capture_progress(
+            current, total, file_path, error=None, info=None, concurrent_files=None
+        ):
             if info and total > 0 and "files/s" in info:
                 parts = info.split("|")
                 if len(parts) >= 2:
@@ -331,7 +335,9 @@ class TestClass_{i}:
         # Track thread utilization over time
         thread_utilization_over_time = []
 
-        def capture_progress(current, total, file_path, error=None, info=None):
+        def capture_progress(
+            current, total, file_path, error=None, info=None, concurrent_files=None
+        ):
             if info and total > 0 and "threads" in info:
                 parts = info.split("|")
                 if len(parts) >= 4:  # Now need at least 4 parts due to KB/s addition

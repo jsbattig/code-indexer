@@ -25,6 +25,7 @@ from typing import List, Dict, Any, Optional, Callable, Set
 from ..indexing.processor import ProcessingStats
 from ..services.git_aware_processor import GitAwareDocumentProcessor
 from .vector_calculation_manager import VectorCalculationManager
+from .consolidated_file_tracker import ConsolidatedFileTracker, FileStatus
 
 logger = logging.getLogger(__name__)
 
@@ -87,10 +88,119 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             []
         )  # List of (timestamp, total_bytes) tuples for smoothed KB/s
 
+        # NEW: Consolidated file tracking system - replaces three duplicate systems
+        self.file_tracker = ConsolidatedFileTracker(max_concurrent_files=8)
+        self._thread_counter = 0  # For assigning stable thread IDs
+
+        # Fix static file display: Map file paths to thread IDs for proper updates
+        self._file_to_thread_map: Dict[Path, int] = {}
+        self._file_to_thread_lock = threading.Lock()
+
     def request_cancellation(self):
         """Request cancellation of processing."""
         self.cancelled = True
         logger.info("High throughput processing cancellation requested")
+
+    def _register_thread_file(
+        self, file_path: Path, status: str = "starting..."
+    ) -> int:
+        """Register a file with a thread for concurrent tracking.
+
+        Args:
+            file_path: Path to the file being processed
+            status: Current processing status
+
+        Returns:
+            Thread ID assigned to this file
+        """
+        # Assign a stable thread ID
+        thread_id: int = self._thread_counter
+        self._thread_counter += 1
+
+        # Map file path to thread ID for efficient lookups during processing
+        with self._file_to_thread_lock:
+            self._file_to_thread_map[file_path] = thread_id
+
+        # Use consolidated tracker - handles file I/O outside critical sections
+        if status == "starting...":
+            file_status = FileStatus.STARTING
+        elif "processing" in status.lower():
+            file_status = FileStatus.PROCESSING
+        else:
+            file_status = FileStatus.STARTING
+
+        self.file_tracker.start_file_processing(thread_id, file_path)
+        self.file_tracker.update_file_status(thread_id, file_status)
+        return thread_id
+
+    def _update_thread_status(self, file_path: Path, status: str) -> None:
+        """Update the status of a thread processing a file.
+
+        Args:
+            file_path: Path to the file being processed
+            status: New processing status
+        """
+        # Use efficient file-to-thread mapping instead of linear search
+        with self._file_to_thread_lock:
+            thread_id = self._file_to_thread_map.get(file_path)
+
+        if thread_id is None:
+            # File not registered - this shouldn't happen but handle gracefully
+            logger.warning(
+                f"Attempted to update status for unregistered file: {file_path}"
+            )
+            return
+
+        # Convert status string to FileStatus enum
+        if "complete" in status.lower():
+            file_status = FileStatus.COMPLETE
+        elif "processing" in status.lower() or "vectorizing" in status.lower():
+            file_status = FileStatus.PROCESSING
+        elif "finalizing" in status.lower() or "queued" in status.lower():
+            file_status = FileStatus.COMPLETING
+        else:
+            file_status = FileStatus.PROCESSING
+
+        self.file_tracker.update_file_status(thread_id, file_status)
+
+    def _complete_thread_file(self, file_path: Path) -> None:
+        """Mark a file as completed and free up the thread.
+
+        Args:
+            file_path: Path to the completed file
+        """
+        # Use efficient file-to-thread mapping instead of linear search
+        with self._file_to_thread_lock:
+            thread_id = self._file_to_thread_map.get(file_path)
+            if thread_id is not None:
+                # Clean up the mapping since file is complete
+                del self._file_to_thread_map[file_path]
+
+        if thread_id is None:
+            # File not registered - this shouldn't happen but handle gracefully
+            logger.warning(f"Attempted to complete unregistered file: {file_path}")
+            return
+
+        self.file_tracker.complete_file_processing(thread_id)
+
+    def _get_concurrent_threads_snapshot(
+        self, max_threads: int = 8
+    ) -> List[Dict[str, Any]]:
+        """Get current snapshot of active threads for concurrent display.
+
+        REPLACED: Now using consolidated file tracker instead of duplicate logic.
+
+        Args:
+            max_threads: Maximum number of threads to show
+
+        Returns:
+            List of thread info dictionaries for display
+        """
+        # Use consolidated tracker - eliminates race conditions and duplication
+        concurrent_data: List[Dict[str, Any]] = (
+            self.file_tracker.get_concurrent_files_data()
+        )
+        return concurrent_data
 
     def _initialize_file_rate_tracking(self):
         """Initialize file processing rate tracking."""
@@ -241,12 +351,18 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         logger.info("Phase 1: Creating chunk queue from all files...")
         for file_path in files:
             try:
+                # Don't register files during chunking - they're not actually being processed yet
+                # File registration will happen when actual processing begins
+
                 # Debug: Log each file being processed
                 with open(debug_file, "a") as f:
                     f.write(
                         f"[{datetime.datetime.now().isoformat()}] Starting to chunk: {file_path}\n"
                     )
                     f.flush()
+
+                # Skip status update during chunking - no display registration yet
+
                 # Chunk the file
                 chunks = self.fixed_size_chunker.chunk_file(file_path)
 
@@ -258,7 +374,10 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                     f.flush()
 
                 if not chunks:
+                    # Skip - no file registered during chunking
                     continue
+
+                # Files will be registered when actual processing starts in ThreadPoolExecutor
 
                 # Get file metadata once per file
                 file_metadata = self.file_identifier.get_file_metadata(file_path)
@@ -282,6 +401,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             except Exception as e:
                 logger.error(f"Failed to process file {file_path}: {e}")
                 stats.failed_files += 1
+                # Skip cleanup - no file registered during chunking
                 continue
 
         if not all_chunk_tasks:
@@ -392,6 +512,19 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                     chunk_task = vector_result.metadata["chunk_task"]
                     current_file = chunk_task.file_path
 
+                    # Register file with display system when first chunk completes (dynamic registration)
+                    chunks_completed = file_completed_chunks.get(current_file, 0) + 1
+                    if chunks_completed == 1:
+                        # First chunk of this file - register for display
+                        self._register_thread_file(current_file, "processing (0%)")
+
+                    # Update thread status for processing with real-time progress
+                    total_chunks = file_chunk_counts[current_file]
+                    progress_pct = int((chunks_completed / total_chunks) * 100)
+                    self._update_thread_status(
+                        current_file, f"processing ({progress_pct}%)"
+                    )
+
                     # Create Qdrant point using existing logic
                     point = self._create_qdrant_point(
                         chunk_task, vector_result.embedding
@@ -413,6 +546,12 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                         # File is complete - add all its chunks to batch for indexing
                         completed_files.add(current_file)
                         file_completion_status[current_file] = True
+
+                        # Show completion status briefly before cleanup
+                        self._update_thread_status(current_file, "complete ✓")
+
+                        # Complete the file processing - consolidated tracker handles display and cleanup
+                        self._complete_thread_file(current_file)
 
                         # Track source bytes for KB/s calculation when file completes (Story 3)
                         try:
@@ -492,6 +631,11 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                         # Calculate KB/s throughput for source data ingestion rate (Story 3)
                         kbs_throughput = self._calculate_kbs_throughput()
 
+                        # NEW: Use real-time thread tracking for concurrent display
+                        concurrent_files = self._get_concurrent_threads_snapshot(
+                            max_threads=8
+                        )
+
                         # Create comprehensive info message including file status for progress bar display
                         # STORY 3: Added KB/s between files/s and threads to show source data throughput
                         info_msg = (
@@ -505,6 +649,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                         if progress_callback:
                             # ⚠️  CRITICAL: files_total > 0 triggers CLI progress bar
                             # Use empty path with info to ensure progress bar updates instead of individual messages
+                            # Include concurrent files data for multi-threaded display integration
                             callback_result = progress_callback(
                                 files_completed,
                                 files_total,
@@ -512,6 +657,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                                     ""
                                 ),  # Empty path with info = progress bar description update
                                 info=info_msg,
+                                concurrent_files=concurrent_files,  # NEW: Add concurrent file data
                             )
                             # Check for cancellation signal
                             if callback_result == "INTERRUPT":
@@ -1098,3 +1244,27 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             logger.info(f"Branch isolation: no files to hide for branch '{branch}'")
 
         return True
+
+    def _build_concurrent_files_data(
+        self,
+        file_completed_chunks: Dict[Path, int],
+        file_chunk_counts: Dict[Path, int],
+        completed_files: Set[Path],
+    ) -> List[Dict[str, Any]]:
+        """Build concurrent files data structure for multi-threaded display integration.
+
+        NOW USING CONSOLIDATED FILE TRACKER - eliminates race conditions and lock contention.
+
+        Args:
+            file_completed_chunks: Map of file paths to completed chunk counts
+            file_chunk_counts: Map of file paths to total chunk counts
+            completed_files: Set of fully completed file paths
+
+        Returns:
+            List of concurrent file data dictionaries for display manager
+        """
+        # Use consolidated file tracker instead of duplicate tracking logic
+        concurrent_files_data: List[Dict[str, Any]] = (
+            self.file_tracker.get_concurrent_files_data()
+        )
+        return concurrent_files_data

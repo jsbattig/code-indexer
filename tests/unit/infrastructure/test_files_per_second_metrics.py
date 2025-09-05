@@ -97,11 +97,11 @@ class TestClass_{i}:
         self.mock_embedding_provider = MockEmbeddingProvider(delay=0.05)
 
     @pytest.mark.unit
-    def test_current_progress_shows_emb_per_sec_NOT_files_per_sec(self):
+    def test_current_progress_shows_files_per_sec_NOT_emb_per_sec(self):
         """
-        FAILING TEST - Demonstrates current emb/s usage in progress reporting.
+        UPDATED TEST - Demonstrates current files/s usage in progress reporting.
 
-        This test will PASS with current implementation and FAIL after we implement files/s.
+        This test was updated because emb/s has been replaced with files/s.
         """
         # Create processor
         processor = HighThroughputProcessor(
@@ -110,12 +110,14 @@ class TestClass_{i}:
             qdrant_client=self.mock_qdrant,
         )
 
-        # Track progress calls to verify current emb/s usage
+        # Track progress calls to verify current files/s usage
         progress_calls = []
         emb_per_sec_found = False
         files_per_sec_found = False
 
-        def capture_progress(current, total, file_path, error=None, info=None):
+        def capture_progress(
+            current, total, file_path, error=None, info=None, concurrent_files=None
+        ):
             nonlocal emb_per_sec_found, files_per_sec_found
             if info and total > 0:  # File progress calls
                 progress_calls.append(
@@ -127,11 +129,11 @@ class TestClass_{i}:
                     }
                 )
 
-                # Check for current emb/s format
+                # Check for old emb/s format (should not exist)
                 if "emb/s" in info:
                     emb_per_sec_found = True
 
-                # Check for files/s format (should not exist yet)
+                # Check for files/s format (should exist)
                 if "files/s" in info:
                     files_per_sec_found = True
 
@@ -148,50 +150,54 @@ class TestClass_{i}:
         # Verify progress calls were made
         assert len(progress_calls) > 0, "Expected progress callbacks during processing"
 
-        # CURRENT STATE: Should show emb/s, NOT files/s
-        assert emb_per_sec_found, (
-            f"Expected to find 'emb/s' in progress info, but didn't. "
+        # CURRENT STATE: Should show files/s, NOT emb/s
+        assert files_per_sec_found, (
+            f"Expected to find 'files/s' in progress info, but didn't. "
             f"Progress calls: {[call['info'] for call in progress_calls[-3:]]}"
         )
 
-        # FUTURE STATE: Should NOT show files/s yet (this will change after implementation)
-        assert not files_per_sec_found, (
-            f"Found 'files/s' in progress info but should not exist yet. "
+        # Should NOT show emb/s anymore
+        assert not emb_per_sec_found, (
+            f"Found 'emb/s' in progress info but should be replaced with 'files/s'. "
             f"Progress calls: {[call['info'] for call in progress_calls[-3:]]}"
         )
 
-        # Verify exact format includes emb/s
-        emb_per_sec_calls = [call for call in progress_calls if "emb/s" in call["info"]]
+        # Verify exact format includes files/s
+        files_per_sec_calls = [
+            call for call in progress_calls if "files/s" in call["info"]
+        ]
         assert (
-            len(emb_per_sec_calls) > 0
-        ), "Expected at least one progress call with 'emb/s'"
+            len(files_per_sec_calls) > 0
+        ), "Expected at least one progress call with 'files/s'"
 
-        # Verify format: "X/Y files (Z%) | A.B emb/s | N threads | filename"
-        for call in emb_per_sec_calls[:3]:  # Check first 3 calls
+        # Verify format: "X/Y files (Z%) | A.B files/s | KB/s | N threads | status"
+        for call in files_per_sec_calls[:3]:  # Check first 3 calls
             info = call["info"]
             parts = info.split("|")
             assert len(parts) >= 4, f"Expected at least 4 parts, got: {info}"
 
-            # Check emb/s part (second part)
-            emb_part = parts[1].strip()
-            assert "emb/s" in emb_part, f"Expected 'emb/s' in second part: {emb_part}"
+            # Check files/s part (second part)
+            files_part = parts[1].strip()
+            assert (
+                "files/s" in files_part
+            ), f"Expected 'files/s' in second part: {files_part}"
 
-            # Extract numeric value before "emb/s"
-            emb_str = emb_part.replace("emb/s", "").strip()
+            # Extract numeric value before "files/s"
+            files_str = files_part.replace("files/s", "").strip()
             try:
-                emb_value = float(emb_str)
+                files_value = float(files_str)
                 assert (
-                    emb_value >= 0.0
-                ), f"Expected non-negative emb/s value: {emb_value}"
+                    files_value >= 0.0
+                ), f"Expected non-negative files/s value: {files_value}"
             except ValueError:
-                pytest.fail(f"Could not parse emb/s value from: {emb_part}")
+                pytest.fail(f"Could not parse files/s value from: {files_part}")
 
     @pytest.mark.unit
     def test_files_per_sec_should_replace_emb_per_sec_in_progress(self):
         """
-        TEST FOR FUTURE STATE - Progress should show files/s instead of emb/s.
+        TEST - Progress should show files/s instead of emb/s.
 
-        This test will FAIL initially and PASS after we implement files/s replacement.
+        This test verifies files/s replacement is working correctly.
         """
         # Create processor
         processor = HighThroughputProcessor(
@@ -205,7 +211,9 @@ class TestClass_{i}:
         files_per_sec_values = []
         emb_per_sec_found = False
 
-        def capture_progress(current, total, file_path, error=None, info=None):
+        def capture_progress(
+            current, total, file_path, error=None, info=None, concurrent_files=None
+        ):
             nonlocal emb_per_sec_found
             if info and total > 0:  # File progress calls
                 progress_calls.append(
@@ -262,7 +270,7 @@ class TestClass_{i}:
             f"Progress calls: {[call['info'] for call in progress_calls[-3:]]}"
         )
 
-        # Verify format: "X/Y files (Z%) | A.B files/s | N threads | filename"
+        # Verify format: "X/Y files (Z%) | A.B files/s | KB/s | N threads | status"
         for call in files_per_sec_calls[:3]:  # Check first 3 calls
             info = call["info"]
             parts = info.split("|")
@@ -306,9 +314,9 @@ class TestClass_{i}:
     @pytest.mark.unit
     def test_files_per_sec_reflects_parallel_processing_benefits(self):
         """
-        TEST FOR FUTURE STATE - files/s should show benefits of parallel processing.
+        TEST - files/s should show benefits of parallel processing.
 
-        This test will FAIL initially and PASS after we implement files/s replacement.
+        This test verifies parallel processing benefits are visible in files/s metrics.
         """
         # Create processor
         processor = HighThroughputProcessor(
@@ -322,7 +330,7 @@ class TestClass_{i}:
         files_per_sec_values_8_threads = []
 
         def capture_progress_4_threads(
-            current, total, file_path, error=None, info=None
+            current, total, file_path, error=None, info=None, concurrent_files=None
         ):
             if info and total > 0 and "files/s" in info:
                 parts = info.split("|")
@@ -338,7 +346,7 @@ class TestClass_{i}:
             return None
 
         def capture_progress_8_threads(
-            current, total, file_path, error=None, info=None
+            current, total, file_path, error=None, info=None, concurrent_files=None
         ):
             if info and total > 0 and "files/s" in info:
                 parts = info.split("|")

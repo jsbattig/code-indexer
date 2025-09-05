@@ -87,7 +87,7 @@ class TestClass_{i}:
         cancelled_after_files = 3
 
         def progress_callback_with_cancellation(
-            current, total, file_path, error=None, info=None
+            current, total, file_path, error=None, info=None, concurrent_files=None
         ):
             progress_calls.append(
                 {
