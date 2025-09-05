@@ -284,9 +284,13 @@ class TestRealWorldPathWalking:
             # DockerManager should use the same directory for project operations
             docker_manager = DockerManager()
 
-            # Test project hash generation - should be based on config directory
-            expected_hash = docker_manager._generate_project_hash(config_dir)
-            current_dir_hash = docker_manager._generate_project_hash(Path.cwd())
+            # Test project hash generation through port registry - should be based on config directory
+            expected_hash = docker_manager.port_registry._calculate_project_hash(
+                config_dir
+            )
+            current_dir_hash = docker_manager.port_registry._calculate_project_hash(
+                Path.cwd()
+            )
 
             # These should be the same since config is in current directory
             assert (

@@ -9,7 +9,7 @@ identification when git is not available.
 
 import hashlib
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -175,7 +175,7 @@ class FileIdentifier:
             "project_id": self._get_project_id(),
             "file_path": rel_path,
             "file_hash": self._get_file_content_hash(file_path),
-            "indexed_at": datetime.utcnow().isoformat() + "Z",
+            "indexed_at": datetime.now(timezone.utc).isoformat() + "Z",
             "git_available": self.git_available,
         }
 

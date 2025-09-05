@@ -1,5 +1,39 @@
 # Release Notes
 
+## Version 4.0.0.2 - Docker Cleanup Bug Fix
+
+**Release Date**: September 4, 2025
+
+### 🐛 Critical Bug Fix
+
+- **Fixed Docker container cleanup in uninstall**: Resolved critical issue where `cidx uninstall --force-docker` left dangling containers that prevented subsequent startups
+- **Enhanced container discovery**: Uninstall now finds and removes ALL containers with project hash, not just predefined ones
+- **Project scoping protection**: Fixed dangerous cross-project container removal that could affect other CIDX projects
+- **Container state handling**: Enhanced cleanup to properly handle containers in Created, Running, Exited, and Paused states
+- **Orphan removal**: Added `--remove-orphans` flag to docker-compose down for complete cleanup
+
+### 🔧 Technical Improvements
+
+- **Project-scoped filtering**: Container cleanup now uses `name=cidx-{project_hash}-` instead of dangerous `name=cidx-` wildcards
+- **Comprehensive validation**: Added validation to verify complete container removal after uninstall
+- **Enhanced error reporting**: Improved verbose output with actionable guidance for manual cleanup
+- **Mandatory force cleanup**: Uninstall operations always perform thorough container cleanup regardless of compose down results
+- **Thread safety**: Fixed type issues and ensured atomic container operations
+
+### 🧪 Code Quality
+
+- **Deprecated datetime warnings**: Fixed all `datetime.utcnow()` deprecation warnings with `datetime.now(timezone.utc)`
+- **Test suite improvements**: Updated tests to validate correct behavior instead of old buggy behavior
+- **Zero warnings policy**: Eliminated all deprecation warnings from test suite
+- **Fast automation pipeline**: All 1,239 unit tests passing with zero warnings
+
+### 📖 Documentation
+
+- **Installation Instructions**: Updated with version 4.0.0.2
+- **Manual test plan**: Added comprehensive manual testing procedures for Docker cleanup validation
+
+---
+
 ## Version 4.0.0.1 - Bug Fixes and Improvements
 
 **Release Date**: September 4, 2025

@@ -7,7 +7,7 @@ triggering appropriate re-indexing when needed.
 
 import json
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Tuple
 
@@ -123,7 +123,7 @@ class GitDetectionService:
 
         state = {
             "git_available": identifier.git_available,
-            "checked_at": datetime.utcnow().isoformat() + "Z",
+            "checked_at": datetime.now(timezone.utc).isoformat() + "Z",
         }
 
         if identifier.git_available:

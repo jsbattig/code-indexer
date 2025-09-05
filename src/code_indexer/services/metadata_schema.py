@@ -6,7 +6,7 @@ provides validation utilities, and supports migration from legacy metadata forma
 """
 
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 
 
@@ -309,7 +309,7 @@ class GitAwareMetadataSchema:
             "file_size": file_size,
             "chunk_index": chunk_index,
             "total_chunks": total_chunks,
-            "indexed_at": datetime.utcnow().isoformat() + "Z",
+            "indexed_at": datetime.now(timezone.utc).isoformat() + "Z",
             "schema_version": MetadataSchemaVersion.LEGACY,
         }
 
@@ -354,7 +354,7 @@ class GitAwareMetadataSchema:
             "file_size": file_size,
             "chunk_index": chunk_index,
             "total_chunks": total_chunks,
-            "indexed_at": datetime.utcnow().isoformat() + "Z",
+            "indexed_at": datetime.now(timezone.utc).isoformat() + "Z",
             "project_id": project_id,
             "file_hash": file_hash,
             "git_available": git_metadata is not None,
@@ -417,7 +417,7 @@ class GitAwareMetadataSchema:
             "file_size": file_size,
             "chunk_index": chunk_index,
             "total_chunks": total_chunks,
-            "indexed_at": datetime.utcnow().isoformat() + "Z",
+            "indexed_at": datetime.now(timezone.utc).isoformat() + "Z",
             "project_id": project_id,
             "file_hash": file_hash,
             "git_available": git_metadata is not None,
@@ -470,7 +470,7 @@ class GitAwareMetadataSchema:
 
         # Ensure indexed_at is present
         if "indexed_at" not in migrated:
-            migrated["indexed_at"] = datetime.utcnow().isoformat() + "Z"
+            migrated["indexed_at"] = datetime.now(timezone.utc).isoformat() + "Z"
 
         return migrated
 

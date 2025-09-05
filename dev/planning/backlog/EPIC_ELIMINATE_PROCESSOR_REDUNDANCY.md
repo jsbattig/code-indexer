@@ -137,6 +137,108 @@ The current architecture suffers from a critical performance bottleneck due to d
 - VectorCalculationManager → EmbeddingProvider (parallel embeddings)
 - HighThroughputProcessor → QdrantClient (batch operations)
 
+## Thread Safety and Concurrency Requirements
+
+### Critical Thread Safety Specifications
+
+#### 1. **Content ID Generation Thread Safety**
+- **Requirement**: `_generate_content_id()` must use thread-local UUID namespace to prevent collisions
+- **Implementation**: Each worker thread maintains isolated UUID5 generation context
+- **Critical**: Deterministic ID generation must remain consistent across concurrent operations
+
+#### 2. **Branch Visibility Updates Thread Safety**
+- **Requirement**: `hidden_branches` array updates must use atomic operations with optimistic locking
+- **Implementation**: Database updates use conditional writes with retry logic on conflict
+- **Pattern**: Read current state → Modify → Conditional write with version check → Retry on failure
+- **Critical**: Prevents lost updates when multiple threads modify same content point
+
+#### 3. **Progress Reporting Thread Safety**
+- **Requirement**: Progress callbacks must use atomic counters for thread-safe aggregation
+- **Implementation**: `threading.Lock` protects progress state updates
+- **Pattern**: Acquire lock → Update counters → Release lock → Trigger callback
+- **Critical**: Ensures accurate progress reporting without race conditions
+
+#### 4. **Queue Management Thread Safety**
+- **Requirement**: File processing queue must be thread-safe bounded queue
+- **Implementation**: `queue.Queue(maxsize=1000)` prevents unbounded memory growth
+- **Backpressure**: When queue full, main thread blocks until space available
+- **Critical**: Prevents memory exhaustion with large file sets
+
+### Synchronization Points and Critical Sections
+
+#### **Serial Operations (Single Thread)**
+1. **Pre-processing Phase**: Content existence checking and deduplication analysis
+2. **Post-processing Phase**: Branch visibility updates after all files processed
+3. **Critical Sections**: Content ID generation, progress updates, database batch operations
+
+#### **Parallel Operations (Multi-Thread)**
+1. **File Processing**: Chunking, embedding generation, point creation (8 threads)
+2. **I/O Operations**: File reading, embedding API calls (within thread context)
+3. **Thread-Local State**: Each thread maintains isolated processing context
+
+#### **Synchronization Primitives**
+```python
+# Thread safety implementation requirements
+class ThreadSafeProcessor:
+    def __init__(self):
+        self._progress_lock = threading.Lock()
+        self._batch_lock = threading.Lock()
+        self._file_queue = queue.Queue(maxsize=1000)
+        self._progress_counters = {'completed': 0, 'total': 0}
+    
+    def thread_safe_progress_update(self, increment=1):
+        with self._progress_lock:
+            self._progress_counters['completed'] += increment
+            # Trigger progress callback safely
+    
+    def thread_safe_batch_update(self, points):
+        with self._batch_lock:
+            # Batch database operations atomically
+            pass
+```
+
+## Atomic Failure Handling Requirements
+
+### File-Level Atomicity
+- **Unit of Work**: Individual file processing is atomic (success or failure)
+- **No Rollback**: File-level failures do not trigger rollback of other files
+- **Error Isolation**: One file failure does not stop processing of remaining files
+- **Partial Success**: Batch operations return succeeded and failed file lists
+
+### Error Propagation Strategy
+```python
+# Error handling pattern for parallel processing
+class ProcessingResult:
+    def __init__(self):
+        self.succeeded_files = []
+        self.failed_files = []
+        self.errors = []
+
+def process_files_with_error_handling(files):
+    result = ProcessingResult()
+    
+    with ThreadPoolExecutor(8) as executor:
+        futures = {executor.submit(process_single_file, f): f for f in files}
+        
+        for future in as_completed(futures):
+            file_path = futures[future]
+            try:
+                points = future.result()
+                result.succeeded_files.append(file_path)
+            except Exception as e:
+                result.failed_files.append(file_path)
+                result.errors.append(f"{file_path}: {str(e)}")
+                # Continue processing other files
+    
+    return result
+```
+
+### Exception Aggregation
+- **Worker Thread Exceptions**: Captured and stored, not propagated immediately
+- **Error Collection**: All errors collected and reported at batch completion
+- **Cancellation Handling**: Graceful shutdown of all threads on cancellation signal
+- **Resource Cleanup**: Thread pool cleanup guaranteed even on exceptions
+
 ## Migration Strategy
 
 ### Phase 1: Enhance HighThroughputProcessor with Branch-Aware Capabilities
@@ -188,44 +290,85 @@ The current architecture suffers from a critical performance bottleneck due to d
    - **Implementation**: Direct migration of batch hidden_branches update
    - **Critical**: Required for branch deletion operations
 
-#### Enhanced File Processing Algorithm:
+#### Enhanced Thread-Safe File Processing Algorithm:
 
 ```pseudocode
 process_files_high_throughput_branch_aware(files, old_branch, new_branch, vector_thread_count):
-    # Phase 1: Pre-process files with branch-aware metadata
-    file_tasks = []
-    for file_path in files:
-        current_commit = _get_file_commit(file_path)  # Working dir vs committed
-        content_id = _generate_content_id(file_path, current_commit, 0)
-        
-        if _content_exists(content_id, collection_name):
-            # Content exists - ensure visibility in new branch
-            _ensure_file_visible_in_branch(file_path, new_branch, collection_name)
-            continue  # Skip processing, reuse existing content
-        
-        # Content doesn't exist - queue for parallel processing
-        file_tasks.append(FileTask(file_path, current_commit, metadata))
+    # Initialize thread-safe components
+    progress_lock = threading.Lock()
+    batch_lock = threading.Lock()
+    file_queue = queue.Queue(maxsize=1000)
+    processing_result = ProcessingResult()
     
-    # Phase 2: Process files in parallel with branch context
+    # Phase 1: Serial pre-processing with content deduplication (CRITICAL SECTION)
+    file_tasks = []
+    with content_id_lock:  # Ensure deterministic ID generation
+        for file_path in files:
+            current_commit = _get_file_commit(file_path)  # Working dir vs committed
+            content_id = _generate_content_id_thread_safe(file_path, current_commit, 0)
+            
+            if _content_exists(content_id, collection_name):
+                # Content exists - ensure visibility in new branch (atomic operation)
+                _ensure_file_visible_in_branch_atomic(file_path, new_branch, collection_name)
+                processing_result.reused_files.append(file_path)
+                continue  # Skip processing, reuse existing content
+            
+            # Content doesn't exist - queue for parallel processing
+            file_tasks.append(FileTask(file_path, current_commit, metadata))
+    
+    # Phase 2: Parallel file processing with error isolation
     with ThreadPoolExecutor(8) as executor:
-        futures = [executor.submit(process_file_with_branch_awareness, task) for task in file_tasks]
+        futures = {executor.submit(process_file_with_error_handling, task): task for task in file_tasks}
         
         for future in as_completed(futures):
-            content_points = future.result()
-            
-            # Phase 3: Handle point-in-time snapshot management
-            for point in content_points:
-                if point.commit.startswith("working_dir_"):
-                    # Hide old committed versions in same branch
-                    hide_committed_versions_for_working_dir_content(point.file_path, new_branch)
-                else:
-                    # Hide working directory versions for committed content
-                    hide_working_dir_versions_for_committed_content(point.file_path, new_branch)
-            
-            batch_points.extend(content_points)
+            task = futures[future]
+            try:
+                content_points = future.result(timeout=300)  # 5 minute timeout per file
+                
+                # Phase 3: Thread-safe batch collection
+                with batch_lock:
+                    processing_result.succeeded_files.append(task.file_path)
+                    processing_result.content_points.extend(content_points)
+                
+                # Phase 4: Thread-safe progress update
+                with progress_lock:
+                    update_progress_atomic(len(processing_result.succeeded_files), len(file_tasks))
+                    
+            except Exception as e:
+                # Error isolation - continue processing other files
+                with batch_lock:
+                    processing_result.failed_files.append(task.file_path)
+                    processing_result.errors.append(f"{task.file_path}: {str(e)}")
+                
+                with progress_lock:
+                    update_progress_atomic(len(processing_result.succeeded_files) + len(processing_result.failed_files), len(file_tasks))
     
-    # Phase 4: Update branch visibility for all files
-    hide_files_not_in_branch(new_branch, all_visible_files, collection_name)
+    # Phase 5: Serial post-processing - Point-in-time snapshot management (CRITICAL SECTION)
+    for point in processing_result.content_points:
+        if point.commit.startswith("working_dir_"):
+            # Hide old committed versions in same branch (atomic operation)
+            hide_committed_versions_atomic(point.file_path, new_branch)
+        else:
+            # Hide working directory versions for committed content (atomic operation)
+            hide_working_dir_versions_atomic(point.file_path, new_branch)
+    
+    # Phase 6: Serial branch visibility update (CRITICAL SECTION)
+    hide_files_not_in_branch_atomic(new_branch, all_visible_files, collection_name)
+    
+    # Return comprehensive result with error details
+    return processing_result
+
+def process_file_with_error_handling(task):
+    """Thread-safe file processing with isolated error handling."""
+    try:
+        # Each thread operates in isolation
+        chunks = chunker.chunk_file(task.file_path)
+        embeddings = [get_embedding_with_retry(c) for c in chunks]
+        points = create_qdrant_points_with_branch_metadata(chunks, embeddings, task.metadata)
+        return points
+    except Exception as e:
+        # Let exception propagate to be caught by main thread
+        raise ProcessingException(f"Failed to process {task.file_path}: {str(e)}")
 ```
 
 ### Phase 2: Replace All SmartIndexer Calls
@@ -728,7 +871,8 @@ If any test shows:
 - **Full Index**: 4-8x speedup  
 - **Incremental**: 4-8x speedup
 - **Thread Utilization**: 95%+ during large operations
-- **Memory Usage**: Acceptable increase for performance gains
+- **Error Handling**: Individual file failures do not impact batch performance
+- **Concurrency**: 8 threads processing simultaneously without data corruption
 
 ### Technical Constraints
 - Must maintain all existing git-aware features

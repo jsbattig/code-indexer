@@ -56,7 +56,7 @@ class TestCLIHelpTextCleanup:
         """Verify main CLI help has no semantic chunking references."""
         # Use python -m to run CLI (works in any environment)
         result = subprocess.run(
-            ["python", "-m", "code_indexer.cli", "--help"],
+            ["python3", "-m", "code_indexer.cli", "--help"],
             capture_output=True,
             text=True,
         )
@@ -187,7 +187,7 @@ class TestConfigurationDocumentation:
         """Verify that CLI points to clean configuration documentation."""
         # Check if there are any commands that mention config file setup
         main_result = subprocess.run(
-            ["python", "-m", "code_indexer.cli", "--help"],
+            ["python3", "-m", "code_indexer.cli", "--help"],
             capture_output=True,
             text=True,
         )

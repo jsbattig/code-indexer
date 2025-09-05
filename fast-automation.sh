@@ -48,14 +48,13 @@ fi
 
 # Check Python version (GitHub Actions tests multiple versions, we'll use current)
 print_step "Checking Python version"
-PYTHON_VERSION=$(python --version 2>&1 | cut -d " " -f 2)
+PYTHON_VERSION=$(python3 --version 2>&1 | cut -d " " -f 2)
 echo "Using Python $PYTHON_VERSION"
 print_success "Python version checked"
 
 # 1. Install dependencies (same as GitHub Actions)
 print_step "Installing dependencies"
-python -m pip install --upgrade pip
-pip install -e ".[dev]"
+pip install -e ".[dev]" --break-system-packages
 print_success "Dependencies installed"
 
 # 2. Lint with ruff (same as GitHub Actions)

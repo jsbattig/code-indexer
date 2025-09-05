@@ -637,14 +637,6 @@ class DockerManager:
             return ports
 
         except Exception as e:
-            # For test compatibility - fallback to default ports if registry fails
-            if "Operation not permitted" in str(e) or "Permission" in str(e):
-                logger.warning(f"Registry permission issue, using fallback ports: {e}")
-                return {
-                    "qdrant_port": 6333,
-                    "ollama_port": 11434,
-                    "data_cleaner_port": 8091,
-                }
             raise PortRegistryError(
                 f"Failed to allocate ports for project {project_root}: {e}"
             )
@@ -700,23 +692,6 @@ class DockerManager:
 
         # Allocate new ports if none exist or existing ones are invalid
         return self.allocate_project_ports(project_root)
-
-    # Temporary compatibility methods for tests (to be removed after test migration is complete)
-    def _generate_project_hash(self, project_root: Path) -> str:
-        """Generate deterministic hash from project root path (compatibility method)."""
-        return self.port_registry._calculate_project_hash(project_root)
-
-    def _allocate_free_ports(
-        self, project_hash: Optional[str] = None
-    ) -> Dict[str, int]:
-        """Allocate ports using fallback for tests (compatibility method)."""
-        # For test compatibility, return default ports to avoid permission issues
-        return {"qdrant_port": 6333, "ollama_port": 11434, "data_cleaner_port": 8091}
-
-    def _calculate_project_ports(self, project_hash: str) -> Dict[str, int]:
-        """Calculate ports based on project hash (compatibility method for tests)."""
-        # For test compatibility, return default ports to avoid permission issues
-        return {"qdrant_port": 6333, "ollama_port": 11434, "data_cleaner_port": 8091}
 
     def is_compose_available(self) -> bool:
         """Check if Podman Compose or Docker Compose is available, prioritizing Podman unless force_docker is True."""
@@ -2948,6 +2923,16 @@ class DockerManager:
         compose_cmd = self.get_compose_command()
         cleanup_success = True
 
+        # Enhanced status tracking for comprehensive reporting
+        status_tracker = {
+            "container_orchestration": {"success": True, "error": ""},
+            "data_cleaner": {"success": True, "error": ""},
+            "container_removal": {"success": True, "error": ""},
+            "data_directory_cleanup": {"success": True, "error": ""},
+            "named_volume_cleanup": {"success": True, "error": ""},
+            "cleanup_validation": {"success": True, "error": ""},
+        }
+
         try:
             if verbose:
                 self.console.print("🔍 Starting enhanced cleanup process...")
@@ -3037,6 +3022,10 @@ class DockerManager:
                     cleanup_paths, project_config_dict
                 )
                 if not cleaner_success:
+                    status_tracker["data_cleaner"]["success"] = False
+                    status_tracker["data_cleaner"][
+                        "error"
+                    ] = "Data cleaner reported failures"
                     if verbose:
                         self.console.print(
                             "⚠️  Data cleaner reported some failures", style="yellow"
@@ -3077,9 +3066,9 @@ class DockerManager:
                 "down",
             ]
             if remove_data:
-                down_cmd.append("-v")
+                down_cmd.extend(["-v", "--remove-orphans"])
             if force:
-                down_cmd.extend(["--remove-orphans", "--timeout", "10"])
+                down_cmd.extend(["--timeout", "10"])
 
             result = subprocess.run(
                 down_cmd,
@@ -3097,11 +3086,45 @@ class DockerManager:
                             style="yellow",
                         )
                 else:
+                    status_tracker["container_removal"]["success"] = False
+                    status_tracker["container_removal"]["error"] = result.stderr
                     cleanup_success = False
                     if verbose:
                         self.console.print(
                             f"❌ Container removal failed: {result.stderr}", style="red"
                         )
+                        # Provide specific guidance based on error type
+                        if (
+                            "network" in result.stderr.lower()
+                            and "in use" in result.stderr.lower()
+                        ):
+                            runtime_engine = self._get_available_runtime() or "podman"
+                            network_name = (
+                                self.get_network_name()
+                            )  # Get project-scoped network name
+                            self.console.print(
+                                f"💡 Manual network cleanup: {runtime_engine} network rm {network_name} --force",
+                                style="blue",
+                            )
+                        elif "permission denied" in result.stderr.lower():
+                            self.console.print(
+                                "💡 Try running with sudo or check container engine permissions",
+                                style="blue",
+                            )
+                        elif "device busy" in result.stderr.lower():
+                            self.console.print(
+                                "💡 Wait a moment and retry, or manually stop containers first",
+                                style="blue",
+                            )
+
+            # MANDATORY: Always force cleanup for uninstall (remove_data=True)
+            # This ensures containers are removed regardless of docker-compose down results
+            if remove_data:
+                if verbose:
+                    self.console.print(
+                        "🔧 Running mandatory force cleanup for uninstall..."
+                    )
+                cleanup_success &= self._force_cleanup_containers(verbose)
 
             # Step 4: Handle data removal ONLY when explicitly requested
             if remove_data:
@@ -3109,10 +3132,13 @@ class DockerManager:
                     self.console.print("🗂️  Removing data volumes and directories...")
 
                 # Clean up named volumes (new approach)
-                cleanup_success &= self._cleanup_named_volumes(verbose)
-
-                # Still clean up any old bind mount directories for backward compatibility
-                cleanup_success &= self._cleanup_data_directories(verbose, force)
+                volumes_success = self._cleanup_named_volumes(verbose)
+                if not volumes_success:
+                    status_tracker["named_volume_cleanup"]["success"] = False
+                    status_tracker["named_volume_cleanup"][
+                        "error"
+                    ] = "Named volume cleanup failed"
+                cleanup_success &= volumes_success
 
             # Step 5: Clean up compose file and networks
             if verbose:
@@ -3145,27 +3171,38 @@ class DockerManager:
                         )
                     validation_success = True
                 else:
-                    # Wait for containers to stop and ports to be released
+                    # Wait for containers to stop and ports to be released (PROJECT-SCOPED)
                     container_engine = self._get_available_runtime()
                     if not container_engine:
                         raise RuntimeError("Neither podman nor docker is available")
 
-                    # Find all cidx containers for validation
-                    list_cmd = [container_engine, "ps", "-a", "--format", "{{.Names}}"]
+                    # Get project hash for current project to ensure project-scoped operations
+                    project_root = Path.cwd()
+                    project_hash = self.port_registry._calculate_project_hash(
+                        project_root
+                    )
+
+                    # Find only containers for CURRENT PROJECT using project hash filtering
+                    list_cmd = [
+                        container_engine,
+                        "ps",
+                        "-a",
+                        "--format",
+                        "{{.Names}}",
+                        "--filter",
+                        f"name=cidx-{project_hash}-",  # PROJECT-SCOPED: Only current project
+                    ]
                     try:
                         list_result = subprocess.run(
                             list_cmd, capture_output=True, text=True, timeout=10
                         )
                         if list_result.returncode == 0:
-                            all_containers = (
-                                list_result.stdout.strip().split("\n")
-                                if list_result.stdout.strip()
-                                else []
-                            )
+                            # Already filtered by project hash, just parse the names
                             container_names = [
-                                name
-                                for name in all_containers
-                                if name.startswith("cidx-")
+                                name.strip()
+                                for name in list_result.stdout.strip().split("\n")
+                                if name.strip()
+                                and name.strip().startswith(f"cidx-{project_hash}-")
                             ]
                         else:
                             container_names = []
@@ -3187,13 +3224,36 @@ class DockerManager:
                             style="yellow",
                         )
 
-                    # Additional validation check for legacy compatibility
-                    legacy_validation_success = self._validate_cleanup(verbose)
-                    validation_success = (
-                        validation_success and legacy_validation_success
-                    )
+                    # Comprehensive cleanup validation for uninstall operations
+                    if remove_data:  # Only for uninstall operations
+                        complete_validation_success = self._validate_complete_cleanup(
+                            verbose
+                        )
+                        if verbose and not complete_validation_success:
+                            self.console.print(
+                                "⚠️  Complete cleanup validation failed - some cidx containers may still exist",
+                                style="yellow",
+                            )
+                        validation_success = (
+                            validation_success and complete_validation_success
+                        )
 
+                if not validation_success:
+                    status_tracker["cleanup_validation"]["success"] = False
+                    status_tracker["cleanup_validation"][
+                        "error"
+                    ] = "Cleanup validation failed"
                 cleanup_success &= validation_success
+
+            # Enhanced status summary reporting for verbose mode
+            if verbose:
+                self._provide_comprehensive_status_summary(
+                    status_tracker, cleanup_success
+                )
+
+            # Enhanced actionable guidance for failed cleanups
+            if not cleanup_success and verbose:
+                self._provide_actionable_cleanup_guidance(status_tracker)
 
             # Final result
             if cleanup_success:
@@ -3209,8 +3269,140 @@ class DockerManager:
             self.console.print(f"❌ Error during cleanup: {e}", style="red")
             return False
 
+    def cleanup_with_final_guidance(
+        self,
+        remove_data: bool = False,
+        force: bool = False,
+        verbose: bool = False,
+        validate: bool = False,
+    ) -> bool:
+        """Enhanced cleanup with comprehensive final status reporting and manual guidance.
+
+        This method extends the regular cleanup with detailed status tracking and
+        provides actionable guidance for manual cleanup when automated cleanup fails.
+        """
+        # Track specific operation results
+        operation_results = {
+            "Container removal": False,
+            "Volume cleanup": False,
+            "Final validation": False,
+        }
+
+        # Perform individual operations to track their results
+        try:
+            # Container cleanup
+            operation_results["Container removal"] = self._force_cleanup_containers(
+                verbose
+            )
+
+            # Volume cleanup
+            operation_results["Volume cleanup"] = self._cleanup_named_volumes(verbose)
+
+            # Final validation
+            if validate:
+                operation_results["Final validation"] = self._validate_complete_cleanup(
+                    verbose
+                )
+            else:
+                operation_results["Final validation"] = True  # Skip validation
+
+        except Exception as e:
+            if verbose:
+                self.console.print(
+                    f"❌ Error during cleanup operations: {e}", style="red"
+                )
+            return False
+
+        # Determine overall success
+        overall_success = all(operation_results.values())
+
+        # Provide comprehensive final status summary
+        if verbose:
+            self.console.print("📋 Final Cleanup Status Summary:", style="bold")
+
+            # Report individual operation status
+            for operation, success in operation_results.items():
+                status_icon = "✅" if success else "❌"
+                status_text = "SUCCESS" if success else "FAILED"
+                self.console.print(f"{status_icon} {operation}: {status_text}")
+
+            # Provide manual cleanup guidance if needed (PROJECT-SCOPED)
+            if not overall_success:
+                self.console.print(
+                    "🔧 Manual cleanup may be required. Try these commands (Current Project Only):",
+                    style="yellow",
+                )
+
+                # Get the container engine and project hash for the commands
+                container_engine = self._get_available_runtime()
+                engine_name = container_engine or "docker"
+                project_root = Path.cwd()
+                project_hash = self.port_registry._calculate_project_hash(project_root)
+
+                self.console.print(
+                    f"   {engine_name} ps -a | grep cidx-{project_hash}- | awk '{{print $1}}' | xargs {engine_name} rm -f"
+                )
+                self.console.print(
+                    f"   {engine_name} volume ls | grep cidx-{project_hash}- | awk '{{print $2}}' | xargs {engine_name} volume rm"
+                )
+
+        return overall_success
+
+    def _provide_comprehensive_status_summary(
+        self, status_tracker: dict, overall_success: bool
+    ) -> None:
+        """Provide comprehensive status summary for cleanup operations."""
+        self.console.print("📊 Cleanup Status Summary:", style="cyan")
+
+        for operation, status in status_tracker.items():
+            operation_name = operation.replace("_", " ").title()
+            if status["success"]:
+                self.console.print(f"  ✅ {operation_name}: Success", style="green")
+            else:
+                error_detail = f" - {status['error']}" if status["error"] else ""
+                self.console.print(
+                    f"  ❌ {operation_name}: Failed{error_detail}", style="red"
+                )
+
+    def _provide_actionable_cleanup_guidance(self, status_tracker: dict) -> None:
+        """Provide actionable guidance when cleanup fails.
+
+        CRITICAL: Uses project hash-based filtering to prevent cross-project operations.
+        """
+        container_engine = self._get_available_runtime() or "podman"
+
+        # Get project hash for current project to ensure project-scoped guidance
+        project_root = Path.cwd()
+        project_hash = self.port_registry._calculate_project_hash(project_root)
+
+        self.console.print(
+            "🔧 Manual Cleanup Required (Current Project Only):", style="yellow"
+        )
+        self.console.print(
+            f"1. Check for remaining containers: {container_engine} ps -a --filter name=cidx-{project_hash}-"
+        )
+        self.console.print(
+            f"2. Manually remove containers: {container_engine} rm -f <container-name>"
+        )
+        self.console.print(
+            f"3. Check for remaining volumes: {container_engine} volume ls --filter name=cidx-{project_hash}-"
+        )
+        self.console.print(
+            f"4. Manually remove volumes: {container_engine} volume rm <volume-name>"
+        )
+        self.console.print(
+            "5. Check for root-owned files: sudo find .code-indexer -user root"
+        )
+        self.console.print("6. Remove root files: sudo rm -rf .code-indexer/qdrant/")
+
     def _force_cleanup_containers(self, verbose: bool = False) -> bool:
-        """Force cleanup all cidx containers system-wide."""
+        """Force cleanup containers for CURRENT PROJECT ONLY using comprehensive discovery.
+
+        Uses project hash-based discovery to find ALL containers belonging to current project,
+        not just the 3 predefined ones (qdrant, ollama, data-cleaner).
+        Enhanced to handle ALL container states (Created, Running, Exited, Paused)
+        and SCOPED to only affect containers belonging to the current project.
+        """
         import subprocess
 
         success = True
@@ -3218,72 +3410,355 @@ class DockerManager:
         if not container_engine:
             raise RuntimeError("Neither podman nor docker is available")
 
-        # Find all cidx containers system-wide
+        # Get project hash for comprehensive container discovery
         try:
-            list_cmd = [container_engine, "ps", "-a", "--format", "{{.Names}}"]
+            # Get project configuration to determine project hash
+            from ..config import ConfigManager
+
+            config_manager = ConfigManager.create_with_backtrack()
+            project_config = config_manager.load()
+
+            # Determine project hash for comprehensive discovery
+            if (
+                hasattr(project_config, "project_containers")
+                and project_config.project_containers
+                and project_config.project_containers.project_hash  # Ensure it's not empty
+            ):
+                project_hash = project_config.project_containers.project_hash
+            else:
+                # Generate project hash from current working directory
+                from pathlib import Path
+
+                project_root = Path.cwd()
+                project_hash = self.port_registry._calculate_project_hash(project_root)
+
+            if verbose:
+                self.console.print(
+                    f"🎯 Discovering ALL containers for project hash: {project_hash}"
+                )
+
+        except Exception as e:
+            if verbose:
+                self.console.print(
+                    f"❌ Error getting project configuration: {e}", style="red"
+                )
+            return False
+
+        # Comprehensive discovery: Find ALL containers with current project hash pattern
+        try:
+            # Single discovery call to find all containers with project hash pattern
+            discover_cmd = [
+                container_engine,
+                "ps",
+                "-a",
+                "--format",
+                "{{.Names}}\t{{.State}}",
+                "--filter",
+                f"name=cidx-{project_hash}-",  # Match all containers with project hash
+            ]
             result = subprocess.run(
-                list_cmd, capture_output=True, text=True, timeout=10
+                discover_cmd, capture_output=True, text=True, timeout=10
             )
 
             if result.returncode != 0:
                 if verbose:
                     self.console.print(
-                        f"❌ Failed to list containers: {result.stderr}", style="red"
+                        f"❌ Failed to discover containers: {result.stderr}",
+                        style="red",
                     )
                 return False
 
-            # Filter for cidx containers
-            all_containers = (
-                result.stdout.strip().split("\n") if result.stdout.strip() else []
-            )
-            container_names = [
-                name for name in all_containers if name.startswith("cidx-")
-            ]
+            # Parse discovered containers
+            container_info = []
+            if result.stdout.strip():
+                for line in result.stdout.strip().split("\n"):
+                    if line.strip() and "\t" in line:
+                        parts = line.strip().split("\t")
+                        if len(parts) >= 2:
+                            container_name = parts[0]
+                            container_state = parts[1]
+                            # Verify container matches our project hash pattern (double-check)
+                            if container_name.startswith(f"cidx-{project_hash}-"):
+                                container_info.append((container_name, container_state))
+                    elif line.strip() and line.strip().startswith(
+                        f"cidx-{project_hash}-"
+                    ):
+                        # Fallback for lines without state info
+                        container_info.append((line.strip(), "unknown"))
 
-            if verbose and container_names:
-                self.console.print(f"🔍 Found cidx containers: {container_names}")
+            if not container_info:
+                if verbose:
+                    self.console.print("ℹ️  No project containers found to cleanup")
+                return True  # Success - nothing to clean up
+
+            if verbose:
+                self.console.print("🔍 Discovered project containers for cleanup:")
+                for name, state in container_info:
+                    self.console.print(f"  - {name} (state: {state})")
+                self.console.print(
+                    "🛑 Stopping and removing ALL discovered project containers..."
+                )
+
+            # Extract container names for processing
+            container_names = [name for name, state in container_info]
 
         except Exception as e:
             if verbose:
-                self.console.print(f"❌ Error listing containers: {e}", style="red")
+                self.console.print(
+                    f"❌ Error during container discovery: {e}", style="red"
+                )
             return False
 
+        # Process each container with comprehensive state handling
         for container_name in container_names:
+            container_removed = False
             try:
-                # Force kill container
-                kill_result = subprocess.run(
-                    [container_engine, "kill", container_name],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
-
-                # Force remove container
-                rm_result = subprocess.run(
-                    [container_engine, "rm", "-f", container_name],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
-
-                if verbose:
-                    if kill_result.returncode == 0 or rm_result.returncode == 0:
+                # Always attempt to kill first (handles Running/Paused states)
+                # For Created/Exited states, kill will fail but that's expected
+                try:
+                    kill_result = subprocess.run(
+                        [container_engine, "kill", container_name],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
+                    # Enhanced error reporting for kill failures
+                    if kill_result.returncode != 0 and verbose:
+                        # Only report as error if it's not a benign "container not running" case
+                        if (
+                            "not running" not in kill_result.stderr.lower()
+                            and "no such container" not in kill_result.stderr.lower()
+                        ):
+                            self.console.print(
+                                f"❌ Failed to kill container {container_name}: {kill_result.stderr}",
+                                style="red",
+                            )
+                except subprocess.TimeoutExpired:
+                    # Handle timeout gracefully, continue to removal
+                    if verbose:
                         self.console.print(
-                            f"✅ Force removed container: {container_name}"
+                            f"⚠️  Kill timeout for {container_name}, continuing to removal"
                         )
+
+                # Force remove regardless of kill result (handles ALL states)
+                try:
+                    rm_result = subprocess.run(
+                        [container_engine, "rm", "-f", container_name],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
+
+                    if rm_result.returncode == 0:
+                        container_removed = True
+                        if verbose:
+                            self.console.print(
+                                f"✅ Removed container: {container_name}"
+                            )
                     else:
-                        self.console.print(
-                            f"⚠️  Container {container_name} may not have existed"
-                        )
+                        # Enhanced error reporting for remove failures
+                        if verbose:
+                            self.console.print(
+                                f"❌ Failed to remove container {container_name}: {rm_result.stderr}",
+                                style="red",
+                            )
+
+                except subprocess.TimeoutExpired:
+                    # Handle removal timeout
+                    success = False
+                    if verbose:
+                        self.console.print(f"❌ Removal timeout for {container_name}")
 
             except Exception as e:
                 success = False
                 if verbose:
                     self.console.print(
-                        f"❌ Failed to force remove {container_name}: {e}", style="red"
+                        f"❌ Failed to remove {container_name}: {e}", style="red"
                     )
 
+            # Track overall success - if any container fails to be removed completely
+            if not container_removed:
+                success = False
+
         return success
+
+    def _force_cleanup_containers_with_guidance(self, verbose: bool = False) -> bool:
+        """Force cleanup containers with enhanced error categorization and recovery guidance.
+
+        This method extends the standard force cleanup with intelligent error analysis
+        and actionable recovery suggestions based on error patterns.
+
+        CRITICAL: Uses project hash-based filtering to prevent cross-project operations.
+        """
+        import subprocess
+
+        success = True
+        container_engine = self._get_available_runtime()
+        if not container_engine:
+            raise RuntimeError("Neither podman nor docker is available")
+
+        # Get project hash for current project to ensure project-scoped operations
+        project_root = Path.cwd()
+        project_hash = self.port_registry._calculate_project_hash(project_root)
+
+        # Find ALL containers for CURRENT PROJECT ONLY using project hash filtering
+        try:
+            list_cmd = [
+                container_engine,
+                "ps",
+                "-a",
+                "--format",
+                "{{.Names}}",
+                "--filter",
+                f"name=cidx-{project_hash}-",  # PROJECT-SCOPED: Only current project
+            ]
+            result = subprocess.run(
+                list_cmd, capture_output=True, text=True, timeout=10
+            )
+
+            if result.returncode != 0:
+                error_message = result.stderr.strip()
+                if verbose:
+                    self.console.print(
+                        f"❌ Failed to list containers: {error_message}", style="red"
+                    )
+                    # Provide categorized guidance based on error type
+                    self._provide_error_guidance(
+                        error_message, "container_listing", verbose
+                    )
+                return False
+
+            # Parse container names - already filtered by project hash
+            container_names = [
+                name.strip()
+                for name in result.stdout.strip().split("\n")
+                if name.strip() and name.strip().startswith(f"cidx-{project_hash}-")
+            ]
+
+            if verbose and container_names:
+                self.console.print(f"🔍 Found project containers: {container_names}")
+
+        except Exception as e:
+            if verbose:
+                self.console.print(f"❌ Error listing containers: {e}", style="red")
+                self._provide_error_guidance(str(e), "general_error", verbose)
+            return False
+
+        # Process each container with comprehensive state handling
+        for container_name in container_names:
+            container_removed = False
+            try:
+                # Always attempt to kill first (handles Running/Paused states)
+                # For Created/Exited states, kill will fail but that's expected
+                try:
+                    kill_result = subprocess.run(
+                        [container_engine, "kill", container_name],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
+                    # Check if kill failed with specific errors
+                    if (
+                        kill_result.returncode != 0
+                        and "permission denied" in kill_result.stderr.lower()
+                    ):
+                        if verbose:
+                            self._provide_error_guidance(
+                                kill_result.stderr, "permission_denied", verbose
+                            )
+                    # Don't fail if kill doesn't work - continue to removal
+                except subprocess.TimeoutExpired:
+                    # Handle timeout gracefully, continue to removal
+                    if verbose:
+                        self.console.print(
+                            f"⚠️  Kill timeout for {container_name}, continuing to removal"
+                        )
+
+                # Force remove regardless of kill result (handles ALL states)
+                try:
+                    rm_result = subprocess.run(
+                        [container_engine, "rm", "-f", container_name],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
+
+                    if rm_result.returncode == 0:
+                        container_removed = True
+                        if verbose:
+                            self.console.print(
+                                f"✅ Removed container: {container_name}"
+                            )
+                    else:
+                        if verbose:
+                            self.console.print(
+                                f"⚠️  Container removal warning for {container_name}: {rm_result.stderr}"
+                            )
+                            # Provide specific guidance based on removal error
+                            self._provide_error_guidance(
+                                rm_result.stderr, "container_removal", verbose
+                            )
+
+                except subprocess.TimeoutExpired:
+                    # Handle removal timeout
+                    success = False
+                    if verbose:
+                        self.console.print(f"❌ Removal timeout for {container_name}")
+
+            except Exception as e:
+                success = False
+                if verbose:
+                    self.console.print(
+                        f"❌ Failed to remove {container_name}: {e}", style="red"
+                    )
+                    self._provide_error_guidance(str(e), "general_error", verbose)
+
+            # Track overall success - if any container fails to be removed completely
+            if not container_removed:
+                success = False
+
+        return success
+
+    def _provide_error_guidance(
+        self, error_message: str, error_category: str, verbose: bool = False
+    ):
+        """Provide categorized error guidance and recovery suggestions."""
+        if not verbose:
+            return
+
+        error_lower = error_message.lower()
+
+        if error_category == "permission_denied" or "permission denied" in error_lower:
+            self.console.print(
+                "💡 Permission denied errors can be resolved by:", style="blue"
+            )
+            self.console.print("   • Running with sudo (if using Docker)")
+            self.console.print("   • Checking Docker daemon is running")
+            self.console.print("   • Ensuring user is in docker group")
+
+        elif "device or resource busy" in error_lower:
+            self.console.print(
+                "💡 Resource busy errors can be resolved by:", style="blue"
+            )
+            self.console.print("   • Stopping processes using the container")
+            self.console.print("   • Waiting a few seconds and retrying")
+            self.console.print("   • Using 'lsof' to find processes holding resources")
+
+        elif "no space left" in error_lower:
+            self.console.print("💡 Disk space errors can be resolved by:", style="blue")
+            self.console.print("   • Freeing disk space with 'docker system prune'")
+            self.console.print(
+                "   • Removing unused volumes with 'docker volume prune'"
+            )
+            self.console.print("   • Checking disk usage with 'df -h'")
+
+        elif error_category == "container_listing":
+            self.console.print(
+                "💡 Container listing issues can be resolved by:", style="blue"
+            )
+            self.console.print("   • Checking if Docker/Podman service is running")
+            self.console.print("   • Verifying container engine installation")
+            self.console.print("   • Checking user permissions for container access")
 
     def _cleanup_data_directories(
         self, verbose: bool = False, force: bool = False
@@ -3395,25 +3870,35 @@ class DockerManager:
             # Don't fail validation for port issues alone
             # validation_success = False
 
-        # Check that containers are actually gone
+        # Check that containers are actually gone (PROJECT-SCOPED)
         container_engine = self._get_available_runtime()
         if not container_engine:
             raise RuntimeError("Neither podman nor docker is available")
 
-        # Find all cidx containers for validation
-        list_cmd = [container_engine, "ps", "-a", "--format", "{{.Names}}"]
+        # Get project hash for current project to ensure project-scoped operations
+        project_root = Path.cwd()
+        project_hash = self.port_registry._calculate_project_hash(project_root)
+
+        # Find only containers for CURRENT PROJECT using project hash filtering
+        list_cmd = [
+            container_engine,
+            "ps",
+            "-a",
+            "--format",
+            "{{.Names}}",
+            "--filter",
+            f"name=cidx-{project_hash}-",  # PROJECT-SCOPED: Only current project
+        ]
         try:
             list_result = subprocess.run(
                 list_cmd, capture_output=True, text=True, timeout=10
             )
             if list_result.returncode == 0:
-                all_containers = (
-                    list_result.stdout.strip().split("\n")
-                    if list_result.stdout.strip()
-                    else []
-                )
+                # Already filtered by project hash, just parse the names
                 container_names = [
-                    name for name in all_containers if name.startswith("cidx-")
+                    name.strip()
+                    for name in list_result.stdout.strip().split("\n")
+                    if name.strip() and name.strip().startswith(f"cidx-{project_hash}-")
                 ]
             else:
                 container_names = []
@@ -3460,67 +3945,94 @@ class DockerManager:
 
         return validation_success
 
-    def _verify_no_root_owned_files(self, verbose: bool = False) -> bool:
-        """Verify that no root-owned files remain that could cause container startup issues."""
+    def _validate_complete_cleanup(self, verbose: bool = False) -> bool:
+        """Validate that ALL project containers are removed after cleanup operations.
+
+        This method provides comprehensive cleanup validation that checks for ANY
+        remaining containers for the CURRENT PROJECT ONLY, regardless of their state.
+
+        CRITICAL: Uses project hash-based filtering to prevent cross-project operations.
+
+        Args:
+            verbose: Whether to print detailed feedback about remaining containers
+
+        Returns:
+            bool: True if no project containers remain, False otherwise
+        """
         import subprocess
 
+        container_engine = self._get_available_runtime()
+        if not container_engine:
+            if verbose:
+                self.console.print(
+                    "❌ No container engine available for validation", style="red"
+                )
+            return False
+
+        # Get project hash for current project to ensure project-scoped operations
+        project_root = Path.cwd()
+        project_hash = self.port_registry._calculate_project_hash(project_root)
+
+        # Check for ANY remaining containers for CURRENT PROJECT ONLY
+        list_cmd = [
+            container_engine,
+            "ps",
+            "-a",
+            "--format",
+            "{{.Names}}\t{{.State}}",
+            "--filter",
+            f"name=cidx-{project_hash}-",  # PROJECT-SCOPED: Only current project
+        ]
+
+        try:
+            result = subprocess.run(
+                list_cmd, capture_output=True, text=True, timeout=10
+            )
+
+            if result.returncode != 0:
+                if verbose:
+                    self.console.print(
+                        f"❌ Failed to list containers: {result.stderr}", style="red"
+                    )
+                return False
+
+            if result.stdout.strip():
+                # Parse remaining containers
+                remaining_containers = result.stdout.strip().split("\n")
+                if verbose:
+                    self.console.print("❌ Remaining containers found after cleanup:")
+                    for container in remaining_containers:
+                        name, state = container.split("\t")
+                        self.console.print(f"  - {name} (state: {state})")
+                return False
+
+            if verbose:
+                self.console.print(
+                    "✅ Complete cleanup validation passed - no containers remain"
+                )
+            return True
+
+        except subprocess.TimeoutExpired:
+            if verbose:
+                self.console.print("❌ Container validation timeout", style="red")
+            return False
+        except subprocess.CalledProcessError as e:
+            if verbose:
+                self.console.print(f"❌ Container validation failed: {e}", style="red")
+            return False
+        except Exception as e:
+            if verbose:
+                self.console.print(
+                    f"❌ Unexpected error during validation: {e}", style="red"
+                )
+            return False
+
+    def _verify_no_root_owned_files(self, verbose: bool = False) -> bool:
+        """Verify that no root-owned files remain that could cause container startup issues."""
         verification_success = True
 
         # Check named volumes for root-owned files
         verification_success &= self._verify_named_volumes_ownership(verbose)
-
-        # Check legacy directories for backward compatibility
-        directories_to_check = []
-
-        # Local directory
-        local_data_dir = Path(".code-indexer")
-        if local_data_dir.exists():
-            directories_to_check.append(local_data_dir)
-
-        # Global directories
-        global_dir = Path.home() / ".code-indexer-data"
-
-        if global_dir.exists():
-            directories_to_check.append(global_dir)
-
-        # Also check old global directory structure
-        old_global_dir = Path.home() / ".code-indexer" / "global"
-        if old_global_dir.exists():
-            directories_to_check.append(old_global_dir)
-
-        for data_dir in directories_to_check:
-            try:
-                # Find all root-owned files/directories
-                result = subprocess.run(
-                    ["find", str(data_dir), "-user", "root", "-o", "-group", "root"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
-
-                if result.returncode == 0 and result.stdout.strip():
-                    verification_success = False
-                    root_owned_files = result.stdout.strip().split("\n")
-                    if verbose:
-                        self.console.print(
-                            f"❌ Found root-owned files in {data_dir}:", style="red"
-                        )
-                        for file_path in root_owned_files:
-                            self.console.print(f"  {file_path}", style="red")
-                    else:
-                        self.console.print(
-                            f"❌ Found {len(root_owned_files)} root-owned files in {data_dir}",
-                            style="red",
-                        )
-                elif verbose:
-                    self.console.print(f"✅ No root-owned files found in {data_dir}")
-
-            except Exception as e:
-                if verbose:
-                    self.console.print(
-                        f"⚠️  Could not check for root-owned files in {data_dir}: {e}",
-                        style="yellow",
-                    )
 
         return verification_success
 
@@ -3660,7 +4172,7 @@ class DockerManager:
         return success
 
     def _cleanup_named_volumes(self, verbose: bool = False) -> bool:
-        """Clean up named volumes for Ollama and Qdrant data."""
+        """Clean up named volumes for CURRENT PROJECT ONLY with enhanced reporting."""
         import subprocess
 
         success = True
@@ -3668,40 +4180,118 @@ class DockerManager:
         if not container_engine:
             raise RuntimeError("Neither podman nor docker is available")
 
-        # Volume names to clean up
-        volume_names = ["ollama_data", "qdrant_data"]
+        # Get project-specific volume names to target ONLY current project volumes
+        try:
+            # Get project configuration to determine which volumes belong to this project
+            from ..config import ConfigManager
 
+            config_manager = ConfigManager.create_with_backtrack()
+            project_config = config_manager.load()
+
+            # Determine project-specific volume patterns
+            if (
+                hasattr(project_config, "project_containers")
+                and project_config.project_containers
+                and project_config.project_containers.project_hash  # Ensure it's not empty
+            ):
+                project_hash = project_config.project_containers.project_hash
+            else:
+                # Generate project hash from current working directory
+                from pathlib import Path
+
+                project_root = Path.cwd()
+                project_hash = self.port_registry._calculate_project_hash(project_root)
+
+            # Project-scoped volume patterns (these are the common volume naming patterns)
+            target_volume_patterns = [
+                f"cidx-{project_hash}-qdrant-data",
+                f"cidx-{project_hash}-ollama-data",
+                f"cidx-{project_hash}-data-cleaner-data",
+                "ollama_data",  # Generic volume that might be shared, handle carefully
+            ]
+
+            if verbose:
+                self.console.print(
+                    f"🎯 Checking for project volumes (hash: {project_hash})"
+                )
+
+        except Exception as e:
+            if verbose:
+                self.console.print(
+                    f"❌ Error getting project configuration: {e}", style="red"
+                )
+            return False
+
+        # Check which target volumes actually exist
+        try:
+            volume_names = []
+            for volume_pattern in target_volume_patterns:
+                # For generic volumes like "ollama_data", we need to be more careful
+                if volume_pattern == "ollama_data":
+                    # Only remove generic volumes if no other containers are using them
+                    # For now, we'll skip generic volumes to be safe
+                    continue
+
+                # Check if this specific volume exists
+                check_cmd = [
+                    container_engine,
+                    "volume",
+                    "ls",
+                    "--format",
+                    "{{.Name}}",
+                    "--filter",
+                    f"name=^{volume_pattern}$",  # Exact match to avoid partial matches
+                ]
+                result = subprocess.run(
+                    check_cmd, capture_output=True, text=True, timeout=10
+                )
+
+                if result.returncode == 0 and result.stdout.strip():
+                    found_volumes = [
+                        name.strip()
+                        for name in result.stdout.strip().split("\n")
+                        if name.strip() == volume_pattern
+                    ]
+                    volume_names.extend(found_volumes)
+
+            if not volume_names:
+                if verbose:
+                    self.console.print("ℹ️  No project volumes found to cleanup")
+                return True  # Success - nothing to clean up
+
+            if verbose:
+                self.console.print("🗂️  Found project volumes to cleanup:")
+                for volume_name in volume_names:
+                    self.console.print(f"  - {volume_name}")
+
+        except Exception as e:
+            if verbose:
+                self.console.print(f"❌ Error checking volumes: {e}", style="red")
+            return False
+
+        # Process each volume with enhanced error reporting
         for volume_name in volume_names:
             try:
-                # Check if volume exists
-                result = subprocess.run(
-                    [container_engine, "volume", "inspect", volume_name],
+                # Attempt volume removal
+                remove_result = subprocess.run(
+                    [container_engine, "volume", "rm", volume_name],
                     capture_output=True,
                     text=True,
                     timeout=10,
                 )
 
-                if result.returncode == 0:
-                    # Volume exists, remove it
-                    remove_result = subprocess.run(
-                        [container_engine, "volume", "rm", volume_name],
-                        capture_output=True,
-                        text=True,
-                        timeout=10,
-                    )
-
-                    if remove_result.returncode == 0:
-                        if verbose:
-                            self.console.print(f"✅ Removed volume: {volume_name}")
-                    else:
-                        success = False
-                        if verbose:
-                            self.console.print(
-                                f"❌ Failed to remove volume {volume_name}: {remove_result.stderr}",
-                                style="red",
-                            )
-                elif verbose:
-                    self.console.print(f"ℹ️  Volume {volume_name} does not exist")
+                if remove_result.returncode == 0:
+                    if verbose:
+                        self.console.print(
+                            f"✅ Removed volume: {volume_name}", style="green"
+                        )
+                else:
+                    success = False
+                    if verbose:
+                        self.console.print(
+                            f"❌ Failed to remove volume {volume_name}: {remove_result.stderr}",
+                            style="red",
+                        )
 
             except Exception as e:
                 success = False
@@ -4178,9 +4768,47 @@ class DockerManager:
             )
 
             if not data_cleaner_ready:
-                self.console.print(
-                    "❌ Data cleaner failed to become ready", style="red"
-                )
+                # Enhanced error reporting: Get container status and provide specific feedback
+                try:
+                    status_cmd = [
+                        container_engine,
+                        "ps",
+                        "-a",
+                        "--format",
+                        "{{.Names}}\t{{.State}}",
+                        "--filter",
+                        f"name={container_name}",
+                    ]
+                    status_result = subprocess.run(
+                        status_cmd, capture_output=True, text=True, timeout=10
+                    )
+
+                    if status_result.returncode == 0 and status_result.stdout.strip():
+                        container_info = status_result.stdout.strip()
+                        container_parts = container_info.split("\t")
+                        if len(container_parts) >= 2:
+                            name, state = container_parts[0], container_parts[1]
+                            self.console.print(
+                                f"❌ Data cleaner container failed: {name} (state: {state})",
+                                style="red",
+                            )
+                            self.console.print(
+                                f"💡 To debug: {container_engine} logs {name}",
+                                style="blue",
+                            )
+                        else:
+                            self.console.print(
+                                f"❌ Data cleaner failed to become ready: {container_info}",
+                                style="red",
+                            )
+                    else:
+                        self.console.print(
+                            "❌ Data cleaner failed to become ready", style="red"
+                        )
+                except Exception:
+                    self.console.print(
+                        "❌ Data cleaner failed to become ready", style="red"
+                    )
                 return False
 
             # Use container exec to run cleanup commands with shell expansion
@@ -4266,6 +4894,23 @@ class DockerManager:
                 self.console.print("❌ No container engine available")
                 return False
 
+            # Load project configuration for accurate container name resolution
+            from ..config import ConfigManager
+
+            config_manager = ConfigManager.create_with_backtrack()
+            project_config = config_manager.load()
+
+            # Get project container configuration
+            if not (
+                hasattr(project_config, "project_containers")
+                and project_config.project_containers
+            ):
+                raise RuntimeError(
+                    "Project container configuration not available in config"
+                )
+
+            project_config_dict = project_config.project_containers
+
             # Stop ollama and qdrant services individually with verification
             for service in ["ollama", "qdrant"]:
                 self.console.print(f"🛑 Stopping {service} service...")
@@ -4286,8 +4931,8 @@ class DockerManager:
                         f"⚠️  Warning: Failed to stop {service}: {result.stderr}"
                     )
 
-                # Verify the container is actually stopped
-                container_name = f"{self.project_name}-{service}-1"
+                # Verify the container is actually stopped using correct container name
+                container_name = self.get_container_name(service, project_config_dict)
                 verify_cmd = [
                     container_engine,
                     "ps",
