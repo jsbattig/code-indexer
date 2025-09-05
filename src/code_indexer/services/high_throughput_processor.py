@@ -67,10 +67,150 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         self._content_id_lock = threading.Lock()
         self._database_lock = threading.Lock()
 
+        # File processing rate tracking for files/s metric
+        self._file_rate_lock = threading.Lock()
+        self._file_processing_start_time = None
+        self._file_completion_history = (
+            []
+        )  # List of (timestamp, files_completed) tuples
+        self._rolling_window_seconds = (
+            5.0  # Rolling window for smoothed files/s calculation
+        )
+        self._min_time_diff = 0.1  # Minimum time difference to avoid inflated rates
+
+        # Source bytes tracking for KB/s throughput reporting (Story 3)
+        self._source_bytes_lock = threading.Lock()
+        self._total_source_bytes_processed = (
+            0  # Thread-safe counter for cumulative source bytes
+        )
+        self._source_bytes_history = (
+            []
+        )  # List of (timestamp, total_bytes) tuples for smoothed KB/s
+
     def request_cancellation(self):
         """Request cancellation of processing."""
         self.cancelled = True
         logger.info("High throughput processing cancellation requested")
+
+    def _initialize_file_rate_tracking(self):
+        """Initialize file processing rate tracking."""
+        with self._file_rate_lock:
+            self._file_processing_start_time = time.time()
+            self._file_completion_history.clear()
+
+        # Initialize source bytes tracking for KB/s calculation (Story 3)
+        with self._source_bytes_lock:
+            self._total_source_bytes_processed = 0
+            self._source_bytes_history.clear()
+
+    def _calculate_files_per_second(self, current_files_completed: int) -> float:
+        """Calculate files per second using rolling window for smooth updates."""
+        current_time = time.time()
+
+        with self._file_rate_lock:
+            if not self._file_processing_start_time:
+                return 0.0
+
+            # Record current state (inline to avoid recursive lock)
+            self._file_completion_history.append(
+                (current_time, current_files_completed)
+            )
+
+            # Remove entries older than rolling window
+            cutoff_time = current_time - self._rolling_window_seconds
+            self._file_completion_history = [
+                (timestamp, count)
+                for timestamp, count in self._file_completion_history
+                if timestamp >= cutoff_time
+            ]
+
+            # Calculate smoothed files per second
+            if len(self._file_completion_history) >= 2:
+                # Get oldest and newest entries in window
+                oldest_time, oldest_count = self._file_completion_history[0]
+                newest_time, newest_count = self._file_completion_history[-1]
+
+                time_diff = newest_time - oldest_time
+                files_diff = newest_count - oldest_count
+
+                # Only use rolling window if we have sufficient time difference
+                if time_diff >= self._min_time_diff and files_diff > 0:
+                    return float(files_diff / time_diff)
+                else:
+                    # Fall back to total average if window is too small
+                    elapsed_total = current_time - self._file_processing_start_time
+                    if elapsed_total >= self._min_time_diff:
+                        return float(current_files_completed / elapsed_total)
+                    else:
+                        return 0.0
+            else:
+                # Fall back to total average if not enough data points
+                elapsed_total = current_time - self._file_processing_start_time
+                if elapsed_total >= self._min_time_diff:
+                    return float(current_files_completed / elapsed_total)
+                else:
+                    return 0.0
+
+    def _add_source_bytes_processed(self, bytes_count: int) -> None:
+        """Thread-safe method to add processed source bytes for KB/s calculation."""
+        with self._source_bytes_lock:
+            self._total_source_bytes_processed += bytes_count
+            current_time = time.time()
+            self._source_bytes_history.append(
+                (current_time, self._total_source_bytes_processed)
+            )
+
+            # Remove entries older than rolling window to prevent memory growth
+            cutoff_time = current_time - self._rolling_window_seconds
+            self._source_bytes_history = [
+                (timestamp, total_bytes)
+                for timestamp, total_bytes in self._source_bytes_history
+                if timestamp >= cutoff_time
+            ]
+
+    def _calculate_kbs_throughput(self) -> float:
+        """Calculate KB/s throughput using rolling window for smooth updates."""
+        current_time = time.time()
+
+        with self._source_bytes_lock:
+            if (
+                not self._file_processing_start_time
+                or self._total_source_bytes_processed == 0
+            ):
+                return 0.0
+
+            # Use rolling window for smoothed KB/s if we have sufficient data points
+            if len(self._source_bytes_history) >= 2:
+                # Get oldest and newest entries in window
+                oldest_time, oldest_bytes = self._source_bytes_history[0]
+                newest_time, newest_bytes = self._source_bytes_history[-1]
+
+                time_diff = newest_time - oldest_time
+                bytes_diff = newest_bytes - oldest_bytes
+
+                # Only use rolling window if we have sufficient time difference
+                if time_diff >= self._min_time_diff and bytes_diff > 0:
+                    return float((bytes_diff / 1024) / time_diff)
+                else:
+                    # Fall back to total average if window is too small
+                    elapsed_total = current_time - self._file_processing_start_time
+                    if (
+                        elapsed_total > 0
+                    ):  # Allow any positive time for KB/s calculation
+                        return float(
+                            (self._total_source_bytes_processed / 1024) / elapsed_total
+                        )
+                    else:
+                        return 0.0
+            else:
+                # Fall back to total average if not enough data points
+                elapsed_total = current_time - self._file_processing_start_time
+                if elapsed_total > 0:  # Allow any positive time for KB/s calculation
+                    return float(
+                        (self._total_source_bytes_processed / 1024) / elapsed_total
+                    )
+                else:
+                    return 0.0
 
     def process_files_high_throughput(
         self,
@@ -83,6 +223,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
 
         stats = ProcessingStats()
         stats.start_time = time.time()
+
+        # Initialize file processing rate tracking for files/s metric
+        self._initialize_file_rate_tracking()
 
         # Phase 1: Pre-process all files to create chunk queue
         all_chunk_tasks = []
@@ -133,7 +276,8 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
 
                 # Don't count files as processed until actually completed
                 # stats.files_processed will be updated during actual processing
-                stats.total_size += file_path.stat().st_size
+                file_size = file_path.stat().st_size
+                stats.total_size += file_size
 
             except Exception as e:
                 logger.error(f"Failed to process file {file_path}: {e}")
@@ -270,6 +414,15 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                         completed_files.add(current_file)
                         file_completion_status[current_file] = True
 
+                        # Track source bytes for KB/s calculation when file completes (Story 3)
+                        try:
+                            file_size = current_file.stat().st_size
+                            self._add_source_bytes_processed(file_size)
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to track source bytes for {current_file}: {e}"
+                            )
+
                         # Add all chunks for this completed file to the batch
                         batch_points.extend(file_chunks[current_file])
                         logger.debug(
@@ -331,10 +484,20 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                             )
                             file_status = f" ({file_pct:.0f}%)"
 
+                        # Calculate files per second for progress reporting
+                        files_per_second = self._calculate_files_per_second(
+                            files_completed
+                        )
+
+                        # Calculate KB/s throughput for source data ingestion rate (Story 3)
+                        kbs_throughput = self._calculate_kbs_throughput()
+
                         # Create comprehensive info message including file status for progress bar display
+                        # STORY 3: Added KB/s between files/s and threads to show source data throughput
                         info_msg = (
                             f"{files_completed}/{files_total} files ({file_progress_pct:.0f}%) | "
-                            f"{vector_stats.embeddings_per_second:.1f} emb/s | "
+                            f"{files_per_second:.1f} files/s | "
+                            f"{kbs_throughput:.1f} KB/s | "
                             f"{vector_stats.active_threads} threads | "
                             f"{display_file.name}{file_status}"
                         )
@@ -384,6 +547,26 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             f"High-throughput processing completed: "
             f"{stats.files_processed} files, {stats.chunks_created} chunks in {stats.end_time - stats.start_time:.2f}s"
         )
+
+        # STORY 1: Send final progress callback to reach 100% completion
+        # This ensures Rich Progress bar shows 100% instead of stopping at ~94%
+        if progress_callback and len(files) > 0:
+            # Calculate final KB/s throughput for completion message (Story 3)
+            final_kbs_throughput = self._calculate_kbs_throughput()
+
+            final_info_msg = (
+                f"{len(files)}/{len(files)} files (100%) | "
+                f"0.0 files/s | "
+                f"{final_kbs_throughput:.1f} KB/s | "
+                f"0 threads | "
+                f"✅ Completed"
+            )
+            progress_callback(
+                len(files),  # current = total for 100% completion
+                len(files),  # total files
+                Path(""),  # Empty path with info = progress bar description update
+                info=final_info_msg,
+            )
 
         return stats
 
