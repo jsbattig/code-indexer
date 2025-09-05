@@ -4,7 +4,7 @@ Smart incremental indexer that combines index and update functionality.
 ⚠️  CRITICAL PROGRESS REPORTING WARNING:
 This module calls progress_callback with setup messages using total=0.
 These MUST use total=0 to show as ℹ️ messages in CLI, not progress bar.
-See BranchAwareIndexer for file progress patterns (total>0).
+See HighThroughputProcessor for file progress patterns (total>0).
 """
 
 import logging
@@ -23,7 +23,7 @@ from .progressive_metadata import ProgressiveMetadata
 from .git_topology_service import GitTopologyService
 
 # Removed: SmartBranchIndexer (abandoned code)
-from .branch_aware_indexer import BranchAwareIndexer
+# Removed: BranchAwareIndexer (replaced with HighThroughputProcessor)
 from .indexing_lock import IndexingLockError, create_indexing_lock
 from .high_throughput_processor import HighThroughputProcessor
 from .vector_calculation_manager import get_default_thread_count
@@ -108,18 +108,8 @@ class SmartIndexer(HighThroughputProcessor):
             config_dir=Path(config.codebase_dir) / ".code-indexer"
         )
 
-        # Initialize new branch-aware indexer with graph optimization
-        self.branch_aware_indexer = BranchAwareIndexer(
-            qdrant_client,
-            embedding_provider,
-            self.fixed_size_chunker,
-            config,
-            progress_log=self.progress_log,
-            progressive_metadata=self.progressive_metadata,
-        )
-
-        # Configure branch tracking
-        self.branch_aware_indexer.metadata_file = metadata_path
+        # Note: BranchAwareIndexer replaced with HighThroughputProcessor git-aware methods
+        # All branch-aware functionality is now handled by HighThroughputProcessor
 
         # Initialize git hook manager for branch change detection
         self.git_hook_manager = GitHookManager(config.codebase_dir, metadata_path)
@@ -339,8 +329,8 @@ class SmartIndexer(HighThroughputProcessor):
                             old_branch, current_branch
                         )
 
-                        # Use the new branch-aware indexer
-                        branch_result = self.branch_aware_indexer.index_branch_changes(
+                        # Use high-throughput parallel branch processing (4-8x faster)
+                        branch_result = self.process_branch_changes_high_throughput(
                             old_branch=old_branch,
                             new_branch=current_branch,
                             changed_files=analysis.files_to_reindex,
@@ -608,23 +598,22 @@ class SmartIndexer(HighThroughputProcessor):
 
             with open(debug_file, "a") as f:
                 f.write(
-                    f"[{datetime.datetime.now().isoformat()}] Calling branch_aware_indexer.index_branch_changes with {len(relative_files)} files\n"
+                    f"[{datetime.datetime.now().isoformat()}] Calling high-throughput parallel processing with {len(relative_files)} files\n"
                 )
                 f.flush()
 
-            branch_result = self.branch_aware_indexer.index_branch_changes(
-                old_branch="",  # No old branch for full index
-                new_branch=current_branch,
-                changed_files=relative_files,
-                unchanged_files=[],
-                collection_name=collection_name,
+            # Use direct high-throughput parallel processing for full index (4-8x faster)
+            # Bypass branch processing wrapper to maximize parallel utilization
+            high_throughput_stats = self.process_files_high_throughput(
+                files=files_to_index,  # Use absolute paths directly
+                vector_thread_count=vector_thread_count or 8,
+                batch_size=50,
                 progress_callback=progress_callback,
-                vector_thread_count=vector_thread_count,
             )
 
             with open(debug_file, "a") as f:
                 f.write(
-                    f"[{datetime.datetime.now().isoformat()}] branch_aware_indexer.index_branch_changes completed\n"
+                    f"[{datetime.datetime.now().isoformat()}] high-throughput parallel processing completed\n"
                 )
                 f.flush()
 
@@ -644,23 +633,16 @@ class SmartIndexer(HighThroughputProcessor):
                 except ValueError:
                     all_relative_files.append(str(file_path))
 
-            self.branch_aware_indexer.hide_files_not_in_branch(
+            # Use thread-safe branch isolation directly from high-throughput processor
+            self.hide_files_not_in_branch_thread_safe(
                 current_branch, all_relative_files, collection_name, progress_callback
             )
 
-            # Convert BranchIndexingResult to ProcessingStats
-            stats = ProcessingStats()
-            stats.files_processed = branch_result.files_processed
-            stats.chunks_created = branch_result.content_points_created
-            stats.failed_files = 0
-            stats.start_time = time.time() - branch_result.processing_time
-            stats.end_time = time.time()
-            stats.cancelled = branch_result.cancelled
+            # Use ProcessingStats directly from high-throughput processor
+            stats = high_throughput_stats
 
         except Exception as e:
-            logger.error(
-                f"BranchAwareIndexer failed during full index in git project: {e}"
-            )
+            logger.error(f"High-throughput processor failed during full index: {e}")
             # NO FALLBACK - fail fast in git projects
             raise RuntimeError(
                 f"Git-aware indexing failed and fallbacks are disabled. "
@@ -897,24 +879,8 @@ class SmartIndexer(HighThroughputProcessor):
         # Store file list for resumability
         self.progressive_metadata.set_files_to_index(files_to_index)
 
-        # Use BranchAwareIndexer for git-aware processing with parallel embeddings (SINGLE PROCESSING PATH)
+        # Use HighThroughputProcessor directly for git-aware processing (STORY 3 MIGRATION)
         try:
-            # Convert absolute paths to relative paths for BranchAwareIndexer
-            relative_files = []
-            for file_path in files_to_index:
-                try:
-                    # If path is absolute and within codebase_dir, make it relative
-                    if file_path.is_absolute():
-                        relative_files.append(
-                            str(file_path.relative_to(self.config.codebase_dir))
-                        )
-                    else:
-                        # Already relative, use as-is
-                        relative_files.append(str(file_path))
-                except ValueError:
-                    # Path is not within codebase_dir, use as-is (shouldn't happen in normal usage)
-                    relative_files.append(str(file_path))
-
             # Get current branch for indexing
             current_branch = self.git_topology_service.get_current_branch() or "master"
 
@@ -923,14 +889,13 @@ class SmartIndexer(HighThroughputProcessor):
                 self.config, self.embedding_provider
             )
 
-            branch_result = self.branch_aware_indexer.index_branch_changes(
-                old_branch="",  # No old branch for incremental
-                new_branch=current_branch,
-                changed_files=relative_files,
-                unchanged_files=[],
-                collection_name=collection_name,
+            # Use direct high-throughput parallel processing for incremental indexing (4-8x faster)
+            # STORY 3: Use process_files_high_throughput() directly instead of branch wrapper
+            high_throughput_stats = self.process_files_high_throughput(
+                files=files_to_index,  # Use absolute paths directly
+                vector_thread_count=vector_thread_count or 8,
+                batch_size=50,
                 progress_callback=progress_callback,
-                vector_thread_count=vector_thread_count,
             )
 
             # For incremental indexing, also hide files that don't exist in current branch
@@ -949,22 +914,17 @@ class SmartIndexer(HighThroughputProcessor):
                 except ValueError:
                     all_relative_files.append(str(file_path))
 
-            self.branch_aware_indexer.hide_files_not_in_branch(
+            # Use thread-safe branch isolation directly from high-throughput processor
+            self.hide_files_not_in_branch_thread_safe(
                 current_branch, all_relative_files, collection_name, progress_callback
             )
 
-            # Convert BranchIndexingResult to ProcessingStats
-            stats = ProcessingStats()
-            stats.files_processed = branch_result.files_processed
-            stats.chunks_created = branch_result.content_points_created
-            stats.failed_files = 0
-            stats.start_time = time.time() - branch_result.processing_time
-            stats.end_time = time.time()
-            stats.cancelled = branch_result.cancelled
+            # Use ProcessingStats directly from high-throughput processor
+            stats = high_throughput_stats
 
         except Exception as e:
             logger.error(
-                f"BranchAwareIndexer failed during incremental indexing in git project: {e}"
+                f"HighThroughputProcessor failed during incremental indexing in git project: {e}"
             )
             # NO FALLBACK - fail fast in git projects
             raise RuntimeError(
@@ -1069,10 +1029,8 @@ class SmartIndexer(HighThroughputProcessor):
                 relative_path = str(file_path.relative_to(self.config.codebase_dir))
 
                 # Get what the current effective content ID should be
-                current_effective_id = (
-                    self.branch_aware_indexer._get_effective_content_id_for_reconcile(
-                        relative_path
-                    )
+                current_effective_id = self._get_effective_content_id_for_reconcile(
+                    relative_path
                 )
 
                 # Check what's currently visible for this file in current branch
@@ -1142,7 +1100,7 @@ class SmartIndexer(HighThroughputProcessor):
                         )
                         if current_branch in hidden_branches:
                             # File exists on disk but is hidden for current branch - unhide it
-                            self.branch_aware_indexer._unhide_file_in_branch(
+                            self._ensure_file_visible_in_branch_thread_safe(
                                 relative_file_path, current_branch, collection_name
                             )
                             files_unhidden += 1
@@ -1335,7 +1293,8 @@ class SmartIndexer(HighThroughputProcessor):
             # Get current branch for indexing
             current_branch = self.git_topology_service.get_current_branch() or "master"
 
-            branch_result = self.branch_aware_indexer.index_branch_changes(
+            # Use high-throughput parallel processing for reconcile (4-8x faster)
+            branch_result = self.process_branch_changes_high_throughput(
                 old_branch="",  # No old branch for reconcile
                 new_branch=current_branch,
                 changed_files=relative_files,
@@ -1444,53 +1403,24 @@ class SmartIndexer(HighThroughputProcessor):
                 info=f"🔄 Resuming interrupted operation: {completed}/{total} files completed ({chunks_so_far} chunks), {len(existing_files)} files remaining",
             )
 
-        # Use BranchAwareIndexer for git-aware processing with parallel embeddings (SINGLE PROCESSING PATH)
+        # Use HighThroughputProcessor directly for git-aware processing (STORY 3 MIGRATION)
         try:
-            # Convert absolute paths to relative paths for BranchAwareIndexer
-            relative_files = []
-            for f in existing_files:
-                try:
-                    # If path is absolute and within codebase_dir, make it relative
-                    if f.is_absolute():
-                        relative_files.append(
-                            str(f.relative_to(self.config.codebase_dir))
-                        )
-                    else:
-                        # Already relative, use as-is
-                        relative_files.append(str(f))
-                except ValueError:
-                    # Path is not within codebase_dir, use as-is (shouldn't happen in normal usage)
-                    relative_files.append(str(f))
-
-            # Get current branch for indexing
-            current_branch = self.git_topology_service.get_current_branch() or "master"
-
-            # Ensure collection exists
-            collection_name = self.qdrant_client.resolve_collection_name(
-                self.config, self.embedding_provider
-            )
-
-            branch_result = self.branch_aware_indexer.index_branch_changes(
-                old_branch="",  # No old branch for resume
-                new_branch=current_branch,
-                changed_files=relative_files,
-                unchanged_files=[],
-                collection_name=collection_name,
+            # Use direct high-throughput parallel processing for resume (4-8x faster)
+            # STORY 3: Use process_files_high_throughput() directly instead of branch wrapper
+            high_throughput_stats = self.process_files_high_throughput(
+                files=existing_files,  # Use absolute paths directly
+                vector_thread_count=vector_thread_count or 8,
+                batch_size=50,
                 progress_callback=progress_callback,
-                vector_thread_count=vector_thread_count,
             )
 
-            # Convert BranchIndexingResult to ProcessingStats
-            stats = ProcessingStats()
-            stats.files_processed = branch_result.files_processed
-            stats.chunks_created = branch_result.content_points_created
-            stats.failed_files = 0
-            stats.start_time = time.time() - branch_result.processing_time
-            stats.end_time = time.time()
-            stats.cancelled = branch_result.cancelled
+            # Use ProcessingStats directly from high-throughput processor
+            stats = high_throughput_stats
 
         except Exception as e:
-            logger.error(f"BranchAwareIndexer failed during resume in git project: {e}")
+            logger.error(
+                f"HighThroughputProcessor failed during resume in git project: {e}"
+            )
             # NO FALLBACK - fail fast in git projects
             raise RuntimeError(
                 f"Git-aware resume failed and fallbacks are disabled. "
@@ -1649,20 +1579,61 @@ class SmartIndexer(HighThroughputProcessor):
         """Clear progress metadata (for fresh start)."""
         self.progressive_metadata.clear()
 
-    def cleanup_branch_data(self, branch: str) -> bool:
+    def cleanup_branch_data(self, branch: str) -> Dict[str, int]:
         """
-        Clean up branch data using the graph-optimized approach.
+        Clean up branch data by hiding content points that don't exist in the branch.
 
-        This delegates to the new BranchAwareIndexer for proper cleanup.
+        Returns a dictionary with cleanup statistics.
         """
         try:
             collection_name = self.qdrant_client.resolve_collection_name(
                 self.config, self.embedding_provider
             )
 
-            cleanup_result = self.branch_aware_indexer.cleanup_branch(
-                branch, collection_name
+            # Get all content points for this branch
+            content_points, _ = self.qdrant_client.scroll_points(
+                collection_name=collection_name,
+                filter_conditions={
+                    "must": [{"key": "visible_branches", "match": {"value": branch}}]
+                },
+                limit=10000,  # Process in batches if needed
             )
+
+            content_points_hidden = 0
+            content_points_preserved = 0
+
+            # Get current files in branch from git
+            try:
+                result = subprocess.run(
+                    ["git", "ls-tree", "-r", "--name-only", branch],
+                    cwd=self.config.root_path,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                current_files_in_branch = set(result.stdout.strip().split("\n"))
+            except subprocess.CalledProcessError:
+                logger.warning(
+                    f"Could not get files for branch {branch}, skipping cleanup"
+                )
+                return {"content_points_hidden": 0, "content_points_preserved": 0}
+
+            # Check each content point
+            for point in content_points:
+                file_path = point.get("payload", {}).get("file_path", "")
+                if file_path and file_path not in current_files_in_branch:
+                    # Hide this file from the branch
+                    self._hide_file_in_branch_thread_safe(
+                        file_path, branch, collection_name
+                    )
+                    content_points_hidden += 1
+                else:
+                    content_points_preserved += 1
+
+            cleanup_result = {
+                "content_points_hidden": content_points_hidden,
+                "content_points_preserved": content_points_preserved,
+            }
 
             logger.info(
                 f"Branch cleanup completed for {branch}: "
@@ -1670,11 +1641,11 @@ class SmartIndexer(HighThroughputProcessor):
                 f"{cleanup_result['content_points_preserved']} preserved"
             )
 
-            return True
+            return cleanup_result
 
         except Exception as e:
             logger.error(f"Failed to cleanup branch {branch}: {e}")
-            return False
+            return {"content_points_hidden": 0, "content_points_preserved": 0}
 
     def process_files_incrementally(
         self,
@@ -1750,7 +1721,8 @@ class SmartIndexer(HighThroughputProcessor):
                         self.config, self.embedding_provider
                     )
 
-                    branch_result = self.branch_aware_indexer.index_branch_changes(
+                    # Use high-throughput parallel processing for incremental files (4-8x faster)
+                    branch_result = self.process_branch_changes_high_throughput(
                         old_branch="",  # No old branch for process files incrementally
                         new_branch=current_branch,
                         changed_files=relative_files,
@@ -1775,7 +1747,7 @@ class SmartIndexer(HighThroughputProcessor):
                         except ValueError:
                             all_relative_files.append(str(f))
 
-                    self.branch_aware_indexer.hide_files_not_in_branch(
+                    self.hide_files_not_in_branch_thread_safe(
                         current_branch, all_relative_files, collection_name
                     )
 
@@ -2178,7 +2150,7 @@ class SmartIndexer(HighThroughputProcessor):
             if current_branch:
                 # DEADLOCK FIX: Always use fast deletion without verification
                 # Trust synchronous operations - verification was causing 5+ minute hangs
-                self.branch_aware_indexer._hide_file_in_branch(
+                self._hide_file_in_branch_thread_safe(
                     file_path, current_branch, collection_name
                 )
                 logger.info(f"Hidden file in branch '{current_branch}': {file_path}")
@@ -2344,3 +2316,104 @@ class SmartIndexer(HighThroughputProcessor):
                 progress_callback(
                     0, 0, Path(""), info=f"Deletion detection failed: {e}"
                 )
+
+    def _get_effective_content_id_for_reconcile(self, file_path: str) -> str:
+        """Get content ID that represents current working directory state.
+
+        This method replaces the BranchAwareIndexer equivalent for reconciliation.
+        """
+        # Check if this is a git repository
+        is_git_repo = self.git_topology_service.is_git_available()
+
+        if not is_git_repo:
+            # For non-git projects, always use timestamp-based content IDs for consistency
+            try:
+                file_stat = (Path(self.config.codebase_dir) / file_path).stat()
+                commit = f"working_dir_{file_stat.st_mtime}_{file_stat.st_size}"
+                return f"{file_path}:{commit}"
+            except Exception:
+                # Fallback if stat fails
+                return f"{file_path}:working_dir_error"
+
+        # For git repositories, use the git-aware logic
+        if self._file_differs_from_committed_version(file_path):
+            # File has working directory changes - use mtime/size based ID
+            try:
+                file_stat = (Path(self.config.codebase_dir) / file_path).stat()
+                commit = f"working_dir_{file_stat.st_mtime}_{file_stat.st_size}"
+                return f"{file_path}:{commit}"
+            except Exception:
+                # Fallback if stat fails
+                return f"{file_path}:working_dir_error"
+        else:
+            # File matches committed version - use commit-based ID
+            commit = self._get_file_commit(file_path)
+            return f"{file_path}:{commit}"
+
+    def _file_differs_from_committed_version(self, file_path: str) -> bool:
+        """Check if working directory file differs from committed version."""
+        try:
+            # Use git diff to check if file differs from HEAD
+            result = subprocess.run(
+                ["git", "diff", "--quiet", "HEAD", "--", file_path],
+                cwd=self.config.codebase_dir,
+                capture_output=True,
+                timeout=10,
+            )
+            # git diff --quiet returns 0 if no differences, 1 if differences exist
+            differs = result.returncode != 0
+            if differs:
+                logger.debug(
+                    f"RECONCILE: File {file_path} differs from committed version (git diff returncode={result.returncode})"
+                )
+            return differs
+        except Exception as e:
+            # If git command fails, assume no differences
+            logger.debug(f"RECONCILE: Git diff failed for {file_path}: {e}")
+            return False
+
+    def _get_file_commit(self, file_path: str) -> str:
+        """Get current commit hash for file, or working directory indicator if modified."""
+        try:
+            # Check if this is a git repository
+            is_git_repo = self.git_topology_service.is_git_available()
+
+            if not is_git_repo:
+                # For non-git projects, always use timestamp-based IDs for consistency
+                try:
+                    file_path_obj = Path(self.config.codebase_dir) / file_path
+                    file_stat = file_path_obj.stat()
+                    return f"working_dir_{file_stat.st_mtime}_{file_stat.st_size}"
+                except Exception:
+                    # Fallback if stat fails
+                    import time
+
+                    return f"working_dir_{time.time()}_error"
+
+            # For git repositories, use the git-aware logic
+            # Check if file differs from committed version
+            if self._file_differs_from_committed_version(file_path):
+                # File has working directory changes - generate unique ID based on mtime/size
+                try:
+                    file_path_obj = Path(self.config.codebase_dir) / file_path
+                    file_stat = file_path_obj.stat()
+                    return f"working_dir_{file_stat.st_mtime}_{file_stat.st_size}"
+                except Exception:
+                    # Fallback if stat fails
+                    import time
+
+                    return f"working_dir_{time.time()}_error"
+
+            # File matches committed version - use commit hash
+            result = subprocess.run(
+                ["git", "log", "-1", "--format=%H", "--", file_path],
+                cwd=self.config.codebase_dir,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            commit = result.stdout.strip() if result.returncode == 0 else ""
+            # If no commit found, use "unknown"
+            return commit if commit else "unknown"
+        except Exception:
+            return "unknown"

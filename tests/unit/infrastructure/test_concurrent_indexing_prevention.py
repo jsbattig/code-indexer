@@ -72,7 +72,7 @@ class TestConcurrentIndexingPrevention:
                     # Simulate slow indexing operation
                     time.sleep(2.0)  # 2 second delay
                     # Mock return value
-                    from code_indexer.services.branch_aware_indexer import (
+                    from code_indexer.services.high_throughput_processor import (
                         BranchIndexingResult,
                     )
 
@@ -242,7 +242,7 @@ class TestConcurrentIndexingPrevention:
                     ]
 
                     # Mock return value for branch aware indexer
-                    from code_indexer.services.branch_aware_indexer import (
+                    from code_indexer.services.high_throughput_processor import (
                         BranchIndexingResult,
                     )
 
@@ -320,7 +320,7 @@ class TestConcurrentIndexingPrevention:
                     ]
 
                     # Mock return value for branch aware indexer
-                    from code_indexer.services.branch_aware_indexer import (
+                    from code_indexer.services.high_throughput_processor import (
                         BranchIndexingResult,
                     )
 

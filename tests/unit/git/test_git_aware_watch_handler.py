@@ -311,14 +311,11 @@ class TestGitAwareWatchHandler:
             mock_analysis
         )
 
-        # Mock branch indexer result
-        mock_branch_result = Mock()
-        mock_branch_result.content_points_created = 5
-        mock_branch_result.content_points_reused = 0
-        mock_branch_result.processing_time = 1.0
-        mock_branch_result.files_processed = 2
-        self.mock_smart_indexer.branch_aware_indexer.index_branch_changes.return_value = (
-            mock_branch_result
+        # Mock SmartIndexer process_files_incrementally result
+        mock_reindex_stats = Mock()
+        mock_reindex_stats.chunks_created = 5
+        self.mock_smart_indexer.process_files_incrementally.return_value = (
+            mock_reindex_stats
         )
 
         # Mock collection name resolution
@@ -337,13 +334,14 @@ class TestGitAwareWatchHandler:
             "main", "feature"
         )
 
-        # Verify branch indexer was called
-        self.mock_smart_indexer.branch_aware_indexer.index_branch_changes.assert_called_once_with(
-            old_branch="main",
-            new_branch="feature",
-            changed_files=["changed.py"],
-            unchanged_files=["unchanged.py"],
-            collection_name="test_collection",
+        # Verify SmartIndexer process_files_incrementally was called for reindexing
+        self.mock_smart_indexer.process_files_incrementally.assert_called_once_with(
+            ["changed.py"]
+        )
+
+        # Verify _ensure_file_visible_in_branch_thread_safe was called for metadata updates
+        self.mock_smart_indexer._ensure_file_visible_in_branch_thread_safe.assert_called_once_with(
+            "unchanged.py", "feature", "test_collection"
         )
 
         # Verify metadata updates

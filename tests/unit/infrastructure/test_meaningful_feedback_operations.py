@@ -307,7 +307,7 @@ venv/
                 smart_indexer.git_topology_service, "analyze_branch_change"
             ) as mock_analyze,
             patch.object(
-                smart_indexer.branch_aware_indexer, "index_branch_changes"
+                smart_indexer, "process_branch_changes_high_throughput"
             ) as mock_index_changes,
         ):
             # Set up mock analysis
@@ -319,12 +319,17 @@ venv/
             ]  # 2 unchanged
             mock_analyze.return_value = mock_analysis
 
-            # Set up mock branch aware indexer result
-            mock_result = Mock()
-            mock_result.files_processed = 3
-            mock_result.content_points_created = 5
-            mock_result.content_points_reused = 8
-            mock_result.processing_time = 1.5
+            # Set up mock branch processing result
+            from src.code_indexer.services.high_throughput_processor import (
+                BranchIndexingResult,
+            )
+
+            mock_result = BranchIndexingResult(
+                files_processed=3,
+                content_points_created=5,
+                content_points_reused=8,
+                processing_time=1.5,
+            )
             mock_index_changes.return_value = mock_result
 
             # Act

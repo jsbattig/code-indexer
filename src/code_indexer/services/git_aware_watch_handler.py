@@ -349,25 +349,40 @@ class GitAwareWatchHandler(FileSystemEventHandler):
                     old_branch, new_branch
                 )
 
-                # Use BranchAwareIndexer for proper branch transition
+                # Use HighThroughputProcessor for proper branch transition
                 collection_name = (
                     self.smart_indexer.qdrant_client.resolve_collection_name(
                         self.config, self.smart_indexer.embedding_provider
                     )
                 )
 
-                branch_result = (
-                    self.smart_indexer.branch_aware_indexer.index_branch_changes(
-                        old_branch=old_branch,
-                        new_branch=new_branch,
-                        changed_files=branch_analysis.files_to_reindex,
-                        unchanged_files=branch_analysis.files_to_update_metadata,
-                        collection_name=collection_name,
+                # Process branch changes using SmartIndexer functionality
+                content_points_created = 0
+                content_points_reused = 0
+
+                # Process files that need reindexing
+                if branch_analysis.files_to_reindex:
+                    reindex_stats = self.smart_indexer.process_files_incrementally(
+                        branch_analysis.files_to_reindex
                     )
-                )
+                    content_points_created += reindex_stats.chunks_created
+
+                # Update metadata for files that don't need reindexing
+                if branch_analysis.files_to_update_metadata:
+                    for file_path in branch_analysis.files_to_update_metadata:
+                        try:
+                            # Ensure file is visible in new branch
+                            self.smart_indexer._ensure_file_visible_in_branch_thread_safe(
+                                file_path, new_branch, collection_name
+                            )
+                            content_points_reused += 1
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to update metadata for {file_path}: {e}"
+                            )
 
                 logger.info(
-                    f"Branch transition complete: {branch_result.content_points_created} content points created, {branch_result.content_points_reused} content points reused"
+                    f"Branch transition complete: {content_points_created} content points created, {content_points_reused} content points reused"
                 )
 
             # Clear pending changes as they might be from the old branch context

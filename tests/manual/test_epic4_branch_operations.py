@@ -35,7 +35,7 @@ class Epic4BranchTester:
             if response.status_code == 200:
                 result = response.json()
                 self.admin_token = result["access_token"]
-                print(f"✅ Admin token obtained")
+                print("✅ Admin token obtained")
                 return True
             else:
                 print(f"❌ Admin login failed: {response.status_code} - {response.text}")
@@ -156,7 +156,7 @@ class Epic4BranchTester:
                     
                     time.sleep(1)
                 
-                print(f"⏰ Registration job still running after 30 seconds")
+                print("⏰ Registration job still running after 30 seconds")
                 return False
                 
             else:
@@ -211,7 +211,7 @@ class Epic4BranchTester:
                     
                     time.sleep(1)
                 
-                print(f"⏰ Activation job still running after 60 seconds")
+                print("⏰ Activation job still running after 60 seconds")
                 return False
                 
             else:
@@ -347,7 +347,7 @@ class Epic4BranchTester:
             )
             results["4.1.5"] = response.status_code == 404
             if results["4.1.5"]:
-                print(f"✅ Non-activated repo properly rejected (404)")
+                print("✅ Non-activated repo properly rejected (404)")
             else:
                 print(f"❌ Expected 404, got {response.status_code}")
         except Exception as e:
@@ -486,7 +486,7 @@ class Epic4BranchTester:
                 headers={"Authorization": f"Bearer {self.admin_token}"}
             )
             if response.status_code in [200, 404]:
-                print(f"   ✅ Golden repository cleanup initiated")
+                print("   ✅ Golden repository cleanup initiated")
         except:
             pass
     

@@ -30,6 +30,17 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class BranchIndexingResult:
+    """Results of branch indexing operation."""
+
+    files_processed: int = 0
+    content_points_created: int = 0
+    content_points_reused: int = 0
+    processing_time: float = 0.0
+    cancelled: bool = False
+
+
+@dataclass
 class ChunkTask:
     """Task for processing a single chunk."""
 
@@ -47,6 +58,14 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         super().__init__(*args, **kwargs)
         self.cancelled = False
         self.progress_log = progress_log
+
+        # Initialize shared locks for thread safety
+        import threading
+
+        self._visibility_lock = threading.Lock()
+        self._git_lock = threading.Lock()
+        self._content_id_lock = threading.Lock()
+        self._database_lock = threading.Lock()
 
     def request_cancellation(self):
         """Request cancellation of processing."""
@@ -316,7 +335,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                         info_msg = (
                             f"{files_completed}/{files_total} files ({file_progress_pct:.0f}%) | "
                             f"{vector_stats.embeddings_per_second:.1f} emb/s | "
-                            f"{vector_thread_count} threads | "
+                            f"{vector_stats.active_threads} threads | "
                             f"{display_file.name}{file_status}"
                         )
 
@@ -432,3 +451,467 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         )
         # Ensure we return a Dict[str, Any] as expected
         return dict(point) if point else {}
+
+    # =============================================================================
+    # BRANCH-AWARE HIGH-THROUGHPUT PROCESSING
+    # =============================================================================
+
+    def process_branch_changes_high_throughput(
+        self,
+        old_branch: str,
+        new_branch: str,
+        changed_files: List[str],
+        unchanged_files: List[str],
+        collection_name: str,
+        progress_callback: Optional[Callable] = None,
+        vector_thread_count: Optional[int] = None,
+    ):
+        """
+        Process branch changes using high-throughput parallel processing.
+
+        This method combines the git-aware features of BranchAwareIndexer with the
+        parallel processing capabilities of HighThroughputProcessor for maximum performance.
+
+        Args:
+            old_branch: Previous branch name (for branch change analysis)
+            new_branch: Current branch name
+            changed_files: List of relative file paths that changed
+            unchanged_files: List of relative file paths that didn't change but need visibility updates
+            collection_name: Qdrant collection name
+            progress_callback: Optional callback for progress reporting
+            vector_thread_count: Number of threads for parallel processing
+
+        Returns:
+            BranchIndexingResult with processing statistics
+        """
+        import time
+
+        start_time = time.time()
+        result = BranchIndexingResult()
+
+        logger.info(
+            f"Starting high-throughput branch processing: {old_branch} -> {new_branch}"
+        )
+        logger.info(
+            f"Changed files: {len(changed_files)}, Unchanged files: {len(unchanged_files)}"
+        )
+
+        try:
+            # Convert relative paths to absolute paths for processing
+            absolute_changed_files = []
+            for rel_path in changed_files:
+                abs_path = self.config.codebase_dir / rel_path
+                if abs_path.exists():
+                    absolute_changed_files.append(abs_path)
+
+            total_files = len(absolute_changed_files)
+
+            if progress_callback:
+                progress_callback(
+                    0,
+                    0,
+                    Path(""),
+                    info=f"🚀 High-throughput branch processing: {total_files} files with {vector_thread_count or 8} threads",
+                )
+
+            # Process changed files using high-throughput parallel processing
+            if absolute_changed_files:
+                # Use the existing high-throughput infrastructure
+                stats = self.process_files_high_throughput(
+                    files=absolute_changed_files,
+                    vector_thread_count=vector_thread_count or 8,
+                    batch_size=50,
+                    progress_callback=progress_callback,
+                )
+
+                result.files_processed = stats.files_processed
+                result.content_points_created = stats.chunks_created
+                result.cancelled = stats.cancelled
+
+                if result.cancelled:
+                    logger.info("High-throughput branch processing was cancelled")
+                    result.processing_time = time.time() - start_time
+                    return result
+
+            # Handle visibility updates for unchanged files (fast, non-parallel operation)
+            if unchanged_files:
+                if progress_callback:
+                    progress_callback(
+                        0,
+                        0,
+                        Path(""),
+                        info=f"👁️  Updating visibility for {len(unchanged_files)} unchanged files",
+                    )
+
+                for file_path in unchanged_files:
+                    try:
+                        self._ensure_file_visible_in_branch_thread_safe(
+                            file_path, new_branch, collection_name
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to update visibility for {file_path}: {e}"
+                        )
+                        continue
+
+            # Hide files that don't exist in the new branch (branch isolation)
+            if progress_callback:
+                progress_callback(0, 0, Path(""), info="Applying branch isolation")
+
+            # Get all files that should be visible in the new branch
+            all_branch_files = changed_files + unchanged_files
+            self.hide_files_not_in_branch_thread_safe(
+                new_branch, all_branch_files, collection_name, progress_callback
+            )
+
+            result.processing_time = time.time() - start_time
+
+            logger.info(
+                f"High-throughput branch processing completed: "
+                f"{result.files_processed} files, {result.content_points_created} chunks, "
+                f"{result.processing_time:.2f}s"
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"High-throughput branch processing failed: {e}")
+            result.processing_time = time.time() - start_time
+            raise
+
+    # =============================================================================
+    # THREAD-SAFE GIT-AWARE METHODS
+    # =============================================================================
+
+    def _generate_content_id_thread_safe(
+        self, file_path: str, commit: str, chunk_index: int = 0
+    ) -> str:
+        """Thread-safe version of content ID generation."""
+        import uuid
+
+        content_str = f"{file_path}:{commit}:{chunk_index}"
+        # Use UUID5 for deterministic UUIDs that Qdrant accepts
+        namespace = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")  # DNS namespace
+        return str(uuid.uuid5(namespace, content_str))
+
+    def _content_exists_thread_safe(
+        self, content_id: str, collection_name: str
+    ) -> bool:
+        """Thread-safe check if content point already exists."""
+        with self._content_id_lock:
+            try:
+                point = self.qdrant_client.get_point(content_id, collection_name)
+                return point is not None
+            except Exception as e:
+                logger.warning(
+                    f"Failed to check content existence for {content_id}: {e}"
+                )
+                return False
+
+    def _get_file_commit_thread_safe(self, file_path: str) -> str:
+        """Thread-safe version of getting file commit hash."""
+        import subprocess
+        import time
+
+        try:
+            # Check if this is a git repository
+            is_git_repo = self._is_git_repository_thread_safe()
+
+            if not is_git_repo:
+                # For non-git projects, always use timestamp-based IDs for consistency
+                try:
+                    file_path_obj = self.config.codebase_dir / file_path
+                    file_stat = file_path_obj.stat()
+                    return f"working_dir_{file_stat.st_mtime}_{file_stat.st_size}"
+                except Exception:
+                    return f"working_dir_{time.time()}_error"
+
+            # For git repositories, use git-aware logic
+            if self._file_differs_from_committed_version_thread_safe(file_path):
+                # File has working directory changes
+                try:
+                    file_path_obj = self.config.codebase_dir / file_path
+                    file_stat = file_path_obj.stat()
+                    return f"working_dir_{file_stat.st_mtime}_{file_stat.st_size}"
+                except Exception:
+                    return f"working_dir_{time.time()}_error"
+
+            # File matches committed version - use commit hash
+            with self._git_lock:
+                try:
+                    result = subprocess.run(
+                        ["git", "log", "-1", "--format=%H", "--", file_path],
+                        cwd=self.config.codebase_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
+                    commit = result.stdout.strip() if result.returncode == 0 else ""
+                    return commit if commit else "unknown"
+                except subprocess.TimeoutExpired:
+                    logger.warning(f"Git log timeout for {file_path}")
+                    return "unknown"
+                except Exception as e:
+                    logger.warning(f"Git log failed for {file_path}: {e}")
+                    return "unknown"
+        except Exception:
+            return "unknown"
+
+    def _file_differs_from_committed_version_thread_safe(self, file_path: str) -> bool:
+        """Thread-safe check if working directory file differs from committed version."""
+        import subprocess
+
+        with self._git_lock:
+            try:
+                result = subprocess.run(
+                    ["git", "diff", "--quiet", "HEAD", "--", file_path],
+                    cwd=self.config.codebase_dir,
+                    capture_output=True,
+                    timeout=10,
+                )
+                return result.returncode != 0
+            except subprocess.TimeoutExpired:
+                logger.warning(f"Git diff timeout for {file_path}")
+                return False
+            except Exception as e:
+                logger.warning(f"Git diff failed for {file_path}: {e}")
+                return False
+
+    def _is_git_repository_thread_safe(self) -> bool:
+        """Thread-safe check if current directory is a git repository."""
+        import subprocess
+
+        with self._git_lock:
+            try:
+                result = subprocess.run(
+                    ["git", "rev-parse", "--git-dir"],
+                    cwd=self.config.codebase_dir,
+                    capture_output=True,
+                    timeout=5,
+                )
+                return result.returncode == 0
+            except subprocess.TimeoutExpired:
+                logger.warning("Git rev-parse timeout")
+                return False
+            except Exception as e:
+                logger.warning(f"Git rev-parse failed: {e}")
+                return False
+
+    def _hide_file_in_branch_thread_safe(
+        self, file_path: str, branch: str, collection_name: str
+    ):
+        """Thread-safe version of hiding file in branch."""
+
+        # Use shared lock to ensure thread safety for visibility updates
+        with self._visibility_lock:
+            # Get all content points for this file with error handling
+            try:
+                content_points, _ = self.qdrant_client.scroll_points(
+                    filter_conditions={
+                        "must": [
+                            {"key": "type", "match": {"value": "content"}},
+                            {"key": "path", "match": {"value": file_path}},
+                        ]
+                    },
+                    limit=1000,
+                    collection_name=collection_name,
+                )
+                if not isinstance(content_points, list):
+                    logger.error(
+                        f"Unexpected scroll_points return type: {type(content_points)}"
+                    )
+                    return False
+            except Exception as e:
+                logger.error(f"Failed to get content points for {file_path}: {e}")
+                return False
+
+            # Update each content point to add branch to hidden_branches if not already present
+            points_to_update = []
+            for point in content_points:
+                current_hidden = point.get("payload", {}).get("hidden_branches", [])
+                if branch not in current_hidden:
+                    new_hidden = current_hidden + [branch]
+                    points_to_update.append(
+                        {"id": point["id"], "payload": {"hidden_branches": new_hidden}}
+                    )
+
+            # Batch update the points with new hidden_branches arrays
+            if points_to_update:
+                return self.qdrant_client._batch_update_points(
+                    points_to_update, collection_name
+                )
+
+            return True
+
+    def _ensure_file_visible_in_branch_thread_safe(
+        self, file_path: str, branch: str, collection_name: str
+    ):
+        """Thread-safe version of ensuring file is visible in branch."""
+        with self._visibility_lock:
+            # Get all content points for this file with error handling
+            try:
+                content_points, _ = self.qdrant_client.scroll_points(
+                    filter_conditions={
+                        "must": [
+                            {"key": "type", "match": {"value": "content"}},
+                            {"key": "path", "match": {"value": file_path}},
+                        ]
+                    },
+                    limit=1000,
+                    collection_name=collection_name,
+                )
+                if not isinstance(content_points, list):
+                    logger.error(
+                        f"Unexpected scroll_points return type: {type(content_points)}"
+                    )
+                    return False
+            except Exception as e:
+                logger.error(f"Failed to get content points for {file_path}: {e}")
+                return False
+
+            # Update each content point to remove branch from hidden_branches if present
+            points_to_update = []
+            for point in content_points:
+                current_hidden = point.get("payload", {}).get("hidden_branches", [])
+                if branch in current_hidden:
+                    new_hidden = [b for b in current_hidden if b != branch]
+                    points_to_update.append(
+                        {"id": point["id"], "payload": {"hidden_branches": new_hidden}}
+                    )
+
+            # Batch update the points with new hidden_branches arrays
+            if points_to_update:
+                return self.qdrant_client._batch_update_points(
+                    points_to_update, collection_name
+                )
+
+            return True
+
+    def _batch_hide_files_in_branch(
+        self, file_paths: List[str], branch: str, collection_name: str
+    ):
+        """Batch process hiding files in branch to avoid sequential locking bottleneck."""
+        if not file_paths:
+            return
+
+        with self._visibility_lock:
+            all_points_to_update = []
+
+            try:
+                # Get all content points for all files in a single batch query
+                # This is more efficient than individual queries per file
+                for file_path in file_paths:
+                    try:
+                        content_points, _ = self.qdrant_client.scroll_points(
+                            filter_conditions={
+                                "must": [
+                                    {"key": "type", "match": {"value": "content"}},
+                                    {"key": "path", "match": {"value": file_path}},
+                                ]
+                            },
+                            limit=1000,
+                            collection_name=collection_name,
+                        )
+
+                        if not isinstance(content_points, list):
+                            logger.warning(
+                                f"Unexpected scroll_points return type: {type(content_points)} for {file_path}"
+                            )
+                            continue
+
+                        # Collect points that need updating
+                        for point in content_points:
+                            current_hidden = point.get("payload", {}).get(
+                                "hidden_branches", []
+                            )
+                            if branch not in current_hidden:
+                                new_hidden = current_hidden + [branch]
+                                all_points_to_update.append(
+                                    {
+                                        "id": point["id"],
+                                        "payload": {"hidden_branches": new_hidden},
+                                    }
+                                )
+
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to get content points for {file_path}: {e}"
+                        )
+                        continue
+
+                # Batch update all points at once instead of individual updates
+                if all_points_to_update:
+                    self.qdrant_client._batch_update_points(
+                        all_points_to_update, collection_name
+                    )
+                    logger.info(
+                        f"Batch updated {len(all_points_to_update)} points for branch hiding"
+                    )
+
+            except Exception as e:
+                logger.error(f"Batch hide operation failed: {e}")
+
+    def hide_files_not_in_branch_thread_safe(
+        self,
+        branch: str,
+        current_files: List[str],
+        collection_name: str,
+        progress_callback: Optional[Callable] = None,
+    ):
+        """Thread-safe version of hiding files that don't exist in branch."""
+
+        if progress_callback:
+            progress_callback(
+                0, 0, Path(""), info="Scanning database for branch isolation..."
+            )
+
+        # Get all unique file paths from content points in the database
+        with self._database_lock:
+            try:
+                all_content_points, _ = self.qdrant_client.scroll_points(
+                    filter_conditions={
+                        "must": [{"key": "type", "match": {"value": "content"}}]
+                    },
+                    limit=10000,
+                    collection_name=collection_name,
+                )
+                if not isinstance(all_content_points, list):
+                    logger.error(
+                        f"Unexpected scroll_points return type: {type(all_content_points)}"
+                    )
+                    return False
+            except Exception as e:
+                logger.error(f"Failed to get all content points from database: {e}")
+                return False
+
+        # Extract unique file paths from database
+        db_file_paths = set()
+        for point in all_content_points:
+            if "path" in point.get("payload", {}):
+                db_file_paths.add(point["payload"]["path"])
+
+        # Find files in DB that aren't in current branch
+        current_files_set = set(current_files)
+        files_to_hide = db_file_paths - current_files_set
+
+        if files_to_hide:
+            logger.info(
+                f"Branch isolation: hiding {len(files_to_hide)} files not in branch '{branch}'"
+            )
+
+            # Batch process files to hide - avoid sequential locking bottleneck
+            self._batch_hide_files_in_branch(
+                list(files_to_hide), branch, collection_name
+            )
+
+            if progress_callback:
+                progress_callback(
+                    0,
+                    0,
+                    Path(""),
+                    info=f"Hidden {len(files_to_hide)} files not in branch '{branch}'",
+                )
+        else:
+            logger.info(f"Branch isolation: no files to hide for branch '{branch}'")
+
+        return True

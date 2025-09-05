@@ -87,7 +87,7 @@ class TestHighThroughputProcessorCancellation:
                 ]
 
             with patch.object(
-                processor.text_chunker, "chunk_file", side_effect=mock_chunk_file
+                processor.fixed_size_chunker, "chunk_file", side_effect=mock_chunk_file
             ):
                 # Mock file identifier
                 def mock_get_file_metadata(file_path):
@@ -170,7 +170,7 @@ class TestHighThroughputProcessorCancellation:
                 ]
 
             with patch.object(
-                processor.text_chunker, "chunk_file", side_effect=mock_chunk_file
+                processor.fixed_size_chunker, "chunk_file", side_effect=mock_chunk_file
             ):
                 # Mock file identifier
                 def mock_get_file_metadata(file_path):
@@ -263,7 +263,7 @@ class TestHighThroughputProcessorCancellation:
                 ]
 
             with patch.object(
-                processor.text_chunker, "chunk_file", side_effect=mock_chunk_file
+                processor.fixed_size_chunker, "chunk_file", side_effect=mock_chunk_file
             ):
                 # Mock file identifier
                 def mock_get_file_metadata(file_path):

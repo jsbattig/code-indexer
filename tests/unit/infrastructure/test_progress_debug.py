@@ -201,8 +201,8 @@ class TestClass_{i}:
                 print("✅ Progress percentage looks correct")
 
     @pytest.mark.unit
-    def test_debug_high_throughput_fallback(self):
-        """Debug progress when BranchAwareIndexer fails and falls back to HighThroughputProcessor."""
+    def test_debug_high_throughput_processing_progress(self):
+        """Debug progress during high-throughput processing to ensure proper progress reporting."""
 
         # Create SmartIndexer
         smart_indexer = SmartIndexer(
@@ -243,38 +243,43 @@ class TestClass_{i}:
 
             return None  # Don't cancel
 
-        # Force BranchAwareIndexer to fail so we hit the HighThroughputProcessor fallback
-        from unittest.mock import patch
+        print(
+            f"\n=== Testing high-throughput processing progress with {len(self.test_files)} files ==="
+        )
 
-        with patch.object(
-            smart_indexer.branch_aware_indexer, "index_branch_changes"
-        ) as mock_branch_indexer:
-            mock_branch_indexer.side_effect = Exception(
-                "Forced BranchAwareIndexer failure to test fallback"
-            )
+        # Execute high-throughput processing with progress tracking
+        result = smart_indexer.smart_index(
+            force_full=True,  # Force full indexing (same as --clear)
+            reconcile_with_database=False,
+            batch_size=50,
+            progress_callback=debug_progress_callback,
+            safety_buffer_seconds=60,
+            files_count_to_process=None,
+            vector_thread_count=2,
+        )
 
-            print(
-                f"\n=== Testing HighThroughputProcessor fallback with {len(self.test_files)} files ==="
-            )
-            # Should raise RuntimeError due to disabled fallbacks
-            with pytest.raises(
-                RuntimeError,
-                match="Git-aware indexing failed and fallbacks are disabled",
-            ):
-                smart_indexer.smart_index(
-                    force_full=True,  # Force full indexing (same as --clear)
-                    reconcile_with_database=False,
-                    batch_size=50,
-                    progress_callback=debug_progress_callback,
-                    safety_buffer_seconds=60,
-                    files_count_to_process=None,
-                    vector_thread_count=2,
-                )
+        # Verify successful processing
+        assert result.files_processed > 0, "Should have processed files successfully"
+        assert result.chunks_created > 0, "Should have created chunks"
 
-        # Test passes if RuntimeError is raised due to disabled fallbacks
-        print("\n=== FALLBACK DISABLED ANALYSIS ===")
-        print(f"Expected total files: {len(self.test_files)}")
-        print("✅ Git-aware indexing correctly fails fast without fallbacks")
+        # Verify progress reporting
+        assert len(progress_calls) > 0, "Should have made progress calls"
+
+        # Verify progress included collection clearing
+        setup_calls = [call for call in progress_calls if call["total"] == 0]
+        assert len(setup_calls) > 0, "Should have setup progress calls"
+
+        # Verify progress included file processing
+        file_progress_calls = [call for call in progress_calls if call["total"] > 0]
+        assert len(file_progress_calls) > 0, "Should have file progress calls"
+
+        print("\n=== HIGH-THROUGHPUT PROCESSING ANALYSIS ===")
+        print(f"Files processed: {result.files_processed}")
+        print(f"Chunks created: {result.chunks_created}")
+        print(f"Progress calls made: {len(progress_calls)}")
+        print(f"Setup calls: {len(setup_calls)}")
+        print(f"File progress calls: {len(file_progress_calls)}")
+        print("✅ High-throughput processing completed with proper progress reporting")
 
     def teardown_method(self):
         """Cleanup test environment."""

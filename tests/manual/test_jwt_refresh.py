@@ -6,7 +6,6 @@ Test script for JWT token refresh mechanism.
 import requests
 import json
 import sys
-import time
 
 def test_jwt_refresh():
     base_url = "http://localhost:8001"

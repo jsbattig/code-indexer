@@ -2022,20 +2022,15 @@ def query(
 
         # Check if project uses git-aware indexing
         from .services.git_topology_service import GitTopologyService
-        from .services.branch_aware_indexer import BranchAwareIndexer
-        from .indexing.fixed_size_chunker import FixedSizeChunker
+
+        # BranchAwareIndexer removed - using HighThroughputProcessor git-aware methods
 
         git_topology_service = GitTopologyService(config.codebase_dir)
         is_git_aware = git_topology_service.is_git_available()
 
         # Initialize query service based on project type
         if is_git_aware:
-            # Use branch-aware indexer for git projects
-            # Use model-aware fixed-size chunker for all processing
-            fixed_size_chunker = FixedSizeChunker(config)
-            branch_aware_indexer = BranchAwareIndexer(
-                qdrant_client, embedding_provider, fixed_size_chunker, config
-            )
+            # Use git-aware filtering for git projects
             current_branch = git_topology_service.get_current_branch() or "master"
             use_branch_aware_query = True
         else:
@@ -2114,49 +2109,41 @@ def query(
             if not quiet:
                 console.print("🔍 Applying git-aware filtering...")
 
-            # Build additional filters for branch-aware search
-            additional_filters = {}
+            # Use branch-aware search with git filtering
+            # Content is visible if it was indexed from current branch
+            git_filter_conditions = {
+                "must": [
+                    # Match content from the current branch
+                    {"key": "git_branch", "match": {"value": current_branch}},
+                    # Ensure git is available (exclude non-git content)
+                    {"key": "git_available", "match": {"value": True}},
+                ],
+            }
+
+            # Add additional filters
             if language:
-                additional_filters["must"] = [
+                git_filter_conditions["must"].append(
                     {"key": "language", "match": {"value": language}}
-                ]
+                )
             if path:
-                additional_filters.setdefault("must", []).append(
+                git_filter_conditions["must"].append(
                     {"key": "path", "match": {"text": path}}
                 )
 
-            # Use branch-aware search
-            results = branch_aware_indexer.search_with_branch_context(
+            results = qdrant_client.search(
                 query_vector=query_embedding,
-                branch=current_branch,
+                filter_conditions=git_filter_conditions,
                 limit=limit,
                 collection_name=collection_name,
             )
 
-            # Apply additional filters manually for now
-            if language or path or min_score:
+            # Apply minimum score filtering (language and path already handled by Qdrant filters)
+            if min_score:
                 filtered_results = []
                 for result in results:
-                    payload = result.get("payload", {})
-
-                    # Filter by language
-                    if language and payload.get("language") != language:
-                        continue
-
-                    # Filter by path using glob pattern matching
-                    if path:
-                        import fnmatch
-
-                        file_path = payload.get("path", "")
-                        if not fnmatch.fnmatch(file_path, path):
-                            continue
-
                     # Filter by minimum score
-                    if min_score and result.get("score", 0) < min_score:
-                        continue
-
-                    filtered_results.append(result)
-
+                    if result.get("score", 0) >= min_score:
+                        filtered_results.append(result)
                 results = filtered_results
         else:
             # Use model-specific search for non-git projects

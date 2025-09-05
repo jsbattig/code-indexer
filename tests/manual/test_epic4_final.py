@@ -7,7 +7,6 @@ Tests the core branch operation functionality using existing repositories
 import requests
 import json
 import sys
-import time
 
 def get_admin_token():
     """Get admin authentication token"""
@@ -106,7 +105,7 @@ def test_epic4_branch_operations():
         print(f"❌ Branch switch test error: {str(e)}")
     
     # Test 3: Test with different branch names
-    print(f"\n📋 Test 3: Try different branch names")
+    print("\n📋 Test 3: Try different branch names")
     branch_tests = ["master", "feature/test", "develop", "non-existent-branch"]
     branch_results = {}
     
@@ -136,7 +135,7 @@ def test_epic4_branch_operations():
     print(f"   Got {unique_responses} different response types ({'✅ Good' if unique_responses > 1 else '⚠️ Limited'})")
     
     # Test 4: Test error handling for non-existent repository
-    print(f"\n📋 Test 4: Error handling for non-existent repository")
+    print("\n📋 Test 4: Error handling for non-existent repository")
     try:
         switch_data = {"branch_name": "master"}
         
@@ -162,7 +161,7 @@ def test_epic4_branch_operations():
         print(f"❌ Error handling test failed: {str(e)}")
     
     # Test 5: Verify repository still functional after branch operations
-    print(f"\n📋 Test 5: Verify repository functionality after branch tests")
+    print("\n📋 Test 5: Verify repository functionality after branch tests")
     try:
         query_data = {
             "query_text": "function",
@@ -245,7 +244,7 @@ def test_epic4_branch_operations():
     else:
         print("❌ Repository functionality affected by branch operations")
     
-    print(f"\n📝 EPIC 4 CONCLUSION:")
+    print("\n📝 EPIC 4 CONCLUSION:")
     if success_rate >= 0.75:
         print("🎉 Branch Operations API is substantially implemented")
         print("   - Core endpoints exist and respond appropriately") 

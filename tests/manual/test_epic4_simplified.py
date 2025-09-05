@@ -24,7 +24,7 @@ def get_admin_token():
         if response.status_code == 200:
             result = response.json()
             token = result["access_token"]
-            print(f"✅ Admin token obtained")
+            print("✅ Admin token obtained")
             return token
         else:
             print(f"❌ Admin login failed: {response.status_code} - {response.text}")
@@ -49,7 +49,7 @@ def wait_for_job(token, job_id, timeout=60):
                 status = job_data['status']
                 
                 if status == 'completed':
-                    print(f"✅ Job completed successfully")
+                    print("✅ Job completed successfully")
                     return True
                 elif status == 'failed':
                     print(f"❌ Job failed: {job_data.get('error', 'Unknown error')}")
