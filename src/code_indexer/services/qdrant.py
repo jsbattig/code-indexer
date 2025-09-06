@@ -120,14 +120,18 @@ class QdrantClient:
                 f"/collections/{collection_name}", json=collection_config
             )
             if response.status_code in [200, 201]:
-                # Collection created successfully, now create payload indexes
-                self._create_payload_indexes_with_retry(collection_name)
+                # Collection created successfully, now create payload indexes using centralized method
+                self.ensure_payload_indexes(
+                    collection_name, context="collection_creation"
+                )
                 return True
             elif response.status_code == 409:
                 # Collection already exists - this is acceptable
                 # (caller will handle clearing if needed)
-                # Still try to create indexes in case they're missing
-                self._create_payload_indexes_with_retry(collection_name)
+                # Still try to create indexes in case they're missing using centralized method
+                self.ensure_payload_indexes(
+                    collection_name, context="collection_creation"
+                )
                 return True
             else:
                 self.console.print(
@@ -271,8 +275,8 @@ class QdrantClient:
                 f"✅ Created collection '{collection}' with {profile} profile: {profile_config['description']}",
                 style="green",
             )
-            # Collection created successfully, now create payload indexes
-            self._create_payload_indexes_with_retry(collection)
+            # Collection created successfully, now create payload indexes using centralized method
+            self.ensure_payload_indexes(collection, context="collection_creation")
             return True
         except Exception as e:
             self.console.print(f"❌ Failed to create collection: {e}", style="red")
@@ -1454,7 +1458,14 @@ class QdrantClient:
     def list_payload_indexes(
         self, collection_name: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """List existing payload indexes."""
+        """List existing payload indexes.
+        
+        Returns:
+            List of existing indexes with field and schema information
+            
+        Raises:
+            RuntimeError: If unable to retrieve index information from Qdrant
+        """
         collection = (
             collection_name
             or self._current_collection_name
@@ -1466,118 +1477,27 @@ class QdrantClient:
             indexes = info.get("payload_schema", {})
             return [{"field": k, "schema": v} for k, v in indexes.items()]
         except Exception as e:
+            # Log error for visibility
             self.console.print(f"Failed to list indexes: {e}", style="red")
-            return []
+            
+            # For critical errors that could cause false positives, re-raise
+            # For collection-not-found errors, return empty list (expected behavior)
+            error_msg = str(e).lower()
+            if ("collection" in error_msg and "not found" in error_msg) or \
+               ("collection" in error_msg and "exist" in error_msg):
+                # Collection doesn't exist - this is expected, return empty list
+                return []
+            else:
+                # Network, parsing, or other errors - re-raise to prevent false positives
+                raise RuntimeError(f"Unable to retrieve payload indexes: {e}") from e
 
     def _create_payload_indexes_with_retry(self, collection_name: str) -> bool:
-        """Create payload indexes with retry logic and user feedback for single-user reliability."""
-        # Check if payload indexes are disabled in configuration
-        if not self.config.enable_payload_indexes:
-            self.console.print(
-                "🔧 Payload indexes disabled in configuration - skipping index creation"
-            )
-            return True
+        """Create payload indexes with retry logic and user feedback for single-user reliability.
 
-        # Get payload indexes from configuration
-        required_indexes = self.config.payload_indexes
-
-        # Handle empty configuration
-        if not required_indexes:
-            self.console.print(
-                "🔧 No payload indexes configured - skipping index creation"
-            )
-            return True
-
-        self.console.print(
-            "🔧 Setting up payload indexes for optimal query performance..."
-        )
-        success_count = 0
-
-        for field_name, field_schema in required_indexes:
-            self.console.print(
-                f"   • Creating index for '{field_name}' field ({field_schema} type)..."
-            )
-
-            # Retry logic for network/service issues (single-user, no concurrency concerns)
-            index_created = False
-            for attempt in range(3):
-                try:
-                    response = self.client.put(
-                        f"/collections/{collection_name}/index",
-                        json={"field_name": field_name, "field_schema": field_schema},
-                    )
-                    if response.status_code in [200, 201]:
-                        success_count += 1
-                        index_created = True
-                        self.console.print(
-                            f"   ✅ Index for '{field_name}' created successfully"
-                        )
-                        break
-                    elif response.status_code == 409:  # Index already exists
-                        success_count += 1
-                        index_created = True
-                        self.console.print(
-                            f"   ✅ Index for '{field_name}' already exists"
-                        )
-                        break
-                    else:
-                        if attempt < 2:  # Not the last attempt
-                            self.console.print(
-                                f"   ⚠️  Attempt {attempt + 1} failed (HTTP {response.status_code}), retrying..."
-                            )
-                        else:
-                            self.console.print(
-                                f"   ❌ Failed to create index for '{field_name}' after 3 attempts (HTTP {response.status_code})"
-                            )
-                            import logging
-
-                            logger = logging.getLogger(__name__)
-                            logger.warning(
-                                f"Failed to create index on {field_name}: HTTP {response.status_code}"
-                            )
-                except Exception as e:
-                    if attempt < 2:  # Not the last attempt
-                        self.console.print(
-                            f"   ⚠️  Attempt {attempt + 1} failed ({str(e)[:50]}...), retrying in {2**attempt}s..."
-                        )
-                        time.sleep(2**attempt)  # Exponential backoff: 1s, 2s
-                    else:
-                        self.console.print(
-                            f"   ❌ Failed to create index for '{field_name}' after 3 attempts: {str(e)[:100]}"
-                        )
-                        import logging
-
-                        logger = logging.getLogger(__name__)
-                        logger.warning(f"Index creation failed for {field_name}: {e}")
-
-            if not index_created:
-                self.console.print(
-                    f"   ⚠️  Index creation failed for '{field_name}' - queries may be slower"
-                )
-
-        # Final status with user-friendly summary
-        if success_count == len(required_indexes):
-            self.console.print(
-                f"   📊 Successfully created all {success_count} payload indexes"
-            )
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.info(
-                f"Successfully created {success_count} payload indexes for collection {collection_name}"
-            )
-            return True
-        else:
-            self.console.print(
-                f"   📊 Created {success_count}/{len(required_indexes)} payload indexes ({len(required_indexes) - success_count} failed)"
-            )
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.warning(
-                f"Created {success_count}/{len(required_indexes)} payload indexes for collection {collection_name}"
-            )
-            return success_count > 0  # Partial success is acceptable
+        DEPRECATED: This method delegates to ensure_payload_indexes for centralized management.
+        """
+        # Delegate to centralized method with legacy context
+        return self.ensure_payload_indexes(collection_name, context="legacy_direct")
 
     def optimize_collection(self, collection_name: Optional[str] = None) -> bool:
         """Optimize collection storage by triggering Qdrant's optimization process."""
@@ -1724,6 +1644,13 @@ class QdrantClient:
 
             existing_fields = {idx["field"] for idx in existing_indexes}
             expected_fields = {field for field, _ in expected_indexes}
+            
+            # Debug logging to help track down future false positive issues
+            if existing_fields != expected_fields:
+                # Only log when there's a mismatch to avoid spam
+                self.console.print(f"[dim]DEBUG: Collection={collection_name}, " 
+                                 f"Existing={sorted(existing_fields)}, " 
+                                 f"Expected={sorted(expected_fields)}[/dim]", style="dim")
 
             missing_indexes = list(expected_fields - existing_fields)
             extra_indexes = list(existing_fields - expected_fields)
@@ -1749,29 +1676,101 @@ class QdrantClient:
         except Exception as e:
             return {"error": str(e), "healthy": False}
 
-    def ensure_payload_indexes(
-        self, collection_name: str, context: str = "read"
-    ) -> bool:
+    def ensure_payload_indexes(self, collection_name: str, context: str) -> bool:
         """Ensure payload indexes exist, with context-aware behavior (single-user optimized).
 
         Args:
             collection_name: Name of the collection
-            context: Context of the operation - "index", "query", "status", or other
+            context: Context of the operation - required parameter for proper messaging
 
         Returns:
             bool: True if indexes are ensured/acceptable, False if missing and can't create
         """
         if not self.config.enable_payload_indexes:
+            # Only print message for informational contexts, not operational ones
+            if context in ["status", "query"]:
+                self.console.print("Payload indexes disabled in configuration")
             return True  # Indexes disabled, nothing to do
 
         index_status = self.get_payload_index_status(collection_name)
 
-        if not index_status.get("missing_indexes"):
-            return True  # All indexes exist
+        # Handle errors in index status checking
+        if index_status.get("error"):
+            if context not in ["silent"]:
+                self.console.print(
+                    f"❌ Error checking payload indexes: {index_status['error']}",
+                    style="red",
+                )
+            return False
 
+        missing_count = len(index_status.get("missing_indexes", []))
+        total_expected = index_status.get("expected_indexes", 0)
+        existing_count = index_status.get("total_indexes", 0)
+
+        # All indexes exist - handle success scenarios
+        if not index_status.get("missing_indexes"):
+            if context == "collection_creation":
+                self.console.print(
+                    f"✅ Created {total_expected} index{'es' if total_expected != 1 else ''}"
+                )
+            elif context == "index_verification":
+                self.console.print(f"✅ Verified {existing_count} existing indexes")
+            elif context == "silent":
+                pass  # No output
+            elif context in ["legacy_direct", "index"]:
+                # Legacy contexts expect traditional messaging
+                pass  # Don't duplicate messages
+            # For all other contexts, just return success
+            return True
+
+        # Some indexes are missing - handle creation scenarios
         missing = ", ".join(index_status["missing_indexes"])
 
-        if context == "index":
+        if context == "collection_creation":
+            # Collection creation context: Auto-create missing indexes
+            self.console.print("🔧 Setting up payload indexes...")
+            success = self._create_missing_indexes_with_detailed_feedback(
+                collection_name, index_status["missing_indexes"]
+            )
+            if success:
+                self.console.print(
+                    f"✅ Created {missing_count} index{'es' if missing_count != 1 else ''}"
+                )
+            else:
+                self.console.print("⚠️ Failed to set up some payload indexes")
+            return success
+
+        elif context == "index_verification":
+            # Index verification context: Create missing with specific messaging
+            self.console.print(f"🔧 Creating {missing_count} missing indexes...")
+            success = self._create_missing_indexes_with_detailed_feedback(
+                collection_name, index_status["missing_indexes"]
+            )
+            if success:
+                self.console.print(
+                    f"✅ Added {missing_count} missing index{'es' if missing_count > 1 else ''}"
+                )
+            else:
+                self.console.print("⚠️ Failed to add some missing indexes")
+            return success
+
+        elif context == "legacy_direct":
+            # Legacy direct context: Traditional messaging for backward compatibility
+            self.console.print(
+                "🔧 Setting up payload indexes for optimal query performance..."
+            )
+            success = self._create_missing_indexes_with_detailed_feedback(
+                collection_name, index_status["missing_indexes"]
+            )
+            if success:
+                self.console.print("✅ All payload indexes created successfully")
+            else:
+                self.console.print(
+                    "⚠️  Some payload indexes failed to create (performance may be degraded)"
+                )
+            return success
+
+        elif context == "index":
             # INDEXING context: Auto-create missing indexes with retry logic
             self.console.print(
                 "🔧 Creating missing payload indexes for optimal performance..."
@@ -1800,10 +1799,21 @@ class QdrantClient:
             # STATUS context: Report-only, no warnings during status checks
             return True  # Status will show index health separately
 
+        elif context == "silent":
+            # Silent context: No output, just ensure indexes exist
+            return self._create_missing_indexes_with_detailed_feedback(
+                collection_name, index_status["missing_indexes"]
+            )
+
         else:
-            # DEFAULT context: Report missing indexes
-            self.console.print(f"⚠️  Missing payload indexes: {missing}", style="yellow")
-            return False
+            # Unknown context: Use default messaging and try to create indexes
+            self.console.print("🔧 Managing payload indexes...")
+            success = self._create_missing_indexes_with_detailed_feedback(
+                collection_name, index_status["missing_indexes"]
+            )
+            return (
+                True  # Return True regardless of creation success for unknown contexts
+            )
 
     def _create_missing_indexes_with_detailed_feedback(
         self, collection_name: str, missing_fields: List[str]
@@ -1947,8 +1957,10 @@ class QdrantClient:
                     f"   Drop '{field_name}': {'✅' if result else '❌'}", style="dim"
                 )
 
-            # Step 2: Create fresh indexes with retry logic
-            success = self._create_payload_indexes_with_retry(collection_name)
+            # Step 2: Create fresh indexes using centralized method
+            success = self.ensure_payload_indexes(
+                collection_name, context="collection_creation"
+            )
 
             if success:
                 # For now, trust that the index creation succeeded and skip health check

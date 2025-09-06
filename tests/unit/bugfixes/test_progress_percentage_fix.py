@@ -5,6 +5,8 @@ Test to verify the progress percentage fix works correctly with Rich Progress Di
 # pathlib import removed - no longer needed
 from unittest.mock import Mock
 import pytest
+import time
+from io import StringIO
 
 from code_indexer.progress.multi_threaded_display import MultiThreadedProgressManager
 
@@ -23,6 +25,9 @@ class TestProgressPercentageFix:
 
         # Create Rich Progress Display manager
         progress_manager = MultiThreadedProgressManager(console=console_mock)
+
+        # Patch the get_time method on the progress object to return consistent values
+        progress_manager.progress.get_time = Mock(return_value=time.time())
 
         # Simulate the pattern that was causing percentage calculation issues
         total_files = 134
@@ -50,12 +55,20 @@ class TestProgressPercentageFix:
                 concurrent_files=[],
             )
 
-            # Get the integrated display
-            display = progress_manager.get_integrated_display()
+            # Get the integrated display and render to string
+            display_table = progress_manager.get_integrated_display()
+
+            # Render the table to string using console_mock's mock capabilities
+            console_buffer = StringIO()
+            from rich.console import Console
+
+            test_console = Console(file=console_buffer, width=120)
+            test_console.print(display_table)
+            display = console_buffer.getvalue()
 
             # Verify display is not empty
             assert (
-                len(display) > 0
+                len(display.strip()) > 0
             ), f"Display should not be empty for {current}/{total}"
 
             # Verify it contains the correct progress information
@@ -67,7 +80,7 @@ class TestProgressPercentageFix:
             calculated_percentage = (current / total * 100) if total > 0 else 0
 
             # Verify the percentage in the display content
-            percentage_text = f"({calculated_percentage:.0f}%)"
+            percentage_text = f"{calculated_percentage:.0f}%"
             assert (
                 percentage_text in display
             ), f"Should show correct percentage {percentage_text} in display"
@@ -91,6 +104,9 @@ class TestProgressPercentageFix:
 
         progress_manager = MultiThreadedProgressManager(console=console_mock)
 
+        # Patch the get_time method on the progress object to return consistent values
+        progress_manager.progress.get_time = Mock(return_value=time.time())
+
         total_files = 134
 
         # Set initial progress state
@@ -104,8 +120,20 @@ class TestProgressPercentageFix:
         )
 
         # Get display before and after (should maintain state)
-        display1 = progress_manager.get_integrated_display()
-        display2 = progress_manager.get_integrated_display()
+        display1_table = progress_manager.get_integrated_display()
+        display2_table = progress_manager.get_integrated_display()
+
+        # Render both tables to strings for comparison
+        console_buffer1 = StringIO()
+        console_buffer2 = StringIO()
+        from rich.console import Console
+
+        test_console1 = Console(file=console_buffer1, width=120)
+        test_console2 = Console(file=console_buffer2, width=120)
+        test_console1.print(display1_table)
+        test_console2.print(display2_table)
+        display1 = console_buffer1.getvalue()
+        display2 = console_buffer2.getvalue()
 
         # Both displays should show the same progress information
         assert "14/134 files" in display1, "First display should show correct progress"
@@ -114,8 +142,8 @@ class TestProgressPercentageFix:
         ), "Second display should maintain progress state"
 
         # Both should show the correct percentage (10.4%)
-        assert "(10%" in display1, "First display should show ~10%"
-        assert "(10%" in display2, "Second display should maintain ~10%"
+        assert "10%" in display1, "First display should show ~10%"
+        assert "10%" in display2, "Second display should maintain ~10%"
 
         print("\n✅ Info updates correctly maintain progress state!")
         print("   Progress state is preserved across multiple display calls")

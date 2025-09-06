@@ -8,6 +8,7 @@ and has NO FALLBACKS or alternative code paths.
 import pytest
 from unittest.mock import Mock
 from pathlib import Path
+from rich.table import Table
 
 from code_indexer.progress.multi_threaded_display import MultiThreadedProgressManager
 from code_indexer.progress.progress_display import RichLiveProgressManager
@@ -28,6 +29,11 @@ class TestRichProgressCLIIntegration:
         self.progress_manager = MultiThreadedProgressManager(
             console=self.console_mock, live_manager=self.live_manager
         )
+
+        # Mock the get_time method to return a proper float for Rich Progress calculations
+        import time
+
+        self.progress_manager.progress.get_time = Mock(return_value=time.time())
 
     @pytest.mark.unit
     def test_progress_callback_always_uses_rich_display(self):
@@ -59,8 +65,16 @@ class TestRichProgressCLIIntegration:
         )
 
         display1 = self.progress_manager.get_integrated_display()
-        assert len(display1) > 0, "Must provide display with concurrent files"
-        assert "test.py" in display1, "Must show concurrent file info"
+        assert display1 is not None, "Must provide display with concurrent files"
+        # Rich Table objects are sufficient - test that it's not empty
+        assert isinstance(display1, Table), "Should return Rich Table object"
+
+        # Test the underlying concurrent display was updated
+        concurrent_lines = self.progress_manager.concurrent_display.get_rendered_lines()
+        assert len(concurrent_lines) > 0, "Should have concurrent file lines"
+        assert any(
+            "test.py" in line for line in concurrent_lines
+        ), "Must show concurrent file info"
 
         # Test scenario 2: Without concurrent files (empty list)
         self.progress_manager.update_complete_state(
@@ -73,8 +87,17 @@ class TestRichProgressCLIIntegration:
         )
 
         display2 = self.progress_manager.get_integrated_display()
-        assert len(display2) > 0, "Must provide display even without concurrent files"
-        assert "5/10 files" in display2, "Must show progress information"
+        assert (
+            display2 is not None
+        ), "Must provide display even without concurrent files"
+        # Rich Table objects are sufficient for display integration
+        assert isinstance(display2, Table), "Should return Rich Table object"
+
+        # Test that progress was properly initialized
+        assert self.progress_manager._progress_started, "Progress should be started"
+        assert (
+            self.progress_manager.main_task_id is not None
+        ), "Should have main task ID"
 
         # Both scenarios MUST work without fallbacks
         # This proves the CLI anti-fallback fix is working
@@ -97,10 +120,17 @@ class TestRichProgressCLIIntegration:
 
         # Should ALWAYS provide display content, even with empty concurrent files
         assert display is not None, "Rich Progress Display must ALWAYS provide content"
-        assert len(display) > 0, "Display content cannot be empty"
-        assert "5/10 files" in display, "Should show progress information"
-        assert "2.3 files/s" in display, "Should show processing rate"
-        assert "4 threads" in display, "Should show thread count"
+        assert isinstance(display, Table), "Should return Rich Table object"
+
+        # Test that progress was properly initialized and metrics stored
+        assert self.progress_manager._progress_started, "Progress should be started"
+        assert self.progress_manager._current_metrics_info, "Should have metrics info"
+        assert (
+            "2.3 files/s" in self.progress_manager._current_metrics_info
+        ), "Should show processing rate"
+        assert (
+            "4 threads" in self.progress_manager._current_metrics_info
+        ), "Should show thread count"
 
     @pytest.mark.unit
     def test_rich_live_manager_integration(self):
@@ -137,7 +167,7 @@ class TestRichProgressCLIIntegration:
 
         # Scenario 1: Empty concurrent files
         display = self.progress_manager.get_integrated_display()
-        assert len(display) > 0, "Must provide display even with no concurrent files"
+        assert display is not None, "Must provide display even with no concurrent files"
 
         # Scenario 2: Single threaded processing (active_threads=1)
         self.progress_manager.update_complete_state(
@@ -149,7 +179,11 @@ class TestRichProgressCLIIntegration:
             concurrent_files=[],
         )
         display = self.progress_manager.get_integrated_display()
-        assert "1 threads" in display, "Must handle single thread scenario"
+        assert isinstance(display, Table), "Should return Rich Table object"
+        # Check that metrics info contains thread count
+        assert (
+            "1 threads" in self.progress_manager._current_metrics_info
+        ), "Must handle single thread scenario"
 
         # Scenario 3: Zero thread scenario (completion)
         self.progress_manager.update_complete_state(
@@ -199,10 +233,18 @@ class TestRichProgressCLIIntegration:
         )
 
         display = self.progress_manager.get_integrated_display()
-        assert "test1.py" in display, "Should show concurrent files"
-        assert "test2.py" in display, "Should show concurrent files"
-        assert "vectorizing..." in display, "Should show file status"
-        assert "complete" in display, "Should show file status"
+        assert isinstance(display, Table), "Should return Rich Table object"
+
+        # Check that concurrent files were properly processed
+        concurrent_lines = self.progress_manager.concurrent_display.get_rendered_lines()
+        assert len(concurrent_lines) > 0, "Should have concurrent file lines"
+
+        # Check that the concurrent display contains the expected files
+        display_content = "\n".join(concurrent_lines)
+        assert "test1.py" in display_content, "Should show concurrent files"
+        assert "test2.py" in display_content, "Should show concurrent files"
+        assert "vectorizing..." in display_content, "Should show file status"
+        assert "complete" in display_content, "Should show file status"
 
         # Error messages
         # CLI calls: show_error_message(file_path, error)

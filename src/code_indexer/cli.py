@@ -22,7 +22,11 @@ from .services.claude_integration import (
     check_claude_sdk_availability,
 )
 from .services.config_fixer import ConfigurationRepairer, generate_fix_report
-from .services.vector_calculation_manager import get_default_thread_count
+from .services.vector_calculation_manager import resolve_thread_count_with_precedence
+from .utils.enhanced_messaging import (
+    get_conflicting_flags_message,
+    get_service_unavailable_message,
+)
 from .services.cidx_prompt_generator import create_cidx_ai_prompt
 
 # MultiThreadedProgressManager imported locally where needed
@@ -1475,16 +1479,14 @@ def index(
 
         # Health checks
         if not embedding_provider.health_check():
-            console.print(
-                f"❌ {embedding_provider.get_provider_name().title()} service not available. Run 'start' first.",
-                style="red",
-            )
+            provider_name = embedding_provider.get_provider_name().title()
+            error_message = get_service_unavailable_message(provider_name, "cidx start")
+            console.print(error_message, style="red")
             sys.exit(1)
 
         if not qdrant_client.health_check():
-            console.print(
-                "❌ Qdrant service not available. Run 'start' first.", style="red"
-            )
+            error_message = get_service_unavailable_message("Qdrant", "cidx start")
+            console.print(error_message, style="red")
             sys.exit(1)
 
         # Initialize smart indexer with progressive metadata
@@ -1502,17 +1504,16 @@ def index(
         else:
             console.print(f"📁 Non-git project: {git_status['project_id']}")
 
-        # Determine and display thread count for vector calculations
-        if parallel_vector_worker_thread_count is None:
-            thread_count = get_default_thread_count(embedding_provider)
-            console.print(
-                f"🧵 Vector calculation threads: {thread_count} (auto-detected for {embedding_provider.get_provider_name()})"
-            )
-        else:
-            thread_count = parallel_vector_worker_thread_count
-            console.print(
-                f"🧵 Vector calculation threads: {thread_count} (user specified)"
-            )
+        # Determine and display thread count for vector calculations using configuration hierarchy
+        thread_info = resolve_thread_count_with_precedence(
+            embedding_provider,
+            cli_thread_count=parallel_vector_worker_thread_count,
+            config=config,
+        )
+        thread_count = thread_info["count"]
+
+        # Display accurate source information (replaces misleading "auto-detected")
+        console.print(f"🧵 Vector calculation threads: {thread_info['message']}")
 
         # Show indexing strategy
         if clear:
@@ -1655,7 +1656,8 @@ def index(
 
         # Check for conflicting flags
         if clear and reconcile:
-            console.print("❌ Cannot use --clear and --reconcile together", style="red")
+            error_message = get_conflicting_flags_message("--clear", "--reconcile")
+            console.print(error_message, style="red")
             sys.exit(1)
 
         # Use graceful interrupt handling for the indexing operation

@@ -3,10 +3,8 @@
 
 import sys
 import subprocess
-import tempfile
 import shutil
 from pathlib import Path
-import time
 
 def create_test_files(test_dir: Path, count: int = 50):
     """Create test Python files for indexing."""
@@ -86,7 +84,7 @@ def run_indexing_test():
     print("=" * 60)
     
     if index_result.returncode != 0:
-        print(f"❌ Indexing failed")
+        print("❌ Indexing failed")
         return False
     
     print("\n✅ Indexing completed successfully")

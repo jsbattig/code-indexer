@@ -26,8 +26,9 @@ from .git_topology_service import GitTopologyService
 # Removed: BranchAwareIndexer (replaced with HighThroughputProcessor)
 from .indexing_lock import IndexingLockError, create_indexing_lock
 from .high_throughput_processor import HighThroughputProcessor
-from .vector_calculation_manager import get_default_thread_count
+from .vector_calculation_manager import resolve_thread_count_with_precedence
 from .git_hook_manager import GitHookManager
+from ..utils.enhanced_messaging import OperationType, create_enhanced_callback
 
 logger = logging.getLogger(__name__)
 
@@ -447,7 +448,12 @@ class SmartIndexer(HighThroughputProcessor):
                 provider_name, model_name, git_status
             ):
                 if progress_callback:
-                    progress_callback(
+                    enhanced_callback = create_enhanced_callback(
+                        progress_callback,
+                        OperationType.CONFIGURATION_CHANGE,
+                        provider_name=provider_name,
+                    )
+                    enhanced_callback(
                         0,
                         0,
                         Path(""),
@@ -522,17 +528,29 @@ class SmartIndexer(HighThroughputProcessor):
         except Exception:
             points_before_clear = 0
 
-        # Clear collection and provide meaningful feedback
+        # Create enhanced progress callback for clear operation
+        if progress_callback:
+            enhanced_callback = create_enhanced_callback(
+                progress_callback,
+                OperationType.CLEAR,
+                collection_name=collection_name,
+                documents_before_clear=points_before_clear,
+                provider_name=provider_name,
+            )
+        else:
+            enhanced_callback = None
+
+        # Clear collection - enhanced callback will provide clear, non-duplicate messaging
         self.qdrant_client.clear_collection(collection_name)
-        if progress_callback and points_before_clear > 0:
-            progress_callback(
+        if enhanced_callback and points_before_clear > 0:
+            enhanced_callback(
                 0,
                 0,
                 Path(""),
                 info=f"🗑️  Cleared collection '{collection_name}' ({points_before_clear} documents removed)",
             )
-        elif progress_callback:
-            progress_callback(
+        elif enhanced_callback:
+            enhanced_callback(
                 0,
                 0,
                 Path(""),
@@ -604,9 +622,19 @@ class SmartIndexer(HighThroughputProcessor):
 
             # Use direct high-throughput parallel processing for full index (4-8x faster)
             # Bypass branch processing wrapper to maximize parallel utilization
+
+            # Resolve thread count using configuration hierarchy: CLI → config.json → provider defaults
+            if vector_thread_count is None:
+                thread_info = resolve_thread_count_with_precedence(
+                    self.embedding_provider, cli_thread_count=None, config=self.config
+                )
+                resolved_thread_count = thread_info["count"]
+            else:
+                resolved_thread_count = vector_thread_count
+
             high_throughput_stats = self.process_files_high_throughput(
                 files=files_to_index,  # Use absolute paths directly
-                vector_thread_count=vector_thread_count or 8,
+                vector_thread_count=resolved_thread_count,
                 batch_size=50,
                 progress_callback=progress_callback,
             )
@@ -891,9 +919,19 @@ class SmartIndexer(HighThroughputProcessor):
 
             # Use direct high-throughput parallel processing for incremental indexing (4-8x faster)
             # STORY 3: Use process_files_high_throughput() directly instead of branch wrapper
+
+            # Resolve thread count using configuration hierarchy: CLI → config.json → provider defaults
+            if vector_thread_count is None:
+                thread_info = resolve_thread_count_with_precedence(
+                    self.embedding_provider, cli_thread_count=None, config=self.config
+                )
+                resolved_thread_count = thread_info["count"]
+            else:
+                resolved_thread_count = vector_thread_count
+
             high_throughput_stats = self.process_files_high_throughput(
                 files=files_to_index,  # Use absolute paths directly
-                vector_thread_count=vector_thread_count or 8,
+                vector_thread_count=resolved_thread_count,
                 batch_size=50,
                 progress_callback=progress_callback,
             )
@@ -1407,9 +1445,19 @@ class SmartIndexer(HighThroughputProcessor):
         try:
             # Use direct high-throughput parallel processing for resume (4-8x faster)
             # STORY 3: Use process_files_high_throughput() directly instead of branch wrapper
+
+            # Resolve thread count using configuration hierarchy: CLI → config.json → provider defaults
+            if vector_thread_count is None:
+                thread_info = resolve_thread_count_with_precedence(
+                    self.embedding_provider, cli_thread_count=None, config=self.config
+                )
+                resolved_thread_count = thread_info["count"]
+            else:
+                resolved_thread_count = vector_thread_count
+
             high_throughput_stats = self.process_files_high_throughput(
                 files=existing_files,  # Use absolute paths directly
-                vector_thread_count=vector_thread_count or 8,
+                vector_thread_count=resolved_thread_count,
                 batch_size=50,
                 progress_callback=progress_callback,
             )
@@ -1521,8 +1569,13 @@ class SmartIndexer(HighThroughputProcessor):
             )
 
         # Use queue-based high-throughput processing for all code paths
+        # Resolve thread count using configuration hierarchy: CLI → config.json → provider defaults
         if vector_thread_count is None:
-            vector_thread_count = get_default_thread_count(self.embedding_provider)
+            thread_info = resolve_thread_count_with_precedence(
+                self.embedding_provider, cli_thread_count=None, config=self.config
+            )
+            vector_thread_count = thread_info["count"]
+            logger.info(f"Resolved vector thread count: {thread_info['message']}")
 
         # Process all files using queue-based high-throughput approach
         high_throughput_stats = self.process_files_high_throughput(

@@ -222,8 +222,17 @@ class TestRampingDownSequence:
             rendered_lines = display.get_rendered_lines()
             assert len(rendered_lines) == 0, "Should have no rendered lines"
 
-            # Get final display (should be progress bar only)
-            final_display = manager.get_completion_display()
+            # Get final display (should be progress bar only) and render to string
+            final_display_table = manager.get_completion_display()
+
+            # Render the table to string for content checking
+            from io import StringIO
+            from rich.console import Console as RichConsole
+
+            console_buffer = StringIO()
+            test_console = RichConsole(file=console_buffer, width=120)
+            test_console.print(final_display_table)
+            final_display = console_buffer.getvalue()
 
             # Should show 100% progress
             assert "100%" in final_display, "Should show 100% completion"

@@ -364,6 +364,64 @@ class VectorCalculationManager:
         """Context manager exit."""
         self.shutdown(wait=True, timeout=30.0)
 
+    def get_resolved_thread_count(self, config) -> int:
+        """
+        Get resolved thread count respecting configuration hierarchy.
+
+        Args:
+            config: Configuration object containing config.json settings
+
+        Returns:
+            Resolved thread count from configuration hierarchy
+        """
+        thread_info = resolve_thread_count_with_precedence(
+            self.embedding_provider, cli_thread_count=None, config=config
+        )
+        return int(thread_info["count"])
+
+    def resolve_thread_count_with_precedence(
+        self, cli_thread_count: Optional[int] = None, config=None
+    ) -> Dict[str, Any]:
+        """
+        Resolve thread count using configuration hierarchy: CLI → config.json → provider defaults.
+
+        Args:
+            cli_thread_count: Thread count specified via CLI option (highest priority)
+            config: Configuration object containing config.json settings
+
+        Returns:
+            Dictionary with resolved thread count and source information
+        """
+        return resolve_thread_count_with_precedence(
+            self.embedding_provider, cli_thread_count, config
+        )
+
+    def get_thread_count_with_source(self, config) -> Dict[str, Any]:
+        """
+        Get thread count with accurate source messaging (replaces misleading 'auto-detected').
+
+        Args:
+            config: Configuration object containing config.json settings
+
+        Returns:
+            Dictionary with thread count and source information for display
+        """
+        return resolve_thread_count_with_precedence(
+            self.embedding_provider, cli_thread_count=None, config=config
+        )
+
+    def get_unified_thread_count(self, config) -> int:
+        """
+        Get unified thread count that matches HTTP component configuration.
+
+        Args:
+            config: Configuration object containing config.json settings
+
+        Returns:
+            Thread count that ensures consistency across HTTP and vector components
+        """
+        return self.get_resolved_thread_count(config)
+
     def _update_rolling_window(
         self, current_time: float, total_completed: int
     ) -> float:
@@ -488,3 +546,63 @@ def get_default_thread_count(embedding_provider: EmbeddingProvider) -> int:
     else:
         # Conservative default for unknown providers
         return 2
+
+
+def resolve_thread_count_with_precedence(
+    embedding_provider: EmbeddingProvider,
+    cli_thread_count: Optional[int] = None,
+    config=None,
+) -> Dict[str, Any]:
+    """
+    Resolve thread count using configuration hierarchy: CLI → config.json → provider defaults.
+
+    Args:
+        embedding_provider: The embedding provider being used
+        cli_thread_count: Thread count specified via CLI option (highest priority)
+        config: Configuration object containing config.json settings
+
+    Returns:
+        Dictionary with resolved thread count and source information:
+        {
+            "count": int,           # Resolved thread count
+            "source": str,          # Source: "cli", "config.json", or "provider_default"
+            "message": str          # Human-readable message for display
+        }
+    """
+    provider_name = embedding_provider.get_provider_name().lower()
+
+    # Priority 1: CLI option (highest)
+    if cli_thread_count is not None:
+        return {
+            "count": cli_thread_count,
+            "source": "cli",
+            "message": f"{cli_thread_count} (from CLI option)",
+        }
+
+    # Priority 2: config.json setting (medium)
+    if config is not None:
+        config_thread_count = None
+
+        if (
+            provider_name == "voyage-ai"
+            and hasattr(config, "voyage_ai")
+            and config.voyage_ai
+        ):
+            config_thread_count = config.voyage_ai.parallel_requests
+        elif provider_name == "ollama" and hasattr(config, "ollama") and config.ollama:
+            config_thread_count = config.ollama.num_parallel
+
+        if config_thread_count is not None:
+            return {
+                "count": config_thread_count,
+                "source": "config.json",
+                "message": f"{config_thread_count} (from config.json)",
+            }
+
+    # Priority 3: Provider defaults (fallback)
+    default_count = get_default_thread_count(embedding_provider)
+    return {
+        "count": default_count,
+        "source": "provider_default",
+        "message": f"{default_count} (provider default for {provider_name})",
+    }

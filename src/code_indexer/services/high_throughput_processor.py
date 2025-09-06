@@ -89,7 +89,8 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         )  # List of (timestamp, total_bytes) tuples for smoothed KB/s
 
         # NEW: Consolidated file tracking system - replaces three duplicate systems
-        self.file_tracker = ConsolidatedFileTracker(max_concurrent_files=8)
+        # Initialize lazily with actual thread count in process_files_high_throughput
+        self.file_tracker = None
         self._thread_counter = 0  # For assigning stable thread IDs
 
         # Fix static file display: Map file paths to thread IDs for proper updates
@@ -100,6 +101,20 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         """Request cancellation of processing."""
         self.cancelled = True
         logger.info("High throughput processing cancellation requested")
+
+    def _ensure_file_tracker_initialized(self, thread_count: int = 8):
+        """Ensure file tracker is initialized with appropriate thread count.
+
+        Args:
+            thread_count: Number of threads to use for file tracking (defaults to 8 for backwards compatibility)
+        """
+        if self.file_tracker is None:
+            self.file_tracker = ConsolidatedFileTracker(
+                max_concurrent_files=thread_count
+            )
+            logger.info(
+                f"Initialized ConsolidatedFileTracker with {thread_count} max concurrent files"
+            )
 
     def _register_thread_file(
         self, file_path: Path, status: str = "starting..."
@@ -120,6 +135,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         # Map file path to thread ID for efficient lookups during processing
         with self._file_to_thread_lock:
             self._file_to_thread_map[file_path] = thread_id
+
+        # Ensure file tracker is initialized (fallback for backwards compatibility)
+        self._ensure_file_tracker_initialized()
 
         # Use consolidated tracker - handles file I/O outside critical sections
         if status == "starting...":
@@ -151,6 +169,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             )
             return
 
+        # Ensure file tracker is initialized (fallback for backwards compatibility)
+        self._ensure_file_tracker_initialized()
+
         # Convert status string to FileStatus enum
         if "complete" in status.lower():
             file_status = FileStatus.COMPLETE
@@ -181,6 +202,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             logger.warning(f"Attempted to complete unregistered file: {file_path}")
             return
 
+        # Ensure file tracker is initialized (fallback for backwards compatibility)
+        self._ensure_file_tracker_initialized()
+
         self.file_tracker.complete_file_processing(thread_id)
 
     def _get_concurrent_threads_snapshot(
@@ -196,6 +220,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         Returns:
             List of thread info dictionaries for display
         """
+        # Ensure file tracker is initialized (fallback for backwards compatibility)
+        self._ensure_file_tracker_initialized()
+
         # Use consolidated tracker - eliminates race conditions and duplication
         concurrent_data: List[Dict[str, Any]] = (
             self.file_tracker.get_concurrent_files_data()
@@ -330,6 +357,10 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         progress_callback: Optional[Callable] = None,
     ) -> ProcessingStats:
         """Process files with maximum throughput using pre-queued chunks."""
+
+        # Initialize ConsolidatedFileTracker with actual thread count
+        # This fixes the hardcoded 8-file limit bug - now supports any thread count
+        self._ensure_file_tracker_initialized(vector_thread_count)
 
         stats = ProcessingStats()
         stats.start_time = time.time()
