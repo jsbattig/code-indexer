@@ -294,17 +294,21 @@ class MultiThreadedProgressManager:
     """
 
     def __init__(
-        self, console: Console, live_manager: Optional[RichLiveProgressManager] = None
+        self,
+        console: Console,
+        live_manager: Optional[RichLiveProgressManager] = None,
+        max_lines: int = 8,
     ):
         """Initialize multi-threaded progress manager.
 
         Args:
             console: Rich console for rendering
             live_manager: Optional existing Rich Live manager for integration
+            max_lines: Maximum number of concurrent file lines to display (should match thread count)
         """
         self.console = console
         self.live_manager = live_manager
-        self.concurrent_display = ConcurrentFileDisplay(console, max_lines=8)
+        self.concurrent_display = ConcurrentFileDisplay(console, max_lines=max_lines)
         self.ramping_manager = RampingDownManager(console)
 
         # Create Rich Progress component for visual progress bar

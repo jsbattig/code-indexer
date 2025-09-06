@@ -83,7 +83,7 @@ def test_partial_file_bug_reproduction():
             patch("code_indexer.services.git_aware_processor.FileIdentifier"),
             patch("code_indexer.services.git_aware_processor.GitDetectionService"),
             patch("code_indexer.indexing.processor.FileFinder"),
-            patch("code_indexer.indexing.processor.TextChunker") as mock_chunker,
+            patch("code_indexer.indexing.chunker.TextChunker") as mock_chunker,
         ):
             # Configure chunker to return exactly 5 chunks for this file
             def mock_chunk_file(file_path):
@@ -142,7 +142,9 @@ def test_partial_file_bug_reproduction():
             # Cancel after 2 chunks are processed to create partial file
             processed_chunks = 0
 
-            def progress_callback(current, total, path, info=None):
+            def progress_callback(
+                current, total, path, info=None, concurrent_files=None
+            ):
                 nonlocal processed_chunks
                 processed_chunks += 1
                 print(

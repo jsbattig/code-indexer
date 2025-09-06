@@ -34,12 +34,9 @@ class GitAwareDocumentProcessor(DocumentProcessor):
     def process_file(self, file_path: Path) -> List[Dict[str, Any]]:
         """Process a single file with git-aware metadata (backward compatibility)."""
         # For backward compatibility, use VectorCalculationManager to process single file
-        from .vector_calculation_manager import (
-            VectorCalculationManager,
-            get_default_thread_count,
-        )
+        from .vector_calculation_manager import VectorCalculationManager
 
-        thread_count = get_default_thread_count(self.embedding_provider)
+        thread_count = self.config.voyage_ai.parallel_requests
         with VectorCalculationManager(
             self.embedding_provider, thread_count
         ) as vector_manager:

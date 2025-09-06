@@ -366,39 +366,41 @@ class VectorCalculationManager:
 
     def get_resolved_thread_count(self, config) -> int:
         """
-        Get resolved thread count respecting configuration hierarchy.
+        Get thread count from config.json setting directly.
 
         Args:
             config: Configuration object containing config.json settings
 
         Returns:
-            Resolved thread count from configuration hierarchy
+            Thread count from config.voyage_ai.parallel_requests
         """
-        thread_info = resolve_thread_count_with_precedence(
-            self.embedding_provider, cli_thread_count=None, config=config
-        )
-        return int(thread_info["count"])
+        return int(config.voyage_ai.parallel_requests)
 
     def resolve_thread_count_with_precedence(
         self, cli_thread_count: Optional[int] = None, config=None
     ) -> Dict[str, Any]:
         """
-        Resolve thread count using configuration hierarchy: CLI → config.json → provider defaults.
+        Get thread count from config.json setting directly.
 
         Args:
-            cli_thread_count: Thread count specified via CLI option (highest priority)
+            cli_thread_count: Not used (removed CLI option)
             config: Configuration object containing config.json settings
 
         Returns:
-            Dictionary with resolved thread count and source information
+            Dictionary with thread count and source information
         """
-        return resolve_thread_count_with_precedence(
-            self.embedding_provider, cli_thread_count, config
-        )
+        count = config.voyage_ai.parallel_requests if config else 8
+        return {
+            "count": count,
+            "source": "config.json" if config else "default",
+            "message": (
+                f"{count} (from config.json)" if config else f"{count} (default)"
+            ),
+        }
 
     def get_thread_count_with_source(self, config) -> Dict[str, Any]:
         """
-        Get thread count with accurate source messaging (replaces misleading 'auto-detected').
+        Get thread count from config.json setting directly.
 
         Args:
             config: Configuration object containing config.json settings
@@ -406,9 +408,12 @@ class VectorCalculationManager:
         Returns:
             Dictionary with thread count and source information for display
         """
-        return resolve_thread_count_with_precedence(
-            self.embedding_provider, cli_thread_count=None, config=config
-        )
+        count = config.voyage_ai.parallel_requests
+        return {
+            "count": count,
+            "source": "config.json",
+            "message": f"{count} (from config.json)",
+        }
 
     def get_unified_thread_count(self, config) -> int:
         """
@@ -523,86 +528,3 @@ class VectorCalculationManager:
         ]
 
         return any(indicator in error_msg for indicator in throttling_indicators)
-
-
-def get_default_thread_count(embedding_provider: EmbeddingProvider) -> int:
-    """
-    Get default thread count based on embedding provider.
-
-    Args:
-        embedding_provider: The embedding provider being used
-
-    Returns:
-        Recommended thread count for the provider
-    """
-    provider_name = embedding_provider.get_provider_name().lower()
-
-    if provider_name == "voyage-ai":
-        # VoyageAI can handle parallel requests efficiently
-        return 8
-    elif provider_name == "ollama":
-        # Ollama runs locally, avoid resource contention
-        return 1
-    else:
-        # Conservative default for unknown providers
-        return 2
-
-
-def resolve_thread_count_with_precedence(
-    embedding_provider: EmbeddingProvider,
-    cli_thread_count: Optional[int] = None,
-    config=None,
-) -> Dict[str, Any]:
-    """
-    Resolve thread count using configuration hierarchy: CLI → config.json → provider defaults.
-
-    Args:
-        embedding_provider: The embedding provider being used
-        cli_thread_count: Thread count specified via CLI option (highest priority)
-        config: Configuration object containing config.json settings
-
-    Returns:
-        Dictionary with resolved thread count and source information:
-        {
-            "count": int,           # Resolved thread count
-            "source": str,          # Source: "cli", "config.json", or "provider_default"
-            "message": str          # Human-readable message for display
-        }
-    """
-    provider_name = embedding_provider.get_provider_name().lower()
-
-    # Priority 1: CLI option (highest)
-    if cli_thread_count is not None:
-        return {
-            "count": cli_thread_count,
-            "source": "cli",
-            "message": f"{cli_thread_count} (from CLI option)",
-        }
-
-    # Priority 2: config.json setting (medium)
-    if config is not None:
-        config_thread_count = None
-
-        if (
-            provider_name == "voyage-ai"
-            and hasattr(config, "voyage_ai")
-            and config.voyage_ai
-        ):
-            config_thread_count = config.voyage_ai.parallel_requests
-        elif provider_name == "ollama" and hasattr(config, "ollama") and config.ollama:
-            config_thread_count = config.ollama.num_parallel
-
-        if config_thread_count is not None:
-            return {
-                "count": config_thread_count,
-                "source": "config.json",
-                "message": f"{config_thread_count} (from config.json)",
-            }
-
-    # Priority 3: Provider defaults (fallback)
-    default_count = get_default_thread_count(embedding_provider)
-    return {
-        "count": default_count,
-        "source": "provider_default",
-        "message": f"{default_count} (provider default for {provider_name})",
-    }

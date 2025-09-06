@@ -22,7 +22,6 @@ from .services.claude_integration import (
     check_claude_sdk_availability,
 )
 from .services.config_fixer import ConfigurationRepairer, generate_fix_report
-from .services.vector_calculation_manager import resolve_thread_count_with_precedence
 from .utils.enhanced_messaging import (
     get_conflicting_flags_message,
     get_service_unavailable_message,
@@ -1343,12 +1342,6 @@ def start(
     help="Internal: Stop after processing N files (for testing)",
 )
 @click.option(
-    "--parallel-vector-worker-thread-count",
-    "-p",
-    type=int,
-    help="Number of parallel threads for vector calculations (default: 8 for VoyageAI, 1 for Ollama)",
-)
-@click.option(
     "--detect-deletions",
     is_flag=True,
     help="Detect and handle files deleted from filesystem but still in database (for standard indexing only; --reconcile includes this automatically)",
@@ -1365,7 +1358,6 @@ def index(
     reconcile: bool,
     batch_size: int,
     files_count_to_process: Optional[int],
-    parallel_vector_worker_thread_count: Optional[int],
     detect_deletions: bool,
     rebuild_indexes: bool,
 ):
@@ -1429,7 +1421,7 @@ def index(
       • Vector calculations can be parallelized for faster indexing
       • VoyageAI default: 8 threads (API supports parallel requests)
       • Ollama default: 1 thread (local model, avoid resource contention)
-      • Use -p/--parallel-vector-worker-thread-count to customize
+      • Configure thread count in config.json: voyage_ai.parallel_requests
 
     \b
     EXAMPLES:
@@ -1504,16 +1496,11 @@ def index(
         else:
             console.print(f"📁 Non-git project: {git_status['project_id']}")
 
-        # Determine and display thread count for vector calculations using configuration hierarchy
-        thread_info = resolve_thread_count_with_precedence(
-            embedding_provider,
-            cli_thread_count=parallel_vector_worker_thread_count,
-            config=config,
+        # Use config.json setting directly
+        thread_count = config.voyage_ai.parallel_requests
+        console.print(
+            f"🧵 Vector calculation threads: {thread_count} (from config.json)"
         )
-        thread_count = thread_info["count"]
-
-        # Display accurate source information (replaces misleading "auto-detected")
-        console.print(f"🧵 Vector calculation threads: {thread_info['message']}")
 
         # Show indexing strategy
         if clear:
@@ -1540,7 +1527,9 @@ def index(
         # Create Rich Live progress manager for bottom-anchored display
         rich_live_manager = RichLiveProgressManager(console=console)
         progress_manager = MultiThreadedProgressManager(
-            console=console, live_manager=rich_live_manager
+            console=console,
+            live_manager=rich_live_manager,
+            max_lines=thread_count,
         )
         display_initialized = False
 
@@ -1702,7 +1691,7 @@ def index(
                     progress_callback=progress_callback,
                     safety_buffer_seconds=60,  # 1-minute safety buffer
                     files_count_to_process=files_count_to_process,
-                    vector_thread_count=thread_count,
+                    vector_thread_count=config.voyage_ai.parallel_requests,
                     detect_deletions=detect_deletions,
                 )
 

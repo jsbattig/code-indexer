@@ -177,7 +177,29 @@ class TestPerformanceAfterCoWRemoval:
         self, qdrant_client
     ):
         """Test that collection creation includes automatic payload index creation after CoW removal."""
-        with patch.object(qdrant_client.client, "put") as mock_put:
+        # Mock index status to indicate missing indexes for new collection
+        mock_index_status = {
+            "missing_indexes": [
+                "type",
+                "path",
+                "git_branch",
+                "file_mtime",
+                "hidden_branches",
+                "language",
+                "embedding_model",
+            ],
+            "expected_indexes": 7,
+            "total_indexes": 0,
+        }
+
+        with (
+            patch.object(qdrant_client.client, "put") as mock_put,
+            patch.object(
+                qdrant_client,
+                "get_payload_index_status",
+                return_value=mock_index_status,
+            ),
+        ):
             mock_put.return_value.status_code = 200
 
             result = qdrant_client._create_collection_direct("test_collection", 1536)

@@ -115,7 +115,7 @@ class TestDatabaseConsistencyDuringCancellation:
                 patch("code_indexer.services.git_aware_processor.FileIdentifier"),
                 patch("code_indexer.services.git_aware_processor.GitDetectionService"),
                 patch("code_indexer.indexing.processor.FileFinder"),
-                patch("code_indexer.indexing.processor.TextChunker") as mock_chunker,
+                patch("code_indexer.indexing.chunker.TextChunker") as mock_chunker,
             ):
                 # Configure chunker to return multiple chunks per file
                 def mock_chunk_file(file_path):
@@ -199,7 +199,7 @@ class TestDatabaseConsistencyDuringCancellation:
                 patch("code_indexer.services.git_aware_processor.FileIdentifier"),
                 patch("code_indexer.services.git_aware_processor.GitDetectionService"),
                 patch("code_indexer.indexing.processor.FileFinder"),
-                patch("code_indexer.indexing.processor.TextChunker") as mock_chunker,
+                patch("code_indexer.indexing.chunker.TextChunker") as mock_chunker,
             ):
                 # Configure chunker to return chunks
                 mock_chunker.return_value.chunk_file.return_value = [
@@ -272,7 +272,7 @@ class TestDatabaseConsistencyDuringCancellation:
                 patch("code_indexer.services.git_aware_processor.FileIdentifier"),
                 patch("code_indexer.services.git_aware_processor.GitDetectionService"),
                 patch("code_indexer.indexing.processor.FileFinder"),
-                patch("code_indexer.indexing.processor.TextChunker") as mock_chunker,
+                patch("code_indexer.indexing.chunker.TextChunker") as mock_chunker,
             ):
                 # Configure chunker
                 def mock_chunk_file(file_path):

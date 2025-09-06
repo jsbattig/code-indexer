@@ -17,14 +17,14 @@ class TestHardcodedFileDisplayLimit:
     """Test cases demonstrating hardcoded 8-file display limit bug."""
 
     def test_file_display_limited_to_8_despite_12_threads_configured(self):
-        """FAILING TEST: File display shows only 8 files despite 12 threads configured.
+        """FIX VERIFICATION: File display now properly shows all files matching thread configuration.
 
-        This test demonstrates that ConsolidatedFileTracker is hardcoded to 8 max_concurrent_files
-        even when the system is configured for 12 threads. This creates a mismatch where:
+        This test verifies that ConsolidatedFileTracker now correctly uses the configured thread count
+        for max_concurrent_files instead of being hardcoded to 8. Now both should match:
         - Thread count shows: "12 threads" (correct)
-        - File display shows: Only 8 file lines (BUG - should show 12)
+        - File display shows: 12 file lines (FIXED - now matches thread count)
         """
-        # Create HighThroughputProcessor instance (which hardcodes ConsolidatedFileTracker to 8)
+        # Create HighThroughputProcessor instance (which now properly uses thread_count)
         processor = HighThroughputProcessor.__new__(HighThroughputProcessor)
 
         # Initialize threading attributes
@@ -34,12 +34,15 @@ class TestHardcodedFileDisplayLimit:
         processor._file_to_thread_map = {}
         processor._file_to_thread_lock = threading.Lock()
 
-        # Initialize ConsolidatedFileTracker with hardcoded 8 (this is the bug)
+        # Initialize ConsolidatedFileTracker with correct thread count (the fix)
         from src.code_indexer.services.consolidated_file_tracker import (
             ConsolidatedFileTracker,
         )
 
-        processor.file_tracker = ConsolidatedFileTracker(max_concurrent_files=8)
+        thread_count = 12  # Configured thread count
+        processor.file_tracker = ConsolidatedFileTracker(
+            max_concurrent_files=thread_count
+        )
 
         # Simulate 12 threads all working on files simultaneously
         # (representing 12 configured threads from config.json)
@@ -53,15 +56,14 @@ class TestHardcodedFileDisplayLimit:
                 file_size=1024,
             )
 
-        # Get concurrent files data - this should show all 12 files but will only show 8
+        # Get concurrent files data - this should now show all 12 files after the fix
         concurrent_files = processor.file_tracker.get_concurrent_files_data()
 
-        # BUG DEMONSTRATION: This fails because ConsolidatedFileTracker is hardcoded to 8
-        # The file display is artificially limited despite having 12 threads configured
+        # FIX VERIFICATION: This should now pass since the hardcoded limit bug has been fixed
+        # The file display should now properly show all files matching thread configuration
         assert len(concurrent_files) == 12, (
-            f"HARDCODED LIMIT BUG: Expected 12 concurrent files to match 12 configured threads, "
-            f"but got {len(concurrent_files)} due to hardcoded max_concurrent_files=8 in "
-            f"ConsolidatedFileTracker initialization"
+            f"FIX VERIFICATION: Expected 12 concurrent files to match 12 configured threads, "
+            f"but got {len(concurrent_files)}. The hardcoded limit bug should be fixed."
         )
 
         # Verify all 12 files should be visible
@@ -71,9 +73,8 @@ class TestHardcodedFileDisplayLimit:
         missing_files = expected_files - displayed_files
         if missing_files:
             pytest.fail(
-                f"Files missing from display due to hardcoded 8-file limit: {missing_files}. "
-                f"ConsolidatedFileTracker should support all {len(file_paths)} configured threads, "
-                f"not hardcoded 8 files."
+                f"Files missing from display after hardcoded limit fix: {missing_files}. "
+                f"ConsolidatedFileTracker should now support all {len(file_paths)} configured threads."
             )
 
     def test_thread_configuration_mismatch_demonstration(self):

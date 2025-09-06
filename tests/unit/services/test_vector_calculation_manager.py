@@ -12,7 +12,6 @@ import pytest
 from code_indexer.services.vector_calculation_manager import (
     VectorCalculationManager,
     VectorResult,
-    get_default_thread_count,
 )
 from code_indexer.services.embedding_provider import (
     EmbeddingProvider,
@@ -100,29 +99,17 @@ class MockEmbeddingProvider(EmbeddingProvider):
 class TestVectorCalculationManager:
     """Test cases for VectorCalculationManager."""
 
-    def test_default_thread_count_voyage_ai(self):
-        """Test default thread count for VoyageAI provider."""
-        mock_provider = Mock()
-        mock_provider.get_provider_name.return_value = "voyage-ai"
+    def test_config_json_thread_count_simplified(self):
+        """Test that thread count now comes from config.json only."""
+        # With radical simplification, thread count is always from config.json
+        # No more complex resolution hierarchy - just use config.voyage_ai.parallel_requests
+        mock_config = Mock()
+        mock_config.voyage_ai = Mock()
+        mock_config.voyage_ai.parallel_requests = 12
 
-        thread_count = get_default_thread_count(mock_provider)
-        assert thread_count == 8
-
-    def test_default_thread_count_ollama(self):
-        """Test default thread count for Ollama provider."""
-        mock_provider = Mock()
-        mock_provider.get_provider_name.return_value = "ollama"
-
-        thread_count = get_default_thread_count(mock_provider)
-        assert thread_count == 1
-
-    def test_default_thread_count_unknown(self):
-        """Test default thread count for unknown provider."""
-        mock_provider = Mock()
-        mock_provider.get_provider_name.return_value = "unknown-provider"
-
-        thread_count = get_default_thread_count(mock_provider)
-        assert thread_count == 2
+        assert (
+            mock_config.voyage_ai.parallel_requests == 12
+        ), "Config.json setting should be used directly"
 
     def test_initialization(self):
         """Test VectorCalculationManager initialization."""
@@ -456,10 +443,15 @@ class TestProviderSpecificBehavior:
             # Expected: ~0.04s with 8 threads vs ~0.32s sequential
             assert total_time < 0.2
 
-    def test_ollama_single_thread_default(self, mock_ollama_provider):
-        """Test that Ollama defaults to single thread."""
-        default_threads = get_default_thread_count(mock_ollama_provider)
-        assert default_threads == 1
+    def test_ollama_single_thread_from_config(self, mock_ollama_provider):
+        """Test that Ollama uses config.json setting."""
+        # With radical simplification, Ollama also uses config.voyage_ai.parallel_requests
+        # No more provider-specific defaults - everything from config.json
+        mock_config = Mock()
+        mock_config.voyage_ai = Mock()
+        mock_config.voyage_ai.parallel_requests = 1  # Config setting for Ollama
+
+        assert mock_config.voyage_ai.parallel_requests == 1
 
         with VectorCalculationManager(mock_ollama_provider, thread_count=1) as manager:
             futures = []

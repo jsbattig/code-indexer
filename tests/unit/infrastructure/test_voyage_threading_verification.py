@@ -70,6 +70,10 @@ class TestClass_{i}:
         self.config.chunking.chunk_size = 200
         self.config.chunking.overlap_size = 50
 
+        # Mock VoyageAI config for thread testing
+        self.config.voyage_ai = Mock()
+        self.config.voyage_ai.parallel_requests = 8  # Standard config.json setting
+
         # Mock Qdrant client
         self.mock_qdrant = Mock(spec=QdrantClient)
         self.mock_qdrant.upsert_points.return_value = True
@@ -88,23 +92,12 @@ class TestClass_{i}:
         )
 
     @pytest.mark.unit
-    def test_voyage_ai_thread_count_calculation(self):
-        """Test that Voyage AI gets the correct default thread count."""
-        from code_indexer.services.vector_calculation_manager import (
-            get_default_thread_count,
-        )
-
-        # Mock Voyage AI provider
-        voyage_provider = Mock()
-        voyage_provider.get_provider_name.return_value = "voyage-ai"
-
-        # Test thread count calculation
-        thread_count = get_default_thread_count(voyage_provider)
-
-        # Voyage AI should get 8 threads by default
+    def test_voyage_ai_thread_count_from_config(self):
+        """Test that thread count comes from config.json setting."""
+        # Thread count now comes from config.json, not provider defaults
         assert (
-            thread_count == 8
-        ), f"Expected 8 threads for Voyage AI, got {thread_count}"
+            self.config.voyage_ai.parallel_requests == 8
+        ), f"Expected 8 from config.json, got {self.config.voyage_ai.parallel_requests}"
 
     @pytest.mark.unit
     def test_clear_command_uses_high_throughput_processor(self):

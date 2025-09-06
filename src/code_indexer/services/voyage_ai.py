@@ -3,7 +3,6 @@
 import os
 import time
 from typing import List, Dict, Any, Optional
-from concurrent.futures import ThreadPoolExecutor
 import httpx
 from rich.console import Console
 
@@ -28,9 +27,7 @@ class VoyageAIClient(EmbeddingProvider):
             )
 
         # HTTP client will be created per request to avoid threading issues
-
-        # Thread pool for parallel processing
-        self.executor = ThreadPoolExecutor(max_workers=config.parallel_requests)
+        # ThreadPoolExecutor removed - parallel processing handled by VectorCalculationManager
 
     def health_check(self, test_api: bool = False) -> bool:
         """Check if VoyageAI service is configured correctly.
@@ -176,7 +173,11 @@ class VoyageAIClient(EmbeddingProvider):
     def get_embeddings_batch(
         self, texts: List[str], model: Optional[str] = None
     ) -> List[List[float]]:
-        """Generate embeddings for multiple texts in batch with parallel processing."""
+        """Generate embeddings for multiple texts in batch with synchronous processing.
+
+        Note: Parallel processing is now handled by VectorCalculationManager threads.
+        This method processes batches synchronously to avoid thread contention.
+        """
         if not texts:
             return []
 
@@ -185,24 +186,18 @@ class VoyageAIClient(EmbeddingProvider):
             result = self._make_sync_request(texts, model)
             return [list(item["embedding"]) for item in result["data"]]
 
-        # Split into batches and process in parallel
+        # Split into batches and process synchronously
         batches = [
             texts[i : i + self.config.batch_size]
             for i in range(0, len(texts), self.config.batch_size)
         ]
 
         all_embeddings = []
-        futures = []
 
-        # Submit all batch requests to thread pool
+        # Process all batches synchronously
         for batch in batches:
-            future = self.executor.submit(self._make_sync_request, batch, model)
-            futures.append(future)
-
-        # Collect results in order
-        for future in futures:
             try:
-                result = future.result(timeout=self.config.timeout * 2)
+                result = self._make_sync_request(batch, model)
                 batch_embeddings = [list(item["embedding"]) for item in result["data"]]
                 all_embeddings.extend(batch_embeddings)
             except Exception as e:
@@ -286,8 +281,9 @@ class VoyageAIClient(EmbeddingProvider):
         return True
 
     def close(self) -> None:
-        """Close the executor."""
-        self.executor.shutdown(wait=True)
+        """Clean up resources (no executor to close after refactoring)."""
+        # ThreadPoolExecutor removed - no cleanup needed
+        pass
 
     def __enter__(self):
         return self

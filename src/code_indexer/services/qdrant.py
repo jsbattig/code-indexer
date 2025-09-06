@@ -1459,10 +1459,10 @@ class QdrantClient:
         self, collection_name: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """List existing payload indexes.
-        
+
         Returns:
             List of existing indexes with field and schema information
-            
+
         Raises:
             RuntimeError: If unable to retrieve index information from Qdrant
         """
@@ -1479,12 +1479,13 @@ class QdrantClient:
         except Exception as e:
             # Log error for visibility
             self.console.print(f"Failed to list indexes: {e}", style="red")
-            
+
             # For critical errors that could cause false positives, re-raise
             # For collection-not-found errors, return empty list (expected behavior)
             error_msg = str(e).lower()
-            if ("collection" in error_msg and "not found" in error_msg) or \
-               ("collection" in error_msg and "exist" in error_msg):
+            if ("collection" in error_msg and "not found" in error_msg) or (
+                "collection" in error_msg and "exist" in error_msg
+            ):
                 # Collection doesn't exist - this is expected, return empty list
                 return []
             else:
@@ -1644,13 +1645,16 @@ class QdrantClient:
 
             existing_fields = {idx["field"] for idx in existing_indexes}
             expected_fields = {field for field, _ in expected_indexes}
-            
+
             # Debug logging to help track down future false positive issues
             if existing_fields != expected_fields:
                 # Only log when there's a mismatch to avoid spam
-                self.console.print(f"[dim]DEBUG: Collection={collection_name}, " 
-                                 f"Existing={sorted(existing_fields)}, " 
-                                 f"Expected={sorted(expected_fields)}[/dim]", style="dim")
+                self.console.print(
+                    f"[dim]DEBUG: Collection={collection_name}, "
+                    f"Existing={sorted(existing_fields)}, "
+                    f"Expected={sorted(expected_fields)}[/dim]",
+                    style="dim",
+                )
 
             missing_indexes = list(expected_fields - existing_fields)
             extra_indexes = list(existing_fields - expected_fields)
@@ -1806,14 +1810,20 @@ class QdrantClient:
             )
 
         else:
-            # Unknown context: Use default messaging and try to create indexes
-            self.console.print("🔧 Managing payload indexes...")
-            success = self._create_missing_indexes_with_detailed_feedback(
-                collection_name, index_status["missing_indexes"]
-            )
-            return (
-                True  # Return True regardless of creation success for unknown contexts
-            )
+            # Unknown context: Different behavior based on specific context string
+            if context == "unknown":
+                # Conservative behavior for 'unknown' context - just warn
+                self.console.print(
+                    f"⚠️  Missing payload indexes: {missing}", style="yellow"
+                )
+                return False
+            else:
+                # Default behavior for other unknown contexts - try to create indexes
+                self.console.print("🔧 Managing payload indexes...")
+                success = self._create_missing_indexes_with_detailed_feedback(
+                    collection_name, index_status["missing_indexes"]
+                )
+                return True  # Return True regardless of creation success for unknown contexts
 
     def _create_missing_indexes_with_detailed_feedback(
         self, collection_name: str, missing_fields: List[str]

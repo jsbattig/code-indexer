@@ -147,8 +147,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         else:
             file_status = FileStatus.STARTING
 
-        self.file_tracker.start_file_processing(thread_id, file_path)
-        self.file_tracker.update_file_status(thread_id, file_status)
+        if self.file_tracker:
+            self.file_tracker.start_file_processing(thread_id, file_path)
+            self.file_tracker.update_file_status(thread_id, file_status)
         return thread_id
 
     def _update_thread_status(self, file_path: Path, status: str) -> None:
@@ -182,7 +183,8 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         else:
             file_status = FileStatus.PROCESSING
 
-        self.file_tracker.update_file_status(thread_id, file_status)
+        if self.file_tracker:
+            self.file_tracker.update_file_status(thread_id, file_status)
 
     def _complete_thread_file(self, file_path: Path) -> None:
         """Mark a file as completed and free up the thread.
@@ -205,7 +207,8 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         # Ensure file tracker is initialized (fallback for backwards compatibility)
         self._ensure_file_tracker_initialized()
 
-        self.file_tracker.complete_file_processing(thread_id)
+        if self.file_tracker:
+            self.file_tracker.complete_file_processing(thread_id)
 
     def _get_concurrent_threads_snapshot(
         self, max_threads: int = 8
@@ -224,9 +227,12 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         self._ensure_file_tracker_initialized()
 
         # Use consolidated tracker - eliminates race conditions and duplication
-        concurrent_data: List[Dict[str, Any]] = (
-            self.file_tracker.get_concurrent_files_data()
-        )
+        if self.file_tracker:
+            concurrent_data: List[Dict[str, Any]] = (
+                self.file_tracker.get_concurrent_files_data()
+            )
+        else:
+            concurrent_data = []
         return concurrent_data
 
     def _initialize_file_rate_tracking(self):
@@ -664,7 +670,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
 
                         # NEW: Use real-time thread tracking for concurrent display
                         concurrent_files = self._get_concurrent_threads_snapshot(
-                            max_threads=8
+                            max_threads=vector_thread_count
                         )
 
                         # Create comprehensive info message including file status for progress bar display

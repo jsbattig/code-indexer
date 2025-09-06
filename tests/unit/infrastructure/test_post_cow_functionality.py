@@ -38,7 +38,29 @@ class TestPostCoWQdrantClient:
 
     def test_create_collection_direct_should_work_without_cow(self, qdrant_client):
         """Test that _create_collection_direct works independently of CoW."""
-        with patch.object(qdrant_client.client, "put") as mock_put:
+        # Mock index status to indicate missing indexes for new collection
+        mock_index_status = {
+            "missing_indexes": [
+                "type",
+                "path",
+                "git_branch",
+                "file_mtime",
+                "hidden_branches",
+                "language",
+                "embedding_model",
+            ],
+            "expected_indexes": 7,
+            "total_indexes": 0,
+        }
+
+        with (
+            patch.object(qdrant_client.client, "put") as mock_put,
+            patch.object(
+                qdrant_client,
+                "get_payload_index_status",
+                return_value=mock_index_status,
+            ),
+        ):
             mock_put.return_value.status_code = 200
 
             result = qdrant_client._create_collection_direct("test_collection", 1536)
@@ -285,14 +307,34 @@ class TestPostCoWPerformance:
 
         client = QdrantClient(config=config)
 
-        with patch.object(client.client, "put") as mock_put:
+        # Mock index status to indicate missing indexes for new collection
+        mock_index_status = {
+            "missing_indexes": [
+                "type",
+                "path",
+                "git_branch",
+                "file_mtime",
+                "hidden_branches",
+                "language",
+                "embedding_model",
+            ],
+            "expected_indexes": 7,
+            "total_indexes": 0,
+        }
+
+        with (
+            patch.object(client.client, "put") as mock_put,
+            patch.object(
+                client, "get_payload_index_status", return_value=mock_index_status
+            ),
+        ):
             mock_put.return_value.status_code = 200
 
             # This includes collection creation + payload indexes (no CoW overhead)
             result = client._create_collection_direct("perf_test", 1536)
 
             assert result is True
-            # Verify 7 API calls were made (1 collection + 6 indexes, no CoW complexity)
+            # Verify 8 API calls were made (1 collection + 7 indexes, no CoW complexity)
             assert mock_put.call_count == 8
 
             # Verify collection creation call is present

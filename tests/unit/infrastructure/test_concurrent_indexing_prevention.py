@@ -42,6 +42,11 @@ class TestConcurrentIndexingPrevention:
             indexing_config.max_file_size = 1000000
             config.indexing = indexing_config
 
+            # Mock the voyage_ai sub-config
+            voyage_ai_config = Mock()
+            voyage_ai_config.parallel_requests = 8
+            config.voyage_ai = voyage_ai_config
+
             mock_embedding_provider = Mock()
             mock_embedding_provider.get_provider_name.return_value = "test-provider"
             mock_embedding_provider.get_current_model.return_value = "test-model"
@@ -192,6 +197,11 @@ class TestConcurrentIndexingPrevention:
             indexing_config.max_file_size = 1000000
             config.indexing = indexing_config
 
+            # Mock the voyage_ai sub-config
+            voyage_ai_config = Mock()
+            voyage_ai_config.parallel_requests = 8
+            config.voyage_ai = voyage_ai_config
+
             mock_embedding_provider = Mock()
             mock_embedding_provider.get_provider_name.return_value = "test-provider"
             mock_embedding_provider.get_current_model.return_value = "test-model"
@@ -285,6 +295,11 @@ class TestConcurrentIndexingPrevention:
             indexing_config.chunk_overlap = 100
             indexing_config.max_file_size = 1000000
             config.indexing = indexing_config
+
+            # Mock the voyage_ai sub-config
+            voyage_ai_config = Mock()
+            voyage_ai_config.parallel_requests = 8
+            config.voyage_ai = voyage_ai_config
 
             mock_embedding_provider = Mock()
             mock_embedding_provider.get_provider_name.return_value = "test-provider"

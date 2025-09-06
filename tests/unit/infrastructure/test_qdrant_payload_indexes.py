@@ -3,6 +3,7 @@
 from unittest.mock import Mock, patch
 
 import httpx
+import pytest
 
 from code_indexer.services.qdrant import QdrantClient
 from code_indexer.config import QdrantConfig
@@ -38,10 +39,29 @@ class TestQdrantPayloadIndexes:
         mock_response = Mock()
         mock_response.status_code = 201
 
-        with patch.object(
-            self.client.client, "put", return_value=mock_response
-        ) as mock_put:
-            # This will fail until we implement the method
+        # Mock index status to indicate missing indexes that need to be created
+        mock_index_status = {
+            "missing_indexes": [
+                "type",
+                "path",
+                "git_branch",
+                "file_mtime",
+                "hidden_branches",
+                "language",
+                "embedding_model",
+            ],
+            "expected_indexes": 7,
+            "total_indexes": 0,
+        }
+
+        with (
+            patch.object(
+                self.client.client, "put", return_value=mock_response
+            ) as mock_put,
+            patch.object(
+                self.client, "get_payload_index_status", return_value=mock_index_status
+            ),
+        ):
             result = self.client._create_payload_indexes_with_retry(collection_name)
 
             assert result is True
@@ -85,9 +105,9 @@ class TestQdrantPayloadIndexes:
         """Test partial failure scenario where some indexes succeed and some fail."""
         collection_name = "test_collection"
 
-        # Mock responses: first 3 succeed, last 3 fail
+        # Mock responses: first 3 succeed, last 4 fail (7 total indexes)
         mock_responses = []
-        for i in range(6):
+        for i in range(7):
             mock_response = Mock()
             if i < 3:
                 mock_response.status_code = 201
@@ -95,12 +115,31 @@ class TestQdrantPayloadIndexes:
                 mock_response.status_code = 500
             mock_responses.append(mock_response)
 
-        with patch.object(self.client.client, "put", side_effect=mock_responses):
-            # This will fail until we implement the method
+        # Mock index status to indicate missing indexes that need to be created
+        mock_index_status = {
+            "missing_indexes": [
+                "type",
+                "path",
+                "git_branch",
+                "file_mtime",
+                "hidden_branches",
+                "language",
+                "embedding_model",
+            ],
+            "expected_indexes": 7,
+            "total_indexes": 0,
+        }
+
+        with (
+            patch.object(self.client.client, "put", side_effect=mock_responses),
+            patch.object(
+                self.client, "get_payload_index_status", return_value=mock_index_status
+            ),
+        ):
             result = self.client._create_payload_indexes_with_retry(collection_name)
 
-            # Should return True if at least some indexes were created
-            assert result is True  # Partial success should be acceptable
+            # Implementation is strict - returns False if any indexes fail
+            assert result is False  # Partial failure should return False
 
             # Verify user feedback messages were displayed
             self.mock_console.print.assert_any_call(
@@ -115,8 +154,27 @@ class TestQdrantPayloadIndexes:
         mock_response = Mock()
         mock_response.status_code = 409
 
-        with patch.object(self.client.client, "put", return_value=mock_response):
-            # This will fail until we implement the method
+        # Mock index status to indicate missing indexes that need to be created
+        mock_index_status = {
+            "missing_indexes": [
+                "type",
+                "path",
+                "git_branch",
+                "file_mtime",
+                "hidden_branches",
+                "language",
+                "embedding_model",
+            ],
+            "expected_indexes": 7,
+            "total_indexes": 0,
+        }
+
+        with (
+            patch.object(self.client.client, "put", return_value=mock_response),
+            patch.object(
+                self.client, "get_payload_index_status", return_value=mock_index_status
+            ),
+        ):
             result = self.client._create_payload_indexes_with_retry(collection_name)
 
             assert result is True
@@ -143,8 +201,27 @@ class TestQdrantPayloadIndexes:
             mock_response.status_code = 201
             return mock_response
 
-        with patch.object(self.client.client, "put", side_effect=mock_put_side_effect):
-            # This will fail until we implement the method
+        # Mock index status to indicate missing indexes that need to be created
+        mock_index_status = {
+            "missing_indexes": [
+                "type",
+                "path",
+                "git_branch",
+                "file_mtime",
+                "hidden_branches",
+                "language",
+                "embedding_model",
+            ],
+            "expected_indexes": 7,
+            "total_indexes": 0,
+        }
+
+        with (
+            patch.object(self.client.client, "put", side_effect=mock_put_side_effect),
+            patch.object(
+                self.client, "get_payload_index_status", return_value=mock_index_status
+            ),
+        ):
             result = self.client._create_payload_indexes_with_retry(collection_name)
 
             assert result is True
@@ -163,8 +240,27 @@ class TestQdrantPayloadIndexes:
         mock_response = Mock()
         mock_response.status_code = 500
 
-        with patch.object(self.client.client, "put", return_value=mock_response):
-            # This will fail until we implement the method
+        # Mock index status to indicate missing indexes that need to be created
+        mock_index_status = {
+            "missing_indexes": [
+                "type",
+                "path",
+                "git_branch",
+                "file_mtime",
+                "hidden_branches",
+                "language",
+                "embedding_model",
+            ],
+            "expected_indexes": 7,
+            "total_indexes": 0,
+        }
+
+        with (
+            patch.object(self.client.client, "put", return_value=mock_response),
+            patch.object(
+                self.client, "get_payload_index_status", return_value=mock_index_status
+            ),
+        ):
             result = self.client._create_payload_indexes_with_retry(collection_name)
 
             assert result is False
@@ -295,8 +391,27 @@ class TestQdrantPayloadIndexesIntegration:
         mock_response = Mock()
         mock_response.status_code = 201
 
-        with patch.object(self.client.client, "put", return_value=mock_response):
-            # This will fail until we implement the method
+        # Mock index status to indicate missing indexes that need to be created
+        mock_index_status = {
+            "missing_indexes": [
+                "type",
+                "path",
+                "git_branch",
+                "file_mtime",
+                "hidden_branches",
+                "language",
+                "embedding_model",
+            ],
+            "expected_indexes": 7,
+            "total_indexes": 0,
+        }
+
+        with (
+            patch.object(self.client.client, "put", return_value=mock_response),
+            patch.object(
+                self.client, "get_payload_index_status", return_value=mock_index_status
+            ),
+        ):
             self.client._create_payload_indexes_with_retry(collection_name)
 
             # Verify progress messages were shown
@@ -308,7 +423,8 @@ class TestQdrantPayloadIndexesIntegration:
                 "   • Creating index for 'file_mtime' field (integer type)...",
                 "   • Creating index for 'hidden_branches' field (keyword type)...",
                 "   • Creating index for 'language' field (keyword type)...",
-                "   📊 Successfully created all 7 payload indexes",
+                "   • Creating index for 'embedding_model' field (keyword type)...",
+                "   📊 Successfully created 7/7 payload indexes",
             ]
 
             for message in expected_messages:
@@ -405,10 +521,11 @@ class TestQdrantPayloadIndexStatus:
         with patch.object(
             self.client, "get_collection_info", side_effect=Exception("Network error")
         ):
-            result = self.client.list_payload_indexes(collection_name)
-
-            assert isinstance(result, list)
-            assert len(result) == 0
+            # Should raise RuntimeError for API errors (not collection-not-found)
+            with pytest.raises(
+                RuntimeError, match="Unable to retrieve payload indexes"
+            ):
+                self.client.list_payload_indexes(collection_name)
 
     def test_estimate_index_memory_usage_method_exists(self):
         """Test that _estimate_index_memory_usage method exists and is callable."""

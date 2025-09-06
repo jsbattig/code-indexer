@@ -35,6 +35,11 @@ def mock_config():
         indexing_config.max_file_size = 1000000
         config.indexing = indexing_config
 
+        # Mock the voyage_ai sub-config
+        voyage_ai_config = Mock()
+        voyage_ai_config.parallel_requests = 8
+        config.voyage_ai = voyage_ai_config
+
         yield config
 
 
