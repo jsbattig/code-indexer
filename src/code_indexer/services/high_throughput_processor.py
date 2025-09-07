@@ -17,6 +17,7 @@ This module contains progress_callback calls that MUST follow the pattern:
 
 import logging
 import time
+import concurrent.futures
 from concurrent.futures import as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,8 +27,19 @@ from ..indexing.processor import ProcessingStats
 from ..services.git_aware_processor import GitAwareDocumentProcessor
 from .vector_calculation_manager import VectorCalculationManager
 from .consolidated_file_tracker import ConsolidatedFileTracker, FileStatus
+from .file_chunking_manager import FileChunkingManager, FileProcessingResult
+
+# SURGICAL FIX: Remove RealTimeFeedbackManager import - causes individual callback spam
 
 logger = logging.getLogger(__name__)
+
+# Export imports for tests
+__all__ = [
+    "HighThroughputProcessor",
+    "FileChunkingManager",
+    "FileProcessingResult",
+    "BranchIndexingResult",
+]
 
 
 @dataclass
@@ -68,6 +80,10 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         self._content_id_lock = threading.Lock()
         self._database_lock = threading.Lock()
 
+        # CRITICAL FIX: Single cancellation event for unified cancellation
+        self._cancellation_event = threading.Event()
+        self._cancellation_lock = threading.Lock()
+
         # File processing rate tracking for files/s metric
         self._file_rate_lock = threading.Lock()
         self._file_processing_start_time = None
@@ -75,7 +91,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             []
         )  # List of (timestamp, files_completed) tuples
         self._rolling_window_seconds = (
-            5.0  # Rolling window for smoothed files/s calculation
+            30.0  # Rolling window for smoothed files/s calculation
         )
         self._min_time_diff = 0.1  # Minimum time difference to avoid inflated rates
 
@@ -97,12 +113,14 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         self._file_to_thread_map: Dict[Path, int] = {}
         self._file_to_thread_lock = threading.Lock()
 
-    def request_cancellation(self):
+    def request_cancellation(self) -> None:
         """Request cancellation of processing."""
-        self.cancelled = True
+        with self._cancellation_lock:
+            self.cancelled = True
+            self._cancellation_event.set()
         logger.info("High throughput processing cancellation requested")
 
-    def _ensure_file_tracker_initialized(self, thread_count: int = 8):
+    def _ensure_file_tracker_initialized(self, thread_count: int = 8) -> None:
         """Ensure file tracker is initialized with appropriate thread count.
 
         Args:
@@ -111,9 +129,10 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         if self.file_tracker is None:
             self.file_tracker = ConsolidatedFileTracker(
                 max_concurrent_files=thread_count
+                + 2  # Match FileChunkingManager workers
             )
             logger.info(
-                f"Initialized ConsolidatedFileTracker with {thread_count} max concurrent files"
+                f"Initialized ConsolidatedFileTracker with {thread_count + 2} max concurrent files"
             )
 
     def _register_thread_file(
@@ -371,365 +390,226 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         stats = ProcessingStats()
         stats.start_time = time.time()
 
+        # SURGICAL FIX: Remove RealTimeFeedbackManager - causes individual callback spam
+        # Use ConsolidatedFileTracker for fixed N-line display instead
+
+        # SURGICAL FIX: Remove feedback_manager initialization call
+
         # Initialize file processing rate tracking for files/s metric
         self._initialize_file_rate_tracking()
 
-        # Phase 1: Pre-process all files to create chunk queue
-        all_chunk_tasks = []
-        task_counter = 0
-
-        # Debug: Log processing start
-        import os
-        import datetime
-
-        debug_file = os.path.expanduser("~/.tmp/cidx_debug.log")
-        os.makedirs(os.path.dirname(debug_file), exist_ok=True)
-
-        logger.info("Phase 1: Creating chunk queue from all files...")
-        for file_path in files:
-            try:
-                # Don't register files during chunking - they're not actually being processed yet
-                # File registration will happen when actual processing begins
-
-                # Debug: Log each file being processed
-                with open(debug_file, "a") as f:
-                    f.write(
-                        f"[{datetime.datetime.now().isoformat()}] Starting to chunk: {file_path}\n"
-                    )
-                    f.flush()
-
-                # Skip status update during chunking - no display registration yet
-
-                # Chunk the file
-                chunks = self.fixed_size_chunker.chunk_file(file_path)
-
-                # Debug: Log completion of chunking
-                with open(debug_file, "a") as f:
-                    f.write(
-                        f"[{datetime.datetime.now().isoformat()}] Completed chunking: {file_path} - {len(chunks) if chunks else 0} chunks\n"
-                    )
-                    f.flush()
-
-                if not chunks:
-                    # Skip - no file registered during chunking
-                    continue
-
-                # Files will be registered when actual processing starts in ThreadPoolExecutor
-
-                # Get file metadata once per file
-                file_metadata = self.file_identifier.get_file_metadata(file_path)
-
-                # Create tasks for all chunks
-                for chunk in chunks:
-                    task_counter += 1
-                    chunk_task = ChunkTask(
-                        file_path=file_path,
-                        chunk_data=chunk,
-                        file_metadata=file_metadata,
-                        task_id=f"task_{task_counter}",
-                    )
-                    all_chunk_tasks.append(chunk_task)
-
-                # Don't count files as processed until actually completed
-                # stats.files_processed will be updated during actual processing
-                file_size = file_path.stat().st_size
-                stats.total_size += file_size
-
-            except Exception as e:
-                logger.error(f"Failed to process file {file_path}: {e}")
-                stats.failed_files += 1
-                # Skip cleanup - no file registered during chunking
-                continue
-
-        if not all_chunk_tasks:
-            logger.warning("No chunks to process")
-            return stats
-
-        logger.info(
-            f"Created {len(all_chunk_tasks)} chunk tasks from {len(files)} files"
-        )
-
-        # Phase 2: Process all chunks in parallel with maximum worker utilization
+        # PARALLEL FILE PROCESSING: Replace sequential chunking with parallel submission
         with VectorCalculationManager(
             self.embedding_provider, vector_thread_count
         ) as vector_manager:
-            # Submit ALL chunks to the vector calculation manager
-            chunk_futures = []
-            for chunk_task in all_chunk_tasks:
-                future = vector_manager.submit_chunk(
-                    chunk_task.chunk_data["text"],
-                    {
-                        "chunk_task": chunk_task,
-                        "file_path": str(chunk_task.file_path),
-                    },
-                )
-                chunk_futures.append(future)
+            with FileChunkingManager(
+                vector_manager=vector_manager,
+                chunker=self.fixed_size_chunker,
+                qdrant_client=self.qdrant_client,
+                thread_count=vector_thread_count,
+                file_tracker=self.file_tracker,  # ADD THIS LINE
+            ) as file_manager:
 
-            logger.info(
-                f"Submitted {len(chunk_futures)} chunks to {vector_thread_count} worker threads"
-            )
-
-            # Phase 3: Collect results and batch to Qdrant with file-level atomicity
-            batch_points = []
-            completed_chunks = 0
-
-            # Track file-level progress for smooth updates
-            file_chunk_counts: Dict[Path, int] = {}  # file_path -> total_chunks
-            file_completed_chunks: Dict[Path, int] = {}  # file_path -> completed_chunks
-            completed_files: Set[Path] = set()
-            last_progress_file: Optional[Path] = None
-
-            # File-level transaction management for atomicity
-            file_chunks: Dict[Path, List[Dict[str, Any]]] = (
-                {}
-            )  # file_path -> list of completed points
-            file_completion_status: Dict[Path, bool] = (
-                {}
-            )  # file_path -> all_chunks_complete
-
-            # Pre-calculate chunk counts per file for accurate progress
-            for chunk_task in all_chunk_tasks:
-                file_path = chunk_task.file_path
-                file_chunk_counts[file_path] = file_chunk_counts.get(file_path, 0) + 1
-                file_completed_chunks[file_path] = 0
-                file_chunks[file_path] = []
-                file_completion_status[file_path] = False
-
-            for future in as_completed(chunk_futures):
-                # Check for cancellation at the beginning of each iteration
-                if self.cancelled:
-                    logger.info(
-                        "Processing cancelled - breaking out of as_completed loop"
-                    )
-                    # Also cancel the vector manager to stop new tasks
-                    vector_manager.request_cancellation()
-
-                    # Before breaking, commit any completed files to maintain atomicity
-                    completed_file_chunks = []
-                    for file_path, is_complete in file_completion_status.items():
-                        if is_complete:
-                            completed_file_chunks.extend(file_chunks[file_path])
-                            logger.info(
-                                f"Committing completed file on cancellation: {file_path}"
-                            )
-
-                    if completed_file_chunks:
-                        logger.info(
-                            f"Committing {len(completed_file_chunks)} chunks from {len(completed_files)} completed files due to cancellation"
+                # Submit all files for parallel processing
+                file_futures = []
+                for file_path in files:
+                    try:
+                        file_metadata = self.file_identifier.get_file_metadata(
+                            file_path
                         )
-                        try:
-                            if not self.qdrant_client.upsert_points_atomic(
-                                completed_file_chunks
-                            ):
-                                logger.error(
-                                    "Failed to commit completed files during cancellation"
-                                )
-                        except Exception as e:
-                            last_file = (
-                                list(completed_files)[-1].name
-                                if completed_files
-                                else "unknown"
-                            )
-                            logger.error(
-                                f"Failed to commit completed files during cancellation (last file: {last_file}): {e}"
-                            )
-
-                    break
-
-                try:
-                    vector_result = future.result(timeout=300)  # 5 minute timeout
-
-                    if vector_result.error:
-                        logger.error(
-                            f"Vector calculation failed: {vector_result.error}"
+                        file_future = file_manager.submit_file_for_processing(
+                            file_path, file_metadata, progress_callback
                         )
+                        file_futures.append(file_future)
+
+                        # Update stats with file size for total tracking
+                        file_size = file_path.stat().st_size
+                        stats.total_size += file_size
+
+                    except Exception as e:
+                        logger.error(f"Failed to submit file {file_path}: {e}")
+                        stats.failed_files += 1
                         continue
 
-                    # Extract chunk task from metadata
-                    chunk_task = vector_result.metadata["chunk_task"]
-                    current_file = chunk_task.file_path
+                if not file_futures:
+                    logger.warning("No files to process")
+                    return stats
 
-                    # Register file with display system when first chunk completes (dynamic registration)
-                    chunks_completed = file_completed_chunks.get(current_file, 0) + 1
-                    if chunks_completed == 1:
-                        # First chunk of this file - register for display
-                        self._register_thread_file(current_file, "processing (0%)")
+                logger.info(
+                    f"Submitted {len(file_futures)} files for parallel processing"
+                )
 
-                    # Update thread status for processing with real-time progress
-                    total_chunks = file_chunk_counts[current_file]
-                    progress_pct = int((chunks_completed / total_chunks) * 100)
-                    self._update_thread_status(
-                        current_file, f"processing ({progress_pct}%)"
-                    )
+                # Collect file-level results
+                completed_files = 0
+                
+                # Track time for periodic display updates to avoid lock contention
+                last_display_update = time.time()
+                display_update_interval = 1.0  # Update display at most once per second
 
-                    # Create Qdrant point using existing logic
-                    point = self._create_qdrant_point(
-                        chunk_task, vector_result.embedding
-                    )
+                # SIMPLE FIX: Use reasonable timeout for all file results
+                # No aggressive graduated timeouts that cause false failures
+                file_result_timeout = (
+                    600.0  # 10 minutes - reasonable for file completion
+                )
 
-                    # Store point for this file (don't add to batch yet)
-                    file_chunks[current_file].append(point)
-                    stats.chunks_created += 1
-                    completed_chunks += 1
-
-                    # Update file-level progress tracking
-                    file_completed_chunks[current_file] += 1
-
-                    # Check if this file is now completed
-                    if (
-                        file_completed_chunks[current_file]
-                        == file_chunk_counts[current_file]
-                    ):
-                        # File is complete - add all its chunks to batch for indexing
-                        completed_files.add(current_file)
-                        file_completion_status[current_file] = True
-
-                        # Show completion status briefly before cleanup
-                        self._update_thread_status(current_file, "complete ✓")
-
-                        # Complete the file processing - consolidated tracker handles display and cleanup
-                        self._complete_thread_file(current_file)
-
-                        # Track source bytes for KB/s calculation when file completes (Story 3)
-                        try:
-                            file_size = current_file.stat().st_size
-                            self._add_source_bytes_processed(file_size)
-                        except Exception as e:
-                            logger.warning(
-                                f"Failed to track source bytes for {current_file}: {e}"
-                            )
-
-                        # Add all chunks for this completed file to the batch
-                        batch_points.extend(file_chunks[current_file])
-                        logger.debug(
-                            f"File {current_file} completed - added {len(file_chunks[current_file])} chunks to batch"
+                for file_future in as_completed(file_futures):
+                    # SIMPLE BETWEEN-FILES-ONLY CANCELLATION:
+                    # Check cancellation only between files, never during file processing
+                    if self.cancelled:
+                        logger.info(
+                            "Cancellation requested - stopping after current file"
                         )
+                        stats.cancelled = True
+                        break
 
-                    # Process batch if full with enhanced atomicity
-                    if len(batch_points) >= batch_size:
-                        try:
-                            if not self.qdrant_client.upsert_points_atomic(
-                                batch_points
-                            ):
-                                raise RuntimeError("Failed to upload batch to Qdrant")
-                        except Exception as e:
-                            raise RuntimeError(
-                                f"Failed to upload batch to Qdrant (last processed file: {file_path.name}): {e}"
-                            )
-                        batch_points = []
+                    try:
+                        # SIMPLE FIX: Use reasonable timeout for all file results
+                        file_result = file_future.result(timeout=file_result_timeout)
 
-                    # Smooth progress updates: call every few chunks or when file changes
-                    should_update_progress = False
-                    if progress_callback:
-                        # Update every 3 chunks OR when we start/complete a file
-                        if (
-                            completed_chunks % 3 == 0
-                            or current_file != last_progress_file
-                            or current_file in completed_files
-                        ):
-                            should_update_progress = True
-                            last_progress_file = current_file
+                        if file_result.success:
+                            stats.files_processed += 1
+                            stats.chunks_created += file_result.chunks_processed
+                            completed_files += 1
 
-                    if should_update_progress:
-                        vector_stats = vector_manager.get_stats()
-
-                        # Create file-based progress information
-                        files_completed = len(completed_files)
-                        files_total = len(files)
-                        file_progress_pct = (
-                            (files_completed / files_total * 100)
-                            if files_total > 0
-                            else 0
-                        )
-
-                        # Show current file being processed (or last completed)
-                        display_file = current_file
-                        file_status = ""
-                        if current_file in completed_files:
-                            file_status = " ✓"
-                        else:
-                            # Show progress within current file
-                            file_pct = (
-                                (
-                                    file_completed_chunks[current_file]
-                                    / file_chunk_counts[current_file]
-                                    * 100
+                            # Track source bytes for KB/s calculation when file completes
+                            try:
+                                file_size = file_result.file_path.stat().st_size
+                                self._add_source_bytes_processed(file_size)
+                            except Exception as e:
+                                logger.warning(
+                                    f"Failed to track source bytes for {file_result.file_path}: {e}"
                                 )
-                                if file_chunk_counts[current_file] > 0
-                                else 0
-                            )
-                            file_status = f" ({file_pct:.0f}%)"
 
-                        # Calculate files per second for progress reporting
-                        files_per_second = self._calculate_files_per_second(
-                            files_completed
+                            # PERFORMANCE FIX: Reduce lock contention by updating display less frequently
+                            if progress_callback:
+                                files_per_second = self._calculate_files_per_second(
+                                    completed_files
+                                )
+                                kbs_throughput = self._calculate_kbs_throughput()
+
+                                # CRITICAL PERFORMANCE FIX: Don't call get_concurrent_threads_snapshot()
+                                # on EVERY file completion - it causes severe lock contention!
+                                # The lock blocks worker threads trying to update their status.
+                                # Use time-based updates (max once per second) or on significant milestones.
+                                current_time = time.time()
+                                time_since_last_update = current_time - last_display_update
+                                concurrent_files = None
+                                
+                                should_update_display = True
+                                
+                                if should_update_display:
+                                    last_display_update = current_time
+                                    concurrent_files = (
+                                        self._get_concurrent_threads_snapshot(
+                                            max_threads=vector_thread_count
+                                        )
+                                    )
+
+                                file_progress_pct = (
+                                    (completed_files / len(files) * 100)
+                                    if len(files) > 0
+                                    else 0
+                                )
+
+                                info_msg = f"{completed_files}/{len(files)} files ({file_progress_pct:.0f}%) | {files_per_second:.1f} files/s | {kbs_throughput:.1f} KB/s | {vector_thread_count} threads"
+
+                                # Only pass concurrent_files when we have fresh data
+                                try:
+                                    if concurrent_files is not None:
+                                        callback_result = progress_callback(
+                                            completed_files,
+                                            len(files),
+                                            Path(""),
+                                            info=info_msg,
+                                            concurrent_files=concurrent_files,
+                                        )
+                                    else:
+                                        # Update progress bar without concurrent files data
+                                        callback_result = progress_callback(
+                                            completed_files,
+                                            len(files),
+                                            Path(""),
+                                            info=info_msg,
+                                        )
+                                except TypeError:
+                                    # Old-style callback that doesn't accept concurrent_files
+                                    callback_result = progress_callback(
+                                        completed_files,
+                                        len(files),
+                                        Path(""),
+                                        info=info_msg,
+                                    )
+
+                                # Check for cancellation signal from progress callback
+                                if callback_result == "INTERRUPT":
+                                    logger.info("Processing interrupted by user")
+                                    with self._cancellation_lock:
+                                        self.cancelled = True
+                                        self._cancellation_event.set()
+                                        # CRITICAL FIX: Propagate cancellation to all components
+                                        vector_manager.request_cancellation()
+                                        file_manager.request_cancellation()
+                                        stats.files_processed = completed_files
+                                        stats.cancelled = True
+                                        # Cancel remaining futures atomically
+                                        futures_to_cancel = [
+                                            f for f in file_futures if not f.done()
+                                        ]
+                                        for future in futures_to_cancel:
+                                            future.cancel()
+                                    return stats
+                        else:
+                            stats.failed_files += 1
+                            logger.error(f"File processing failed: {file_result.error}")
+
+                    except concurrent.futures.TimeoutError:
+                        # Check if cancelled during timeout
+                        with self._cancellation_lock:
+                            if self.cancelled:
+                                logger.info(
+                                    "File result timeout during cancellation - expected behavior"
+                                )
+                                # Cancel the future and continue to next
+                                file_future.cancel()
+                                continue
+
+                        # Real timeout - legitimate slow processing with reasonable timeout
+                        logger.warning(
+                            f"File processing timeout after {file_result_timeout}s - very slow embedding provider or extremely large file"
                         )
-
-                        # Calculate KB/s throughput for source data ingestion rate (Story 3)
-                        kbs_throughput = self._calculate_kbs_throughput()
-
-                        # NEW: Use real-time thread tracking for concurrent display
-                        concurrent_files = self._get_concurrent_threads_snapshot(
-                            max_threads=vector_thread_count
-                        )
-
-                        # Create comprehensive info message including file status for progress bar display
-                        # STORY 3: Added KB/s between files/s and threads to show source data throughput
-                        info_msg = (
-                            f"{files_completed}/{files_total} files ({file_progress_pct:.0f}%) | "
-                            f"{files_per_second:.1f} files/s | "
-                            f"{kbs_throughput:.1f} KB/s | "
-                            f"{vector_stats.active_threads} threads | "
-                            f"{display_file.name}{file_status}"
-                        )
-
-                        if progress_callback:
-                            # ⚠️  CRITICAL: files_total > 0 triggers CLI progress bar
-                            # Use empty path with info to ensure progress bar updates instead of individual messages
-                            # Include concurrent files data for multi-threaded display integration
-                            callback_result = progress_callback(
-                                files_completed,
-                                files_total,
-                                Path(
-                                    ""
-                                ),  # Empty path with info = progress bar description update
-                                info=info_msg,
-                                concurrent_files=concurrent_files,  # NEW: Add concurrent file data
-                            )
-                            # Check for cancellation signal
-                            if callback_result == "INTERRUPT":
-                                logger.info("Processing interrupted by user")
-                                # Set cancellation flag for immediate response
-                                self.cancelled = True
-                                # Also cancel the vector manager
-                                vector_manager.request_cancellation()
-                                # Update stats to reflect actual files processed before interruption
-                                stats.files_processed = files_completed
-                                stats.cancelled = True
-                                return stats
-
-                except Exception as e:
-                    logger.error(f"Failed to process chunk result: {e}")
-                    continue
-
-            # Process remaining points with enhanced atomicity
-            if batch_points:
-                try:
-                    if not self.qdrant_client.upsert_points_atomic(batch_points):
-                        raise RuntimeError("Failed to upload final batch to Qdrant")
-                except Exception as e:
-                    last_file = files[-1].name if files else "unknown"
-                    raise RuntimeError(
-                        f"Failed to upload final batch to Qdrant (last processed file: {last_file}): {e}"
-                    )
+                        stats.failed_files += 1
+                        continue
+                    except Exception as e:
+                        logger.error(f"Failed to get file result: {e}")
+                        stats.failed_files += 1
+                        continue
 
         stats.end_time = time.time()
-        # Set final files_processed count to actual completed files
-        stats.files_processed = len(completed_files)
+        # stats.files_processed already updated during processing
         logger.info(
             f"High-throughput processing completed: "
             f"{stats.files_processed} files, {stats.chunks_created} chunks in {stats.end_time - stats.start_time:.2f}s"
         )
+
+        # STORY 1: Send final progress callback to reach 100% completion
+        # This ensures Rich Progress bar shows 100% instead of stopping at ~94%
+        if progress_callback and len(files) > 0:
+            # Calculate final KB/s throughput for completion message
+            final_kbs_throughput = self._calculate_kbs_throughput()
+
+            final_info_msg = (
+                f"{len(files)}/{len(files)} files (100%) | "
+                f"0.0 files/s | "
+                f"{final_kbs_throughput:.1f} KB/s | "
+                f"0 threads | "
+                f"✅ Completed"
+            )
+            progress_callback(
+                len(files),  # current = total for 100% completion
+                len(files),  # total files
+                Path(""),  # Empty path with info = progress bar description update
+                info=final_info_msg,
+            )
 
         # STORY 1: Send final progress callback to reach 100% completion
         # This ensures Rich Progress bar shows 100% instead of stopping at ~94%
@@ -750,6 +630,11 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 Path(""),  # Empty path with info = progress bar description update
                 info=final_info_msg,
             )
+
+        # PERFORMANCE FIX: Stop the cleanup thread when done processing
+        # This ensures clean shutdown of the background cleanup thread
+        if self.file_tracker:
+            self.file_tracker.stop_cleanup_thread()
 
         return stats
 
@@ -1301,7 +1186,10 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             List of concurrent file data dictionaries for display manager
         """
         # Use consolidated file tracker instead of duplicate tracking logic
-        concurrent_files_data: List[Dict[str, Any]] = (
-            self.file_tracker.get_concurrent_files_data()
-        )
+        if self.file_tracker:
+            concurrent_files_data: List[Dict[str, Any]] = (
+                self.file_tracker.get_concurrent_files_data()
+            )
+        else:
+            concurrent_files_data = []
         return concurrent_files_data

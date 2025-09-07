@@ -186,8 +186,27 @@ class ConcurrentFileDisplay:
         else:
             size_str = f"{line_data.file_size / (1024 * 1024):.1f} MB"
 
+        # Format status with custom mappings for better user experience
+        # Complete status mapping - activity states have "...", waiting states don't
+        if line_data.status == "queued":
+            status_str = "queued"  # WAITING STATE - no ...
+        elif line_data.status == "chunking":
+            status_str = "chunking..."  # ACTIVITY - has ...
+        elif line_data.status == "vectorizing":
+            status_str = "vectorizing..."  # ACTIVITY - has ...
+        elif line_data.status == "starting...":
+            status_str = "starting"  # WAITING STATE - remove ...
+        elif line_data.status == "processing":
+            status_str = "vectorizing..."  # ACTIVITY - keep existing
+        elif line_data.status == "finalizing...":
+            status_str = "finalizing..."  # ACTIVITY - has ...
+        elif line_data.status == "complete":
+            status_str = "complete ✓"  # FINAL STATE - completion indicator
+        else:
+            status_str = line_data.status
+
         # Format: ├─ filename.py (size, estimated_time) status
-        return f"├─ {line_data.file_path.name} ({size_str}, {line_data.estimated_seconds}s) {line_data.status}"
+        return f"├─ {line_data.file_path.name} ({size_str}, {line_data.estimated_seconds}s) {status_str}"
 
 
 class RampingDownManager:

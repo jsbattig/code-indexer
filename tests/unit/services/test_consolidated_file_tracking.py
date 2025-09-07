@@ -121,11 +121,12 @@ class TestConsolidatedFileTracker:
         assert len(active_files) == 1
         assert active_files[0]["status"] == FileStatus.COMPLETE.value
 
-        # Should be removed after cleanup delay (3 seconds)
-        # Fast-forward time using mock
-        with patch("time.time", return_value=time.time() + 4.0):
-            active_files = self.tracker.get_concurrent_files_data()
-            assert len(active_files) == 0
+        # PERFORMANCE FIX: Cleanup now happens in background thread
+        # Wait for actual cleanup to occur (3 second delay + thread interval)
+        time.sleep(4.0)
+        
+        active_files = self.tracker.get_concurrent_files_data()
+        assert len(active_files) == 0
 
     def test_no_race_condition_in_cleanup(self):
         """Test that cleanup doesn't have race conditions."""

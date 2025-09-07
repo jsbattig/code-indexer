@@ -8,6 +8,8 @@ file I/O, chunking, and Qdrant operations in the main thread.
 import logging
 import threading
 import time
+
+# import concurrent.futures - not needed
 from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass
 from enum import Enum
@@ -336,22 +338,58 @@ class VectorCalculationManager:
 
     def shutdown(self, wait: bool = True, timeout: Optional[float] = None):
         """
-        Shutdown the thread pool.
+        Shutdown the thread pool with proper cleanup.
 
         Args:
             wait: Whether to wait for completion of running tasks
-            timeout: Maximum time to wait for shutdown
+            timeout: Maximum time to wait for shutdown (default 30s)
         """
         if not self.is_running or not self.executor:
             return
 
         self.is_running = False
 
+        # Set cancellation event to signal all threads
+        self.cancellation_event.set()
+
         try:
-            self.executor.shutdown(wait=wait)
-            logger.info("Vector calculation thread pool shut down successfully")
+            # Use reasonable timeout if not specified
+            shutdown_timeout = timeout if timeout is not None else 30.0
+
+            if wait and shutdown_timeout:
+                # Implement timeout using thread since Python < 3.9 doesn't support timeout parameter
+                import threading
+
+                shutdown_complete = threading.Event()
+
+                def shutdown_thread():
+                    try:
+                        self.executor.shutdown(wait=True)
+                        shutdown_complete.set()
+                    except Exception as e:
+                        logger.error(f"Error in shutdown thread: {e}")
+                        shutdown_complete.set()
+
+                shutdown_worker = threading.Thread(target=shutdown_thread, daemon=True)
+                shutdown_worker.start()
+
+                # Wait for shutdown with timeout
+                if shutdown_complete.wait(timeout=shutdown_timeout):
+                    logger.info("Vector calculation thread pool shut down successfully")
+                else:
+                    logger.warning(
+                        f"Vector calculation shutdown timeout after {shutdown_timeout}s - forcing shutdown"
+                    )
+                    # Force shutdown without wait
+                    self.executor.shutdown(wait=False)
+            else:
+                # No timeout needed, just shutdown
+                self.executor.shutdown(wait=wait)
+                logger.info("Vector calculation thread pool shut down successfully")
+
         except Exception as e:
             logger.error(f"Error during thread pool shutdown: {e}")
+
         finally:
             self.executor = None
 
@@ -361,8 +399,14 @@ class VectorCalculationManager:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
-        self.shutdown(wait=True, timeout=30.0)
+        """Context manager exit with proper cleanup."""
+        # CRITICAL FIX: Use graduated timeout based on exception status
+        if exc_type is not None:
+            # Exception occurred - quick shutdown to avoid delays
+            self.shutdown(wait=True, timeout=5.0)
+        else:
+            # Normal exit - allow more time for clean shutdown
+            self.shutdown(wait=True, timeout=30.0)
 
     def get_resolved_thread_count(self, config) -> int:
         """

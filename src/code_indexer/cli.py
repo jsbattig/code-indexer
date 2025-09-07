@@ -1529,7 +1529,7 @@ def index(
         progress_manager = MultiThreadedProgressManager(
             console=console,
             live_manager=rich_live_manager,
-            max_lines=thread_count,
+            max_lines=thread_count + 2,
         )
         display_initialized = False
 

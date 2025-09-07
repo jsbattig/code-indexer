@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 class FileStatus(Enum):
     """File processing status enumeration."""
 
+    QUEUED = "queued"
+    CHUNKING = "chunking"
+    VECTORIZING = "vectorizing"
     STARTING = "starting..."
     PROCESSING = "processing"
     COMPLETING = "finalizing..."
@@ -78,6 +81,11 @@ class ConsolidatedFileTracker:
         # Thread counter for consistent ordering
         self._next_display_order = 0
         self._display_order_lock = threading.Lock()
+
+        # PERFORMANCE FIX: Cleanup thread to avoid doing work in hot path
+        self._cleanup_thread: Optional[threading.Thread] = None
+        self._cleanup_stop_event = threading.Event()
+        self._start_cleanup_thread()
 
     def start_file_processing(
         self, thread_id: int, file_path: Path, file_size: Optional[int] = None
@@ -152,8 +160,8 @@ class ConsolidatedFileTracker:
             List of file data dictionaries compatible with progress callback
         """
         with self._lock:
-            # Clean up expired completed files
-            self._cleanup_expired_files()
+            # PERFORMANCE FIX: Removed cleanup from hot path - cleanup thread handles it
+            # This method is called for EVERY file completion, must be fast!
 
             # Build concurrent files list
             concurrent_files = []
@@ -180,8 +188,7 @@ class ConsolidatedFileTracker:
             List of formatted line strings with tree-style indicators
         """
         with self._lock:
-            # Clean up expired files
-            self._cleanup_expired_files()
+            # PERFORMANCE FIX: Removed cleanup from hot path - cleanup thread handles it
 
             display_lines = []
 
@@ -200,7 +207,7 @@ class ConsolidatedFileTracker:
             Number of active files being tracked
         """
         with self._lock:
-            self._cleanup_expired_files()
+            # PERFORMANCE FIX: Removed cleanup from hot path - cleanup thread handles it
             return len(self._active_files)
 
     def _remove_oldest_file(self) -> None:
@@ -259,11 +266,21 @@ class ConsolidatedFileTracker:
         elapsed_seconds = current_time - tracking_data.start_time
         elapsed_str = self._format_elapsed_time(elapsed_seconds)
 
-        # Format status
-        if tracking_data.status == FileStatus.PROCESSING:
-            status_str = "vectorizing..."
+        # Format status with user-friendly display
+        if tracking_data.status == FileStatus.QUEUED:
+            status_str = "📥 Queued"
+        elif tracking_data.status == FileStatus.CHUNKING:
+            status_str = "🔄 Chunking"
+        elif tracking_data.status == FileStatus.VECTORIZING:
+            status_str = "🔄 Vectorizing"
+        elif tracking_data.status == FileStatus.STARTING:
+            status_str = "📥 Starting"
+        elif tracking_data.status == FileStatus.PROCESSING:
+            status_str = "🔄 Processing"
+        elif tracking_data.status == FileStatus.COMPLETING:
+            status_str = "📝 Finalizing"
         elif tracking_data.status == FileStatus.COMPLETE:
-            status_str = "complete ✓"
+            status_str = "✅ Complete"
         else:
             status_str = tracking_data.status.value
 
@@ -297,3 +314,41 @@ class ConsolidatedFileTracker:
         # Round to nearest second, with minimum of 1s
         rounded_seconds = max(1, round(elapsed_seconds))
         return f"{rounded_seconds}s"
+
+    def _start_cleanup_thread(self) -> None:
+        """Start background cleanup thread for expired files.
+
+        PERFORMANCE FIX: Move cleanup out of hot path to avoid lock contention.
+        Cleanup runs every second in background instead of on every get_concurrent_files_data() call.
+        """
+
+        def cleanup_worker():
+            """Background worker that periodically cleans up expired files."""
+            while not self._cleanup_stop_event.is_set():
+                # Wait 1 second between cleanups
+                if self._cleanup_stop_event.wait(1.0):
+                    break
+
+                # Perform cleanup with minimal lock time
+                with self._lock:
+                    self._cleanup_expired_files()
+
+            logger.debug("Cleanup thread stopped")
+
+        self._cleanup_thread = threading.Thread(
+            target=cleanup_worker,
+            name="FileTrackerCleanup",
+            daemon=True,  # Daemon thread will exit when main program exits
+        )
+        self._cleanup_thread.start()
+        logger.debug("Started file tracker cleanup thread")
+
+    def stop_cleanup_thread(self) -> None:
+        """Stop the background cleanup thread.
+
+        Call this when shutting down to cleanly stop the cleanup thread.
+        """
+        if self._cleanup_thread:
+            self._cleanup_stop_event.set()
+            self._cleanup_thread.join(timeout=2.0)
+            logger.debug("Stopped file tracker cleanup thread")

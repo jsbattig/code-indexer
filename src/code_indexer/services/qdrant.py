@@ -668,17 +668,18 @@ class QdrantClient:
             self.console.print(f"Failed to upsert points: {e}", style="red")
             return False
 
-    def upsert_points_atomic(
+    def upsert_points_batched(
         self,
         points: List[Dict[str, Any]],
         collection_name: Optional[str] = None,
         max_batch_size: int = 100,
     ) -> bool:
         """
-        Insert or update points with enhanced batch safety and atomicity.
+        Insert or update points using batch processing for better performance.
 
-        This method ensures that either all points in the batch are successfully
-        inserted or none are, preventing partial state corruption during cancellation.
+        NOTE: This method is NOT atomic. If one batch fails, some points may have
+        been successfully inserted while others failed. This provides better
+        performance but not transactional guarantees.
 
         Args:
             points: List of points to upsert
@@ -686,17 +687,17 @@ class QdrantClient:
             max_batch_size: Maximum size for individual batches (default 100)
 
         Returns:
-            True if all points were successfully upserted, False otherwise
+            True if all points were successfully upserted, False if any batch failed
         """
         if not points:
             return True
 
-        # For small batches, use standard upsert with Qdrant's built-in atomicity
+        # For small batches, use standard upsert directly
         if len(points) <= max_batch_size:
             return self.upsert_points(points, collection_name)
 
-        # For larger batches, split into smaller atomic chunks
-        # Each chunk is atomic by Qdrant's guarantee
+        # For larger batches, split into smaller batches for better performance
+        # Each batch is processed independently
         total_batches = (len(points) + max_batch_size - 1) // max_batch_size
 
         for i in range(0, len(points), max_batch_size):
@@ -720,6 +721,12 @@ class QdrantClient:
                 return False
 
         return True
+
+    # BACKWARD COMPATIBILITY: Alias for old method name
+    # TODO: Remove this alias after updating all test files
+    def upsert_points_atomic(self, *args, **kwargs):
+        """DEPRECATED: Use upsert_points_batched instead. This method is NOT atomic."""
+        return self.upsert_points_batched(*args, **kwargs)
 
     def search(
         self,

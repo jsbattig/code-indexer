@@ -1,5 +1,7 @@
 - When using cidx (code-indexer), the flow to use it is init command must have been run, at least once, on a fresh folder before you can do start. After start is succesful, then you can operate in that space with query command.
 
+- ⚠️ CRITICAL PERFORMANCE PROHIBITION: NEVER add artificial time.sleep() delays to production code to make status changes "visible" to users. This is a brain-dead approach that destroys performance (adding minutes of delay across hundreds of files). If status transitions are too fast to see, fix the DISPLAY LOGIC or REFRESH RATE, not the processing logic. Adding sleep() to production code for UI visibility is STRICTLY FORBIDDEN and demonstrates fundamental misunderstanding of performance engineering.
+
 - When I give a list of e2e, functional, integration, long running tests to troubleshoot and fix, keep in mind that tests don't leave a clean a state at the end to improve running performance, they leave service running and dirty collections. Tests should be aware of this, of noisy neighboor, and have comprehensive setup that ensure conditions are adjusted execute the tests succesfully.
 
 - When I ask you to "lint" you will run the ./lint.sh file and address all and every error reported in a systematic way

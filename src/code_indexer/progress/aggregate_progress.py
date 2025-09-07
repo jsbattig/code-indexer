@@ -48,7 +48,7 @@ class ProgressState:
 class ProgressMetricsCalculator:
     """Calculates real-time performance metrics from progress data."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize metrics calculator."""
         self.progress_points: List[Tuple[float, int, int, int]] = (
             []
@@ -187,7 +187,7 @@ class AggregateProgressDisplay:
     Separates progress bar (line 1) from performance metrics (line 2).
     """
 
-    def __init__(self, console: Console):
+    def __init__(self, console: Console) -> None:
         """Initialize aggregate progress display.
 
         Args:

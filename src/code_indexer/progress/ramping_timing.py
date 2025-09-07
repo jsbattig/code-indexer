@@ -29,7 +29,7 @@ class ContextualTiming:
 class RampingTimingManager:
     """Manages timing for ramping down operations."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize ramping timing manager."""
         self.default_config = TimingConfig(min_delay_seconds=0.5, max_delay_seconds=2.0)
         self.current_config: TimingConfig = self.default_config
