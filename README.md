@@ -1,34 +1,40 @@
-# Code Indexer
+# Code Indexer (`cidx`)
 
 AI-powered semantic code search for your codebase. Find code by meaning, not just keywords.
 
 ## Version 4.1.0
 
-Multi-user server functionality with FastAPI, JWT authentication, and role-based access control.
+## Two Operating Modes
 
-## Features
+### CLI Mode (`cidx` command)
+Traditional command-line interface for individual developers:
+- **Direct CLI commands** - `cidx init`, `cidx index`, `cidx query`
+- **Local project indexing** - Index your current project directory
+- **Real-time progress** - Individual file status with slot-based parallel processing
+- **Integrated with Claude CLI** - Seamless AI code analysis with semantic search context
 
-### Core Search Capabilities
-- **Semantic Search** - Find code by meaning using vector embeddings and fixed-size chunking
-- **Multiple Providers** - Local (Ollama) or cloud (VoyageAI) embeddings  
-- **Smart Indexing** - Parallel file processing with slot-based worker allocation, incremental updates, git-aware, multi-project support
-- **Search Filtering** - Filter by programming language, file paths, file extensions, and similarity scores
-- **Multi-Language Support** - Universal text processing for Python, JavaScript, TypeScript, Java, C#, Go, Kotlin, Groovy, Pascal/Delphi, SQL, C, C++, Rust, Swift, Ruby, Lua, HTML, CSS, YAML, XML
-
-### Multi-User Server
-- **REST API** - FastAPI-based web service
-- **JWT Authentication** - Token-based authentication
-- **User Management** - Admin-controlled user creation and role assignment
-- **Golden Repositories** - Centralized code repository management
-- **Repository Activation** - Copy-on-Write cloning for user workspaces
-- **Semantic Query Endpoints** - Search with filtering capabilities
+### Multi-User Server Mode
+FastAPI web service for team environments:
+- **REST API** - Web service with authentication and user management
+- **JWT Authentication** - Token-based security
+- **Golden Repositories** - Centralized code repository management for teams
 - **Background Processing** - Async job system for heavy operations
-- **Health Monitoring** - System status and performance metrics
+- **Multi-project support** - Team workspace management
 
-### Traditional CLI Interface
-- **CLI Interface** - Simple commands with progress indicators
-- **AI Analysis** - Integrates with Claude CLI for code analysis with semantic search
-- **Privacy Options** - Full local processing or cloud for better performance
+## Core Capabilities
+
+### Semantic Search Engine
+- **Vector embeddings** - Find code by meaning using fixed-size chunking
+- **Multiple providers** - Local (Ollama) or cloud (VoyageAI) embeddings  
+- **Smart indexing** - Parallel file processing, incremental updates, git-aware
+- **Advanced filtering** - Language, file paths, extensions, similarity scores
+- **Multi-language** - Python, JavaScript, TypeScript, Java, C#, Go, Kotlin, and more
+
+### Parallel Processing Architecture  
+- **Slot-based file processing** - Real-time state visibility with natural slot reuse
+- **Dual thread pools** - Frontend file processing (threadcount+2) feeds backend vectorization (threadcount)
+- **Real-time progress** - Individual file status progression (starting → chunking → vectorizing → finalizing → complete)
+- **Clean cancellation** - Post-write cancellation preserves file atomicity
 
 ## Installation
 
@@ -51,7 +57,7 @@ source code-indexer-env/bin/activate
 pip install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.2
 
 # Setup global registry (standalone command - requires sudo)
-code-indexer setup-global-registry
+cidx setup-global-registry
 ```
 
 ### Requirements
@@ -82,27 +88,27 @@ cidx setup-global-registry
 cd /path/to/your/project
 
 # 3. Start services and index code
-code-indexer start     # Auto-creates config if needed
-code-indexer index     # Smart incremental indexing
+cidx start     # Auto-creates config if needed
+cidx index     # Smart incremental indexing
 
 # 4. Search semantically
-code-indexer query "authentication logic"
+cidx query "authentication logic"
 
 # 5. Search with filtering
-code-indexer query "user" --language python --min-score 0.7
-code-indexer query "save" --path "*/models/*" --limit 20
+cidx query "user" --language python --min-score 0.7
+cidx query "save" --path "*/models/*" --limit 20
 
 # 6. AI-powered analysis (requires Claude CLI)
-code-indexer claude "How does auth work in this app?"
+cidx claude "How does auth work in this app?"
 ```
 
 ### Alternative: Custom Configuration
 
 ```bash
 # Optional: Initialize with custom settings first
-code-indexer init --embedding-provider voyage-ai --max-file-size 2000000
-code-indexer start
-code-indexer index
+cidx init --embedding-provider voyage-ai --max-file-size 2000000
+cidx start
+cidx index
 ```
 
 ## Multi-User Server
@@ -195,122 +201,122 @@ curl -X POST http://localhost:8090/query/repositories \
 
 ```bash
 # Global system setup
-code-indexer setup-global-registry              # Setup global port registry (requires sudo)
-code-indexer setup-global-registry --test-access --quiet  # Test registry access
+cidx setup-global-registry              # Setup global port registry (requires sudo)
+cidx setup-global-registry --test-access --quiet  # Test registry access
 
 # Project initialization
-code-indexer init                               # Initialize with default settings
-code-indexer init --embedding-provider voyage-ai  # Use VoyageAI instead of Ollama
-code-indexer init --max-file-size 2000000       # Set 2MB file size limit
-code-indexer init --setup-global-registry       # Init + setup registry (legacy)
-code-indexer init --create-override-file        # Create .code-indexer-override.yaml
+cidx init                               # Initialize with default settings
+cidx init --embedding-provider voyage-ai  # Use VoyageAI instead of Ollama
+cidx init --max-file-size 2000000       # Set 2MB file size limit
+cidx init --setup-global-registry       # Init + setup registry (legacy)
+cidx init --create-override-file        # Create .code-indexer-override.yaml
 ```
 
 ### Service Management
 
 ```bash
 # Service lifecycle
-code-indexer start                      # Start services (smart detection)
-code-indexer start --force-docker       # Force Docker instead of Podman
-code-indexer start --force-recreate     # Force recreate containers
-code-indexer start --quiet              # Silent mode
-code-indexer start -m all-minilm-l6-v2  # Different Ollama model
+cidx start                      # Start services (smart detection)
+cidx start --force-docker       # Force Docker instead of Podman
+cidx start --force-recreate     # Force recreate containers
+cidx start --quiet              # Silent mode
+cidx start -m all-minilm-l6-v2  # Different Ollama model
 
-code-indexer status                     # Check service status
-code-indexer status --force-docker      # Check Docker status specifically
+cidx status                     # Check service status
+cidx status --force-docker      # Check Docker status specifically
 
-code-indexer stop                       # Stop services (preserve data)
-code-indexer stop --force-docker        # Stop Docker services specifically
+cidx stop                       # Stop services (preserve data)
+cidx stop --force-docker        # Stop Docker services specifically
 ```
 
 ### Indexing Commands
 
 ```bash
 # Standard indexing
-code-indexer index                      # Smart incremental indexing
-code-indexer index --clear              # Force full reindex
-code-indexer index --reconcile          # Reconcile disk vs database
-code-indexer index --detect-deletions   # Handle deleted files
-code-indexer index --batch-size 25      # Custom batch size
-code-indexer index --files-count-to-process 100  # Limit file count
-code-indexer index --threads 8          # Custom thread count (configure in config.json)
+cidx index                      # Smart incremental indexing
+cidx index --clear              # Force full reindex
+cidx index --reconcile          # Reconcile disk vs database
+cidx index --detect-deletions   # Handle deleted files
+cidx index --batch-size 25      # Custom batch size
+cidx index --files-count-to-process 100  # Limit file count
+cidx index --threads 8          # Custom thread count (configure in config.json)
 
 # Real-time monitoring
-code-indexer watch                      # Git-aware file watching
-code-indexer watch --debounce 5.0       # Custom debounce delay
-code-indexer watch --initial-sync       # Full sync before watching
+cidx watch                      # Git-aware file watching
+cidx watch --debounce 5.0       # Custom debounce delay
+cidx watch --initial-sync       # Full sync before watching
 ```
 
 ### Search Commands
 
 ```bash
 # Basic search
-code-indexer query "search terms"      # Semantic search
-code-indexer query "auth" --limit 20   # More results
-code-indexer query "function" --quiet  # Only results, no headers
+cidx query "search terms"      # Semantic search
+cidx query "auth" --limit 20   # More results
+cidx query "function" --quiet  # Only results, no headers
 
 # Advanced filtering
-code-indexer query "user" --language python  # Filter by language
-code-indexer query "save" --path "*/models/*" # Filter by path pattern
-code-indexer query "function" --min-score 0.7  # Higher confidence matches
-code-indexer query "database" --limit 15     # More results
-code-indexer query "test" --min-score 0.8     # High-confidence matches
+cidx query "user" --language python  # Filter by language
+cidx query "save" --path "*/models/*" # Filter by path pattern
+cidx query "function" --min-score 0.7  # Higher confidence matches
+cidx query "database" --limit 15     # More results
+cidx query "test" --min-score 0.8     # High-confidence matches
 
 # Short alias
-cidx query "search terms"              # Same as code-indexer query
+cidx query "search terms"              # Same as cidx query
 ```
 
 ### AI Analysis Commands
 
 ```bash
 # Standard analysis
-code-indexer claude "How does auth work?"     # AI-powered analysis
-code-indexer claude "Debug this" --limit 15   # Custom search limit
-code-indexer claude "Analyze" --context-lines 200  # More context
-code-indexer claude "Quick check" --quiet     # Minimal output
-code-indexer claude "Review code" --no-stream # No streaming output
+cidx claude "How does auth work?"     # AI-powered analysis
+cidx claude "Debug this" --limit 15   # Custom search limit
+cidx claude "Analyze" --context-lines 200  # More context
+cidx claude "Quick check" --quiet     # Minimal output
+cidx claude "Review code" --no-stream # No streaming output
 
 # Advanced options
-code-indexer claude "Test" --include-file-list  # Include project file list
-code-indexer claude "Legacy" --rag-first       # Use legacy RAG-first approach
+cidx claude "Test" --include-file-list  # Include project file list
+cidx claude "Legacy" --rag-first       # Use legacy RAG-first approach
 
 # Debugging
-code-indexer claude "Test" --dry-run-show-claude-prompt  # Show prompt without execution
-code-indexer claude "Analyze" --show-claude-plan        # Show tool usage tracking
+cidx claude "Test" --dry-run-show-claude-prompt  # Show prompt without execution
+cidx claude "Analyze" --show-claude-plan        # Show tool usage tracking
 ```
 
 ### Data Management Commands
 
 ```bash
 # Quick cleanup (recommended)
-code-indexer clean-data                 # Clear current project data
-code-indexer clean-data --all-projects  # Clear all projects data
-code-indexer clean-data --force-docker  # Use Docker for cleanup
+cidx clean-data                 # Clear current project data
+cidx clean-data --all-projects  # Clear all projects data
+cidx clean-data --force-docker  # Use Docker for cleanup
 
 # Complete removal
-code-indexer uninstall                  # Remove current project completely
-code-indexer uninstall --force-docker   # Use Docker for removal
-code-indexer uninstall --wipe-all       # DANGEROUS: Complete system wipe
+cidx uninstall                  # Remove current project completely
+cidx uninstall --force-docker   # Use Docker for removal
+cidx uninstall --wipe-all       # DANGEROUS: Complete system wipe
 
 # Migration and maintenance
-code-indexer clean-legacy               # Migrate from legacy containers
-code-indexer optimize                   # Optimize vector database
-code-indexer force-flush                # Force flush to disk (deprecated)
-code-indexer force-flush --collection mycoll  # Flush specific collection
+cidx clean-legacy               # Migrate from legacy containers
+cidx optimize                   # Optimize vector database
+cidx force-flush                # Force flush to disk (deprecated)
+cidx force-flush --collection mycoll  # Flush specific collection
 ```
 
 ### Configuration Commands
 
 ```bash
 # Configuration repair
-code-indexer fix-config                 # Fix corrupted configuration
-code-indexer fix-config --dry-run       # Preview fixes
-code-indexer fix-config --verbose       # Detailed fix information
-code-indexer fix-config --force         # Apply without confirmation
+cidx fix-config                 # Fix corrupted configuration
+cidx fix-config --dry-run       # Preview fixes
+cidx fix-config --verbose       # Detailed fix information
+cidx fix-config --force         # Apply without confirmation
 
 # Claude integration setup
-code-indexer set-claude-prompt          # Set CIDX instructions in project CLAUDE.md
-code-indexer set-claude-prompt --user-prompt  # Set in global ~/.claude/CLAUDE.md
+cidx set-claude-prompt          # Set CIDX instructions in project CLAUDE.md
+cidx set-claude-prompt --user-prompt  # Set in global ~/.claude/CLAUDE.md
 ```
 
 ### Global Options
@@ -340,13 +346,13 @@ code-indexer set-claude-prompt --user-prompt  # Set in global ~/.claude/CLAUDE.m
 
 **Ollama (Default - Local)**
 ```bash
-code-indexer init --embedding-provider ollama
+cidx init --embedding-provider ollama
 ```
 
 **VoyageAI (Cloud)**
 ```bash
 export VOYAGE_API_KEY="your-key"
-code-indexer init --embedding-provider voyage-ai
+cidx init --embedding-provider voyage-ai
 ```
 
 **Performance Status Indicators (VoyageAI only)**
