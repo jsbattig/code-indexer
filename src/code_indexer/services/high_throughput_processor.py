@@ -282,6 +282,10 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         """Process files with maximum throughput using pre-queued chunks."""
 
         # Initialize CleanSlotTracker with proper thread count
+        if progress_callback:
+            progress_callback(
+                0, 0, Path(""), info="⚙️ Initializing parallel processing threads..."
+            )
         self._ensure_slot_tracker_initialized(vector_thread_count)
 
         stats = ProcessingStats()

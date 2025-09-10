@@ -183,35 +183,40 @@ class VoyageAIClient(EmbeddingProvider):
         # TOKEN-AWARE BATCHING: Check both chunk count AND token limits
         # VoyageAI limit: 120,000 tokens per batch
         MAX_TOKENS_PER_BATCH = 100_000  # Conservative limit (safety margin)
-        
+
         # Estimate total tokens for all texts
         total_tokens = sum(self._estimate_tokens(text) for text in texts)
-        
+
         # If texts fit in one batch (both chunk and token limits), process directly
-        if len(texts) <= self.config.batch_size and total_tokens <= MAX_TOKENS_PER_BATCH:
+        if (
+            len(texts) <= self.config.batch_size
+            and total_tokens <= MAX_TOKENS_PER_BATCH
+        ):
             result = self._make_sync_request(texts, model)
             return [list(item["embedding"]) for item in result["data"]]
 
         # Split into token-aware batches
         batches = []
-        current_batch = []
+        current_batch: List[str] = []
         current_tokens = 0
-        
+
         for text in texts:
             text_tokens = self._estimate_tokens(text)
-            
+
             # Check if adding this text would exceed limits
-            if (len(current_batch) >= self.config.batch_size or 
-                current_tokens + text_tokens > MAX_TOKENS_PER_BATCH) and current_batch:
+            if (
+                len(current_batch) >= self.config.batch_size
+                or current_tokens + text_tokens > MAX_TOKENS_PER_BATCH
+            ) and current_batch:
                 # Finish current batch
                 batches.append(current_batch)
                 current_batch = []
                 current_tokens = 0
-            
+
             # Add text to current batch
             current_batch.append(text)
             current_tokens += text_tokens
-        
+
         # Add final batch if not empty
         if current_batch:
             batches.append(current_batch)

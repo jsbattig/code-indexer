@@ -152,9 +152,7 @@ class VectorResult:
             return []
 
         if len(self.embeddings) == 1:
-            return list(
-                self.embeddings[0]
-            )  # Convert tuple to list format
+            return list(self.embeddings[0])  # Convert tuple to list format
 
         raise ValueError(
             f"Cannot access embedding on batch with {len(self.embeddings)} embeddings. Use embeddings instead."

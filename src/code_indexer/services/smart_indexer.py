@@ -562,10 +562,21 @@ class SmartIndexer(HighThroughputProcessor):
         self.progressive_metadata.start_indexing(provider_name, model_name, git_status)
 
         # Find all files
+        if progress_callback:
+            progress_callback(
+                0, 0, Path(""), info="🔍 Discovering files in repository..."
+            )
         with open(debug_file, "a") as f:
             f.write(f"[{datetime.datetime.now().isoformat()}] Finding files...\n")
             f.flush()
         files_to_index = list(self.file_finder.find_files())
+        if progress_callback:
+            progress_callback(
+                0,
+                0,
+                Path(""),
+                info=f"📁 Found {len(files_to_index)} files for indexing",
+            )
         with open(debug_file, "a") as f:
             f.write(
                 f"[{datetime.datetime.now().isoformat()}] Found {len(files_to_index)} files\n"
@@ -593,6 +604,10 @@ class SmartIndexer(HighThroughputProcessor):
         logger.info(f"Started structured logging session: {session_id}")
 
         # Get current branch for indexing
+        if progress_callback:
+            progress_callback(
+                0, 0, Path(""), info="🌿 Analyzing git repository structure..."
+            )
         current_branch = self.git_topology_service.get_current_branch() or "master"
 
         # Use BranchAwareIndexer for git-aware processing with parallel embeddings
