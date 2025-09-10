@@ -13,7 +13,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
+import copy
 
 from .embedding_provider import EmbeddingProvider
 
@@ -27,25 +28,137 @@ class ThrottlingStatus(Enum):
     SERVER_THROTTLED = "🔴"  # Server-side throttling detected
 
 
-@dataclass
+@dataclass(frozen=True)
 class VectorTask:
     """Task for vector calculation in worker thread."""
 
     task_id: str
-    chunk_text: str
+    chunk_texts: Tuple[str, ...]  # Changed from List to Tuple for immutability
     metadata: Dict[str, Any]
     created_at: float
 
+    def __post_init__(self):
+        """Protect from external mutation by converting to immutable types."""
+        # Use object.__setattr__ to modify frozen dataclass during initialization
+        if not isinstance(self.chunk_texts, tuple):
+            object.__setattr__(self, "chunk_texts", tuple(self.chunk_texts))
+        object.__setattr__(self, "metadata", copy.deepcopy(self.metadata))
 
-@dataclass
+    @classmethod
+    def create_immutable(
+        cls, task_id: str, chunk_texts, metadata: Dict[str, Any], created_at: float
+    ) -> "VectorTask":
+        """
+        Factory method for creating immutable VectorTask instances.
+
+        Simplifies construction by handling type conversion explicitly.
+        """
+        return cls(
+            task_id=task_id,
+            chunk_texts=(
+                tuple(chunk_texts)
+                if not isinstance(chunk_texts, tuple)
+                else chunk_texts
+            ),
+            metadata=copy.deepcopy(metadata),
+            created_at=created_at,
+        )
+
+    @property
+    def batch_size(self) -> int:
+        """Return the number of chunks in this batch."""
+        return len(self.chunk_texts)
+
+    @property
+    def chunk_text(self) -> str:
+        """Property for single chunk access."""
+        # Fixed: Use early returns to eliminate deep nesting (CLAUDE.md Foundation #8)
+        if len(self.chunk_texts) == 0:
+            return ""
+
+        if len(self.chunk_texts) == 1:
+            return self.chunk_texts[0]
+
+        raise ValueError(
+            f"Cannot access chunk_text on batch with {len(self.chunk_texts)} chunks. Use chunk_texts instead."
+        )
+
+
+@dataclass(frozen=True)
 class VectorResult:
     """Result from vector calculation."""
 
     task_id: str
-    embedding: List[float]
+    embeddings: Tuple[
+        Tuple[float, ...], ...
+    ]  # Changed from List to Tuple for immutability
     metadata: Dict[str, Any]
     processing_time: float
     error: Optional[str] = None
+
+    def __post_init__(self):
+        """Protect from external mutation by converting to immutable types."""
+        # Use object.__setattr__ to modify frozen dataclass during initialization
+        if not isinstance(self.embeddings, tuple):
+            # Convert nested lists to tuples
+            immutable_embeddings = tuple(
+                tuple(embedding) if isinstance(embedding, list) else embedding
+                for embedding in self.embeddings
+            )
+            object.__setattr__(self, "embeddings", immutable_embeddings)
+        object.__setattr__(self, "metadata", copy.deepcopy(self.metadata))
+
+    @classmethod
+    def create_immutable(
+        cls,
+        task_id: str,
+        embeddings,
+        metadata: Dict[str, Any],
+        processing_time: float,
+        error: Optional[str] = None,
+    ) -> "VectorResult":
+        """
+        Factory method for creating immutable VectorResult instances.
+
+        Simplifies construction by handling type conversion explicitly.
+        """
+        # Convert nested lists to immutable tuples
+        if isinstance(embeddings, (list, tuple)):
+            immutable_embeddings = tuple(
+                tuple(embedding) if isinstance(embedding, list) else embedding
+                for embedding in embeddings
+            )
+        else:
+            immutable_embeddings = ()
+
+        return cls(
+            task_id=task_id,
+            embeddings=immutable_embeddings,
+            metadata=copy.deepcopy(metadata),
+            processing_time=processing_time,
+            error=error,
+        )
+
+    @property
+    def batch_size(self) -> int:
+        """Return the number of embeddings in this batch."""
+        return len(self.embeddings)
+
+    @property
+    def embedding(self) -> List[float]:
+        """Property for single embedding access."""
+        # Fixed: Use early returns to eliminate deep nesting (CLAUDE.md Foundation #8)
+        if len(self.embeddings) == 0:
+            return []
+
+        if len(self.embeddings) == 1:
+            return list(
+                self.embeddings[0]
+            )  # Convert tuple to list format
+
+        raise ValueError(
+            f"Cannot access embedding on batch with {len(self.embeddings)} embeddings. Use embeddings instead."
+        )
 
 
 @dataclass
@@ -62,6 +175,7 @@ class VectorCalculationStats:
     embeddings_per_second: float = 0.0
     throttling_status: ThrottlingStatus = ThrottlingStatus.FULL_SPEED
     server_throttle_count: int = 0
+    total_embeddings_processed: int = 0  # CRITICAL FIX: Track actual embedding counts
 
 
 @dataclass
@@ -162,7 +276,7 @@ class VectorCalculationManager:
             cancelled_future: Future[VectorResult] = Future()
             cancelled_result = VectorResult(
                 task_id="cancelled",
-                embedding=[],
+                embeddings=(),  # Updated for immutable batch structure
                 metadata=metadata.copy(),
                 processing_time=0.0,
                 error="Cancelled",
@@ -175,11 +289,148 @@ class VectorCalculationManager:
             self.task_counter += 1
             task_id = f"task_{self.task_counter}"
 
-        # Create task
+        # Create task (convert single chunk to batch format)
         task = VectorTask(
             task_id=task_id,
-            chunk_text=chunk_text,
+            chunk_texts=(chunk_text,),  # Convert single chunk to immutable batch format
             metadata=metadata.copy(),
+            created_at=time.time(),
+        )
+
+        # Submit to thread pool
+        if not self.executor:
+            raise RuntimeError("Thread pool not started")
+        future = self.executor.submit(self._calculate_vector, task)
+
+        # Update stats
+        with self.stats_lock:
+            self.stats.total_tasks_submitted += 1
+            self.stats.active_threads = min(
+                self.stats.total_tasks_submitted - self.stats.total_tasks_completed,
+                self.thread_count,
+            )
+
+        return future
+
+    def submit_task(
+        self, chunk_text: str, metadata: Dict[str, Any]
+    ) -> "Future[VectorResult]":
+        """
+        Submit a single text chunk for vector calculation.
+
+        Wraps single chunks for efficient batch processing while preserving
+        the original API interface and behavior patterns.
+
+        Args:
+            chunk_text: Text to calculate embedding for
+            metadata: Associated metadata for the chunk
+
+        Returns:
+            Future that will contain VectorResult with single embedding when complete
+        """
+        # Convert single chunk to array for batch processing
+        chunk_texts = [chunk_text]
+
+        # Use batch processing infrastructure
+        batch_future = self.submit_batch_task(chunk_texts, metadata)
+
+        # Create wrapper future that extracts single result
+        single_future: Future[VectorResult] = Future()
+
+        def extract_single_result():
+            """Extract single embedding from batch result in background thread."""
+            try:
+                batch_result = batch_future.result()
+
+                # Check if single_future is already done (cancelled, etc.)
+                if single_future.done():
+                    return
+
+                # Extract single result from batch
+                if batch_result.error is not None:
+                    # Preserve error handling - same error types and messages
+                    single_result = VectorResult.create_immutable(
+                        task_id=batch_result.task_id,
+                        embeddings=(),  # Empty on error
+                        metadata=batch_result.metadata,
+                        processing_time=batch_result.processing_time,
+                        error=batch_result.error,
+                    )
+                else:
+                    # Extract single embedding from batch result
+                    single_result = VectorResult.create_immutable(
+                        task_id=batch_result.task_id,
+                        embeddings=batch_result.embeddings,  # Preserve batch structure for .embedding property
+                        metadata=batch_result.metadata,
+                        processing_time=batch_result.processing_time,
+                        error=None,
+                    )
+
+                # Only set result if future is not already done
+                if not single_future.done():
+                    single_future.set_result(single_result)
+
+            except Exception as e:
+                # Only set exception if future is not already done
+                if not single_future.done():
+                    single_future.set_exception(e)
+
+        # Process extraction in background thread
+        extraction_thread = threading.Thread(target=extract_single_result, daemon=True)
+        extraction_thread.start()
+
+        return single_future
+
+    def submit_batch_task(
+        self, chunk_texts: List[str], metadata: Dict[str, Any]
+    ) -> "Future[VectorResult]":
+        """
+        Submit a batch of text chunks for vector calculation.
+
+        Args:
+            chunk_texts: List of text chunks to calculate embeddings for
+            metadata: Associated metadata for the batch
+
+        Returns:
+            Future that will contain VectorResult when complete
+
+        Raises:
+            RuntimeError: If thread pool is not available
+            TypeError: If chunk_texts is None or metadata is None
+        """
+        # Validate inputs early
+        if chunk_texts is None:
+            raise TypeError("chunk_texts cannot be None")
+        if metadata is None:
+            raise TypeError("metadata cannot be None")
+
+        if not self.is_running:
+            self.start()
+
+        # Check for cancellation before submitting new tasks
+        if self.cancellation_event.is_set():
+            # Return a completed future with cancellation error
+            cancelled_future: Future[VectorResult] = Future()
+            cancelled_result = VectorResult(
+                task_id="cancelled",
+                embeddings=(),
+                metadata=metadata.copy(),
+                processing_time=0.0,
+                error="Cancelled",
+            )
+            cancelled_future.set_result(cancelled_result)
+            return cancelled_future
+
+        # Generate unique task ID
+        with self.task_counter_lock:
+            self.task_counter += 1
+            task_id = f"task_{self.task_counter}"
+
+        # Create batch task using factory method
+        task = VectorTask.create_immutable(
+            task_id=task_id,
+            chunk_texts=chunk_texts,
+            metadata=metadata,
             created_at=time.time(),
         )
 
@@ -200,13 +451,13 @@ class VectorCalculationManager:
 
     def _calculate_vector(self, task: VectorTask) -> VectorResult:
         """
-        Calculate vector embedding for a task (runs in worker thread).
+        Calculate vector embedding for a task using batch processing (runs in worker thread).
 
         Args:
-            task: VectorTask to process
+            task: VectorTask to process (contains multiple chunks)
 
         Returns:
-            VectorResult with embedding or error
+            VectorResult with embeddings array or error
         """
         start_time = time.time()
 
@@ -214,36 +465,70 @@ class VectorCalculationManager:
         if self.cancellation_event.is_set():
             return VectorResult(
                 task_id=task.task_id,
-                embedding=[],
+                embeddings=(),  # Updated for immutable batch structure
                 metadata=task.metadata,
                 processing_time=time.time() - start_time,
                 error="Cancelled",
             )
 
         try:
-            # Calculate embedding using the provider
-            embedding = self.embedding_provider.get_embedding(task.chunk_text)
+            # Check for cancellation again before making API call
+            if self.cancellation_event.is_set():
+                return VectorResult(
+                    task_id=task.task_id,
+                    embeddings=(),
+                    metadata=task.metadata,
+                    processing_time=time.time() - start_time,
+                    error="Cancelled",
+                )
+
+            # CRITICAL FIX: Check for empty batch before making API call
+            if len(task.chunk_texts) == 0:
+                # Return early for empty batch - no API call needed
+                return VectorResult(
+                    task_id=task.task_id,
+                    embeddings=(),
+                    metadata=task.metadata,
+                    processing_time=time.time() - start_time,
+                    error=None,
+                )
+
+            # Calculate embeddings using batch processing API
+            chunk_texts_list = list(task.chunk_texts)  # Convert tuple to list for API
+            embeddings_list = self.embedding_provider.get_embeddings_batch(
+                chunk_texts_list
+            )
 
             processing_time = time.time() - start_time
+
+            # Convert embeddings to immutable tuple format
+            immutable_embeddings = tuple(tuple(emb) for emb in embeddings_list)
+
+            # CRITICAL FIX: Count actual embeddings processed
+            embeddings_count = len(immutable_embeddings)
 
             # Update stats
             with self.stats_lock:
                 self.stats.total_tasks_completed += 1
+                self.stats.total_embeddings_processed += (
+                    embeddings_count  # Track actual embeddings
+                )
                 self.stats.total_processing_time += processing_time
                 self.stats.average_processing_time = (
                     self.stats.total_processing_time / self.stats.total_tasks_completed
                 )
 
-                # Update rolling window for smoothed embeddings per second
+                # CRITICAL FIX: Update rolling window using embedding count, not task count
                 current_time = time.time()
                 embeddings_per_second = self._update_rolling_window(
-                    current_time, self.stats.total_tasks_completed
+                    current_time,
+                    self.stats.total_embeddings_processed,  # Use embedding count
                 )
                 self.stats.embeddings_per_second = embeddings_per_second
 
             return VectorResult(
                 task_id=task.task_id,
-                embedding=embedding,
+                embeddings=immutable_embeddings,
                 metadata=task.metadata,
                 processing_time=processing_time,
             )
@@ -262,11 +547,13 @@ class VectorCalculationManager:
                 self.stats.total_tasks_completed += (
                     1  # Count as completed for queue tracking
                 )
+                # Note: No embeddings processed on error, so don't increment total_embeddings_processed
 
-                # Update rolling window for failed tasks too
+                # CRITICAL FIX: Update rolling window using embedding count, not task count
                 current_time = time.time()
                 embeddings_per_second = self._update_rolling_window(
-                    current_time, self.stats.total_tasks_completed
+                    current_time,
+                    self.stats.total_embeddings_processed,  # Use embedding count
                 )
                 self.stats.embeddings_per_second = embeddings_per_second
 
@@ -276,7 +563,7 @@ class VectorCalculationManager:
 
             return VectorResult(
                 task_id=task.task_id,
-                embedding=[],
+                embeddings=(),  # Updated for immutable batch structure
                 metadata=task.metadata,
                 processing_time=processing_time,
                 error=error_msg,
@@ -309,6 +596,7 @@ class VectorCalculationManager:
                 embeddings_per_second=self.stats.embeddings_per_second,
                 throttling_status=self.stats.throttling_status,
                 server_throttle_count=self.stats.server_throttle_count,
+                total_embeddings_processed=self.stats.total_embeddings_processed,  # Include new field
             )
 
     def wait_for_all_tasks(self, timeout: Optional[float] = None) -> bool:

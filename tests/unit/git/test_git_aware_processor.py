@@ -56,6 +56,11 @@ class TestGitAwareDocumentProcessor:
         ollama_client.get_embedding.return_value = [
             0.1
         ] * 768  # Match default vector size
+        
+        # BATCH PROCESSING FIX: Add mock for get_embeddings_batch used internally
+        ollama_client.get_embeddings_batch.return_value = [
+            [0.1] * 768  # Return array of embeddings for batch processing
+        ]
 
         qdrant_client = MagicMock()
         qdrant_client.create_point.return_value = {"id": "test_point"}

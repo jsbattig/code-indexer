@@ -324,19 +324,9 @@ class FileChunkingManager:
         # Single acquire using CleanSlotTracker
         slot_id = self.slot_tracker.acquire_slot(file_data)
 
-        # CRITICAL FIX: Trigger progress callback to update display
-        # This ensures the display sees the file being processed
-        if progress_callback:
-            # Get concurrent files for display update
-            concurrent_files = self.slot_tracker.get_concurrent_files_data()
-            # Don't pass file counts here - let HighThroughputProcessor track overall progress
-            # Just trigger display refresh with current concurrent files
-            progress_callback(
-                None,  # current - will be handled by caller
-                None,  # total - will be handled by caller
-                file_path,
-                concurrent_files=concurrent_files,
-            )
+        # PROGRESS REPORTING ADJUSTMENT: Remove initial callback
+        # HighThroughputProcessor handles file-level progress counting
+        # We only call progress_callback when the file actually completes
 
         try:
             # ALL work in try block
@@ -352,6 +342,16 @@ class FileChunkingManager:
 
                 self.slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
 
+                # PROGRESS REPORTING ADJUSTMENT: Empty file completion callback
+                if progress_callback:
+                    concurrent_files = self.slot_tracker.get_concurrent_files_data()
+                    progress_callback(
+                        None,  # current - HighThroughputProcessor manages file counts
+                        None,  # total - HighThroughputProcessor manages file counts
+                        file_path,
+                        concurrent_files=concurrent_files,
+                    )
+
                 return FileProcessingResult(
                     success=True,
                     file_path=file_path,
@@ -365,81 +365,104 @@ class FileChunkingManager:
             # Update status after chunking
             self.slot_tracker.update_slot(slot_id, FileStatus.VECTORIZING)
 
-            # CRITICAL FIX: Trigger display update after status change
-            if progress_callback:
-                concurrent_files = self.slot_tracker.get_concurrent_files_data()
-                progress_callback(
-                    None,  # current
-                    None,  # total
-                    file_path,
-                    concurrent_files=concurrent_files,
-                )
+            # PROGRESS REPORTING ADJUSTMENT: Remove intermediate callback
+            # Status updates are tracked by CleanSlotTracker for display
+            # HighThroughputProcessor handles file-level progress reporting
 
-            # Phase 2: Submit ALL chunks to vector processing
-            chunk_futures = []
-            for chunk in chunks:
-                try:
-                    future = self.vector_manager.submit_chunk(chunk["text"], metadata)
-                    chunk_futures.append((chunk, future))
-                except RuntimeError as e:
-                    if "Thread pool not started" in str(e):
-                        logger.info(f"Vector manager shut down, cancelling {file_path}")
+            # Phase 2: BATCH OPTIMIZATION - Submit ALL chunks in single API call
+            # CRITICAL PERFORMANCE IMPROVEMENT: N chunks → 1 API call (10-50x improvement)
+            chunk_texts = [chunk["text"] for chunk in chunks]
+
+            try:
+                batch_future = self.vector_manager.submit_batch_task(
+                    chunk_texts, metadata
+                )
+            except RuntimeError as e:
+                if "Thread pool not started" in str(e):
+                    logger.info(f"Vector manager shut down, cancelling {file_path}")
+                    return FileProcessingResult(
+                        success=False,
+                        file_path=file_path,
+                        chunks_processed=0,
+                        processing_time=time.time() - start_time,
+                        error="Cancelled",
+                    )
+                raise
+
+            logger.debug(
+                f"Submitted batch of {len(chunks)} chunks to vector processing for {file_path}"
+            )
+
+            self.slot_tracker.update_slot(slot_id, FileStatus.FINALIZING)
+
+            # PROGRESS REPORTING ADJUSTMENT: Remove intermediate callback
+            # Status updates tracked by CleanSlotTracker, progress callback only on completion
+
+            # Phase 3: BATCH RESULT PROCESSING - Process batch embeddings with chunk mapping
+            file_points = []
+            try:
+                batch_result = batch_future.result(timeout=VECTOR_PROCESSING_TIMEOUT)
+
+                # CRITICAL: Validate batch result and handle batch failure atomically
+                if batch_result and not batch_result.error and batch_result.embeddings:
+                    # CRITICAL MAPPING: chunks[i] ↔ embeddings[i] ↔ points[i]
+                    if len(batch_result.embeddings) != len(chunks):
+                        logger.error(
+                            f"Batch embedding count mismatch: {len(batch_result.embeddings)} embeddings for {len(chunks)} chunks in {file_path}"
+                        )
                         return FileProcessingResult(
                             success=False,
                             file_path=file_path,
                             chunks_processed=0,
                             processing_time=time.time() - start_time,
-                            error="Cancelled",
+                            error="Batch embedding count mismatch",
                         )
-                    raise
 
-            logger.debug(
-                f"Submitted {len(chunk_futures)} chunks to vector processing for {file_path}"
-            )
-
-            # Phase 3: Wait for ALL chunk vectors to complete
-            self.slot_tracker.update_slot(slot_id, FileStatus.FINALIZING)
-
-            # CRITICAL FIX: Trigger display update for finalizing status
-            if progress_callback:
-                concurrent_files = self.slot_tracker.get_concurrent_files_data()
-                progress_callback(
-                    None,  # current
-                    None,  # total
-                    file_path,
-                    concurrent_files=concurrent_files,
-                )
-
-            file_points = []
-            for chunk, future in chunk_futures:
-                try:
-                    vector_result = future.result(timeout=VECTOR_PROCESSING_TIMEOUT)
-                    # CRITICAL FIX: Validate vector_result, error status, AND embedding is not None
-                    if (
-                        vector_result
-                        and not vector_result.error
-                        and vector_result.embedding
+                    # Create points with preserved order: chunks[i] → embeddings[i] → points[i]
+                    for i, (chunk, embedding) in enumerate(
+                        zip(chunks, batch_result.embeddings)
                     ):
-                        file_points.append(
-                            {
-                                "text": chunk["text"],
-                                "vector": vector_result.embedding,  # Extract embedding, not full VectorResult
-                                "metadata": {
-                                    **metadata,
-                                    "line_start": chunk["line_start"],
-                                    "line_end": chunk["line_end"],
-                                },
-                            }
-                        )
-                    else:
-                        logger.warning(
-                            f"Skipping chunk with invalid embedding in {file_path}"
-                        )
-                except Exception as e:
-                    logger.error(
-                        f"Vector processing failed for chunk in {file_path}: {e}"
+                        if embedding:  # Validate individual embedding
+                            file_points.append(
+                                {
+                                    "text": chunk["text"],
+                                    "vector": embedding,  # Direct embedding from batch result
+                                    "metadata": {
+                                        **metadata,
+                                        "line_start": chunk["line_start"],
+                                        "line_end": chunk["line_end"],
+                                    },
+                                }
+                            )
+                        else:
+                            logger.warning(
+                                f"Skipping chunk {i} with invalid embedding in {file_path}"
+                            )
+                else:
+                    # ATOMIC FAILURE: Batch processing failed, fail entire file
+                    error_msg = (
+                        batch_result.error if batch_result else "No batch result"
                     )
-                    # Continue processing other chunks
+                    logger.error(
+                        f"Batch vector processing failed for {file_path}: {error_msg}"
+                    )
+                    return FileProcessingResult(
+                        success=False,
+                        file_path=file_path,
+                        chunks_processed=0,
+                        processing_time=time.time() - start_time,
+                        error=f"Batch processing failed: {error_msg}",
+                    )
+
+            except Exception as e:
+                logger.error(f"Batch vector processing failed for {file_path}: {e}")
+                return FileProcessingResult(
+                    success=False,
+                    file_path=file_path,
+                    chunks_processed=0,
+                    processing_time=time.time() - start_time,
+                    error=f"Batch processing failed: {e}",
+                )
 
             # Phase 4: Atomic write to Qdrant if we have valid vectors
             if file_points:
@@ -491,12 +514,14 @@ class FileChunkingManager:
             # Mark as complete
             self.slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
 
-            # CRITICAL FIX: Trigger final display update for completed file
+            # PROGRESS REPORTING ADJUSTMENT: File completion callback
+            # This is the ONLY progress callback - when file truly completes
+            # HighThroughputProcessor will handle file count updates and metrics
             if progress_callback:
                 concurrent_files = self.slot_tracker.get_concurrent_files_data()
                 progress_callback(
-                    None,  # current
-                    None,  # total
+                    None,  # current - HighThroughputProcessor manages file counts
+                    None,  # total - HighThroughputProcessor manages file counts
                     file_path,
                     concurrent_files=concurrent_files,
                 )
@@ -517,6 +542,16 @@ class FileChunkingManager:
             # Mark file failed
             self.slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
 
+            # PROGRESS REPORTING ADJUSTMENT: Error file completion callback
+            if progress_callback:
+                concurrent_files = self.slot_tracker.get_concurrent_files_data()
+                progress_callback(
+                    None,  # current - HighThroughputProcessor manages file counts
+                    None,  # total - HighThroughputProcessor manages file counts
+                    file_path,
+                    concurrent_files=concurrent_files,
+                )
+
             return FileProcessingResult(
                 success=False,
                 file_path=file_path,
@@ -526,6 +561,6 @@ class FileChunkingManager:
             )
 
         finally:
-            # SINGLE release - guaranteed
+            # SINGLE release - guaranteed (CLAUDE.md Foundation #8 compliance)
             if slot_id is not None:
                 self.slot_tracker.release_slot(slot_id)

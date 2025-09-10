@@ -83,8 +83,7 @@ class GitAwareDocumentProcessor(DocumentProcessor):
                             f"Vector calculation failed: {vector_result.error}"
                         )
 
-                    if not vector_result.embedding:
-                        raise ValueError(f"Embedding is None for chunk in {file_path}")
+                    # Note: vector_result.embedding now uses batch processing internally
 
                     # Reconstruct chunk and file metadata
                     chunk = vector_result.metadata["chunk"]

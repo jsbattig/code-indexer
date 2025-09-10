@@ -13,6 +13,7 @@ from concurrent.futures import Future
 from code_indexer.services.vector_calculation_manager import (
     VectorCalculationManager,
     VectorResult,
+    VectorTask,
 )
 from code_indexer.services.embedding_provider import (
     EmbeddingProvider,
@@ -30,13 +31,19 @@ class MockEmbeddingProvider(EmbeddingProvider):
         provider_name: str = "test-provider",
         delay: float = 0.1,
         dimensions: int = 768,
+        fail_on_batch: bool = False,
+        batch_delay_multiplier: float = 1.0,
     ):
         super().__init__()
         self.provider_name = provider_name
         self.delay = delay
         self.dimensions = dimensions
+        self.fail_on_batch = fail_on_batch
+        self.batch_delay_multiplier = batch_delay_multiplier
         self.call_count = 0
+        self.batch_call_count = 0
         self.call_lock = threading.Lock()
+        self.batch_calls_log: List[List[str]] = []  # Track actual batch calls
 
     def get_provider_name(self) -> str:
         return self.provider_name
@@ -61,8 +68,25 @@ class MockEmbeddingProvider(EmbeddingProvider):
     def get_embeddings_batch(
         self, texts: List[str], model: Optional[str] = None
     ) -> List[List[float]]:
-        """Mock batch embedding generation."""
-        return [self.get_embedding(text, model) for text in texts]
+        """Mock batch embedding generation with tracking."""
+        with self.call_lock:
+            self.batch_call_count += 1
+            # Log the actual batch call for verification
+            self.batch_calls_log.append(list(texts))
+
+        if self.fail_on_batch:
+            raise ValueError("Mock batch processing failure")
+
+        if self.delay > 0:
+            time.sleep(self.delay * self.batch_delay_multiplier)
+
+        # Generate embeddings for all texts in batch
+        embeddings = []
+        for text in texts:
+            # Generate a simple mock embedding based on text length
+            embeddings.append([float(len(text) % 100) / 100.0] * self.dimensions)
+
+        return embeddings
 
     def get_embedding_with_metadata(
         self, text: str, model: Optional[str] = None
@@ -99,6 +123,32 @@ class MockEmbeddingProvider(EmbeddingProvider):
 
 class TestVectorCalculationManager:
     """Test cases for VectorCalculationManager."""
+
+    def _submit_batch_task(
+        self,
+        manager: VectorCalculationManager,
+        chunk_texts: List[str],
+        metadata: Dict[str, Any],
+    ) -> "Future[VectorResult]":
+        """Helper method to submit a batch task directly to test batch processing."""
+        # Create a VectorTask with multiple chunks
+        task = VectorTask(
+            task_id=f"batch_task_{time.time()}",
+            chunk_texts=tuple(chunk_texts),
+            metadata=metadata,
+            created_at=time.time(),
+        )
+
+        # Submit directly to the thread pool
+        if not manager.executor:
+            raise RuntimeError("Thread pool not started")
+        future = manager.executor.submit(manager._calculate_vector, task)
+
+        # Update stats for submitted batch task
+        with manager.stats_lock:
+            manager.stats.total_tasks_submitted += 1
+
+        return future
 
     def test_config_json_thread_count_simplified(self):
         """Test that thread count now comes from config.json only."""
@@ -186,8 +236,9 @@ class TestVectorCalculationManager:
             total_time = end_time - start_time
             assert total_time < 0.8  # Allow some overhead
 
-            # Verify provider was called correct number of times
-            assert provider.call_count == 10
+            # Verify provider batch API was called correct number of times (now uses batch processing for single chunks)
+            assert provider.batch_call_count == 10  # 10 batch calls with 1 chunk each
+            assert provider.call_count == 0  # No single embedding calls should be made
 
     def test_statistics_tracking(self):
         """Test that statistics are tracked correctly."""
@@ -217,15 +268,16 @@ class TestVectorCalculationManager:
         """Test error handling in vector calculation."""
         provider = MockEmbeddingProvider()
 
-        # Mock the provider to raise an exception
-        def failing_get_embedding(
-            text: str, model: Optional[str] = None
-        ) -> List[float]:
-            if "fail" in text:
-                raise ValueError("Simulated embedding failure")
-            return [1.0] * 768
+        # Mock the provider to raise an exception on batch calls (now uses batch processing)
+        def failing_get_embeddings_batch(
+            texts: List[str], model: Optional[str] = None
+        ) -> List[List[float]]:
+            for text in texts:
+                if "fail" in text:
+                    raise ValueError("Simulated embedding failure")
+            return [[1.0] * 768 for _ in texts]
 
-        provider.get_embedding = failing_get_embedding  # type: ignore[method-assign]
+        provider.get_embeddings_batch = failing_get_embeddings_batch  # type: ignore[method-assign]
 
         with VectorCalculationManager(provider, thread_count=1) as manager:
             # Submit a failing task
@@ -399,6 +451,518 @@ class TestVectorCalculationManager:
             assert result.metadata == complex_metadata
             # Verify it's a copy, not the same object
             assert result.metadata is not complex_metadata
+
+    # ========== BATCH PROCESSING TESTS ==========
+
+    def test_batch_processing_multiple_chunks(self):
+        """Test batch processing with multiple chunks via get_embeddings_batch()."""
+        provider = MockEmbeddingProvider(delay=0.01)
+        chunk_texts = ["First chunk", "Second chunk", "Third chunk"]
+        metadata = {"batch_test": True}
+
+        with VectorCalculationManager(provider, thread_count=1) as manager:
+            # Submit batch task
+            future = self._submit_batch_task(manager, chunk_texts, metadata)
+            result = future.result(timeout=5.0)
+
+            # Verify batch processing occurred
+            assert result.error is None
+            assert result.batch_size == 3
+            assert len(result.embeddings) == 3
+            assert result.metadata == metadata
+
+            # Verify batch API was called exactly once
+            assert provider.batch_call_count == 1
+            assert provider.call_count == 0  # Single embedding API should not be called
+
+            # Verify the batch call received correct texts
+            assert len(provider.batch_calls_log) == 1
+            assert provider.batch_calls_log[0] == chunk_texts
+
+            # Verify each embedding has correct dimensions
+            for embedding in result.embeddings:
+                assert len(embedding) == provider.dimensions
+
+    def test_batch_processing_single_chunk_compatibility(self):
+        """Test that batch processing works with single chunk (backward compatibility)."""
+        provider = MockEmbeddingProvider(delay=0.01)
+        chunk_texts = ["Single chunk text"]
+        metadata = {"single_chunk": True}
+
+        with VectorCalculationManager(provider, thread_count=1) as manager:
+            # Submit single-chunk batch task
+            future = self._submit_batch_task(manager, chunk_texts, metadata)
+            result = future.result(timeout=5.0)
+
+            # Verify processing succeeded
+            assert result.error is None
+            assert result.batch_size == 1
+            assert len(result.embeddings) == 1
+            assert result.metadata == metadata
+
+            # Verify batch API was used even for single chunk
+            assert provider.batch_call_count == 1
+            assert provider.call_count == 0
+
+            # Verify backward compatibility properties
+            assert result.embedding == list(result.embeddings[0])
+
+    def test_batch_processing_error_handling(self):
+        """Test error handling for batch operations with retry patterns."""
+        provider = MockEmbeddingProvider(delay=0.01, fail_on_batch=True)
+        chunk_texts = ["Chunk 1", "Chunk 2", "Chunk 3"]
+        metadata = {"error_test": True}
+
+        with VectorCalculationManager(provider, thread_count=1) as manager:
+            # Submit batch task that will fail
+            future = self._submit_batch_task(manager, chunk_texts, metadata)
+            result = future.result(timeout=5.0)
+
+            # Verify error handling
+            assert result.error is not None
+            assert "Mock batch processing failure" in result.error
+            assert result.batch_size == 0  # Empty on error
+            assert len(result.embeddings) == 0
+
+            # Verify batch API was called
+            assert provider.batch_call_count == 1
+
+            # Verify stats tracking for failed batch
+            stats = manager.get_stats()
+            assert stats.total_tasks_failed == 1
+
+    def test_batch_processing_statistics_tracking(self):
+        """Test statistics tracking accurately reflects batch operations."""
+        provider = MockEmbeddingProvider(delay=0.02)
+
+        with VectorCalculationManager(provider, thread_count=2) as manager:
+            # Submit multiple batch tasks with different sizes
+            futures = []
+            batch_configs = [
+                (["A", "B", "C"], {"batch": 1}),
+                (["D", "E"], {"batch": 2}),
+                (["F"], {"batch": 3}),
+                (["G", "H", "I", "J"], {"batch": 4}),
+            ]
+
+            for chunk_texts, metadata in batch_configs:
+                future = self._submit_batch_task(manager, chunk_texts, metadata)
+                futures.append(future)
+
+            # Wait for all batches to complete
+            results = []
+            for future in futures:
+                result = future.result(timeout=10.0)
+                results.append(result)
+
+            # Verify all batches processed successfully
+            assert len(results) == 4
+            for result in results:
+                assert result.error is None
+
+            # Verify batch API calls
+            assert provider.batch_call_count == 4  # 4 batch API calls
+            assert provider.call_count == 0  # No single embedding calls
+
+            # Verify statistics accuracy
+            stats = manager.get_stats()
+            assert stats.total_tasks_submitted == 4  # 4 batch tasks submitted
+            assert stats.total_tasks_completed == 4  # 4 batch tasks completed
+            assert stats.total_tasks_failed == 0
+            assert stats.embeddings_per_second > 0
+
+            # Verify individual results match batch sizes
+            assert results[0].batch_size == 3  # First batch: 3 chunks
+            assert results[1].batch_size == 2  # Second batch: 2 chunks
+            assert results[2].batch_size == 1  # Third batch: 1 chunk
+            assert results[3].batch_size == 4  # Fourth batch: 4 chunks
+
+    def test_batch_processing_cancellation_handling(self):
+        """Test cancellation handling for batch operations."""
+        provider = MockEmbeddingProvider(
+            delay=0.05
+        )  # Shorter delay for more reliable cancellation
+        chunk_texts = ["Chunk 1", "Chunk 2", "Chunk 3"]
+        metadata = {"cancellation_test": True}
+
+        manager = VectorCalculationManager(provider, thread_count=1)
+        manager.start()
+
+        try:
+            # Request cancellation before submitting task
+            manager.request_cancellation()
+
+            # Submit batch task after cancellation is requested
+            future = self._submit_batch_task(manager, chunk_texts, metadata)
+
+            # Wait for result
+            result = future.result(timeout=5.0)
+
+            # Verify cancellation was handled
+            assert result.error is not None
+            assert "Cancelled" in result.error
+            assert result.batch_size == 0
+            assert len(result.embeddings) == 0
+        finally:
+            manager.shutdown()
+
+    def test_batch_processing_empty_chunks(self):
+        """Test batch processing with empty chunk list."""
+        provider = MockEmbeddingProvider(delay=0.01)
+        chunk_texts: List[str] = []  # Empty chunk list
+        metadata = {"empty_test": True}
+
+        with VectorCalculationManager(provider, thread_count=1) as manager:
+            # Submit batch task with empty chunks
+            future = self._submit_batch_task(manager, chunk_texts, metadata)
+            result = future.result(timeout=5.0)
+
+            # Should complete successfully with empty results
+            assert result.error is None
+            assert result.batch_size == 0
+            assert len(result.embeddings) == 0
+
+            # CRITICAL FIX: Empty batches should NOT call the API (optimization)
+            # Old behavior: Made unnecessary API call with empty list
+            # New behavior: Return early without API call for better performance
+            assert provider.batch_call_count == 0, "Empty batches should not call API"
+            assert len(provider.batch_calls_log) == 0, "No API calls should be logged"
+
+    def test_batch_processing_performance_improvement(self):
+        """Test that batch processing provides performance improvements."""
+        # Configure provider with batch efficiency
+        provider = MockEmbeddingProvider(
+            delay=0.05,  # Base delay per chunk
+            batch_delay_multiplier=0.3,  # Batch processing is much more efficient
+        )
+
+        chunk_count = 10
+        chunks_per_batch = 5
+
+        with VectorCalculationManager(provider, thread_count=2) as manager:
+            start_time = time.time()
+
+            # Submit two batch tasks
+            futures = []
+            for batch_idx in range(2):
+                batch_chunks = [
+                    f"Batch {batch_idx} chunk {i}" for i in range(chunks_per_batch)
+                ]
+                future = self._submit_batch_task(
+                    manager, batch_chunks, {"batch": batch_idx}
+                )
+                futures.append(future)
+
+            # Wait for completion
+            results = []
+            for future in futures:
+                result = future.result(timeout=10.0)
+                results.append(result)
+
+            total_time = time.time() - start_time
+
+            # Verify all processed successfully
+            assert len(results) == 2
+            for result in results:
+                assert result.error is None
+                assert result.batch_size == chunks_per_batch
+
+            # Verify performance improvement
+            # With batch processing: 2 API calls * (0.05 * 0.3) = ~0.03s
+            # Without batch: would be 10 API calls * 0.05 = 0.5s
+            assert total_time < 0.2  # Should be much faster than individual processing
+
+            # Verify batch API usage
+            assert (
+                provider.batch_call_count == 2
+            )  # Only 2 batch calls for 10 embeddings
+            assert provider.call_count == 0  # No individual calls
+
+    def test_batch_processing_large_batch_handling(self):
+        """Test batch processing with large batches."""
+        provider = MockEmbeddingProvider(delay=0.01)
+        # Create a larger batch to test system handling
+        chunk_texts = [f"Large batch chunk {i:03d}" for i in range(50)]
+        metadata = {"large_batch": True, "chunk_count": 50}
+
+        with VectorCalculationManager(provider, thread_count=1) as manager:
+            # Submit large batch task
+            future = self._submit_batch_task(manager, chunk_texts, metadata)
+            result = future.result(timeout=10.0)
+
+            # Verify large batch processing
+            assert result.error is None
+            assert result.batch_size == 50
+            assert len(result.embeddings) == 50
+
+            # Verify batch API was called once for entire batch
+            assert provider.batch_call_count == 1
+            assert len(provider.batch_calls_log[0]) == 50
+
+            # Verify all embeddings are correct
+            for i, embedding in enumerate(result.embeddings):
+                assert len(embedding) == provider.dimensions
+
+    # ========== NEW submit_batch_task() API TESTS ==========
+
+    def test_submit_batch_task_basic_functionality(self):
+        """Test submit_batch_task() method basic functionality."""
+        provider = MockEmbeddingProvider(delay=0.01)
+        chunk_texts = ["First chunk", "Second chunk", "Third chunk"]
+        metadata = {"batch_api_test": True}
+
+        with VectorCalculationManager(provider, thread_count=1) as manager:
+            # Use new public API method
+            future = manager.submit_batch_task(chunk_texts, metadata)
+            result = future.result(timeout=5.0)
+
+            # Verify batch processing occurred
+            assert result.error is None
+            assert result.batch_size == 3
+            assert len(result.embeddings) == 3
+            assert result.metadata == metadata
+            assert result.processing_time > 0
+
+            # Verify task ID is generated correctly
+            assert result.task_id.startswith("task_")
+
+            # Verify batch API was called exactly once
+            assert provider.batch_call_count == 1
+            assert provider.call_count == 0
+
+    def test_submit_batch_task_empty_chunks(self):
+        """Test submit_batch_task() with empty chunk list."""
+        provider = MockEmbeddingProvider(delay=0.01)
+        chunk_texts = []
+        metadata = {"empty_batch_test": True}
+
+        with VectorCalculationManager(provider, thread_count=1) as manager:
+            future = manager.submit_batch_task(chunk_texts, metadata)
+            result = future.result(timeout=5.0)
+
+            # Should complete successfully with empty results
+            assert result.error is None
+            assert result.batch_size == 0
+            assert len(result.embeddings) == 0
+            assert result.metadata == metadata
+
+            # Empty batches should not call API
+            assert provider.batch_call_count == 0
+
+    def test_submit_batch_task_single_chunk(self):
+        """Test submit_batch_task() with single chunk."""
+        provider = MockEmbeddingProvider(delay=0.01)
+        chunk_texts = ["Single chunk text"]
+        metadata = {"single_chunk_batch": True}
+
+        with VectorCalculationManager(provider, thread_count=1) as manager:
+            future = manager.submit_batch_task(chunk_texts, metadata)
+            result = future.result(timeout=5.0)
+
+            # Verify processing succeeded
+            assert result.error is None
+            assert result.batch_size == 1
+            assert len(result.embeddings) == 1
+            assert result.metadata == metadata
+
+            # Verify batch API was used
+            assert provider.batch_call_count == 1
+            assert provider.call_count == 0
+
+            # Verify backward compatibility properties
+            assert result.embedding == list(result.embeddings[0])
+
+    def test_submit_batch_task_manager_not_started(self):
+        """Test submit_batch_task() when manager is not started."""
+        provider = MockEmbeddingProvider(delay=0.01)
+        manager = VectorCalculationManager(provider, thread_count=1)
+        # Manager not started yet
+        assert not manager.is_running
+
+        chunk_texts = ["Test chunk"]
+        metadata = {"auto_start_test": True}
+
+        # Should auto-start the manager
+        future = manager.submit_batch_task(chunk_texts, metadata)
+        result = future.result(timeout=5.0)
+
+        # Verify it worked and manager was started
+        assert manager.is_running
+        assert result.error is None
+        assert result.batch_size == 1
+
+        manager.shutdown()
+
+    def test_submit_batch_task_cancelled_manager(self):
+        """Test submit_batch_task() when manager is cancelled."""
+        provider = MockEmbeddingProvider(delay=0.01)
+        manager = VectorCalculationManager(provider, thread_count=1)
+        manager.start()
+        manager.request_cancellation()
+
+        chunk_texts = ["Test chunk"]
+        metadata = {"cancelled_test": True}
+
+        # Should return cancelled result immediately
+        future = manager.submit_batch_task(chunk_texts, metadata)
+        result = future.result(timeout=5.0)
+
+        assert result.error == "Cancelled"
+        assert result.batch_size == 0
+        assert len(result.embeddings) == 0
+        assert result.task_id == "cancelled"
+
+        manager.shutdown()
+
+    def test_submit_batch_task_error_handling(self):
+        """Test submit_batch_task() error handling."""
+        provider = MockEmbeddingProvider(delay=0.01, fail_on_batch=True)
+        chunk_texts = ["Chunk 1", "Chunk 2"]
+        metadata = {"error_test": True}
+
+        with VectorCalculationManager(provider, thread_count=1) as manager:
+            future = manager.submit_batch_task(chunk_texts, metadata)
+            result = future.result(timeout=5.0)
+
+            # Verify error handling
+            assert result.error is not None
+            assert "Mock batch processing failure" in result.error
+            assert result.batch_size == 0
+            assert len(result.embeddings) == 0
+
+    def test_submit_batch_task_statistics_tracking(self):
+        """Test that submit_batch_task() updates statistics correctly."""
+        provider = MockEmbeddingProvider(delay=0.01)
+
+        with VectorCalculationManager(provider, thread_count=1) as manager:
+            # Submit multiple batch tasks
+            futures = []
+            batch_configs = [
+                (["A", "B"], {"batch": 1}),
+                (["C", "D", "E"], {"batch": 2}),
+                (["F"], {"batch": 3}),
+            ]
+
+            for chunk_texts, metadata in batch_configs:
+                future = manager.submit_batch_task(chunk_texts, metadata)
+                futures.append(future)
+
+            # Wait for completion
+            results = []
+            for future in futures:
+                result = future.result(timeout=5.0)
+                results.append(result)
+
+            # Verify statistics
+            stats = manager.get_stats()
+            assert stats.total_tasks_submitted == 3  # 3 batch tasks
+            assert stats.total_tasks_completed == 3
+            assert stats.total_tasks_failed == 0
+            assert stats.total_embeddings_processed == 6  # 2 + 3 + 1 embeddings
+
+    def test_submit_batch_task_metadata_immutability(self):
+        """Test that submit_batch_task() creates immutable copies of metadata."""
+        provider = MockEmbeddingProvider(delay=0.01)
+        chunk_texts = ["Test chunk"]
+        original_metadata = {"mutable": ["list", "data"], "dict": {"key": "value"}}
+
+        with VectorCalculationManager(provider, thread_count=1) as manager:
+            future = manager.submit_batch_task(chunk_texts, original_metadata)
+            result = future.result(timeout=5.0)
+
+            # Modify original metadata
+            original_metadata["new_key"] = "new_value"
+            original_metadata["mutable"].append("new_item")
+            original_metadata["dict"]["new_dict_key"] = "new_dict_value"
+
+            # Result metadata should not be affected
+            assert "new_key" not in result.metadata
+            assert "new_item" not in result.metadata["mutable"]
+            assert "new_dict_key" not in result.metadata["dict"]
+
+    def test_submit_batch_task_chunk_texts_immutability(self):
+        """Test that submit_batch_task() creates immutable copies of chunk_texts."""
+        provider = MockEmbeddingProvider(delay=0.01)
+        original_chunks = ["Original chunk 1", "Original chunk 2"]
+        metadata = {"immutability_test": True}
+
+        with VectorCalculationManager(provider, thread_count=1) as manager:
+            future = manager.submit_batch_task(original_chunks, metadata)
+
+            # Modify original chunks list
+            original_chunks.append("New chunk added after submit")
+            original_chunks[0] = "Modified first chunk"
+
+            result = future.result(timeout=5.0)
+
+            # Verify the task was processed with original data
+            assert result.error is None
+            assert result.batch_size == 2  # Not affected by append
+
+            # Check that provider received original data
+            assert len(provider.batch_calls_log) == 1
+            assert provider.batch_calls_log[0] == [
+                "Original chunk 1",
+                "Original chunk 2",
+            ]
+
+    def test_submit_batch_task_invalid_inputs(self):
+        """Test submit_batch_task() with invalid inputs."""
+        provider = MockEmbeddingProvider(delay=0.01)
+
+        with VectorCalculationManager(provider, thread_count=1) as manager:
+            # Test with None chunk_texts - should raise TypeError
+            with pytest.raises(TypeError):
+                manager.submit_batch_task(None, {"test": True})
+
+            # Test with None metadata - should raise TypeError when deep copying
+            with pytest.raises(TypeError):
+                manager.submit_batch_task(["test"], None)
+
+    def test_submit_batch_task_thread_safety(self):
+        """Test submit_batch_task() thread safety with concurrent submissions."""
+        provider = MockEmbeddingProvider(delay=0.01)
+
+        with VectorCalculationManager(provider, thread_count=4) as manager:
+            import threading
+            import queue
+
+            results_queue = queue.Queue()
+
+            def submit_batch(thread_id):
+                chunk_texts = [f"Thread {thread_id} chunk {i}" for i in range(3)]
+                metadata = {"thread_id": thread_id}
+                future = manager.submit_batch_task(chunk_texts, metadata)
+                result = future.result(timeout=10.0)
+                results_queue.put(result)
+
+            # Submit from multiple threads simultaneously
+            threads = []
+            for i in range(5):
+                thread = threading.Thread(target=submit_batch, args=(i,))
+                threads.append(thread)
+                thread.start()
+
+            # Wait for all threads
+            for thread in threads:
+                thread.join()
+
+            # Collect all results
+            results = []
+            while not results_queue.empty():
+                results.append(results_queue.get())
+
+            # Verify all submissions succeeded
+            assert len(results) == 5
+            for result in results:
+                assert result.error is None
+                assert result.batch_size == 3
+
+            # Verify statistics
+            stats = manager.get_stats()
+            assert stats.total_tasks_submitted == 5
+            assert stats.total_tasks_completed == 5
+            assert stats.total_embeddings_processed == 15
 
 
 @pytest.fixture

@@ -2,7 +2,7 @@
 
 AI-powered semantic code search for your codebase. Find code by meaning, not just keywords.
 
-## Version 4.1.0
+## Version 4.0.0.2
 
 ## Two Operating Modes
 
@@ -10,7 +10,7 @@ AI-powered semantic code search for your codebase. Find code by meaning, not jus
 Traditional command-line interface for individual developers:
 - **Direct CLI commands** - `cidx init`, `cidx index`, `cidx query`
 - **Local project indexing** - Index your current project directory
-- **Real-time progress** - Individual file status with slot-based parallel processing
+- **Real-time progress** - Individual file status progression (starting → chunking → vectorizing → finalizing → complete)
 - **Integrated with Claude CLI** - Seamless AI code analysis with semantic search context
 
 ### Multi-User Server Mode
@@ -41,7 +41,7 @@ FastAPI web service for team environments:
 ### pipx (Recommended)
 ```bash
 # Install the package
-pipx install git+https://github.com/jsbattig/code-indexer.git@v4.1.0
+pipx install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.2
 
 # Setup global registry (standalone command - requires sudo)
 cidx setup-global-registry
@@ -119,14 +119,16 @@ The CIDX server provides a FastAPI-based multi-user semantic code search service
 
 ```bash
 # 1. Install and setup (same as CLI)
-pipx install git+https://github.com/jsbattig/code-indexer.git@v4.1.0
+pipx install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.2
 cidx setup-global-registry
 
-# 2. Start the server
-cd /path/to/your/server/data/directory
-python -m src.code_indexer.server.main --host 127.0.0.1 --port 8090
+# 2. Install and configure the server
+cidx install-server
 
-# 3. Access the API documentation
+# 3. Start the server
+cidx server start
+
+# 4. Access the API documentation
 # Visit: http://localhost:8090/docs
 ```
 
@@ -355,22 +357,23 @@ export VOYAGE_API_KEY="your-key"
 cidx init --embedding-provider voyage-ai
 ```
 
-**Performance Status Indicators (VoyageAI only)**
+**Real-time Progress Display**
 
-During indexing, VoyageAI shows real-time performance status in the progress bar:
-- ⚡ **Full speed** - Running at maximum throughput
-- 🔴 **Server throttling** - VoyageAI API rate limits detected
+During indexing, the progress display shows:
+- File processing progress with counts and percentages
+- Performance metrics: files/s, KB/s, active threads  
+- Individual file status with processing stages
 
-Example: `15/100 files (15%) | 8.3 files/s | 156.7 KB/s | 12 threads`
+Example progress: `15/100 files (15%) | 8.3 files/s | 156.7 KB/s | 12 threads`
 
 Individual file status display:
 ```
-├─ main.py (15.2 KB) vectorizing...
-├─ utils.py (8.3 KB) finalizing...  
-├─ config.py (4.1 KB) complete ✓
+├─ main.py (15.2 KB) starting
+├─ utils.py (8.3 KB) chunking...  
+├─ config.py (4.1 KB) vectorizing...
+├─ helpers.py (3.2 KB) finalizing...
+├─ models.py (12.5 KB) complete ✓
 ```
-
-The system runs at full speed by default. If rate limits are encountered, an error is displayed asking to reduce parallel_requests.
 
 ### Configuration File
 Configuration is stored in `.code-indexer/config.json`:

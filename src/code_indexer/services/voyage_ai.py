@@ -163,12 +163,11 @@ class VoyageAIClient(EmbeddingProvider):
 
     def get_embedding(self, text: str, model: Optional[str] = None) -> List[float]:
         """Generate embedding for given text."""
-        result = self._make_sync_request([text], model)
+        # Use get_embeddings_batch internally with single-item array
+        batch_result = self.get_embeddings_batch([text], model)
 
-        if not result.get("data") or len(result["data"]) == 0:
-            raise ValueError("No embedding returned from VoyageAI")
-
-        return list(result["data"][0]["embedding"])
+        # Extract first result from batch response
+        return batch_result[0]
 
     def get_embeddings_batch(
         self, texts: List[str], model: Optional[str] = None
@@ -181,16 +180,41 @@ class VoyageAIClient(EmbeddingProvider):
         if not texts:
             return []
 
-        # If texts fit in one batch, process directly
-        if len(texts) <= self.config.batch_size:
+        # TOKEN-AWARE BATCHING: Check both chunk count AND token limits
+        # VoyageAI limit: 120,000 tokens per batch
+        MAX_TOKENS_PER_BATCH = 100_000  # Conservative limit (safety margin)
+        
+        # Estimate total tokens for all texts
+        total_tokens = sum(self._estimate_tokens(text) for text in texts)
+        
+        # If texts fit in one batch (both chunk and token limits), process directly
+        if len(texts) <= self.config.batch_size and total_tokens <= MAX_TOKENS_PER_BATCH:
             result = self._make_sync_request(texts, model)
             return [list(item["embedding"]) for item in result["data"]]
 
-        # Split into batches and process synchronously
-        batches = [
-            texts[i : i + self.config.batch_size]
-            for i in range(0, len(texts), self.config.batch_size)
-        ]
+        # Split into token-aware batches
+        batches = []
+        current_batch = []
+        current_tokens = 0
+        
+        for text in texts:
+            text_tokens = self._estimate_tokens(text)
+            
+            # Check if adding this text would exceed limits
+            if (len(current_batch) >= self.config.batch_size or 
+                current_tokens + text_tokens > MAX_TOKENS_PER_BATCH) and current_batch:
+                # Finish current batch
+                batches.append(current_batch)
+                current_batch = []
+                current_tokens = 0
+            
+            # Add text to current batch
+            current_batch.append(text)
+            current_tokens += text_tokens
+        
+        # Add final batch if not empty
+        if current_batch:
+            batches.append(current_batch)
 
         all_embeddings = []
 
@@ -209,19 +233,18 @@ class VoyageAIClient(EmbeddingProvider):
         self, text: str, model: Optional[str] = None
     ) -> EmbeddingResult:
         """Generate embedding with metadata."""
-        result = self._make_sync_request([text], model)
+        # Use batch processing internally for consistency
+        batch_result = self.get_embeddings_batch_with_metadata([text], model)
 
-        if not result.get("data") or len(result["data"]) == 0:
-            raise ValueError("No embedding returned from VoyageAI")
+        if not batch_result.embeddings:
+            raise ValueError("No embedding returned from batch processing")
 
-        model_name = model or self.config.model
-        usage = result.get("usage", {})
-
+        # Extract single embedding from batch result
         return EmbeddingResult(
-            embedding=list(result["data"][0]["embedding"]),
-            model=model_name,
-            tokens_used=usage.get("total_tokens"),
-            provider="voyage-ai",
+            embedding=batch_result.embeddings[0],
+            model=batch_result.model,
+            tokens_used=batch_result.total_tokens_used,
+            provider=batch_result.provider,
         )
 
     def get_embeddings_batch_with_metadata(

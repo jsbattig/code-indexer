@@ -32,14 +32,51 @@ class TestCleanFileChunkingManagerResourceManagement:
 
         # Mock chunker behavior
         self.chunker.chunk_file.return_value = [
-            {"text": "chunk1", "line_start": 1, "line_end": 10},
-            {"text": "chunk2", "line_start": 11, "line_end": 20},
+            {
+                "text": "chunk1", 
+                "line_start": 1, 
+                "line_end": 10,
+                "chunk_index": 0,
+                "total_chunks": 2,
+                "file_extension": "py"
+            },
+            {
+                "text": "chunk2", 
+                "line_start": 11, 
+                "line_end": 20,
+                "chunk_index": 1,
+                "total_chunks": 2,
+                "file_extension": "py"
+            },
         ]
 
-        # Mock vector manager behavior
+        # Mock vector manager behavior  
         future_mock = Mock()
         future_mock.result.return_value = [0.1, 0.2, 0.3]  # Mock vector
         self.vector_manager.submit_chunk.return_value = future_mock
+        
+        # BATCH PROCESSING FIX: Add mock for submit_batch_task used by FileChunkingManager
+        from code_indexer.services.vector_calculation_manager import VectorResult
+        batch_future_mock = Mock()
+        batch_result = VectorResult.create_immutable(
+            task_id="test_batch",
+            embeddings=([0.1, 0.2, 0.3], [0.4, 0.5, 0.6]),  # 2 embeddings for 2 chunks
+            metadata={"test": "batch_metadata"},
+            processing_time=0.1,
+            error=None
+        )
+        batch_future_mock.result.return_value = batch_result
+        self.vector_manager.submit_batch_task.return_value = batch_future_mock
+
+    def _get_complete_metadata(self, file_path: Path) -> dict:
+        """Get complete metadata required for file processing."""
+        return {
+            "project_id": "test_project",
+            "file_hash": f"test_hash_{file_path.stem}",
+            "git_available": False,
+            "file_mtime": file_path.stat().st_mtime,
+            "file_size": file_path.stat().st_size,
+        }
 
     def test_single_acquire_try_finally_pattern(self):
         """Test that FileChunkingManager uses proper acquire/try/finally pattern."""
@@ -83,7 +120,11 @@ class TestCleanFileChunkingManagerResourceManagement:
             self.slot_tracker.release_slot = track_release
 
             # Process file using the clean method directly
-            manager._process_file_clean_lifecycle(test_file, {"test": "metadata"}, None)
+            manager._process_file_clean_lifecycle(test_file, self._get_complete_metadata(test_file), None)
+
+            # Wait for delayed release to complete (background thread)
+            import time
+            time.sleep(2.5)  # Wait for delayed release (2 second delay + buffer)
 
             # Verify proper resource management pattern
             assert len(acquire_calls) == 1, "Should have exactly ONE acquire call"
@@ -92,10 +133,13 @@ class TestCleanFileChunkingManagerResourceManagement:
                 acquire_calls[0] == release_calls[0]
             ), "Same slot should be acquired and released"
 
-            # Verify no slots leaked
+            # VISUAL FEEDBACK FIX: After delayed release, slot should be available
             assert (
                 self.slot_tracker.get_slot_count() == 0
-            ), "No slots should remain occupied"
+            ), "Slot should be released after delay"
+            assert (
+                self.slot_tracker.get_available_slot_count() == 3
+            ), "All slots should be available after processing"
 
         finally:
             test_file.unlink()
@@ -134,7 +178,8 @@ class TestCleanFileChunkingManagerResourceManagement:
             self.slot_tracker.release_slot = track_release
 
             # Process file (should fail but still release properly)
-            manager._process_file_clean_lifecycle(test_file, {"test": "metadata"}, None)
+            manager._process_file_clean_lifecycle(test_file, self._get_complete_metadata(test_file), None)
+
 
             # Should have exactly ONE release call even on error
             assert (
@@ -177,9 +222,9 @@ class TestCleanFileChunkingManagerResourceManagement:
 
             self.slot_tracker.update_slot = track_update
 
-            # Process file using the clean method directly
+            # Process file using the clean method directly with complete metadata
             result = manager._process_file_clean_lifecycle(
-                test_file, {"test": "metadata"}, None
+                test_file, self._get_complete_metadata(test_file), None
             )
 
             # Verify result is successful
@@ -255,8 +300,9 @@ class TestCleanFileChunkingManagerResourceManagement:
 
             # Process empty file
             result = manager._process_file_clean_lifecycle(
-                test_file, {"test": "metadata"}, None
+                test_file, self._get_complete_metadata(test_file), None
             )
+
 
             # Even empty files should follow proper resource management
             assert len(acquire_calls) == 1, "Should acquire slot for empty file"
@@ -342,7 +388,7 @@ class TestCleanFileChunkingManagerResourceManagement:
             results = []
             for test_file in test_files:
                 result = manager._process_file_clean_lifecycle(
-                    test_file, {"test": "metadata"}, None
+                    test_file, self._get_complete_metadata(test_file), None
                 )
                 results.append(result)
 

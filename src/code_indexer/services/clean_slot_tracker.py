@@ -97,6 +97,12 @@ class CleanSlotTracker:
         # Return slot to available pool for reuse
         self.available_slots.put(slot_id)
 
+    def release_slot_keep_visible(self, slot_id: int):
+        """Release slot for reuse but keep file visible in COMPLETE state."""
+        # Return slot to available pool for reuse without clearing display
+        self.available_slots.put(slot_id)
+        # Note: status_array[slot_id] stays as-is to maintain visual feedback
+
     def get_display_files(self) -> List[FileData]:
         """Simple array scan - show active slots."""
         active_files = []

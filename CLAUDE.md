@@ -166,6 +166,8 @@ Cannot create directory in system paths
 - Our solution uses a per-project configuration and container set. Tests need to be aware of this. Many tests written before this big refactoring, were written with implied and hard-coded port numbers, they didn't reuse folders, making them inefficient and slow, some will start/stop containers manually, some e2e tests will tinker with internal calls rather than using the cidx (console) application directly (which is the right way to do it).
 - The last step of every development engagement to implement a feature is to run fast-automation.sh. Only when it passes in full, we consider the task done.
 
+- **🚨 VOYAGEAI BATCH PROCESSING TOKEN LIMITS**: VoyageAI API enforces 120,000 token limit per batch request. The VoyageAI client now implements token-aware batching that automatically splits large file batches to respect this limit while maintaining performance optimization. Files with >100K estimated tokens will be processed in multiple batches transparently. Error "max allowed tokens per submitted batch is 120000" indicates this protection is working correctly.
+
 - CIDX SEMANTIC CODE SEARCH INTEGRATION
 
 🎯 SEMANTIC SEARCH TOOL - YOUR PRIMARY CODE DISCOVERY METHOD

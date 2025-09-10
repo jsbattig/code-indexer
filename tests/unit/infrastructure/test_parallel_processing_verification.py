@@ -121,7 +121,9 @@ class TestParallelProcessingPerformance:
             future.set_result(
                 VectorResult(
                     task_id=chunk_id,
-                    embedding=[0.1, 0.2, 0.3],
+                    embeddings=(
+                        (0.1, 0.2, 0.3),
+                    ),  # Use batch format with immutable tuple
                     metadata=metadata,
                     processing_time=0.05,
                     error=None,

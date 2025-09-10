@@ -40,7 +40,7 @@ class MockVectorCalculationManager:
 
             result = VectorResult(
                 task_id=f"task_{len(self.submitted_chunks)}",
-                embedding=[0.1] * 768,  # Mock embedding
+                embeddings=((0.1,) * 768,),  # Mock embedding in batch format
                 metadata=metadata.copy(),
                 processing_time=self.submit_delay,
                 error=None,
@@ -55,6 +55,40 @@ class MockVectorCalculationManager:
         self.submitted_chunks.append(
             {"text": chunk_text, "metadata": metadata, "future": future}
         )
+
+        return future
+
+    def submit_batch_task(
+        self, chunk_texts: List[str], metadata: Dict[str, Any]
+    ) -> "Future":
+        """Mock submit_batch_task method for batch processing."""
+        from code_indexer.services.vector_calculation_manager import VectorResult
+
+        future: Future[VectorResult] = Future()
+
+        # Track for verification
+        self.submitted_chunks.extend(
+            [{"text": text, "metadata": metadata} for text in chunk_texts]
+        )
+
+        # Mock batch vector result
+        embeddings = tuple((0.1,) * 768 for _ in chunk_texts)
+        result = VectorResult(
+            task_id=f"batch_task_{len(self.submitted_chunks)}",
+            embeddings=embeddings,  # Multiple embeddings as nested tuples
+            metadata=metadata.copy(),
+            processing_time=self.submit_delay * len(chunk_texts),
+            error=None,
+        )
+
+        # Complete future in background thread to simulate async
+        def complete_future():
+            time.sleep(self.submit_delay)
+            future.set_result(result)
+
+        # Execute in background thread
+        thread = threading.Thread(target=complete_future)
+        thread.start()
 
         return future
 
@@ -356,14 +390,25 @@ class TestFileChunkingManagerAcceptanceCriteria:
 
     def test_error_handling_vector_processing_failure(self):
         """Test error handling when vector processing fails."""
-        # Mock vector manager to fail
+        # Mock vector manager to fail on batch submission
         failing_vector_manager = Mock()
         failing_vector_manager.cancellation_event = (
             threading.Event()
         )  # Add required attribute
+
+        # Create a mock future that returns a result with error
         failing_future: Future[Any] = Future()
-        failing_future.set_exception(RuntimeError("Vector processing failed"))
-        failing_vector_manager.submit_chunk.return_value = failing_future
+        from code_indexer.services.vector_calculation_manager import VectorResult
+
+        failing_result = VectorResult(
+            task_id="failed_batch",
+            embeddings=(),  # Empty embeddings on failure
+            metadata={},
+            processing_time=0.1,
+            error="Vector processing failed",
+        )
+        failing_future.set_result(failing_result)
+        failing_vector_manager.submit_batch_task = Mock(return_value=failing_future)
 
         with FileChunkingManager(
             vector_manager=failing_vector_manager,
@@ -381,11 +426,10 @@ class TestFileChunkingManagerAcceptanceCriteria:
 
             result = future.result(timeout=5.0)
 
-            # UPDATED: Current implementation logs errors but continues processing
-            # The file processing succeeds even if individual vector chunks fail
-            assert result.success is True
+            # CORRECTED: Batch processing failure should fail the entire file (atomicity)
+            assert result.success is False
             assert result.chunks_processed == 0  # No chunks were successfully processed
-            # Error is logged but not returned in result for resilient processing
+            assert "Batch processing failed" in str(result.error)
 
     def test_error_handling_qdrant_write_failure(self):
         """Test error handling when Qdrant writing fails."""

@@ -146,6 +146,24 @@ class TestVoyageThreadPoolElimination:
         ):
             voyage_client = VoyageAIClient(voyage_config)
             voyage_client.get_embedding = Mock(side_effect=mock_get_embedding)
+            
+            # BATCH PROCESSING FIX: Add mock for get_embeddings_batch used internally  
+            def mock_get_embeddings_batch(texts):
+                """Mock batch embedding that tracks thread activity."""
+                current_thread = threading.current_thread().name
+                thread_activity.append(
+                    {
+                        "thread": current_thread,
+                        "action": "batch_api_call", 
+                        "count": len(texts),
+                        "timestamp": time.time(),
+                    }
+                )
+                api_call_threads.add(current_thread)
+                time.sleep(0.01 * len(texts))  # Simulate batch processing time
+                return [[0.1, 0.2, 0.3] for _ in texts]  # Return array of embeddings
+                
+            voyage_client.get_embeddings_batch = Mock(side_effect=mock_get_embeddings_batch)
 
             # Create VectorCalculationManager with 4 threads
             vector_manager = VectorCalculationManager(
