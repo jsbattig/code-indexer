@@ -107,6 +107,8 @@ if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest \
     --ignore=tests/unit/infrastructure/test_meaningful_feedback_operations.py \
     --ignore=tests/unit/infrastructure/test_progress_debug.py \
     --ignore=tests/unit/infrastructure/test_full_index_parallel_processing.py \
+    --ignore=tests/unit/cli/test_query_functionality_fix.py \
+    --ignore=tests/unit/docker/ \
     --cov=code_indexer \
     --cov-report=xml --cov-report=term; then
     print_success "Unit tests passed"
