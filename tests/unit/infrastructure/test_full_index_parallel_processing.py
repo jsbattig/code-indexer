@@ -63,7 +63,7 @@ def mock_qdrant_client():
     client.clear_collection.return_value = True
     client.get_collection_info.return_value = {"points_count": 100}
     client.scroll_points.return_value = ([], None)
-    client.upsert_points_atomic.return_value = True
+    client.upsert_points_batched.return_value = True
     return client
 
 

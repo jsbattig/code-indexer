@@ -25,7 +25,7 @@ from dataclasses import dataclass
 
 from .vector_calculation_manager import VectorCalculationManager
 from ..indexing.fixed_size_chunker import FixedSizeChunker
-from .consolidated_file_tracker import FileStatus
+from .clean_slot_tracker import CleanSlotTracker, FileData, FileStatus
 import threading
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ class FileChunkingManager:
         chunker: FixedSizeChunker,
         qdrant_client,  # Pass from HighThroughputProcessor
         thread_count: int,
-        file_tracker=None,  # ADD THIS PARAMETER
+        slot_tracker: CleanSlotTracker,  # Mandatory clean tracker
     ):
         """
         Initialize FileChunkingManager with complete functionality.
@@ -66,7 +66,7 @@ class FileChunkingManager:
             chunker: Existing FixedSizeChunker (unchanged)
             qdrant_client: Qdrant client for atomic writes
             thread_count: Number of worker threads (thread_count + 2 per specs)
-            file_tracker: Optional ConsolidatedFileTracker for status reporting
+            slot_tracker: Mandatory CleanSlotTracker for status reporting
 
         Raises:
             ValueError: If thread_count is invalid or dependencies are None
@@ -79,14 +79,14 @@ class FileChunkingManager:
             raise ValueError("chunker cannot be None")
         if not qdrant_client:
             raise ValueError("qdrant_client cannot be None")
+        if not slot_tracker:
+            raise ValueError("slot_tracker cannot be None")
 
         self.vector_manager = vector_manager
         self.chunker = chunker
         self.qdrant_client = qdrant_client
         self.thread_count = thread_count
-        self.file_tracker = file_tracker  # ADD THIS LINE
-        self._thread_counter = 0  # ADD THIS LINE
-        self._thread_lock = threading.Lock()  # ADD THIS LINE
+        self.slot_tracker = slot_tracker
 
         # CRITICAL FIX: Single cancellation event shared with VectorCalculationManager
         self._cancellation_requested = False
@@ -129,7 +129,8 @@ class FileChunkingManager:
 
                 def shutdown_thread():
                     try:
-                        self.executor.shutdown(wait=True)
+                        if self.executor is not None:
+                            self.executor.shutdown(wait=True)
                         shutdown_complete.set()
                     except Exception as e:
                         logger.error(f"Error in shutdown thread: {e}")
@@ -153,22 +154,6 @@ class FileChunkingManager:
 
             finally:
                 self._shutdown_complete.set()
-
-    def _get_next_thread_id(self) -> int:
-        """Get next available thread ID with minimal locking."""
-        # Quick lock for counter increment only
-        with self._thread_lock:
-            thread_id = self._thread_counter
-            self._thread_counter += 1
-        # Return immediately after increment to minimize lock time
-        return thread_id
-
-    def _update_file_status(
-        self, thread_id: int, status: FileStatus, status_text: Optional[str] = None
-    ):
-        """Update file status in tracker."""
-        if self.file_tracker:
-            self.file_tracker.update_file_status(thread_id, status)
 
     def request_cancellation(self) -> None:
         """Request cancellation of all file processing."""
@@ -214,8 +199,11 @@ class FileChunkingManager:
         # ConsolidatedFileTracker will handle the fixed N-line display
 
         # Submit to worker thread (immediate return)
+        # Always use clean implementation
+        process_method = self._process_file_clean_lifecycle
+
         future = self.executor.submit(
-            self._process_file_complete_lifecycle,
+            process_method,
             file_path,
             metadata,
             progress_callback,
@@ -225,231 +213,6 @@ class FileChunkingManager:
         self._pending_futures.append(future)
 
         return future
-
-    def _process_file_complete_lifecycle(
-        self,
-        file_path: Path,
-        metadata: Dict[str, Any],
-        progress_callback: Optional[Callable],
-    ) -> FileProcessingResult:
-        """
-        Process file complete lifecycle in worker thread.
-
-        Phases:
-        1. Chunk the file (moved from main thread)
-        2. Submit ALL chunks to vector processing
-        3. Wait for ALL chunk vectors to complete
-        4. Write complete file atomically to Qdrant
-
-        Args:
-            file_path: File to process
-            metadata: File metadata
-            progress_callback: Progress callback
-
-        Returns:
-            FileProcessingResult with success/failure status
-        """
-        start_time = time.time()
-
-        # RESTORE: Register file with tracker for display
-        thread_id = self._get_next_thread_id()
-        if self.file_tracker:
-            self.file_tracker.start_file_processing(thread_id, file_path)
-            self._update_file_status(thread_id, FileStatus.STARTING)
-
-        try:
-            # Phase 1: Chunk the file (MOVE chunking logic from main thread to worker thread)
-            logger.debug(f"Starting chunking for {file_path}")
-            # STARTING status set - no artificial delays
-            chunks = self.chunker.chunk_file(file_path)
-
-            if not chunks:
-                # Empty files (like __init__.py) are valid but don't need indexing
-                logger.debug(f"Skipping empty file: {file_path}")
-
-                # Mark as complete without error
-                if self.file_tracker:
-                    self._update_file_status(thread_id, FileStatus.COMPLETE)
-                    self.file_tracker.complete_file_processing(thread_id)
-
-                return FileProcessingResult(
-                    success=True,  # Changed to True - empty files are success
-                    file_path=file_path,
-                    chunks_processed=0,
-                    processing_time=time.time() - start_time,
-                    error=None,  # No error for empty files
-                )
-
-            logger.debug(f"Generated {len(chunks)} chunks for {file_path}")
-
-            # RESTORE: Update status after chunking
-            if self.file_tracker:
-                self._update_file_status(thread_id, FileStatus.PROCESSING)
-
-            # REMOVED: Mid-process cancellation check - breaks file atomicity
-            # Cancellation now only checked AFTER file completion
-
-            # Phase 2: Submit ALL chunks to existing VectorCalculationManager (unchanged)
-            chunk_futures = []
-            for chunk in chunks:
-                try:
-                    future = self.vector_manager.submit_chunk(chunk["text"], metadata)
-                    chunk_futures.append((chunk, future))
-                except RuntimeError as e:
-                    if "Thread pool not started" in str(e):
-                        logger.info(f"Vector manager shut down, cancelling {file_path}")
-                        if self.file_tracker:
-                            self._update_file_status(thread_id, FileStatus.COMPLETE)
-                            self.file_tracker.complete_file_processing(thread_id)
-                        return FileProcessingResult(
-                            success=False,
-                            file_path=file_path,
-                            chunks_processed=0,
-                            processing_time=time.time() - start_time,
-                            error="Cancelled",
-                        )
-                    raise
-
-            logger.debug(
-                f"Submitted {len(chunk_futures)} chunks to vector processing for {file_path}"
-            )
-
-            # Phase 3: Wait for ALL chunk vectors to complete
-            file_points = []
-
-            for chunk_idx, (chunk, future) in enumerate(chunk_futures):
-                try:
-                    # SIMPLE FIX: Use reasonable timeout for all chunks
-                    # No aggressive timeouts that cause false failures
-                    chunk_timeout = VECTOR_PROCESSING_TIMEOUT  # 300 seconds (5 minutes)
-
-                    # Wait for result with reasonable timeout
-                    vector_result = future.result(timeout=chunk_timeout)
-
-                    if not vector_result.error:
-                        # Create Qdrant point (MOVE from main thread to worker thread)
-                        qdrant_point = self._create_qdrant_point(
-                            chunk, vector_result.embedding, metadata, file_path
-                        )
-                        file_points.append(qdrant_point)
-                    else:
-                        logger.warning(
-                            f"Vector processing failed for chunk {chunk_idx} in {file_path}: {vector_result.error}"
-                        )
-
-                except Exception as e:
-                    error_msg = "Vector processing timeout"
-                    detailed_error = f"Failed to get vector result for chunk {chunk_idx} in {file_path}: {e}"
-                    logger.error(detailed_error)
-
-                    # SURGICAL FIX: Remove individual error callbacks - already logged above
-
-                    return FileProcessingResult(
-                        success=False,
-                        file_path=file_path,
-                        chunks_processed=0,
-                        processing_time=time.time() - start_time,
-                        error=detailed_error,
-                    )
-
-            if not file_points:
-                error_msg = "No valid vector embeddings generated"
-                # SURGICAL FIX: Remove individual error callbacks - log instead
-                logger.error(
-                    f"Vector processing failed: {file_path.name} - {error_msg}"
-                )
-
-                return FileProcessingResult(
-                    success=False,
-                    file_path=file_path,
-                    chunks_processed=0,
-                    processing_time=time.time() - start_time,
-                    error=error_msg,
-                )
-
-            logger.debug(f"Generated {len(file_points)} Qdrant points for {file_path}")
-
-            # RESTORE: Update status before write
-            if self.file_tracker:
-                self._update_file_status(thread_id, FileStatus.COMPLETING)
-
-            # Phase 4: Write complete file atomically - NO cancellation check during write
-            # File atomicity guaranteed: all chunks written together or not at all
-
-            # SIMPLE BATCH WRITE: Write all points for this file using batched processing
-            try:
-                # Write all points for this file using efficient batching
-                # This provides good performance but is not transactionally atomic
-                success = self.qdrant_client.upsert_points_batched(file_points)
-
-                if not success:
-                    error_msg = "Qdrant batch write failed"
-                    logger.error(f"Qdrant write failed: {file_path.name} - {error_msg}")
-
-                    # Some points may have been written, but this is acceptable
-                    return FileProcessingResult(
-                        success=False,
-                        file_path=file_path,
-                        chunks_processed=0,
-                        processing_time=time.time() - start_time,
-                        error=error_msg,
-                    )
-
-            except Exception as e:
-                # Any exception during write means the atomic operation was rolled back
-                error_msg = (
-                    f"Database write exception - atomic operation rolled back: {e}"
-                )
-                logger.error(f"Qdrant write exception for {file_path}: {error_msg}")
-
-                return FileProcessingResult(
-                    success=False,
-                    file_path=file_path,
-                    chunks_processed=0,
-                    processing_time=time.time() - start_time,
-                    error=error_msg,
-                )
-
-            processing_time = time.time() - start_time
-            logger.info(
-                f"Successfully processed {file_path}: {len(file_points)} chunks in {processing_time:.2f}s"
-            )
-
-            # RESTORE: Mark file complete
-            if self.file_tracker:
-                self._update_file_status(thread_id, FileStatus.COMPLETE)
-                self.file_tracker.complete_file_processing(thread_id)
-
-            # SIMPLE CANCELLATION STRATEGY:
-            # NO cancellation checks during or after file processing.
-            # Files complete fully without any cancellation interruption.
-            # Cancellation is ONLY checked between files in the main processing loop.
-
-            return FileProcessingResult(
-                success=True,
-                file_path=file_path,
-                chunks_processed=len(file_points),
-                processing_time=processing_time,
-                error=None,
-            )
-
-        except Exception as e:
-            processing_time = time.time() - start_time
-            error_msg = f"File processing failed: {e}"
-            logger.error(f"Error processing {file_path}: {error_msg}")
-
-            # RESTORE: Mark file failed and cleanup
-            if self.file_tracker:
-                self._update_file_status(thread_id, FileStatus.COMPLETE)
-                self.file_tracker.complete_file_processing(thread_id)
-
-            return FileProcessingResult(
-                success=False,
-                file_path=file_path,
-                chunks_processed=0,
-                processing_time=processing_time,
-                error=error_msg,
-            )
 
     def _create_qdrant_point(
         self,
@@ -528,3 +291,241 @@ class FileChunkingManager:
         qdrant_point = {"id": point_id, "vector": embedding, "payload": payload}
 
         return qdrant_point
+
+    def _process_file_clean_lifecycle(
+        self,
+        file_path: Path,
+        metadata: Dict[str, Any],
+        progress_callback: Optional[Callable],
+    ) -> FileProcessingResult:
+        """
+        CLEAN IMPLEMENTATION: Process file with proper resource management.
+
+        DESIGN PRINCIPLES:
+        1. Single acquire at start
+        2. All work in try block
+        3. Single release in finally block
+        4. Direct slot_id usage throughout
+        5. No thread_id tracking
+        6. Call progress_callback to trigger display updates
+        """
+        start_time = time.time()
+        file_size = file_path.stat().st_size
+        filename = file_path.name
+
+        # Single acquire at start - create clean FileData
+        file_data = FileData(
+            filename=filename,
+            file_size=file_size,
+            status=FileStatus.STARTING,
+            start_time=start_time,
+        )
+
+        # Single acquire using CleanSlotTracker
+        slot_id = self.slot_tracker.acquire_slot(file_data)
+
+        # CRITICAL FIX: Trigger progress callback to update display
+        # This ensures the display sees the file being processed
+        if progress_callback:
+            # Get concurrent files for display update
+            concurrent_files = self.slot_tracker.get_concurrent_files_data()
+            # Don't pass file counts here - let HighThroughputProcessor track overall progress
+            # Just trigger display refresh with current concurrent files
+            progress_callback(
+                None,  # current - will be handled by caller
+                None,  # total - will be handled by caller
+                file_path,
+                concurrent_files=concurrent_files,
+            )
+
+        try:
+            # ALL work in try block
+            self.slot_tracker.update_slot(slot_id, FileStatus.CHUNKING)
+
+            # Phase 1: Chunk the file
+            logger.debug(f"Starting chunking for {file_path}")
+            chunks = self.chunker.chunk_file(file_path)
+
+            if not chunks:
+                # Empty files are valid but don't need indexing
+                logger.debug(f"Skipping empty file: {file_path}")
+
+                self.slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
+
+                return FileProcessingResult(
+                    success=True,
+                    file_path=file_path,
+                    chunks_processed=0,
+                    processing_time=time.time() - start_time,
+                    error=None,
+                )
+
+            logger.debug(f"Generated {len(chunks)} chunks for {file_path}")
+
+            # Update status after chunking
+            self.slot_tracker.update_slot(slot_id, FileStatus.VECTORIZING)
+
+            # CRITICAL FIX: Trigger display update after status change
+            if progress_callback:
+                concurrent_files = self.slot_tracker.get_concurrent_files_data()
+                progress_callback(
+                    None,  # current
+                    None,  # total
+                    file_path,
+                    concurrent_files=concurrent_files,
+                )
+
+            # Phase 2: Submit ALL chunks to vector processing
+            chunk_futures = []
+            for chunk in chunks:
+                try:
+                    future = self.vector_manager.submit_chunk(chunk["text"], metadata)
+                    chunk_futures.append((chunk, future))
+                except RuntimeError as e:
+                    if "Thread pool not started" in str(e):
+                        logger.info(f"Vector manager shut down, cancelling {file_path}")
+                        return FileProcessingResult(
+                            success=False,
+                            file_path=file_path,
+                            chunks_processed=0,
+                            processing_time=time.time() - start_time,
+                            error="Cancelled",
+                        )
+                    raise
+
+            logger.debug(
+                f"Submitted {len(chunk_futures)} chunks to vector processing for {file_path}"
+            )
+
+            # Phase 3: Wait for ALL chunk vectors to complete
+            self.slot_tracker.update_slot(slot_id, FileStatus.FINALIZING)
+
+            # CRITICAL FIX: Trigger display update for finalizing status
+            if progress_callback:
+                concurrent_files = self.slot_tracker.get_concurrent_files_data()
+                progress_callback(
+                    None,  # current
+                    None,  # total
+                    file_path,
+                    concurrent_files=concurrent_files,
+                )
+
+            file_points = []
+            for chunk, future in chunk_futures:
+                try:
+                    vector_result = future.result(timeout=VECTOR_PROCESSING_TIMEOUT)
+                    # CRITICAL FIX: Validate vector_result, error status, AND embedding is not None
+                    if (
+                        vector_result
+                        and not vector_result.error
+                        and vector_result.embedding
+                    ):
+                        file_points.append(
+                            {
+                                "text": chunk["text"],
+                                "vector": vector_result.embedding,  # Extract embedding, not full VectorResult
+                                "metadata": {
+                                    **metadata,
+                                    "line_start": chunk["line_start"],
+                                    "line_end": chunk["line_end"],
+                                },
+                            }
+                        )
+                    else:
+                        logger.warning(
+                            f"Skipping chunk with invalid embedding in {file_path}"
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"Vector processing failed for chunk in {file_path}: {e}"
+                    )
+                    # Continue processing other chunks
+
+            # Phase 4: Atomic write to Qdrant if we have valid vectors
+            if file_points:
+                try:
+                    points_data = []
+                    for i, point in enumerate(file_points):
+                        # Create proper Qdrant point using existing method
+                        chunk_data = {
+                            "text": point["text"],
+                            "chunk_index": i,
+                            "total_chunks": len(file_points),
+                            "line_start": point["metadata"].get("line_start"),
+                            "line_end": point["metadata"].get("line_end"),
+                            "file_extension": file_path.suffix.lstrip(".") or "txt",
+                        }
+
+                        # Use the existing _create_qdrant_point method to ensure proper formatting
+                        qdrant_point = self._create_qdrant_point(
+                            chunk_data, point["vector"], point["metadata"], file_path
+                        )
+                        points_data.append(qdrant_point)
+
+                    # Atomic write to Qdrant
+                    success = self.qdrant_client.upsert_points(
+                        points=points_data,
+                        collection_name=metadata.get("collection_name"),
+                    )
+                    if not success:
+                        raise RuntimeError(
+                            f"Failed to write {len(points_data)} points to Qdrant"
+                        )
+
+                    logger.debug(
+                        f"Successfully wrote {len(points_data)} points for {file_path}"
+                    )
+
+                except Exception as e:
+                    logger.error(f"Qdrant write failed for {file_path}: {e}")
+                    return FileProcessingResult(
+                        success=False,
+                        file_path=file_path,
+                        chunks_processed=0,
+                        processing_time=time.time() - start_time,
+                        error=f"Qdrant write failed: {e}",
+                    )
+
+            processing_time = time.time() - start_time
+
+            # Mark as complete
+            self.slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
+
+            # CRITICAL FIX: Trigger final display update for completed file
+            if progress_callback:
+                concurrent_files = self.slot_tracker.get_concurrent_files_data()
+                progress_callback(
+                    None,  # current
+                    None,  # total
+                    file_path,
+                    concurrent_files=concurrent_files,
+                )
+
+            return FileProcessingResult(
+                success=True,
+                file_path=file_path,
+                chunks_processed=len(file_points),
+                processing_time=processing_time,
+                error=None,
+            )
+
+        except Exception as e:
+            processing_time = time.time() - start_time
+            error_msg = f"File processing failed: {e}"
+            logger.error(f"Error processing {file_path}: {error_msg}")
+
+            # Mark file failed
+            self.slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
+
+            return FileProcessingResult(
+                success=False,
+                file_path=file_path,
+                chunks_processed=0,
+                processing_time=processing_time,
+                error=error_msg,
+            )
+
+        finally:
+            # SINGLE release - guaranteed
+            if slot_id is not None:
+                self.slot_tracker.release_slot(slot_id)

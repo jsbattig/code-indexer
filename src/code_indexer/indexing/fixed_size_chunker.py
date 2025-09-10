@@ -72,7 +72,7 @@ class FixedSizeChunker:
             else:
                 self.chunk_size = self.MODEL_CHUNK_SIZES["default"]
         else:
-            # IndexingConfig only - use default for backward compatibility
+            # IndexingConfig only - use default chunk size
             self.chunk_size = self.MODEL_CHUNK_SIZES["default"]
 
         # Calculate derived values

@@ -232,6 +232,12 @@ class TestIndexResumeRoutingLogicBug:
         assert metadata.metadata["status"] == "completed"
 
         # === PHASE 2: Mock dependencies ===
+        # Capture progress messages
+        progress_messages = []
+
+        def capture_progress(current, total, path, info=""):
+            progress_messages.append(info)
+
         with patch.object(indexer, "_do_full_index") as mock_full_index:
             with patch.object(
                 indexer, "_do_resume_interrupted"
@@ -260,7 +266,7 @@ class TestIndexResumeRoutingLogicBug:
                                     # === PHASE 3: Call _do_incremental_index ===
                                     result = indexer._do_incremental_index(
                                         batch_size=10,
-                                        progress_callback=None,
+                                        progress_callback=capture_progress,
                                         git_status=git_status,
                                         provider_name="test-provider",
                                         model_name="test-model",

@@ -4,7 +4,7 @@ Epic 4: Branch Operations - Final Test Execution
 Tests the core branch operation functionality using existing repositories
 """
 
-import requests
+import requests  # type: ignore[import-untyped]
 import json
 import sys
 

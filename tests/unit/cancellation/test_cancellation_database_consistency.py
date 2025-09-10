@@ -39,7 +39,7 @@ class MockQdrantClient:
             self.points_by_file[file_path].append(point)
         return True
 
-    def upsert_points_atomic(self, points, collection_name=None, max_batch_size=100):
+    def upsert_points_batched(self, points, collection_name=None, max_batch_size=100):
         """Mock atomic upsert that delegates to regular upsert for testing."""
         return self.upsert_points(points)
 
@@ -170,7 +170,6 @@ class TestDatabaseConsistencyDuringCancellation:
                     files=test_files,
                     vector_thread_count=2,
                     batch_size=10,
-                    progress_callback=progress_callback,
                 )
 
                 # CRITICAL TEST: Verify no partial files exist in database
@@ -243,7 +242,6 @@ class TestDatabaseConsistencyDuringCancellation:
                     files=[test_file],
                     vector_thread_count=1,
                     batch_size=10,
-                    progress_callback=progress_callback,
                 )
 
                 # Progressive metadata should reflect only actually completed files
@@ -324,7 +322,6 @@ class TestDatabaseConsistencyDuringCancellation:
                     files=test_files,
                     vector_thread_count=2,
                     batch_size=3,  # Small batch size
-                    progress_callback=progress_callback,
                 )
 
                 # Verify that batches were handled consistently

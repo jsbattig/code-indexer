@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 from concurrent.futures import Future
+from typing import Any
 
 from code_indexer.services.high_throughput_processor import HighThroughputProcessor
 from code_indexer.services.file_chunking_manager import FileProcessingResult
@@ -76,7 +77,7 @@ class TestFileLevelCollectionRequirements:
         # Create file futures (not chunk futures)
         file_futures = []
         for i, file_path in enumerate(test_files):
-            future = Future()
+            future: Future[Any] = Future()
             future.set_result(
                 FileProcessingResult(
                     success=True,
@@ -105,7 +106,6 @@ class TestFileLevelCollectionRequirements:
             files=test_files,
             vector_thread_count=4,
             batch_size=50,
-            progress_callback=None,
         )
 
         # Verify as_completed was called with file_futures (collection of file futures)
@@ -179,7 +179,7 @@ class TestFileLevelCollectionRequirements:
 
         futures = []
         for result in file_results:
-            future = Future()
+            future: Future[Any] = Future()
             future.set_result(result)
             futures.append(future)
 
@@ -196,7 +196,6 @@ class TestFileLevelCollectionRequirements:
             files=test_files,
             vector_thread_count=4,
             batch_size=50,
-            progress_callback=None,
         )
 
         # Clean up
@@ -252,7 +251,7 @@ class TestFileLevelCollectionRequirements:
             chunks_processed=4,
             processing_time=1.0,
         )
-        future = Future()
+        future: Future[Any] = Future()
         future.set_result(file_result)
         mock_file_manager_instance.submit_file_for_processing.return_value = future
 
@@ -267,7 +266,6 @@ class TestFileLevelCollectionRequirements:
             files=test_files,
             vector_thread_count=4,
             batch_size=50,
-            progress_callback=None,
         )
 
         # The implementation should NOT need complex file_chunks tracking
@@ -328,7 +326,7 @@ class TestFileLevelCollectionRequirements:
             ),
         ]
 
-        futures = [Future() for _ in results]
+        futures: list[Future[Any]] = [Future() for _ in results]
         for future, result in zip(futures, results):
             future.set_result(result)
 
@@ -345,7 +343,6 @@ class TestFileLevelCollectionRequirements:
             files=test_files,
             vector_thread_count=4,
             batch_size=50,
-            progress_callback=None,
         )
 
         # Clean up

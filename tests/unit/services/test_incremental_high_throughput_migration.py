@@ -202,10 +202,19 @@ class TestIncrementalHighThroughputMigration:
                                                                         "complete_session",
                                                                     ):
 
+                                                                        # Mock progress callback for the test
+                                                                        def mock_progress_callback(
+                                                                            current,
+                                                                            total,
+                                                                            path,
+                                                                            info="",
+                                                                        ):
+                                                                            pass
+
                                                                         # Execute the method
                                                                         result = indexer._do_incremental_index(
                                                                             batch_size=10,
-                                                                            progress_callback=None,
+                                                                            progress_callback=mock_progress_callback,
                                                                             git_status=git_status,
                                                                             provider_name="test-provider",
                                                                             model_name="test-model",
@@ -329,10 +338,16 @@ class TestIncrementalHighThroughputMigration:
                                     indexer.progress_log, "complete_session"
                                 ):
 
+                                    # Mock progress callback for the test
+                                    def mock_progress_callback(
+                                        current, total, path, info=""
+                                    ):
+                                        pass
+
                                     # Execute the method
                                     result = indexer._do_resume_interrupted(
                                         batch_size=10,
-                                        progress_callback=None,
+                                        progress_callback=mock_progress_callback,
                                         git_status=git_status,
                                         provider_name="test-provider",
                                         model_name="test-model",
@@ -440,7 +455,6 @@ class TestIncrementalHighThroughputMigration:
                     changed_files=[str(f) for f in test_files],
                     unchanged_files=[],
                     collection_name="test",
-                    progress_callback=None,
                     vector_thread_count=8,
                 )
                 branch_time = (
@@ -453,7 +467,6 @@ class TestIncrementalHighThroughputMigration:
                     files=test_files,
                     vector_thread_count=8,
                     batch_size=50,
-                    progress_callback=None,
                 )
                 direct_time = (
                     time.time() - start_time + 2.0
@@ -603,10 +616,19 @@ class TestIncrementalHighThroughputMigration:
                                                                         "complete_session",
                                                                     ):
 
+                                                                        # Mock progress callback for the test
+                                                                        def mock_progress_callback(
+                                                                            current,
+                                                                            total,
+                                                                            path,
+                                                                            info="",
+                                                                        ):
+                                                                            pass
+
                                                                         # Execute incremental indexing
                                                                         result = indexer._do_incremental_index(
                                                                             batch_size=10,
-                                                                            progress_callback=None,
+                                                                            progress_callback=mock_progress_callback,
                                                                             git_status=git_status,
                                                                             provider_name="test-provider",
                                                                             model_name="test-model",
@@ -768,10 +790,19 @@ class TestIncrementalHighThroughputMigration:
                                                                         "complete_session",
                                                                     ):
 
+                                                                        # Mock progress callback for the test
+                                                                        def mock_progress_callback(
+                                                                            current,
+                                                                            total,
+                                                                            path,
+                                                                            info="",
+                                                                        ):
+                                                                            pass
+
                                                                         # Execute incremental indexing
                                                                         result = indexer._do_incremental_index(
                                                                             batch_size=10,
-                                                                            progress_callback=None,
+                                                                            progress_callback=mock_progress_callback,
                                                                             git_status=git_status,
                                                                             provider_name="test-provider",
                                                                             model_name="test-model",

@@ -722,12 +722,6 @@ class QdrantClient:
 
         return True
 
-    # BACKWARD COMPATIBILITY: Alias for old method name
-    # TODO: Remove this alias after updating all test files
-    def upsert_points_atomic(self, *args, **kwargs):
-        """DEPRECATED: Use upsert_points_batched instead. This method is NOT atomic."""
-        return self.upsert_points_batched(*args, **kwargs)
-
     def search(
         self,
         query_vector: List[float],
@@ -1766,7 +1760,7 @@ class QdrantClient:
             return success
 
         elif context == "legacy_direct":
-            # Legacy direct context: Traditional messaging for backward compatibility
+            # Legacy direct context: Traditional messaging for consistency
             self.console.print(
                 "🔧 Setting up payload indexes for optimal query performance..."
             )

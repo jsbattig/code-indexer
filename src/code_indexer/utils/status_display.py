@@ -505,9 +505,9 @@ class FreeScrollStreamDisplay(BaseStatusDisplay):
         self.file_tracker = None
 
         if enable_file_tracking:
-            from .file_line_tracker import FileLineTracker
-
-            self.file_tracker = FileLineTracker(console)
+            # FileLineTracker removed - use slot-based tracking only
+            self.file_tracker = None
+            self.enable_file_tracking = False
 
     def start(self, operation_name: str) -> None:
         """Start free scroll display with clean interface."""
@@ -768,7 +768,7 @@ class FreeScrollStreamDisplay(BaseStatusDisplay):
     def _show_bottom_tool_panel(self) -> None:
         """Show persistent tool panel pinned to bottom using Live display."""
         # Get current file lines if file tracking is enabled
-        file_lines = []
+        file_lines: List[str] = []
         if self.enable_file_tracking and self.file_tracker:
             file_lines = self.file_tracker.get_active_file_lines()
 

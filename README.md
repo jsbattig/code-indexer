@@ -2,7 +2,7 @@
 
 AI-powered semantic code search for your codebase. Find code by meaning, not just keywords.
 
-## Version 4.0.0
+## Version 4.1.0
 
 Multi-user server functionality with FastAPI, JWT authentication, and role-based access control.
 
@@ -11,7 +11,7 @@ Multi-user server functionality with FastAPI, JWT authentication, and role-based
 ### Core Search Capabilities
 - **Semantic Search** - Find code by meaning using vector embeddings and fixed-size chunking
 - **Multiple Providers** - Local (Ollama) or cloud (VoyageAI) embeddings  
-- **Smart Indexing** - Incremental updates, git-aware, multi-project support
+- **Smart Indexing** - Parallel file processing with slot-based worker allocation, incremental updates, git-aware, multi-project support
 - **Search Filtering** - Filter by programming language, file paths, file extensions, and similarity scores
 - **Multi-Language Support** - Universal text processing for Python, JavaScript, TypeScript, Java, C#, Go, Kotlin, Groovy, Pascal/Delphi, SQL, C, C++, Rust, Swift, Ruby, Lua, HTML, CSS, YAML, XML
 
@@ -35,7 +35,7 @@ Multi-user server functionality with FastAPI, JWT authentication, and role-based
 ### pipx (Recommended)
 ```bash
 # Install the package
-pipx install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.2
+pipx install git+https://github.com/jsbattig/code-indexer.git@v4.1.0
 
 # Setup global registry (standalone command - requires sudo)
 cidx setup-global-registry
@@ -113,7 +113,7 @@ The CIDX server provides a FastAPI-based multi-user semantic code search service
 
 ```bash
 # 1. Install and setup (same as CLI)
-pipx install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.2
+pipx install git+https://github.com/jsbattig/code-indexer.git@v4.1.0
 cidx setup-global-registry
 
 # 2. Start the server
@@ -233,7 +233,7 @@ code-indexer index --reconcile          # Reconcile disk vs database
 code-indexer index --detect-deletions   # Handle deleted files
 code-indexer index --batch-size 25      # Custom batch size
 code-indexer index --files-count-to-process 100  # Limit file count
-code-indexer index --threads 4          # Custom thread count
+code-indexer index --threads 8          # Custom thread count (configure in config.json)
 
 # Real-time monitoring
 code-indexer watch                      # Git-aware file watching
@@ -355,7 +355,14 @@ During indexing, VoyageAI shows real-time performance status in the progress bar
 - ⚡ **Full speed** - Running at maximum throughput
 - 🔴 **Server throttling** - VoyageAI API rate limits detected
 
-Example: `15/100 files (15%) | 8.3 emb/s ⚡ | 8 threads | main.py`
+Example: `15/100 files (15%) | 8.3 files/s | 156.7 KB/s | 12 threads`
+
+Individual file status display:
+```
+├─ main.py (15.2 KB) vectorizing...
+├─ utils.py (8.3 KB) finalizing...  
+├─ config.py (4.1 KB) complete ✓
+```
 
 The system runs at full speed by default. If rate limits are encountered, an error is displayed asking to reduce parallel_requests.
 
@@ -431,6 +438,25 @@ Code Indexer provides fixed-size chunking with intelligent text processing for a
 - **Fast processing**: No complex parsing overhead, pure arithmetic operations
 - **Complete search results**: Full code sections without truncation
 - **Model efficiency**: Leverages each embedding model's capabilities
+
+### Parallel File Processing
+
+Code Indexer uses slot-based parallel file processing for efficient throughput:
+
+**Architecture:**
+- **Dual thread pool design** - Frontend file processing (threadcount+2 workers) feeds backend vectorization (threadcount workers)
+- **File-level parallelism** - Multiple files processed concurrently with dedicated slot allocation  
+- **Slot-based allocation** - Fixed-size display array (threadcount+2 slots) with natural worker slot reuse
+- **Real-time progress** - Individual file status visible during processing (starting → chunking → vectorizing → finalizing → complete)
+- **Thread allocation** - Base threadcount configured via `voyage_ai.parallel_requests` in config.json
+
+**Thread Configuration:**
+- **VoyageAI default**: 12 vectorization threads → 14 file processing workers (12+2)
+- **Ollama default**: 1 vectorization thread → 3 file processing workers (1+2)  
+- **Frontend thread pool**: threadcount+2 workers handle file reading, chunking, and coordination (provides preemptive capacity)
+- **Backend thread pool**: threadcount workers handle vector embedding calculations
+- **Pipeline design**: Frontend stays ahead of backend, ensuring continuous vector thread utilization
+- **Custom configuration**: Adjust `parallel_requests` in config.json for optimal performance
 
 ### Containerized Services
 

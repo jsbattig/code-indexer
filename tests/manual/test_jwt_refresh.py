@@ -3,7 +3,7 @@
 Test script for JWT token refresh mechanism.
 """
 
-import requests
+import requests  # type: ignore[import-untyped]
 import json
 import sys
 

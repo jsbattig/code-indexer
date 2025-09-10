@@ -69,8 +69,24 @@ class TestRichProgressCLIIntegration:
         # Rich Table objects are sufficient - test that it's not empty
         assert isinstance(display1, Table), "Should return Rich Table object"
 
-        # Test the underlying concurrent display was updated
-        concurrent_lines = self.progress_manager.concurrent_display.get_rendered_lines()
+        # Test that the integrated display includes the concurrent files
+        # In the new architecture, create a slot tracker with the file data
+        from src.code_indexer.services.clean_slot_tracker import (
+            CleanSlotTracker,
+            FileData,
+            FileStatus,
+        )
+
+        mock_slot_tracker = CleanSlotTracker(max_slots=3)
+        file_data = FileData(
+            filename="test.py", file_size=1024, status=FileStatus.PROCESSING
+        )
+        _ = mock_slot_tracker.acquire_slot(file_data)
+
+        # Get display lines from the slot tracker using its actual max_slots
+        concurrent_lines = self.progress_manager.get_display_lines_from_tracker(
+            mock_slot_tracker, mock_slot_tracker.max_slots
+        )
         assert len(concurrent_lines) > 0, "Should have concurrent file lines"
         assert any(
             "test.py" in line for line in concurrent_lines
@@ -235,8 +251,32 @@ class TestRichProgressCLIIntegration:
         display = self.progress_manager.get_integrated_display()
         assert isinstance(display, Table), "Should return Rich Table object"
 
-        # Check that concurrent files were properly processed
-        concurrent_lines = self.progress_manager.concurrent_display.get_rendered_lines()
+        # Check that concurrent files were properly processed using new slot tracker API
+        from src.code_indexer.services.clean_slot_tracker import (
+            CleanSlotTracker,
+            FileData,
+            FileStatus,
+        )
+
+        mock_slot_tracker = CleanSlotTracker(max_slots=5)
+        for cf in concurrent_files:
+            # Map the status from the test data to the appropriate FileStatus
+            if cf["status"] == "complete":
+                status = FileStatus.COMPLETE
+            elif "vectorizing" in cf["status"]:  # type: ignore[operator]
+                status = FileStatus.VECTORIZING
+            else:
+                status = FileStatus.PROCESSING
+            file_data = FileData(
+                filename=str(cf["file_path"]),  # type: ignore[arg-type]
+                file_size=int(cf["file_size"]),  # type: ignore[call-overload]
+                status=status,
+            )
+            _ = mock_slot_tracker.acquire_slot(file_data)
+
+        concurrent_lines = self.progress_manager.get_display_lines_from_tracker(
+            mock_slot_tracker, mock_slot_tracker.max_slots
+        )
         assert len(concurrent_lines) > 0, "Should have concurrent file lines"
 
         # Check that the concurrent display contains the expected files

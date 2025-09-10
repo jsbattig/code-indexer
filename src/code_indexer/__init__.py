@@ -5,5 +5,5 @@ A tool that uses Ollama for embeddings and Qdrant for vector storage
 to provide code search capabilities.
 """
 
-__version__ = "4.0.0.2"
+__version__ = "4.1.0"
 __author__ = "Seba Battig"

@@ -157,7 +157,7 @@ class TestVoyageThreadPoolElimination:
                     # Submit multiple tasks
                     futures = []
                     for i in range(8):
-                        future = vector_manager.submit_chunk(
+                        future: Future[Any] = vector_manager.submit_chunk(
                             chunk_text=f"test text {i}", metadata={"chunk_id": i}
                         )
                         futures.append(future)

@@ -40,7 +40,7 @@ class TestHighThroughputProcessorCancellation:
         # Create mock Qdrant client
         self.qdrant_client = MagicMock()
         self.qdrant_client.create_point.return_value = {"id": "test-point"}
-        self.qdrant_client.upsert_points_atomic.return_value = True
+        self.qdrant_client.upsert_points_batched.return_value = True
 
     def test_request_cancellation_sets_flag(self):
         """Test that request_cancellation sets the cancelled flag."""
@@ -121,7 +121,6 @@ class TestHighThroughputProcessorCancellation:
                         files=test_files,
                         vector_thread_count=2,
                         batch_size=10,
-                        progress_callback=progress_callback,
                     )
                     processing_time = time.time() - start_time
 
@@ -289,7 +288,7 @@ class TestHighThroughputProcessorCancellation:
 
                     with patch.object(
                         processor.qdrant_client,
-                        "upsert_points_atomic",
+                        "upsert_points_batched",
                         side_effect=track_upsert,
                     ):
                         # Start processing in a separate thread

@@ -374,9 +374,7 @@ venv/
         with patch.object(smart_indexer.file_finder, "find_files", return_value=[]):
             # Act & Assert
             with pytest.raises(ValueError, match="No files found to index"):
-                smart_indexer.smart_index(
-                    force_full=True, progress_callback=capture_feedback
-                )
+                smart_indexer.smart_index(force_full=True)
 
         # Should have some feedback about the process
         assert len(feedback_messages) >= 0  # At least some attempt at feedback

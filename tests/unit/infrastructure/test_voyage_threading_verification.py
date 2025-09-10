@@ -139,7 +139,6 @@ class TestClass_{i}:
                 force_full=True,  # This is what --clear does
                 reconcile_with_database=False,
                 batch_size=50,
-                progress_callback=None,
                 safety_buffer_seconds=60,
                 files_count_to_process=None,
                 vector_thread_count=8,  # Voyage AI typical thread count
@@ -195,7 +194,6 @@ class TestClass_{i}:
                 force_full=True,
                 reconcile_with_database=False,
                 batch_size=50,
-                progress_callback=None,
                 safety_buffer_seconds=60,
                 files_count_to_process=None,
                 vector_thread_count=8,  # Voyage AI thread count

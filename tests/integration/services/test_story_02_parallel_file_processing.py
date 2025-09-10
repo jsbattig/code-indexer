@@ -43,7 +43,7 @@ class TestStory02ParallelFileProcessing:
         # Create mock Qdrant client
         self.qdrant_client = MagicMock()
         self.qdrant_client.create_point.return_value = {"id": "test-point"}
-        self.qdrant_client.upsert_points_atomic.return_value = True
+        self.qdrant_client.upsert_points_batched.return_value = True
 
     def test_should_fail_uses_file_chunking_manager_for_parallel_processing(self):
         """FAILING TEST: Verify FileChunkingManager is used for parallel processing."""
@@ -239,7 +239,6 @@ class TestStory02ParallelFileProcessing:
                         files=test_files,
                         vector_thread_count=2,
                         batch_size=10,
-                        progress_callback=progress_callback,
                     )
 
                     submission_time = time.time() - start_time
@@ -558,7 +557,6 @@ class TestStory02ParallelFileProcessing:
                         files=[test_file],
                         vector_thread_count=2,
                         batch_size=50,
-                        progress_callback=progress_callback,
                     )
 
                     # ASSERTIONS for Story 02 acceptance criteria

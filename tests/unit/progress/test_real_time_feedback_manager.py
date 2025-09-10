@@ -174,19 +174,19 @@ class TestRealTimeFeedbackManager:
         # Create mock concurrent file data
         concurrent_files = [
             {
-                "thread_id": 1,
+                "slot_id": 1,
                 "file_path": "file1.py",
                 "progress_percent": 25,
                 "status": "processing",
             },
             {
-                "thread_id": 2,
+                "slot_id": 2,
                 "file_path": "file2.py",
                 "progress_percent": 80,
                 "status": "vectorizing",
             },
             {
-                "thread_id": 3,
+                "slot_id": 3,
                 "file_path": "file3.py",
                 "progress_percent": 60,
                 "status": "chunking",

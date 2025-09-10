@@ -4,7 +4,7 @@ Epic 4: Branch Operations - Complete Manual Test Execution
 Tests all remaining branch operation functionality as specified in MANUAL_TESTING_EPIC.md
 """
 
-import requests
+import requests  # type: ignore[import-untyped]
 import json
 import sys
 import time

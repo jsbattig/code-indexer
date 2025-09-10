@@ -26,7 +26,7 @@ from typing import List, Dict, Any, Optional, Callable, Set
 from ..indexing.processor import ProcessingStats
 from ..services.git_aware_processor import GitAwareDocumentProcessor
 from .vector_calculation_manager import VectorCalculationManager
-from .consolidated_file_tracker import ConsolidatedFileTracker, FileStatus
+from .clean_slot_tracker import CleanSlotTracker, FileStatus
 from .file_chunking_manager import FileChunkingManager, FileProcessingResult
 
 # SURGICAL FIX: Remove RealTimeFeedbackManager import - causes individual callback spam
@@ -39,6 +39,7 @@ __all__ = [
     "FileChunkingManager",
     "FileProcessingResult",
     "BranchIndexingResult",
+    "FileStatus",  # Export unified FileStatus enum
 ]
 
 
@@ -104,14 +105,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             []
         )  # List of (timestamp, total_bytes) tuples for smoothed KB/s
 
-        # NEW: Consolidated file tracking system - replaces three duplicate systems
+        # CleanSlotTracker system - single source of truth
         # Initialize lazily with actual thread count in process_files_high_throughput
-        self.file_tracker = None
-        self._thread_counter = 0  # For assigning stable thread IDs
-
-        # Fix static file display: Map file paths to thread IDs for proper updates
-        self._file_to_thread_map: Dict[Path, int] = {}
-        self._file_to_thread_lock = threading.Lock()
+        self.slot_tracker: CleanSlotTracker
 
     def request_cancellation(self) -> None:
         """Request cancellation of processing."""
@@ -120,114 +116,19 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             self._cancellation_event.set()
         logger.info("High throughput processing cancellation requested")
 
-    def _ensure_file_tracker_initialized(self, thread_count: int = 8) -> None:
-        """Ensure file tracker is initialized with appropriate thread count.
+    def _ensure_slot_tracker_initialized(self, thread_count: int = 8) -> None:
+        """Ensure slot tracker is initialized with appropriate thread count.
 
         Args:
             thread_count: Number of threads to use for file tracking (defaults to 8 for backwards compatibility)
         """
-        if self.file_tracker is None:
-            self.file_tracker = ConsolidatedFileTracker(
-                max_concurrent_files=thread_count
-                + 2  # Match FileChunkingManager workers
+        if not hasattr(self, "slot_tracker") or self.slot_tracker is None:
+            self.slot_tracker = CleanSlotTracker(
+                max_slots=thread_count + 2  # Match FileChunkingManager workers
             )
             logger.info(
-                f"Initialized ConsolidatedFileTracker with {thread_count + 2} max concurrent files"
+                f"Initialized CleanSlotTracker with {thread_count + 2} max concurrent files"
             )
-
-    def _register_thread_file(
-        self, file_path: Path, status: str = "starting..."
-    ) -> int:
-        """Register a file with a thread for concurrent tracking.
-
-        Args:
-            file_path: Path to the file being processed
-            status: Current processing status
-
-        Returns:
-            Thread ID assigned to this file
-        """
-        # Assign a stable thread ID
-        thread_id: int = self._thread_counter
-        self._thread_counter += 1
-
-        # Map file path to thread ID for efficient lookups during processing
-        with self._file_to_thread_lock:
-            self._file_to_thread_map[file_path] = thread_id
-
-        # Ensure file tracker is initialized (fallback for backwards compatibility)
-        self._ensure_file_tracker_initialized()
-
-        # Use consolidated tracker - handles file I/O outside critical sections
-        if status == "starting...":
-            file_status = FileStatus.STARTING
-        elif "processing" in status.lower():
-            file_status = FileStatus.PROCESSING
-        else:
-            file_status = FileStatus.STARTING
-
-        if self.file_tracker:
-            self.file_tracker.start_file_processing(thread_id, file_path)
-            self.file_tracker.update_file_status(thread_id, file_status)
-        return thread_id
-
-    def _update_thread_status(self, file_path: Path, status: str) -> None:
-        """Update the status of a thread processing a file.
-
-        Args:
-            file_path: Path to the file being processed
-            status: New processing status
-        """
-        # Use efficient file-to-thread mapping instead of linear search
-        with self._file_to_thread_lock:
-            thread_id = self._file_to_thread_map.get(file_path)
-
-        if thread_id is None:
-            # File not registered - this shouldn't happen but handle gracefully
-            logger.warning(
-                f"Attempted to update status for unregistered file: {file_path}"
-            )
-            return
-
-        # Ensure file tracker is initialized (fallback for backwards compatibility)
-        self._ensure_file_tracker_initialized()
-
-        # Convert status string to FileStatus enum
-        if "complete" in status.lower():
-            file_status = FileStatus.COMPLETE
-        elif "processing" in status.lower() or "vectorizing" in status.lower():
-            file_status = FileStatus.PROCESSING
-        elif "finalizing" in status.lower() or "queued" in status.lower():
-            file_status = FileStatus.COMPLETING
-        else:
-            file_status = FileStatus.PROCESSING
-
-        if self.file_tracker:
-            self.file_tracker.update_file_status(thread_id, file_status)
-
-    def _complete_thread_file(self, file_path: Path) -> None:
-        """Mark a file as completed and free up the thread.
-
-        Args:
-            file_path: Path to the completed file
-        """
-        # Use efficient file-to-thread mapping instead of linear search
-        with self._file_to_thread_lock:
-            thread_id = self._file_to_thread_map.get(file_path)
-            if thread_id is not None:
-                # Clean up the mapping since file is complete
-                del self._file_to_thread_map[file_path]
-
-        if thread_id is None:
-            # File not registered - this shouldn't happen but handle gracefully
-            logger.warning(f"Attempted to complete unregistered file: {file_path}")
-            return
-
-        # Ensure file tracker is initialized (fallback for backwards compatibility)
-        self._ensure_file_tracker_initialized()
-
-        if self.file_tracker:
-            self.file_tracker.complete_file_processing(thread_id)
 
     def _get_concurrent_threads_snapshot(
         self, max_threads: int = 8
@@ -242,16 +143,13 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         Returns:
             List of thread info dictionaries for display
         """
-        # Ensure file tracker is initialized (fallback for backwards compatibility)
-        self._ensure_file_tracker_initialized()
+        # Ensure slot tracker is initialized for real-time file status tracking
+        self._ensure_slot_tracker_initialized()
 
         # Use consolidated tracker - eliminates race conditions and duplication
-        if self.file_tracker:
-            concurrent_data: List[Dict[str, Any]] = (
-                self.file_tracker.get_concurrent_files_data()
-            )
-        else:
-            concurrent_data = []
+        concurrent_data: List[Dict[str, Any]] = (
+            self.slot_tracker.get_concurrent_files_data()
+        )
         return concurrent_data
 
     def _initialize_file_rate_tracking(self):
@@ -383,17 +281,11 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
     ) -> ProcessingStats:
         """Process files with maximum throughput using pre-queued chunks."""
 
-        # Initialize ConsolidatedFileTracker with actual thread count
-        # This fixes the hardcoded 8-file limit bug - now supports any thread count
-        self._ensure_file_tracker_initialized(vector_thread_count)
+        # Initialize CleanSlotTracker with proper thread count
+        self._ensure_slot_tracker_initialized(vector_thread_count)
 
         stats = ProcessingStats()
         stats.start_time = time.time()
-
-        # SURGICAL FIX: Remove RealTimeFeedbackManager - causes individual callback spam
-        # Use ConsolidatedFileTracker for fixed N-line display instead
-
-        # SURGICAL FIX: Remove feedback_manager initialization call
 
         # Initialize file processing rate tracking for files/s metric
         self._initialize_file_rate_tracking()
@@ -407,7 +299,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 chunker=self.fixed_size_chunker,
                 qdrant_client=self.qdrant_client,
                 thread_count=vector_thread_count,
-                file_tracker=self.file_tracker,  # ADD THIS LINE
+                slot_tracker=self.slot_tracker,  # Clean tracker for real-time state
             ) as file_manager:
 
                 # Submit all files for parallel processing
@@ -439,12 +331,34 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                     f"Submitted {len(file_futures)} files for parallel processing"
                 )
 
+                # CRITICAL FIX: Send initial progress callback to show display immediately
+                # This ensures user sees the progress bar and slots right away
+                if progress_callback and len(files) > 0:
+                    initial_info = (
+                        f"0/{len(files)} files (0%) | "
+                        f"0.0 files/s | "
+                        f"0.0 KB/s | "
+                        f"{vector_thread_count} threads | "
+                        f"Starting..."
+                    )
+                    callback_result = progress_callback(
+                        0,  # current = 0 at start
+                        len(files),  # total files
+                        Path(""),  # Empty path
+                        info=initial_info,
+                    )
+
+                    # Check for immediate cancellation
+                    if callback_result == "INTERRUPT":
+                        logger.info(
+                            "Cancellation requested at start - stopping before processing"
+                        )
+                        self.cancelled = True
+                        stats.cancelled = True
+                        return stats
+
                 # Collect file-level results
                 completed_files = 0
-                
-                # Track time for periodic display updates to avoid lock contention
-                last_display_update = time.time()
-                display_update_interval = 1.0  # Update display at most once per second
 
                 # SIMPLE FIX: Use reasonable timeout for all file results
                 # No aggressive graduated timeouts that cause false failures
@@ -480,84 +394,53 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                                     f"Failed to track source bytes for {file_result.file_path}: {e}"
                                 )
 
-                            # PERFORMANCE FIX: Reduce lock contention by updating display less frequently
+                            # CRITICAL FIX: Restore progress callback for file completion
+                            # AsyncDisplayWorker was removed - we MUST call progress_callback
+                            # to update the display with file progress
                             if progress_callback:
+                                # Calculate current throughput metrics
                                 files_per_second = self._calculate_files_per_second(
                                     completed_files
                                 )
-                                kbs_throughput = self._calculate_kbs_throughput()
+                                kb_per_second = self._calculate_kbs_throughput()
+                                # Get active thread count from slot tracker
+                                active_threads = 0
+                                if self.slot_tracker:
+                                    active_threads = self.slot_tracker.get_slot_count()
 
-                                # CRITICAL PERFORMANCE FIX: Don't call get_concurrent_threads_snapshot()
-                                # on EVERY file completion - it causes severe lock contention!
-                                # The lock blocks worker threads trying to update their status.
-                                # Use time-based updates (max once per second) or on significant milestones.
-                                current_time = time.time()
-                                time_since_last_update = current_time - last_display_update
-                                concurrent_files = None
-                                
-                                should_update_display = True
-                                
-                                if should_update_display:
-                                    last_display_update = current_time
+                                # Get concurrent files from slot tracker
+                                concurrent_files = []
+                                if self.slot_tracker:
                                     concurrent_files = (
-                                        self._get_concurrent_threads_snapshot(
-                                            max_threads=vector_thread_count
-                                        )
+                                        self.slot_tracker.get_concurrent_files_data()
                                     )
 
-                                file_progress_pct = (
-                                    (completed_files / len(files) * 100)
-                                    if len(files) > 0
-                                    else 0
+                                # Format progress info in expected format
+                                progress_info = (
+                                    f"{completed_files}/{len(files)} files ({100 * completed_files // len(files)}%) | "
+                                    f"{files_per_second:.1f} files/s | "
+                                    f"{kb_per_second:.1f} KB/s | "
+                                    f"{active_threads} threads | "
+                                    f"{file_result.file_path.name}"
                                 )
 
-                                info_msg = f"{completed_files}/{len(files)} files ({file_progress_pct:.0f}%) | {files_per_second:.1f} files/s | {kbs_throughput:.1f} KB/s | {vector_thread_count} threads"
+                                # Call progress callback with proper parameters
+                                callback_result = progress_callback(
+                                    completed_files,  # current files completed
+                                    len(files),  # total files to process
+                                    file_result.file_path,
+                                    info=progress_info,
+                                    concurrent_files=concurrent_files,
+                                )
 
-                                # Only pass concurrent_files when we have fresh data
-                                try:
-                                    if concurrent_files is not None:
-                                        callback_result = progress_callback(
-                                            completed_files,
-                                            len(files),
-                                            Path(""),
-                                            info=info_msg,
-                                            concurrent_files=concurrent_files,
-                                        )
-                                    else:
-                                        # Update progress bar without concurrent files data
-                                        callback_result = progress_callback(
-                                            completed_files,
-                                            len(files),
-                                            Path(""),
-                                            info=info_msg,
-                                        )
-                                except TypeError:
-                                    # Old-style callback that doesn't accept concurrent_files
-                                    callback_result = progress_callback(
-                                        completed_files,
-                                        len(files),
-                                        Path(""),
-                                        info=info_msg,
-                                    )
-
-                                # Check for cancellation signal from progress callback
+                                # CRITICAL FIX: Check for user cancellation via progress callback
                                 if callback_result == "INTERRUPT":
-                                    logger.info("Processing interrupted by user")
-                                    with self._cancellation_lock:
-                                        self.cancelled = True
-                                        self._cancellation_event.set()
-                                        # CRITICAL FIX: Propagate cancellation to all components
-                                        vector_manager.request_cancellation()
-                                        file_manager.request_cancellation()
-                                        stats.files_processed = completed_files
-                                        stats.cancelled = True
-                                        # Cancel remaining futures atomically
-                                        futures_to_cancel = [
-                                            f for f in file_futures if not f.done()
-                                        ]
-                                        for future in futures_to_cancel:
-                                            future.cancel()
-                                    return stats
+                                    logger.info(
+                                        "Cancellation requested via progress callback - stopping processing"
+                                    )
+                                    self.cancelled = True
+                                    stats.cancelled = True
+                                    break
                         else:
                             stats.failed_files += 1
                             logger.error(f"File processing failed: {file_result.error}")
@@ -631,10 +514,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 info=final_info_msg,
             )
 
-        # PERFORMANCE FIX: Stop the cleanup thread when done processing
-        # This ensures clean shutdown of the background cleanup thread
-        if self.file_tracker:
-            self.file_tracker.stop_cleanup_thread()
+        # CleanSlotTracker doesn't require explicit cleanup thread management
 
         return stats
 
@@ -1186,10 +1066,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             List of concurrent file data dictionaries for display manager
         """
         # Use consolidated file tracker instead of duplicate tracking logic
-        if self.file_tracker:
-            concurrent_files_data: List[Dict[str, Any]] = (
-                self.file_tracker.get_concurrent_files_data()
-            )
-        else:
-            concurrent_files_data = []
+        concurrent_files_data: List[Dict[str, Any]] = (
+            self.slot_tracker.get_concurrent_files_data()
+        )
         return concurrent_files_data

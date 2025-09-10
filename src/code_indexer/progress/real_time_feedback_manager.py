@@ -314,13 +314,16 @@ class RealTimeFeedbackManager:
 
         # Format multi-threaded display
         worker_info = []
-        for file_data in concurrent_files[:8]:  # Limit to 8 workers for display
-            thread_id = file_data.get("thread_id", 0)
+        for slot_id, file_data in enumerate(
+            concurrent_files[:8]
+        ):  # Limit to 8 workers for display
+            # CRITICAL FIX: Remove fallback pattern - direct slot_id access
+            display_id = file_data["slot_id"]
             file_path = file_data.get("file_path", "unknown")
             progress = file_data.get("progress_percent", 0)
 
             worker_info.append(
-                f"Worker {thread_id}: {Path(file_path).name} ({progress}%)"
+                f"Worker {display_id}: {Path(file_path).name} ({progress}%)"
             )
 
         if worker_info:

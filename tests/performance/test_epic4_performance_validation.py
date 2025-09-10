@@ -636,7 +636,7 @@ class TestEpic4PerformanceValidation:
         client = Mock()
         client.create_point.return_value = {"id": "test-point"}
         client.upsert_points.return_value = True
-        client.upsert_points_atomic.return_value = True
+        client.upsert_points_batched.return_value = True
         client.resolve_collection_name.return_value = "test_collection"
         client.scroll_points.return_value = ([], None)
         client._batch_update_points.return_value = True

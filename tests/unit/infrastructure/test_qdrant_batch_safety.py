@@ -22,7 +22,7 @@ class TestQdrantBatchSafety:
         )
         self.client = QdrantClient(self.config, self.mock_console)
 
-    def test_upsert_points_atomic_small_batch(self):
+    def test_upsert_points_batched_small_batch(self):
         """Test atomic upsert with small batch (uses standard upsert)."""
         points = [
             {"id": "1", "vector": [0.1] * 384, "payload": {"text": "test1"}},
@@ -32,12 +32,12 @@ class TestQdrantBatchSafety:
         with patch.object(
             self.client, "upsert_points", return_value=True
         ) as mock_upsert:
-            result = self.client.upsert_points_atomic(points)
+            result = self.client.upsert_points_batched(points)
 
             assert result is True
             mock_upsert.assert_called_once_with(points, None)
 
-    def test_upsert_points_atomic_large_batch_success(self):
+    def test_upsert_points_batched_large_batch_success(self):
         """Test atomic upsert with large batch that gets split."""
         # Create 250 points (will be split into 3 batches of 100, 100, 50)
         points = [
@@ -48,7 +48,7 @@ class TestQdrantBatchSafety:
         with patch.object(
             self.client, "upsert_points", return_value=True
         ) as mock_upsert:
-            result = self.client.upsert_points_atomic(points, max_batch_size=100)
+            result = self.client.upsert_points_batched(points, max_batch_size=100)
 
             assert result is True
             assert mock_upsert.call_count == 3
@@ -59,7 +59,7 @@ class TestQdrantBatchSafety:
             assert len(call_args[1][0]) == 100  # Second batch
             assert len(call_args[2][0]) == 50  # Third batch
 
-    def test_upsert_points_atomic_partial_failure(self):
+    def test_upsert_points_batched_partial_failure(self):
         """Test atomic upsert handles partial failure correctly."""
         points = [
             {"id": f"point_{i}", "vector": [0.1] * 384, "payload": {"text": f"test{i}"}}
@@ -70,7 +70,7 @@ class TestQdrantBatchSafety:
         with patch.object(
             self.client, "upsert_points", side_effect=[True, False, True]
         ) as mock_upsert:
-            result = self.client.upsert_points_atomic(points, max_batch_size=100)
+            result = self.client.upsert_points_batched(points, max_batch_size=100)
 
             assert result is False  # Should fail due to second batch failure
             assert mock_upsert.call_count == 2  # Should stop after failure
@@ -80,7 +80,7 @@ class TestQdrantBatchSafety:
                 "❌ Failed to upsert batch 2/3 (100 points)", style="red"
             )
 
-    def test_upsert_points_atomic_exception_handling(self):
+    def test_upsert_points_batched_exception_handling(self):
         """Test atomic upsert handles exceptions correctly."""
         points = [
             {"id": f"point_{i}", "vector": [0.1] * 384, "payload": {"text": f"test{i}"}}
@@ -96,7 +96,7 @@ class TestQdrantBatchSafety:
         with patch.object(
             self.client, "upsert_points", side_effect=mock_upsert_side_effect
         ) as mock_upsert:
-            result = self.client.upsert_points_atomic(points, max_batch_size=100)
+            result = self.client.upsert_points_batched(points, max_batch_size=100)
 
             assert result is False
             assert mock_upsert.call_count == 2
@@ -106,12 +106,12 @@ class TestQdrantBatchSafety:
                 "❌ Exception in batch 2/2: Network error", style="red"
             )
 
-    def test_upsert_points_atomic_empty_batch(self):
+    def test_upsert_points_batched_empty_batch(self):
         """Test atomic upsert with empty batch."""
-        result = self.client.upsert_points_atomic([])
+        result = self.client.upsert_points_batched([])
         assert result is True
 
-    def test_upsert_points_atomic_custom_max_batch_size(self):
+    def test_upsert_points_batched_custom_max_batch_size(self):
         """Test atomic upsert with custom max batch size."""
         points = [
             {"id": f"point_{i}", "vector": [0.1] * 384, "payload": {"text": f"test{i}"}}
@@ -121,7 +121,7 @@ class TestQdrantBatchSafety:
         with patch.object(
             self.client, "upsert_points", return_value=True
         ) as mock_upsert:
-            result = self.client.upsert_points_atomic(points, max_batch_size=25)
+            result = self.client.upsert_points_batched(points, max_batch_size=25)
 
             assert result is True
             assert mock_upsert.call_count == 3  # 75 points / 25 = 3 batches
@@ -130,14 +130,14 @@ class TestQdrantBatchSafety:
             call_args = [call[0] for call in mock_upsert.call_args_list]
             assert all(len(args[0]) == 25 for args in call_args)
 
-    def test_upsert_points_atomic_collection_name_passed(self):
+    def test_upsert_points_batched_collection_name_passed(self):
         """Test that collection name is properly passed through."""
         points = [{"id": "1", "vector": [0.1] * 384, "payload": {"text": "test"}}]
 
         with patch.object(
             self.client, "upsert_points", return_value=True
         ) as mock_upsert:
-            result = self.client.upsert_points_atomic(
+            result = self.client.upsert_points_batched(
                 points, collection_name="custom_collection"
             )
 
@@ -195,7 +195,7 @@ class TestQdrantBatchSafetyIntegration:
             mock_put.side_effect = mock_responses
 
             # This should fail safely after processing some batches
-            result = self.client.upsert_points_atomic(large_batch, max_batch_size=100)
+            result = self.client.upsert_points_batched(large_batch, max_batch_size=100)
 
             assert result is False
             # Should have attempted 4 batches before failing
@@ -217,7 +217,7 @@ class TestQdrantBatchSafetyIntegration:
         with patch.object(
             self.client, "upsert_points", side_effect=track_batch_progress
         ):
-            result = self.client.upsert_points_atomic(points, max_batch_size=100)
+            result = self.client.upsert_points_batched(points, max_batch_size=100)
 
             assert result is True
             assert len(successful_batches) == 3  # 300 points / 100 = 3 batches

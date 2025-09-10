@@ -1,19 +1,16 @@
 """Multi-threaded progress display components for Feature 4.
 
-This module implements concurrent file line display with real-time updates
-and ramping down behavior for multi-threaded file processing.
+This module implements direct array access display with real-time updates
+using only CleanSlotTracker.status_array for single data structure architecture.
 
 Key Components:
-- ConcurrentFileDisplay: Thread-safe display of up to 8 concurrent file lines
-- RampingDownManager: Handles gradual reduction from 8→4→2→1→0 lines
-- MultiThreadedProgressManager: Integrates with existing Rich Live display
+- MultiThreadedProgressManager: Integrates with CleanSlotTracker array access
+- Direct slot scanning: for slot_id in range(threadcount+2)
+- No dictionaries, no complex data operations
 """
 
-import threading
-import time
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import List, Optional, Dict, Any
 from rich.console import Console
 from rich.progress import (
     Progress,
@@ -27,308 +24,33 @@ from rich.table import Table
 from rich.text import Text
 
 from .progress_display import RichLiveProgressManager
-
-
-@dataclass
-class FileProcessingLine:
-    """Data class for a single file processing line."""
-
-    thread_id: int
-    file_path: Path
-    file_size: int
-    estimated_seconds: int
-    status: str
-    created_at: float
-    last_updated: float
-
-
-@dataclass
-class TimingConfig:
-    """Configuration for ramping timing behavior."""
-
-    min_delay_between_reductions: float
-    max_delay_between_reductions: float
-
-
-@dataclass
-class TransitionStep:
-    """Single step in a visual transition."""
-
-    opacity: float
-    duration_seconds: float
-
-
-@dataclass
-class TransitionEffect:
-    """Complete transition effect with multiple steps."""
-
-    steps: List[TransitionStep]
-    total_duration_seconds: float
-
-
-class ConcurrentFileDisplay:
-    """Thread-safe display component for concurrent file processing lines.
-
-    Manages up to max_lines concurrent file lines with real-time updates.
-    Provides thread-safe operations for add/update/remove file lines.
-    """
-
-    def __init__(self, console: Console, max_lines: int = 8):
-        """Initialize concurrent file display.
-
-        Args:
-            console: Rich console for rendering
-            max_lines: Maximum number of concurrent lines to display
-        """
-        self.console = console
-        self.max_lines = max_lines
-        self.active_lines: Dict[int, FileProcessingLine] = {}
-        self._lock = threading.Lock()
-
-    def add_file_line(
-        self, thread_id: int, file_path: Path, file_size: int, estimated_seconds: int
-    ) -> None:
-        """Add a new file processing line.
-
-        Args:
-            thread_id: Unique thread identifier
-            file_path: Path of file being processed
-            file_size: Size of file in bytes
-            estimated_seconds: Estimated processing time
-        """
-        with self._lock:
-            # Enforce max lines limit
-            if (
-                len(self.active_lines) >= self.max_lines
-                and thread_id not in self.active_lines
-            ):
-                # Remove oldest line to make room
-                if self.active_lines:
-                    oldest_thread_id = min(
-                        self.active_lines.keys(),
-                        key=lambda tid: self.active_lines[tid].created_at,
-                    )
-                    del self.active_lines[oldest_thread_id]
-
-            current_time = time.time()
-            self.active_lines[thread_id] = FileProcessingLine(
-                thread_id=thread_id,
-                file_path=file_path,
-                file_size=file_size,
-                estimated_seconds=estimated_seconds,
-                status="starting...",
-                created_at=current_time,
-                last_updated=current_time,
-            )
-
-    def update_file_line(self, thread_id: int, status: str) -> None:
-        """Update status of an existing file line.
-
-        Args:
-            thread_id: Thread identifier to update
-            status: New status text
-        """
-        with self._lock:
-            if thread_id in self.active_lines:
-                self.active_lines[thread_id].status = status
-                self.active_lines[thread_id].last_updated = time.time()
-
-    def remove_file_line(self, thread_id: int) -> None:
-        """Remove a file processing line.
-
-        Args:
-            thread_id: Thread identifier to remove
-        """
-        with self._lock:
-            if thread_id in self.active_lines:
-                del self.active_lines[thread_id]
-
-    def get_active_line_count(self) -> int:
-        """Get count of currently active lines.
-
-        Returns:
-            Number of active file processing lines
-        """
-        with self._lock:
-            return len(self.active_lines)
-
-    def get_rendered_lines(self) -> List[str]:
-        """Get list of rendered file processing lines.
-
-        Returns:
-            List of formatted line strings ready for display
-        """
-        with self._lock:
-            rendered = []
-
-            # Sort by thread_id for consistent ordering
-            for thread_id in sorted(self.active_lines.keys()):
-                line_data = self.active_lines[thread_id]
-                formatted_line = self._format_file_line(line_data)
-                rendered.append(formatted_line)
-
-            return rendered
-
-    def _format_file_line(self, line_data: FileProcessingLine) -> str:
-        """Format a single file line for display.
-
-        Args:
-            line_data: File processing line data
-
-        Returns:
-            Formatted line string with tree-style indicator
-        """
-        # Convert file size to human-readable format
-        if line_data.file_size < 1024:
-            size_str = f"{line_data.file_size} B"
-        elif line_data.file_size < 1024 * 1024:
-            size_str = f"{line_data.file_size / 1024:.1f} KB"
-        else:
-            size_str = f"{line_data.file_size / (1024 * 1024):.1f} MB"
-
-        # Format status with custom mappings for better user experience
-        # Complete status mapping - activity states have "...", waiting states don't
-        if line_data.status == "queued":
-            status_str = "queued"  # WAITING STATE - no ...
-        elif line_data.status == "chunking":
-            status_str = "chunking..."  # ACTIVITY - has ...
-        elif line_data.status == "vectorizing":
-            status_str = "vectorizing..."  # ACTIVITY - has ...
-        elif line_data.status == "starting...":
-            status_str = "starting"  # WAITING STATE - remove ...
-        elif line_data.status == "processing":
-            status_str = "vectorizing..."  # ACTIVITY - keep existing
-        elif line_data.status == "finalizing...":
-            status_str = "finalizing..."  # ACTIVITY - has ...
-        elif line_data.status == "complete":
-            status_str = "complete ✓"  # FINAL STATE - completion indicator
-        else:
-            status_str = line_data.status
-
-        # Format: ├─ filename.py (size, estimated_time) status
-        return f"├─ {line_data.file_path.name} ({size_str}, {line_data.estimated_seconds}s) {status_str}"
-
-
-class RampingDownManager:
-    """Manages ramping down behavior as threads complete processing.
-
-    Handles gradual reduction of display lines from 8→4→2→1→0
-    as fewer files remain than active threads.
-    """
-
-    def __init__(self, console: Console):
-        """Initialize ramping down manager.
-
-        Args:
-            console: Rich console for rendering
-        """
-        self.console = console
-        self.timing_config = TimingConfig(
-            min_delay_between_reductions=0.5, max_delay_between_reductions=2.0
-        )
-
-    def should_start_ramping_down(
-        self, active_threads: int, files_remaining: int
-    ) -> bool:
-        """Determine if ramping down should be triggered.
-
-        Args:
-            active_threads: Number of active worker threads
-            files_remaining: Number of files still to be processed
-
-        Returns:
-            True if ramping down should start
-        """
-        return files_remaining <= active_threads
-
-    def calculate_target_lines(self, active_threads: int, files_remaining: int) -> int:
-        """Calculate target number of display lines.
-
-        Args:
-            active_threads: Number of active worker threads
-            files_remaining: Number of files still to be processed
-
-        Returns:
-            Target number of display lines
-        """
-        if files_remaining <= 0:
-            return 0
-        return min(files_remaining, active_threads)
-
-    def ramp_down_to_count(
-        self, display: ConcurrentFileDisplay, target_count: int
-    ) -> None:
-        """Ramp down display to target line count.
-
-        Args:
-            display: Concurrent file display to modify
-            target_count: Target number of lines to maintain
-        """
-        current_count = display.get_active_line_count()
-
-        if current_count <= target_count:
-            return  # Already at or below target
-
-        # Calculate lines to remove
-        lines_to_remove = current_count - target_count
-
-        # Get current thread IDs sorted by creation time (oldest first)
-        with display._lock:
-            thread_ids_by_age = sorted(
-                display.active_lines.keys(),
-                key=lambda tid: display.active_lines[tid].created_at,
-            )
-
-        # Remove oldest lines first
-        for i in range(lines_to_remove):
-            if i < len(thread_ids_by_age):
-                display.remove_file_line(thread_ids_by_age[i])
-
-    def get_timing_config(self) -> TimingConfig:
-        """Get current timing configuration.
-
-        Returns:
-            Current timing configuration
-        """
-        return self.timing_config
-
-    def set_timing_config(self, min_delay: float, max_delay: float) -> None:
-        """Set timing configuration.
-
-        Args:
-            min_delay: Minimum delay between reductions
-            max_delay: Maximum delay between reductions
-        """
-        self.timing_config = TimingConfig(
-            min_delay_between_reductions=min_delay,
-            max_delay_between_reductions=max_delay,
-        )
+from ..services.clean_slot_tracker import CleanSlotTracker, FileData
 
 
 class MultiThreadedProgressManager:
     """Main manager for multi-threaded progress display integration.
 
-    Integrates concurrent file display with existing Rich Live progress
-    and aggregate progress components from Features 1-3.
+    Uses direct array access to CleanSlotTracker.status_array only.
+    No dictionaries, no complex data operations - simple array scanning.
     """
 
     def __init__(
         self,
         console: Console,
         live_manager: Optional[RichLiveProgressManager] = None,
-        max_lines: int = 8,
+        max_slots: int = 14,  # threadcount+2
     ):
         """Initialize multi-threaded progress manager.
 
         Args:
             console: Rich console for rendering
             live_manager: Optional existing Rich Live manager for integration
-            max_lines: Maximum number of concurrent file lines to display (should match thread count)
+            max_slots: Maximum number of slots (threadcount+2)
         """
         self.console = console
         self.live_manager = live_manager
-        self.concurrent_display = ConcurrentFileDisplay(console, max_lines=max_lines)
-        self.ramping_manager = RampingDownManager(console)
+        self.max_slots = max_slots
+        self.slot_tracker: Optional[CleanSlotTracker] = None
 
         # Create Rich Progress component for visual progress bar
         self.progress = Progress(
@@ -349,59 +71,91 @@ class MultiThreadedProgressManager:
         self._current_metrics_info = ""
         self._progress_started = False
 
-    def update_progress(
-        self,
-        current: int,
-        total: int,
-        active_threads: int,
-        concurrent_files: List[Dict[str, Any]],
-    ) -> None:
-        """Update complete progress state with concurrent file information.
+    def set_slot_tracker(self, slot_tracker: CleanSlotTracker) -> None:
+        """Set the slot tracker for direct array access.
 
         Args:
-            current: Current number of processed files
-            total: Total number of files to process
-            active_threads: Number of active worker threads
-            concurrent_files: List of files currently being processed
+            slot_tracker: CleanSlotTracker instance with status_array
         """
-        # Update concurrent file display
-        self.update_concurrent_files(concurrent_files)
+        self.slot_tracker = slot_tracker
 
-        # Check if ramping down is needed
-        files_remaining = total - current
-        if self.ramping_manager.should_start_ramping_down(
-            active_threads, files_remaining
-        ):
-            target_lines = self.ramping_manager.calculate_target_lines(
-                active_threads, files_remaining
-            )
-            self.ramping_manager.ramp_down_to_count(
-                self.concurrent_display, target_lines
-            )
+    def get_display_lines_from_tracker(
+        self, slot_tracker: CleanSlotTracker, max_slots: Optional[int] = None
+    ) -> List[str]:
+        """Get display lines by scanning slot tracker array directly.
 
-    def update_concurrent_files(self, concurrent_files: List[Dict[str, Any]]) -> None:
-        """Update concurrent file display with current file processing state.
+        CONSOLIDATED METHOD: Eliminates code duplication from 3 similar methods.
 
         Args:
-            concurrent_files: List of file processing dictionaries
+            slot_tracker: CleanSlotTracker with status_array to scan
+            max_slots: Number of slots to scan (defaults to self.max_slots)
+
+        Returns:
+            List of formatted display lines
         """
-        # Update or add file lines based on current state
-        for file_data in concurrent_files:
-            thread_id = file_data["thread_id"]
+        display_lines = []
+        slots_to_scan = max_slots or self.max_slots
 
-            if thread_id not in self.concurrent_display.active_lines:
-                # Add new file line
-                self.concurrent_display.add_file_line(
-                    thread_id=thread_id,
-                    file_path=Path(file_data["file_path"]),
-                    file_size=file_data["file_size"],
-                    estimated_seconds=file_data.get("estimated_seconds", 5),
-                )
+        # Simple array scanning: for slot_id in range(threadcount+2)
+        for slot_id in range(slots_to_scan):
+            file_data = slot_tracker.status_array[slot_id]
+            if file_data is not None:
+                formatted_line = self._format_file_line_from_data(file_data)
+                display_lines.append(formatted_line)
 
-            # Update status
-            self.concurrent_display.update_file_line(
-                thread_id=thread_id, status=file_data["status"]
-            )
+        return display_lines
+
+    def get_array_display_lines(
+        self, slot_tracker: CleanSlotTracker, max_slots: int
+    ) -> List[str]:
+        """DEPRECATED: Use get_display_lines_from_tracker() instead."""
+        return self.get_display_lines_from_tracker(slot_tracker, max_slots)
+
+    def get_current_display_lines(self, slot_tracker: CleanSlotTracker) -> List[str]:
+        """DEPRECATED: Use get_display_lines_from_tracker() instead."""
+        return self.get_display_lines_from_tracker(slot_tracker)
+
+    def _format_file_line_from_data(self, file_data: FileData) -> str:
+        """Format a single file line from FileData.
+
+        Args:
+            file_data: FileData from slot tracker
+
+        Returns:
+            Formatted display line string
+        """
+        # Convert file size to human-readable format
+        if file_data.file_size < 1024:
+            size_str = f"{file_data.file_size} B"
+        elif file_data.file_size < 1024 * 1024:
+            size_str = f"{file_data.file_size / 1024:.1f} KB"
+        else:
+            size_str = f"{file_data.file_size / (1024 * 1024):.1f} MB"
+
+        # Format status with custom mappings
+        status_value = (
+            file_data.status.value
+            if hasattr(file_data.status, "value")
+            else str(file_data.status)
+        )
+
+        if status_value == "starting":
+            status_str = "starting"
+        elif status_value == "chunking":
+            status_str = "chunking..."
+        elif status_value == "vectorizing":
+            status_str = "vectorizing..."
+        elif status_value == "processing":
+            status_str = "vectorizing..."
+        elif status_value == "finalizing":
+            status_str = "finalizing..."
+        elif status_value == "complete":
+            status_str = "complete ✓"
+        else:
+            status_str = status_value
+
+        # Format: ├─ filename.py (size, 1s) status
+        return f"├─ {Path(file_data.filename).name} ({size_str}, 1s) {status_str}"
 
     def update_complete_state(
         self,
@@ -411,8 +165,9 @@ class MultiThreadedProgressManager:
         kb_per_second: float,
         active_threads: int,
         concurrent_files: List[Dict[str, Any]],
+        slot_tracker=None,
     ) -> None:
-        """Update complete state including aggregate progress and concurrent files.
+        """Update complete state using direct slot tracker array access.
 
         Args:
             current: Current progress count
@@ -420,8 +175,14 @@ class MultiThreadedProgressManager:
             files_per_second: Processing rate in files/second
             kb_per_second: Processing rate in KB/second
             active_threads: Number of active threads
-            concurrent_files: List of concurrent file processing data
+            concurrent_files: List of concurrent file data (compatibility)
+            slot_tracker: CleanSlotTracker with status_array
         """
+        # Store slot_tracker for get_integrated_display() - use consistent attribute
+        if slot_tracker is not None:
+            # Set slot tracker for direct connection (replaces CLI connection)
+            self.set_slot_tracker(slot_tracker)
+
         # Initialize progress bar if not started
         if not self._progress_started and total > 0:
             files_info = f"{current}/{total} files"
@@ -444,23 +205,11 @@ class MultiThreadedProgressManager:
             f"{active_threads} threads"
         )
 
-        # Update concurrent files first
-        self.update_concurrent_files(concurrent_files)
-
-        # Handle ramping down
-        files_remaining = total - current
-        if self.ramping_manager.should_start_ramping_down(
-            active_threads, files_remaining
-        ):
-            target_lines = self.ramping_manager.calculate_target_lines(
-                active_threads, files_remaining
-            )
-            self.ramping_manager.ramp_down_to_count(
-                self.concurrent_display, target_lines
-            )
+        # Use existing slot tracker reference (set via set_slot_tracker or constructor)
+        # self.slot_tracker is already available
 
     def get_integrated_display(self) -> Table:
-        """Get integrated display combining Rich progress bar and concurrent files.
+        """Get integrated display using direct slot tracker array access.
 
         Returns:
             Rich Table with progress bar at top, metrics line, and file lines
@@ -483,11 +232,25 @@ class MultiThreadedProgressManager:
             metrics_text = Text(self._current_metrics_info, style="dim white")
             main_table.add_row(metrics_text)
 
-        # Add concurrent file lines
-        file_lines = self.concurrent_display.get_rendered_lines()
-        for line in file_lines:
-            file_text = Text(line, style="dim blue")
-            main_table.add_row(file_text)
+        # ADD: Simple slot display lines (NEW)
+        if self.slot_tracker is not None:
+            for slot_id in range(self.slot_tracker.max_slots):
+                file_data = self.slot_tracker.status_array[slot_id]
+                if file_data is not None:
+                    status_display = file_data.status.value
+                    if status_display == "complete":
+                        status_display = "complete ✓"
+                    elif status_display in ["vectorizing", "processing"]:
+                        status_display = "vectorizing..."
+                    elif status_display == "finalizing":
+                        status_display = "finalizing..."
+                    elif status_display == "chunking":
+                        status_display = "chunking..."
+                    elif status_display == "starting":
+                        status_display = "starting"
+
+                    line = f"├─ {file_data.filename} ({file_data.file_size/1024:.1f} KB) {status_display}"
+                    main_table.add_row(Text(line, style="dim blue"))
 
         return main_table
 
@@ -512,18 +275,13 @@ class MultiThreadedProgressManager:
 
         return final_table
 
-    def handle_final_completion(self, display: ConcurrentFileDisplay) -> None:
-        """Handle final completion by removing all file lines.
+    def handle_final_completion(self) -> None:
+        """Handle final completion - no cleanup needed with array access.
 
-        Args:
-            display: Concurrent file display to clear
+        CleanSlotTracker handles slot cleanup automatically.
         """
-        # Remove all active lines
-        with display._lock:
-            thread_ids = list(display.active_lines.keys())
-
-        for thread_id in thread_ids:
-            display.remove_file_line(thread_id)
+        # No cleanup needed - direct array access has no state to clear
+        pass
 
     def get_completion_display(self) -> Table:
         """Get completion display showing 100% progress.

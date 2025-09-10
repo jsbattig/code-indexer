@@ -115,7 +115,8 @@ class TestDataCleanerHealth:
 
             # Check error message was printed
             self.mock_console.print.assert_any_call(
-                "❌ Data cleaner failed to become ready", style="red"
+                "❌ Data cleaner failed to become ready: cidx-12345678-data-cleaner",
+                style="red",
             )
 
     @patch.object(HealthChecker, "get_timeouts")

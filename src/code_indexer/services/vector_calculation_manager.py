@@ -364,7 +364,8 @@ class VectorCalculationManager:
 
                 def shutdown_thread():
                     try:
-                        self.executor.shutdown(wait=True)
+                        if self.executor is not None:
+                            self.executor.shutdown(wait=True)
                         shutdown_complete.set()
                     except Exception as e:
                         logger.error(f"Error in shutdown thread: {e}")

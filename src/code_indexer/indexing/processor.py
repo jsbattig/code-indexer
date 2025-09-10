@@ -108,6 +108,11 @@ class DocumentProcessor:
                             f"Vector calculation failed: {vector_result.error}"
                         )
 
+                    if not vector_result.embedding:
+                        raise ValueError(
+                            f"Embedding is None for chunk in {vector_result.metadata.get('path', 'unknown')}"
+                        )
+
                     # Create Qdrant point with the calculated embedding
                     payload = {
                         "path": vector_result.metadata["path"],

@@ -15,7 +15,6 @@ from watchdog.events import FileSystemEventHandler
 from .watch_metadata import WatchMetadata, GitStateMonitor
 from .smart_indexer import SmartIndexer
 from .git_topology_service import GitTopologyService
-from .deletion_fallback_scanner import DeletionFallbackScanner
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +29,6 @@ class GitAwareWatchHandler(FileSystemEventHandler):
         git_topology_service: GitTopologyService,
         watch_metadata: WatchMetadata,
         debounce_seconds: float = 2.0,
-        enable_deletion_fallback: bool = True,
     ):
         """Initialize git-aware watch handler.
 
@@ -40,7 +38,6 @@ class GitAwareWatchHandler(FileSystemEventHandler):
             git_topology_service: Git topology service for branch monitoring
             watch_metadata: Persistent metadata manager
             debounce_seconds: Time to wait before processing accumulated changes
-            enable_deletion_fallback: Enable periodic deletion scanning fallback
         """
         super().__init__()
         self.config = config
@@ -65,17 +62,6 @@ class GitAwareWatchHandler(FileSystemEventHandler):
         self.files_processed_count = 0
         self.indexing_cycles_count = 0
 
-        # Deletion fallback scanner
-        self.deletion_fallback: Optional[DeletionFallbackScanner] = None
-        if enable_deletion_fallback:
-            self.deletion_fallback = DeletionFallbackScanner(
-                config=config,
-                codebase_dir=config.codebase_dir,
-                scan_interval_seconds=15,  # Scan every 15 seconds for faster deletion detection
-                deletion_callback=self._handle_fallback_deletion,
-                min_confidence_threshold="medium",
-            )
-
     def start_watching(self):
         """Start the git-aware watch process."""
         logger.info("Starting git-aware watch handler")
@@ -95,13 +81,6 @@ class GitAwareWatchHandler(FileSystemEventHandler):
         if self.processing_thread:
             self.processing_thread.start()
 
-        # Start deletion fallback scanner
-        if self.deletion_fallback:
-            if self.deletion_fallback.start_scanning():
-                logger.info("Deletion fallback scanner started (60s intervals)")
-            else:
-                logger.warning("Failed to start deletion fallback scanner")
-
         logger.info("Git-aware watch handler started successfully")
 
     def stop_watching(self):
@@ -110,10 +89,6 @@ class GitAwareWatchHandler(FileSystemEventHandler):
 
         # Stop git monitoring
         self.git_monitor.stop_monitoring()
-
-        # Stop deletion fallback scanner
-        if self.deletion_fallback:
-            self.deletion_fallback.stop_scanning()
 
         # Process any remaining changes
         self._process_pending_changes(final_cleanup=True)
@@ -306,24 +281,6 @@ class GitAwareWatchHandler(FileSystemEventHandler):
         finally:
             self.processing_in_progress = False
 
-    def _handle_fallback_deletion(self, file_path: str):
-        """Handle deletion detected by fallback scanner."""
-        try:
-            logger.info(f"🔧 FALLBACK DELETION: Processing {file_path}")
-
-            # Convert to Path object for consistency
-            path_obj = Path(file_path)
-            if not path_obj.is_absolute():
-                path_obj = self.config.codebase_dir / file_path
-
-            # Add to pending changes as if it was detected by filesystem events
-            self._add_pending_change(path_obj, "deleted")
-
-            logger.info(f"🔧 FALLBACK DELETION: Added {file_path} to pending changes")
-
-        except Exception as e:
-            logger.error(f"Failed to handle fallback deletion for {file_path}: {e}")
-
     def _handle_branch_change(self, change_event: Dict[str, Any]):
         """Handle git branch change events."""
         old_branch = change_event["old_branch"]
@@ -414,10 +371,5 @@ class GitAwareWatchHandler(FileSystemEventHandler):
                 "current_git_branch": self.git_monitor.current_branch,
             }
         )
-
-        # Add deletion fallback scanner statistics
-        if self.deletion_fallback:
-            fallback_stats = self.deletion_fallback.get_statistics()
-            base_stats["deletion_fallback"] = fallback_stats
 
         return base_stats

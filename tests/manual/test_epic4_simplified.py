@@ -4,7 +4,7 @@ Epic 4: Branch Operations - Simplified Test Execution
 Tests core branch operation functionality with proper timing
 """
 
-import requests
+import requests  # type: ignore[import-untyped]
 import json
 import sys
 import time

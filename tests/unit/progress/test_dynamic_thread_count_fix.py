@@ -22,7 +22,7 @@ class TestDynamicThreadCountFix:
         processor = HighThroughputProcessor.__new__(HighThroughputProcessor)
 
         # Initialize required attributes
-        processor.file_tracker = None  # Start with None for lazy init
+        # slot_tracker will be lazily initialized
         processor._thread_counter = 0
         processor._file_to_thread_map = {}
         processor._file_to_thread_lock = threading.Lock()
@@ -31,19 +31,21 @@ class TestDynamicThreadCountFix:
         test_cases = [4, 8, 12, 16, 24]
 
         for thread_count in test_cases:
-            # Reset file tracker for each test
-            processor.file_tracker = None
+            # Reset slot tracker for each test
+            # Explicitly reset to allow re-initialization with different thread count
+            processor.slot_tracker = None  # type: ignore[assignment]
 
             # Call the lazy initialization method with specific thread count
-            processor._ensure_file_tracker_initialized(thread_count)
+            processor._ensure_slot_tracker_initialized(thread_count)
 
-            # Verify file tracker was created with correct thread count
+            # Verify slot tracker was created with correct thread count (thread_count + 2)
             assert (
-                processor.file_tracker is not None
-            ), "File tracker should be initialized"
-            assert processor.file_tracker.max_concurrent_files == thread_count, (
-                f"Expected max_concurrent_files={thread_count}, "
-                f"got {processor.file_tracker.max_concurrent_files}"
+                processor.slot_tracker is not None
+            ), "Slot tracker should be initialized"
+            expected_slots = thread_count + 2
+            assert processor.slot_tracker.max_slots == expected_slots, (
+                f"Expected max_slots={expected_slots} ({thread_count}+2), "
+                f"got {processor.slot_tracker.max_slots}"
             )
 
     def test_process_files_initializes_with_vector_thread_count(self):
@@ -52,7 +54,7 @@ class TestDynamicThreadCountFix:
             processor = HighThroughputProcessor()
 
             # Initialize required attributes
-            processor.file_tracker = None
+            # slot_tracker will be lazily initialized
             processor._thread_counter = 0
             processor._file_to_thread_map = {}
             processor._file_to_thread_lock = threading.Lock()
@@ -74,19 +76,19 @@ class TestDynamicThreadCountFix:
                 processor.process_files_high_throughput(
                     files=[],
                     vector_thread_count=vector_thread_count,
-                    progress_callback=None,
                 )
             except Exception:
                 # We expect it to fail on empty files, but initialization should happen
                 pass
 
-            # Verify tracker was initialized with correct thread count
+            # Verify slot tracker was initialized with correct thread count (thread_count + 2)
             assert (
-                processor.file_tracker is not None
-            ), "File tracker should be initialized"
-            assert processor.file_tracker.max_concurrent_files == vector_thread_count, (
-                f"Expected tracker initialized with {vector_thread_count} threads, "
-                f"got {processor.file_tracker.max_concurrent_files}"
+                processor.slot_tracker is not None
+            ), "Slot tracker should be initialized"
+            expected_slots = vector_thread_count + 2
+            assert processor.slot_tracker.max_slots == expected_slots, (
+                f"Expected tracker initialized with {expected_slots} slots ({vector_thread_count}+2), "
+                f"got {processor.slot_tracker.max_slots}"
             )
 
     def test_concurrent_file_display_matches_thread_count(self):
@@ -94,25 +96,29 @@ class TestDynamicThreadCountFix:
         processor = HighThroughputProcessor.__new__(HighThroughputProcessor)
 
         # Initialize attributes
-        processor.file_tracker = None
+        # slot_tracker will be lazily initialized
         processor._thread_counter = 0
         processor._file_to_thread_map = {}
         processor._file_to_thread_lock = threading.Lock()
 
         # Test with 12 threads (common configuration)
         thread_count = 12
-        processor._ensure_file_tracker_initialized(thread_count)
+        processor._ensure_slot_tracker_initialized(thread_count)
 
         # Register 12 files (simulating all threads active)
         file_paths = [Path(f"/test/file{i}.py") for i in range(1, thread_count + 1)]
 
+        # Register files using the slot_tracker API
+        from src.code_indexer.services.clean_slot_tracker import FileData, FileStatus
+
         for i, file_path in enumerate(file_paths):
-            processor.file_tracker.start_file_processing(
-                thread_id=i, file_path=file_path, file_size=1024
+            file_data = FileData(
+                filename=str(file_path), file_size=1024, status=FileStatus.STARTING
             )
+            _ = processor.slot_tracker.acquire_slot(file_data)
 
         # Get concurrent files data
-        concurrent_files = processor.file_tracker.get_concurrent_files_data()
+        concurrent_files = processor.slot_tracker.get_concurrent_files_data()
 
         # Verify all files are displayed (not limited to 8)
         assert len(concurrent_files) == thread_count, (
@@ -134,15 +140,15 @@ class TestDynamicThreadCountFix:
         processor = HighThroughputProcessor.__new__(HighThroughputProcessor)
 
         # Initialize attributes
-        processor.file_tracker = None
+        # slot_tracker will be lazily initialized
         processor._thread_counter = 0
         processor._file_to_thread_map = {}
         processor._file_to_thread_lock = threading.Lock()
 
         # Call ensure_file_tracker_initialized without thread count (fallback case)
-        processor._ensure_file_tracker_initialized()
+        processor._ensure_slot_tracker_initialized()
 
-        # Should fall back to 8 for backwards compatibility
+        # Should fall back to 8 + 2 = 10 slots for backwards compatibility
         assert (
-            processor.file_tracker.max_concurrent_files == 8
-        ), "Expected fallback to 8 threads for backwards compatibility"
+            processor.slot_tracker.max_slots == 10  # 8 threads + 2
+        ), "Expected fallback to 10 slots (8+2) for backwards compatibility"

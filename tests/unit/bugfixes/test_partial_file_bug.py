@@ -37,7 +37,7 @@ class TrackedQdrantClient:
 
         return True
 
-    def upsert_points_atomic(self, points):
+    def upsert_points_batched(self, points):
         """Atomic version of upsert_points."""
         return self.upsert_points(points)
 
@@ -162,7 +162,6 @@ def test_partial_file_bug_reproduction():
                 files=[test_file],
                 vector_thread_count=1,  # Single thread for predictable timing
                 batch_size=2,  # Small batch - chunks will be sent in batches of 2
-                progress_callback=progress_callback,
             )
 
             print(

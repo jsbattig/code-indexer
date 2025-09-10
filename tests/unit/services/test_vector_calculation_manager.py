@@ -8,6 +8,7 @@ import time
 import threading
 from unittest.mock import Mock
 import pytest
+from concurrent.futures import Future
 
 from code_indexer.services.vector_calculation_manager import (
     VectorCalculationManager,
@@ -140,7 +141,7 @@ class TestVectorCalculationManager:
         metadata = {"file": "test.py", "chunk_index": 0}
 
         with VectorCalculationManager(provider, thread_count=1) as manager:
-            future = manager.submit_chunk(test_text, metadata)
+            future: Future[Any] = manager.submit_chunk(test_text, metadata)
             result = future.result(timeout=5.0)
 
             assert isinstance(result, VectorResult)
@@ -161,7 +162,7 @@ class TestVectorCalculationManager:
             # Submit all chunks
             futures = []
             for chunk, metadata in zip(chunks, metadatas):
-                future = manager.submit_chunk(chunk, metadata)
+                future: Future[Any] = manager.submit_chunk(chunk, metadata)
                 futures.append(future)
 
             # Wait for all results
@@ -196,7 +197,7 @@ class TestVectorCalculationManager:
             # Submit some tasks
             futures = []
             for i in range(5):
-                future = manager.submit_chunk(f"text {i}", {"index": i})
+                future: Future[Any] = manager.submit_chunk(f"text {i}", {"index": i})
                 futures.append(future)
 
             # Wait for completion
@@ -228,16 +229,20 @@ class TestVectorCalculationManager:
 
         with VectorCalculationManager(provider, thread_count=1) as manager:
             # Submit a failing task
-            future = manager.submit_chunk("fail this task", {"test": True})
-            result = future.result(timeout=5.0)
+            fail_future: Future[Any] = manager.submit_chunk(
+                "fail this task", {"test": True}
+            )
+            result = fail_future.result(timeout=5.0)
 
             assert result.error is not None
             assert "Simulated embedding failure" in result.error
             assert result.embedding == []
 
             # Submit a successful task
-            future = manager.submit_chunk("success", {"test": True})
-            result = future.result(timeout=5.0)
+            success_future: Future[Any] = manager.submit_chunk(
+                "success", {"test": True}
+            )
+            result = success_future.result(timeout=5.0)
 
             assert result.error is None
             assert len(result.embedding) == 768
@@ -258,8 +263,8 @@ class TestVectorCalculationManager:
             start_time = time.time()
             futures = []
             for i in range(chunk_count):
-                future = manager.submit_chunk(f"chunk {i}", {"index": i})
-                futures.append(future)
+                single_future = manager.submit_chunk(f"chunk {i}", {"index": i})
+                futures.append(single_future)
 
             for future in futures:
                 future.result(timeout=10.0)
@@ -272,8 +277,8 @@ class TestVectorCalculationManager:
             start_time = time.time()
             futures = []
             for i in range(chunk_count):
-                future = manager.submit_chunk(f"chunk {i}", {"index": i})
-                futures.append(future)
+                multi_future = manager.submit_chunk(f"chunk {i}", {"index": i})
+                futures.append(multi_future)
 
             for future in futures:
                 future.result(timeout=10.0)
@@ -293,7 +298,7 @@ class TestVectorCalculationManager:
         manager.start()
 
         # Submit a task that will take time
-        future = manager.submit_chunk("slow task", {"test": True})
+        future: Future[Any] = manager.submit_chunk("slow task", {"test": True})
 
         # Shutdown immediately without waiting
         manager.shutdown(wait=False)
@@ -317,7 +322,7 @@ class TestVectorCalculationManager:
             # Submit several tasks
             futures = []
             for i in range(6):
-                future = manager.submit_chunk(f"task {i}", {"index": i})
+                future: Future[Any] = manager.submit_chunk(f"task {i}", {"index": i})
                 futures.append(future)
 
             # Wait for all tasks to complete
@@ -340,7 +345,7 @@ class TestVectorCalculationManager:
             # Submit multiple tasks quickly
             futures = []
             for i in range(5):
-                future = manager.submit_chunk(f"task {i}", {"index": i})
+                future: Future[Any] = manager.submit_chunk(f"task {i}", {"index": i})
                 futures.append(future)
 
             # Check that queue size increases
@@ -364,7 +369,7 @@ class TestVectorCalculationManager:
         with VectorCalculationManager(provider, thread_count=2) as manager:
             futures = []
             for i in range(10):
-                future = manager.submit_chunk(f"task {i}", {"index": i})
+                future: Future[Any] = manager.submit_chunk(f"task {i}", {"index": i})
                 futures.append(future)
 
             # Collect all task IDs
@@ -387,7 +392,7 @@ class TestVectorCalculationManager:
         }
 
         with VectorCalculationManager(provider, thread_count=1) as manager:
-            future = manager.submit_chunk("test text", complex_metadata)
+            future: Future[Any] = manager.submit_chunk("test text", complex_metadata)
             result = future.result(timeout=5.0)
 
             assert result.error is None
@@ -424,7 +429,9 @@ class TestProviderSpecificBehavior:
             start_time = time.time()
             futures = []
             for i in range(chunk_count):
-                future = manager.submit_chunk(f"voyage chunk {i}", {"index": i})
+                future: Future[Any] = manager.submit_chunk(
+                    f"voyage chunk {i}", {"index": i}
+                )
                 futures.append(future)
 
             results = []
@@ -456,7 +463,9 @@ class TestProviderSpecificBehavior:
         with VectorCalculationManager(mock_ollama_provider, thread_count=1) as manager:
             futures = []
             for i in range(3):
-                future = manager.submit_chunk(f"ollama chunk {i}", {"index": i})
+                future: Future[Any] = manager.submit_chunk(
+                    f"ollama chunk {i}", {"index": i}
+                )
                 futures.append(future)
 
             results = []
@@ -483,7 +492,9 @@ class TestProviderSpecificBehavior:
         with VectorCalculationManager(mock_voyage_provider, thread_count=4) as manager:
             futures = []
             for i, chunk in enumerate(chunks):
-                future = manager.submit_chunk(chunk, {"index": i, "length": len(chunk)})
+                future: Future[Any] = manager.submit_chunk(
+                    chunk, {"index": i, "length": len(chunk)}
+                )
                 futures.append(future)
 
             results = []

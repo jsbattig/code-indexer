@@ -117,7 +117,9 @@ def function_{i}():
         progress_calls = []
         kbs_values_found = []
 
-        def capture_progress(current, total, file_path, error=None, info=None):
+        def capture_progress(
+            current, total, file_path, error=None, info=None, concurrent_files=None
+        ):
             if info and total > 0:
                 progress_calls.append(
                     {
@@ -195,7 +197,9 @@ def function_{i}():
         # Track progress calls to verify format structure
         progress_calls = []
 
-        def capture_progress(current, total, file_path, error=None, info=None):
+        def capture_progress(
+            current, total, file_path, error=None, info=None, concurrent_files=None
+        ):
             if info and total > 0:
                 progress_calls.append(
                     {
@@ -271,7 +275,9 @@ def function_{i}():
         # Track KB/s values over time to verify cumulative calculation
         kbs_progression = []
 
-        def capture_progress(current, total, file_path, error=None, info=None):
+        def capture_progress(
+            current, total, file_path, error=None, info=None, concurrent_files=None
+        ):
             if info and total > 0 and "KB/s" in info:
                 parts = info.split("|")
                 if len(parts) >= 3:
@@ -344,7 +350,9 @@ def function_{i}():
         # Track all KB/s calculations
         all_kbs_values = []
 
-        def capture_progress(current, total, file_path, error=None, info=None):
+        def capture_progress(
+            current, total, file_path, error=None, info=None, concurrent_files=None
+        ):
             if info and total > 0 and "KB/s" in info:
                 parts = info.split("|")
                 if len(parts) >= 3:

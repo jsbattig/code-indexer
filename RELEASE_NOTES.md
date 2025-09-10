@@ -1,5 +1,45 @@
 # Release Notes
 
+## Version 4.1.0 - Slot-Based Parallel File Processing
+
+**Release Date**: September 10, 2025
+
+### 🚀 Major Architecture Enhancement
+
+- **Slot-based file processing**: Replaced sequential file chunking with parallel slot-based worker allocation
+- **Real-time state visibility**: Individual file status progression (starting → chunking → vectorizing → finalizing → complete) 
+- **Dual thread pool design**: Frontend file processing (threadcount+2 workers) feeds backend vectorization (threadcount workers)
+- **Natural slot reuse**: Completed files remain visible until display slots are reused by new files
+- **Thread-agnostic design**: Pure integer slot operations eliminate thread ID tracking complexity
+
+### ⚡ Performance Improvements
+
+- **Parallel file processing**: Eliminates sequential file chunking bottleneck for improved throughput
+- **Real-time progress updates**: File status changes appear immediately without waiting for completion
+- **Optimized resource management**: Single acquire/try/finally pattern ensures proper slot cleanup
+- **Natural backpressure**: Slot allocation provides automatic workload balancing
+
+### 🎯 User Experience Enhancements
+
+- **Real-time file status**: Progress display shows individual file processing status in fixed display area
+- **Accurate progress metrics**: Files/s and KB/s calculations based on actual file completion
+- **Natural file scrolling**: Completed files cycle out as new files begin processing
+- **Clean cancellation**: Post-write cancellation strategy preserves file atomicity
+
+### 🔧 Technical Implementation
+
+- **CleanSlotTracker**: Pure integer-based slot management with O(1) operations
+- **FileChunkingManager**: Parallel file processing with proper resource lifecycle
+- **Direct array display**: Simple threadcount+2 slot scanning for progress visualization
+- **Aggregate progress tracking**: Separate tracking for cumulative metrics and rates
+
+### 🧪 Code Quality & Testing
+
+- **Zero warnings compliance**: All linting (ruff, black, mypy) passes with no warnings
+- **Comprehensive test cleanup**: Systematic elimination of obsolete tests for removed functionality
+- **CLAUDE.md compliance**: No fallback mechanisms or duplicate tracking systems
+- **Test exclusions**: Proper separation of unit tests vs integration tests requiring external services
+
 ## Version 4.0.0.2 - Docker Cleanup Bug Fix
 
 **Release Date**: September 4, 2025

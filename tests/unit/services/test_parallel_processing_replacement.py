@@ -17,6 +17,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 from concurrent.futures import Future
+from typing import Any
 
 from code_indexer.services.high_throughput_processor import HighThroughputProcessor
 from code_indexer.services.file_chunking_manager import FileProcessingResult
@@ -119,16 +120,17 @@ class TestParallelProcessingReplacement:
             files=test_files,
             vector_thread_count=4,
             batch_size=50,
-            progress_callback=None,
         )
 
         # Verify FileChunkingManager was instantiated with correct parameters
-        mock_file_chunking_manager.assert_called_once_with(
-            vector_manager=mock_vector_manager_instance,
-            chunker=processor.fixed_size_chunker,
-            qdrant_client=qdrant_client,
-            thread_count=4,
-        )
+        # Note: slot_tracker is automatically created by HighThroughputProcessor
+        mock_file_chunking_manager.assert_called_once()
+        call_args = mock_file_chunking_manager.call_args
+        assert call_args[1]["vector_manager"] == mock_vector_manager_instance
+        assert call_args[1]["chunker"] == processor.fixed_size_chunker
+        assert call_args[1]["qdrant_client"] == qdrant_client
+        assert call_args[1]["thread_count"] == 4
+        assert "slot_tracker" in call_args[1]  # Verify slot_tracker is included
 
         # Verify files were submitted for processing (not sequential chunking)
         assert mock_file_manager_instance.submit_file_for_processing.call_count == 2
@@ -179,7 +181,7 @@ class TestParallelProcessingReplacement:
             chunks_processed=5,
             processing_time=2.0,
         )
-        future = Future()
+        future: Future[Any] = Future()
         future.set_result(file_result)
         mock_file_manager_instance.submit_file_for_processing.return_value = future
 
@@ -194,7 +196,6 @@ class TestParallelProcessingReplacement:
             files=test_files,
             vector_thread_count=4,
             batch_size=50,
-            progress_callback=None,
         )
 
         # Verify file-level result aggregation
@@ -274,7 +275,7 @@ class TestParallelProcessingReplacement:
                 chunks_processed=2,
                 processing_time=1.0,
             )
-            future = Future()
+            future: Future[Any] = Future()
             future.set_result(file_result)
             futures.append(future)
 
@@ -380,7 +381,6 @@ class TestParallelProcessingReplacement:
             files=test_files,
             vector_thread_count=4,
             batch_size=50,
-            progress_callback=None,
         )
 
         # Verify error handling: one success, one failure
@@ -439,7 +439,7 @@ class TestParallelProcessingReplacement:
             chunks_processed=2,
             processing_time=1.0,
         )
-        future = Future()
+        future: Future[Any] = Future()
         future.set_result(file_result)
         mock_file_manager_instance.submit_file_for_processing.return_value = future
 
@@ -453,7 +453,6 @@ class TestParallelProcessingReplacement:
             files=test_files,
             vector_thread_count=4,
             batch_size=50,
-            progress_callback=None,
         )
 
         # Verify NO sequential chunking happens in main thread

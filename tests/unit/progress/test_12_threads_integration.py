@@ -46,8 +46,12 @@ class TestTwelveThreadsIntegration:
                 qdrant_client=Mock(),
             )
 
-            # Verify lazy initialization
-            assert processor.file_tracker is None
+            # Verify lazy initialization (slot_tracker should not be assigned yet)
+            try:
+                _ = processor.slot_tracker
+                assert False, "slot_tracker should not be initialized yet"
+            except AttributeError:
+                pass  # Expected - slot_tracker is not yet assigned
 
             # Create 12 test files
             test_files = []
@@ -80,22 +84,30 @@ class TestTwelveThreadsIntegration:
                         # Processing may fail due to mocking, but we only care about file tracker initialization
                         pass
 
-            # Verify file tracker was initialized correctly
+            # Verify slot tracker was initialized correctly
             assert (
-                processor.file_tracker is not None
-            ), "FileTracker should be initialized"
+                processor.slot_tracker is not None
+            ), "SlotTracker should be initialized"
             assert (
-                processor.file_tracker.max_concurrent_files == 12
-            ), f"FileTracker should support 12 concurrent files, got {processor.file_tracker.max_concurrent_files}"
+                processor.slot_tracker.max_slots == 14  # 12 threads + 2
+            ), f"SlotTracker should support 14 concurrent slots (12+2), got {processor.slot_tracker.max_slots}"
 
             # Simulate 12 concurrent files being processed
+            from src.code_indexer.services.clean_slot_tracker import (
+                FileData,
+                FileStatus,
+            )
+
             for i, test_file in enumerate(test_files):
-                processor.file_tracker.start_file_processing(
-                    thread_id=i, file_path=test_file, file_size=test_file.stat().st_size
+                file_data = FileData(
+                    filename=str(test_file),
+                    file_size=test_file.stat().st_size,
+                    status=FileStatus.STARTING,
                 )
+                _ = processor.slot_tracker.acquire_slot(file_data)
 
             # Verify all 12 files can be displayed simultaneously
-            concurrent_files = processor.file_tracker.get_concurrent_files_data()
+            concurrent_files = processor.slot_tracker.get_concurrent_files_data()
             assert (
                 len(concurrent_files) == 12
             ), f"Should display all 12 concurrent files, got {len(concurrent_files)}"
@@ -109,7 +121,7 @@ class TestTwelveThreadsIntegration:
 
             print("✅ SUCCESS: 12 threads configuration works correctly!")
             print(
-                f"   - ConsolidatedFileTracker initialized with {processor.file_tracker.max_concurrent_files} max files"
+                f"   - CleanSlotTracker initialized with {processor.slot_tracker.max_slots} max slots (12+2)"
             )
             print(
                 f"   - Successfully displaying {len(concurrent_files)} concurrent files"
@@ -166,17 +178,28 @@ class TestTwelveThreadsIntegration:
                         except Exception:
                             pass
 
-                # Verify configuration
-                assert processor.file_tracker.max_concurrent_files == thread_count, (
-                    f"Thread count {thread_count}: FileTracker should support {thread_count} files, "
-                    f"got {processor.file_tracker.max_concurrent_files}"
+                # Verify configuration (thread_count + 2 slots)
+                expected_slots = thread_count + 2
+                assert processor.slot_tracker.max_slots == expected_slots, (
+                    f"Thread count {thread_count}: SlotTracker should support {expected_slots} slots ({thread_count}+2), "
+                    f"got {processor.slot_tracker.max_slots}"
                 )
 
                 # Test file display capacity
-                for i, test_file in enumerate(test_files):
-                    processor.file_tracker.start_file_processing(i, test_file, 1024)
+                from src.code_indexer.services.clean_slot_tracker import (
+                    FileData,
+                    FileStatus,
+                )
 
-                concurrent_files = processor.file_tracker.get_concurrent_files_data()
+                for i, test_file in enumerate(test_files):
+                    file_data = FileData(
+                        filename=str(test_file),
+                        file_size=1024,
+                        status=FileStatus.STARTING,
+                    )
+                    _ = processor.slot_tracker.acquire_slot(file_data)
+
+                concurrent_files = processor.slot_tracker.get_concurrent_files_data()
                 assert len(concurrent_files) == thread_count, (
                     f"Thread count {thread_count}: Should display {thread_count} files, "
                     f"got {len(concurrent_files)}"

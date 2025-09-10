@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import signal
+import time
 from pathlib import Path
 from typing import Optional, Union, Callable
 
@@ -383,7 +384,6 @@ class GracefulInterruptHandler:
 
     def _signal_handler(self, signum, frame):
         """Handle SIGINT (Ctrl-C) gracefully with immediate feedback and timeout protection."""
-        import time
 
         current_time = time.time()
 
@@ -453,16 +453,12 @@ class GracefulInterruptHandler:
         if not self.interrupted or not self.interrupt_time:
             return False
 
-        import time
-
         return (time.time() - self.interrupt_time) >= self.cancellation_timeout
 
     def get_time_since_cancellation(self) -> float:
         """Get seconds since cancellation was requested."""
         if not self.interrupt_time:
             return 0.0
-
-        import time
 
         return time.time() - self.interrupt_time
 
@@ -1529,8 +1525,13 @@ def index(
         progress_manager = MultiThreadedProgressManager(
             console=console,
             live_manager=rich_live_manager,
-            max_lines=thread_count + 2,
+            max_slots=thread_count + 2,
         )
+
+        # Connect slot tracker to progress manager for real-time slot display
+        if hasattr(smart_indexer, "slot_tracker") and smart_indexer.slot_tracker:
+            progress_manager.set_slot_tracker(smart_indexer.slot_tracker)
+
         display_initialized = False
 
         def show_setup_message(message: str):
@@ -1575,6 +1576,11 @@ def index(
                 kb_per_second = 0.0
                 active_threads = thread_count
 
+            # Get slot tracker from smart_indexer
+            slot_tracker = None
+            if hasattr(smart_indexer, "slot_tracker"):
+                slot_tracker = smart_indexer.slot_tracker
+
             # Update MultiThreadedProgressManager with rich display
             # Use empty list for concurrent_files if not provided - display will handle it gracefully
             progress_manager.update_complete_state(
@@ -1584,6 +1590,7 @@ def index(
                 kb_per_second=kb_per_second,
                 active_threads=active_threads,
                 concurrent_files=concurrent_files or [],
+                slot_tracker=slot_tracker,
             )
 
             # Get integrated display content (Rich Table) and update Rich Live bottom-anchored display
@@ -1611,7 +1618,7 @@ def index(
                 return
 
             # Handle file progress (total>0) with cancellation status
-            if total > 0 and info:
+            if total and total > 0 and info:
                 # Add cancellation indicator to progress info if interrupted
                 if interrupt_handler and interrupt_handler.interrupted:
                     cancellation_info = f"🛑 CANCELLING - {info}"
@@ -3930,7 +3937,7 @@ def clean_data(
             result["success"] = success
 
         else:
-            # Use legacy DockerManager for backward compatibility
+            # Use legacy DockerManager approach
             docker_manager = DockerManager(
                 force_docker=force_docker, project_config_dir=project_config_dir
             )

@@ -8,6 +8,7 @@ the git-aware filtering that was broken during BranchAwareIndexer removal.
 
 import pytest
 from pathlib import Path
+from typing import Any
 import sys
 
 # Add src to path
@@ -45,7 +46,7 @@ def test_basic_query_functionality(query_services):
 
     # Test basic search without filters
     query_embedding = embedding_provider.get_embedding("test query")
-    basic_filter = {}  # No filtering
+    basic_filter: dict[str, Any] = {}  # No filtering
 
     results = qdrant_client.search(
         query_vector=query_embedding,
@@ -184,7 +185,7 @@ def test_data_schema_validation(query_services):
 
     # Get sample results to check schema
     query_embedding = embedding_provider.get_embedding("test")
-    basic_filter = {}
+    basic_filter: dict[str, Any] = {}
 
     results = qdrant_client.search(
         query_vector=query_embedding,

@@ -12,6 +12,8 @@ from unittest.mock import Mock, patch
 import pytest
 
 from src.code_indexer.services.high_throughput_processor import HighThroughputProcessor
+from typing import Any
+from concurrent.futures import Future
 
 
 @pytest.mark.slow
@@ -52,7 +54,8 @@ class TestParallelProcessingPerformance:
 
         qdrant_client = Mock()
         qdrant_client.resolve_collection_name.return_value = "test_collection"
-        qdrant_client.upsert_points_atomic.return_value = True
+        qdrant_client.upsert_points_batched.return_value = True
+        qdrant_client.scroll_points.return_value = ([], None)  # Fix the unpack error
 
         processor = HighThroughputProcessor(
             config=config,
@@ -60,13 +63,28 @@ class TestParallelProcessingPerformance:
             qdrant_client=qdrant_client,
         )
 
-        # Mock the chunker to return predictable chunks
+        # Mock the chunker to return predictable chunks with all required fields
         def mock_chunk_file(file_path):
             """Mock chunking that returns multiple chunks per file."""
             return [
-                {"text": f"chunk1 from {file_path.name}", "chunk_index": 0},
-                {"text": f"chunk2 from {file_path.name}", "chunk_index": 1},
-                {"text": f"chunk3 from {file_path.name}", "chunk_index": 2},
+                {
+                    "text": f"chunk1 from {file_path.name}",
+                    "chunk_index": 0,
+                    "line_start": 1,
+                    "line_end": 10,
+                },
+                {
+                    "text": f"chunk2 from {file_path.name}",
+                    "chunk_index": 1,
+                    "line_start": 11,
+                    "line_end": 20,
+                },
+                {
+                    "text": f"chunk3 from {file_path.name}",
+                    "chunk_index": 2,
+                    "line_start": 21,
+                    "line_end": 30,
+                },
             ]
 
         processor.fixed_size_chunker = Mock()
@@ -81,7 +99,6 @@ class TestParallelProcessingPerformance:
 
         def mock_submit_chunk(text, metadata):
             """Mock chunk submission that tracks concurrent execution."""
-            from concurrent.futures import Future
             from src.code_indexer.services.vector_calculation_manager import (
                 VectorResult,
             )
@@ -100,7 +117,7 @@ class TestParallelProcessingPerformance:
                 active_chunks.discard(chunk_id)
 
             # Return properly formatted VectorResult
-            future = Future()
+            future: Future[Any] = Future()
             future.set_result(
                 VectorResult(
                     task_id=chunk_id,
@@ -185,8 +202,8 @@ class TestParallelProcessingPerformance:
         import threading
         import queue
 
-        results_queue = queue.Queue()
-        error_queue = queue.Queue()
+        results_queue: queue.Queue = queue.Queue()
+        error_queue: queue.Queue = queue.Queue()
 
         def test_thread_safe_content_id(file_path, thread_id):
             """Test content ID generation from multiple threads."""
@@ -283,7 +300,7 @@ class TestParallelProcessingPerformance:
         import threading
         import queue
 
-        results_queue = queue.Queue()
+        results_queue: queue.Queue = queue.Queue()
 
         def hide_file_operation(branch_name, thread_id):
             """Perform hide file operation."""
