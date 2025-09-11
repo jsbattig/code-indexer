@@ -52,16 +52,16 @@ class TestFileLevelCollectionRequirements:
         self, mock_as_completed, mock_vector_manager, mock_file_chunking_manager
     ):
         """Test that as_completed is called with file_futures, not chunk_futures."""
-        # Setup with proper constructor arguments
-        config = create_test_config()
+        # Setup with proper constructor arguments and real files
+        config, test_files, temp_dir = create_test_config_and_files()
+        # Use only first 2 files for this test
+        test_files = test_files[:2]
         embedding_provider = Mock()
         qdrant_client = Mock()
 
         processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
         processor.file_identifier = Mock()
         processor.fixed_size_chunker = Mock()
-
-        test_files = [Path("/test/file1.py"), Path("/test/file2.py")]
         processor.file_identifier.get_file_metadata.return_value = {
             "project_id": "test",
             "file_hash": "hash123",
@@ -108,13 +108,23 @@ class TestFileLevelCollectionRequirements:
             batch_size=50,
         )
 
+        # Clean up
+        import shutil
+
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
         # Verify as_completed was called with file_futures (collection of file futures)
-        mock_as_completed.assert_called_once()
-        call_args = mock_as_completed.call_args[0][0]
+        # Note: as_completed is called twice - once for hash calculation, once for file processing
+        assert (
+            mock_as_completed.call_count >= 1
+        ), "as_completed should be called at least once"
+
+        # Check the last call args (which should be the file processing futures)
+        last_call_args = mock_as_completed.call_args[0][0]
 
         # The argument to as_completed should be a collection of futures from submit_file_for_processing
         assert hasattr(
-            call_args, "__iter__"
+            last_call_args, "__iter__"
         ), "as_completed should be called with iterable of futures"
 
         # Should NOT be called with chunk-level futures
@@ -223,16 +233,16 @@ class TestFileLevelCollectionRequirements:
         """Test that file_chunks dict tracking (lines 483-490) is removed from implementation."""
         # This test ensures the complex chunk tracking logic is simplified
 
-        # Setup with proper constructor arguments
-        config = create_test_config()
+        # Setup with proper constructor arguments and real files
+        config, test_files, temp_dir = create_test_config_and_files()
+        # Use only first file for this test
+        test_files = test_files[:1]
         embedding_provider = Mock()
         qdrant_client = Mock()
 
         processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
         processor.file_identifier = Mock()
         processor.fixed_size_chunker = Mock()
-
-        test_files = [Path("/test/file1.py")]
         processor.file_identifier.get_file_metadata.return_value = {
             "project_id": "test",
             "file_hash": "hash123",
@@ -267,6 +277,11 @@ class TestFileLevelCollectionRequirements:
             vector_thread_count=4,
             batch_size=50,
         )
+
+        # Clean up
+        import shutil
+
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
         # The implementation should NOT need complex file_chunks tracking
         # because FileChunkingManager handles atomicity internally

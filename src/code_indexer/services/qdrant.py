@@ -1647,15 +1647,7 @@ class QdrantClient:
             existing_fields = {idx["field"] for idx in existing_indexes}
             expected_fields = {field for field, _ in expected_indexes}
 
-            # Debug logging to help track down future false positive issues
-            if existing_fields != expected_fields:
-                # Only log when there's a mismatch to avoid spam
-                self.console.print(
-                    f"[dim]DEBUG: Collection={collection_name}, "
-                    f"Existing={sorted(existing_fields)}, "
-                    f"Expected={sorted(expected_fields)}[/dim]",
-                    style="dim",
-                )
+            # Payload index mismatch detection (debug logging removed for cleaner output)
 
             missing_indexes = list(expected_fields - existing_fields)
             extra_indexes = list(existing_fields - expected_fields)

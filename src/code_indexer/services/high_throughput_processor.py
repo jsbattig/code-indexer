@@ -18,10 +18,12 @@ This module contains progress_callback calls that MUST follow the pattern:
 import logging
 import time
 import concurrent.futures
-from concurrent.futures import as_completed
+from concurrent.futures import as_completed, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Callable, Set
+from queue import Queue, Empty
+import threading
 
 from ..indexing.processor import ProcessingStats
 from ..services.git_aware_processor import GitAwareDocumentProcessor
@@ -306,26 +308,180 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 slot_tracker=self.slot_tracker,  # Clean tracker for real-time state
             ) as file_manager:
 
-                # Submit all files for parallel processing
+                # PARALLEL HASH CALCULATION - eliminate serial bottleneck
                 file_futures = []
+
+                # Thread-safe progress tracking
+                hash_progress_lock = threading.Lock()
+                hash_results_lock = (
+                    threading.Lock()
+                )  # CRITICAL FIX: Thread-safe dictionary access
+                completed_hashes = 0
+                hash_start_time = time.time()
+
+                def hash_worker(
+                    file_queue: Queue, results_dict: dict, error_holder: list
+                ):
+                    """Worker function for parallel hash calculation."""
+                    nonlocal completed_hashes
+
+                    while True:
+                        try:
+                            file_path = file_queue.get_nowait()
+                        except Empty:  # CRITICAL FIX: Specific exception handling
+                            break  # Queue empty
+
+                        try:
+                            # Calculate hash and metadata
+                            file_metadata = self.file_identifier.get_file_metadata(
+                                file_path
+                            )
+                            file_size = file_path.stat().st_size
+
+                            # Store results thread-safely
+                            with (
+                                hash_results_lock
+                            ):  # CRITICAL FIX: Protect dictionary writes
+                                results_dict[file_path] = (file_metadata, file_size)
+
+                            # Update progress thread-safely
+                            with hash_progress_lock:
+                                completed_hashes += 1
+                                current_progress = completed_hashes
+
+                            # Progress bar update (every file or every 10 files for performance)
+                            if progress_callback and (
+                                current_progress % max(1, len(files) // 100) == 0
+                                or current_progress == len(files)
+                            ):
+                                elapsed = time.time() - hash_start_time
+                                files_per_sec = current_progress / max(elapsed, 0.1)
+                                info = f"{current_progress}/{len(files)} files | {files_per_sec:.1f} files/s | Hashing {file_path.name}"
+
+                                progress_callback(
+                                    current_progress, len(files), file_path, info=info
+                                )
+
+                        except Exception as e:
+                            # CRITICAL FAILURE: Store error and signal all threads to stop
+                            error_holder.append(
+                                f"Hash calculation failed for {file_path}: {e}"
+                            )
+                            break
+                        finally:
+                            file_queue.task_done()
+
+                # Create file queue and results storage
+                file_queue: Queue = Queue()
+                hash_results: Dict[Path, tuple] = (
+                    {}
+                )  # {file_path: (metadata, file_size)}
+                hash_errors: List[str] = []  # List to capture any errors
+
+                # Populate queue with all files
                 for file_path in files:
-                    try:
-                        file_metadata = self.file_identifier.get_file_metadata(
-                            file_path
+                    file_queue.put(file_path)
+
+                # Progress bar initialization
+                if progress_callback:
+                    progress_callback(
+                        0,
+                        len(files),
+                        Path(""),
+                        info=f"0/{len(files)} files | 0.0 files/s | Starting hash calculation...",
+                    )
+
+                # PARALLEL HASH CALCULATION
+                with ThreadPoolExecutor(
+                    max_workers=vector_thread_count, thread_name_prefix="HashCalc"
+                ) as hash_executor:
+                    # Submit worker tasks
+                    hash_futures = [
+                        hash_executor.submit(
+                            hash_worker, file_queue, hash_results, hash_errors
                         )
+                        for _ in range(vector_thread_count)
+                    ]
+
+                    # Wait for all hash calculations to complete
+                    for future in as_completed(hash_futures):
+                        try:
+                            future.result()  # Raise any exceptions
+                        except Exception as e:
+                            hash_errors.append(f"Hash worker failed: {e}")
+                            # CRITICAL FIX: Cancel all remaining futures to prevent resource leaks
+                            for f in hash_futures:
+                                if not f.done():
+                                    f.cancel()
+                            break
+
+                    # Check for any errors during hashing
+                    if hash_errors:
+                        # CANCEL ALL WORK - Critical failure
+                        if progress_callback:
+                            progress_callback(
+                                0,
+                                0,
+                                Path(""),
+                                info=f"❌ Hash calculation failed: {hash_errors[0]}",
+                            )
+                        raise RuntimeError(f"Hash calculation failed: {hash_errors[0]}")
+
+                # Final progress update
+                if progress_callback:
+                    elapsed = time.time() - hash_start_time
+                    files_per_sec = len(files) / max(elapsed, 0.1)
+                    progress_callback(
+                        len(files),
+                        len(files),
+                        Path(""),
+                        info=f"{len(files)}/{len(files)} files | {files_per_sec:.1f} files/s | ✅ Hash calculation complete",
+                    )
+
+                # TIMING RESET: Reset timing clock after hash completion for accurate indexing progress
+                # This prevents the hash calculation time (3-10 seconds) from being counted toward indexing phase
+                current_time = time.time()
+                stats.start_time = current_time  # Reset overall processing timer
+
+                # Reset file rate tracking timer for accurate files/s calculation during indexing
+                with self._file_rate_lock:
+                    self._file_processing_start_time = current_time
+                    self._file_completion_history.clear()
+
+                # Reset source bytes tracking for accurate KB/s calculation during indexing
+                with self._source_bytes_lock:
+                    self._total_source_bytes_processed = 0
+                    self._source_bytes_history.clear()
+
+                # PROGRESS DISPLAY RESET: Reset Rich Progress internal timers
+                # The Rich Progress component tracks its own start time which must be reset
+                # separately from the stats timer reset to fix frozen timing display
+                if progress_callback and hasattr(
+                    progress_callback, "reset_progress_timers"
+                ):
+                    progress_callback.reset_progress_timers()
+
+                # FAST FILE SUBMISSION - No more I/O delays
+                for file_path in files:
+                    if self.cancelled:
+                        break
+
+                    try:
+                        # Get pre-calculated metadata and size (no I/O)
+                        file_metadata, file_size = hash_results[file_path]
+
+                        # Submit for processing
                         file_future = file_manager.submit_file_for_processing(
                             file_path, file_metadata, progress_callback
                         )
                         file_futures.append(file_future)
 
-                        # Update stats with file size for total tracking
-                        file_size = file_path.stat().st_size
+                        # Track file size (no duplicate stat() call)
                         stats.total_size += file_size
 
                     except Exception as e:
-                        logger.error(f"Failed to submit file {file_path}: {e}")
-                        stats.failed_files += 1
-                        continue
+                        logger.error(f"Failed to process file {file_path}: {e}")
+                        # Continue with other files rather than failing completely
 
                 if not file_futures:
                     logger.warning("No files to process")
@@ -334,32 +490,6 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 logger.info(
                     f"Submitted {len(file_futures)} files for parallel processing"
                 )
-
-                # CRITICAL FIX: Send initial progress callback to show display immediately
-                # This ensures user sees the progress bar and slots right away
-                if progress_callback and len(files) > 0:
-                    initial_info = (
-                        f"0/{len(files)} files (0%) | "
-                        f"0.0 files/s | "
-                        f"0.0 KB/s | "
-                        f"{vector_thread_count} threads | "
-                        f"Starting..."
-                    )
-                    callback_result = progress_callback(
-                        0,  # current = 0 at start
-                        len(files),  # total files
-                        Path(""),  # Empty path
-                        info=initial_info,
-                    )
-
-                    # Check for immediate cancellation
-                    if callback_result == "INTERRUPT":
-                        logger.info(
-                            "Cancellation requested at start - stopping before processing"
-                        )
-                        self.cancelled = True
-                        stats.cancelled = True
-                        return stats
 
                 # Collect file-level results
                 completed_files = 0

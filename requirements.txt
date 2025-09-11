@@ -26,3 +26,21 @@ watchdog>=3.0.0
 # JSON schema validation
 jsonschema>=4.0.0
 
+# Accurate token counting for VoyageAI
+voyageai>=0.3.5
+
+# Web server framework
+fastapi>=0.104.0
+uvicorn>=0.24.0
+
+# Authentication and security
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+python-multipart>=0.0.6
+
+# System monitoring
+psutil>=5.9.0,<6.0.0
+
+# JWT token handling  
+PyJWT>=2.8.0
+

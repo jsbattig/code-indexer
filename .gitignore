@@ -145,3 +145,4 @@ docker-compose.yml
 /.swarm
 debug_data_cleaner/
 test_output_*/
+/.test-e2e-large-files

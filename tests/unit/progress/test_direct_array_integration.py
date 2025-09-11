@@ -83,10 +83,10 @@ def test_end_to_end_direct_array_integration():
     slot_tracker.release_slot(slot_ids[1])
 
     final_display_lines = progress_manager.get_display_lines_from_tracker(slot_tracker)
-    assert len(final_display_lines) == 2, "Released slot should not appear in display"
-    assert not any(
-        "file_2.js" in line for line in final_display_lines
-    ), "Released file should not be displayed"
+    assert (
+        len(final_display_lines) == 3
+    ), "Released slot should stay visible for better UX"
+    # Released file should still be displayed in COMPLETE state for user feedback
 
 
 def test_array_scanning_range():

@@ -5,6 +5,10 @@ import time
 from typing import List, Dict, Any, Optional
 import httpx
 from rich.console import Console
+import yaml  # type: ignore[import-untyped]
+from pathlib import Path
+
+import voyageai
 
 from ..config import VoyageAIConfig
 from .embedding_provider import EmbeddingProvider, EmbeddingResult, BatchEmbeddingResult
@@ -26,8 +30,50 @@ class VoyageAIClient(EmbeddingProvider):
                 "Set it with: export VOYAGE_API_KEY=your_api_key_here"
             )
 
+        # Load model specifications from YAML
+        self._load_model_specs()
+
+        # Initialize VoyageAI client for accurate token counting
+        self.voyage_client = voyageai.Client()
+
         # HTTP client will be created per request to avoid threading issues
         # ThreadPoolExecutor removed - parallel processing handled by VectorCalculationManager
+
+    def _load_model_specs(self):
+        """Load model specifications from YAML file."""
+        try:
+            # Get path to YAML file relative to this module
+            module_dir = Path(__file__).parent.parent
+            yaml_path = module_dir / "data" / "voyage_models.yaml"
+
+            with open(yaml_path, "r", encoding="utf-8") as f:
+                self.model_specs = yaml.safe_load(f)
+
+        except Exception as e:
+            # Fallback to basic specs if YAML loading fails
+            self.console.print(
+                f"[yellow]Warning: Could not load model specs: {e}[/yellow]"
+            )
+            self.model_specs = {
+                "voyage_models": {
+                    "voyage-code-3": {"token_limit": 120000},
+                    "voyage-large-2": {"token_limit": 120000},
+                    "voyage-2": {"token_limit": 320000},
+                }
+            }
+
+    def _count_tokens_accurately(self, text: str) -> int:
+        """Count tokens accurately using VoyageAI's official count_tokens function."""
+        return self.voyage_client.count_tokens([text], model=self.config.model)  # type: ignore[no-any-return]
+
+    def _get_model_token_limit(self) -> int:
+        """Get token limit for current model."""
+        try:
+            limit = self.model_specs["voyage_models"][self.config.model]["token_limit"]
+            return int(limit)  # Ensure integer return type
+        except (KeyError, TypeError):
+            # Fallback for unknown models
+            return 120000  # Conservative default
 
     def health_check(self, test_api: bool = False) -> bool:
         """Check if VoyageAI service is configured correctly.
@@ -61,13 +107,6 @@ class VoyageAIClient(EmbeddingProvider):
             return True
         except Exception:
             return False
-
-    def _estimate_tokens(self, text: str) -> int:
-        """Estimate token count for text (rough approximation)."""
-        # VoyageAI typically uses ~0.75 tokens per word for English text
-        # This is a rough estimate for rate limiting purposes
-        words = len(text.split())
-        return max(1, int(words * 0.75))
 
     def _make_sync_request(
         self, texts: List[str], model: Optional[str] = None
@@ -172,61 +211,47 @@ class VoyageAIClient(EmbeddingProvider):
     def get_embeddings_batch(
         self, texts: List[str], model: Optional[str] = None
     ) -> List[List[float]]:
-        """Generate embeddings for multiple texts in batch with synchronous processing.
-
-        Note: Parallel processing is now handled by VectorCalculationManager threads.
-        This method processes batches synchronously to avoid thread contention.
-        """
+        """Generate embeddings with dynamic token-aware batching (90% safety margin)."""
         if not texts:
             return []
 
-        # TOKEN-AWARE BATCHING: Check both chunk count AND token limits
-        # VoyageAI limit: 120,000 tokens per batch
-        MAX_TOKENS_PER_BATCH = 100_000  # Conservative limit (safety margin)
+        # Get model-specific token limit with 90% safety margin
+        model_token_limit = self._get_model_token_limit()
+        safety_limit = int(model_token_limit * 0.9)  # 90% safety margin as requested
 
-        # Estimate total tokens for all texts
-        total_tokens = sum(self._estimate_tokens(text) for text in texts)
-
-        # If texts fit in one batch (both chunk and token limits), process directly
-        if (
-            len(texts) <= self.config.batch_size
-            and total_tokens <= MAX_TOKENS_PER_BATCH
-        ):
-            result = self._make_sync_request(texts, model)
-            return [list(item["embedding"]) for item in result["data"]]
-
-        # Split into token-aware batches
-        batches = []
+        # Dynamic batching: process chunks until approaching token limit
+        all_embeddings: List[List[float]] = []
         current_batch: List[str] = []
-        current_tokens = 0
+        current_tokens: int = 0
 
         for text in texts:
-            text_tokens = self._estimate_tokens(text)
+            # Count tokens accurately for this chunk
+            chunk_tokens = self._count_tokens_accurately(text)
 
-            # Check if adding this text would exceed limits
-            if (
-                len(current_batch) >= self.config.batch_size
-                or current_tokens + text_tokens > MAX_TOKENS_PER_BATCH
-            ) and current_batch:
-                # Finish current batch
-                batches.append(current_batch)
+            # Check if adding this chunk would exceed 90% safety limit
+            if current_tokens + chunk_tokens > safety_limit and current_batch:
+                # Submit current batch before it gets too large
+                try:
+                    result = self._make_sync_request(current_batch, model)
+                    batch_embeddings = [
+                        list(item["embedding"]) for item in result["data"]
+                    ]
+                    all_embeddings.extend(batch_embeddings)
+                except Exception as e:
+                    raise RuntimeError(f"Batch embedding request failed: {e}")
+
+                # Reset for next batch
                 current_batch = []
                 current_tokens = 0
 
-            # Add text to current batch
+            # Add chunk to current batch
             current_batch.append(text)
-            current_tokens += text_tokens
+            current_tokens += chunk_tokens
 
-        # Add final batch if not empty
+        # Process final batch if not empty
         if current_batch:
-            batches.append(current_batch)
-
-        all_embeddings = []
-
-        # Process all batches synchronously
-        for batch in batches:
             try:
-                result = self._make_sync_request(batch, model)
+                result = self._make_sync_request(current_batch, model)
                 batch_embeddings = [list(item["embedding"]) for item in result["data"]]
                 all_embeddings.extend(batch_embeddings)
             except Exception as e:
@@ -261,16 +286,16 @@ class VoyageAIClient(EmbeddingProvider):
                 embeddings=[], model=model or self.config.model, provider="voyage-ai"
             )
 
-        result = self._make_sync_request(texts, model)
-        model_name = model or self.config.model
-        usage = result.get("usage", {})
+        # Use conservative sub-batching by delegating to get_embeddings_batch()
+        embeddings = self.get_embeddings_batch(texts, model)
 
-        embeddings = [list(item["embedding"]) for item in result["data"]]
+        # Create metadata result (note: token usage not available from batched calls)
+        model_name = model or self.config.model
 
         return BatchEmbeddingResult(
             embeddings=embeddings,
             model=model_name,
-            total_tokens_used=usage.get("total_tokens"),
+            total_tokens_used=None,  # Token usage not available from batched processing
             provider="voyage-ai",
         )
 

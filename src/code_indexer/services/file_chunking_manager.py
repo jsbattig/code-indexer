@@ -28,6 +28,9 @@ from ..indexing.fixed_size_chunker import FixedSizeChunker
 from .clean_slot_tracker import CleanSlotTracker, FileData, FileStatus
 import threading
 
+# Token counting for large file handling - MANDATORY dependency
+import voyageai
+
 logger = logging.getLogger(__name__)
 
 
@@ -96,6 +99,9 @@ class FileChunkingManager:
         self.executor: Optional[ThreadPoolExecutor] = None
         self._pending_futures: List[Future] = []  # Track futures for clean cancellation
 
+        # Initialize VoyageAI client for accurate token counting
+        self.voyage_client = voyageai.Client()
+
         logger.info(f"Initialized FileChunkingManager with {thread_count} base threads")
 
     def __enter__(self):
@@ -159,6 +165,12 @@ class FileChunkingManager:
         """Request cancellation of all file processing."""
         self._cancellation_requested = True
         logger.info("FileChunkingManager cancellation requested")
+
+    def _count_tokens(self, text: str) -> int:
+        """Count tokens using VoyageAI's official count_tokens function."""
+        # Get the model name from the embedding provider
+        model = self.vector_manager.embedding_provider.get_current_model()
+        return self.voyage_client.count_tokens([text], model=model)  # type: ignore[no-any-return]
 
     def submit_file_for_processing(
         self,
@@ -369,90 +381,161 @@ class FileChunkingManager:
             # Status updates are tracked by CleanSlotTracker for display
             # HighThroughputProcessor handles file-level progress reporting
 
-            # Phase 2: BATCH OPTIMIZATION - Submit ALL chunks in single API call
-            # CRITICAL PERFORMANCE IMPROVEMENT: N chunks → 1 API call (10-50x improvement)
-            chunk_texts = [chunk["text"] for chunk in chunks]
-
-            try:
-                batch_future = self.vector_manager.submit_batch_task(
-                    chunk_texts, metadata
-                )
-            except RuntimeError as e:
-                if "Thread pool not started" in str(e):
-                    logger.info(f"Vector manager shut down, cancelling {file_path}")
-                    return FileProcessingResult(
-                        success=False,
-                        file_path=file_path,
-                        chunks_processed=0,
-                        processing_time=time.time() - start_time,
-                        error="Cancelled",
-                    )
-                raise
-
-            logger.debug(
-                f"Submitted batch of {len(chunks)} chunks to vector processing for {file_path}"
+            # Phase 2: TOKEN-AWARE BATCHING - Count tokens as we chunk, submit when limit reached
+            # Get token limit from VoyageAI client configuration (with safety margin from YAML)
+            model_limit = (
+                self.vector_manager.embedding_provider._get_model_token_limit()  # type: ignore[attr-defined]
             )
+            TOKEN_LIMIT = int(
+                model_limit * 0.9
+            )  # Apply same 90% safety margin as VoyageAI client
+
+            current_batch: List[str] = []
+            current_tokens = 0
+            batch_futures = []
+
+            for chunk in chunks:
+                chunk_text = chunk["text"]
+                chunk_tokens = self._count_tokens(chunk_text)
+
+                # If this chunk would exceed limit, submit current batch
+                if current_tokens + chunk_tokens > TOKEN_LIMIT and current_batch:
+                    try:
+                        batch_future = self.vector_manager.submit_batch_task(
+                            current_batch, metadata
+                        )
+                        batch_futures.append(batch_future)
+                        logger.debug(
+                            f"Submitted batch of {len(current_batch)} chunks ({current_tokens} tokens) for {file_path}"
+                        )
+                    except RuntimeError as e:
+                        if "Thread pool not started" in str(e):
+                            logger.info(
+                                f"Vector manager shut down, cancelling {file_path}"
+                            )
+                            return FileProcessingResult(
+                                success=False,
+                                file_path=file_path,
+                                chunks_processed=0,
+                                processing_time=time.time() - start_time,
+                                error="Cancelled",
+                            )
+                        raise
+
+                    # Reset for next batch
+                    current_batch = []
+                    current_tokens = 0
+
+                # Add chunk to current batch
+                current_batch.append(chunk_text)
+                current_tokens += chunk_tokens
+
+            # Submit final batch if not empty
+            if current_batch:
+                try:
+                    batch_future = self.vector_manager.submit_batch_task(
+                        current_batch, metadata
+                    )
+                    batch_futures.append(batch_future)
+                    logger.debug(
+                        f"Submitted final batch of {len(current_batch)} chunks ({current_tokens} tokens) for {file_path}"
+                    )
+                except RuntimeError as e:
+                    if "Thread pool not started" in str(e):
+                        logger.info(f"Vector manager shut down, cancelling {file_path}")
+                        return FileProcessingResult(
+                            success=False,
+                            file_path=file_path,
+                            chunks_processed=0,
+                            processing_time=time.time() - start_time,
+                            error="Cancelled",
+                        )
+                    raise
+
+            if not batch_futures:
+                logger.warning(f"No batches created for {file_path}")
+                return FileProcessingResult(
+                    success=False,
+                    file_path=file_path,
+                    chunks_processed=0,
+                    processing_time=time.time() - start_time,
+                    error="No batches created",
+                )
+
+            logger.debug(f"Submitted {len(batch_futures)} batches for {file_path}")
 
             self.slot_tracker.update_slot(slot_id, FileStatus.FINALIZING)
 
             # PROGRESS REPORTING ADJUSTMENT: Remove intermediate callback
             # Status updates tracked by CleanSlotTracker, progress callback only on completion
 
-            # Phase 3: BATCH RESULT PROCESSING - Process batch embeddings with chunk mapping
+            # Phase 3: MULTI-BATCH RESULT PROCESSING - Process all batch embeddings with chunk mapping
             file_points = []
-            try:
-                batch_result = batch_future.result(timeout=VECTOR_PROCESSING_TIMEOUT)
+            all_embeddings: List[List[float]] = []
 
-                # CRITICAL: Validate batch result and handle batch failure atomically
-                if batch_result and not batch_result.error and batch_result.embeddings:
-                    # CRITICAL MAPPING: chunks[i] ↔ embeddings[i] ↔ points[i]
-                    if len(batch_result.embeddings) != len(chunks):
+            try:
+                # Collect embeddings from all batches in order
+                for batch_future in batch_futures:
+                    batch_result = batch_future.result(
+                        timeout=VECTOR_PROCESSING_TIMEOUT
+                    )
+
+                    # CRITICAL: Validate each batch result
+                    if (
+                        batch_result
+                        and not batch_result.error
+                        and batch_result.embeddings
+                    ):
+                        all_embeddings.extend(
+                            [list(emb) for emb in batch_result.embeddings]
+                        )
+                    else:
+                        # ATOMIC FAILURE: Any batch fails, fail entire file
+                        error_msg = (
+                            batch_result.error if batch_result else "No batch result"
+                        )
                         logger.error(
-                            f"Batch embedding count mismatch: {len(batch_result.embeddings)} embeddings for {len(chunks)} chunks in {file_path}"
+                            f"Batch vector processing failed for {file_path}: {error_msg}"
                         )
                         return FileProcessingResult(
                             success=False,
                             file_path=file_path,
                             chunks_processed=0,
                             processing_time=time.time() - start_time,
-                            error="Batch embedding count mismatch",
+                            error=f"Batch processing failed: {error_msg}",
                         )
 
-                    # Create points with preserved order: chunks[i] → embeddings[i] → points[i]
-                    for i, (chunk, embedding) in enumerate(
-                        zip(chunks, batch_result.embeddings)
-                    ):
-                        if embedding:  # Validate individual embedding
-                            file_points.append(
-                                {
-                                    "text": chunk["text"],
-                                    "vector": embedding,  # Direct embedding from batch result
-                                    "metadata": {
-                                        **metadata,
-                                        "line_start": chunk["line_start"],
-                                        "line_end": chunk["line_end"],
-                                    },
-                                }
-                            )
-                        else:
-                            logger.warning(
-                                f"Skipping chunk {i} with invalid embedding in {file_path}"
-                            )
-                else:
-                    # ATOMIC FAILURE: Batch processing failed, fail entire file
-                    error_msg = (
-                        batch_result.error if batch_result else "No batch result"
-                    )
+                # CRITICAL: Validate total embedding count matches chunks
+                if len(all_embeddings) != len(chunks):
                     logger.error(
-                        f"Batch vector processing failed for {file_path}: {error_msg}"
+                        f"Total embedding count mismatch: {len(all_embeddings)} embeddings for {len(chunks)} chunks in {file_path}"
                     )
                     return FileProcessingResult(
                         success=False,
                         file_path=file_path,
                         chunks_processed=0,
                         processing_time=time.time() - start_time,
-                        error=f"Batch processing failed: {error_msg}",
+                        error="Total embedding count mismatch",
                     )
+
+                # Create points with preserved order: chunks[i] → embeddings[i] → points[i]
+                for i, (chunk, embedding) in enumerate(zip(chunks, all_embeddings)):
+                    if embedding:  # Validate individual embedding
+                        file_points.append(
+                            {
+                                "text": chunk["text"],
+                                "vector": embedding,  # Direct embedding from batch result
+                                "metadata": {
+                                    **metadata,
+                                    "line_start": chunk["line_start"],
+                                    "line_end": chunk["line_end"],
+                                },
+                            }
+                        )
+                    else:
+                        logger.warning(
+                            f"Skipping chunk {i} with invalid embedding in {file_path}"
+                        )
 
             except Exception as e:
                 logger.error(f"Batch vector processing failed for {file_path}: {e}")

@@ -148,7 +148,7 @@ class TestVectorCalculationManager:
         with manager.stats_lock:
             manager.stats.total_tasks_submitted += 1
 
-        return future
+        return future  # type: ignore[no-any-return]
 
     def test_config_json_thread_count_simplified(self):
         """Test that thread count now comes from config.json only."""
@@ -733,7 +733,7 @@ class TestVectorCalculationManager:
     def test_submit_batch_task_empty_chunks(self):
         """Test submit_batch_task() with empty chunk list."""
         provider = MockEmbeddingProvider(delay=0.01)
-        chunk_texts = []
+        chunk_texts: List[str] = []
         metadata = {"empty_batch_test": True}
 
         with VectorCalculationManager(provider, thread_count=1) as manager:
@@ -864,7 +864,10 @@ class TestVectorCalculationManager:
         """Test that submit_batch_task() creates immutable copies of metadata."""
         provider = MockEmbeddingProvider(delay=0.01)
         chunk_texts = ["Test chunk"]
-        original_metadata = {"mutable": ["list", "data"], "dict": {"key": "value"}}
+        original_metadata: Dict[str, Any] = {
+            "mutable": ["list", "data"],
+            "dict": {"key": "value"},
+        }
 
         with VectorCalculationManager(provider, thread_count=1) as manager:
             future = manager.submit_batch_task(chunk_texts, original_metadata)
@@ -927,7 +930,7 @@ class TestVectorCalculationManager:
             import threading
             import queue
 
-            results_queue = queue.Queue()
+            results_queue: queue.Queue = queue.Queue()
 
             def submit_batch(thread_id):
                 chunk_texts = [f"Thread {thread_id} chunk {i}" for i in range(3)]

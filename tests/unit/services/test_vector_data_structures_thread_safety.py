@@ -7,6 +7,8 @@ These tests demonstrate the critical thread safety violations that need to be fi
 3. Race conditions when accessing shared mutable state
 """
 
+# type: ignore
+
 import pytest
 import threading
 import time

@@ -58,9 +58,9 @@ class TestCleanSlotTracker:
         # Release by slot_id (not filename!)
         tracker.release_slot(slot_id)
 
-        # After release, slot should be cleared from display
+        # After release, file should stay visible for better UX (not cleared)
         display_files = tracker.get_display_files()
-        assert len(display_files) == 0
+        assert len(display_files) == 1  # File stays visible after completion
 
     def test_slot_id_direct_operations(self):
         """Test all operations use slot_id directly, no filename lookups."""
@@ -97,9 +97,9 @@ class TestCleanSlotTracker:
         tracker.release_slot(slot1)
         tracker.release_slot(slot2)
 
-        # After release, both slots should be cleared from display
+        # After release, files should stay visible for better UX (not cleared)
         files = tracker.get_display_files()
-        assert len(files) == 0
+        assert len(files) == 2  # Both files stay visible after completion
 
     def test_no_filename_to_slot_dictionary(self):
         """Test that no filename dictionary exists in clean implementation."""
@@ -165,9 +165,9 @@ class TestCleanSlotTracker:
         assert len(acquired_slots) == 5
         assert len(set(acquired_slots)) == 5  # All unique
 
-        # After release, no files should be visible (correct behavior)
+        # After release, files should stay visible for better UX (not cleared)
         final_files = tracker.get_display_files()
-        assert len(final_files) == 0  # All released and cleared
+        assert len(final_files) == 5  # All files stay visible after completion
 
     def test_simple_array_scanning(self):
         """Test simple array scanning for display without complex lookups."""
@@ -203,16 +203,17 @@ class TestCleanSlotTracker:
         assert file_states["file1.py"] == FileStatus.COMPLETE  # Updated to complete
         assert file_states["file2.py"] == FileStatus.STARTING  # Still active
 
-        # Now release middle slot - it should disappear from display
+        # UX FIX: Release middle slot but file stays visible for user feedback
         tracker.release_slot(slot_ids[1])
 
-        # Only 2 files should be visible now
+        # All files should still be visible (UX behavior)
         display_files = tracker.get_display_files()
-        assert len(display_files) == 2
+        assert len(display_files) == 3
 
-        # Check remaining files
+        # Check that slot is available for reuse but file stays visible
+        assert tracker.get_available_slot_count() == 2  # 1 slot was released
         remaining_files = {f.filename for f in display_files}
-        assert remaining_files == {"file0.py", "file2.py"}
+        assert remaining_files == {"file0.py", "file1.py", "file2.py"}
 
     def test_backpressure_blocking(self):
         """Test that acquire_slot blocks when all slots occupied."""

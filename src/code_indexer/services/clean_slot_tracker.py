@@ -89,12 +89,12 @@ class CleanSlotTracker:
                 file_data.last_updated = time.time()
 
     def release_slot(self, slot_id: int):
-        """Release slot by integer ID, clearing it from display."""
-        # Clear the slot from status array
-        with self._lock:
-            self.status_array[slot_id] = None
+        """Release slot by integer ID, keeping file visible for UX."""
+        # CRITICAL UX DECISION: Keep files visible after completion for better user feedback
+        # Following user instructions: DO NOT clear completed files from display
+        # Files stay visible in COMPLETE state to show user what was processed
 
-        # Return slot to available pool for reuse
+        # Return slot to available pool for reuse without clearing display
         self.available_slots.put(slot_id)
 
     def release_slot_keep_visible(self, slot_id: int):

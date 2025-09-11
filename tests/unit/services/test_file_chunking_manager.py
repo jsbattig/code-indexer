@@ -14,11 +14,11 @@ from pathlib import Path
 from concurrent.futures import Future
 from typing import Dict, List, Any
 
-from code_indexer.services.file_chunking_manager import (
+from src.code_indexer.services.file_chunking_manager import (
     FileChunkingManager,
     FileProcessingResult,
 )
-from code_indexer.services.clean_slot_tracker import CleanSlotTracker
+from src.code_indexer.services.clean_slot_tracker import CleanSlotTracker
 
 
 class MockVectorCalculationManager:
@@ -29,6 +29,13 @@ class MockVectorCalculationManager:
         self.submit_delay = 0.01  # Small delay to simulate processing
         self.cancellation_event = threading.Event()  # Add required cancellation_event
 
+        # TOKEN COUNTING FIX: Add mock embedding provider
+        self.embedding_provider = Mock()
+        self.embedding_provider.get_current_model.return_value = (
+            "voyage-large-2-instruct"
+        )
+        self.embedding_provider._get_model_token_limit.return_value = 120000
+
     def submit_chunk(self, chunk_text: str, metadata: Dict) -> Future:
         """Mock submit_chunk that returns a future."""
         future: Future[Any] = Future()
@@ -36,7 +43,9 @@ class MockVectorCalculationManager:
         # Simulate async processing
         def complete_future():
             time.sleep(self.submit_delay)
-            from code_indexer.services.vector_calculation_manager import VectorResult
+            from src.code_indexer.services.vector_calculation_manager import (
+                VectorResult,
+            )
 
             result = VectorResult(
                 task_id=f"task_{len(self.submitted_chunks)}",
@@ -62,7 +71,7 @@ class MockVectorCalculationManager:
         self, chunk_texts: List[str], metadata: Dict[str, Any]
     ) -> "Future":
         """Mock submit_batch_task method for batch processing."""
-        from code_indexer.services.vector_calculation_manager import VectorResult
+        from src.code_indexer.services.vector_calculation_manager import VectorResult
 
         future: Future[VectorResult] = Future()
 
@@ -199,6 +208,12 @@ class TestFileChunkingManagerAcceptanceCriteria:
         self.test_file.close()
         self.test_file_path = Path(self.test_file.name)
 
+    def _add_voyage_client_mock(self, manager):
+        """Helper to add voyage client mock to manager."""
+        manager.voyage_client = Mock()
+        manager.voyage_client.count_tokens.return_value = 100
+        return manager
+
     def teardown_method(self):
         """Cleanup test environment."""
         if self.test_file_path.exists():
@@ -299,6 +314,8 @@ class TestFileChunkingManagerAcceptanceCriteria:
             thread_count=2,
             slot_tracker=self.slot_tracker,
         ) as manager:
+            # TOKEN COUNTING FIX: Add voyage client mock
+            self._add_voyage_client_mock(manager)
 
             metadata = {"project_id": "test", "file_hash": "abc123"}
             progress_callback = Mock()
@@ -336,6 +353,8 @@ class TestFileChunkingManagerAcceptanceCriteria:
             thread_count=2,
             slot_tracker=self.slot_tracker,
         ) as manager:
+            # TOKEN COUNTING FIX: Add voyage client mock
+            self._add_voyage_client_mock(manager)
 
             metadata = {"project_id": "test", "file_hash": "abc123"}
 
@@ -396,9 +415,18 @@ class TestFileChunkingManagerAcceptanceCriteria:
             threading.Event()
         )  # Add required attribute
 
+        # TOKEN COUNTING FIX: Add mock embedding provider
+        failing_vector_manager.embedding_provider = Mock()
+        failing_vector_manager.embedding_provider.get_current_model.return_value = (
+            "voyage-large-2-instruct"
+        )
+        failing_vector_manager.embedding_provider._get_model_token_limit.return_value = (
+            120000
+        )
+
         # Create a mock future that returns a result with error
         failing_future: Future[Any] = Future()
-        from code_indexer.services.vector_calculation_manager import VectorResult
+        from src.code_indexer.services.vector_calculation_manager import VectorResult
 
         failing_result = VectorResult(
             task_id="failed_batch",
@@ -417,6 +445,8 @@ class TestFileChunkingManagerAcceptanceCriteria:
             thread_count=2,
             slot_tracker=self.slot_tracker,
         ) as manager:
+            # TOKEN COUNTING FIX: Add voyage client mock
+            self._add_voyage_client_mock(manager)
 
             metadata = {"project_id": "test", "file_hash": "abc123"}
 
@@ -443,6 +473,8 @@ class TestFileChunkingManagerAcceptanceCriteria:
             thread_count=2,
             slot_tracker=self.slot_tracker,
         ) as manager:
+            # TOKEN COUNTING FIX: Add voyage client mock
+            self._add_voyage_client_mock(manager)
 
             metadata = {"project_id": "test", "file_hash": "abc123"}
 
@@ -504,6 +536,8 @@ class TestFileChunkingManagerAcceptanceCriteria:
                 thread_count=2,
                 slot_tracker=self.slot_tracker,
             ) as manager:
+                # TOKEN COUNTING FIX: Add voyage client mock
+                self._add_voyage_client_mock(manager)
 
                 start_time = time.time()
                 futures = []
@@ -555,6 +589,8 @@ class TestFileChunkingManagerAcceptanceCriteria:
             thread_count=2,
             slot_tracker=self.slot_tracker,
         ) as manager:
+            # TOKEN COUNTING FIX: Add voyage client mock
+            self._add_voyage_client_mock(manager)
 
             metadata = {
                 "project_id": "test_project",
@@ -598,6 +634,8 @@ class TestFileChunkingManagerAcceptanceCriteria:
             thread_count=2,
             slot_tracker=self.slot_tracker,
         ) as manager:
+            # TOKEN COUNTING FIX: Add voyage client mock
+            self._add_voyage_client_mock(manager)
 
             metadata = {"project_id": "test", "file_hash": "abc123"}
 

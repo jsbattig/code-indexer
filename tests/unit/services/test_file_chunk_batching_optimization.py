@@ -17,8 +17,8 @@ from unittest.mock import Mock
 from concurrent.futures import Future
 from typing import List, Dict, Any
 
-from code_indexer.services.file_chunking_manager import FileChunkingManager
-from code_indexer.services.vector_calculation_manager import VectorResult
+from src.code_indexer.services.file_chunking_manager import FileChunkingManager
+from src.code_indexer.services.vector_calculation_manager import VectorResult
 
 
 @pytest.fixture
@@ -42,16 +42,22 @@ def mock_vector_manager():
     manager.submit_chunk_call_count = 0
     manager.submit_batch_task_call_count = 0
 
+    # TOKEN COUNTING FIX: Mock embedding provider methods
+    manager.embedding_provider.get_current_model.return_value = (
+        "voyage-large-2-instruct"
+    )
+    manager.embedding_provider._get_model_token_limit.return_value = 120000
+
     def mock_submit_chunk(*args, **kwargs):
         manager.submit_chunk_call_count += 1
-        future = Future()
+        future: Future = Future()
         # This should not be called in optimized version
         future.set_result(Mock())
         return future
 
     def mock_submit_batch_task(chunk_texts: List[str], metadata: Dict[str, Any]):
         manager.submit_batch_task_call_count += 1
-        future = Future()
+        future: Future = Future()
         # Return batch result with embeddings for all chunks
         vector_result = VectorResult(
             task_id="batch_task_123",
@@ -101,6 +107,11 @@ def file_chunking_manager(
         thread_count=4,
         slot_tracker=mock_slot_tracker,
     )
+
+    # TOKEN COUNTING FIX: Mock the voyage client count_tokens method
+    manager.voyage_client = Mock()
+    manager.voyage_client.count_tokens.return_value = 100  # Return fixed token count
+
     return manager
 
 
@@ -219,9 +230,13 @@ class TestFileChunkBatchingOptimization:
                 point
             ), f"Point {i} must contain correct chunk text"
 
-            # Verify embedding mapping
+            # Verify embedding mapping (accept both list and tuple formats)
+            actual_vector = point["vector"]
+            expected_vector_list = list(
+                expected_vector
+            )  # Convert tuple to list for comparison
             assert (
-                point["vector"] == expected_vector
+                actual_vector == expected_vector_list
             ), f"Point {i} must have correct embedding from batch result"
 
             # Verify metadata mapping
@@ -255,7 +270,7 @@ class TestFileChunkBatchingOptimization:
 
         # Configure batch processing to fail
         def failing_batch_task(chunk_texts, metadata):
-            future = Future()
+            future: Future = Future()
             vector_result = VectorResult(
                 task_id="batch_fail",
                 embeddings=(),
@@ -373,7 +388,7 @@ class TestFileChunkBatchingOptimization:
         # Configure batch response for 10 chunks
         def batch_with_10_embeddings(chunk_texts, metadata):
             mock_vector_manager.submit_batch_task_call_count += 1  # Increment counter
-            future = Future()
+            future: Future = Future()
             embeddings = tuple(
                 (float(i), float(i + 0.1), float(i + 0.2)) for i in range(10)
             )
@@ -472,7 +487,7 @@ class TestBatchProcessingEdgeCases:
         # Configure batch response for single chunk
         def single_chunk_batch(chunk_texts, metadata):
             mock_vector_manager.submit_batch_task_call_count += 1  # Increment counter
-            future = Future()
+            future: Future = Future()
             vector_result = VectorResult(
                 task_id="single_batch",
                 embeddings=((0.1, 0.2, 0.3),),  # Single embedding tuple

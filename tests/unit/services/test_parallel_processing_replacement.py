@@ -37,6 +37,27 @@ def create_test_config():
     return config
 
 
+def create_test_config_and_files():
+    """Create a properly configured mock with real temporary files."""
+    config = Mock()
+    # Create a temporary directory that actually exists and is writable
+    temp_dir = Path(tempfile.mkdtemp(prefix="test_code_indexer_"))
+    config.codebase_dir = temp_dir
+    config.exclude_dirs = []  # Fix for FileFinder initialization
+    config.max_file_size_mb = 10
+    config.exclude_patterns = []
+
+    # Create real test files
+    test_files = []
+    for i, filename in enumerate(["file1.py", "file2.py", "file3.py"]):
+        file_path = temp_dir / filename
+        # Write some content to the file so it has a real size
+        file_path.write_text(f"# Test file {i+1}\nprint('Hello from {filename}')\n")
+        test_files.append(file_path)
+
+    return config, test_files, temp_dir
+
+
 class TestParallelProcessingReplacement:
     """Test suite for sequential to parallel processing replacement."""
 
@@ -62,8 +83,10 @@ class TestParallelProcessingReplacement:
         self, mock_vector_manager, mock_file_chunking_manager
     ):
         """Test that process_files_high_throughput uses FileChunkingManager instead of sequential chunking."""
-        # Setup with proper constructor arguments
-        config = create_test_config()
+        # Setup with proper constructor arguments and real files
+        config, test_files, temp_dir = create_test_config_and_files()
+        # Use only first 2 files for this test
+        test_files = test_files[:2]
         embedding_provider = Mock()
         qdrant_client = Mock()
 
@@ -72,7 +95,6 @@ class TestParallelProcessingReplacement:
         processor.fixed_size_chunker = Mock()
 
         # Mock file metadata
-        test_files = [Path("/test/file1.py"), Path("/test/file2.py")]
         processor.file_identifier.get_file_metadata.return_value = {
             "project_id": "test",
             "file_hash": "hash123",
@@ -122,6 +144,11 @@ class TestParallelProcessingReplacement:
             batch_size=50,
         )
 
+        # Clean up
+        import shutil
+
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
         # Verify FileChunkingManager was instantiated with correct parameters
         # Note: slot_tracker is automatically created by HighThroughputProcessor
         mock_file_chunking_manager.assert_called_once()
@@ -152,16 +179,16 @@ class TestParallelProcessingReplacement:
         self, mock_vector_manager, mock_file_chunking_manager
     ):
         """Test that results are collected at file level, not chunk level."""
-        # Setup with proper constructor arguments
-        config = create_test_config()
+        # Setup with proper constructor arguments and real files
+        config, test_files, temp_dir = create_test_config_and_files()
+        # Use only first file for this test
+        test_files = test_files[:1]
         embedding_provider = Mock()
         qdrant_client = Mock()
 
         processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
         processor.file_identifier = Mock()
         processor.fixed_size_chunker = Mock()
-
-        test_files = [Path("/test/file1.py")]
         processor.file_identifier.get_file_metadata.return_value = {
             "project_id": "test",
             "file_hash": "hash123",
@@ -197,6 +224,11 @@ class TestParallelProcessingReplacement:
             vector_thread_count=4,
             batch_size=50,
         )
+
+        # Clean up
+        import shutil
+
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
         # Verify file-level result aggregation
         assert result.files_processed == 1  # 1 file processed
@@ -244,16 +276,16 @@ class TestParallelProcessingReplacement:
         self, mock_vector_manager, mock_file_chunking_manager
     ):
         """Test that immediate feedback is provided during file submission."""
-        # Setup with proper constructor arguments
-        config = create_test_config()
+        # Setup with proper constructor arguments and real files
+        config, test_files, temp_dir = create_test_config_and_files()
+        # Use only first 2 files for this test
+        test_files = test_files[:2]
         embedding_provider = Mock()
         qdrant_client = Mock()
 
         processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
         processor.file_identifier = Mock()
         processor.fixed_size_chunker = Mock()
-
-        test_files = [Path("/test/file1.py"), Path("/test/file2.py")]
         processor.file_identifier.get_file_metadata.return_value = {
             "project_id": "test",
             "file_hash": "hash123",
@@ -297,6 +329,11 @@ class TestParallelProcessingReplacement:
             batch_size=50,
             progress_callback=progress_callback,
         )
+
+        # Clean up
+        import shutil
+
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
         # Verify each file was submitted individually (parallel submission)
         assert mock_file_manager_instance.submit_file_for_processing.call_count == 2
@@ -411,16 +448,16 @@ class TestParallelProcessingReplacement:
         """Test that sequential chunking phase (lines 388-450) is completely removed."""
         # This test verifies that the sequential "for file_path in files:" loop is gone
 
-        # Setup with proper constructor arguments
-        config = create_test_config()
+        # Setup with proper constructor arguments and real files
+        config, test_files, temp_dir = create_test_config_and_files()
+        # Use only first file for this test
+        test_files = test_files[:1]
         embedding_provider = Mock()
         qdrant_client = Mock()
 
         processor = HighThroughputProcessor(config, embedding_provider, qdrant_client)
         processor.file_identifier = Mock()
         processor.fixed_size_chunker = Mock()
-
-        test_files = [Path("/test/file1.py")]
         processor.file_identifier.get_file_metadata.return_value = {
             "project_id": "test",
             "file_hash": "hash123",
@@ -454,6 +491,11 @@ class TestParallelProcessingReplacement:
             vector_thread_count=4,
             batch_size=50,
         )
+
+        # Clean up
+        import shutil
+
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
         # Verify NO sequential chunking happens in main thread
         # The chunker should NOT be called directly in process_files_high_throughput

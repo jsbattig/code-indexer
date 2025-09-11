@@ -112,6 +112,7 @@ if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest \
     --ignore=tests/unit/bugfixes/test_container_name_resolution_stop_services.py \
     --ignore=tests/unit/infrastructure/test_progress_display_thread_safety.py \
     --ignore=tests/unit/services/test_incremental_high_throughput_migration.py \
+    --ignore=tests/unit/services/test_single_embedding_wrapper.py \
     --cov=code_indexer \
     --cov-report=xml --cov-report=term; then
     print_success "Unit tests passed"

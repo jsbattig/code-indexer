@@ -56,7 +56,7 @@ class TestCleanFileChunkingManagerResourceManagement:
         self.vector_manager.submit_chunk.return_value = future_mock
 
         # BATCH PROCESSING FIX: Add mock for submit_batch_task used by FileChunkingManager
-        from code_indexer.services.vector_calculation_manager import VectorResult
+        from src.code_indexer.services.vector_calculation_manager import VectorResult
 
         batch_future_mock = Mock()
         batch_result = VectorResult.create_immutable(
@@ -68,6 +68,34 @@ class TestCleanFileChunkingManagerResourceManagement:
         )
         batch_future_mock.result.return_value = batch_result
         self.vector_manager.submit_batch_task.return_value = batch_future_mock
+
+        # TOKEN COUNTING FIX: Mock embedding provider methods
+        self.vector_manager.embedding_provider.get_current_model.return_value = (
+            "voyage-large-2-instruct"
+        )
+        self.vector_manager.embedding_provider._get_model_token_limit.return_value = (
+            120000
+        )
+
+    def _create_clean_manager(self):
+        """Helper to create FileChunkingManager with proper mocking."""
+        from src.code_indexer.services.file_chunking_manager import FileChunkingManager
+
+        manager = FileChunkingManager(
+            chunker=self.chunker,
+            vector_manager=self.vector_manager,
+            qdrant_client=self.qdrant_client,
+            thread_count=2,
+            slot_tracker=self.slot_tracker,
+        )
+
+        # TOKEN COUNTING FIX: Mock the voyage client count_tokens method
+        manager.voyage_client = Mock()
+        manager.voyage_client.count_tokens.return_value = (
+            100  # Return fixed token count
+        )
+
+        return manager
 
     def _get_complete_metadata(self, file_path: Path) -> dict:
         """Get complete metadata required for file processing."""
@@ -83,17 +111,8 @@ class TestCleanFileChunkingManagerResourceManagement:
         """Test that FileChunkingManager uses proper acquire/try/finally pattern."""
         # This test will initially fail - we need to implement the clean pattern
 
-        # Import the class we'll refactor
-        from src.code_indexer.services.file_chunking_manager import FileChunkingManager
-
         # Create clean manager with our clean slot tracker
-        manager = FileChunkingManager(
-            chunker=self.chunker,
-            vector_manager=self.vector_manager,
-            qdrant_client=self.qdrant_client,
-            thread_count=2,
-            slot_tracker=self.slot_tracker,  # Clean tracker (updated parameter name)
-        )
+        manager = self._create_clean_manager()
 
         # Create test file
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
@@ -125,11 +144,6 @@ class TestCleanFileChunkingManagerResourceManagement:
                 test_file, self._get_complete_metadata(test_file), None
             )
 
-            # Wait for delayed release to complete (background thread)
-            import time
-
-            time.sleep(2.5)  # Wait for delayed release (2 second delay + buffer)
-
             # Verify proper resource management pattern
             assert len(acquire_calls) == 1, "Should have exactly ONE acquire call"
             assert len(release_calls) == 1, "Should have exactly ONE release call"
@@ -137,29 +151,21 @@ class TestCleanFileChunkingManagerResourceManagement:
                 acquire_calls[0] == release_calls[0]
             ), "Same slot should be acquired and released"
 
-            # VISUAL FEEDBACK FIX: After delayed release, slot should be available
+            # UX FIX: Files stay visible but slots become available for reuse
             assert (
-                self.slot_tracker.get_slot_count() == 0
-            ), "Slot should be released after delay"
+                self.slot_tracker.get_slot_count() == 1
+            ), "File should stay visible after processing"
             assert (
                 self.slot_tracker.get_available_slot_count() == 3
-            ), "All slots should be available after processing"
+            ), "All slots should be available for reuse after processing"
 
         finally:
             test_file.unlink()
 
     def test_no_multiple_release_calls(self):
         """Test that only ONE release call exists - no scattered releases."""
-        from src.code_indexer.services.file_chunking_manager import FileChunkingManager
-
         # Mock scenario where exception occurs during processing
-        manager = FileChunkingManager(
-            chunker=self.chunker,
-            vector_manager=self.vector_manager,
-            qdrant_client=self.qdrant_client,
-            thread_count=2,
-            slot_tracker=self.slot_tracker,
-        )
+        manager = self._create_clean_manager()
 
         # Make vector processing fail
         self.vector_manager.submit_chunk.side_effect = Exception(
@@ -191,25 +197,20 @@ class TestCleanFileChunkingManagerResourceManagement:
                 len(release_calls) == 1
             ), "Should have exactly ONE release call even on error"
 
-            # No slots should be leaked
+            # UX FIX: File stays visible but slot is available for reuse even after error
             assert (
-                self.slot_tracker.get_slot_count() == 0
-            ), "No slots should remain occupied after error"
+                self.slot_tracker.get_slot_count() == 1
+            ), "File should stay visible even after error"
+            assert (
+                self.slot_tracker.get_available_slot_count() == 3
+            ), "Slot should be available for reuse after error"
 
         finally:
             test_file.unlink()
 
     def test_slot_id_used_throughout_lifecycle(self):
         """Test that slot_id is used directly throughout file lifecycle, no filename lookups."""
-        from src.code_indexer.services.file_chunking_manager import FileChunkingManager
-
-        manager = FileChunkingManager(
-            chunker=self.chunker,
-            vector_manager=self.vector_manager,
-            qdrant_client=self.qdrant_client,
-            thread_count=2,
-            slot_tracker=self.slot_tracker,
-        )
+        manager = self._create_clean_manager()
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write("def test(): pass\n")
@@ -266,18 +267,10 @@ class TestCleanFileChunkingManagerResourceManagement:
 
     def test_empty_file_resource_management(self):
         """Test proper resource management for empty files."""
-        from src.code_indexer.services.file_chunking_manager import FileChunkingManager
-
         # Mock empty file scenario
         self.chunker.chunk_file.return_value = []  # No chunks
 
-        manager = FileChunkingManager(
-            chunker=self.chunker,
-            vector_manager=self.vector_manager,
-            qdrant_client=self.qdrant_client,
-            thread_count=2,
-            slot_tracker=self.slot_tracker,
-        )
+        manager = self._create_clean_manager()
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             # Create empty file
@@ -313,25 +306,20 @@ class TestCleanFileChunkingManagerResourceManagement:
             assert len(release_calls) == 1, "Should release slot for empty file"
             assert result.success, "Empty file processing should succeed"
 
-            # No slots should leak
+            # UX FIX: File stays visible but slot is available for reuse
             assert (
-                self.slot_tracker.get_slot_count() == 0
-            ), "No slots should remain occupied"
+                self.slot_tracker.get_slot_count() == 1
+            ), "Empty file should stay visible"
+            assert (
+                self.slot_tracker.get_available_slot_count() == 3
+            ), "Slot should be available for reuse after empty file processing"
 
         finally:
             test_file.unlink()
 
     def test_no_thread_id_pollution_in_processing(self):
         """Test that FileChunkingManager doesn't use thread_id anywhere."""
-        from src.code_indexer.services.file_chunking_manager import FileChunkingManager
-
-        manager = FileChunkingManager(
-            chunker=self.chunker,
-            vector_manager=self.vector_manager,
-            qdrant_client=self.qdrant_client,
-            thread_count=2,
-            slot_tracker=self.slot_tracker,
-        )
+        manager = self._create_clean_manager()
 
         # Verify that _process_file_clean_lifecycle method doesn't take thread_id parameter
         import inspect
@@ -346,15 +334,7 @@ class TestCleanFileChunkingManagerResourceManagement:
 
     def test_concurrent_file_processing_isolation(self):
         """Test that multiple files process independently with clean slot management."""
-        from src.code_indexer.services.file_chunking_manager import FileChunkingManager
-
-        manager = FileChunkingManager(
-            chunker=self.chunker,
-            vector_manager=self.vector_manager,
-            qdrant_client=self.qdrant_client,
-            thread_count=2,
-            slot_tracker=self.slot_tracker,
-        )
+        manager = self._create_clean_manager()
 
         # Create multiple test files
         test_files = []
@@ -401,10 +381,14 @@ class TestCleanFileChunkingManagerResourceManagement:
                 r.success for r in results
             ), "All files should process successfully"
 
-            # No slots should remain occupied
+            # UX FIX: With slot reuse, only the LAST file stays visible (correct behavior)
+            # When processing sequentially, the same slot gets reused, overwriting previous file data
             assert (
-                self.slot_tracker.get_slot_count() == 0
-            ), "No slots should remain occupied"
+                self.slot_tracker.get_slot_count() == 1
+            ), "Only the last processed file should be visible (slot reuse)"
+            assert (
+                self.slot_tracker.get_available_slot_count() == 3
+            ), "All slots should be available for reuse after processing"
 
             # Should have proper acquire/release pairs
             acquire_count = len(

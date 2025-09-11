@@ -299,3 +299,22 @@ class MultiThreadedProgressManager:
         if self._progress_started:
             self.progress.stop()
             self._progress_started = False
+
+    def reset_progress_timers(self) -> None:
+        """Reset progress display for new phase after timing reset.
+
+        This method resets the Rich Progress component's internal timers
+        to fix the frozen timing issue when transitioning from hash to indexing phase.
+        The Rich Progress component tracks its own start time which must be reset
+        separately from the stats timer reset.
+        """
+        if self._progress_started:
+            # Stop current progress to clear internal timers
+            self.progress.stop()
+
+            # Reset progress state to allow fresh initialization
+            self._progress_started = False
+            self.main_task_id = None
+
+            # Progress will re-initialize with fresh timers on next update_complete_state call
+            # This ensures both Rich Progress timers AND stats timers are aligned

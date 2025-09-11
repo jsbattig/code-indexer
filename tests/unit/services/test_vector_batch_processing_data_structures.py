@@ -8,6 +8,7 @@ while maintaining thread safety and order preservation.
 import pytest
 import time
 import threading
+from typing import List
 
 from code_indexer.services.vector_calculation_manager import (
     VectorTask,
@@ -74,7 +75,7 @@ class TestVectorTaskBatchProcessing:
 
     def test_vector_task_empty_batch_handling(self):
         """Test VectorTask handling of empty batch."""
-        empty_chunk_texts = []
+        empty_chunk_texts: List[str] = []
         metadata = {"file_path": "test.py"}
 
         task = VectorTask(
@@ -178,7 +179,7 @@ class TestVectorResultBatchProcessing:
 
     def test_vector_result_empty_embeddings_handling(self):
         """Test VectorResult handling of empty embeddings."""
-        empty_embeddings = []
+        empty_embeddings: List[List[float]] = []
         metadata = {"file_path": "test.py"}
 
         result = VectorResult(
@@ -193,7 +194,7 @@ class TestVectorResultBatchProcessing:
 
     def test_vector_result_error_handling_with_batch(self):
         """Test VectorResult error handling in batch context."""
-        embeddings = []  # Empty on error
+        embeddings: List[List[float]] = []  # Empty on error
         metadata = {"file_path": "test.py", "batch_size": 3}
         error_message = "Batch processing failed: Connection timeout"
 

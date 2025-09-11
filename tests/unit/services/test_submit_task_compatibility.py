@@ -237,7 +237,10 @@ class TestSubmitTaskCompatibility:
     def test_submit_task_metadata_immutability(self):
         """Test that submit_task() creates immutable copies of metadata."""
         provider = MockEmbeddingProvider(delay=0.01)
-        original_metadata = {"mutable": ["list", "data"], "dict": {"key": "value"}}
+        original_metadata: Dict[str, Any] = {
+            "mutable": ["list", "data"],
+            "dict": {"key": "value"},
+        }
 
         with VectorCalculationManager(provider, thread_count=1) as manager:
             future = manager.submit_task("test text", original_metadata)

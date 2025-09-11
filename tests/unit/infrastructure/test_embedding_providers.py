@@ -219,7 +219,7 @@ class TestVoyageAIClient:
         assert result.embedding == [0.1, 0.2, 0.3, 0.4]
         assert result.model == "voyage-code-3"
         assert result.provider == "voyage-ai"
-        assert result.tokens_used == 10
+        assert result.tokens_used is None
 
     @patch("code_indexer.services.voyage_ai.VoyageAIClient._make_sync_request")
     def test_get_embeddings_batch_single_request(self, mock_request, voyage_client):
@@ -384,4 +384,4 @@ class TestEmbeddingProviderIntegration:
             assert result.embedding == [0.1, 0.2, 0.3, 0.4]
             assert result.model == "voyage-code-3"
             assert result.provider == "voyage-ai"
-            assert result.tokens_used == 10
+            assert result.tokens_used is None

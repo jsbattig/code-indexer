@@ -184,9 +184,9 @@ class TestCleanSlotTracker:
         # Release slot
         tracker.release_slot(slot_id)
 
-        # Verify slot is released
+        # UX FIX: Verify slot is available for reuse but file stays visible
         assert tracker.available_slots.qsize() == 3
-        assert tracker.status_array[slot_id] is None
+        assert tracker.status_array[slot_id] is not None  # File stays visible for UX
 
     def test_release_slot_already_empty(self):
         """Test releasing already empty slot does nothing harmful."""
@@ -351,6 +351,6 @@ class TestCleanSlotTracker:
         # Release slot
         tracker.release_slot(slot_id)
 
-        # Verify cleanup
-        assert tracker.status_array[slot_id] is None
+        # UX FIX: Verify slot available for reuse but file stays visible
+        assert tracker.status_array[slot_id] is not None  # File stays visible for UX
         assert tracker.available_slots.qsize() == 2

@@ -1649,6 +1649,7 @@ def index(
         )
         progress_callback.show_error_message = show_error_message  # type: ignore
         progress_callback.check_for_interruption = check_for_interruption  # type: ignore
+        progress_callback.reset_progress_timers = lambda: progress_manager.reset_progress_timers()  # type: ignore
 
         # Check for conflicting flags
         if clear and reconcile:

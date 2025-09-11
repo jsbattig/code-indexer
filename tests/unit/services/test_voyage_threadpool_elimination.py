@@ -89,8 +89,8 @@ class TestVoyageThreadPoolElimination:
             with patch.object(
                 client, "_make_sync_request", side_effect=mock_sync_request
             ):
-                # Process batch larger than batch_size to trigger multiple API calls
-                texts = [f"text_{i}" for i in range(16)]  # Should be 2 batches of 8
+                # Process batch smaller than conservative batch size (50) - should be single API call
+                texts = [f"text_{i}" for i in range(16)]  # Should be 1 batch of 16
 
                 embeddings = client.get_embeddings_batch(texts)
 
@@ -106,12 +106,11 @@ class TestVoyageThreadPoolElimination:
                     len(threads_used) == 1
                 ), f"Should use only one thread for all API calls, found: {threads_used}"
 
-                # Verify correct batch sizes (8 each)
+                # Verify conservative batching - single batch since 16 <= 50
                 batch_sizes = [call["batch_size"] for call in api_calls]
                 assert batch_sizes == [
-                    8,
-                    8,
-                ], f"Expected [8, 8] batch sizes, got: {batch_sizes}"
+                    16,
+                ], f"Expected [16] batch size with conservative batching, got: {batch_sizes}"
 
     def test_vector_calculation_manager_integration_shows_contention(
         self, voyage_config
