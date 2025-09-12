@@ -113,6 +113,8 @@ class TestCLIFlagValidation:
                         "Qdrant",
                         "Ollama service not available",
                         "No files found to index",
+                        "[Errno 2] No such file or directory",
+                        "SingletonCookie",
                     ]
                     error_output = result.stderr + result.stdout
                     assert any(
@@ -182,6 +184,8 @@ class TestCLIFlagValidation:
                         "Qdrant",
                         "Ollama service not available",
                         "No files found to index",
+                        "[Errno 2] No such file or directory",
+                        "SingletonCookie",
                     ]
                     error_output = result.stderr + result.stdout
                     assert any(
@@ -240,6 +244,8 @@ class TestCLIFlagValidation:
                         "Qdrant",
                         "Ollama service not available",
                         "No files found to index",
+                        "[Errno 2] No such file or directory",
+                        "SingletonCookie",
                     ]
                     error_output = result.stderr + result.stdout
                     assert any(

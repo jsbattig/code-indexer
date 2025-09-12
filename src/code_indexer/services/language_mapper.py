@@ -6,7 +6,7 @@ and file extensions (like "py", "js") to enable intuitive language filtering in 
 
 The mapper supports:
 - Friendly language names: python, javascript, typescript, etc.
-- File extension pass-through: py, js, ts, etc. (backward compatibility)
+- File extension pass-through: py, js, ts, etc.
 - Case-insensitive matching
 - Multiple extensions per language
 - Fast O(1) lookup performance
@@ -28,7 +28,7 @@ class LanguageMapper:
     Features:
     - Case-insensitive language matching
     - Multiple extensions per language (e.g., python -> py, pyw, pyi)
-    - Backward compatibility with direct extension usage
+    - Direct extension usage support
     - Fast O(1) lookup performance
     - Unknown languages pass through unchanged for compatibility
     """
@@ -98,7 +98,7 @@ class LanguageMapper:
 
         This method supports:
         - Friendly names: "python" -> {"py", "pyw", "pyi"}
-        - Direct extensions: "py" -> {"py"} (backward compatibility)
+        - Direct extensions: "py" -> {"py"}
         - Case-insensitive matching: "PYTHON" -> {"py", "pyw", "pyi"}
         - Unknown inputs: "unknownlang" -> {"unknownlang"} (pass-through)
 
@@ -129,9 +129,9 @@ class LanguageMapper:
             logger.debug(f"Mapped language '{language}' to extensions: {extensions}")
             return extensions.copy()  # Return copy to prevent modification
 
-        # For backward compatibility and unknown languages, return as-is
+        # For unknown languages and direct extensions, return as-is
         # This allows direct extension usage (e.g., "py") and graceful handling
-        # of unknown inputs without breaking existing code
+        # of unknown inputs
         result = {language.strip()}  # Preserve original case for extensions
         logger.debug(
             f"Unknown language '{language}', using pass-through behavior: {result}"

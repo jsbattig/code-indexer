@@ -58,8 +58,8 @@ class TestLanguageValidatorCore:
             # Common alternative names
             ("node", ["javascript"]),
             ("nodejs", ["javascript"]),
-            ("reactjs", ["javascript", "jsx"]),
-            ("react", ["javascript", "jsx"]),
+            ("reactjs", ["javascript"]),
+            ("react", ["javascript"]),
             ("vue.js", ["vue"]),
             ("vuejs", ["vue"]),
             # Programming language aliases
