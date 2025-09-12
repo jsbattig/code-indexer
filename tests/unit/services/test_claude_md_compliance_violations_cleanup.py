@@ -68,8 +68,17 @@ class TestClaudeMdComplianceViolationsCleanup(unittest.TestCase):
         violations = []
         for pattern in fallback_patterns:
             result = subprocess.run(
-                ["grep", "-r", "-i", "--exclude-dir=__pycache__", "--include=*.py", pattern, "src/"], 
-                capture_output=True, text=True
+                [
+                    "grep",
+                    "-r",
+                    "-i",
+                    "--exclude-dir=__pycache__",
+                    "--include=*.py",
+                    pattern,
+                    "src/",
+                ],
+                capture_output=True,
+                text=True,
             )
             if result.returncode == 0:  # Found matches
                 violations.append(f"Pattern '{pattern}':\n{result.stdout}")
