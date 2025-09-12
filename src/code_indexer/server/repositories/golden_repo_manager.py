@@ -259,7 +259,10 @@ class GoldenRepoManager:
 
     def _clone_repository(self, repo_url: str, alias: str, branch: str) -> str:
         """
-        Clone a git repository to the golden repos directory using CoW if available.
+        Clone a git repository to the golden repos directory.
+
+        Golden repository registration should always use regular copying/cloning,
+        NOT Copy-on-Write (CoW) cloning, as it may involve cross-device operations.
 
         Args:
             repo_url: Git repository URL
@@ -274,9 +277,9 @@ class GoldenRepoManager:
         """
         clone_path = os.path.join(self.golden_repos_dir, alias)
 
-        # For local repositories, attempt CoW cloning
+        # For local repositories, use regular copying (NO CoW for golden repo registration)
         if self._is_local_path(repo_url):
-            return self._clone_local_repository_with_cow(repo_url, clone_path)
+            return self._clone_local_repository_with_regular_copy(repo_url, clone_path)
 
         # For remote repositories, use regular git clone
         return self._clone_remote_repository(repo_url, clone_path, branch)
@@ -293,9 +296,15 @@ class GoldenRepoManager:
         """
         return repo_url.startswith("/") or repo_url.startswith("file://")
 
-    def _clone_local_repository_with_cow(self, repo_url: str, clone_path: str) -> str:
+    def _clone_local_repository_with_regular_copy(
+        self, repo_url: str, clone_path: str
+    ) -> str:
         """
-        Clone a local repository using Copy-on-Write if available, with fallback.
+        Clone a local repository using regular copying (NO CoW).
+
+        This method is used for golden repository registration to avoid
+        cross-device link issues when copying from arbitrary local paths
+        (like /tmp) to the golden repository storage directory.
 
         Args:
             repo_url: Local repository path
@@ -314,23 +323,13 @@ class GoldenRepoManager:
             else repo_url
         )
 
-        # Attempt CoW cloning first
-        if self._supports_cow(clone_path):
-            logging.info(f"Attempting CoW clone from {source_path} to {clone_path}")
-            if self._cow_clone(source_path, clone_path):
-                logging.info(f"CoW clone successful for {clone_path}")
-                return clone_path
-            else:
-                logging.warning(
-                    f"CoW clone failed for {clone_path}, falling back to regular copy"
-                )
-        else:
-            logging.info(f"CoW not supported for {clone_path}, using regular copy")
-
-        # Fallback to regular copy
         try:
+            # Always use regular copy for golden repository registration
+            # This avoids cross-device link issues that occur with CoW cloning
             shutil.copytree(source_path, clone_path, symlinks=True)
-            logging.info(f"Regular copy successful for {clone_path}")
+            logging.info(
+                f"Golden repository registered using regular copy: {source_path} -> {clone_path}"
+            )
             return clone_path
         except Exception as e:
             raise GitOperationError(f"Failed to copy local repository: {str(e)}")
@@ -380,74 +379,6 @@ class GoldenRepoManager:
             raise GitOperationError("Git clone operation timed out")
         except subprocess.SubprocessError as e:
             raise GitOperationError(f"Git clone subprocess error: {str(e)}")
-
-    def _supports_cow(self, path: str) -> bool:
-        """
-        Check if the filesystem supports Copy-on-Write operations.
-
-        Args:
-            path: Path to check (uses parent directory)
-
-        Returns:
-            True if CoW is supported, False otherwise
-        """
-        try:
-            parent_path = os.path.dirname(path)
-            os.makedirs(parent_path, exist_ok=True)
-
-            # Check filesystem type
-            result = subprocess.run(
-                ["df", "-T", parent_path], capture_output=True, text=True, timeout=5
-            )
-
-            if result.returncode != 0:
-                return False
-
-            output = result.stdout
-            # Check for CoW-capable filesystems
-            cow_filesystems = ["btrfs", "zfs", "xfs"]
-            for fs_type in cow_filesystems:
-                if fs_type in output.lower():
-                    logging.info(f"Detected {fs_type} filesystem, CoW supported")
-                    return True
-
-            logging.info(f"Filesystem type check: {output.strip()}")
-            return False
-
-        except Exception as e:
-            logging.warning(f"CoW support detection failed: {str(e)}")
-            return False
-
-    def _cow_clone(self, source: str, dest: str) -> bool:
-        """
-        Perform Copy-on-Write cloning using cp --reflink.
-
-        Args:
-            source: Source directory path
-            dest: Destination directory path
-
-        Returns:
-            True if CoW clone succeeded, False otherwise
-        """
-        try:
-            # Use cp --reflink=always for CoW cloning
-            result = subprocess.run(
-                ["cp", "--reflink=always", "-r", source, dest],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-
-            if result.returncode == 0:
-                logging.info(f"CoW clone successful: {source} -> {dest}")
-                return True
-            else:
-                logging.warning(f"CoW clone failed: {result.stderr}")
-                return False
-
-        except Exception as e:
-            logging.warning(f"CoW clone operation failed: {str(e)}")
-            return False
 
     def _cleanup_repository_files(self, clone_path: str) -> None:
         """

@@ -459,6 +459,155 @@ class TestGoldenRepoManager:
             assert "filesystem-test-repo" in golden_repo_manager.golden_repos
             mock_cleanup.assert_called_once_with("/path/to/filesystem-test-repo")
 
+    def test_regular_copy_always_used_for_local_repos(self, golden_repo_manager):
+        """Test that regular copying is always used for local repository registration."""
+        # Create a temporary directory to simulate /tmp (different filesystem)
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_source:
+            # Create a test repository in the temp directory
+            test_repo_path = os.path.join(tmp_source, "test-repo")
+            os.makedirs(test_repo_path)
+
+            # Create a test file
+            test_file = os.path.join(test_repo_path, "README.md")
+            with open(test_file, "w") as f:
+                f.write("# Test Repository")
+
+            dest_path = os.path.join(golden_repo_manager.golden_repos_dir, "test-dest")
+
+            # Test the new behavior - always uses regular copy
+            with patch("shutil.copytree") as mock_copytree:
+                result_path = (
+                    golden_repo_manager._clone_local_repository_with_regular_copy(
+                        test_repo_path, dest_path
+                    )
+                )
+
+                # Verify regular copy was used (no CoW attempts)
+                mock_copytree.assert_called_once_with(
+                    test_repo_path, dest_path, symlinks=True
+                )
+                assert result_path == dest_path
+
+    def test_fixed_tmp_to_golden_repo_registration(self, golden_repo_manager):
+        """
+        Test that registering local repositories from /tmp now works correctly.
+
+        This test verifies the FIXED behavior that uses regular copying
+        instead of CoW for cross-device operations.
+        """
+        # Simulate registering a local repository from /tmp
+        tmp_repo_url = "/tmp/test-repo"
+
+        with patch.object(
+            golden_repo_manager, "_validate_git_repository"
+        ) as mock_validate:
+            mock_validate.return_value = True
+            with patch.object(
+                golden_repo_manager, "_execute_post_clone_workflow"
+            ) as mock_workflow:
+                mock_workflow.return_value = None
+                with patch.object(
+                    golden_repo_manager, "_is_local_path"
+                ) as mock_is_local:
+                    mock_is_local.return_value = True  # It's a local path
+                    with patch.object(
+                        golden_repo_manager, "_clone_local_repository_with_regular_copy"
+                    ) as mock_regular_copy:
+                        mock_regular_copy.return_value = "/path/to/cloned/repo"
+
+                        # This should now succeed with regular copying (no more cross-device link errors)
+                        result = golden_repo_manager.add_golden_repo(
+                            repo_url=tmp_repo_url,
+                            alias="tmp-test-repo",
+                            default_branch="main",
+                        )
+
+                        # Verify success
+                        assert result["success"] is True
+                        assert "tmp-test-repo" in result["message"]
+
+                        # Verify the fixed regular copy method was called
+                        mock_regular_copy.assert_called_once()
+
+    def test_should_not_use_cow_for_golden_repo_registration(self, golden_repo_manager):
+        """
+        Test that Golden Repository registration should NOT use CoW cloning.
+
+        This test verifies the FIXED behavior: Golden repo registration should
+        use regular copying, not CoW cloning, regardless of filesystem support.
+        """
+        # Create a temporary source repository
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_source:
+            test_repo_path = os.path.join(tmp_source, "test-repo")
+            os.makedirs(test_repo_path)
+
+            # Create test content
+            with open(os.path.join(test_repo_path, "test.txt"), "w") as f:
+                f.write("test content")
+
+            dest_path = os.path.join(
+                golden_repo_manager.golden_repos_dir, "correct-repo"
+            )
+
+            # Test the corrected behavior - should use regular copy, not CoW
+            with patch("shutil.copytree") as mock_copytree:
+                # This now uses the FIXED implementation
+                result_path = (
+                    golden_repo_manager._clone_local_repository_with_regular_copy(
+                        test_repo_path, dest_path
+                    )
+                )
+
+                # Verify regular copy was used
+                mock_copytree.assert_called_once_with(
+                    test_repo_path, dest_path, symlinks=True
+                )
+                assert result_path == dest_path
+
+    def test_fixed_local_repository_cloning_no_cow(self, golden_repo_manager):
+        """
+        Test that local repository cloning now uses regular copy instead of CoW.
+
+        This test verifies the fix by ensuring that _clone_repository calls
+        the regular copy method for local paths, not the CoW method.
+        """
+        with patch.object(golden_repo_manager, "_is_local_path") as mock_is_local:
+            mock_is_local.return_value = True
+            with patch.object(
+                golden_repo_manager, "_clone_local_repository_with_regular_copy"
+            ) as mock_regular_copy:
+                mock_regular_copy.return_value = "/path/to/dest"
+
+                result = golden_repo_manager._clone_repository(
+                    "/tmp/source", "test-alias", "main"
+                )
+
+                # Verify that regular copy method was called, not CoW
+                mock_regular_copy.assert_called_once_with(
+                    "/tmp/source",
+                    os.path.join(golden_repo_manager.golden_repos_dir, "test-alias"),
+                )
+                assert result == "/path/to/dest"
+
+    def test_cow_methods_removed_from_golden_repo_manager(self, golden_repo_manager):
+        """
+        Test that CoW-specific methods have been removed from GoldenRepoManager.
+
+        These methods are inappropriate for golden repository registration
+        and should only exist in ActivatedRepoManager.
+        """
+        # Verify CoW methods are removed from golden repo manager
+        assert not hasattr(golden_repo_manager, "_supports_cow")
+        assert not hasattr(golden_repo_manager, "_cow_clone")
+        assert not hasattr(golden_repo_manager, "_clone_local_repository_with_cow")
+
+        # Verify the new regular copy method exists
+        assert hasattr(golden_repo_manager, "_clone_local_repository_with_regular_copy")
+
 
 class TestGoldenRepo:
     """Test suite for GoldenRepo model."""
