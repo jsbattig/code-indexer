@@ -36,10 +36,10 @@ class MockEmbeddingProvider(EmbeddingProvider):
         return self.provider_name
 
     def get_current_model(self) -> str:
-        return "test-model"
+        return "text-embedding-3-small"  # Use a valid OpenAI model name
 
     def get_model_info(self) -> Dict[str, Any]:
-        return {"name": "test-model", "dimensions": self.dimensions}
+        return {"name": "text-embedding-3-small", "dimensions": self.dimensions}
 
     def get_embedding(self, text: str, model: Optional[str] = None) -> List[float]:
         """Mock embedding generation with configurable delay."""
@@ -94,3 +94,7 @@ class MockEmbeddingProvider(EmbeddingProvider):
         """Reset the call count for testing purposes."""
         with self.call_lock:
             self.call_count = 0
+
+    def _get_model_token_limit(self) -> int:
+        """Return mock token limit for the model."""
+        return 8192  # Standard token limit for testing

@@ -118,7 +118,13 @@ def function_{i}():
         kbs_values_found = []
 
         def capture_progress(
-            current, total, file_path, error=None, info=None, concurrent_files=None
+            current,
+            total,
+            file_path,
+            error=None,
+            info=None,
+            concurrent_files=None,
+            slot_tracker=None,
         ):
             if info and total > 0:
                 progress_calls.append(
@@ -198,7 +204,13 @@ def function_{i}():
         progress_calls = []
 
         def capture_progress(
-            current, total, file_path, error=None, info=None, concurrent_files=None
+            current,
+            total,
+            file_path,
+            error=None,
+            info=None,
+            concurrent_files=None,
+            slot_tracker=None,
         ):
             if info and total > 0:
                 progress_calls.append(
@@ -276,7 +288,13 @@ def function_{i}():
         kbs_progression = []
 
         def capture_progress(
-            current, total, file_path, error=None, info=None, concurrent_files=None
+            current,
+            total,
+            file_path,
+            error=None,
+            info=None,
+            concurrent_files=None,
+            slot_tracker=None,
         ):
             if info and total > 0 and "KB/s" in info:
                 parts = info.split("|")
@@ -351,7 +369,13 @@ def function_{i}():
         all_kbs_values = []
 
         def capture_progress(
-            current, total, file_path, error=None, info=None, concurrent_files=None
+            current,
+            total,
+            file_path,
+            error=None,
+            info=None,
+            concurrent_files=None,
+            slot_tracker=None,
         ):
             if info and total > 0 and "KB/s" in info:
                 parts = info.split("|")

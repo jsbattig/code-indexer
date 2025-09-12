@@ -136,7 +136,7 @@ def test_single_project_complete_workflow():
 
         print("🔧 Single project test: Initializing project...")
         init_result = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -146,7 +146,7 @@ def test_single_project_complete_workflow():
 
         print("🚀 Single project test: Starting services...")
         start_result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -156,7 +156,7 @@ def test_single_project_complete_workflow():
 
         print("📚 Single project test: Indexing project...")
         index_result = subprocess.run(
-            ["code-indexer", "index"],
+            ["cidx", "index"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -174,7 +174,7 @@ def test_single_project_complete_workflow():
         successful_queries = 0
         for query in search_queries:
             result = subprocess.run(
-                ["code-indexer", "query", query, "--quiet"],
+                ["cidx", "query", query, "--quiet"],
                 cwd=project_path,
                 capture_output=True,
                 text=True,
@@ -191,7 +191,7 @@ def test_single_project_complete_workflow():
 
         print("📊 Single project test: Testing status functionality...")
         status_result = subprocess.run(
-            ["code-indexer", "status"],
+            ["cidx", "status"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -217,7 +217,7 @@ def test_complete_lifecycle_clean_data():
 
         print("🔧 Lifecycle test: Initializing project...")
         init_result = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -227,7 +227,7 @@ def test_complete_lifecycle_clean_data():
 
         print("🚀 Lifecycle test: Starting services...")
         start_result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -237,7 +237,7 @@ def test_complete_lifecycle_clean_data():
 
         print("📚 Lifecycle test: Indexing project...")
         index_result = subprocess.run(
-            ["code-indexer", "index"],
+            ["cidx", "index"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -248,7 +248,7 @@ def test_complete_lifecycle_clean_data():
         # Verify indexing worked
         print("🔍 Lifecycle test: Verifying indexed data...")
         query_result = subprocess.run(
-            ["code-indexer", "query", "calculator", "--quiet"],
+            ["cidx", "query", "calculator", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -259,7 +259,7 @@ def test_complete_lifecycle_clean_data():
         # Clean data
         print("🗑️ Lifecycle test: Cleaning data...")
         clean_result = subprocess.run(
-            ["code-indexer", "clean-data"],
+            ["cidx", "clean-data"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -270,7 +270,7 @@ def test_complete_lifecycle_clean_data():
         # Verify status after cleanup (services should still be running)
         print("📊 Lifecycle test: Verifying services still running...")
         status_result = subprocess.run(
-            ["code-indexer", "status"],
+            ["cidx", "status"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -282,7 +282,7 @@ def test_complete_lifecycle_clean_data():
         # Re-index to verify services work after cleanup
         print("📚 Lifecycle test: Re-indexing after cleanup...")
         reindex_result = subprocess.run(
-            ["code-indexer", "index"],
+            ["cidx", "index"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -310,7 +310,7 @@ def test_multi_project_isolation_and_search():
 
         print("🔧 Multi-project test: Setup Project 1 (Calculator + VoyageAI)...")
         init_result1 = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
             cwd=project1_path,
             capture_output=True,
             text=True,
@@ -321,7 +321,7 @@ def test_multi_project_isolation_and_search():
         ), f"Project 1 init failed: {init_result1.stderr}"
 
         start_result1 = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project1_path,
             capture_output=True,
             text=True,
@@ -332,7 +332,7 @@ def test_multi_project_isolation_and_search():
         ), f"Project 1 start failed: {start_result1.stderr}"
 
         index_result1 = subprocess.run(
-            ["code-indexer", "index"],
+            ["cidx", "index"],
             cwd=project1_path,
             capture_output=True,
             text=True,
@@ -347,7 +347,7 @@ def test_multi_project_isolation_and_search():
         project1_success = 0
         for query in calc_queries:
             result = subprocess.run(
-                ["code-indexer", "query", query, "--quiet"],
+                ["cidx", "query", query, "--quiet"],
                 cwd=project1_path,
                 capture_output=True,
                 text=True,
@@ -370,7 +370,7 @@ def test_multi_project_isolation_and_search():
 
         print("🔧 Multi-project test: Setup Project 2 (Web Server + Ollama)...")
         init_result2 = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "ollama"],
+            ["cidx", "init", "--force", "--embedding-provider", "ollama"],
             cwd=project2_path,
             capture_output=True,
             text=True,
@@ -381,7 +381,7 @@ def test_multi_project_isolation_and_search():
         ), f"Project 2 init failed: {init_result2.stderr}"
 
         start_result2 = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project2_path,
             capture_output=True,
             text=True,
@@ -392,7 +392,7 @@ def test_multi_project_isolation_and_search():
         ), f"Project 2 start failed: {start_result2.stderr}"
 
         index_result2 = subprocess.run(
-            ["code-indexer", "index"],
+            ["cidx", "index"],
             cwd=project2_path,
             capture_output=True,
             text=True,
@@ -407,7 +407,7 @@ def test_multi_project_isolation_and_search():
         project2_success = 0
         for query in web_queries:
             result = subprocess.run(
-                ["code-indexer", "query", query, "--quiet"],
+                ["cidx", "query", query, "--quiet"],
                 cwd=project2_path,
                 capture_output=True,
                 text=True,
@@ -438,7 +438,7 @@ def test_error_conditions_and_recovery():
 
         print("🔧 Error test: Initialize project...")
         init_result = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -448,7 +448,7 @@ def test_error_conditions_and_recovery():
 
         print("🚀 Error test: Start services...")
         start_result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -459,7 +459,7 @@ def test_error_conditions_and_recovery():
         # Test 1: Query with non-existent term before indexing
         print("🔍 Error test: Query non-existent term before indexing...")
         query_result = subprocess.run(
-            ["code-indexer", "query", "nonexistent_unique_term_12345", "--quiet"],
+            ["cidx", "query", "nonexistent_unique_term_12345", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -473,7 +473,7 @@ def test_error_conditions_and_recovery():
         # Test 2: Status should work before indexing
         print("📊 Error test: Status before indexing...")
         status_result = subprocess.run(
-            ["code-indexer", "status"],
+            ["cidx", "status"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -485,7 +485,7 @@ def test_error_conditions_and_recovery():
         # Test 3: Index the project
         print("📚 Error test: Index project...")
         index_result = subprocess.run(
-            ["code-indexer", "index"],
+            ["cidx", "index"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -496,7 +496,7 @@ def test_error_conditions_and_recovery():
         # Test 4: Verify indexing worked
         print("🔍 Error test: Verify indexing with real query...")
         verify_result = subprocess.run(
-            ["code-indexer", "query", "calculator", "--quiet"],
+            ["cidx", "query", "calculator", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -507,7 +507,7 @@ def test_error_conditions_and_recovery():
         # Test 5: Query with non-existent term after indexing
         print("🔍 Error test: Query non-existent term after indexing...")
         no_result_query = subprocess.run(
-            ["code-indexer", "query", "completely_nonexistent_term_xyz_999", "--quiet"],
+            ["cidx", "query", "completely_nonexistent_term_xyz_999", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -520,7 +520,7 @@ def test_error_conditions_and_recovery():
         # Test 6: Test query with special characters
         print("🔍 Error test: Query with special characters...")
         special_query = subprocess.run(
-            ["code-indexer", "query", "!@#$%^&*()", "--quiet"],
+            ["cidx", "query", "!@#$%^&*()", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -548,7 +548,7 @@ def test_concurrent_operations_workflow():
 
         print("🔧 Concurrent test: Setup Project 1 (Calculator)...")
         init_result1 = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
             cwd=project1_path,
             capture_output=True,
             text=True,
@@ -559,7 +559,7 @@ def test_concurrent_operations_workflow():
         ), f"Project 1 init failed: {init_result1.stderr}"
 
         start_result1 = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project1_path,
             capture_output=True,
             text=True,
@@ -570,7 +570,7 @@ def test_concurrent_operations_workflow():
         ), f"Project 1 start failed: {start_result1.stderr}"
 
         index_result1 = subprocess.run(
-            ["code-indexer", "index"],
+            ["cidx", "index"],
             cwd=project1_path,
             capture_output=True,
             text=True,
@@ -583,7 +583,7 @@ def test_concurrent_operations_workflow():
         # Test Project 1 searches
         print("🔍 Concurrent test: Testing Project 1 searches...")
         result1 = subprocess.run(
-            ["code-indexer", "query", "calculator", "--quiet"],
+            ["cidx", "query", "calculator", "--quiet"],
             cwd=project1_path,
             capture_output=True,
             text=True,
@@ -594,7 +594,7 @@ def test_concurrent_operations_workflow():
         # Multiple operations on same project to test concurrency handling
         print("🔄 Concurrent test: Multiple operations on Project 1...")
         status_result1 = subprocess.run(
-            ["code-indexer", "status"],
+            ["cidx", "status"],
             cwd=project1_path,
             capture_output=True,
             text=True,
@@ -604,7 +604,7 @@ def test_concurrent_operations_workflow():
 
         # Clean data to test cleanup during concurrent operations
         clean_result1 = subprocess.run(
-            ["code-indexer", "clean-data"],
+            ["cidx", "clean-data"],
             cwd=project1_path,
             capture_output=True,
             text=True,
@@ -620,7 +620,7 @@ def test_concurrent_operations_workflow():
 
         print("🔧 Concurrent test: Setup Project 2 (Web Server)...")
         init_result2 = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
             cwd=project2_path,
             capture_output=True,
             text=True,
@@ -632,7 +632,7 @@ def test_concurrent_operations_workflow():
 
         # Services should already be running from Project 1
         start_result2 = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project2_path,
             capture_output=True,
             text=True,
@@ -643,7 +643,7 @@ def test_concurrent_operations_workflow():
         ), f"Project 2 start failed: {start_result2.stderr}"
 
         index_result2 = subprocess.run(
-            ["code-indexer", "index"],
+            ["cidx", "index"],
             cwd=project2_path,
             capture_output=True,
             text=True,
@@ -656,7 +656,7 @@ def test_concurrent_operations_workflow():
         # Test Project 2 searches
         print("🔍 Concurrent test: Testing Project 2 searches...")
         result2 = subprocess.run(
-            ["code-indexer", "query", "server", "--quiet"],
+            ["cidx", "query", "server", "--quiet"],
             cwd=project2_path,
             capture_output=True,
             text=True,
@@ -668,7 +668,7 @@ def test_concurrent_operations_workflow():
         print("🔄 Concurrent test: Rapid operations on Project 2...")
         for i in range(3):
             rapid_status = subprocess.run(
-                ["code-indexer", "status"],
+                ["cidx", "status"],
                 cwd=project2_path,
                 capture_output=True,
                 text=True,

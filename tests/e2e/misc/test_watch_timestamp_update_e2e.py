@@ -133,7 +133,7 @@ class TestWatchTimestampUpdateE2E:
 
             # Start services
             start_result = subprocess.run(
-                ["code-indexer", "start", "--quiet"],
+                ["cidx", "start", "--quiet"],
                 cwd=test_dir,
                 capture_output=True,
                 text=True,
@@ -144,7 +144,7 @@ class TestWatchTimestampUpdateE2E:
             try:
                 # Perform initial index
                 index_result = subprocess.run(
-                    ["code-indexer", "index"],
+                    ["cidx", "index"],
                     cwd=test_dir,
                     capture_output=True,
                     text=True,
@@ -171,7 +171,7 @@ class TestWatchTimestampUpdateE2E:
 
                 # Start watch process in background
                 watch_process = subprocess.Popen(
-                    ["code-indexer", "watch", "--debounce", "0.5"],
+                    ["cidx", "watch", "--debounce", "0.5"],
                     cwd=test_dir,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
@@ -209,7 +209,7 @@ def new_function():
 
                 # Now run incremental index with reconcile
                 reconcile_result = subprocess.run(
-                    ["code-indexer", "index", "--reconcile"],
+                    ["cidx", "index", "--reconcile"],
                     cwd=test_dir,
                     capture_output=True,
                     text=True,
@@ -258,7 +258,7 @@ def new_function():
             finally:
                 # Clean up
                 subprocess.run(
-                    ["code-indexer", "clean", "--remove-data", "--quiet"],
+                    ["cidx", "clean", "--remove-data", "--quiet"],
                     cwd=test_dir,
                     capture_output=True,
                     text=True,
@@ -299,7 +299,7 @@ def new_function():
                 timeout=30,
             )
             subprocess.run(
-                ["code-indexer", "start", "--quiet"],
+                ["cidx", "start", "--quiet"],
                 cwd=test_dir,
                 check=True,
                 capture_output=True,
@@ -309,7 +309,7 @@ def new_function():
             try:
                 # Initial index
                 subprocess.run(
-                    ["code-indexer", "index"],
+                    ["cidx", "index"],
                     cwd=test_dir,
                     check=True,
                     capture_output=True,
@@ -318,7 +318,7 @@ def new_function():
 
                 # Start watch
                 watch_process = subprocess.Popen(
-                    ["code-indexer", "watch", "--debounce", "0.5"],
+                    ["cidx", "watch", "--debounce", "0.5"],
                     cwd=test_dir,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
@@ -375,7 +375,7 @@ if __name__ == "__main__":
 
                 # Run reconcile
                 reconcile_result = subprocess.run(
-                    ["code-indexer", "index", "--reconcile"],
+                    ["cidx", "index", "--reconcile"],
                     cwd=test_dir,
                     capture_output=True,
                     text=True,
@@ -419,7 +419,7 @@ if __name__ == "__main__":
             finally:
                 # Clean up
                 subprocess.run(
-                    ["code-indexer", "clean", "--remove-data", "--quiet"],
+                    ["cidx", "clean", "--remove-data", "--quiet"],
                     cwd=test_dir,
                     capture_output=True,
                     text=True,

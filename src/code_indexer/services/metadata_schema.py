@@ -42,6 +42,7 @@ class GitAwareMetadataSchema:
         "file_hash",  # Content hash of the file
         "git_available",  # Whether git metadata is available
         "schema_version",  # Metadata schema version
+        "type",  # Point type (content, metadata, etc.)
     }
 
     # Optional line number fields (for enhanced display)
@@ -361,6 +362,7 @@ class GitAwareMetadataSchema:
             "schema_version": MetadataSchemaVersion.GIT_AWARE,
             "line_start": line_start,
             "line_end": line_end,
+            "type": "content",  # All indexed points are content points
         }
 
         if git_metadata:
@@ -422,6 +424,7 @@ class GitAwareMetadataSchema:
             "file_hash": file_hash,
             "git_available": git_metadata is not None,
             "schema_version": MetadataSchemaVersion.BRANCH_TOPOLOGY,
+            "type": "content",  # All indexed points are content points
         }
 
         if git_metadata:

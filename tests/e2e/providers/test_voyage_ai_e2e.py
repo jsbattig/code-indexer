@@ -97,7 +97,7 @@ def test_voyage_ai_shared_container_full_workflow():
 
         # Step 1: Initialize project with VoyageAI provider
         result = subprocess.run(
-            ["code-indexer", "init", "--embedding-provider", "voyage-ai", "--force"],
+            ["cidx", "init", "--embedding-provider", "voyage-ai", "--force"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -107,7 +107,7 @@ def test_voyage_ai_shared_container_full_workflow():
 
         # Step 2: Verify provider configuration and status
         result = subprocess.run(
-            ["code-indexer", "status"],
+            ["cidx", "status"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -127,7 +127,7 @@ def test_voyage_ai_shared_container_full_workflow():
 
         # Step 3: Start services (should be fast with shared containers)
         result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -137,7 +137,7 @@ def test_voyage_ai_shared_container_full_workflow():
 
         # Step 4: Test indexing workflow with VoyageAI
         result = subprocess.run(
-            ["code-indexer", "index"],
+            ["cidx", "index"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -151,7 +151,7 @@ def test_voyage_ai_shared_container_full_workflow():
 
         # Step 5: Test semantic querying with VoyageAI
         result = subprocess.run(
-            ["code-indexer", "query", "authentication function", "--quiet"],
+            ["cidx", "query", "authentication function", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -162,7 +162,7 @@ def test_voyage_ai_shared_container_full_workflow():
 
         # Step 6: Test another query to verify VoyageAI functionality
         result = subprocess.run(
-            ["code-indexer", "query", "hello world", "--quiet"],
+            ["cidx", "query", "hello world", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -187,7 +187,7 @@ def test_voyage_ai_shared_container_service_validation():
 
         # Step 1: Initialize project with VoyageAI
         result = subprocess.run(
-            ["code-indexer", "init", "--embedding-provider", "voyage-ai", "--force"],
+            ["cidx", "init", "--embedding-provider", "voyage-ai", "--force"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -197,7 +197,7 @@ def test_voyage_ai_shared_container_service_validation():
 
         # Step 2: Test Docker Compose/container validation via start command
         result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -207,7 +207,7 @@ def test_voyage_ai_shared_container_service_validation():
 
         # Step 3: Verify services are running properly for VoyageAI
         result = subprocess.run(
-            ["code-indexer", "status"],
+            ["cidx", "status"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -222,7 +222,7 @@ def test_voyage_ai_shared_container_service_validation():
         # Step 4: Test that VoyageAI-specific services work correctly
         # Test basic indexing to validate container setup
         result = subprocess.run(
-            ["code-indexer", "index"],
+            ["cidx", "index"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -234,7 +234,7 @@ def test_voyage_ai_shared_container_service_validation():
 
         # Step 5: Validate that containers can be restarted (idempotent start)
         result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -258,7 +258,7 @@ def test_voyage_ai_shared_container_idempotent_operations():
 
         # Step 1: Initialize project with VoyageAI
         result = subprocess.run(
-            ["code-indexer", "init", "--embedding-provider", "voyage-ai", "--force"],
+            ["cidx", "init", "--embedding-provider", "voyage-ai", "--force"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -269,7 +269,7 @@ def test_voyage_ai_shared_container_idempotent_operations():
         # Step 2: Test multiple start commands are idempotent (critical for shared containers)
         for i in range(3):
             result = subprocess.run(
-                ["code-indexer", "start", "--quiet"],
+                ["cidx", "start", "--quiet"],
                 cwd=project_path,
                 capture_output=True,
                 text=True,
@@ -280,7 +280,7 @@ def test_voyage_ai_shared_container_idempotent_operations():
             # Each start should be fast due to shared containers
             # Verify status after each start
             status_result = subprocess.run(
-                ["code-indexer", "status"],
+                ["cidx", "status"],
                 cwd=project_path,
                 capture_output=True,
                 text=True,
@@ -291,7 +291,7 @@ def test_voyage_ai_shared_container_idempotent_operations():
         # Step 3: Test idempotent indexing operations
         for i in range(2):
             result = subprocess.run(
-                ["code-indexer", "index"],
+                ["cidx", "index"],
                 cwd=project_path,
                 capture_output=True,
                 text=True,
@@ -302,7 +302,7 @@ def test_voyage_ai_shared_container_idempotent_operations():
         # Step 4: Test idempotent querying
         for i in range(2):
             result = subprocess.run(
-                ["code-indexer", "query", "authentication", "--quiet"],
+                ["cidx", "query", "authentication", "--quiet"],
                 cwd=project_path,
                 capture_output=True,
                 text=True,
@@ -312,7 +312,7 @@ def test_voyage_ai_shared_container_idempotent_operations():
 
         # Step 5: Verify final state is consistent
         result = subprocess.run(
-            ["code-indexer", "status"],
+            ["cidx", "status"],
             cwd=project_path,
             capture_output=True,
             text=True,

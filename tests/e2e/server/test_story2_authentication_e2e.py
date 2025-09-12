@@ -91,7 +91,7 @@ class TestStory2AuthenticationE2E:
             # Start the server
             server_process = subprocess.Popen(
                 [
-                    "python",
+                    "python3",
                     "-m",
                     "code_indexer.server.main",
                     "--port",

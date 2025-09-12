@@ -101,18 +101,18 @@ class OriginalClass:
         # Initialize and index with VoyageAI
         init_result = run_cidx_command(
             project_path,
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
         )
         assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
         # Start services (should already be running in shared environment)
         start_result = run_cidx_command(
-            project_path, ["code-indexer", "start", "--quiet"], timeout=120
+            project_path, ["cidx", "start", "--quiet"], timeout=120
         )
         assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
 
         initial_index_result = run_cidx_command(
-            project_path, ["code-indexer", "index", "--clear"], timeout=180
+            project_path, ["cidx", "index", "--clear"], timeout=180
         )
         assert (
             initial_index_result.returncode == 0
@@ -122,7 +122,7 @@ class OriginalClass:
         # Verify initial committed content is searchable
         committed_query = run_cidx_command(
             project_path,
-            ["code-indexer", "query", "original content from commit", "--quiet"],
+            ["cidx", "query", "original content from commit", "--quiet"],
         )
         assert committed_query.returncode == 0
         assert (
@@ -179,7 +179,7 @@ def new_working_dir_function():
         print("=== PHASE 3: Reconcile working directory changes ===")
 
         reconcile_result = run_cidx_command(
-            project_path, ["code-indexer", "index", "--reconcile"], timeout=180
+            project_path, ["cidx", "index", "--reconcile"], timeout=180
         )
         assert (
             reconcile_result.returncode == 0
@@ -218,7 +218,7 @@ def new_working_dir_function():
 
         # Query for working directory only functions
         new_method_query = run_cidx_command(
-            project_path, ["code-indexer", "query", "new_working_dir_method", "--quiet"]
+            project_path, ["cidx", "query", "new_working_dir_method", "--quiet"]
         )
         assert new_method_query.returncode == 0
         assert (
@@ -227,7 +227,7 @@ def new_working_dir_function():
 
         new_function_query = run_cidx_command(
             project_path,
-            ["code-indexer", "query", "new_working_dir_function", "--quiet"],
+            ["cidx", "query", "new_working_dir_function", "--quiet"],
         )
         assert new_function_query.returncode == 0
         assert (
@@ -241,7 +241,7 @@ def new_working_dir_function():
 
         old_committed_query = run_cidx_command(
             project_path,
-            ["code-indexer", "query", "original content from commit", "--quiet"],
+            ["cidx", "query", "original content from commit", "--quiet"],
         )
         assert (
             old_committed_query.returncode == 0
@@ -309,18 +309,18 @@ def test_git_restore_reconcile_workflow_e2e():
         # Index committed content
         init_result = run_cidx_command(
             project_path,
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
         )
         assert init_result.returncode == 0
 
         # Start services (should already be running in shared environment)
         start_result = run_cidx_command(
-            project_path, ["code-indexer", "start", "--quiet"], timeout=120
+            project_path, ["cidx", "start", "--quiet"], timeout=120
         )
         assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
 
         index_result = run_cidx_command(
-            project_path, ["code-indexer", "index", "--clear"], timeout=180
+            project_path, ["cidx", "index", "--clear"], timeout=180
         )
         assert index_result.returncode == 0
         assert "✅ Indexing complete!" in index_result.stdout
@@ -342,14 +342,14 @@ def temporary_function():
 
         # Reconcile to index working directory changes
         working_reconcile = run_cidx_command(
-            project_path, ["code-indexer", "index", "--reconcile"], timeout=180
+            project_path, ["cidx", "index", "--reconcile"], timeout=180
         )
         assert working_reconcile.returncode == 0
 
         # Verify working directory content is searchable
         working_query = run_cidx_command(
             project_path,
-            ["code-indexer", "query", "working directory content", "--quiet"],
+            ["cidx", "query", "working directory content", "--quiet"],
         )
         assert working_query.returncode == 0
         assert "restore_test.py" in working_query.stdout
@@ -374,7 +374,7 @@ def temporary_function():
         print("=== PHASE 4: Reconcile after git restore ===")
 
         restore_reconcile = run_cidx_command(
-            project_path, ["code-indexer", "index", "--reconcile"], timeout=180
+            project_path, ["cidx", "index", "--reconcile"], timeout=180
         )
         assert restore_reconcile.returncode == 0
         assert "✅ Indexing complete!" in restore_reconcile.stdout
@@ -403,7 +403,7 @@ def temporary_function():
 
         old_working_query = run_cidx_command(
             project_path,
-            ["code-indexer", "query", "working directory content", "--quiet"],
+            ["cidx", "query", "working directory content", "--quiet"],
         )
         assert old_working_query.returncode == 0
 

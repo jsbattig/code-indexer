@@ -7,7 +7,6 @@ Uses TDD approach to drive implementation of enhanced line number display.
 
 from typing import Dict, List
 import subprocess
-import os
 
 import pytest
 
@@ -278,21 +277,18 @@ def create_test_project_with_line_numbers(test_dir):
         file_path.write_text(content)
 
 
-@pytest.mark.skipif(
-    not os.getenv("VOYAGE_API_KEY"),
-    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
-)
+@pytest.mark.e2e
 def test_line_numbers_in_quiet_query_results():
     """Test that line numbers appear in quiet mode query results."""
     with shared_container_test_environment(
-        "test_line_numbers_quiet", EmbeddingProvider.VOYAGE_AI
+        "test_line_numbers_quiet", EmbeddingProvider.OLLAMA
     ) as project_path:
         # Create test files in the shared project path
         create_test_project_with_line_numbers(project_path)
 
         # Initialize this specific project
         init_result = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["code-indexer", "init", "--force", "--embedding-provider", "ollama"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -366,21 +362,18 @@ def test_line_numbers_in_quiet_query_results():
         ), f"Query results should include line numbers. Got: {result_lines}"
 
 
-@pytest.mark.skipif(
-    not os.getenv("VOYAGE_API_KEY"),
-    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
-)
+@pytest.mark.e2e
 def test_line_numbers_in_verbose_query_results():
     """Test that line numbers appear in verbose mode query results."""
     with shared_container_test_environment(
-        "test_line_numbers_verbose", EmbeddingProvider.VOYAGE_AI
+        "test_line_numbers_verbose", EmbeddingProvider.OLLAMA
     ) as project_path:
         # Create test files in the shared project path
         create_test_project_with_line_numbers(project_path)
 
         # Initialize this specific project
         init_result = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["code-indexer", "init", "--force", "--embedding-provider", "ollama"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -448,21 +441,18 @@ def test_line_numbers_in_verbose_query_results():
         ), f"Verbose query results should include line numbers in file headers. Got headers: {file_headers}"
 
 
-@pytest.mark.skipif(
-    not os.getenv("VOYAGE_API_KEY"),
-    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
-)
+@pytest.mark.e2e
 def test_line_numbers_with_actual_line_prefixes():
     """Test that query results show actual line numbers as prefixes in content."""
     with shared_container_test_environment(
-        "test_line_numbers_prefixes", EmbeddingProvider.VOYAGE_AI
+        "test_line_numbers_prefixes", EmbeddingProvider.OLLAMA
     ) as project_path:
         # Create test files in the shared project path
         create_test_project_with_line_numbers(project_path)
 
         # Initialize this specific project
         init_result = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["code-indexer", "init", "--force", "--embedding-provider", "ollama"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -560,14 +550,11 @@ def test_line_numbers_with_actual_line_prefixes():
         ), f"Query results should show line number prefixes in content. Content sections found: {len(content_sections)}"
 
 
-@pytest.mark.skipif(
-    not os.getenv("VOYAGE_API_KEY"),
-    reason="VoyageAI API key required for E2E tests (set VOYAGE_API_KEY environment variable)",
-)
+@pytest.mark.e2e
 def test_line_numbers_match_file_structure():
     """Test that displayed line numbers accurately match the actual file structure."""
     with shared_container_test_environment(
-        "test_line_numbers_structure", EmbeddingProvider.VOYAGE_AI
+        "test_line_numbers_structure", EmbeddingProvider.OLLAMA
     ) as project_path:
         # Create test files in the shared project path
         create_test_project_with_line_numbers(project_path)
@@ -589,7 +576,7 @@ def test_line_numbers_match_file_structure():
 
         # Initialize this specific project
         init_result = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["code-indexer", "init", "--force", "--embedding-provider", "ollama"],
             cwd=project_path,
             capture_output=True,
             text=True,

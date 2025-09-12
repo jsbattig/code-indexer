@@ -15,7 +15,7 @@ from code_indexer.config import ConfigManager
 
 # Import new test infrastructure to eliminate duplication
 from .infrastructure import (
-    TestProjectInventory,
+    ProjectInventory,
     create_test_project_with_inventory,
 )
 
@@ -102,13 +102,23 @@ def multiproject_test_setup():
         project1_path = base_dir / "project1"
         project2_path = base_dir / "project2"
 
-        project1_path.mkdir()
-        project2_path.mkdir()
+        # Ensure project directories exist (don't clean - they're part of shared environment)
+        project1_path.mkdir(exist_ok=True)
+        project2_path.mkdir(exist_ok=True)
+
+        # Clean only the test files we'll be creating (not the .code-indexer directory)
+        for proj_path in [project1_path, project2_path]:
+            # Remove only Python test files, not configuration
+            for py_file in proj_path.glob("*.py"):
+                try:
+                    py_file.unlink()
+                except (PermissionError, FileNotFoundError):
+                    pass  # Ignore if file is locked or already deleted
 
         # Create isolated configs but use compatible collection names for shared containers
         # Use the same collection base name so they can share the container environment
-        multiproject_config_1 = TestProjectInventory.INTEGRATION_MULTIPROJECT_1
-        multiproject_config_2 = TestProjectInventory.INTEGRATION_MULTIPROJECT_2
+        multiproject_config_1 = ProjectInventory.INTEGRATION_MULTIPROJECT_1
+        multiproject_config_2 = ProjectInventory.INTEGRATION_MULTIPROJECT_2
 
         # Override collection names to be compatible with shared environment
         multiproject_config_1.base_collection_name = "code_index"  # type: ignore[attr-defined]

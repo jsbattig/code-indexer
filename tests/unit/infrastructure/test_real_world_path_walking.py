@@ -88,7 +88,7 @@ class TestRealWorldPathWalking:
             # Run cidx status as subprocess to test real CLI behavior
             # This should find microservice config, not parent config
             result = subprocess.run(
-                ["python", "-m", "code_indexer.cli", "status"],
+                ["python3", "-m", "code_indexer.cli", "status"],
                 capture_output=True,
                 text=True,
                 timeout=30,

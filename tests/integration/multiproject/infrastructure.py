@@ -9,14 +9,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, Any
 
-# Import EmbeddingProvider from shared test infrastructure
-from ...shared.mock_providers import MockEmbeddingProvider
-
-# Re-export for compatibility with existing imports
-EmbeddingProvider = MockEmbeddingProvider
+# Import EmbeddingProvider enum from unit test infrastructure
 
 
-class TestProjectInventory(Enum):
+class ProjectInventory(Enum):
     """Enumeration of predefined test project configurations for multiproject integration tests."""
 
     INTEGRATION_MULTIPROJECT_1 = "integration_multiproject_1"
@@ -24,7 +20,7 @@ class TestProjectInventory(Enum):
 
 
 def create_test_project_with_inventory(
-    project_path: Path, inventory: TestProjectInventory
+    project_path: Path, inventory: ProjectInventory
 ) -> None:
     """
     Create a test project with predefined configuration based on inventory type.
@@ -57,7 +53,7 @@ def create_test_project_with_inventory(
     _create_inventory_source_files(project_path, inventory)
 
 
-def _get_inventory_config(inventory: TestProjectInventory) -> Dict[str, Any]:
+def _get_inventory_config(inventory: ProjectInventory) -> Dict[str, Any]:
     """Get configuration data for specific inventory type."""
 
     base_config = {
@@ -86,22 +82,22 @@ def _get_inventory_config(inventory: TestProjectInventory) -> Dict[str, Any]:
 
     # Inventory-specific configurations
     inventory_configs = {
-        TestProjectInventory.INTEGRATION_MULTIPROJECT_1: project1_config,
-        TestProjectInventory.INTEGRATION_MULTIPROJECT_2: project2_config,
+        ProjectInventory.INTEGRATION_MULTIPROJECT_1: project1_config,
+        ProjectInventory.INTEGRATION_MULTIPROJECT_2: project2_config,
     }
 
     return inventory_configs.get(inventory, base_config)
 
 
 def _create_inventory_source_files(
-    project_path: Path, inventory: TestProjectInventory
+    project_path: Path, inventory: ProjectInventory
 ) -> None:
     """Create sample source files for specific inventory type."""
 
     src_path = project_path / "src"
 
     project_id = (
-        "1" if inventory == TestProjectInventory.INTEGRATION_MULTIPROJECT_1 else "2"
+        "1" if inventory == ProjectInventory.INTEGRATION_MULTIPROJECT_1 else "2"
     )
 
     # Create project-specific files

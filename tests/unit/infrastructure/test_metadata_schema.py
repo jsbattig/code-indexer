@@ -27,6 +27,7 @@ class TestGitAwareMetadataSchema:
             "git_branch": "main",
             "git_blob_hash": "b" * 40,
             "schema_version": MetadataSchemaVersion.GIT_AWARE,
+            "type": "content",
         }
 
         result = GitAwareMetadataSchema.validate_metadata(metadata)
@@ -50,6 +51,7 @@ class TestGitAwareMetadataSchema:
             "filesystem_mtime": 1640995200,
             "filesystem_size": 15,
             "schema_version": MetadataSchemaVersion.GIT_AWARE,
+            "type": "content",
         }
 
         result = GitAwareMetadataSchema.validate_metadata(metadata)
@@ -87,6 +89,7 @@ class TestGitAwareMetadataSchema:
             "git_available": True,
             "git_commit_hash": "invalid_hash",  # Invalid format
             "schema_version": MetadataSchemaVersion.GIT_AWARE,
+            "type": "content",
         }
 
         result = GitAwareMetadataSchema.validate_metadata(metadata)
@@ -108,6 +111,7 @@ class TestGitAwareMetadataSchema:
             "file_hash": "sha256:abc123",
             "git_available": False,
             "schema_version": MetadataSchemaVersion.GIT_AWARE,
+            "type": "content",
         }
 
         result = GitAwareMetadataSchema.validate_metadata(metadata)
@@ -129,6 +133,7 @@ class TestGitAwareMetadataSchema:
             "file_hash": "sha256:abc123",
             "git_available": False,
             "schema_version": MetadataSchemaVersion.GIT_AWARE,
+            "type": "content",
         }
 
         result = GitAwareMetadataSchema.validate_metadata(metadata)
@@ -151,6 +156,7 @@ class TestGitAwareMetadataSchema:
             "git_available": False,
             "schema_version": MetadataSchemaVersion.GIT_AWARE,
             "unknown_field": "some_value",  # Unknown field
+            "type": "content",
         }
 
         result = GitAwareMetadataSchema.validate_metadata(metadata)
@@ -310,6 +316,7 @@ class TestMetadataValidator:
             "file_hash": "sha256:abc123",
             "git_available": False,
             "schema_version": MetadataSchemaVersion.GIT_AWARE,
+            "type": "content",
         }
 
         assert MetadataValidator.validate_point_payload(payload) is True
@@ -337,6 +344,7 @@ class TestMetadataValidator:
             "file_hash": "sha256:abc123",
             "git_available": False,
             "schema_version": MetadataSchemaVersion.GIT_AWARE,
+            "type": "content",
         }
 
         invalid_payload = {

@@ -16,10 +16,10 @@ class TestCancellationIntegration:
     @patch("code_indexer.services.git_aware_processor.FileIdentifier")
     @patch("code_indexer.services.git_aware_processor.GitDetectionService")
     @patch("code_indexer.indexing.processor.FileFinder")
-    @patch("code_indexer.indexing.processor.TextChunker")
+    @patch("code_indexer.indexing.processor.FixedSizeChunker")
     def test_cancellation_flag_in_instance(
         self,
-        mock_text_chunker,
+        mock_fixed_size_chunker,
         mock_file_finder,
         mock_git_detection,
         mock_file_identifier,
@@ -47,10 +47,10 @@ class TestCancellationIntegration:
     @patch("code_indexer.services.git_aware_processor.FileIdentifier")
     @patch("code_indexer.services.git_aware_processor.GitDetectionService")
     @patch("code_indexer.indexing.processor.FileFinder")
-    @patch("code_indexer.indexing.processor.TextChunker")
+    @patch("code_indexer.indexing.processor.FixedSizeChunker")
     def test_request_cancellation_sets_flag(
         self,
-        mock_text_chunker,
+        mock_fixed_size_chunker,
         mock_file_finder,
         mock_git_detection,
         mock_file_identifier,

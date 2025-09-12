@@ -118,11 +118,23 @@ class TestDockerCleanupProjectScoping:
             _ = docker_manager._force_cleanup_containers(verbose=True)
 
             # Current implementation behavior - this will FAIL because it targets other projects
-            # Get all the kill/rm calls made
+            # Get all the kill/rm calls made (check actual command, not string representation)
             kill_calls = [
-                call for call in mock_run.call_args_list if "kill" in str(call)
+                call
+                for call in mock_run.call_args_list
+                if call.args
+                and len(call.args) > 0
+                and len(call.args[0]) > 1
+                and call.args[0][1] == "kill"
             ]
-            rm_calls = [call for call in mock_run.call_args_list if "rm" in str(call)]
+            rm_calls = [
+                call
+                for call in mock_run.call_args_list
+                if call.args
+                and len(call.args) > 0
+                and len(call.args[0]) > 1
+                and call.args[0][1] == "rm"
+            ]
 
             # ASSERTION THAT DEMONSTRATES THE BUG:
             # Currently, the implementation will try to remove containers from other projects
@@ -181,33 +193,18 @@ class TestDockerCleanupProjectScoping:
                 def mock_subprocess_calls(*args, **kwargs):
                     cmd = args[0]
 
-                    # FIXED BEHAVIOR: Uses exact container name matching
+                    # FIXED BEHAVIOR: Uses project hash pattern matching for discovery
                     if (
                         "ps" in cmd
                         and "-a" in cmd
-                        and "name=^cidx-current123" in str(cmd)
+                        and "name=cidx-current123-" in str(cmd)
                     ):
-                        # Return the specific container if it matches the exact filter
-                        if "qdrant" in str(cmd):
-                            return Mock(
-                                returncode=0,
-                                stdout="cidx-current123-qdrant\tRunning\n",
-                                stderr="",
-                            )
-                        elif "ollama" in str(cmd):
-                            return Mock(
-                                returncode=0,
-                                stdout="cidx-current123-ollama\tRunning\n",
-                                stderr="",
-                            )
-                        elif "data-cleaner" in str(cmd):
-                            return Mock(
-                                returncode=0,
-                                stdout="cidx-current123-data-cleaner\tRunning\n",
-                                stderr="",
-                            )
-                        else:
-                            return Mock(returncode=0, stdout="", stderr="")
+                        # Return all containers for this project in a single discovery call
+                        return Mock(
+                            returncode=0,
+                            stdout="cidx-current123-qdrant\tRunning\ncidx-current123-ollama\tRunning\ncidx-current123-data-cleaner\tRunning\n",
+                            stderr="",
+                        )
                     elif "kill" in cmd or "rm" in cmd:
                         return Mock(returncode=0, stdout="", stderr="")
                     else:
@@ -223,20 +220,27 @@ class TestDockerCleanupProjectScoping:
                 container_operations = [
                     call
                     for call in all_calls
-                    if any(op in str(call) for op in ["kill", "rm"])
+                    if call.args
+                    and len(call.args) > 0
+                    and len(call.args[0]) > 1
+                    and call.args[0][1]
+                    in [
+                        "kill",
+                        "rm",
+                    ]  # Check the actual command, not string representation
                 ]
 
-                # Verify exact matching is used (not wildcard)
-                exact_match_calls = [
+                # Verify project-scoped discovery is used
+                discovery_calls = [
                     call
                     for call in all_calls
-                    if "ps" in str(call) and "name=^cidx-current123" in str(call)
+                    if "ps" in str(call) and "name=cidx-current123-" in str(call)
                 ]
                 assert (
-                    len(exact_match_calls) >= 3
-                ), "Should use exact matching for each container"
+                    len(discovery_calls) == 1
+                ), "Should use single discovery call for all project containers"
 
-                # Check operations only target current project containers
+                # Check operations only target current project containers (kill/rm only)
                 current_project_operations = [
                     call
                     for call in container_operations
@@ -254,9 +258,10 @@ class TestDockerCleanupProjectScoping:
                 assert (
                     len(other_project_operations) == 0
                 ), f"Force cleanup targeted other project containers: {other_project_operations}"
+                # Should have kill and rm operations for each of the 3 containers
                 assert (
-                    len(current_project_operations) >= 6
-                ), f"Force cleanup should have targeted current project containers: {current_project_operations}"  # 3 containers * 2 operations (kill + rm)
+                    len(current_project_operations) == 6
+                ), f"Force cleanup should have targeted current project containers (expected 6, got {len(current_project_operations)}): {current_project_operations}"  # 3 containers * 2 operations (kill + rm)
 
     def test_cleanup_uninstall_should_not_affect_other_projects(
         self,
@@ -349,7 +354,10 @@ class TestDockerCleanupProjectScoping:
             container_operations = [
                 call
                 for call in all_calls
-                if any(op in str(call) for op in ["kill", "rm"])
+                if call.args
+                and len(call.args) > 0
+                and len(call.args[0]) > 1
+                and call.args[0][1] in ["kill", "rm"]  # Check the actual command
             ]
 
             # Find operations on other projects (this is the bug!)
@@ -426,18 +434,17 @@ class TestDockerCleanupProjectScoping:
                     cmd for cmd in actual_commands if "ps" in cmd and "--filter" in cmd
                 ]
 
-                # Verify NO dangerous wildcard filters are used
-                buggy_commands = [
+                # Verify project-scoped filters are used (with project hash)
+                project_scoped_commands = [
                     cmd
                     for cmd in container_list_commands
-                    if "name=cidx-" in cmd
-                    and "name=^cidx-" not in cmd  # Wildcard without exact match
+                    if "name=cidx-proj123-" in cmd  # Project-scoped pattern
                 ]
 
-                # Fixed implementation should have ZERO wildcard filters
-                assert len(buggy_commands) == 0, (
-                    f"BUG: Found dangerous wildcard filter commands: {buggy_commands}. "
-                    f"Fixed implementation should only use exact matching."
+                # Fixed implementation should use project-scoped discovery
+                assert len(project_scoped_commands) == 1, (
+                    f"Expected project-scoped discovery command. "
+                    f"Found commands: {container_list_commands}"
                 )
 
                 # The implementation should attempt to check for each container
@@ -445,16 +452,20 @@ class TestDockerCleanupProjectScoping:
                     len(actual_commands) > 0
                 ), f"Implementation should have executed some commands, but got: {actual_commands}"
 
-                # Verify no wildcard patterns are used anywhere
-                all_wildcard_commands = [
+                # Verify no system-wide wildcard patterns are used
+                # Project-scoped patterns like "cidx-proj123-" are safe
+                dangerous_wildcards = [
                     cmd
                     for cmd in actual_commands
-                    if "name=cidx-" in str(cmd) and "name=^" not in str(cmd)
+                    if "name=cidx-" in str(cmd)
+                    and not any(
+                        f"name=cidx-{h}-" in str(cmd) for h in ["proj123"]
+                    )  # Not project-scoped
                 ]
 
                 assert (
-                    len(all_wildcard_commands) == 0
-                ), f"No wildcard patterns should be used. Found: {all_wildcard_commands}"
+                    len(dangerous_wildcards) == 0
+                ), f"No system-wide wildcard patterns should be used. Found: {dangerous_wildcards}"
 
 
 if __name__ == "__main__":

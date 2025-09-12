@@ -151,7 +151,7 @@ def get_collection_stats(test_dir) -> Dict[str, Any]:
 
     # First try to get stats from status command
     result = subprocess.run(
-        ["code-indexer", "status"],
+        ["cidx", "status"],
         cwd=test_dir,
         capture_output=True,
         text=True,
@@ -221,7 +221,7 @@ def get_collection_stats(test_dir) -> Dict[str, Any]:
 def query_files(test_dir, query: str, limit: int = 10) -> Dict[str, Any]:
     """Query the indexed files."""
     result = subprocess.run(
-        ["code-indexer", "query", query, "--limit", str(limit)],
+        ["cidx", "query", query, "--limit", str(limit)],
         cwd=test_dir,
         capture_output=True,
         text=True,
@@ -357,7 +357,7 @@ def test_git_aware_watch_deletion():
             assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
             start_result = subprocess.run(
-                ["code-indexer", "start", "--quiet"],
+                ["cidx", "start", "--quiet"],
                 cwd=project_path,
                 capture_output=True,
                 text=True,
@@ -367,7 +367,7 @@ def test_git_aware_watch_deletion():
 
             # Index files initially
             index_result = subprocess.run(
-                ["code-indexer", "index"],
+                ["cidx", "index"],
                 cwd=project_path,
                 capture_output=True,
                 text=True,
@@ -381,7 +381,7 @@ def test_git_aware_watch_deletion():
 
             # Start watch mode
             watch_process = subprocess.Popen(
-                ["code-indexer", "watch", "--debounce", "1.0"],
+                ["cidx", "watch", "--debounce", "1.0"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -453,7 +453,7 @@ def test_git_aware_reconcile_deletion():
 
         # Initialize and start services
         init_result = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -462,7 +462,7 @@ def test_git_aware_reconcile_deletion():
         assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
         start_result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -472,7 +472,7 @@ def test_git_aware_reconcile_deletion():
 
         # Index files initially
         index_result = subprocess.run(
-            ["code-indexer", "index"],
+            ["cidx", "index"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -490,7 +490,7 @@ def test_git_aware_reconcile_deletion():
 
         # Run reconcile (includes deletion detection automatically)
         reconcile_result = subprocess.run(
-            ["code-indexer", "index", "--reconcile"],
+            ["cidx", "index", "--reconcile"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -554,7 +554,7 @@ def test_multi_branch_isolation():
             assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
             start_result = subprocess.run(
-                ["code-indexer", "start", "--quiet"],
+                ["cidx", "start", "--quiet"],
                 cwd=project_path,
                 capture_output=True,
                 text=True,
@@ -564,7 +564,7 @@ def test_multi_branch_isolation():
 
             # Index files on main branch
             index_result = subprocess.run(
-                ["code-indexer", "index"],
+                ["cidx", "index"],
                 cwd=project_path,
                 capture_output=True,
                 text=True,
@@ -581,7 +581,7 @@ def test_multi_branch_isolation():
 
             # Index files on feature branch
             index_result = subprocess.run(
-                ["code-indexer", "index"],
+                ["cidx", "index"],
                 cwd=project_path,
                 capture_output=True,
                 text=True,
@@ -596,7 +596,7 @@ def test_multi_branch_isolation():
 
             # Start watch mode to detect deletion
             watch_process = subprocess.Popen(
-                ["code-indexer", "watch", "--debounce", "1.0"],
+                ["cidx", "watch", "--debounce", "1.0"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -633,7 +633,7 @@ class Feature1Handler:
 
             # Index on master branch
             index_result = subprocess.run(
-                ["code-indexer", "index"],
+                ["cidx", "index"],
                 cwd=project_path,
                 capture_output=True,
                 text=True,
@@ -676,7 +676,7 @@ def test_non_git_hard_deletion():
 
         # Initialize and start services
         init_result = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -685,7 +685,7 @@ def test_non_git_hard_deletion():
         assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
         start_result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -695,7 +695,7 @@ def test_non_git_hard_deletion():
 
         # Index files initially
         index_result = subprocess.run(
-            ["code-indexer", "index"],
+            ["cidx", "index"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -712,7 +712,7 @@ def test_non_git_hard_deletion():
 
         # Run reconcile (includes deletion detection automatically)
         reconcile_result = subprocess.run(
-            ["code-indexer", "index", "--reconcile"],
+            ["cidx", "index", "--reconcile"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -769,7 +769,7 @@ def test_non_git_watch_deletion():
             assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
             start_result = subprocess.run(
-                ["code-indexer", "start", "--quiet"],
+                ["cidx", "start", "--quiet"],
                 cwd=project_path,
                 capture_output=True,
                 text=True,
@@ -779,7 +779,7 @@ def test_non_git_watch_deletion():
 
             # Index files initially
             index_result = subprocess.run(
-                ["code-indexer", "index"],
+                ["cidx", "index"],
                 cwd=project_path,
                 capture_output=True,
                 text=True,
@@ -793,7 +793,7 @@ def test_non_git_watch_deletion():
 
             # Start watch mode
             watch_process = subprocess.Popen(
-                ["code-indexer", "watch", "--debounce", "1.0"],
+                ["cidx", "watch", "--debounce", "1.0"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -857,7 +857,7 @@ def test_deletion_performance():
 
         # Initialize and start services
         init_result = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -866,7 +866,7 @@ def test_deletion_performance():
         assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
         start_result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -876,7 +876,7 @@ def test_deletion_performance():
 
         # Index all files
         index_result = subprocess.run(
-            ["code-indexer", "index"],
+            ["cidx", "index"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -896,7 +896,7 @@ def test_deletion_performance():
         start_time = time.time()
 
         reconcile_result = subprocess.run(
-            ["code-indexer", "index", "--reconcile"],
+            ["cidx", "index", "--reconcile"],
             cwd=project_path,
             capture_output=True,
             text=True,

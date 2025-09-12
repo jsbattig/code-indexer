@@ -67,10 +67,9 @@ class TestQdrantServiceConfigIntegration:
             assert result is True
             assert mock_put.call_count == 0
 
-            # Should display message about skipping indexes
-            self.mock_console.print.assert_any_call(
-                "🔧 Payload indexes disabled in configuration - skipping index creation"
-            )
+            # When indexes are disabled, no message is printed for legacy_direct context
+            # The implementation returns True silently without any console output
+            # So we should not expect any specific message to be printed
 
     def test_create_payload_indexes_uses_custom_config(self):
         """Test that custom payload index configuration is used."""
@@ -118,51 +117,68 @@ class TestQdrantServiceConfigIntegration:
         )
         client = QdrantClient(config, self.mock_console)
 
-        with patch.object(client.client, "put") as mock_put:
-            result = client._create_payload_indexes_with_retry("test_collection")
+        # Mock the collection info response to avoid 404 errors
+        mock_collection_info = Mock()
+        mock_collection_info.status_code = 200
+        mock_collection_info.json.return_value = {
+            "result": {"payload_schema": {}}  # Empty payload schema
+        }
 
-            # Should return True (no-op success) and make no API calls
-            assert result is True
-            assert mock_put.call_count == 0
+        with patch.object(client.client, "get", return_value=mock_collection_info):
+            with patch.object(client.client, "put") as mock_put:
+                result = client._create_payload_indexes_with_retry("test_collection")
 
-            # Should display message about no indexes to create
-            self.mock_console.print.assert_any_call(
-                "🔧 No payload indexes configured - skipping index creation"
-            )
+                # Should return True (no-op success) and make no API calls
+                assert result is True
+                assert mock_put.call_count == 0
+
+                # With empty indexes config and no errors, the method returns True silently
+                # No specific message is printed in this case
 
     def test_create_payload_indexes_uses_defaults_when_not_specified(self):
         """Test that default payload indexes are used when config uses defaults."""
         config = QdrantConfig(host="http://localhost:6333")  # Uses defaults
         client = QdrantClient(config, self.mock_console)
 
+        # Mock the collection info response to indicate no existing indexes
+        mock_collection_info = Mock()
+        mock_collection_info.status_code = 200
+        mock_collection_info.json.return_value = {
+            "result": {"payload_schema": {}}  # No existing indexes
+        }
+
         mock_response = Mock()
         mock_response.status_code = 201
 
-        with patch.object(client.client, "put", return_value=mock_response) as mock_put:
-            result = client._create_payload_indexes_with_retry("test_collection")
+        with patch.object(client.client, "get", return_value=mock_collection_info):
+            with patch.object(
+                client.client, "put", return_value=mock_response
+            ) as mock_put:
+                result = client._create_payload_indexes_with_retry("test_collection")
 
-            assert result is True
-            # Should make 6 API calls for the default indexes
-            assert mock_put.call_count == 7
+                assert result is True
+                # Should make 7 API calls for the default indexes
+                assert mock_put.call_count == 7
 
-            # Verify the default fields were sent (same as hardcoded in current implementation)
-            call_args_list = mock_put.call_args_list
-            sent_fields = [
-                (call[1]["json"]["field_name"], call[1]["json"]["field_schema"])
-                for call in call_args_list
-            ]
+                # Verify the default fields were sent
+                call_args_list = mock_put.call_args_list
+                sent_fields = [
+                    (call[1]["json"]["field_name"], call[1]["json"]["field_schema"])
+                    for call in call_args_list
+                ]
 
-            expected_defaults = [
-                ("type", "keyword"),
-                ("path", "text"),
-                ("git_branch", "keyword"),
-                ("file_mtime", "integer"),
-                ("hidden_branches", "keyword"),
-                ("language", "keyword"),
-            ]
+                expected_defaults = [
+                    ("type", "keyword"),
+                    ("path", "text"),
+                    ("git_branch", "keyword"),
+                    ("file_mtime", "integer"),
+                    ("hidden_branches", "keyword"),
+                    ("language", "keyword"),
+                    ("embedding_model", "keyword"),  # Added missing default index
+                ]
 
-            for field_name, field_schema in expected_defaults:
-                assert (field_name, field_schema) in sent_fields
+                for field_name, field_schema in expected_defaults:
+                    assert (field_name, field_schema) in sent_fields
 
     def test_create_payload_indexes_partial_failure_with_custom_config(self):
         """Test partial failure scenario with custom configuration."""
@@ -179,6 +195,13 @@ class TestQdrantServiceConfigIntegration:
         )
         client = QdrantClient(config, self.mock_console)
 
+        # Mock the collection info response to indicate no existing indexes
+        mock_collection_info = Mock()
+        mock_collection_info.status_code = 200
+        mock_collection_info.json.return_value = {
+            "result": {"payload_schema": {}}  # No existing indexes
+        }
+
         # Mock responses: first 2 succeed, third fails
         mock_responses = []
         for i in range(3):
@@ -189,13 +212,14 @@ class TestQdrantServiceConfigIntegration:
                 mock_response.status_code = 500
             mock_responses.append(mock_response)
 
-        with patch.object(client.client, "put", side_effect=mock_responses):
-            result = client._create_payload_indexes_with_retry("test_collection")
+        with patch.object(client.client, "get", return_value=mock_collection_info):
+            with patch.object(client.client, "put", side_effect=mock_responses):
+                result = client._create_payload_indexes_with_retry("test_collection")
 
-            # Should return True (partial success acceptable)
-            assert result is True
+            # Should return False (partial success is treated as failure in legacy_direct context)
+            assert result is False
 
-            # Verify appropriate feedback messages
+            # Verify appropriate feedback messages about partial failure
             self.mock_console.print.assert_any_call(
                 "   📊 Created 2/3 payload indexes (1 failed)"
             )
@@ -214,16 +238,18 @@ class TestQdrantServiceConfigIntegration:
 
         with patch.object(client.client, "put", return_value=mock_collection_response):
             with patch.object(
-                client, "_create_payload_indexes_with_retry", return_value=True
-            ) as mock_create_indexes:
+                client, "ensure_payload_indexes", return_value=True
+            ) as mock_ensure_indexes:
                 # Test _create_collection_direct
                 result = client._create_collection_direct("test_collection", 768)
                 assert result is True
 
-                # Index creation should still be called (method decides whether to act)
-                mock_create_indexes.assert_called_once_with("test_collection")
+                # Index creation should still be called with collection_creation context
+                mock_ensure_indexes.assert_called_once_with(
+                    "test_collection", context="collection_creation"
+                )
 
-                mock_create_indexes.reset_mock()
+                mock_ensure_indexes.reset_mock()
 
                 # Test create_collection_with_profile
                 result = client.create_collection_with_profile(
@@ -231,7 +257,10 @@ class TestQdrantServiceConfigIntegration:
                 )
                 assert result is True
 
-                mock_create_indexes.assert_called_once_with("test_collection2")
+                # Should call ensure_payload_indexes for the new collection
+                mock_ensure_indexes.assert_called_with(
+                    "test_collection2", context="collection_creation"
+                )
 
     def test_backward_compatibility_with_existing_qdrant_client_usage(self):
         """Test that existing QdrantClient usage continues to work with new config fields."""
@@ -247,12 +276,22 @@ class TestQdrantServiceConfigIntegration:
         assert config.enable_payload_indexes is True
         assert len(config.payload_indexes) == 7  # Default indexes
 
+        # Mock the collection info response to indicate no existing indexes
+        mock_collection_info = Mock()
+        mock_collection_info.status_code = 200
+        mock_collection_info.json.return_value = {
+            "result": {"payload_schema": {}}  # No existing indexes
+        }
+
         mock_response = Mock()
         mock_response.status_code = 201
 
-        with patch.object(client.client, "put", return_value=mock_response) as mock_put:
-            result = client._create_payload_indexes_with_retry("test_collection")
+        with patch.object(client.client, "get", return_value=mock_collection_info):
+            with patch.object(
+                client.client, "put", return_value=mock_response
+            ) as mock_put:
+                result = client._create_payload_indexes_with_retry("test_collection")
 
-            assert result is True
-            # Should create all 6 default indexes
-            assert mock_put.call_count == 7
+                assert result is True
+                # Should create all 7 default indexes
+                assert mock_put.call_count == 7

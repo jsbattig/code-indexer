@@ -83,7 +83,7 @@ def error_handler(func):
 
         # Step 1: Initialize project
         init_result = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -93,7 +93,7 @@ def error_handler(func):
 
         # Step 2: Start services (may already be running in shared environment)
         start_result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -103,7 +103,7 @@ def error_handler(func):
 
         # Step 3: Index the project (cleanup handled by shared environment)
         index_result = subprocess.run(
-            ["code-indexer", "index"],
+            ["cidx", "index"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -113,7 +113,7 @@ def error_handler(func):
 
         # Step 4: Query to verify data exists
         query_result = subprocess.run(
-            ["code-indexer", "query", "authentication", "--limit", "3"],
+            ["cidx", "query", "authentication", "--limit", "3"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -136,7 +136,7 @@ def error_handler(func):
 
         # Test CLI access from subfolder
         status_result = subprocess.run(
-            ["code-indexer", "status"],
+            ["cidx", "status"],
             cwd=subfolder,
             capture_output=True,
             text=True,
@@ -149,7 +149,7 @@ def error_handler(func):
 
         # Test start command from subfolder (should be idempotent)
         start_from_subfolder = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=subfolder,
             capture_output=True,
             text=True,
@@ -161,7 +161,7 @@ def error_handler(func):
 
         # Step 6: Query again from subfolder to verify data preservation and CLI access
         query_after_workflow = subprocess.run(
-            ["code-indexer", "query", "authentication", "--limit", "3"],
+            ["cidx", "query", "authentication", "--limit", "3"],
             cwd=subfolder,
             capture_output=True,
             text=True,
@@ -188,7 +188,7 @@ def error_handler(func):
 
         # Test different query to ensure broader data preservation
         db_query_result = subprocess.run(
-            ["code-indexer", "query", "database connection", "--limit", "2"],
+            ["cidx", "query", "database connection", "--limit", "2"],
             cwd=subfolder,
             capture_output=True,
             text=True,
@@ -218,7 +218,7 @@ def test_start_stop_from_different_subfolders():
 
         # Initialize project
         init_result = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -228,7 +228,7 @@ def test_start_stop_from_different_subfolders():
 
         # Start services (may already be running in shared environment)
         start_result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -238,7 +238,7 @@ def test_start_stop_from_different_subfolders():
 
         # Test CLI access from deep subfolder
         status_deep_result = subprocess.run(
-            ["code-indexer", "status"],
+            ["cidx", "status"],
             cwd=deep_folder,
             capture_output=True,
             text=True,
@@ -256,7 +256,7 @@ def test_start_stop_from_different_subfolders():
         # Test start command from different intermediate folder (should be idempotent)
         intermediate_folder = project_path / "src" / "main"
         start_intermediate_result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=intermediate_folder,
             capture_output=True,
             text=True,
@@ -269,7 +269,7 @@ def test_start_stop_from_different_subfolders():
 
         # Verify services are accessible from all levels
         status_intermediate_result = subprocess.run(
-            ["code-indexer", "status"],
+            ["cidx", "status"],
             cwd=intermediate_folder,
             capture_output=True,
             text=True,
@@ -290,7 +290,7 @@ def test_start_without_prior_setup():
     ) as project_path:
         # Initialize project (this creates the basic configuration)
         init_result = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -300,7 +300,7 @@ def test_start_without_prior_setup():
 
         # Test start command - should work in shared environment
         start_result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -310,7 +310,7 @@ def test_start_without_prior_setup():
 
         # Verify services are running
         status_result = subprocess.run(
-            ["code-indexer", "status"],
+            ["cidx", "status"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -321,7 +321,7 @@ def test_start_without_prior_setup():
 
         # Test start idempotency - running start again should succeed
         start_again_result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -333,7 +333,7 @@ def test_start_without_prior_setup():
 
         # Verify services are still running
         final_status = subprocess.run(
-            ["code-indexer", "status"],
+            ["cidx", "status"],
             cwd=project_path,
             capture_output=True,
             text=True,

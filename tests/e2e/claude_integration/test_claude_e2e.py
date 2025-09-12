@@ -686,7 +686,7 @@ def test_manual_workflow():
 
     try:
         help_result = subprocess.run(
-            ["python", "-m", "code_indexer.cli", "--help"],
+            ["python3", "-m", "code_indexer.cli", "--help"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -699,7 +699,7 @@ def test_manual_workflow():
     print("\n3. Testing Claude command help...")
     try:
         claude_help = subprocess.run(
-            ["python", "-m", "code_indexer.cli", "claude", "--help"],
+            ["python3", "-m", "code_indexer.cli", "claude", "--help"],
             capture_output=True,
             text=True,
             timeout=30,

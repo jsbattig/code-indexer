@@ -61,7 +61,7 @@ class TestGitPullIncrementalE2E:
         )
 
         # Create initial files and commit
-        (temp_dir / "src").mkdir()
+        (temp_dir / "src").mkdir(exist_ok=True)
         (temp_dir / "src" / "initial.py").write_text("print('initial file')")
         (temp_dir / "README.md").write_text("# Test Project")
 

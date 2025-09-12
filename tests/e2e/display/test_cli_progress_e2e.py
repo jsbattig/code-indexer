@@ -48,6 +48,32 @@ class TestClass_{i}:
                 file_path.write_text(content)
                 test_files.append(file_path)
 
+            # Initialize the project with VoyageAI
+            init_result = subprocess.run(
+                [
+                    "code-indexer",
+                    "init",
+                    "--force",
+                    "--embedding-provider",
+                    "voyage-ai",
+                ],
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
+
+            # Start services
+            start_result = subprocess.run(
+                ["code-indexer", "start", "--quiet"],
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
+
             # Run indexing and capture output
             index_result = subprocess.run(
                 ["code-indexer", "index", "--clear"],
@@ -106,6 +132,32 @@ class TestClass_{i}:
 """
                 file_path.write_text(content)
                 test_files.append(file_path)
+
+            # Initialize the project with VoyageAI
+            init_result = subprocess.run(
+                [
+                    "code-indexer",
+                    "init",
+                    "--force",
+                    "--embedding-provider",
+                    "voyage-ai",
+                ],
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
+
+            # Start services
+            start_result = subprocess.run(
+                ["code-indexer", "start", "--quiet"],
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
 
             # Run indexing with --clear and check output
             index_result = subprocess.run(

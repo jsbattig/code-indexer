@@ -9,11 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, Any
 
-# Import EmbeddingProvider from shared test infrastructure
-from ...shared.mock_providers import MockEmbeddingProvider
-
-# Re-export for compatibility with existing imports
-EmbeddingProvider = MockEmbeddingProvider
+# Import EmbeddingProvider enum from unit test infrastructure
 
 
 class TestProjectInventory(Enum):

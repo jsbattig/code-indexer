@@ -132,7 +132,7 @@ class TestFixedSizeChunkingDocumentation:
         try:
             # Run the CLI help command
             result = subprocess.run(
-                ["python", "-m", "src.code_indexer.cli", "--help"],
+                ["python3", "-m", "src.code_indexer.cli", "--help"],
                 cwd=project_root,
                 capture_output=True,
                 text=True,

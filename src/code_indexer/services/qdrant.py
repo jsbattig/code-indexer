@@ -900,7 +900,6 @@ class QdrantClient:
 
         # Combine with additional filters
         final_filter = self.combine_filters(model_filter, additional_filters)
-        print(f"DEBUG: Final filter: {final_filter}")
 
         # Use search with accuracy if specified, otherwise use regular search
         if accuracy:

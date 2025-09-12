@@ -244,7 +244,7 @@ class E2EServiceManager:
         try:
             # Use CLI to start services (this handles all the setup)
             setup_result = subprocess.run(
-                ["python", "-m", "code_indexer.cli", "start", "--force-recreate"],
+                ["python3", "-m", "code_indexer.cli", "start", "--force-recreate"],
                 cwd=self.config_dir,
                 capture_output=True,
                 text=True,
@@ -276,7 +276,7 @@ class E2EServiceManager:
         print("🛑 Stopping services...")
         try:
             stop_result = subprocess.run(
-                ["python", "-m", "code_indexer.cli", "stop"],
+                ["python3", "-m", "code_indexer.cli", "stop"],
                 cwd=self.config_dir,
                 capture_output=True,
                 text=True,
@@ -296,7 +296,7 @@ class E2EServiceManager:
         try:
             # Check if we can get status
             status_result = subprocess.run(
-                ["python", "-m", "code_indexer.cli", "status"],
+                ["python3", "-m", "code_indexer.cli", "status"],
                 cwd=self.config_dir,
                 capture_output=True,
                 text=True,
@@ -344,7 +344,7 @@ def e2e_environment() -> Generator[E2EServiceManager, None, None]:
             # Initialize configuration
             print(f"🔧 Setting up E2E environment in {config_dir}")
             init_result = subprocess.run(
-                ["python", "-m", "code_indexer.cli", "init", "--force"],
+                ["python3", "-m", "code_indexer.cli", "init", "--force"],
                 cwd=config_dir,
                 capture_output=True,
                 text=True,

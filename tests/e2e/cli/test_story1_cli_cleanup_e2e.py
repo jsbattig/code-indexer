@@ -38,7 +38,7 @@ class TestStory1CLICleanupE2E:
         for service_info in self.started_services:
             try:
                 subprocess.run(
-                    ["python", "-m", "code_indexer.cli", "stop"],
+                    ["python3", "-m", "code_indexer.cli", "stop"],
                     capture_output=True,
                     timeout=30,
                 )
@@ -63,7 +63,9 @@ class TestStory1CLICleanupE2E:
         for options in deprecated_options:
             # Test with query command
             cmd = (
-                ["python", "-m", "code_indexer.cli", "query"] + options + ["test query"]
+                ["python3", "-m", "code_indexer.cli", "query"]
+                + options
+                + ["test query"]
             )
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
 
@@ -77,7 +79,7 @@ class TestStory1CLICleanupE2E:
 
     def test_e2e_query_help_contains_no_semantic_references(self):
         """E2E test: Verify query help contains no references to deprecated semantic options."""
-        cmd = ["python", "-m", "code_indexer.cli", "query", "--help"]
+        cmd = ["python3", "-m", "code_indexer.cli", "query", "--help"]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
 
         assert result.returncode == 0, "Query help command should succeed"
@@ -103,7 +105,7 @@ class TestStory1CLICleanupE2E:
 
     def test_e2e_query_help_contains_no_semantic_examples(self):
         """E2E test: Verify query help contains no examples using deprecated semantic options."""
-        cmd = ["python", "-m", "code_indexer.cli", "query", "--help"]
+        cmd = ["python3", "-m", "code_indexer.cli", "query", "--help"]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
 
         assert result.returncode == 0, "Query help command should succeed"
@@ -127,7 +129,7 @@ class TestStory1CLICleanupE2E:
 
     def test_e2e_main_help_contains_no_semantic_references(self):
         """E2E test: Verify main CLI help contains no deprecated semantic references."""
-        cmd = ["python", "-m", "code_indexer.cli", "--help"]
+        cmd = ["python3", "-m", "code_indexer.cli", "--help"]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
 
         assert result.returncode == 0, "Main help command should succeed"
@@ -169,7 +171,7 @@ class TestStory1CLICleanupE2E:
     def test_e2e_query_command_still_functional(self):
         """E2E test: Verify query command still works with valid options after cleanup."""
         # Test that basic query functionality still works
-        cmd = ["python", "-m", "code_indexer.cli", "query", "--help"]
+        cmd = ["python3", "-m", "code_indexer.cli", "query", "--help"]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
 
         assert result.returncode == 0, "Query help should still work"
@@ -207,7 +209,7 @@ class TestStory1CLICleanupE2E:
 
         # 2. Deprecated options removed
         cmd = [
-            "python",
+            "python3",
             "-m",
             "code_indexer.cli",
             "query",
@@ -219,7 +221,7 @@ class TestStory1CLICleanupE2E:
         assert result.returncode != 0, "Deprecated --semantic-type should not work"
 
         # 3. Help text cleaned up
-        cmd = ["python", "-m", "code_indexer.cli", "query", "--help"]
+        cmd = ["python3", "-m", "code_indexer.cli", "query", "--help"]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         assert result.returncode == 0, "Query help should work"
         help_text = result.stdout.lower()
@@ -228,7 +230,7 @@ class TestStory1CLICleanupE2E:
         ), "Help should not mention --semantic-type"
 
         # 4. Core functionality preserved
-        cmd = ["python", "-m", "code_indexer.cli", "query", "--quiet", "test"]
+        cmd = ["python3", "-m", "code_indexer.cli", "query", "--quiet", "test"]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         # Should fail gracefully (no config/services) but not due to missing options
         assert (

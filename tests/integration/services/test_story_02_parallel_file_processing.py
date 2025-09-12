@@ -167,7 +167,14 @@ class TestStory02ParallelFileProcessing:
             # Track progress callbacks for immediate feedback
             progress_calls = []
 
-            def progress_callback(current, total, path, info=None):
+            def progress_callback(
+                current,
+                total,
+                path,
+                info=None,
+                slot_tracker=None,
+                concurrent_files=None,
+            ):
                 progress_calls.append(
                     {
                         "current": current,
@@ -234,11 +241,12 @@ class TestStory02ParallelFileProcessing:
                 ):
                     start_time = time.time()
 
-                    # Process files
+                    # Process files with progress callback
                     processor.process_files_high_throughput(
                         files=test_files,
                         vector_thread_count=2,
                         batch_size=10,
+                        progress_callback=progress_callback,  # Pass the callback
                     )
 
                     submission_time = time.time() - start_time
@@ -550,13 +558,21 @@ class TestStory02ParallelFileProcessing:
                     # Pattern 3: With progress callback
                     callback_calls = []
 
-                    def progress_callback(current, total, path, info=None):
+                    def progress_callback(
+                        current,
+                        total,
+                        path,
+                        info=None,
+                        slot_tracker=None,
+                        concurrent_files=None,
+                    ):
                         callback_calls.append((current, total, str(path), info))
 
                     stats3 = processor.process_files_high_throughput(
                         files=[test_file],
                         vector_thread_count=2,
                         batch_size=50,
+                        progress_callback=progress_callback,  # Pass the callback
                     )
 
                     # ASSERTIONS for Story 02 acceptance criteria

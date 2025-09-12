@@ -169,7 +169,7 @@ class TestDockerManager(unittest.TestCase):
             # Generate project config with proper port allocation
             container_names = docker_manager._generate_container_names(test_dir)
 
-            ports = docker_manager._allocate_free_ports()
+            ports = docker_manager.allocate_project_ports(test_dir)
             project_config = {
                 **container_names,
                 "qdrant_port": str(ports["qdrant_port"]),
@@ -246,7 +246,7 @@ class TestDockerManager(unittest.TestCase):
             os.chdir(test_dir)
             docker_manager = DockerManager(project_name="test_shared")
             container_names = docker_manager._generate_container_names(test_dir)
-            ports = docker_manager._allocate_free_ports()
+            ports = docker_manager.allocate_project_ports(test_dir)
             project_config = {
                 **container_names,
                 "qdrant_port": str(ports["qdrant_port"]),
@@ -304,7 +304,7 @@ class TestDockerManager(unittest.TestCase):
             os.chdir(test_dir)
             docker_manager = DockerManager(project_name="test_shared")
             container_names = docker_manager._generate_container_names(test_dir)
-            ports = docker_manager._allocate_free_ports()
+            ports = docker_manager.allocate_project_ports(test_dir)
             project_config = {
                 **container_names,
                 "qdrant_port": str(ports["qdrant_port"]),
@@ -358,7 +358,7 @@ class TestDockerManager(unittest.TestCase):
             os.chdir(test_dir)
             docker_manager = DockerManager(project_name="test_shared")
             container_names = docker_manager._generate_container_names(test_dir)
-            ports = docker_manager._allocate_free_ports()
+            ports = docker_manager.allocate_project_ports(test_dir)
             project_config = {
                 **container_names,
                 "qdrant_port": str(ports["qdrant_port"]),
@@ -407,15 +407,21 @@ class TestDockerManager(unittest.TestCase):
             test_dir = Path(temp_dir) / "test-project"
             test_dir.mkdir()
 
+            # Create required .code-indexer directory
+            config_dir = test_dir / ".code-indexer"
+            config_dir.mkdir(exist_ok=True)
+
             docker_manager = DockerManager(project_name="test_shared")
             container_names = docker_manager._generate_container_names(test_dir)
-            ports = docker_manager._allocate_free_ports()
-            project_config = {
-                **container_names,
-                "qdrant_port": str(ports["qdrant_port"]),
-                "ollama_port": str(ports["ollama_port"]),
-                "data_cleaner_port": str(ports["data_cleaner_port"]),
-            }
+
+            # Pass a config with embedding provider to ensure all services are allocated
+            config_dict = {"embedding_provider": "ollama"}
+            ports = docker_manager.allocate_project_ports(test_dir, config_dict)
+
+            # Build project config with available ports
+            project_config = {**container_names}
+            for port_key in ports:
+                project_config[port_key] = str(ports[port_key])
             config = docker_manager.generate_compose_config(test_dir, project_config)
 
             networks = config["networks"]
@@ -495,7 +501,7 @@ class TestDockerManagerConfig(unittest.TestCase):
             # Should be able to generate compose config with proper port allocation
             container_names = docker_manager._generate_container_names(test_dir)
 
-            ports = docker_manager._allocate_free_ports()
+            ports = docker_manager.allocate_project_ports(test_dir)
             project_config = {
                 **container_names,
                 "qdrant_port": str(ports["qdrant_port"]),

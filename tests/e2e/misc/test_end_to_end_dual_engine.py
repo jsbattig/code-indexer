@@ -508,7 +508,7 @@ class TestEndToEndDualEngine:
                     os.chdir(original_cwd)
                     # Clean up
                     subprocess.run(
-                        ["code-indexer", "clean", "--remove-data", "--quiet"],
+                        ["cidx", "clean", "--remove-data", "--quiet"],
                         cwd=test_dir,
                         capture_output=True,
                         text=True,
@@ -604,7 +604,7 @@ class TestEndToEndDualEngine:
                     os.chdir(original_cwd)
                     # Clean up
                     subprocess.run(
-                        ["code-indexer", "clean", "--remove-data", "--quiet"],
+                        ["cidx", "clean", "--remove-data", "--quiet"],
                         cwd=test_dir,
                         capture_output=True,
                         text=True,
@@ -700,7 +700,7 @@ class TestEndToEndDualEngine:
                     os.chdir(original_cwd)
                     # Clean up
                     subprocess.run(
-                        ["code-indexer", "clean", "--remove-data", "--quiet"],
+                        ["cidx", "clean", "--remove-data", "--quiet"],
                         cwd=test_dir,
                         capture_output=True,
                         text=True,
@@ -810,7 +810,7 @@ class TestEndToEndDualEngine:
                     os.chdir(original_cwd)
                     # Clean up
                     subprocess.run(
-                        ["code-indexer", "clean", "--remove-data", "--quiet"],
+                        ["cidx", "clean", "--remove-data", "--quiet"],
                         cwd=test_dir,
                         capture_output=True,
                         text=True,
@@ -888,7 +888,7 @@ class TestEndToEndDualEngine:
                     os.chdir(original_cwd)
                     # Clean up
                     subprocess.run(
-                        ["code-indexer", "clean", "--remove-data", "--quiet"],
+                        ["cidx", "clean", "--remove-data", "--quiet"],
                         cwd=test_dir,
                         capture_output=True,
                         text=True,

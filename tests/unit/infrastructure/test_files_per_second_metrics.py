@@ -116,7 +116,13 @@ class TestClass_{i}:
         files_per_sec_found = False
 
         def capture_progress(
-            current, total, file_path, error=None, info=None, concurrent_files=None
+            current,
+            total,
+            file_path,
+            error=None,
+            info=None,
+            concurrent_files=None,
+            slot_tracker=None,
         ):
             nonlocal emb_per_sec_found, files_per_sec_found
             if info and total > 0:  # File progress calls
@@ -212,7 +218,13 @@ class TestClass_{i}:
         emb_per_sec_found = False
 
         def capture_progress(
-            current, total, file_path, error=None, info=None, concurrent_files=None
+            current,
+            total,
+            file_path,
+            error=None,
+            info=None,
+            concurrent_files=None,
+            slot_tracker=None,
         ):
             nonlocal emb_per_sec_found
             if info and total > 0:  # File progress calls
@@ -330,7 +342,13 @@ class TestClass_{i}:
         files_per_sec_values_8_threads = []
 
         def capture_progress_4_threads(
-            current, total, file_path, error=None, info=None, concurrent_files=None
+            current,
+            total,
+            file_path,
+            error=None,
+            info=None,
+            concurrent_files=None,
+            slot_tracker=None,
         ):
             if info and total > 0 and "files/s" in info:
                 parts = info.split("|")
@@ -346,7 +364,13 @@ class TestClass_{i}:
             return None
 
         def capture_progress_8_threads(
-            current, total, file_path, error=None, info=None, concurrent_files=None
+            current,
+            total,
+            file_path,
+            error=None,
+            info=None,
+            concurrent_files=None,
+            slot_tracker=None,
         ):
             if info and total > 0 and "files/s" in info:
                 parts = info.split("|")

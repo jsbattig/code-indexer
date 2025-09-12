@@ -49,10 +49,14 @@ class MockEmbeddingProvider(EmbeddingProvider):
         return self.provider_name
 
     def get_current_model(self) -> str:
-        return "test-model"
+        return "voyage-3"
 
     def get_model_info(self) -> Dict[str, Any]:
-        return {"name": "test-model", "dimensions": self.dimensions}
+        return {"name": "voyage-3", "dimensions": self.dimensions}
+
+    def _get_model_token_limit(self) -> int:
+        """Get token limit for current model."""
+        return 120000
 
     def get_embedding(self, text: str, model: Optional[str] = None) -> List[float]:
         """Mock embedding generation with configurable delay."""

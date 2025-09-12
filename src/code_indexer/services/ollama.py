@@ -123,6 +123,25 @@ class OllamaClient(EmbeddingProvider):
             provider="ollama",
         )
 
+    def _get_model_token_limit(self) -> int:
+        """Get token limit for current model.
+
+        Ollama models don't have strict token limits like cloud providers,
+        but we return a reasonable default for chunking purposes.
+        """
+        # Common token limits for Ollama models
+        model_limits = {
+            "nomic-embed-text": 8192,
+            "all-minilm": 512,
+            "all-minilm:l6-v2": 512,
+            "bge-small": 512,
+            "bge-base": 512,
+            "bge-large": 512,
+        }
+
+        # Return specific limit if known, otherwise use conservative default
+        return model_limits.get(self.config.model, 2048)
+
     def get_model_info(self) -> Dict[str, Any]:
         """Get information about the current model."""
         model_name = self.config.model

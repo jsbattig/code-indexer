@@ -104,7 +104,13 @@ class TestClass_{i}:
         thread_counts_seen = set()
 
         def capture_progress(
-            current, total, file_path, error=None, info=None, concurrent_files=None
+            current,
+            total,
+            file_path,
+            error=None,
+            info=None,
+            concurrent_files=None,
+            slot_tracker=None,
         ):
             if info and total > 0:  # File progress calls
                 progress_calls.append(
@@ -218,7 +224,13 @@ class TestClass_{i}:
         completion_indicators_found = []
 
         def capture_progress(
-            current, total, file_path, error=None, info=None, concurrent_files=None
+            current,
+            total,
+            file_path,
+            error=None,
+            info=None,
+            concurrent_files=None,
+            slot_tracker=None,
         ):
             if info and total > 0:
                 progress_calls.append(
@@ -276,7 +288,13 @@ class TestClass_{i}:
         files_per_sec_values = []
 
         def capture_progress(
-            current, total, file_path, error=None, info=None, concurrent_files=None
+            current,
+            total,
+            file_path,
+            error=None,
+            info=None,
+            concurrent_files=None,
+            slot_tracker=None,
         ):
             if info and total > 0 and "files/s" in info:
                 parts = info.split("|")
@@ -336,7 +354,13 @@ class TestClass_{i}:
         thread_utilization_over_time = []
 
         def capture_progress(
-            current, total, file_path, error=None, info=None, concurrent_files=None
+            current,
+            total,
+            file_path,
+            error=None,
+            info=None,
+            concurrent_files=None,
+            slot_tracker=None,
         ):
             if info and total > 0 and "threads" in info:
                 parts = info.split("|")

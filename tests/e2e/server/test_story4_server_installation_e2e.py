@@ -28,7 +28,7 @@ class TestStory4ServerInstallationE2E:
             try:
                 # Run the actual install-server command
                 result = subprocess.run(
-                    ["python", "-m", "code_indexer.cli", "install-server", "--force"],
+                    ["python3", "-m", "code_indexer.cli", "install-server", "--force"],
                     cwd="/home/jsbattig/Dev/code-indexer",
                     capture_output=True,
                     text=True,
@@ -70,7 +70,7 @@ class TestStory4ServerInstallationE2E:
             try:
                 # Run install-server
                 result = subprocess.run(
-                    ["python", "-m", "code_indexer.cli", "install-server", "--force"],
+                    ["python3", "-m", "code_indexer.cli", "install-server", "--force"],
                     cwd="/home/jsbattig/Dev/code-indexer",
                     capture_output=True,
                     text=True,
@@ -121,7 +121,7 @@ class TestStory4ServerInstallationE2E:
                 # Run install-server with custom port
                 result = subprocess.run(
                     [
-                        "python",
+                        "python3",
                         "-m",
                         "code_indexer.cli",
                         "install-server",
@@ -167,7 +167,7 @@ class TestStory4ServerInstallationE2E:
             try:
                 # First installation
                 result1 = subprocess.run(
-                    ["python", "-m", "code_indexer.cli", "install-server", "--force"],
+                    ["python3", "-m", "code_indexer.cli", "install-server", "--force"],
                     cwd="/home/jsbattig/Dev/code-indexer",
                     capture_output=True,
                     text=True,
@@ -195,7 +195,7 @@ class TestStory4ServerInstallationE2E:
 
                 # Second installation (reinstall)
                 result2 = subprocess.run(
-                    ["python", "-m", "code_indexer.cli", "install-server", "--force"],
+                    ["python3", "-m", "code_indexer.cli", "install-server", "--force"],
                     cwd="/home/jsbattig/Dev/code-indexer",
                     capture_output=True,
                     text=True,
@@ -231,7 +231,7 @@ class TestStory4ServerInstallationE2E:
             try:
                 # First installation
                 result1 = subprocess.run(
-                    ["python", "-m", "code_indexer.cli", "install-server"],
+                    ["python3", "-m", "code_indexer.cli", "install-server"],
                     cwd="/home/jsbattig/Dev/code-indexer",
                     capture_output=True,
                     text=True,
@@ -248,7 +248,7 @@ class TestStory4ServerInstallationE2E:
 
                 # Second installation without force should detect existing
                 result2 = subprocess.run(
-                    ["python", "-m", "code_indexer.cli", "install-server"],
+                    ["python3", "-m", "code_indexer.cli", "install-server"],
                     cwd="/home/jsbattig/Dev/code-indexer",
                     capture_output=True,
                     text=True,

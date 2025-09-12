@@ -108,7 +108,7 @@ venv/
         # Initialize services - shared environment handles this
         print("🚀 Initializing and starting services...")
         init_result = subprocess.run(
-            ["code-indexer", "init", "--force", "--embedding-provider", "voyage-ai"],
+            ["cidx", "init", "--force", "--embedding-provider", "voyage-ai"],
             cwd=test_dir,
             capture_output=True,
             text=True,
@@ -117,7 +117,7 @@ venv/
         assert init_result.returncode == 0, f"Init failed: {init_result.stderr}"
 
         start_result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=test_dir,
             capture_output=True,
             text=True,
@@ -126,7 +126,7 @@ venv/
         assert start_result.returncode == 0, f"Start failed: {start_result.stderr}"
 
         # Verify services are running
-        status_result = run_cli_command(["code-indexer", "status"], test_dir)
+        status_result = run_cli_command(["cidx", "status"], test_dir)
         if "✅" not in status_result.stdout and "Running" not in status_result.stdout:
             pytest.skip("Services not healthy after start")
 
@@ -134,7 +134,7 @@ venv/
         print("Step 1: Initial indexing on master branch")
 
         # Run indexing using CLI
-        index_result = run_cli_command(["code-indexer", "index"], test_dir)
+        index_result = run_cli_command(["cidx", "index"], test_dir)
 
         # Verify indexing was successful by checking for success indicators
         assert "✅ Indexing complete!" in index_result.stdout
@@ -154,7 +154,7 @@ venv/
         assert chunks_indexed > 0
 
         # Verify search works - this confirms points exist
-        search_result = run_cli_command(["code-indexer", "query", "test"], test_dir)
+        search_result = run_cli_command(["cidx", "query", "test"], test_dir)
         assert (
             "Results found:" in search_result.stdout
             or "Found" in search_result.stdout
@@ -196,7 +196,7 @@ def helper_function():
         print("Step 3: Running incremental indexing on feature branch")
 
         # Run indexing using CLI
-        branch_index_result = run_cli_command(["code-indexer", "index"], test_dir)
+        branch_index_result = run_cli_command(["cidx", "index"], test_dir)
 
         # Verify indexing was successful
         assert "✅ Indexing complete!" in branch_index_result.stdout
@@ -217,15 +217,13 @@ def helper_function():
 
         # Search for content from the new file
         search_result = run_cli_command(
-            ["code-indexer", "query", "new feature implementation"], test_dir
+            ["cidx", "query", "new feature implementation"], test_dir
         )
         assert "new_feature.py" in search_result.stdout, "Should find new file content"
         print("✅ New file content is searchable")
 
         # Search for original content should still work
-        search_result = run_cli_command(
-            ["code-indexer", "query", "Hello World"], test_dir
-        )
+        search_result = run_cli_command(["cidx", "query", "Hello World"], test_dir)
         assert "main.py" in search_result.stdout, "Should find original content"
         print("✅ Original content is still accessible")
 
@@ -235,9 +233,7 @@ def helper_function():
         subprocess.run(["git", "checkout", "master"], cwd=test_dir, check=True)
 
         # Search for original content - should still work
-        search_result = run_cli_command(
-            ["code-indexer", "query", "Hello World"], test_dir
-        )
+        search_result = run_cli_command(["cidx", "query", "Hello World"], test_dir)
         assert (
             "main.py" in search_result.stdout
         ), "Should find original content on master"
@@ -245,7 +241,7 @@ def helper_function():
 
         # Search for new file content - should not be found (branch isolation)
         search_result = run_cli_command(
-            ["code-indexer", "query", "new feature implementation"],
+            ["cidx", "query", "new feature implementation"],
             test_dir,
             expect_success=False,
         )
@@ -256,14 +252,12 @@ def helper_function():
         print("Step 6: Testing incremental indexing on master")
 
         # Run indexing on master - should be minimal since no new changes
-        master_index_result = run_cli_command(["code-indexer", "index"], test_dir)
+        master_index_result = run_cli_command(["cidx", "index"], test_dir)
         assert "✅ Indexing complete!" in master_index_result.stdout
         print("✅ Incremental indexing works on master")
 
         # Final verification - original search should still work
-        search_result = run_cli_command(
-            ["code-indexer", "query", "Hello World"], test_dir
-        )
+        search_result = run_cli_command(["cidx", "query", "Hello World"], test_dir)
         assert "main.py" in search_result.stdout, "Should find original content"
         print("✅ Final verification: All functionality working correctly")
 

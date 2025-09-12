@@ -89,8 +89,7 @@ fi
 
 # 1. Install dependencies
 print_step "Installing dependencies"
-python -m pip install --upgrade pip
-pip install -e ".[dev]"
+python3 -m pip install -e ".[dev]" --break-system-packages
 print_success "Dependencies installed"
 
 # 2. Lint with ruff
@@ -277,8 +276,8 @@ echo '}}' >> "$TEST_SUMMARY_LOG"
 # Generate final coverage report
 if [[ -f .coverage ]]; then
     echo "   Generating final coverage report..."
-    PYTHONPATH="$(pwd)/src:$(pwd)/tests" python -m coverage xml
-    PYTHONPATH="$(pwd)/src:$(pwd)/tests" python -m coverage report --show-missing
+    PYTHONPATH="$(pwd)/src:$(pwd)/tests" python3 -m coverage xml
+    PYTHONPATH="$(pwd)/src:$(pwd)/tests" python3 -m coverage report --show-missing
 fi
 
 # Report results
@@ -292,7 +291,7 @@ echo "   Failed: ${#failed_tests[@]}/$total_count"
 if [[ -f "parse_test_results.py" ]]; then
     echo ""
     echo "📋 Generating detailed test report..."
-    python parse_test_results.py "$TEST_OUTPUT_DIR" | tee "$TEST_OUTPUT_DIR/detailed_summary.txt"
+    python3 parse_test_results.py "$TEST_OUTPUT_DIR" | tee "$TEST_OUTPUT_DIR/detailed_summary.txt"
 else
     echo ""
     echo "⚠️  Test parser not found, showing basic summary only"
@@ -324,8 +323,8 @@ fi
 
 # 8. Build package
 print_step "Building package"
-pip install build twine
-if python -m build; then
+python3 -m pip install build twine --break-system-packages
+if python3 -m build; then
     print_success "Package built successfully"
 else
     print_error "Package build failed"

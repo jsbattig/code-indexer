@@ -153,9 +153,82 @@ Cannot create directory in system paths
 --ignore=tests/unit/infrastructure/test_broken_softlink_cleanup.py
 --ignore=tests/unit/infrastructure/test_real_world_path_walking.py
 --ignore=tests/unit/cli/test_cli_init_segment_size.py
+--ignore=tests/unit/services/test_clean_file_chunking_manager.py
+--ignore=tests/unit/services/test_file_chunking_manager.py
+--ignore=tests/unit/services/test_file_chunk_batching_optimization.py
+--ignore=tests/unit/services/test_voyage_threadpool_elimination.py
 ```
 
-**Rule**: Any test that fails in GitHub Actions with permission errors should be added to this exclusion list while being kept in `fast-automation.sh` for local testing.
+**Rule**: Any test that fails in GitHub Actions with permission errors OR requires external API keys (like VoyageAI) should be added to this exclusion list while being kept in `fast-automation.sh` for local testing.
+
+**VoyageAI Integration Tests**: Tests that use real VoyageAI API calls are considered integration tests, not unit tests, and should not run in GitHub Actions without API credentials. They remain in fast-automation.sh for local development where API keys are available.
+
+## **FULL-AUTOMATION.SH PYTHON COMMAND COMPATIBILITY**
+
+**CRITICAL SYSTEM REQUIREMENT**: The `full-automation.sh` script must use `python3 -m pip` instead of bare `pip` commands to ensure compatibility with modern Python environments.
+
+### **Python Command Issues and Solutions**
+
+#### **Issue**: Modern Python environments may not have `python` command available
+- **System Setup**: Many Linux distributions only provide `python3` command, not bare `python`
+- **Error Symptom**: `./full-automation.sh: line 92: python: command not found`
+- **Root Cause**: Script was using bare `pip` commands that may not be available
+
+#### **Solution Implemented**:
+```bash
+# ❌ WRONG - May fail on systems without 'python' command
+pip install -e ".[dev]" --break-system-packages
+
+# ✅ CORRECT - Works with python3 environments
+python3 -m pip install -e ".[dev]" --break-system-packages
+```
+
+### **Externally-Managed Environment Handling**
+
+**Modern pip restriction**: Many distributions use externally-managed environments that prevent direct pip installations.
+
+**Error Pattern**:
+```
+error: externally-managed-environment
+
+× This environment is externally managed
+╰─ To override this, use --break-system-packages
+```
+
+**Required Solution**: All pip commands MUST include `--break-system-packages` flag:
+- `python3 -m pip install -e ".[dev]" --break-system-packages`
+- `python3 -m pip install build twine --break-system-packages`
+
+### **Script Command Audit Results**
+
+**Fixed Commands in full-automation.sh**:
+- Line 92: `python3 -m pip install -e ".[dev]" --break-system-packages`
+- Line 326: `python3 -m pip install build twine --break-system-packages`
+
+**Already Correct Commands**:
+- Coverage commands: `python3 -m coverage xml`
+- Build commands: `python3 -m build`
+
+### **Testing Strategy for Script Compatibility**
+
+**Test Coverage Implemented**:
+- `tests/unit/scripts/test_full_automation_python_commands.py`: Comprehensive script validation
+- `tests/unit/scripts/test_pip_command_issues.py`: Specific pip command compatibility testing
+
+**Key Test Cases**:
+- Python command availability verification
+- Script syntax validation
+- Externally-managed environment detection
+- Pip command format verification (must use `python3 -m pip`)
+- Error handling when script runs outside project root
+
+### **Maintenance Guidelines**
+
+**When adding new pip commands to full-automation.sh**:
+1. ALWAYS use `python3 -m pip install` (never bare `pip install`)
+2. ALWAYS include `--break-system-packages` flag
+3. Test on systems where only `python3` is available
+4. Add corresponding test cases for new pip usage patterns
 - NEVER, EVER, remove functionality related to our enhanced processing of git projects. The git-awarness aspects, how we optimize processing branches, and keeping track of relationships, deduplication of indexing is what make this project unique. If you ever go into a refactoring rabbit hole and you will start removing functionality to that enables this capability you must stop, immediately, and ask if that's the true intent of the work you been asked to do.
 - When working on fixing quick feedback unit tests, or fast tests, always use ./fast-automation.sh. This shell file is specifically tuned to run test that run fast, so they can be run efficiently from within Claude Code as a first layer of protection ensuring our tests pass and we didn't introduce regressions.
 - When indexing, progress reporting is done real-time, in a single line at the bottom, showing a progress bar, and right next to it we show speed metrics and current file being processed. Don't change this approach without confirmation from the user. This is how it is, and it should be for all indexing operations, we don't show feedback scrolling the console, EVER, NEVER, EVER. Ask for confirmation if you are about to change this behavior. If the user ask you to change it, ask question, confirm the user is sure it wants to remove the single line, fixed to the bottom, progress bar, speed and currently file being processed.

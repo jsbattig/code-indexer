@@ -23,7 +23,7 @@ class TestSetupGlobalRegistryCommand:
     def test_command_exists_and_has_help(self):
         """Test that setup-global-registry command exists and shows help."""
         result = subprocess.run(
-            ["code-indexer", "setup-global-registry", "--help"],
+            ["cidx", "setup-global-registry", "--help"],
             capture_output=True,
             text=True,
         )
@@ -39,7 +39,7 @@ class TestSetupGlobalRegistryCommand:
         """Test that command without sudo shows appropriate error message."""
         # Run as regular user (no sudo)
         result = subprocess.run(
-            ["code-indexer", "setup-global-registry"],
+            ["cidx", "setup-global-registry"],
             capture_output=True,
             text=True,
         )
@@ -67,7 +67,7 @@ class TestSetupGlobalRegistryCommand:
             try:
                 # Should work even from empty directory
                 result = subprocess.run(
-                    ["code-indexer", "setup-global-registry", "--help"],
+                    ["cidx", "setup-global-registry", "--help"],
                     capture_output=True,
                     text=True,
                 )
@@ -81,7 +81,7 @@ class TestSetupGlobalRegistryCommand:
     def test_command_with_quiet_flag(self):
         """Test that --quiet flag reduces output appropriately."""
         result = subprocess.run(
-            ["code-indexer", "setup-global-registry", "--quiet", "--help"],
+            ["cidx", "setup-global-registry", "--quiet", "--help"],
             capture_output=True,
             text=True,
         )
@@ -93,7 +93,7 @@ class TestSetupGlobalRegistryCommand:
     def test_command_with_test_access_flag(self):
         """Test that --test-access flag is recognized."""
         result = subprocess.run(
-            ["code-indexer", "setup-global-registry", "--test-access", "--help"],
+            ["cidx", "setup-global-registry", "--test-access", "--help"],
             capture_output=True,
             text=True,
         )
@@ -111,7 +111,7 @@ class TestSetupGlobalRegistryCommand:
             try:
                 # Run setup-global-registry (will fail without sudo but that's OK)
                 subprocess.run(
-                    ["code-indexer", "setup-global-registry"],
+                    ["cidx", "setup-global-registry"],
                     capture_output=True,
                     text=True,
                 )
@@ -140,7 +140,7 @@ class TestSetupGlobalRegistryCommand:
 
             # Run init with --setup-global-registry (will fail but should try to create config)
             subprocess.run(
-                ["code-indexer", "init", "--setup-global-registry", "--force"],
+                ["cidx", "init", "--setup-global-registry", "--force"],
                 cwd=project_dir,
                 capture_output=True,
                 text=True,
@@ -157,7 +157,7 @@ class TestSetupGlobalRegistryCommand:
 
             try:
                 subprocess.run(
-                    ["code-indexer", "setup-global-registry"],
+                    ["cidx", "setup-global-registry"],
                     capture_output=True,
                     text=True,
                 )
@@ -183,7 +183,7 @@ class TestSetupGlobalRegistryCommand:
 
         # Run setup-global-registry as root
         result = subprocess.run(
-            ["code-indexer", "setup-global-registry"],
+            ["cidx", "setup-global-registry"],
             capture_output=True,
             text=True,
         )
@@ -221,7 +221,7 @@ class TestSetupGlobalRegistryCommand:
     def test_help_message_content(self):
         """Test that help message contains appropriate information."""
         result = subprocess.run(
-            ["code-indexer", "setup-global-registry", "--help"],
+            ["cidx", "setup-global-registry", "--help"],
             capture_output=True,
             text=True,
         )
@@ -245,7 +245,7 @@ class TestSetupGlobalRegistryCommand:
         """Test that command returns appropriate exit codes."""
         # Help should return 0
         result = subprocess.run(
-            ["code-indexer", "setup-global-registry", "--help"],
+            ["cidx", "setup-global-registry", "--help"],
             capture_output=True,
             text=True,
         )
@@ -253,7 +253,7 @@ class TestSetupGlobalRegistryCommand:
 
         # Invalid flag should return non-zero
         result = subprocess.run(
-            ["code-indexer", "setup-global-registry", "--invalid-flag"],
+            ["cidx", "setup-global-registry", "--invalid-flag"],
             capture_output=True,
             text=True,
         )
@@ -263,7 +263,7 @@ class TestSetupGlobalRegistryCommand:
         """Test that --test-access flag actually tests registry access."""
         # This will fail without proper setup, but should show test access attempt
         result = subprocess.run(
-            ["code-indexer", "setup-global-registry", "--test-access"],
+            ["cidx", "setup-global-registry", "--test-access"],
             capture_output=True,
             text=True,
         )
@@ -280,7 +280,7 @@ class TestSetupGlobalRegistryCommand:
         ) as project_path:
             # Now try to start services (this should mention registry setup)
             result = subprocess.run(
-                ["code-indexer", "start"],
+                ["cidx", "start"],
                 cwd=project_path,
                 capture_output=True,
                 text=True,

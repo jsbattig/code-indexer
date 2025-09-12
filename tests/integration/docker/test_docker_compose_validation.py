@@ -171,13 +171,14 @@ class TestDockerComposeValidation:
 
             # Container names are generated dynamically by the DockerManager
 
-            ports = docker_manager._allocate_free_ports()
-            project_config = {
-                **container_names,
-                "qdrant_port": str(ports["qdrant_port"]),
-                "ollama_port": str(ports["ollama_port"]),
-                "data_cleaner_port": str(ports["data_cleaner_port"]),
-            }
+            # Pass ollama as provider to ensure all ports are allocated
+            config_dict = {"embedding_provider": "ollama"}
+            ports = docker_manager.allocate_project_ports(test_dir, config_dict)
+
+            # Build project config with all allocated ports
+            project_config = {**container_names}
+            for port_key in ports:
+                project_config[port_key] = str(ports[port_key])
             compose_config = docker_manager.generate_compose_config(
                 test_dir, project_config
             )
@@ -238,13 +239,18 @@ class TestDockerComposeValidation:
 
             # Container names are generated dynamically by the DockerManager
 
-            ports = docker_manager._allocate_free_ports()
-            project_config = {
-                **container_names,
-                "qdrant_port": str(ports["qdrant_port"]),
-                "ollama_port": str(ports["ollama_port"]),
-                "data_cleaner_port": str(ports["data_cleaner_port"]),
-            }
+            # VoyageAI doesn't need ollama, pass config to allocate_project_ports
+            config_dict = {"embedding_provider": "voyage-ai"}
+            ports = docker_manager.allocate_project_ports(test_dir, config_dict)
+
+            # Build project config with only the ports that were allocated
+            project_config = {**container_names}
+            for port_key in ports:
+                project_config[port_key] = str(ports[port_key])
+
+            # Add ollama_port with a dummy value if not present (for generate_compose_config compatibility)
+            if "ollama_port" not in project_config:
+                project_config["ollama_port"] = "11434"  # Default ollama port
             compose_config = docker_manager.generate_compose_config(
                 test_dir, project_config
             )
@@ -311,13 +317,14 @@ class TestDockerComposeValidation:
 
                     # Container names are generated dynamically by the DockerManager
 
-                    ports = docker_manager._allocate_free_ports()
-                    project_config = {
-                        **container_names,
-                        "qdrant_port": str(ports["qdrant_port"]),
-                        "ollama_port": str(ports["ollama_port"]),
-                        "data_cleaner_port": str(ports["data_cleaner_port"]),
-                    }
+                    # Pass ollama as provider to ensure all ports are allocated
+                    config_dict = {"embedding_provider": "ollama"}
+                    ports = docker_manager.allocate_project_ports(test_dir, config_dict)
+
+                    # Build project config with all allocated ports
+                    project_config = {**container_names}
+                    for port_key in ports:
+                        project_config[port_key] = str(ports[port_key])
                     state = docker_manager.get_service_state(
                         "test_service", project_config
                     )
@@ -367,13 +374,18 @@ class TestDockerComposeValidation:
 
                 # Container names are generated dynamically by the DockerManager
 
-                ports = docker_manager._allocate_free_ports()
-                project_config = {
-                    **container_names,
-                    "qdrant_port": str(ports["qdrant_port"]),
-                    "ollama_port": str(ports["ollama_port"]),
-                    "data_cleaner_port": str(ports["data_cleaner_port"]),
-                }
+                # Pass the current provider config
+                config_dict = {"embedding_provider": provider}
+                ports = docker_manager.allocate_project_ports(test_dir, config_dict)
+
+                # Build project config with only the ports that were allocated
+                project_config = {**container_names}
+                for port_key in ports:
+                    project_config[port_key] = str(ports[port_key])
+
+                # Add ollama_port with a dummy value if not present (for generate_compose_config compatibility)
+                if "ollama_port" not in project_config:
+                    project_config["ollama_port"] = "11434"  # Default ollama port
                 compose_config = docker_manager.generate_compose_config(
                     test_dir, project_config
                 )
@@ -423,13 +435,14 @@ class TestDockerComposeValidation:
 
             # Container names are generated dynamically by the DockerManager
 
-            ports = docker_manager._allocate_free_ports()
-            project_config = {
-                **container_names,
-                "qdrant_port": str(ports["qdrant_port"]),
-                "ollama_port": str(ports["ollama_port"]),
-                "data_cleaner_port": str(ports["data_cleaner_port"]),
-            }
+            # Pass ollama as provider to ensure all ports are allocated
+            config_dict = {"embedding_provider": "ollama"}
+            ports = docker_manager.allocate_project_ports(test_dir, config_dict)
+
+            # Build project config with all allocated ports
+            project_config = {**container_names}
+            for port_key in ports:
+                project_config[port_key] = str(ports[port_key])
             compose_config = docker_manager.generate_compose_config(
                 test_dir, project_config
             )

@@ -62,7 +62,7 @@ class TestTimestampComparison:
     def _ensure_services_started(self, project_path):
         """Ensure services are started before running tests."""
         start_result = subprocess.run(
-            ["code-indexer", "start", "--quiet"],
+            ["cidx", "start", "--quiet"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -71,7 +71,7 @@ class TestTimestampComparison:
         # Services may already be running, so check status if start fails
         if start_result.returncode != 0:
             status_result = subprocess.run(
-                ["code-indexer", "status", "--quiet"],
+                ["cidx", "status", "--quiet"],
                 cwd=project_path,
                 capture_output=True,
                 text=True,
@@ -96,7 +96,7 @@ class TestTimestampComparison:
 
         # Perform initial index via CLI
         initial_result = subprocess.run(
-            ["code-indexer", "index", "--clear"],
+            ["cidx", "index", "--clear"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -133,7 +133,7 @@ class TestTimestampComparison:
 
         # ✅ Perform reconcile via CLI (no cheating!)
         reconcile_result = subprocess.run(
-            ["code-indexer", "index", "--reconcile"],
+            ["cidx", "index", "--reconcile"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -171,7 +171,7 @@ class TestTimestampComparison:
 
         # Perform initial index via CLI with resource contention handling
         initial_result = subprocess.run(
-            ["code-indexer", "index", "--clear"],
+            ["cidx", "index", "--clear"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -216,7 +216,7 @@ class TestTimestampComparison:
 
         # Don't modify any files, just perform reconcile via CLI
         reconcile_result = subprocess.run(
-            ["code-indexer", "index", "--reconcile"],
+            ["cidx", "index", "--reconcile"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -253,7 +253,7 @@ class TestTimestampComparison:
 
         # Perform initial index via CLI with resource contention handling
         initial_result = subprocess.run(
-            ["code-indexer", "index", "--clear"],
+            ["cidx", "index", "--clear"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -303,7 +303,7 @@ class TestTimestampComparison:
 
         # ✅ Perform reconcile via CLI (no cheating!)
         reconcile_result = subprocess.run(
-            ["code-indexer", "index", "--reconcile"],
+            ["cidx", "index", "--reconcile"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -341,7 +341,7 @@ class TestTimestampComparison:
 
         # Perform initial index via CLI
         initial_result = subprocess.run(
-            ["code-indexer", "index", "--clear"],
+            ["cidx", "index", "--clear"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -363,7 +363,7 @@ class TestTimestampComparison:
         # Test that reconcile works (indicating timestamps are comparable)
         # This is an indirect test - if timestamps weren't comparable, reconcile would fail
         reconcile_result = subprocess.run(
-            ["code-indexer", "index", "--reconcile"],
+            ["cidx", "index", "--reconcile"],
             cwd=project_path,
             capture_output=True,
             text=True,
