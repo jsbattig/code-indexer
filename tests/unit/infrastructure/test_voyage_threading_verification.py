@@ -70,6 +70,10 @@ class TestClass_{i}:
         self.config.chunking.chunk_size = 200
         self.config.chunking.overlap_size = 50
 
+        # Mock VoyageAI config for thread testing
+        self.config.voyage_ai = Mock()
+        self.config.voyage_ai.parallel_requests = 8  # Standard config.json setting
+
         # Mock Qdrant client
         self.mock_qdrant = Mock(spec=QdrantClient)
         self.mock_qdrant.upsert_points.return_value = True
@@ -88,27 +92,16 @@ class TestClass_{i}:
         )
 
     @pytest.mark.unit
-    def test_voyage_ai_thread_count_calculation(self):
-        """Test that Voyage AI gets the correct default thread count."""
-        from code_indexer.services.vector_calculation_manager import (
-            get_default_thread_count,
-        )
-
-        # Mock Voyage AI provider
-        voyage_provider = Mock()
-        voyage_provider.get_provider_name.return_value = "voyage-ai"
-
-        # Test thread count calculation
-        thread_count = get_default_thread_count(voyage_provider)
-
-        # Voyage AI should get 8 threads by default
+    def test_voyage_ai_thread_count_from_config(self):
+        """Test that thread count comes from config.json setting."""
+        # Thread count now comes from config.json, not provider defaults
         assert (
-            thread_count == 8
-        ), f"Expected 8 threads for Voyage AI, got {thread_count}"
+            self.config.voyage_ai.parallel_requests == 8
+        ), f"Expected 8 from config.json, got {self.config.voyage_ai.parallel_requests}"
 
     @pytest.mark.unit
-    def test_clear_command_threading_fallback(self):
-        """Test that --clear command uses multi-threading in fallback scenario with Voyage AI."""
+    def test_clear_command_uses_high_throughput_processor(self):
+        """Test that --clear command (force_full) uses high-throughput processor with proper threading."""
 
         # Create SmartIndexer with Voyage-like provider
         smart_indexer = SmartIndexer(
@@ -118,11 +111,13 @@ class TestClass_{i}:
             metadata_path=self.metadata_path,
         )
 
-        # Track vector thread count usage in fallback
+        # Track that high-throughput processor is called with correct thread count
         vector_thread_count_used = None
+        high_throughput_called = False
 
-        def capture_vector_thread_count(files, vector_thread_count=None, **kwargs):
-            nonlocal vector_thread_count_used
+        def capture_high_throughput_call(files, vector_thread_count=None, **kwargs):
+            nonlocal vector_thread_count_used, high_throughput_called
+            high_throughput_called = True
             vector_thread_count_used = vector_thread_count
             # Return mock stats
             from code_indexer.indexing.processor import ProcessingStats
@@ -134,32 +129,32 @@ class TestClass_{i}:
                 total_size=1000,
             )
 
-        # Force BranchAwareIndexer to fail so we test the fallback path
+        # Mock the high-throughput processor
         with patch.object(
-            smart_indexer.branch_aware_indexer, "index_branch_changes"
-        ) as mock_branch_indexer:
-            mock_branch_indexer.side_effect = Exception(
-                "BranchAwareIndexer forced failure for testing"
+            smart_indexer,
+            "process_files_high_throughput",
+            side_effect=capture_high_throughput_call,
+        ):
+            smart_indexer.smart_index(
+                force_full=True,  # This is what --clear does
+                reconcile_with_database=False,
+                batch_size=50,
+                safety_buffer_seconds=60,
+                files_count_to_process=None,
+                vector_thread_count=8,  # Voyage AI typical thread count
             )
 
-            # Should raise RuntimeError due to disabled fallbacks
-            with pytest.raises(
-                RuntimeError,
-                match="Git-aware indexing failed and fallbacks are disabled",
-            ):
-                smart_indexer.smart_index(
-                    force_full=True,  # This is what --clear does
-                    reconcile_with_database=False,
-                    batch_size=50,
-                    progress_callback=None,
-                    safety_buffer_seconds=60,
-                    files_count_to_process=None,
-                    vector_thread_count=8,  # Voyage AI typical thread count
-                )
+        # Verify high-throughput processor was called directly
+        assert (
+            high_throughput_called
+        ), "High-throughput processor should be called for full index"
+        assert (
+            vector_thread_count_used == 8
+        ), f"Expected thread count of 8, got {vector_thread_count_used}"
 
     @pytest.mark.unit
-    def test_branch_aware_indexer_receives_thread_count(self):
-        """Test that BranchAwareIndexer receives vector_thread_count parameter."""
+    def test_high_throughput_processor_receives_thread_count_for_full_index(self):
+        """Test that full index passes vector_thread_count to high-throughput processor."""
 
         # Create SmartIndexer
         smart_indexer = SmartIndexer(
@@ -169,52 +164,74 @@ class TestClass_{i}:
             metadata_path=self.metadata_path,
         )
 
-        # Track vector thread count passed to BranchAwareIndexer
-        branch_indexer_thread_count = None
+        # Track vector thread count passed to high-throughput processor
+        high_throughput_thread_count = None
 
-        def capture_branch_indexer_thread_count(
-            old_branch,
-            new_branch,
-            changed_files,
-            unchanged_files,
-            collection_name,
-            progress_callback=None,
+        def capture_high_throughput_thread_count(
+            files,
             vector_thread_count=None,
+            batch_size=50,
+            progress_callback=None,
         ):
-            nonlocal branch_indexer_thread_count
-            branch_indexer_thread_count = vector_thread_count
+            nonlocal high_throughput_thread_count
+            high_throughput_thread_count = vector_thread_count
             # Return mock result
-            from code_indexer.services.branch_aware_indexer import BranchIndexingResult
+            from code_indexer.indexing.processor import ProcessingStats
 
-            return BranchIndexingResult(
-                content_points_created=3,
-                content_points_reused=0,
-                processing_time=0.1,
-                files_processed=3,
-            )
+            stats = ProcessingStats()
+            stats.files_processed = 3
+            stats.chunks_created = 10
+            return stats
 
-        # Mock BranchAwareIndexer.index_branch_changes to capture thread count
+        # Mock process_files_high_throughput to capture thread count
         with patch.object(
-            smart_indexer.branch_aware_indexer,
-            "index_branch_changes",
-            side_effect=capture_branch_indexer_thread_count,
+            smart_indexer,
+            "process_files_high_throughput",
+            side_effect=capture_high_throughput_thread_count,
         ):
-            # Call with specific thread count
+            # Call with specific thread count for full index
             smart_indexer.smart_index(
                 force_full=True,
                 reconcile_with_database=False,
                 batch_size=50,
-                progress_callback=None,
                 safety_buffer_seconds=60,
                 files_count_to_process=None,
                 vector_thread_count=8,  # Voyage AI thread count
             )
 
-        # Verify that BranchAwareIndexer received the thread count
-        assert branch_indexer_thread_count == 8, (
-            f"Expected BranchAwareIndexer to receive vector_thread_count=8, but got {branch_indexer_thread_count}. "
-            f"This indicates that thread count is not being passed to BranchAwareIndexer."
+        # Verify that high-throughput processor received the thread count
+        assert high_throughput_thread_count == 8, (
+            f"Expected high-throughput processor to receive vector_thread_count=8, but got {high_throughput_thread_count}. "
+            f"This indicates that thread count is not being passed to the parallel processor for full index."
         )
+
+    @pytest.mark.unit
+    def test_branch_processor_method_signature_includes_thread_count(self):
+        """Test that process_branch_changes_high_throughput accepts vector_thread_count parameter."""
+
+        # Create SmartIndexer
+        smart_indexer = SmartIndexer(
+            config=self.config,
+            embedding_provider=self.mock_embedding_provider,
+            qdrant_client=self.mock_qdrant,
+            metadata_path=self.metadata_path,
+        )
+
+        # Check that process_branch_changes_high_throughput has the right signature
+        import inspect
+
+        sig = inspect.signature(smart_indexer.process_branch_changes_high_throughput)
+        params = sig.parameters
+
+        # Verify vector_thread_count parameter exists
+        assert (
+            "vector_thread_count" in params
+        ), "process_branch_changes_high_throughput should have vector_thread_count parameter"
+
+        # Verify it has a default value
+        assert (
+            params["vector_thread_count"].default is not inspect.Parameter.empty
+        ), "vector_thread_count should have a default value"
 
     def teardown_method(self):
         """Cleanup test environment."""

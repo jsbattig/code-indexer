@@ -42,6 +42,11 @@ class TestConcurrentIndexingPrevention:
             indexing_config.max_file_size = 1000000
             config.indexing = indexing_config
 
+            # Mock the voyage_ai sub-config
+            voyage_ai_config = Mock()
+            voyage_ai_config.parallel_requests = 8
+            config.voyage_ai = voyage_ai_config
+
             mock_embedding_provider = Mock()
             mock_embedding_provider.get_provider_name.return_value = "test-provider"
             mock_embedding_provider.get_current_model.return_value = "test-model"
@@ -72,16 +77,17 @@ class TestConcurrentIndexingPrevention:
                     # Simulate slow indexing operation
                     time.sleep(2.0)  # 2 second delay
                     # Mock return value
-                    from code_indexer.services.branch_aware_indexer import (
-                        BranchIndexingResult,
-                    )
+                    from code_indexer.indexing.processor import ProcessingStats
 
-                    return BranchIndexingResult(
-                        content_points_created=1,
-                        content_points_reused=0,
-                        processing_time=2.0,
-                        files_processed=1,
-                    )
+                    mock_stats = ProcessingStats()
+                    mock_stats.files_processed = 1
+                    mock_stats.chunks_created = 1
+                    mock_stats.failed_files = 0
+                    mock_stats.start_time = time.time() - 2.0
+                    mock_stats.end_time = time.time()
+                    mock_stats.cancelled = False
+
+                    return mock_stats
 
                 # Results tracking
                 results = []
@@ -92,8 +98,8 @@ class TestConcurrentIndexingPrevention:
                     try:
                         with (
                             patch.object(
-                                indexer.branch_aware_indexer,
-                                "index_branch_changes",
+                                indexer,
+                                "process_files_high_throughput",
                                 side_effect=slow_index_branch_changes,
                             ),
                             patch.object(indexer, "get_git_status") as mock_git_status,
@@ -192,6 +198,11 @@ class TestConcurrentIndexingPrevention:
             indexing_config.max_file_size = 1000000
             config.indexing = indexing_config
 
+            # Mock the voyage_ai sub-config
+            voyage_ai_config = Mock()
+            voyage_ai_config.parallel_requests = 8
+            config.voyage_ai = voyage_ai_config
+
             mock_embedding_provider = Mock()
             mock_embedding_provider.get_provider_name.return_value = "test-provider"
             mock_embedding_provider.get_current_model.return_value = "test-model"
@@ -233,25 +244,26 @@ class TestConcurrentIndexingPrevention:
                     patch.object(indexer, "get_git_status") as mock_git_status,
                     patch.object(indexer, "file_finder") as mock_file_finder,
                     patch.object(
-                        indexer.branch_aware_indexer, "index_branch_changes"
-                    ) as mock_index_branch,
+                        indexer, "process_files_high_throughput"
+                    ) as mock_process_files,
                 ):
                     mock_git_status.return_value = {"git_available": False}
                     mock_file_finder.find_files.return_value = [
                         Path(tmpdir) / f for f in test_files
                     ]
 
-                    # Mock return value for branch aware indexer
-                    from code_indexer.services.branch_aware_indexer import (
-                        BranchIndexingResult,
-                    )
+                    # Mock return value for process_files_high_throughput
+                    from code_indexer.indexing.processor import ProcessingStats
 
-                    mock_index_branch.return_value = BranchIndexingResult(
-                        content_points_created=1,
-                        content_points_reused=0,
-                        processing_time=0.1,
-                        files_processed=len(test_files),
-                    )
+                    mock_stats = ProcessingStats()
+                    mock_stats.files_processed = len(test_files)
+                    mock_stats.chunks_created = 1
+                    mock_stats.failed_files = 0
+                    mock_stats.start_time = time.time()
+                    mock_stats.end_time = time.time() + 0.1
+                    mock_stats.cancelled = False
+
+                    mock_process_files.return_value = mock_stats
 
                     # This should succeed (stale heartbeat should be ignored)
                     try:
@@ -286,6 +298,11 @@ class TestConcurrentIndexingPrevention:
             indexing_config.max_file_size = 1000000
             config.indexing = indexing_config
 
+            # Mock the voyage_ai sub-config
+            voyage_ai_config = Mock()
+            voyage_ai_config.parallel_requests = 8
+            config.voyage_ai = voyage_ai_config
+
             mock_embedding_provider = Mock()
             mock_embedding_provider.get_provider_name.return_value = "test-provider"
             mock_embedding_provider.get_current_model.return_value = "test-model"
@@ -311,25 +328,26 @@ class TestConcurrentIndexingPrevention:
                     patch.object(indexer, "get_git_status") as mock_git_status,
                     patch.object(indexer, "file_finder") as mock_file_finder,
                     patch.object(
-                        indexer.branch_aware_indexer, "index_branch_changes"
-                    ) as mock_index_branch,
+                        indexer, "process_files_high_throughput"
+                    ) as mock_process_files,
                 ):
                     mock_git_status.return_value = {"git_available": False}
                     mock_file_finder.find_files.return_value = [
                         Path(tmpdir) / f for f in test_files
                     ]
 
-                    # Mock return value for branch aware indexer
-                    from code_indexer.services.branch_aware_indexer import (
-                        BranchIndexingResult,
-                    )
+                    # Mock return value for process_files_high_throughput
+                    from code_indexer.indexing.processor import ProcessingStats
 
-                    mock_index_branch.return_value = BranchIndexingResult(
-                        content_points_created=1,
-                        content_points_reused=0,
-                        processing_time=0.1,
-                        files_processed=len(test_files),
-                    )
+                    mock_stats = ProcessingStats()
+                    mock_stats.files_processed = len(test_files)
+                    mock_stats.chunks_created = 1
+                    mock_stats.failed_files = 0
+                    mock_stats.start_time = time.time()
+                    mock_stats.end_time = time.time() + 0.1
+                    mock_stats.cancelled = False
+
+                    mock_process_files.return_value = mock_stats
 
                     # Run indexing
                     indexer.smart_index(force_full=True)

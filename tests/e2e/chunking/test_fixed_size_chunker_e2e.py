@@ -399,6 +399,13 @@ class DataProcessor:
         """Create a mock Qdrant client."""
         client = Mock()
         client.upsert_points.return_value = True
+
+        # Mock create_point to return a dictionary with expected structure
+        def create_point(vector, payload, embedding_model):
+            return {"embedding": vector, "metadata": payload, "model": embedding_model}
+
+        client.create_point.side_effect = create_point
+
         return client
 
     def test_fixed_size_chunker_in_document_processor(
@@ -425,16 +432,20 @@ class DataProcessor:
             mock_vector_manager = Mock()
             MockVectorManager.return_value = mock_vector_manager
 
-            # Mock the submit_chunk method to return a future
-            mock_future = Mock()
-            mock_future.result.return_value = VectorResult(
-                task_id="test_task",
-                embedding=[0.1] * 384,
-                metadata={"test": "data"},
-                processing_time=0.001,
-                error=None,
-            )
-            mock_vector_manager.submit_chunk.return_value = mock_future
+            # Mock the submit_chunk method to return a future with dynamic metadata
+            def create_mock_future(text, metadata):
+                """Create a mock future with proper metadata from actual chunking."""
+                mock_future = Mock()
+                mock_future.result.return_value = VectorResult(
+                    task_id="test_task",
+                    embeddings=((0.1,) * 384,),  # Use batch format with immutable tuple
+                    metadata=metadata,  # Use the actual metadata passed by the processor
+                    processing_time=0.001,
+                    error=None,
+                )
+                return mock_future
+
+            mock_vector_manager.submit_chunk.side_effect = create_mock_future
 
             # Call the file processing method
             chunks = processor.process_file_parallel(java_file, mock_vector_manager)
@@ -483,10 +494,13 @@ class DataProcessor:
             def mock_submit_chunk(text, metadata):
                 submitted_chunks.append({"text": text, "metadata": metadata})
                 mock_future = Mock()
-                mock_future.result.return_value = {
-                    "embedding": [0.1] * 384,
-                    "metadata": metadata,
-                }
+                mock_future.result.return_value = VectorResult(
+                    task_id="test_task",
+                    embeddings=((0.1,) * 384,),  # Use batch format with immutable tuple
+                    metadata=metadata,
+                    processing_time=0.001,
+                    error=None,
+                )
                 return mock_future
 
             mock_vector_manager.submit_chunk.side_effect = mock_submit_chunk
@@ -532,7 +546,7 @@ class DataProcessor:
                 assert metadata["content"] == text
                 assert metadata["line_start"] > 0
                 assert metadata["line_end"] >= metadata["line_start"]
-                assert metadata["semantic_chunking"] is False
+                # Note: semantic_chunking field is not set by fixed-size chunker
 
     def test_chunking_overlap_in_processing_pipeline(
         self, mock_config, mock_embedding_provider, mock_qdrant_client
@@ -558,10 +572,13 @@ class DataProcessor:
             def mock_submit_chunk(text, metadata):
                 chunk_texts.append(text)
                 mock_future = Mock()
-                mock_future.result.return_value = {
-                    "embedding": [0.1] * 384,
-                    "metadata": metadata,
-                }
+                mock_future.result.return_value = VectorResult(
+                    task_id="test_task",
+                    embeddings=((0.1,) * 384,),  # Use batch format with immutable tuple
+                    metadata=metadata,
+                    processing_time=0.001,
+                    error=None,
+                )
                 return mock_future
 
             mock_vector_manager.submit_chunk.side_effect = mock_submit_chunk
@@ -615,13 +632,20 @@ class DataProcessor:
             mock_vector_manager = Mock()
             MockVectorManager.return_value = mock_vector_manager
 
-            # Mock fast vector calculation
-            mock_future = Mock()
-            mock_future.result.return_value = {
-                "embedding": [0.1] * 384,
-                "metadata": {"test": "data"},
-            }
-            mock_vector_manager.submit_chunk.return_value = mock_future
+            # Mock fast vector calculation with dynamic metadata
+            def create_mock_future(text, metadata):
+                """Create a mock future with proper metadata from actual chunking."""
+                mock_future = Mock()
+                mock_future.result.return_value = VectorResult(
+                    task_id="test_task",
+                    embeddings=((0.1,) * 384,),  # Use batch format with immutable tuple
+                    metadata=metadata,  # Use the actual metadata passed by the processor
+                    processing_time=0.001,
+                    error=None,
+                )
+                return mock_future
+
+            mock_vector_manager.submit_chunk.side_effect = create_mock_future
 
             for file_path in test_files:
                 start_time = time.perf_counter()
@@ -685,10 +709,15 @@ class DataProcessor:
                 if len(text) > 500:  # Arbitrary condition
                     mock_future.result.side_effect = Exception("Embedding failed")
                 else:
-                    mock_future.result.return_value = {
-                        "embedding": [0.1] * 384,
-                        "metadata": metadata,
-                    }
+                    mock_future.result.return_value = VectorResult(
+                        task_id="test_task",
+                        embeddings=(
+                            (0.1,) * 384,
+                        ),  # Use batch format with immutable tuple
+                        metadata=metadata,
+                        processing_time=0.001,
+                        error=None,
+                    )
                 return mock_future
 
             mock_vector_manager.submit_chunk.side_effect = mock_submit_chunk
@@ -728,10 +757,13 @@ class DataProcessor:
             def mock_submit_chunk(text, metadata):
                 submitted_data.append({"text": text, "metadata": metadata})
                 mock_future = Mock()
-                mock_future.result.return_value = {
-                    "embedding": [0.1] * 384,
-                    "metadata": metadata,
-                }
+                mock_future.result.return_value = VectorResult(
+                    task_id="test_task",
+                    embeddings=((0.1,) * 384,),  # Use batch format with immutable tuple
+                    metadata=metadata,
+                    processing_time=0.001,
+                    error=None,
+                )
                 return mock_future
 
             mock_vector_manager.submit_chunk.side_effect = mock_submit_chunk

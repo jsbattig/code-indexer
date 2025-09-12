@@ -1,0 +1,82 @@
+# VoyageAI Model Specifications and Token Limits
+# Source: https://docs.voyageai.com/docs/embeddings (2025)
+
+voyage_models:
+  # High-capacity models (1M tokens per batch)
+  voyage-3.5-lite:
+    token_limit: 1000000
+    context_length: 32000
+    dimensions: [2048, 1024, 512, 256]
+    default_dimension: 1024
+    description: "Improved quality lite model with highest batch capacity"
+    
+  # Medium-capacity models (320K tokens per batch)  
+  voyage-3.5:
+    token_limit: 320000
+    context_length: 32000
+    dimensions: [2048, 1024, 512, 256]  
+    default_dimension: 1024
+    description: "Latest high-quality general purpose model"
+    
+  voyage-2:
+    token_limit: 320000
+    context_length: 32000
+    dimensions: [1024]
+    default_dimension: 1024
+    description: "General purpose embedding model"
+    
+  # Standard-capacity models (120K tokens per batch)
+  voyage-3-large:
+    token_limit: 120000
+    context_length: 32000
+    dimensions: [2048, 1024, 512, 256]
+    default_dimension: 1024
+    description: "State-of-the-art general-purpose model"
+    
+  voyage-code-3:
+    token_limit: 120000
+    context_length: 32000
+    dimensions: [2048, 1024, 512, 256]
+    default_dimension: 1024
+    description: "Optimized for code and technical content"
+    
+  voyage-large-2-instruct:
+    token_limit: 120000
+    context_length: 32000
+    dimensions: [1536]
+    default_dimension: 1536
+    description: "Instruction-tuned large model"
+    
+  voyage-finance-2:
+    token_limit: 120000
+    context_length: 32000
+    dimensions: [1024]
+    default_dimension: 1024
+    description: "Optimized for financial documents"
+    
+  voyage-multilingual-2:
+    token_limit: 120000
+    context_length: 32000
+    dimensions: [1024]
+    default_dimension: 1024
+    description: "Multilingual embedding model"
+    
+  voyage-law-2:
+    token_limit: 120000
+    context_length: 32000
+    dimensions: [1024]
+    default_dimension: 1024
+    description: "Optimized for legal documents"
+
+# API Constraints
+api_constraints:
+  max_texts_per_request: 1000
+  safety_margin_percentage: 90  # Use 90% of token limit
+  
+# Rate Limits (Tokens Per Minute)
+rate_limits:
+  voyage-3.5: 8000000
+  voyage-3-large: 3000000
+  voyage-context-3: 3000000  
+  voyage-code-3: 3000000
+  voyage-2_series: 3000000  # voyage-2, voyage-large-2, voyage-law-2, etc.

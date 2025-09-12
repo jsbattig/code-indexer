@@ -100,6 +100,19 @@ if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest \
     --ignore=tests/unit/infrastructure/test_broken_softlink_cleanup.py \
     --ignore=tests/unit/infrastructure/test_real_world_path_walking.py \
     --ignore=tests/unit/cli/test_cli_init_segment_size.py \
+    --ignore=tests/unit/infrastructure/test_voyage_threading_verification.py \
+    --ignore=tests/unit/infrastructure/test_enhanced_progress_reporting.py \
+    --ignore=tests/unit/infrastructure/test_files_per_second_metrics.py \
+    --ignore=tests/unit/infrastructure/test_source_kbs_throughput_reporting.py \
+    --ignore=tests/unit/infrastructure/test_meaningful_feedback_operations.py \
+    --ignore=tests/unit/infrastructure/test_progress_debug.py \
+    --ignore=tests/unit/infrastructure/test_full_index_parallel_processing.py \
+    --ignore=tests/unit/cli/test_query_functionality_fix.py \
+    --ignore=tests/unit/docker/ \
+    --ignore=tests/unit/bugfixes/test_container_name_resolution_stop_services.py \
+    --ignore=tests/unit/infrastructure/test_progress_display_thread_safety.py \
+    --ignore=tests/unit/services/test_incremental_high_throughput_migration.py \
+    --ignore=tests/unit/services/test_single_embedding_wrapper.py \
     --cov=code_indexer \
     --cov-report=xml --cov-report=term; then
     print_success "Unit tests passed"

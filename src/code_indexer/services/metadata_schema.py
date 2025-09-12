@@ -25,8 +25,8 @@ class GitAwareMetadataSchema:
     """
     Enhanced metadata schema supporting git-aware indexing.
 
-    This schema extends the original metadata with git-specific fields while
-    maintaining backward compatibility with non-git projects.
+    This schema extends the original metadata with git-specific fields for
+    comprehensive project awareness.
     """
 
     # Core metadata fields (required)
@@ -289,7 +289,7 @@ class GitAwareMetadataSchema:
         total_chunks: int,
     ) -> Dict[str, Any]:
         """
-        Create legacy-compatible metadata for backward compatibility.
+        Create legacy-compatible metadata for existing systems.
 
         Args:
             path: Relative file path

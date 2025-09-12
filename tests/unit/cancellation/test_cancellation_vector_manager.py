@@ -18,6 +18,7 @@ from code_indexer.services.embedding_provider import (
     BatchEmbeddingResult,
 )
 from typing import List, Optional, Dict, Any
+from concurrent.futures import Future
 
 
 class SlowMockEmbeddingProvider(EmbeddingProvider):
@@ -129,7 +130,7 @@ class TestVectorCalculationManagerCancellation:
             manager.request_cancellation()
 
             # Submit a task after cancellation is requested
-            future = manager.submit_chunk("test text", {"test": True})
+            future: Future[Any] = manager.submit_chunk("test text", {"test": True})
 
             # Get result (should be cancelled)
             result = future.result(timeout=5.0)
@@ -149,7 +150,9 @@ class TestVectorCalculationManagerCancellation:
             # Submit many slow tasks
             futures = []
             for i in range(20):
-                future = manager.submit_chunk(f"slow task {i}", {"index": i})
+                future: Future[Any] = manager.submit_chunk(
+                    f"slow task {i}", {"index": i}
+                )
                 futures.append(future)
 
             # Wait a bit for tasks to start
@@ -185,10 +188,10 @@ class TestVectorCalculationManagerCancellation:
             # Submit first batch of tasks
             futures_batch1 = []
             for i in range(3):
-                future = manager.submit_chunk(
+                batch1_future = manager.submit_chunk(
                     f"batch1 task {i}", {"batch": 1, "index": i}
                 )
-                futures_batch1.append(future)
+                futures_batch1.append(batch1_future)
 
             # Request cancellation
             manager.request_cancellation()
@@ -196,10 +199,10 @@ class TestVectorCalculationManagerCancellation:
             # Submit second batch of tasks (should be rejected or cancelled)
             futures_batch2 = []
             for i in range(3):
-                future = manager.submit_chunk(
+                batch2_future = manager.submit_chunk(
                     f"batch2 task {i}", {"batch": 2, "index": i}
                 )
-                futures_batch2.append(future)
+                futures_batch2.append(batch2_future)
 
             # Check results
             batch2_successful = 0
@@ -226,7 +229,9 @@ class TestVectorCalculationManagerCancellation:
             # Submit and let some tasks complete
             futures = []
             for i in range(5):
-                future = manager.submit_chunk(f"fast task {i}", {"index": i})
+                future: Future[Any] = manager.submit_chunk(
+                    f"fast task {i}", {"index": i}
+                )
                 futures.append(future)
 
             # Wait for first few to complete
@@ -260,7 +265,9 @@ class TestVectorCalculationManagerCancellation:
         # Submit tasks
         futures = []
         for i in range(10):
-            future = manager.submit_chunk(f"cleanup test {i}", {"index": i})
+            future: Future[Any] = manager.submit_chunk(
+                f"cleanup test {i}", {"index": i}
+            )
             futures.append(future)
 
         # Request cancellation
@@ -285,7 +292,9 @@ class TestVectorCalculationManagerCancellation:
             # Submit tasks
             futures = []
             for i in range(5):
-                future = manager.submit_chunk(f"multi cancel test {i}", {"index": i})
+                future: Future[Any] = manager.submit_chunk(
+                    f"multi cancel test {i}", {"index": i}
+                )
                 futures.append(future)
 
             # Request cancellation multiple times (should be safe)

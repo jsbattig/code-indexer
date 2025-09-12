@@ -12,7 +12,6 @@ from ...conftest import local_temporary_directory
 from code_indexer.config import Config
 from code_indexer.services.smart_indexer import SmartIndexer
 from code_indexer.services.progressive_metadata import ProgressiveMetadata
-from code_indexer.services.branch_aware_indexer import BranchIndexingResult
 
 
 @pytest.fixture
@@ -31,6 +30,11 @@ def mock_config():
         indexing_config.chunk_overlap = 100
         indexing_config.max_file_size = 1000000
         config.indexing = indexing_config
+
+        # Mock the voyage_ai sub-config
+        voyage_ai_config = Mock()
+        voyage_ai_config.parallel_requests = 8
+        config.voyage_ai = voyage_ai_config
 
         yield config
 
@@ -240,19 +244,22 @@ class TestSmartIndexer:
             patch.object(indexer, "get_git_status") as mock_git_status,
             patch.object(indexer, "file_finder") as mock_file_finder,
             patch.object(
-                indexer.branch_aware_indexer, "index_branch_changes"
-            ) as mock_branch_indexer,
-            patch.object(indexer.branch_aware_indexer, "hide_files_not_in_branch"),
+                indexer, "process_files_high_throughput"
+            ) as mock_high_throughput,
+            patch.object(indexer, "hide_files_not_in_branch_thread_safe"),
         ):
             # Setup mocks
             mock_git_status.return_value = {"git_available": False}
             mock_file_finder.find_files.return_value = [Path("test.py")]
-            mock_branch_indexer.return_value = BranchIndexingResult(
-                files_processed=1,
-                content_points_created=5,
-                content_points_reused=0,
-                processing_time=0.1,
-            )
+
+            # Mock the high-throughput processor for full index
+            from code_indexer.indexing.processor import ProcessingStats
+
+            mock_stats = ProcessingStats()
+            mock_stats.files_processed = 1
+            mock_stats.chunks_created = 5
+            mock_high_throughput.return_value = mock_stats
+
             mock_qdrant_client.collection_exists.return_value = False
 
             stats = indexer.smart_index(force_full=True)
@@ -260,6 +267,10 @@ class TestSmartIndexer:
             # Verify full index was performed
             mock_qdrant_client.ensure_provider_aware_collection.assert_called_once()
             mock_qdrant_client.clear_collection.assert_called_once()
+
+            # Verify high-throughput processor was called directly
+            mock_high_throughput.assert_called_once()
+
             assert stats.files_processed == 1
             assert stats.chunks_created == 5
 
@@ -279,25 +290,31 @@ class TestSmartIndexer:
             patch.object(indexer, "get_git_status") as mock_git_status,
             patch.object(indexer, "file_finder") as mock_file_finder,
             patch.object(
-                indexer.branch_aware_indexer, "index_branch_changes"
-            ) as mock_branch_indexer,
-            patch.object(indexer.branch_aware_indexer, "hide_files_not_in_branch"),
+                indexer, "process_files_high_throughput"
+            ) as mock_high_throughput,
+            patch.object(indexer, "hide_files_not_in_branch_thread_safe"),
         ):
             # Setup mocks
             mock_git_status.return_value = {"git_available": False}
             mock_file_finder.find_files.return_value = [Path("test.py")]
-            mock_branch_indexer.return_value = BranchIndexingResult(
-                files_processed=1,
-                content_points_created=5,
-                content_points_reused=0,
-                processing_time=0.1,
-            )
+
+            # Mock the high-throughput processor (used for full index fallback)
+            from code_indexer.indexing.processor import ProcessingStats
+
+            mock_stats = ProcessingStats()
+            mock_stats.files_processed = 1
+            mock_stats.chunks_created = 5
+            mock_high_throughput.return_value = mock_stats
 
             stats = indexer.smart_index(force_full=False)
 
             # Should fall back to full index since no previous data
             mock_qdrant_client.ensure_provider_aware_collection.assert_called_once()
             mock_qdrant_client.clear_collection.assert_called_once()
+
+            # Verify high-throughput processor was called directly
+            mock_high_throughput.assert_called_once()
+
             assert stats.files_processed == 1
 
     def test_smart_index_incremental_with_changes(
@@ -319,36 +336,38 @@ class TestSmartIndexer:
             mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
         )
 
-        # Create a temporary file for the test
-        with tempfile.NamedTemporaryFile(suffix=".py", delete=False) as temp_file:
-            temp_file.write(b"# Test file content\nprint('hello')\n")
-            temp_file_path = Path(temp_file.name)
+        # Create a temporary file inside the mock codebase directory
+        temp_file_path = mock_config.codebase_dir / "test_modified_file.py"
+        temp_file_path.write_text("# Test file content\nprint('hello')\n")
 
         try:
             with (
                 patch.object(indexer, "get_git_status") as mock_git_status,
                 patch.object(indexer, "file_finder") as mock_file_finder,
                 patch.object(
-                    indexer.branch_aware_indexer, "index_branch_changes"
-                ) as mock_branch_indexer,
-                patch.object(indexer.branch_aware_indexer, "hide_files_not_in_branch"),
+                    indexer, "process_files_high_throughput"
+                ) as mock_high_throughput_processing,
+                patch.object(indexer, "hide_files_not_in_branch_thread_safe"),
             ):
                 # Setup mocks - use the same git_status as the pre-populated metadata
                 mock_git_status.return_value = git_status
-                mock_file_finder.find_modified_files.return_value = [temp_file_path]
 
-                # Mock BranchAwareIndexer result (now the primary processing path)
-                from src.code_indexer.services.branch_aware_indexer import (
-                    BranchIndexingResult,
+                # Mock find_modified_files to return an iterable of modified files
+                def mock_find_modified_files(timestamp):
+                    return [temp_file_path]
+
+                mock_file_finder.find_modified_files.side_effect = (
+                    mock_find_modified_files
                 )
 
-                mock_branch_result = BranchIndexingResult(
-                    content_points_created=3,
-                    content_points_reused=0,
-                    processing_time=0.1,
-                    files_processed=1,
-                )
-                mock_branch_indexer.return_value = mock_branch_result
+                # Mock high-throughput processing result for incremental indexing
+                from src.code_indexer.indexing.processor import ProcessingStats
+
+                mock_stats = ProcessingStats()
+                mock_stats.files_processed = 1
+                mock_stats.chunks_created = 3
+                mock_stats.failed_files = 0
+                mock_high_throughput_processing.return_value = mock_stats
 
                 # Mock other required methods
                 mock_embedding_provider.get_provider_name.return_value = "test-provider"
@@ -362,10 +381,10 @@ class TestSmartIndexer:
 
                 stats = indexer.smart_index(force_full=False)
 
-                # Should do incremental update using BranchAwareIndexer
+                # Should do incremental update using high-throughput processing
                 mock_qdrant_client.ensure_provider_aware_collection.assert_called_once()
                 mock_qdrant_client.clear_collection.assert_not_called()
-                mock_branch_indexer.assert_called_once()
+                mock_high_throughput_processing.assert_called_once()
                 assert stats.files_processed == 1
                 assert stats.chunks_created == 3
         finally:
@@ -492,19 +511,22 @@ class TestSmartIndexer:
             patch.object(indexer, "get_git_status") as mock_git_status,
             patch.object(indexer, "file_finder") as mock_file_finder,
             patch.object(
-                indexer.branch_aware_indexer, "index_branch_changes"
-            ) as mock_branch_indexer,
-            patch.object(indexer.branch_aware_indexer, "hide_files_not_in_branch"),
+                indexer, "process_files_high_throughput"
+            ) as mock_high_throughput,
+            patch.object(indexer, "hide_files_not_in_branch_thread_safe"),
         ):
             # Setup mocks - different provider now
             mock_git_status.return_value = git_status
             mock_file_finder.find_files.return_value = [Path("test.py")]
-            mock_branch_indexer.return_value = BranchIndexingResult(
-                files_processed=1,
-                content_points_created=5,
-                content_points_reused=0,
-                processing_time=0.1,
-            )
+
+            # Mock high-throughput processor for forced full index due to config change
+            from code_indexer.indexing.processor import ProcessingStats
+
+            mock_stats = ProcessingStats()
+            mock_stats.files_processed = 1
+            mock_stats.chunks_created = 5
+            mock_high_throughput.return_value = mock_stats
+
             mock_embedding_provider.get_provider_name.return_value = (
                 "new-provider"  # Changed!
             )

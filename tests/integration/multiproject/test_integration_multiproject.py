@@ -111,8 +111,8 @@ def multiproject_test_setup():
         multiproject_config_2 = TestProjectInventory.INTEGRATION_MULTIPROJECT_2
 
         # Override collection names to be compatible with shared environment
-        multiproject_config_1.collection_base_name = "code_index"
-        multiproject_config_2.collection_base_name = "code_index"
+        multiproject_config_1.base_collection_name = "code_index"  # type: ignore[attr-defined]
+        multiproject_config_2.base_collection_name = "code_index"  # type: ignore[attr-defined]
 
         create_test_project_with_inventory(project1_path, multiproject_config_1)
         create_test_project_with_inventory(project2_path, multiproject_config_2)

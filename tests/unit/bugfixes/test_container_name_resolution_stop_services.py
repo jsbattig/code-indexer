@@ -223,7 +223,7 @@ class TestContainerNameResolutionBug:
                                 )
 
                                 # Verify it was called with correct arguments
-                                expected_calls = [
+                                expected_calls: list[str] = [
                                     (("ollama", mock_project_config), {}),
                                     (("qdrant", mock_project_config), {}),
                                 ]

@@ -8,10 +8,7 @@ from dataclasses import dataclass
 from ..config import Config
 from ..services import QdrantClient
 from ..services.embedding_provider import EmbeddingProvider
-from ..services.vector_calculation_manager import (
-    VectorCalculationManager,
-    get_default_thread_count,
-)
+from ..services.vector_calculation_manager import VectorCalculationManager
 from .file_finder import FileFinder
 from .fixed_size_chunker import FixedSizeChunker
 
@@ -111,6 +108,11 @@ class DocumentProcessor:
                             f"Vector calculation failed: {vector_result.error}"
                         )
 
+                    if not vector_result.embedding:
+                        raise ValueError(
+                            f"Embedding is None for chunk in {vector_result.metadata.get('path', 'unknown')}"
+                        )
+
                     # Create Qdrant point with the calculated embedding
                     payload = {
                         "path": vector_result.metadata["path"],
@@ -170,7 +172,7 @@ class DocumentProcessor:
 
         # Determine thread count
         if vector_thread_count is None:
-            vector_thread_count = get_default_thread_count(self.embedding_provider)
+            vector_thread_count = self.config.voyage_ai.parallel_requests
 
         # Create vector calculation manager
         with VectorCalculationManager(
@@ -205,7 +207,7 @@ class DocumentProcessor:
                     if progress_callback:
                         vector_stats = vector_manager.get_stats()
                         # Include vector calculation throughput in info
-                        info_msg = f"Vector threads: {vector_thread_count}, Queue: {vector_stats.queue_size}, {vector_stats.embeddings_per_second:.1f} emb/s | {file_path.name}"
+                        info_msg = f"Vector threads: {vector_stats.active_threads}, Queue: {vector_stats.queue_size}, {vector_stats.embeddings_per_second:.1f} emb/s | {file_path.name}"
                         # Use empty path with info to ensure progress bar updates instead of individual messages
                         progress_callback(i + 1, len(files), Path(""), info=info_msg)
 

@@ -1,5 +1,7 @@
 - When using cidx (code-indexer), the flow to use it is init command must have been run, at least once, on a fresh folder before you can do start. After start is succesful, then you can operate in that space with query command.
 
+- ⚠️ CRITICAL PERFORMANCE PROHIBITION: NEVER add artificial time.sleep() delays to production code to make status changes "visible" to users. This is a brain-dead approach that destroys performance (adding minutes of delay across hundreds of files). If status transitions are too fast to see, fix the DISPLAY LOGIC or REFRESH RATE, not the processing logic. Adding sleep() to production code for UI visibility is STRICTLY FORBIDDEN and demonstrates fundamental misunderstanding of performance engineering.
+
 - When I give a list of e2e, functional, integration, long running tests to troubleshoot and fix, keep in mind that tests don't leave a clean a state at the end to improve running performance, they leave service running and dirty collections. Tests should be aware of this, of noisy neighboor, and have comprehensive setup that ensure conditions are adjusted execute the tests succesfully.
 
 - When I ask you to "lint" you will run the ./lint.sh file and address all and every error reported in a systematic way
@@ -163,6 +165,8 @@ Cannot create directory in system paths
 - When working on this project, it's absolutely critical to remember that we support both podman and docker. Development and most testing is done with podman, but there are docker-specific tests to verify no regressions occur. Docker usage is achieved in Docky Linux using the --force-docker flag.
 - Our solution uses a per-project configuration and container set. Tests need to be aware of this. Many tests written before this big refactoring, were written with implied and hard-coded port numbers, they didn't reuse folders, making them inefficient and slow, some will start/stop containers manually, some e2e tests will tinker with internal calls rather than using the cidx (console) application directly (which is the right way to do it).
 - The last step of every development engagement to implement a feature is to run fast-automation.sh. Only when it passes in full, we consider the task done.
+
+- **🚨 VOYAGEAI BATCH PROCESSING TOKEN LIMITS**: VoyageAI API enforces 120,000 token limit per batch request. The VoyageAI client now implements token-aware batching that automatically splits large file batches to respect this limit while maintaining performance optimization. Files with >100K estimated tokens will be processed in multiple batches transparently. Error "max allowed tokens per submitted batch is 120000" indicates this protection is working correctly.
 
 - CIDX SEMANTIC CODE SEARCH INTEGRATION
 

@@ -32,14 +32,11 @@ class GitAwareDocumentProcessor(DocumentProcessor):
         self.git_detection = GitDetectionService(config.codebase_dir, config)
 
     def process_file(self, file_path: Path) -> List[Dict[str, Any]]:
-        """Process a single file with git-aware metadata (backward compatibility)."""
-        # For backward compatibility, use VectorCalculationManager to process single file
-        from .vector_calculation_manager import (
-            VectorCalculationManager,
-            get_default_thread_count,
-        )
+        """Process a single file with git-aware metadata."""
+        # Use VectorCalculationManager to process single file
+        from .vector_calculation_manager import VectorCalculationManager
 
-        thread_count = get_default_thread_count(self.embedding_provider)
+        thread_count = self.config.voyage_ai.parallel_requests
         with VectorCalculationManager(
             self.embedding_provider, thread_count
         ) as vector_manager:
@@ -85,6 +82,8 @@ class GitAwareDocumentProcessor(DocumentProcessor):
                         raise ValueError(
                             f"Vector calculation failed: {vector_result.error}"
                         )
+
+                    # Note: vector_result.embedding now uses batch processing internally
 
                     # Reconstruct chunk and file metadata
                     chunk = vector_result.metadata["chunk"]
