@@ -86,7 +86,7 @@ class TestCleanFileChunkingManagerResourceManagement:
             vector_manager=self.vector_manager,
             qdrant_client=self.qdrant_client,
             thread_count=2,
-            slot_tracker=self.slot_tracker,
+            slot_tracker=CleanSlotTracker(max_slots=4),
         )
 
         # TOKEN COUNTING FIX: Mock the voyage client count_tokens method
@@ -141,7 +141,10 @@ class TestCleanFileChunkingManagerResourceManagement:
 
             # Process file using the clean method directly
             manager._process_file_clean_lifecycle(
-                test_file, self._get_complete_metadata(test_file), None
+                test_file,
+                self._get_complete_metadata(test_file),
+                None,
+                self.slot_tracker,
             )
 
             # Verify proper resource management pattern
@@ -189,7 +192,10 @@ class TestCleanFileChunkingManagerResourceManagement:
 
             # Process file (should fail but still release properly)
             manager._process_file_clean_lifecycle(
-                test_file, self._get_complete_metadata(test_file), None
+                test_file,
+                self._get_complete_metadata(test_file),
+                None,
+                self.slot_tracker,
             )
 
             # Should have exactly ONE release call even on error
@@ -230,7 +236,10 @@ class TestCleanFileChunkingManagerResourceManagement:
 
             # Process file using the clean method directly with complete metadata
             result = manager._process_file_clean_lifecycle(
-                test_file, self._get_complete_metadata(test_file), None
+                test_file,
+                self._get_complete_metadata(test_file),
+                None,
+                self.slot_tracker,
             )
 
             # Verify result is successful
@@ -298,7 +307,10 @@ class TestCleanFileChunkingManagerResourceManagement:
 
             # Process empty file
             result = manager._process_file_clean_lifecycle(
-                test_file, self._get_complete_metadata(test_file), None
+                test_file,
+                self._get_complete_metadata(test_file),
+                None,
+                self.slot_tracker,
             )
 
             # Even empty files should follow proper resource management
@@ -372,7 +384,10 @@ class TestCleanFileChunkingManagerResourceManagement:
             results = []
             for test_file in test_files:
                 result = manager._process_file_clean_lifecycle(
-                    test_file, self._get_complete_metadata(test_file), None
+                    test_file,
+                    self._get_complete_metadata(test_file),
+                    None,
+                    self.slot_tracker,
                 )
                 results.append(result)
 

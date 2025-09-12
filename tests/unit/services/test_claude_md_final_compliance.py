@@ -36,26 +36,22 @@ class TestClaudeMdFinalCompliance:
 
     def test_slot_tracker_is_mandatory_not_optional(self):
         """
-        CRITICAL: CleanSlotTracker must be mandatory in FileChunkingManager.
+        CRITICAL: CleanSlotTracker must be mandatory in FileChunkingManager constructor.
 
         CLAUDE.md Anti-Fallback Foundation: Optional dependencies create alternative paths.
         The slot tracker must be required, not optional.
         """
-        # Get constructor signature
+        # Get FileChunkingManager constructor signature
         sig = inspect.signature(FileChunkingManager.__init__)
 
-        # Check if file_tracker parameter exists and is properly typed
+        # Check if slot_tracker parameter exists and is properly typed
         params = sig.parameters
 
-        # The parameter might be named file_tracker or slot_tracker
-        tracker_param = None
-        for param_name in ["file_tracker", "slot_tracker"]:
-            if param_name in params:
-                tracker_param = params[param_name]
-                break
+        # The parameter should be named slot_tracker
+        tracker_param = params.get("slot_tracker")
 
         assert tracker_param is not None, (
-            "CLAUDE.md VIOLATION: No file/slot tracker parameter found in constructor. "
+            "CLAUDE.md VIOLATION: No slot_tracker parameter found in FileChunkingManager constructor. "
             "CleanSlotTracker must be mandatory parameter."
         )
 

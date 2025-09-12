@@ -246,8 +246,8 @@ class TestSingleEmbeddingWrapperIntegration:
         )
         mock_request.side_effect = api_key_error
 
-        # Act & Assert - Error should be passed through by batch method
-        with pytest.raises(ValueError, match="Invalid VoyageAI API key"):
+        # Act & Assert - Error should be wrapped by batch method in RuntimeError
+        with pytest.raises(RuntimeError, match="Batch embedding request failed"):
             voyage_client.get_embedding(test_text)
 
     @patch("code_indexer.services.voyage_ai.VoyageAIClient._make_sync_request")

@@ -258,6 +258,7 @@ class TestParallelProcessingReplacement:
             "vector_thread_count",
             "batch_size",
             "progress_callback",
+            "slot_tracker",
         ]
         actual_params = list(sig.parameters.keys())
 

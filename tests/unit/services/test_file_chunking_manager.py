@@ -5,6 +5,9 @@ Tests the complete parallel file processing lifecycle with file atomicity
 and immediate progress feedback.
 """
 
+# mypy: ignore-errors
+# Mock types work correctly in tests despite type checker warnings
+
 import pytest
 import tempfile
 import time
@@ -229,7 +232,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             chunker=self.mock_chunker,
             qdrant_client=self.mock_qdrant_client,
             thread_count=thread_count,
-            slot_tracker=self.slot_tracker,
+            slot_tracker=CleanSlotTracker(max_slots=thread_count + 2),
         )
 
         # Then creates ThreadPoolExecutor with (thread_count + 2) workers per user specs
@@ -251,7 +254,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             chunker=self.mock_chunker,
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
-            slot_tracker=self.slot_tracker,
+            slot_tracker=CleanSlotTracker(max_slots=4),
         ) as manager:
 
             metadata = {"project_id": "test", "file_hash": "abc123"}
@@ -277,7 +280,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             chunker=self.mock_chunker,
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
-            slot_tracker=self.slot_tracker,
+            slot_tracker=CleanSlotTracker(max_slots=4),
         ) as manager:
 
             metadata = {"project_id": "test", "file_hash": "abc123"}
@@ -312,7 +315,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             chunker=self.mock_chunker,
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
-            slot_tracker=self.slot_tracker,
+            slot_tracker=CleanSlotTracker(max_slots=4),
         ) as manager:
             # TOKEN COUNTING FIX: Add voyage client mock
             self._add_voyage_client_mock(manager)
@@ -351,7 +354,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             chunker=self.mock_chunker,
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
-            slot_tracker=self.slot_tracker,
+            slot_tracker=CleanSlotTracker(max_slots=4),
         ) as manager:
             # TOKEN COUNTING FIX: Add voyage client mock
             self._add_voyage_client_mock(manager)
@@ -389,7 +392,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             chunker=failing_chunker,
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
-            slot_tracker=self.slot_tracker,
+            slot_tracker=CleanSlotTracker(max_slots=4),
         ) as manager:
 
             metadata = {"project_id": "test", "file_hash": "abc123"}
@@ -443,7 +446,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             chunker=self.mock_chunker,
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
-            slot_tracker=self.slot_tracker,
+            slot_tracker=CleanSlotTracker(max_slots=4),
         ) as manager:
             # TOKEN COUNTING FIX: Add voyage client mock
             self._add_voyage_client_mock(manager)
@@ -471,7 +474,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             chunker=self.mock_chunker,
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
-            slot_tracker=self.slot_tracker,
+            slot_tracker=CleanSlotTracker(max_slots=4),
         ) as manager:
             # TOKEN COUNTING FIX: Add voyage client mock
             self._add_voyage_client_mock(manager)
@@ -496,7 +499,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             chunker=self.mock_chunker,
             qdrant_client=self.mock_qdrant_client,
             thread_count=3,
-            slot_tracker=self.slot_tracker,
+            slot_tracker=CleanSlotTracker(max_slots=5),
         )
 
         # Context manager should start thread pool
@@ -534,7 +537,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
                 chunker=self.mock_chunker,
                 qdrant_client=self.mock_qdrant_client,
                 thread_count=2,
-                slot_tracker=self.slot_tracker,
+                slot_tracker=CleanSlotTracker(max_slots=4),
             ) as manager:
                 # TOKEN COUNTING FIX: Add voyage client mock
                 self._add_voyage_client_mock(manager)
@@ -587,7 +590,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             chunker=self.mock_chunker,
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
-            slot_tracker=self.slot_tracker,
+            slot_tracker=CleanSlotTracker(max_slots=4),
         ) as manager:
             # TOKEN COUNTING FIX: Add voyage client mock
             self._add_voyage_client_mock(manager)
@@ -632,7 +635,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             chunker=self.mock_chunker,
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
-            slot_tracker=self.slot_tracker,
+            slot_tracker=CleanSlotTracker(max_slots=4),
         ) as manager:
             # TOKEN COUNTING FIX: Add voyage client mock
             self._add_voyage_client_mock(manager)
@@ -641,7 +644,9 @@ class TestFileChunkingManagerAcceptanceCriteria:
 
             # Submit small file
             future: Future[Any] = manager.submit_file_for_processing(
-                self.test_file_path, metadata, None  # No individual callbacks
+                self.test_file_path,
+                metadata,
+                None,  # No individual callbacks
             )
 
             result = future.result(timeout=5.0)
@@ -671,7 +676,7 @@ class TestFileChunkingManagerValidation:
                 chunker=mock_chunker,
                 qdrant_client=mock_qdrant_client,
                 thread_count=0,
-                slot_tracker=CleanSlotTracker(5),
+                slot_tracker=CleanSlotTracker(max_slots=2),
             )
 
         with pytest.raises(ValueError, match="thread_count must be positive"):
@@ -680,7 +685,7 @@ class TestFileChunkingManagerValidation:
                 chunker=mock_chunker,
                 qdrant_client=mock_qdrant_client,
                 thread_count=-1,
-                slot_tracker=CleanSlotTracker(5),
+                slot_tracker=CleanSlotTracker(max_slots=2),
             )
 
     def test_none_dependencies_validation(self):
@@ -695,7 +700,7 @@ class TestFileChunkingManagerValidation:
                 chunker=mock_chunker,
                 qdrant_client=mock_qdrant_client,
                 thread_count=2,
-                slot_tracker=CleanSlotTracker(5),
+                slot_tracker=CleanSlotTracker(max_slots=4),
             )
 
         with pytest.raises(ValueError, match="chunker cannot be None"):
@@ -704,7 +709,7 @@ class TestFileChunkingManagerValidation:
                 chunker=None,
                 qdrant_client=mock_qdrant_client,
                 thread_count=2,
-                slot_tracker=CleanSlotTracker(5),
+                slot_tracker=CleanSlotTracker(max_slots=4),
             )
 
         with pytest.raises(ValueError, match="qdrant_client cannot be None"):
@@ -713,7 +718,7 @@ class TestFileChunkingManagerValidation:
                 chunker=mock_chunker,
                 qdrant_client=None,
                 thread_count=2,
-                slot_tracker=CleanSlotTracker(5),
+                slot_tracker=CleanSlotTracker(max_slots=4),
             )
 
     def test_submit_without_context_manager_raises_error(self):
@@ -723,7 +728,7 @@ class TestFileChunkingManagerValidation:
             chunker=MockFixedSizeChunker(),
             qdrant_client=MockQdrantClient(),
             thread_count=2,
-            slot_tracker=CleanSlotTracker(5),
+            slot_tracker=CleanSlotTracker(max_slots=4),
         )
 
         metadata = {"project_id": "test", "file_hash": "abc123"}
@@ -742,7 +747,7 @@ class TestFileChunkingManagerValidation:
             chunker=empty_chunker,
             qdrant_client=MockQdrantClient(),
             thread_count=2,
-            slot_tracker=CleanSlotTracker(5),
+            slot_tracker=CleanSlotTracker(max_slots=4),
         ) as manager:
 
             test_file = tempfile.NamedTemporaryFile(

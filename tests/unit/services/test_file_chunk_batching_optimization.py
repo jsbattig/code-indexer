@@ -131,7 +131,12 @@ class TestFileChunkBatchingOptimization:
     """Test the critical file chunk batching optimization."""
 
     def test_single_batch_submission_replaces_individual_chunks(
-        self, file_chunking_manager, mock_vector_manager, standard_metadata, tmp_path
+        self,
+        file_chunking_manager,
+        mock_vector_manager,
+        standard_metadata,
+        tmp_path,
+        mock_slot_tracker,
     ):
         """
         CRITICAL TEST: Verify single batch submission replaces N individual chunk submissions.
@@ -175,7 +180,12 @@ class TestFileChunkBatchingOptimization:
         assert result.chunks_processed == 3
 
     def test_qdrant_point_creation_from_batch_results(
-        self, file_chunking_manager, mock_qdrant_client, standard_metadata, tmp_path
+        self,
+        file_chunking_manager,
+        mock_qdrant_client,
+        standard_metadata,
+        tmp_path,
+        mock_slot_tracker,
     ):
         """
         Verify Qdrant points created from batch results with proper chunk-to-embedding mapping.
@@ -249,7 +259,12 @@ class TestFileChunkBatchingOptimization:
         assert result.success is True
 
     def test_file_atomicity_with_batch_failure(
-        self, file_chunking_manager, mock_vector_manager, mock_qdrant_client, tmp_path
+        self,
+        file_chunking_manager,
+        mock_vector_manager,
+        mock_qdrant_client,
+        tmp_path,
+        mock_slot_tracker,
     ):
         """
         Verify file atomicity: batch failure results in complete file failure.
@@ -304,7 +319,12 @@ class TestFileChunkBatchingOptimization:
         ), "No data should be written to Qdrant on batch failure"
 
     def test_order_preservation_and_metadata_consistency(
-        self, file_chunking_manager, mock_qdrant_client, standard_metadata, tmp_path
+        self,
+        file_chunking_manager,
+        mock_qdrant_client,
+        standard_metadata,
+        tmp_path,
+        mock_slot_tracker,
     ):
         """
         Verify order preservation: chunks[i] maps to embeddings[i] and points[i].
@@ -360,7 +380,12 @@ class TestFileChunkBatchingOptimization:
         assert result.success is True
 
     def test_api_call_reduction_measurement(
-        self, file_chunking_manager, mock_vector_manager, standard_metadata, tmp_path
+        self,
+        file_chunking_manager,
+        mock_vector_manager,
+        standard_metadata,
+        tmp_path,
+        mock_slot_tracker,
     ):
         """
         PERFORMANCE TEST: Measure and validate API call reduction (N chunks → 1 call).
@@ -443,7 +468,12 @@ class TestBatchProcessingEdgeCases:
     """Test edge cases for batch processing optimization."""
 
     def test_empty_file_batch_optimization(
-        self, file_chunking_manager, mock_vector_manager, standard_metadata, tmp_path
+        self,
+        file_chunking_manager,
+        mock_vector_manager,
+        standard_metadata,
+        tmp_path,
+        mock_slot_tracker,
     ):
         """Verify empty files bypass batch processing efficiently."""
         # Create empty file
@@ -472,7 +502,12 @@ class TestBatchProcessingEdgeCases:
         assert result.chunks_processed == 0
 
     def test_single_chunk_batch_processing(
-        self, file_chunking_manager, mock_vector_manager, standard_metadata, tmp_path
+        self,
+        file_chunking_manager,
+        mock_vector_manager,
+        standard_metadata,
+        tmp_path,
+        mock_slot_tracker,
     ):
         """Verify single chunk still uses batch processing (not individual calls)."""
         test_file = tmp_path / "single.py"

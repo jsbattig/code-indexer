@@ -1591,6 +1591,7 @@ def index(
                 active_threads=active_threads,
                 concurrent_files=concurrent_files or [],
                 slot_tracker=slot_tracker,
+                info=info,  # Pass info for phase detection
             )
 
             # Get integrated display content (Rich Table) and update Rich Live bottom-anchored display
@@ -1604,7 +1605,13 @@ def index(
             return None
 
         def progress_callback(
-            current, total, file_path, error=None, info=None, concurrent_files=None
+            current,
+            total,
+            file_path,
+            error=None,
+            info=None,
+            concurrent_files=None,
+            slot_tracker=None,
         ):
             """Multi-threaded progress callback - uses Rich Live progress display."""
             # Check for interruption first

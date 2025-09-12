@@ -192,7 +192,7 @@ class TestCompleteViolationsElimination:
 
             # Should use slot_tracker parameter name
             assert (
-                "slot_tracker=self.slot_tracker" in content
+                "slot_tracker=local_slot_tracker" in content
             ), "Must pass slot_tracker parameter"
             assert "file_tracker=" not in content, "Must not use file_tracker parameter"
 

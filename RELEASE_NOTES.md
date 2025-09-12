@@ -1,5 +1,46 @@
 # Release Notes
 
+## Version 4.2.0 - VoyageAI Batch Processing & Enhanced Progress Reporting
+
+**Release Date**: September 11, 2025
+
+### 🚀 Major Performance Enhancement
+
+- **VoyageAI Batch Processing Optimization**: Implemented dynamic token-aware batching to prevent token limit errors
+- **Intelligent Token Management**: Automatic batch splitting based on actual token counts using VoyageAI's native token counting
+- **Model-Specific Limits**: Dynamic token limits loaded from external configuration (120K for voyage-code-3, 320K for voyage-2, etc.)
+- **90% Safety Margin**: Conservative batching prevents VoyageAI token limit violations (120K+ token errors eliminated)
+
+### 📊 Enhanced Progress Reporting
+
+- **Dual-Phase Progress Display**: Separate visual reporting for hash calculation (🔍 Hashing) and embedding indexing (📊 Indexing)
+- **Hash Phase Slot Reporting**: Individual file activity display during hash calculation with proper status tracking
+- **Transition Phase Visibility**: Added informational messages during silent periods between processing phases
+- **Accurate Thread Reporting**: Fixed thread count display showing actual worker threads instead of hardcoded zero
+
+### 🏗️ Architecture Improvements
+
+- **Clean Slot Tracker Parameter Passing**: Eliminated shared state contamination between hash and indexing phases
+- **Breaking Change Implementation**: Forced explicit slot_tracker parameter passing for cleaner architecture
+- **Visual Feedback Enhancement**: Completed files remain visible until slot positions are reused by new files
+- **CLAUDE.md Compliance**: All foundation principles maintained throughout implementation
+
+### 🔧 Technical Implementation
+
+- **VoyageAI Token Counting**: Native token counting integration for accurate batch sizing
+- **YAML Model Configuration**: Externalized VoyageAI model limits and specifications  
+- **Dynamic Batching Algorithm**: Per-chunk token counting with automatic batch submission at 90% safety threshold
+- **Resource Management**: Proper slot acquire/release patterns with visual feedback preservation
+
+### 🐛 Bug Fixes
+
+- **VoyageAI Token Limit Errors**: Eliminated "max allowed tokens per submitted batch" errors through intelligent batching
+- **Progress Display Issues**: Fixed slot-based file activity display during hash phase
+- **Thread Count Accuracy**: Corrected hash completion reporting to show actual thread count
+- **Phase Label Accuracy**: Fixed "Indexing" label appearing during hash calculation phase
+
+---
+
 ## Version 4.1.0 - Slot-Based Parallel File Processing
 
 **Release Date**: September 10, 2025

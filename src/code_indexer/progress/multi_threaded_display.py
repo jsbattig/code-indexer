@@ -51,10 +51,14 @@ class MultiThreadedProgressManager:
         self.live_manager = live_manager
         self.max_slots = max_slots
         self.slot_tracker: Optional[CleanSlotTracker] = None
+        self._current_phase = "Indexing"  # Default phase
+        self._concurrent_files: List[Dict[str, Any]] = (
+            []
+        )  # Store concurrent files for display
 
         # Create Rich Progress component for visual progress bar
         self.progress = Progress(
-            TextColumn("Indexing"),
+            TextColumn("[progress.description]{task.description}"),
             BarColumn(bar_width=40),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             "•",
@@ -166,6 +170,7 @@ class MultiThreadedProgressManager:
         active_threads: int,
         concurrent_files: List[Dict[str, Any]],
         slot_tracker=None,
+        info: Optional[str] = None,
     ) -> None:
         """Update complete state using direct slot tracker array access.
 
@@ -177,17 +182,36 @@ class MultiThreadedProgressManager:
             active_threads: Number of active threads
             concurrent_files: List of concurrent file data (compatibility)
             slot_tracker: CleanSlotTracker with status_array
+            info: Optional info string containing phase indicators
         """
         # Store slot_tracker for get_integrated_display() - use consistent attribute
         if slot_tracker is not None:
             # Set slot tracker for direct connection (replaces CLI connection)
             self.set_slot_tracker(slot_tracker)
+        else:
+            # CRITICAL FIX: Clear stale slot_tracker when None is passed (e.g., hash phase)
+            # This ensures concurrent_files data is used instead of stale slot tracker data
+            self.slot_tracker = None
+
+        # Store concurrent files for display when slot_tracker is None (e.g., hash phase)
+        self._concurrent_files = concurrent_files or []
+
+        # Detect phase from info string if provided
+        if info:
+            if "🔍" in info:
+                self._current_phase = "🔍 Hashing"
+            elif "📊" in info:
+                self._current_phase = "🚀 Indexing"
+            # Keep current phase if no clear indicator
 
         # Initialize progress bar if not started
         if not self._progress_started and total > 0:
             files_info = f"{current}/{total} files"
             self.main_task_id = self.progress.add_task(
-                "Indexing", total=total, completed=current, files_info=files_info
+                self._current_phase,
+                total=total,
+                completed=current,
+                files_info=files_info,
             )
             self._progress_started = True
 
@@ -195,7 +219,10 @@ class MultiThreadedProgressManager:
         if self._progress_started and self.main_task_id is not None:
             files_info = f"{current}/{total} files"
             self.progress.update(
-                self.main_task_id, completed=current, files_info=files_info
+                self.main_task_id,
+                completed=current,
+                files_info=files_info,
+                description=self._current_phase,
             )
 
         # Store metrics info for display below progress bar
@@ -234,6 +261,7 @@ class MultiThreadedProgressManager:
 
         # ADD: Simple slot display lines (NEW)
         if self.slot_tracker is not None:
+            # Use slot tracker when available (indexing phase)
             for slot_id in range(self.slot_tracker.max_slots):
                 file_data = self.slot_tracker.status_array[slot_id]
                 if file_data is not None:
@@ -241,7 +269,11 @@ class MultiThreadedProgressManager:
                     if status_display == "complete":
                         status_display = "complete ✓"
                     elif status_display in ["vectorizing", "processing"]:
-                        status_display = "vectorizing..."
+                        # Detect if we're in hash phase based on current phase
+                        if self._current_phase == "🔍 Hashing":
+                            status_display = "hashing..."
+                        else:
+                            status_display = "vectorizing..."
                     elif status_display == "finalizing":
                         status_display = "finalizing..."
                     elif status_display == "chunking":
@@ -250,6 +282,31 @@ class MultiThreadedProgressManager:
                         status_display = "starting"
 
                     line = f"├─ {file_data.filename} ({file_data.file_size/1024:.1f} KB) {status_display}"
+                    main_table.add_row(Text(line, style="dim blue"))
+        elif self._concurrent_files:
+            # Fallback to concurrent_files when slot_tracker is None (hash phase)
+            for file_info in self._concurrent_files:
+                if file_info:
+                    filename = file_info.get("file_path", "unknown")
+                    if isinstance(filename, Path):
+                        filename = filename.name
+                    elif "/" in str(filename):
+                        filename = str(filename).split("/")[-1]
+                    file_size = file_info.get("file_size", 0)
+                    status = file_info.get("status", "processing")
+
+                    # Format status for display
+                    if status == "complete":
+                        status_display = "complete ✓"
+                    elif status == "processing":
+                        if self._current_phase == "🔍 Hashing":
+                            status_display = "hashing..."
+                        else:
+                            status_display = "processing..."
+                    else:
+                        status_display = status
+
+                    line = f"├─ {filename} ({file_size/1024:.1f} KB) {status_display}"
                     main_table.add_row(Text(line, style="dim blue"))
 
         return main_table

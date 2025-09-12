@@ -2,7 +2,7 @@
 
 AI-powered semantic code search for your codebase. Find code by meaning, not just keywords.
 
-## Version 4.0.0.2
+## Version 4.2.0
 
 ## Two Operating Modes
 
@@ -36,12 +36,23 @@ FastAPI web service for team environments:
 - **Real-time progress** - Individual file status progression (starting → chunking → vectorizing → finalizing → complete)
 - **Clean cancellation** - Post-write cancellation preserves file atomicity
 
+## How the Indexing Algorithm Works
+
+The code-indexer uses a sophisticated dual-phase parallel processing architecture with git-aware metadata extraction and dynamic VoyageAI batch optimization.
+
+**For detailed technical documentation**, see [`docs/algorithms.md`](docs/algorithms.md) which covers:
+- Complete algorithm flow and complexity analysis
+- VoyageAI batch processing optimization  
+- Slot-based progress tracking architecture
+- Git-aware branch isolation and deduplication
+- Performance characteristics and implementation details
+
 ## Installation
 
 ### pipx (Recommended)
 ```bash
 # Install the package
-pipx install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.2
+pipx install git+https://github.com/jsbattig/code-indexer.git@v4.2.0
 
 # Setup global registry (standalone command - requires sudo)
 cidx setup-global-registry
@@ -54,7 +65,7 @@ cidx setup-global-registry
 ```bash
 python3 -m venv code-indexer-env
 source code-indexer-env/bin/activate
-pip install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.2
+pip install git+https://github.com/jsbattig/code-indexer.git@v4.2.0
 
 # Setup global registry (standalone command - requires sudo)
 cidx setup-global-registry
@@ -119,7 +130,7 @@ The CIDX server provides a FastAPI-based multi-user semantic code search service
 
 ```bash
 # 1. Install and setup (same as CLI)
-pipx install git+https://github.com/jsbattig/code-indexer.git@v4.0.0.2
+pipx install git+https://github.com/jsbattig/code-indexer.git@v4.2.0
 cidx setup-global-registry
 
 # 2. Install and configure the server

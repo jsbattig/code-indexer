@@ -59,7 +59,7 @@ class FileChunkingManager:
         chunker: FixedSizeChunker,
         qdrant_client,  # Pass from HighThroughputProcessor
         thread_count: int,
-        slot_tracker: CleanSlotTracker,  # Mandatory clean tracker
+        slot_tracker: CleanSlotTracker,
     ):
         """
         Initialize FileChunkingManager with complete functionality.
@@ -69,7 +69,7 @@ class FileChunkingManager:
             chunker: Existing FixedSizeChunker (unchanged)
             qdrant_client: Qdrant client for atomic writes
             thread_count: Number of worker threads (thread_count + 2 per specs)
-            slot_tracker: Mandatory CleanSlotTracker for status reporting
+            slot_tracker: CleanSlotTracker for progress tracking and slot management
 
         Raises:
             ValueError: If thread_count is invalid or dependencies are None
@@ -219,6 +219,7 @@ class FileChunkingManager:
             file_path,
             metadata,
             progress_callback,
+            self.slot_tracker,
         )
 
         # Track future for clean shutdown
@@ -309,6 +310,7 @@ class FileChunkingManager:
         file_path: Path,
         metadata: Dict[str, Any],
         progress_callback: Optional[Callable],
+        slot_tracker: CleanSlotTracker,
     ) -> FileProcessingResult:
         """
         CLEAN IMPLEMENTATION: Process file with proper resource management.
@@ -334,7 +336,7 @@ class FileChunkingManager:
         )
 
         # Single acquire using CleanSlotTracker
-        slot_id = self.slot_tracker.acquire_slot(file_data)
+        slot_id = slot_tracker.acquire_slot(file_data)
 
         # PROGRESS REPORTING ADJUSTMENT: Remove initial callback
         # HighThroughputProcessor handles file-level progress counting
@@ -342,7 +344,7 @@ class FileChunkingManager:
 
         try:
             # ALL work in try block
-            self.slot_tracker.update_slot(slot_id, FileStatus.CHUNKING)
+            slot_tracker.update_slot(slot_id, FileStatus.CHUNKING)
 
             # Phase 1: Chunk the file
             logger.debug(f"Starting chunking for {file_path}")
@@ -352,11 +354,11 @@ class FileChunkingManager:
                 # Empty files are valid but don't need indexing
                 logger.debug(f"Skipping empty file: {file_path}")
 
-                self.slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
+                slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
 
                 # PROGRESS REPORTING ADJUSTMENT: Empty file completion callback
                 if progress_callback:
-                    concurrent_files = self.slot_tracker.get_concurrent_files_data()
+                    concurrent_files = slot_tracker.get_concurrent_files_data()
                     progress_callback(
                         None,  # current - HighThroughputProcessor manages file counts
                         None,  # total - HighThroughputProcessor manages file counts
@@ -375,7 +377,7 @@ class FileChunkingManager:
             logger.debug(f"Generated {len(chunks)} chunks for {file_path}")
 
             # Update status after chunking
-            self.slot_tracker.update_slot(slot_id, FileStatus.VECTORIZING)
+            slot_tracker.update_slot(slot_id, FileStatus.VECTORIZING)
 
             # PROGRESS REPORTING ADJUSTMENT: Remove intermediate callback
             # Status updates are tracked by CleanSlotTracker for display
@@ -464,7 +466,7 @@ class FileChunkingManager:
 
             logger.debug(f"Submitted {len(batch_futures)} batches for {file_path}")
 
-            self.slot_tracker.update_slot(slot_id, FileStatus.FINALIZING)
+            slot_tracker.update_slot(slot_id, FileStatus.FINALIZING)
 
             # PROGRESS REPORTING ADJUSTMENT: Remove intermediate callback
             # Status updates tracked by CleanSlotTracker, progress callback only on completion
@@ -595,13 +597,13 @@ class FileChunkingManager:
             processing_time = time.time() - start_time
 
             # Mark as complete
-            self.slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
+            slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
 
             # PROGRESS REPORTING ADJUSTMENT: File completion callback
             # This is the ONLY progress callback - when file truly completes
             # HighThroughputProcessor will handle file count updates and metrics
             if progress_callback:
-                concurrent_files = self.slot_tracker.get_concurrent_files_data()
+                concurrent_files = slot_tracker.get_concurrent_files_data()
                 progress_callback(
                     None,  # current - HighThroughputProcessor manages file counts
                     None,  # total - HighThroughputProcessor manages file counts
@@ -623,11 +625,11 @@ class FileChunkingManager:
             logger.error(f"Error processing {file_path}: {error_msg}")
 
             # Mark file failed
-            self.slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
+            slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
 
             # PROGRESS REPORTING ADJUSTMENT: Error file completion callback
             if progress_callback:
-                concurrent_files = self.slot_tracker.get_concurrent_files_data()
+                concurrent_files = slot_tracker.get_concurrent_files_data()
                 progress_callback(
                     None,  # current - HighThroughputProcessor manages file counts
                     None,  # total - HighThroughputProcessor manages file counts
@@ -646,4 +648,4 @@ class FileChunkingManager:
         finally:
             # SINGLE release - guaranteed (CLAUDE.md Foundation #8 compliance)
             if slot_id is not None:
-                self.slot_tracker.release_slot(slot_id)
+                slot_tracker.release_slot(slot_id)

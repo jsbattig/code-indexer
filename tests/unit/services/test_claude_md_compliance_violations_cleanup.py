@@ -106,24 +106,41 @@ class TestClaudeMdComplianceViolationsCleanup(unittest.TestCase):
                 HighThroughputProcessor,
             )
 
-            # Check the processor only references CleanSlotTracker
+            # Check the processor only references CleanSlotTracker in processing methods
             import inspect
 
-            source = inspect.getsource(HighThroughputProcessor.__init__)
+            # NEW ARCHITECTURE: Check process_files_high_throughput method instead of __init__
+            source = inspect.getsource(
+                HighThroughputProcessor.process_files_high_throughput
+            )
 
-            # Should NOT reference ConsolidatedFileTracker
+            # Should NOT reference ConsolidatedFileTracker anywhere
             self.assertNotIn(
                 "ConsolidatedFileTracker",
                 source,
-                "HighThroughputProcessor.__init__ still references ConsolidatedFileTracker. "
+                "HighThroughputProcessor.process_files_high_throughput still references ConsolidatedFileTracker. "
                 "CLAUDE.md violation: Must use only CleanSlotTracker.",
             )
 
-            # Should reference CleanSlotTracker
+            # Should reference CleanSlotTracker (created locally in method)
             self.assertIn(
                 "CleanSlotTracker",
                 source,
-                "HighThroughputProcessor.__init__ should use CleanSlotTracker as single source.",
+                "HighThroughputProcessor.process_files_high_throughput should use CleanSlotTracker for local slot tracking.",
+            )
+
+            # Verify proper local tracker creation patterns
+            self.assertIn(
+                "local_slot_tracker = CleanSlotTracker",
+                source,
+                "Should create local slot tracker in processing method.",
+            )
+
+            # Verify hash phase also uses CleanSlotTracker
+            self.assertIn(
+                "hash_slot_tracker = slot_tracker or CleanSlotTracker",
+                source,
+                "Hash phase should use CleanSlotTracker for parallel processing.",
             )
 
         except ImportError as e:

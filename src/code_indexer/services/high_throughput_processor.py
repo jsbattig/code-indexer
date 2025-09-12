@@ -21,14 +21,14 @@ import concurrent.futures
 from concurrent.futures import as_completed, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Callable, Set
+from typing import List, Dict, Any, Optional, Callable
 from queue import Queue, Empty
 import threading
 
 from ..indexing.processor import ProcessingStats
 from ..services.git_aware_processor import GitAwareDocumentProcessor
 from .vector_calculation_manager import VectorCalculationManager
-from .clean_slot_tracker import CleanSlotTracker, FileStatus
+from .clean_slot_tracker import CleanSlotTracker, FileStatus, FileData
 from .file_chunking_manager import FileChunkingManager, FileProcessingResult
 
 # SURGICAL FIX: Remove RealTimeFeedbackManager import - causes individual callback spam
@@ -107,52 +107,12 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             []
         )  # List of (timestamp, total_bytes) tuples for smoothed KB/s
 
-        # CleanSlotTracker system - single source of truth
-        # Initialize lazily with actual thread count in process_files_high_throughput
-        self.slot_tracker: CleanSlotTracker
-
     def request_cancellation(self) -> None:
         """Request cancellation of processing."""
         with self._cancellation_lock:
             self.cancelled = True
             self._cancellation_event.set()
         logger.info("High throughput processing cancellation requested")
-
-    def _ensure_slot_tracker_initialized(self, thread_count: int = 8) -> None:
-        """Ensure slot tracker is initialized with appropriate thread count.
-
-        Args:
-            thread_count: Number of threads to use for file tracking (defaults to 8 for backwards compatibility)
-        """
-        if not hasattr(self, "slot_tracker") or self.slot_tracker is None:
-            self.slot_tracker = CleanSlotTracker(
-                max_slots=thread_count + 2  # Match FileChunkingManager workers
-            )
-            logger.info(
-                f"Initialized CleanSlotTracker with {thread_count + 2} max concurrent files"
-            )
-
-    def _get_concurrent_threads_snapshot(
-        self, max_threads: int = 8
-    ) -> List[Dict[str, Any]]:
-        """Get current snapshot of active threads for concurrent display.
-
-        REPLACED: Now using consolidated file tracker instead of duplicate logic.
-
-        Args:
-            max_threads: Maximum number of threads to show
-
-        Returns:
-            List of thread info dictionaries for display
-        """
-        # Ensure slot tracker is initialized for real-time file status tracking
-        self._ensure_slot_tracker_initialized()
-
-        # Use consolidated tracker - eliminates race conditions and duplication
-        concurrent_data: List[Dict[str, Any]] = (
-            self.slot_tracker.get_concurrent_files_data()
-        )
-        return concurrent_data
 
     def _initialize_file_rate_tracking(self):
         """Initialize file processing rate tracking."""
@@ -280,15 +240,16 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         vector_thread_count: int,
         batch_size: int = 50,
         progress_callback: Optional[Callable] = None,
+        slot_tracker: Optional[CleanSlotTracker] = None,
     ) -> ProcessingStats:
         """Process files with maximum throughput using pre-queued chunks."""
 
-        # Initialize CleanSlotTracker with proper thread count
+        # Create local slot tracker for this processing phase
         if progress_callback:
             progress_callback(
                 0, 0, Path(""), info="⚙️ Initializing parallel processing threads..."
             )
-        self._ensure_slot_tracker_initialized(vector_thread_count)
+        local_slot_tracker = CleanSlotTracker(max_slots=vector_thread_count + 2)
 
         stats = ProcessingStats()
         stats.start_time = time.time()
@@ -305,7 +266,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 chunker=self.fixed_size_chunker,
                 qdrant_client=self.qdrant_client,
                 thread_count=vector_thread_count,
-                slot_tracker=self.slot_tracker,  # Clean tracker for real-time state
+                slot_tracker=local_slot_tracker,
             ) as file_manager:
 
                 # PARALLEL HASH CALCULATION - eliminate serial bottleneck
@@ -319,10 +280,18 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 completed_hashes = 0
                 hash_start_time = time.time()
 
+                # Use the passed slot tracker for hash phase (breaking change completion)
+                hash_slot_tracker = slot_tracker or CleanSlotTracker(
+                    max_slots=vector_thread_count + 2
+                )
+
                 def hash_worker(
-                    file_queue: Queue, results_dict: dict, error_holder: list
+                    file_queue: Queue,
+                    results_dict: dict,
+                    error_holder: list,
+                    slot_tracker: CleanSlotTracker,
                 ):
-                    """Worker function for parallel hash calculation."""
+                    """Worker function for parallel hash calculation with slot-based progress tracking."""
                     nonlocal completed_hashes
 
                     while True:
@@ -331,12 +300,27 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                         except Empty:  # CRITICAL FIX: Specific exception handling
                             break  # Queue empty
 
+                        slot_id = None
                         try:
+                            # Get file size for slot tracking
+                            file_size = file_path.stat().st_size
+
+                            # Acquire slot with FileData for display
+                            file_data = FileData(
+                                filename=str(file_path.name),
+                                file_size=file_size,
+                                status=FileStatus.PROCESSING,
+                                start_time=time.time(),
+                            )
+                            slot_id = slot_tracker.acquire_slot(file_data)
+
+                            # Update slot status to show processing
+                            slot_tracker.update_slot(slot_id, FileStatus.PROCESSING)
+
                             # Calculate hash and metadata
                             file_metadata = self.file_identifier.get_file_metadata(
                                 file_path
                             )
-                            file_size = file_path.stat().st_size
 
                             # Store results thread-safely
                             with (
@@ -349,6 +333,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                                 completed_hashes += 1
                                 current_progress = completed_hashes
 
+                            # Update slot to complete status
+                            slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
+
                             # Progress bar update (every file or every 10 files for performance)
                             if progress_callback and (
                                 current_progress % max(1, len(files) // 100) == 0
@@ -356,10 +343,29 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                             ):
                                 elapsed = time.time() - hash_start_time
                                 files_per_sec = current_progress / max(elapsed, 0.1)
-                                info = f"{current_progress}/{len(files)} files | {files_per_sec:.1f} files/s | Hashing {file_path.name}"
+                                # Calculate KB/s throughput for consistency
+                                total_bytes = sum(
+                                    f.stat().st_size for f in files[:current_progress]
+                                )
+                                kb_per_sec = (total_bytes / 1024) / max(elapsed, 0.1)
+
+                                # Get active thread count from slot tracker
+                                active_threads = hash_slot_tracker.get_slot_count()
+
+                                # Get concurrent files data for display
+                                concurrent_files = (
+                                    hash_slot_tracker.get_concurrent_files_data()
+                                )
+
+                                # Format: "files (%) | files/s | KB/s | threads | message"
+                                info = f"{current_progress}/{len(files)} files ({100 * current_progress // len(files)}%) | {files_per_sec:.1f} files/s | {kb_per_sec:.1f} KB/s | {active_threads} threads | 🔍 {file_path.name}"
 
                                 progress_callback(
-                                    current_progress, len(files), file_path, info=info
+                                    current_progress,
+                                    len(files),
+                                    file_path,
+                                    info=info,
+                                    concurrent_files=concurrent_files,
                                 )
 
                         except Exception as e:
@@ -369,6 +375,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                             )
                             break
                         finally:
+                            # SINGLE release - guaranteed (CLAUDE.md Foundation #8 compliance)
+                            if slot_id is not None:
+                                slot_tracker.release_slot(slot_id)
                             file_queue.task_done()
 
                 # Create file queue and results storage
@@ -388,7 +397,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                         0,
                         len(files),
                         Path(""),
-                        info=f"0/{len(files)} files | 0.0 files/s | Starting hash calculation...",
+                        info=f"0/{len(files)} files (0%) | 0.0 files/s | 0.0 KB/s | 0 threads | 🔍 Starting hash calculation...",
+                        concurrent_files=[],
+                        slot_tracker=hash_slot_tracker,
                     )
 
                 # PARALLEL HASH CALCULATION
@@ -398,7 +409,11 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                     # Submit worker tasks
                     hash_futures = [
                         hash_executor.submit(
-                            hash_worker, file_queue, hash_results, hash_errors
+                            hash_worker,
+                            file_queue,
+                            hash_results,
+                            hash_errors,
+                            hash_slot_tracker,
                         )
                         for _ in range(vector_thread_count)
                     ]
@@ -431,11 +446,22 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 if progress_callback:
                     elapsed = time.time() - hash_start_time
                     files_per_sec = len(files) / max(elapsed, 0.1)
+                    # Calculate total KB/s throughput
+                    total_bytes = sum(f.stat().st_size for f in files)
+                    kb_per_sec = (total_bytes / 1024) / max(elapsed, 0.1)
+
                     progress_callback(
                         len(files),
                         len(files),
                         Path(""),
-                        info=f"{len(files)}/{len(files)} files | {files_per_sec:.1f} files/s | ✅ Hash calculation complete",
+                        info=f"{len(files)}/{len(files)} files (100%) | {files_per_sec:.1f} files/s | {kb_per_sec:.1f} KB/s | {vector_thread_count} threads | 🔍 ✅ Hash calculation complete",
+                        concurrent_files=[],
+                    )
+
+                # Add transition message 1: Preparing indexing phase
+                if progress_callback:
+                    progress_callback(
+                        0, 0, Path(""), info="ℹ️ Preparing indexing phase..."
                     )
 
                 # TIMING RESET: Reset timing clock after hash completion for accurate indexing progress
@@ -461,6 +487,15 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 ):
                     progress_callback.reset_progress_timers()
 
+                # Add transition message 2: Submitting files for vector embedding
+                if progress_callback:
+                    progress_callback(
+                        0,
+                        0,
+                        Path(""),
+                        info=f"ℹ️ Submitting {len(files)} files for vector embedding...",
+                    )
+
                 # FAST FILE SUBMISSION - No more I/O delays
                 for file_path in files:
                     if self.cancelled:
@@ -472,7 +507,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
 
                         # Submit for processing
                         file_future = file_manager.submit_file_for_processing(
-                            file_path, file_metadata, progress_callback
+                            file_path,
+                            file_metadata,
+                            progress_callback,
                         )
                         file_futures.append(file_future)
 
@@ -539,14 +576,14 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                                 kb_per_second = self._calculate_kbs_throughput()
                                 # Get active thread count from slot tracker
                                 active_threads = 0
-                                if self.slot_tracker:
-                                    active_threads = self.slot_tracker.get_slot_count()
+                                if local_slot_tracker:
+                                    active_threads = local_slot_tracker.get_slot_count()
 
                                 # Get concurrent files from slot tracker
                                 concurrent_files = []
-                                if self.slot_tracker:
+                                if local_slot_tracker:
                                     concurrent_files = (
-                                        self.slot_tracker.get_concurrent_files_data()
+                                        local_slot_tracker.get_concurrent_files_data()
                                     )
 
                                 # Format progress info in expected format
@@ -555,7 +592,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                                     f"{files_per_second:.1f} files/s | "
                                     f"{kb_per_second:.1f} KB/s | "
                                     f"{active_threads} threads | "
-                                    f"{file_result.file_path.name}"
+                                    f"📊 {file_result.file_path.name}"
                                 )
 
                                 # Call progress callback with proper parameters
@@ -565,6 +602,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                                     file_result.file_path,
                                     info=progress_info,
                                     concurrent_files=concurrent_files,
+                                    slot_tracker=local_slot_tracker,
                                 )
 
                                 # CRITICAL FIX: Check for user cancellation via progress callback
@@ -612,26 +650,6 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         # This ensures Rich Progress bar shows 100% instead of stopping at ~94%
         if progress_callback and len(files) > 0:
             # Calculate final KB/s throughput for completion message
-            final_kbs_throughput = self._calculate_kbs_throughput()
-
-            final_info_msg = (
-                f"{len(files)}/{len(files)} files (100%) | "
-                f"0.0 files/s | "
-                f"{final_kbs_throughput:.1f} KB/s | "
-                f"0 threads | "
-                f"✅ Completed"
-            )
-            progress_callback(
-                len(files),  # current = total for 100% completion
-                len(files),  # total files
-                Path(""),  # Empty path with info = progress bar description update
-                info=final_info_msg,
-            )
-
-        # STORY 1: Send final progress callback to reach 100% completion
-        # This ensures Rich Progress bar shows 100% instead of stopping at ~94%
-        if progress_callback and len(files) > 0:
-            # Calculate final KB/s throughput for completion message (Story 3)
             final_kbs_throughput = self._calculate_kbs_throughput()
 
             final_info_msg = (
@@ -730,6 +748,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         collection_name: str,
         progress_callback: Optional[Callable] = None,
         vector_thread_count: Optional[int] = None,
+        slot_tracker: Optional[CleanSlotTracker] = None,
     ):
         """
         Process branch changes using high-throughput parallel processing.
@@ -1180,27 +1199,3 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             logger.info(f"Branch isolation: no files to hide for branch '{branch}'")
 
         return True
-
-    def _build_concurrent_files_data(
-        self,
-        file_completed_chunks: Dict[Path, int],
-        file_chunk_counts: Dict[Path, int],
-        completed_files: Set[Path],
-    ) -> List[Dict[str, Any]]:
-        """Build concurrent files data structure for multi-threaded display integration.
-
-        NOW USING CONSOLIDATED FILE TRACKER - eliminates race conditions and lock contention.
-
-        Args:
-            file_completed_chunks: Map of file paths to completed chunk counts
-            file_chunk_counts: Map of file paths to total chunk counts
-            completed_files: Set of fully completed file paths
-
-        Returns:
-            List of concurrent file data dictionaries for display manager
-        """
-        # Use consolidated file tracker instead of duplicate tracking logic
-        concurrent_files_data: List[Dict[str, Any]] = (
-            self.slot_tracker.get_concurrent_files_data()
-        )
-        return concurrent_files_data
