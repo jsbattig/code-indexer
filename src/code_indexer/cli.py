@@ -4587,8 +4587,13 @@ def fix_config(ctx, dry_run: bool, verbose: bool, force: bool):
     is_flag=True,
     help="Set prompt in user's global ~/.claude/CLAUDE.md file instead of project file",
 )
+@click.option(
+    "--show-only",
+    is_flag=True,
+    help="Display the generated prompt content without modifying any files",
+)
 @click.pass_context
-def set_claude_prompt(ctx, user_prompt: bool):
+def set_claude_prompt(ctx, user_prompt: bool, show_only: bool):
     """Set CIDX semantic search instructions in CLAUDE.md files.
 
     This command injects comprehensive CIDX semantic search instructions into
@@ -4597,6 +4602,7 @@ def set_claude_prompt(ctx, user_prompt: bool):
     \b
     BEHAVIOR:
     • --user-prompt: Sets prompt in ~/.claude/CLAUDE.md (global for all projects)
+    • --show-only: Displays prompt content without modifying files
     • Default: Sets prompt in project CLAUDE.md (walks up directory tree to find it)
 
     \b
@@ -4610,18 +4616,47 @@ def set_claude_prompt(ctx, user_prompt: bool):
     EXAMPLES:
       cidx set-claude-prompt                 # Set in project CLAUDE.md
       cidx set-claude-prompt --user-prompt  # Set in user's global CLAUDE.md
+      cidx set-claude-prompt --show-only    # Display content without writing files
 
     \b
     REQUIREMENTS:
     • For project mode: CLAUDE.md must exist in current directory or parent directories
     • For user mode: ~/.claude/ directory will be created if needed
+    • For show-only mode: No file requirements
     """
     from .services.claude_prompt_setter import ClaudePromptSetter
 
     try:
+        # Check for conflicting flags
+        if show_only and user_prompt:
+            console.print("❌ Cannot use --show-only with --user-prompt", style="red")
+            console.print(
+                "   --show-only displays content without specifying target file",
+                style="dim",
+            )
+            sys.exit(1)
+
         # Get current directory for codebase context
         current_dir = Path.cwd()
         setter = ClaudePromptSetter(current_dir)
+
+        # Handle --show-only mode
+        if show_only:
+            console.print("📖 Generated CIDX prompt content:\n", style="blue")
+            prompt_content = setter._generate_cidx_prompt()
+
+            # Add section header as it would appear in CLAUDE.md
+            section_header = "- CIDX SEMANTIC CODE SEARCH INTEGRATION\n\n"
+            full_content = section_header + prompt_content
+
+            # Display with syntax highlighting for better readability
+            from rich.syntax import Syntax
+
+            syntax = Syntax(
+                full_content, "markdown", theme="github-dark", line_numbers=False
+            )
+            console.print(syntax)
+            return
 
         if user_prompt:
             # Set in user's global CLAUDE.md

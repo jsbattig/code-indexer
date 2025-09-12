@@ -9,7 +9,14 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, Any
 
-# Import EmbeddingProvider enum from unit test infrastructure
+from tests.unit.infrastructure.infrastructure import EmbeddingProvider
+
+# Re-export EmbeddingProvider for test files
+__all__ = [
+    "EmbeddingProvider",
+    "TestProjectInventory",
+    "create_test_project_with_inventory",
+]
 
 
 class TestProjectInventory(Enum):

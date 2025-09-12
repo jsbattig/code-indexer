@@ -8,8 +8,10 @@ into CLAUDE.md files for better Claude Code integration.
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
+from click.testing import CliRunner
 
 from code_indexer.services.claude_prompt_setter import ClaudePromptSetter
+from code_indexer.cli import cli
 
 
 class TestClaudePromptSetter:
@@ -221,7 +223,61 @@ This should be replaced.
         setter = ClaudePromptSetter()
         prompt = setter._generate_cidx_prompt()
 
-        assert "SEMANTIC SEARCH TOOL" in prompt
+        assert "ABSOLUTE REQUIREMENT" in prompt
         assert "cidx query" in prompt
         assert "--quiet" in prompt
-        assert "WHEN TO USE CIDX QUERY" in prompt
+        assert "Mandatory CIDX-First Workflow" in prompt
+
+
+class TestSetClaudePromptCLI:
+    """Test cases for set-claude-prompt CLI command."""
+
+    def test_show_only_flag_displays_content(self):
+        """Test --show-only flag displays prompt content without modifying files."""
+        runner = CliRunner()
+
+        # Run command with --show-only flag
+        result = runner.invoke(cli, ["set-claude-prompt", "--show-only"])
+
+        # Should succeed without error
+        assert result.exit_code == 0
+
+        # Should contain the prompt content
+        assert "Generated CIDX prompt content" in result.output
+        assert "CIDX SEMANTIC CODE SEARCH INTEGRATION" in result.output
+        assert "ABSOLUTE REQUIREMENT" in result.output
+        assert "cidx query" in result.output
+
+        # Should not contain file modification messages
+        assert "Setting CIDX prompt" not in result.output
+        assert "prompt set in" not in result.output
+
+    def test_show_only_with_user_prompt_fails(self):
+        """Test --show-only with --user-prompt returns error."""
+        runner = CliRunner()
+
+        # Run command with conflicting flags
+        result = runner.invoke(
+            cli, ["set-claude-prompt", "--show-only", "--user-prompt"]
+        )
+
+        # Should fail with error
+        assert result.exit_code == 1
+        assert "Cannot use --show-only with --user-prompt" in result.output
+        assert (
+            "--show-only displays content without specifying target file"
+            in result.output
+        )
+
+    def test_show_only_includes_section_header(self):
+        """Test --show-only includes the section header as it would appear in CLAUDE.md."""
+        runner = CliRunner()
+
+        # Run command with --show-only flag
+        result = runner.invoke(cli, ["set-claude-prompt", "--show-only"])
+
+        # Should succeed
+        assert result.exit_code == 0
+
+        # Should include the section header
+        assert "- CIDX SEMANTIC CODE SEARCH INTEGRATION" in result.output

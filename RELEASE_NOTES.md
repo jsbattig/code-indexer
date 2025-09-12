@@ -1,5 +1,45 @@
 # Release Notes
 
+## Version 4.3.0 - Simplified Claude Code Integration & --show-only Flag
+
+**Release Date**: September 12, 2025
+
+### 🎯 Claude Code Integration Enhancement
+
+- **Simplified CIDX Prompt Content**: Replaced verbose Claude Code integration prompt with concise, focused content emphasizing the mandatory "CIDX-first" workflow
+- **Streamlined Instructions**: New prompt content focuses on the absolute requirement to use `cidx query` before any grep/find operations
+- **Clear Examples**: Practical bash examples showing proper cidx usage patterns with --quiet flags and filtering options
+- **Mandatory Use Cases**: Clearly defined scenarios where cidx must be used (NO EXCEPTIONS)
+
+### 🔧 New CLI Feature
+
+- **--show-only Flag**: Added `cidx set-claude-prompt --show-only` flag to preview generated prompt content without modifying files
+- **Rich Display**: Prompt content displayed with markdown syntax highlighting for better readability
+- **Safe Preview**: Allows users to see exactly what content would be injected before committing to file changes
+- **No File Requirements**: Works without existing CLAUDE.md files, making it safe for exploration
+
+### 📝 Content Simplification
+
+- **Reduced Complexity**: Eliminated verbose "🎯 SEMANTIC SEARCH TOOL" section in favor of direct, actionable requirements
+- **Focused Workflow**: Simplified from multi-mode complex instructions to single, clear workflow emphasis
+- **Practical Examples**: Replaced theoretical examples with real command examples users will actually use
+- **Violation Consequences**: Clear warning about semantic-first mandate violations
+
+### 🏗️ Architecture Improvements
+
+- **Unified Output**: All instruction levels (minimal, balanced, comprehensive) now return the same focused content
+- **Simplified Logic**: Eliminated complex mode-based instruction building in favor of consistent output
+- **Test Coverage**: Updated all tests to validate new simplified content expectations
+- **Backward Compatibility**: Existing set-claude-prompt functionality preserved with enhanced --show-only option
+
+### 🐛 Bug Fixes & Quality
+
+- **Test Suite Updates**: Fixed 17+ failing tests to align with new simplified prompt content
+- **Linting Compliance**: All code passes ruff, black, and mypy quality checks
+- **Import Cleanup**: Removed unused imports and cleaned up test dependencies
+
+---
+
 ## Version 4.2.0 - VoyageAI Batch Processing & Enhanced Progress Reporting
 
 **Release Date**: September 11, 2025

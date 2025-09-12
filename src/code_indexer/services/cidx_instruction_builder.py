@@ -38,50 +38,37 @@ class CidxInstructionBuilder:
         Returns:
             Formatted instruction string
         """
-        sections = []
-
-        # Core CIDX introduction
-        sections.append(self._build_core_introduction())
-
-        if include_help_output:
-            sections.append(self._build_help_output())
-
-        # Strategic usage based on level
-        if instruction_level in ["balanced", "comprehensive"]:
-            sections.append(self._build_strategic_usage())
-
-        if include_examples:
-            sections.append(self._build_examples())
-
-        if include_advanced_patterns:
-            sections.append(self._build_advanced_patterns())
-
-        # Evidence requirements removed - now handled by Claude integration service
-
-        return "\n\n".join(sections)
+        # Always return the simplified version - just the core introduction
+        return self._build_core_introduction()
 
     def _build_core_introduction(self) -> str:
         """Build the core CIDX introduction."""
-        return """🎯 SEMANTIC SEARCH TOOL - YOUR PRIMARY CODE DISCOVERY METHOD
+        return """**ABSOLUTE REQUIREMENT**: ALWAYS use `cidx query` FIRST before any grep/find/search operations when exploring code by purpose or functionality.
 
-CRITICAL: You have access to a powerful semantic search tool `cidx query` that can find relevant code across the entire codebase. Use it liberally - it's much more effective than guessing or making assumptions.
+### Mandatory CIDX-First Workflow
+**STEP 1 - ALWAYS**: Start with semantic search using cidx
+```bash
+cidx query "authentication function" --quiet
+cidx query "error handling patterns" --language python --quiet
+cidx query "database connection" --path */services/* --quiet
+cidx query "authentication system login" --limit 10
+cidx query "caching engine documentation" --language md
+```
 
-**🧠 WHAT MAKES CIDX QUERY UNIQUE**:
-- **Semantic Understanding**: Finds code related to concepts even when exact words don't match
-- **Context Awareness**: Understands relationships between functions, classes, and modules  
-- **Relevance Scoring**: Returns results ranked by semantic similarity (0.0-1.0 scale)
-- **Git-Aware**: Searches within current project/branch context
-- **Cross-Language**: Finds similar patterns across different programming languages
+**STEP 2 - ONLY IF NEEDED**: Use traditional tools for exact string matches or when cidx fails
 
-**WHEN TO USE CIDX QUERY**:
-✅ "Where is X implemented?" → Search immediately with `cidx query "X implementation" --quiet`
-✅ "How does Y work?" → Search for Y-related code first: `cidx query "Y functionality" --quiet`  
-✅ "What files contain Z?" → Use semantic search: `cidx query "Z" --quiet`
-✅ "Show me examples of..." → Search for examples: `cidx query "examples of..." --quiet`
-✅ "Is there any code that..." → Search to verify: `cidx query "code that..." --quiet`
-❌ "What is dependency injection?" → Can answer directly (general concept)
+### CIDX Mandatory Use Cases - NO EXCEPTIONS
+- **ABSOLUTELY REQUIRED** when user asks to "explore [functionality]" - use cidx IMMEDIATELY
+- **ABSOLUTELY REQUIRED** for finding functions/classes by purpose: "user authentication", "data validation"
+- **ABSOLUTELY REQUIRED** for locating implementation patterns: "async database queries", "error handling"
+- **ABSOLUTELY REQUIRED** for discovering related code: "similar to login function", "authentication middleware"
 
-**ALWAYS USE --quiet FLAG**: This provides cleaner output without headers, making it easier to process results."""
+### Traditional Tools - LIMITED EXCEPTIONS ONLY
+- Exact literal string matches needed (specific variable names, exact text)
+- Simple file listing operations (ls, find by filename)
+- When cidx index unavailable or corrupted (fallback only)
+
+**VIOLATION CONSEQUENCE**: Using grep/find BEFORE attempting cidx for semantic searches violates the semantic-first mandate."""
 
     def _build_help_output(self) -> str:
         """Build the complete CIDX help output section."""
