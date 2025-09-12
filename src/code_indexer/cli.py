@@ -6,7 +6,7 @@ import sys
 import signal
 import time
 from pathlib import Path
-from typing import Optional, Union, Callable
+from typing import Optional, Union, Callable, Dict, Any
 
 import click
 from rich.console import Console
@@ -18,6 +18,8 @@ from .config import ConfigManager, Config
 from .services import QdrantClient, DockerManager, EmbeddingProviderFactory
 from .services.smart_indexer import SmartIndexer
 from .services.generic_query_service import GenericQueryService
+from .services.language_mapper import LanguageMapper
+from .services.language_validator import LanguageValidator
 from .services.claude_integration import (
     ClaudeIntegrationService,
     check_claude_sdk_availability,
@@ -33,6 +35,84 @@ from .services.cidx_prompt_generator import create_cidx_ai_prompt
 
 # CoW-related imports removed as part of CoW cleanup Epic
 from . import __version__
+
+
+def _generate_language_help_text() -> str:
+    """Generate dynamic help text for language option based on LanguageMapper."""
+    try:
+        language_mapper = LanguageMapper()
+        supported_languages = sorted(language_mapper.get_supported_languages())
+
+        # Group languages for better readability
+        programming = [
+            lang
+            for lang in supported_languages
+            if lang
+            in [
+                "python",
+                "javascript",
+                "typescript",
+                "java",
+                "csharp",
+                "cpp",
+                "c",
+                "go",
+                "rust",
+                "php",
+                "ruby",
+                "swift",
+                "kotlin",
+                "scala",
+                "dart",
+            ]
+        ]
+        web = [lang for lang in supported_languages if lang in ["html", "css", "vue"]]
+        markup = [
+            lang
+            for lang in supported_languages
+            if lang in ["markdown", "xml", "latex", "rst"]
+        ]
+        data = [
+            lang
+            for lang in supported_languages
+            if lang in ["json", "yaml", "toml", "ini", "sql", "csv"]
+        ]
+        shell = [
+            lang
+            for lang in supported_languages
+            if lang in ["shell", "bash", "powershell", "batch"]
+        ]
+        other = [
+            lang
+            for lang in supported_languages
+            if lang not in programming + web + markup + data + shell
+        ]
+
+        help_parts = []
+        help_parts.append("Filter by programming language or file extension.")
+        help_parts.append("Supported friendly names:")
+
+        if programming:
+            help_parts.append(f"Programming: {', '.join(programming)}")
+        if web:
+            help_parts.append(f"Web: {', '.join(web)}")
+        if markup:
+            help_parts.append(f"Markup: {', '.join(markup)}")
+        if data:
+            help_parts.append(f"Data: {', '.join(data)}")
+        if shell:
+            help_parts.append(f"Shell: {', '.join(shell)}")
+        if other:
+            help_parts.append(f"Other: {', '.join(other)}")
+
+        help_parts.append(
+            "You can also use file extensions directly (py, js, ts, etc.)"
+        )
+
+        return " ".join(help_parts)
+    except Exception:
+        # Fallback to static text if dynamic generation fails
+        return "Filter by programming language. Supports both friendly names (python, javascript, etc.) and file extensions (py, js, etc.)"
 
 
 def _create_default_override_file(project_dir: Path, force: bool = False) -> bool:
@@ -1942,7 +2022,7 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
 )
 @click.option(
     "--language",
-    help="Filter by programming language. Supported: python, javascript, typescript, java, cpp, c, csharp, go, rust, ruby, php, shell, html, css, sql, swift, kotlin, scala, dart, vue, pascal, delphi, markdown, json, yaml, toml, text",
+    help=_generate_language_help_text(),
 )
 @click.option("--path", help="Filter by file path pattern (e.g., */tests/*)")
 @click.option("--min-score", type=float, help="Minimum similarity score (0.0-1.0)")
@@ -2045,12 +2125,39 @@ def query(
         else:
             query_embedding = embedding_provider.get_embedding(query)
 
-        # Build filter conditions
-        filter_conditions = {}
+        # Build filter conditions with language mapping support
+        filter_conditions: Dict[str, Any] = {}
         if language:
-            filter_conditions["must"] = [
-                {"key": "language", "match": {"value": language}}
-            ]
+            # Validate and map language to file extensions
+            language_validator = LanguageValidator()
+            validation_result = language_validator.validate_language(language)
+
+            if not validation_result.is_valid:
+                click.echo(f"Error: {validation_result.error_message}", err=True)
+                if validation_result.suggestions:
+                    click.echo(
+                        f"Suggestions: {', '.join(validation_result.suggestions)}",
+                        err=True,
+                    )
+                raise click.ClickException(f"Invalid language: {language}")
+
+            # Map language to file extensions
+            language_mapper = LanguageMapper()
+            extensions = language_mapper.get_extensions(language)
+
+            # Build filter for extensions
+            if len(extensions) == 1:
+                # Single extension - simple filter
+                filter_conditions["must"] = [
+                    {"key": "language", "match": {"value": list(extensions)[0]}}
+                ]
+            else:
+                # Multiple extensions - OR filter
+                language_filters = [
+                    {"key": "language", "match": {"value": ext}} for ext in extensions
+                ]
+                filter_conditions["should"] = language_filters
+                filter_conditions["minimum_should_match"] = 1
         if path:
             filter_conditions.setdefault("must", []).append(
                 {"key": "path", "match": {"text": path}}
@@ -2347,7 +2454,7 @@ def query(
 )
 @click.option(
     "--language",
-    help="[RAG-first only] Filter initial search by programming language. Supported: python, javascript, typescript, java, cpp, c, csharp, go, rust, ruby, php, shell, html, css, sql, swift, kotlin, scala, dart, vue, pascal, delphi, markdown, json, yaml, toml, text",
+    help=f"[RAG-first only] Filter initial search by programming language. {_generate_language_help_text()}",
 )
 @click.option(
     "--path",
