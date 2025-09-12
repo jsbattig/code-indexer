@@ -10,10 +10,18 @@ The mapper supports:
 - Case-insensitive matching
 - Multiple extensions per language
 - Fast O(1) lookup performance
+- YAML-based configuration with reactive creation
 """
 
-from typing import Set, Dict
+from typing import Set, Dict, Optional, Any
+from pathlib import Path
 import logging
+
+from ..utils.yaml_utils import (
+    create_language_mappings_yaml,
+    load_language_mappings_yaml,
+    DEFAULT_LANGUAGE_MAPPINGS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,66 +39,133 @@ class LanguageMapper:
     - Direct extension usage support
     - Fast O(1) lookup performance
     - Unknown languages pass through unchanged for compatibility
+    - YAML-based configuration with reactive creation
     """
 
-    def __init__(self):
-        """Initialize the language mapper with comprehensive language mappings."""
-        self._language_to_extensions = self._build_language_mappings()
+    # Class-level cache for singleton pattern
+    _instance: Optional["LanguageMapper"] = None
+    _mappings_cache: Optional[Dict[str, Set[str]]] = None
+    _yaml_path_cache: Optional[Path] = None
 
-    def _build_language_mappings(self) -> Dict[str, Set[str]]:
+    def __new__(cls):
+        """Implement singleton pattern for efficiency."""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self):
+        """Initialize the language mapper with YAML-based mappings."""
+        # Skip re-initialization if already loaded
+        if self._mappings_cache is not None:
+            self._language_to_extensions = self._mappings_cache
+            return
+
+        # Find config directory
+        config_dir = self._find_config_dir()
+
+        if config_dir:
+            yaml_path = config_dir / "language-mappings.yaml"
+            self._yaml_path_cache = yaml_path
+
+            # Try to load from YAML
+            try:
+                if yaml_path.exists():
+                    # Load existing mappings
+                    self._language_to_extensions = load_language_mappings_yaml(
+                        yaml_path
+                    )
+                    logger.debug(f"Loaded language mappings from {yaml_path}")
+                else:
+                    # Reactive creation: create YAML on first use
+                    logger.info(
+                        "Language mappings file not found, creating with defaults"
+                    )
+                    create_language_mappings_yaml(config_dir, force=False)
+                    self._language_to_extensions = self._convert_default_mappings()
+
+            except Exception as e:
+                # Fallback to defaults on any error
+                logger.warning(
+                    f"Failed to load/create YAML mappings: {e}, using defaults"
+                )
+                self._language_to_extensions = self._convert_default_mappings()
+        else:
+            # No config directory found, use defaults
+            logger.debug("No .code-indexer directory found, using default mappings")
+            self._language_to_extensions = self._convert_default_mappings()
+
+        # Cache the mappings
+        LanguageMapper._mappings_cache = self._language_to_extensions
+
+    def _find_config_dir(self) -> Optional[Path]:
         """
-        Build comprehensive mappings from friendly names to file extensions.
+        Find .code-indexer directory by walking up from current directory.
 
         Returns:
-            Dictionary mapping language names to sets of file extensions
+            Path to .code-indexer directory if found, None otherwise
         """
-        return {
-            # Programming languages
-            "python": {"py", "pyw", "pyi"},
-            "javascript": {"js", "jsx"},
-            "typescript": {"ts", "tsx"},
-            "java": {"java"},
-            "csharp": {"cs"},
-            "c": {"c", "h"},
-            "cpp": {"cpp", "cc", "cxx", "c++"},
-            "c++": {"cpp", "cc", "cxx", "c++"},  # Alias for cpp
-            "go": {"go"},
-            "rust": {"rs"},
-            "php": {"php"},
-            "ruby": {"rb"},
-            "swift": {"swift"},
-            "kotlin": {"kt", "kts"},
-            "scala": {"scala"},
-            "dart": {"dart"},
-            # Web technologies
-            "html": {"html", "htm"},
-            "css": {"css"},
-            "vue": {"vue"},
-            # Markup and documentation
-            "markdown": {"md", "markdown"},
-            "xml": {"xml"},
-            "latex": {"tex", "latex"},
-            "rst": {"rst"},
-            # Data and configuration
-            "json": {"json"},
-            "yaml": {"yaml", "yml"},
-            "toml": {"toml"},
-            "ini": {"ini"},
-            "sql": {"sql"},
-            # Shell and scripting
-            "shell": {"sh", "bash"},
-            "bash": {"sh", "bash"},
-            "powershell": {"ps1", "psm1", "psd1"},
-            "batch": {"bat", "cmd"},
-            # Build and config files
-            "dockerfile": {"dockerfile"},
-            "makefile": {"makefile", "mk"},
-            "cmake": {"cmake"},
-            # Other formats
-            "text": {"txt"},
-            "log": {"log"},
-            "csv": {"csv"},
-        }
+        current = Path.cwd()
+
+        # Walk up directory tree looking for .code-indexer
+        while current != current.parent:
+            config_dir = current / ".code-indexer"
+            if config_dir.exists() and config_dir.is_dir():
+                return config_dir
+            current = current.parent
+
+        # Check root directory
+        config_dir = current / ".code-indexer"
+        if config_dir.exists() and config_dir.is_dir():
+            return config_dir
+
+        return None
+
+    def _convert_default_mappings(self) -> Dict[str, Set[str]]:
+        """Convert default list-based mappings to set-based."""
+        return {lang: set(exts) for lang, exts in DEFAULT_LANGUAGE_MAPPINGS.items()}
+
+    def reload_mappings(self) -> None:
+        """
+        Force reload of mappings from YAML file.
+        Useful after manual edits to the YAML file.
+        """
+        # Clear caches
+        LanguageMapper._mappings_cache = None
+
+        # Re-initialize by calling initialization logic directly
+        config_dir = self._find_config_dir()
+
+        if config_dir:
+            yaml_path = config_dir / "language-mappings.yaml"
+            self._yaml_path_cache = yaml_path
+
+            # Try to load from YAML
+            try:
+                if yaml_path.exists():
+                    # Load existing mappings
+                    self._language_to_extensions = load_language_mappings_yaml(
+                        yaml_path
+                    )
+                    logger.debug(f"Reloaded language mappings from {yaml_path}")
+                else:
+                    # Reactive creation: create YAML on first use
+                    logger.info(
+                        "Language mappings file not found, creating with defaults"
+                    )
+                    create_language_mappings_yaml(config_dir, force=False)
+                    self._language_to_extensions = self._convert_default_mappings()
+
+            except Exception as e:
+                # Fallback to defaults on any error
+                logger.warning(f"Failed to reload YAML mappings: {e}, using defaults")
+                self._language_to_extensions = self._convert_default_mappings()
+        else:
+            # No config directory found, use defaults
+            logger.debug("No .code-indexer directory found, using default mappings")
+            self._language_to_extensions = self._convert_default_mappings()
+
+        # Cache the mappings
+        LanguageMapper._mappings_cache = self._language_to_extensions
 
     def get_extensions(self, language: str) -> Set[str]:
         """
@@ -201,3 +276,41 @@ class LanguageMapper:
         for extensions in self._language_to_extensions.values():
             all_extensions.update(extensions)
         return all_extensions
+
+    def build_language_filter(self, language: str) -> Dict[str, Any]:
+        """
+        Build Qdrant filter for language filtering with OR semantics.
+
+        Args:
+            language: Language name or extension
+
+        Returns:
+            Qdrant filter dict with proper OR logic for multiple extensions
+
+        Examples:
+            >>> mapper = LanguageMapper()
+            >>> mapper.build_language_filter("python")
+            {'should': [{'key': 'language', 'match': {'value': 'py'}},
+                       {'key': 'language', 'match': {'value': 'pyw'}},
+                       {'key': 'language', 'match': {'value': 'pyi'}}]}
+            >>> mapper.build_language_filter("java")
+            {'key': 'language', 'match': {'value': 'java'}}
+            >>> mapper.build_language_filter("py")
+            {'key': 'language', 'match': {'value': 'py'}}
+        """
+        if self.is_supported_language(language):
+            extensions = self.get_extensions(language)
+            if len(extensions) == 1:
+                # Single extension - simple filter
+                return {"key": "language", "match": {"value": list(extensions)[0]}}
+            else:
+                # Multiple extensions - OR filter
+                return {
+                    "should": [
+                        {"key": "language", "match": {"value": ext}}
+                        for ext in extensions
+                    ]
+                }
+        else:
+            # Direct extension or unknown language
+            return {"key": "language", "match": {"value": language}}

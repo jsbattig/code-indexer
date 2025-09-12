@@ -279,6 +279,37 @@ cidx query "test" --min-score 0.8     # High-confidence matches
 cidx query "search terms"              # Same as cidx query
 ```
 
+### Language Filtering
+
+CIDX supports intelligent language filtering with comprehensive file extension mapping:
+
+```bash
+# Friendly language names (recommended)
+cidx query "authentication" --language python     # Matches .py, .pyw, .pyi files
+cidx query "components" --language javascript     # Matches .js, .jsx files  
+cidx query "models" --language typescript         # Matches .ts, .tsx files
+cidx query "handlers" --language cpp              # Matches .cpp, .cc, .cxx, .c++ files
+
+# Direct extension usage (also supported)
+cidx query "function" --language py               # Matches only .py files
+cidx query "component" --language jsx             # Matches only .jsx files
+```
+
+**Supported Languages**: python, javascript, typescript, java, csharp, c, cpp, go, rust, php, ruby, swift, kotlin, scala, dart, html, css, vue, markdown, xml, yaml, json, sql, shell, bash, dockerfile, and more.
+
+#### Customizing Language Mappings
+
+You can customize language mappings by editing `.code-indexer/language-mappings.yaml`:
+
+```yaml
+# Add custom languages or modify existing mappings
+python: [py, pyw, pyi]          # Multiple extensions
+mylang: [ml, mli]               # Your custom language  
+javascript: [js, jsx]           # Modify existing mappings
+```
+
+Changes take effect on the next query execution. The file is automatically created during `cidx init` or on first use.
+
 ### AI Analysis Commands
 
 ```bash

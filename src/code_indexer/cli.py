@@ -990,6 +990,18 @@ def init(
                     "📝 Created .code-indexer-override.yaml for project-level file filtering"
                 )
 
+        # Create language mappings file (proactive creation during init)
+        from .utils.yaml_utils import create_language_mappings_yaml
+
+        language_mappings_created = create_language_mappings_yaml(
+            config_manager.config_path.parent, force=force
+        )
+
+        if language_mappings_created:
+            console.print(
+                "📚 Created language-mappings.yaml for query language filtering"
+            )
+
         console.print(f"✅ Initialized configuration at {config_manager.config_path}")
         console.print(
             f"📖 Documentation created at {config_manager.config_path.parent / 'README.md'}"
@@ -2125,10 +2137,10 @@ def query(
         else:
             query_embedding = embedding_provider.get_embedding(query)
 
-        # Build filter conditions with language mapping support
+        # Build filter conditions for non-git path only
         filter_conditions: Dict[str, Any] = {}
         if language:
-            # Validate and map language to file extensions
+            # Validate language parameter
             language_validator = LanguageValidator()
             validation_result = language_validator.validate_language(language)
 
@@ -2141,23 +2153,10 @@ def query(
                     )
                 raise click.ClickException(f"Invalid language: {language}")
 
-            # Map language to file extensions
+            # For non-git path, handle language mapping
             language_mapper = LanguageMapper()
-            extensions = language_mapper.get_extensions(language)
-
-            # Build filter for extensions
-            if len(extensions) == 1:
-                # Single extension - simple filter
-                filter_conditions["must"] = [
-                    {"key": "language", "match": {"value": list(extensions)[0]}}
-                ]
-            else:
-                # Multiple extensions - OR filter
-                language_filters = [
-                    {"key": "language", "match": {"value": ext}} for ext in extensions
-                ]
-                filter_conditions["should"] = language_filters
-                filter_conditions["minimum_should_match"] = 1
+            language_filter = language_mapper.build_language_filter(language)
+            filter_conditions["must"] = [language_filter]
         if path:
             filter_conditions.setdefault("must", []).append(
                 {"key": "path", "match": {"text": path}}
@@ -2265,9 +2264,9 @@ def query(
 
             # Add additional filters
             if language:
-                git_filter_conditions["must"].append(
-                    {"key": "language", "match": {"value": language}}
-                )
+                language_mapper = LanguageMapper()
+                language_filter = language_mapper.build_language_filter(language)
+                git_filter_conditions["must"].append(language_filter)
             if path:
                 git_filter_conditions["must"].append(
                     {"key": "path", "match": {"text": path}}
@@ -2740,9 +2739,10 @@ def claude(
             # Build filter conditions
             filter_conditions = {}
             if language:
-                filter_conditions["must"] = [
-                    {"key": "language", "match": {"value": language}}
-                ]
+                # Apply language mapping for friendly names
+                language_mapper = LanguageMapper()
+                language_filter = language_mapper.build_language_filter(language)
+                filter_conditions["must"] = [language_filter]
             if path:
                 filter_conditions.setdefault("must", []).append(
                     {"key": "path", "match": {"text": path}}
@@ -2752,7 +2752,6 @@ def claude(
             current_model = embedding_provider.get_current_model()
 
             # Perform semantic search using model-specific filter
-            print(f"DEBUG: CLI filter_conditions: {filter_conditions}")
             raw_results = qdrant_client.search_with_model_filter(
                 query_vector=query_embedding,
                 embedding_model=current_model,

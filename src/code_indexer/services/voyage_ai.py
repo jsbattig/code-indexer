@@ -8,6 +8,9 @@ from rich.console import Console
 import yaml  # type: ignore[import-untyped]
 from pathlib import Path
 
+# Suppress tokenizers parallelism warning
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 import voyageai
 
 from ..config import VoyageAIConfig

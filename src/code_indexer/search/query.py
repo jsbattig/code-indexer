@@ -64,9 +64,11 @@ class SearchEngine:
             filter_conditions = {"must": []}
 
             if language and filter_conditions is not None:
-                filter_conditions["must"].append(
-                    {"key": "language", "match": {"value": language}}
-                )
+                from ..services.language_mapper import LanguageMapper
+
+                language_mapper = LanguageMapper()
+                language_filter = language_mapper.build_language_filter(language)
+                filter_conditions["must"].append(language_filter)
 
             if file_path_pattern and filter_conditions is not None:
                 filter_conditions["must"].append(
@@ -74,14 +76,12 @@ class SearchEngine:
                 )
 
         # Perform search
-        print(f"DEBUG: Performing search with filter_conditions: {filter_conditions}")
         results = self.qdrant_client.search(
             query_vector=query_embedding,
             limit=limit,
             score_threshold=min_score,
             filter_conditions=filter_conditions,
         )
-        print(f"DEBUG: Search returned {len(results)} results")
 
         # Convert to SearchResult objects
         return [SearchResult.from_qdrant_result(result) for result in results]
@@ -134,10 +134,14 @@ class SearchEngine:
         if query:
             return self.search(query=query, limit=limit, language=language)
         else:
+            # Apply language mapping for friendly names
+            from ..services.language_mapper import LanguageMapper
+
+            language_mapper = LanguageMapper()
+            language_filter = language_mapper.build_language_filter(language)
+
             # Return random samples from the language
-            filter_conditions = {
-                "must": [{"key": "language", "match": {"value": language}}]
-            }
+            filter_conditions = {"must": [language_filter]}
 
             # Use empty vector for language browsing
             results = self.qdrant_client.search(

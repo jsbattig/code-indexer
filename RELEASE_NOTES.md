@@ -1,8 +1,29 @@
 # Release Notes
 
-## Version 4.3.0 - Simplified Claude Code Integration & --show-only Flag
+## Version 4.3.0 - Enhanced Language Filtering & Claude Code Integration
 
 **Release Date**: September 12, 2025
+
+### 🎯 Major Language Filtering Improvements
+
+#### Externalized Language Mappings
+- **YAML Configuration**: Language mappings externalized to `.code-indexer/language-mappings.yaml` for user customization
+- **Dual Creation Strategy**: 
+  - **Proactive**: Automatically created during `cidx init`  
+  - **Reactive**: Auto-generated on first use when missing
+- **Custom Language Support**: Users can add their own languages or modify existing mappings
+- **Hot Reload**: Changes take effect immediately on next query execution
+
+#### Intelligent OR-Based Filtering  
+- **Multiple Extension Support**: `--language python` now matches ALL Python files (`.py`, `.pyw`, `.pyi`) using Qdrant OR filters
+- **Comprehensive Coverage**: Language filters now capture all relevant files instead of arbitrary single extensions
+- **Backward Compatible**: Direct extension usage (`--language py`) and unknown languages still work as before
+- **Centralized Logic**: Eliminated code duplication across 5 different filtering code paths
+
+#### Enhanced User Experience
+- **Intuitive Filtering**: `--language javascript` matches both `.js` and `.jsx` files automatically
+- **Rich Language Support**: 25+ programming languages with proper extension mappings out of the box
+- **Documentation**: Clear examples and customization instructions added to README
 
 ### 🎯 Claude Code Integration Enhancement
 
@@ -28,6 +49,26 @@
 ### 🏗️ Architecture Improvements
 
 - **Unified Output**: All instruction levels (minimal, balanced, comprehensive) now return the same focused content
+
+### 🔧 Technical Implementation Details
+
+#### Language Filtering Architecture
+- **Centralized Filter Builder**: New `LanguageMapper.build_language_filter()` method handles all Qdrant filter construction
+- **Qdrant OR Semantics**: Multiple extensions use `{"should": [...]}` clause for proper OR filtering
+- **Performance Optimized**: Singleton pattern with caching maintains O(1) lookup performance
+- **Thread-Safe**: Safe concurrent access to language mappings across all code paths
+
+#### YAML Configuration System
+- **Comprehensive Defaults**: 25+ languages with 50+ file extensions pre-configured
+- **Flexible Format**: Supports both single extensions (`python: py`) and multiple extensions (`python: [py, pyw, pyi]`)
+- **Error Handling**: Graceful fallback to hardcoded defaults on YAML corruption or permission errors
+- **Hot Configuration**: Runtime reload capability without service restart
+
+#### Code Quality Improvements
+- **Zero Duplication**: Eliminated repeated filter building logic across CLI and SearchEngine modules
+- **CLAUDE.md Compliance**: Follows anti-duplication and KISS principles
+- **Comprehensive Testing**: 16+ unit tests covering YAML functionality and edge cases
+- **Type Safety**: Full mypy compliance with proper type annotations
 - **Simplified Logic**: Eliminated complex mode-based instruction building in favor of consistent output
 - **Test Coverage**: Updated all tests to validate new simplified content expectations
 - **Backward Compatibility**: Existing set-claude-prompt functionality preserved with enhanced --show-only option
