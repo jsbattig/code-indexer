@@ -46,6 +46,7 @@ dependencies = [
     "psutil>=5.9.0,<6.0.0",
     "PyJWT>=2.8.0",
     "voyageai>=0.3.5",
+    "GitPython>=3.1.0",
 ]
 
 [project.optional-dependencies]

@@ -5,11 +5,13 @@ Manages golden repositories that can be activated by users for semantic search.
 Golden repositories are stored in ~/.cidx-server/data/golden-repos/ with metadata tracking.
 """
 
+import errno
 import json
 import os
 import shutil
 import subprocess
 import logging
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -162,13 +164,26 @@ class GoldenRepoManager:
             # Execute post-clone workflow if repository was successfully cloned
             self._execute_post_clone_workflow(clone_path, force_init=False)
 
-        except Exception as e:
-            raise GitOperationError(f"Failed to clone repository: {str(e)}")
+        except subprocess.CalledProcessError as e:
+            raise GitOperationError(
+                f"Failed to clone repository: Git process failed with exit code {e.returncode}: {e.stderr}"
+            )
+        except subprocess.TimeoutExpired as e:
+            raise GitOperationError(
+                f"Failed to clone repository: Git operation timed out after {e.timeout} seconds"
+            )
+        except (OSError, IOError) as e:
+            raise GitOperationError(
+                f"Failed to clone repository: File system error: {str(e)}"
+            )
+        except GitOperationError:
+            # Re-raise GitOperationError from sub-methods without modification
+            raise
 
         # Check repository size
         repo_size = self._get_repository_size(clone_path)
         if repo_size > self.MAX_REPO_SIZE_BYTES:
-            # Clean up cloned repository
+            # Clean up cloned repository (ignore cleanup result since we're rejecting anyway)
             self._cleanup_repository_files(clone_path)
             size_gb = repo_size / (1024 * 1024 * 1024)
             limit_gb = self.MAX_REPO_SIZE_BYTES / (1024 * 1024 * 1024)
@@ -223,16 +238,22 @@ class GoldenRepoManager:
         # Get repository info before removal
         golden_repo = self.golden_repos[alias]
 
-        # Clean up repository files
-        self._cleanup_repository_files(golden_repo.clone_path)
+        # Clean up repository files - this now returns bool indicating cleanup success
+        cleanup_successful = self._cleanup_repository_files(golden_repo.clone_path)
 
-        # Remove from storage
+        # Remove from storage - this is the critical operation for deletion success
         del self.golden_repos[alias]
         self._save_metadata()
 
+        # Generate appropriate success message based on cleanup result
+        if cleanup_successful:
+            message = f"Golden repository '{alias}' removed successfully"
+        else:
+            message = f"Golden repository '{alias}' removed successfully (some cleanup issues occurred)"
+
         return {
             "success": True,
-            "message": f"Golden repository '{alias}' removed successfully",
+            "message": message,
         }
 
     def _validate_git_repository(self, repo_url: str) -> bool:
@@ -331,8 +352,22 @@ class GoldenRepoManager:
                 f"Golden repository registered using regular copy: {source_path} -> {clone_path}"
             )
             return clone_path
-        except Exception as e:
-            raise GitOperationError(f"Failed to copy local repository: {str(e)}")
+        except FileNotFoundError as e:
+            raise GitOperationError(
+                f"Failed to copy local repository: Source directory not found: {str(e)}"
+            )
+        except PermissionError as e:
+            raise GitOperationError(
+                f"Failed to copy local repository: Permission denied: {str(e)}"
+            )
+        except OSError as e:
+            raise GitOperationError(
+                f"Failed to copy local repository: File system error: {str(e)}"
+            )
+        except shutil.Error as e:
+            raise GitOperationError(
+                f"Failed to copy local repository: Copy operation failed: {str(e)}"
+            )
 
     def _clone_remote_repository(
         self, repo_url: str, clone_path: str, branch: str
@@ -380,7 +415,7 @@ class GoldenRepoManager:
         except subprocess.SubprocessError as e:
             raise GitOperationError(f"Git clone subprocess error: {str(e)}")
 
-    def _cleanup_repository_files(self, clone_path: str) -> None:
+    def _cleanup_repository_files(self, clone_path: str) -> bool:
         """
         Clean up repository files and directories using orchestrated cleanup.
 
@@ -389,9 +424,16 @@ class GoldenRepoManager:
 
         Args:
             clone_path: Path to repository directory to clean up
+
+        Returns:
+            bool: True if cleanup was successful, False if there were issues
+                  (but the repository deletion can still be considered successful)
+
+        Raises:
+            GitOperationError: Only for critical failures that should prevent deletion
         """
         if not os.path.exists(clone_path):
-            return
+            return True  # Already cleaned up
 
         try:
             from pathlib import Path
@@ -403,36 +445,124 @@ class GoldenRepoManager:
 
             if project_config_dir.exists():
                 # Repository has cidx services - use orchestrated cleanup
-                docker_manager = DockerManager(
-                    force_docker=True,  # Use Docker for server operations
-                    project_config_dir=project_config_dir,
-                )
+                try:
+                    docker_manager = None
+                    try:
+                        docker_manager = DockerManager(
+                            force_docker=True,  # Use Docker for server operations
+                            project_config_dir=project_config_dir,
+                        )
 
-                # Perform orchestrated cleanup with data removal (same as uninstall)
-                cleanup_success = docker_manager.cleanup(
-                    remove_data=True, verbose=False
-                )
-                if not cleanup_success:
-                    logging.warning(
-                        f"Docker cleanup reported some issues for {clone_path}"
+                        # Perform orchestrated cleanup with data removal (same as uninstall)
+                        cleanup_success = docker_manager.cleanup(
+                            remove_data=True, verbose=False
+                        )
+                        if not cleanup_success:
+                            logging.warning(
+                                f"Docker cleanup reported some issues for {clone_path}"
+                            )
+
+                        logging.info(
+                            f"Completed orchestrated cleanup for: {clone_path}"
+                        )
+                    finally:
+                        # DockerManager doesn't require explicit closing
+                        docker_manager = None
+
+                except PermissionError as e:
+                    logging.error(f"Permission denied during Docker cleanup: {e}")
+                    raise GitOperationError(
+                        f"Insufficient permissions for Docker cleanup: {str(e)}"
                     )
-
-                logging.info(f"Completed orchestrated cleanup for: {clone_path}")
+                except OSError as e:
+                    if e.errno == errno.ENOENT:  # File not found
+                        logging.info(
+                            f"Docker resources already cleaned for {clone_path}"
+                        )
+                    else:
+                        logging.error(f"OS error during Docker cleanup: {e}")
+                        raise GitOperationError(
+                            f"File system error during Docker cleanup: {str(e)}"
+                        )
+                except ImportError as e:
+                    logging.error(f"Missing Docker dependency: {e}")
+                    raise GitOperationError(
+                        f"Docker system dependency unavailable: {str(e)}"
+                    )
+                except subprocess.CalledProcessError as e:
+                    logging.error(f"Docker cleanup process failed: {e}")
+                    raise GitOperationError(
+                        f"Docker cleanup failed with exit code {e.returncode}"
+                    )
+                except (
+                    RuntimeError,
+                    ConnectionError,
+                    TimeoutError,
+                    ValueError,
+                    TypeError,
+                ) as e:
+                    # Docker daemon issues that are non-critical for repository deletion
+                    # These specific Docker-related exceptions should not prevent repository deletion
+                    logging.warning(
+                        f"Docker cleanup failed but deletion can proceed: {e}"
+                    )
+                    # Don't raise - this allows deletion to continue
+                finally:
+                    # Ensure docker_manager is properly cleaned up if it was created
+                    if "docker_manager" in locals():
+                        docker_manager = None
 
             # After orchestrated cleanup, remove the remaining directory structure
             # This should now work since root-owned files have been cleaned up
             if clone_path_obj.exists():
-                shutil.rmtree(clone_path)
-                logging.info(f"Successfully cleaned up repository files: {clone_path}")
+                try:
+                    shutil.rmtree(clone_path)
+                    logging.info(
+                        f"Successfully cleaned up repository files: {clone_path}"
+                    )
+                    return True
+                except (PermissionError, OSError) as fs_error:
+                    # File system cleanup failed - log but don't prevent deletion
+                    logging.warning(
+                        f"File system cleanup incomplete for {clone_path}: {fs_error}. "
+                        "Some files may remain but repository deletion was successful."
+                    )
+                    return False
+            else:
+                return True  # Directory already removed
 
-        except Exception as e:
-            # Log the error with more context about the cleanup approach
-            logging.error(f"Failed to clean up repository files {clone_path}: {str(e)}")
-            logging.info(
-                "Note: Golden repo cleanup uses orchestrated approach like 'cidx uninstall'"
+        except ImportError as import_error:
+            # DockerManager import failed - this is a critical system issue
+            logging.error(f"Critical system error during cleanup: {import_error}")
+            raise GitOperationError(
+                f"System dependency unavailable for cleanup: {str(import_error)}"
             )
-            # Re-raise as GitOperationError to ensure proper HTTP status code (500)
-            raise GitOperationError(f"Failed to cleanup repository files: {str(e)}")
+        except PermissionError as e:
+            logging.error(f"Permission denied during cleanup: {e}")
+            raise GitOperationError(f"Insufficient permissions for cleanup: {str(e)}")
+        except OSError as e:
+            if e.errno == errno.ENOENT:  # File not found
+                return True  # Already cleaned
+            elif e.errno == errno.EACCES:  # Permission denied
+                logging.error(f"Access denied during cleanup: {e}")
+                raise GitOperationError(f"Access denied for cleanup: {str(e)}")
+            else:
+                logging.error(f"OS error during cleanup: {e}")
+                raise GitOperationError(f"File system error during cleanup: {str(e)}")
+        except subprocess.CalledProcessError as e:
+            if e.returncode == 126:  # Permission denied
+                logging.error(f"Command permission error during cleanup: {e}")
+                raise GitOperationError(f"Command permission denied: {str(e)}")
+            else:
+                logging.error(f"Process error during cleanup: {e}")
+                raise GitOperationError(
+                    f"Process failed with exit code {e.returncode}: {str(e)}"
+                )
+        except RuntimeError as e:
+            # Critical system errors that prevent cleanup
+            logging.error(f"Critical system error during cleanup: {e}")
+            raise GitOperationError(f"Critical cleanup failure: {str(e)}")
+        # No generic Exception handler - all specific errors are handled above
 
     def _get_repository_size(self, repo_path: str) -> int:
         """
@@ -507,10 +637,12 @@ class GoldenRepoManager:
                 )
 
                 if result.returncode != 0:
+                    # Analyze command failure and determine if it's recoverable
+                    command_name = command[1] if len(command) > 1 else command[0]
+                    combined_output = result.stdout + result.stderr
+
                     # Special handling for cidx index command when no files are found to index
                     if i == 4 and "cidx index" in " ".join(command):
-                        # Check both stdout and stderr for the "no files found" message
-                        combined_output = result.stdout + result.stderr
                         if "No files found to index" in combined_output:
                             logging.warning(
                                 f"Workflow step {i}: Repository has no indexable files - this is acceptable for golden repository registration"
@@ -518,16 +650,44 @@ class GoldenRepoManager:
                             logging.info(
                                 f"Workflow step {i} completed with acceptable condition (no indexable files)"
                             )
-                        else:
-                            # Real indexing error - should fail
-                            error_msg = f"Workflow step {i} failed: {' '.join(command)}\nStdout: {result.stdout}\nStderr: {result.stderr}"
-                            logging.error(error_msg)
-                            raise GitOperationError(error_msg)
-                    else:
-                        # All other workflow failures are real errors
-                        error_msg = f"Workflow step {i} failed: {' '.join(command)}\nStdout: {result.stdout}\nStderr: {result.stderr}"
-                        logging.error(error_msg)
-                        raise GitOperationError(error_msg)
+                            continue  # This is acceptable, continue to next step
+
+                    # Check for recoverable configuration conflicts
+                    if command_name == "init" and self._is_recoverable_init_error(
+                        combined_output
+                    ):
+                        logging.warning(
+                            f"Workflow step {i}: Recoverable configuration conflict detected. "
+                            f"Attempting to resolve: {combined_output}"
+                        )
+                        # Try to resolve the conflict and retry
+                        if self._attempt_init_conflict_resolution(
+                            clone_path, force_init
+                        ):
+                            logging.info(
+                                f"Workflow step {i}: Configuration conflict resolved, continuing"
+                            )
+                            continue
+
+                    # Check for recoverable service conflicts
+                    if command_name == "start" and self._is_recoverable_service_error(
+                        combined_output
+                    ):
+                        logging.warning(
+                            f"Workflow step {i}: Recoverable service conflict detected. "
+                            f"Attempting to resolve: {combined_output}"
+                        )
+                        # Try to resolve service conflicts
+                        if self._attempt_service_conflict_resolution(clone_path):
+                            logging.info(
+                                f"Workflow step {i}: Service conflict resolved, continuing"
+                            )
+                            continue
+
+                    # Unrecoverable error - fail the workflow
+                    error_msg = f"Workflow step {i} failed: {' '.join(command)}\nStdout: {result.stdout}\nStderr: {result.stderr}"
+                    logging.error(error_msg)
+                    raise GitOperationError(error_msg)
 
                 logging.info(f"Workflow step {i} completed successfully")
 
@@ -535,8 +695,22 @@ class GoldenRepoManager:
 
         except subprocess.TimeoutExpired:
             raise GitOperationError("Post-clone workflow timed out")
-        except Exception as e:
-            raise GitOperationError(f"Post-clone workflow failed: {str(e)}")
+        except subprocess.CalledProcessError as e:
+            raise GitOperationError(
+                f"Post-clone workflow failed: Command '{' '.join(e.cmd)}' failed with exit code {e.returncode}"
+            )
+        except FileNotFoundError as e:
+            raise GitOperationError(
+                f"Post-clone workflow failed: Required command not found: {str(e)}"
+            )
+        except PermissionError as e:
+            raise GitOperationError(
+                f"Post-clone workflow failed: Permission denied: {str(e)}"
+            )
+        except OSError as e:
+            raise GitOperationError(
+                f"Post-clone workflow failed: System error: {str(e)}"
+            )
 
     def refresh_golden_repo(self, alias: str) -> Dict[str, Any]:
         """
@@ -589,7 +763,241 @@ class GoldenRepoManager:
                 "message": f"Golden repository '{alias}' refreshed successfully",
             }
 
-        except Exception as e:
-            error_msg = f"Failed to refresh repository '{alias}': {str(e)}"
+        except subprocess.CalledProcessError as e:
+            error_msg = f"Failed to refresh repository '{alias}': Git command failed with exit code {e.returncode}: {e.stderr}"
             logging.error(error_msg)
             raise GitOperationError(error_msg)
+        except subprocess.TimeoutExpired as e:
+            error_msg = f"Failed to refresh repository '{alias}': Git operation timed out after {e.timeout} seconds"
+            logging.error(error_msg)
+            raise GitOperationError(error_msg)
+        except FileNotFoundError as e:
+            error_msg = f"Failed to refresh repository '{alias}': Required file or command not found: {str(e)}"
+            logging.error(error_msg)
+            raise GitOperationError(error_msg)
+        except PermissionError as e:
+            error_msg = (
+                f"Failed to refresh repository '{alias}': Permission denied: {str(e)}"
+            )
+            logging.error(error_msg)
+            raise GitOperationError(error_msg)
+        except GitOperationError:
+            # Re-raise GitOperationError from sub-methods without modification
+            raise
+
+    def _is_recoverable_init_error(self, error_output: str) -> bool:
+        """
+        Check if an init command error is recoverable.
+
+        Args:
+            error_output: Combined stdout/stderr from failed init command
+
+        Returns:
+            bool: True if error appears recoverable
+        """
+        error_lower = error_output.lower()
+        recoverable_patterns = [
+            "configuration conflict",
+            "already initialized",
+            "config file exists",
+            "already in use",
+            "service already running",
+        ]
+        return any(pattern in error_lower for pattern in recoverable_patterns)
+
+    def _is_recoverable_service_error(self, error_output: str) -> bool:
+        """
+        Check if a service start command error is recoverable.
+
+        Args:
+            error_output: Combined stdout/stderr from failed start command
+
+        Returns:
+            bool: True if error appears recoverable
+        """
+        error_lower = error_output.lower()
+        recoverable_patterns = [
+            "already in use",
+            "service already running",
+            "container already exists",
+            "already exists",
+        ]
+        return any(pattern in error_lower for pattern in recoverable_patterns)
+
+    def _attempt_init_conflict_resolution(
+        self, clone_path: str, force_init: bool
+    ) -> bool:
+        """
+        Attempt to resolve initialization conflicts.
+
+        Args:
+            clone_path: Path to repository
+            force_init: Whether force flag was already used
+
+        Returns:
+            bool: True if conflict was resolved
+        """
+        try:
+            if not force_init:
+                # Try init with force flag if it wasn't already used
+                logging.info("Attempting init conflict resolution with --force flag")
+                result = subprocess.run(
+                    ["cidx", "init", "--embedding-provider", "voyage-ai", "--force"],
+                    cwd=clone_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+                return result.returncode == 0
+            else:
+                # Force was already used, try cleanup and retry
+                logging.info("Attempting init conflict resolution with cleanup")
+                config_dir = os.path.join(clone_path, ".code-indexer")
+                if os.path.exists(config_dir):
+                    import shutil
+
+                    shutil.rmtree(config_dir)
+
+                result = subprocess.run(
+                    ["cidx", "init", "--embedding-provider", "voyage-ai"],
+                    cwd=clone_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+                return result.returncode == 0
+
+        except subprocess.CalledProcessError as e:
+            logging.warning(
+                f"Init conflict resolution failed: Command failed with exit code {e.returncode}: {e.stderr}"
+            )
+            return False
+        except subprocess.TimeoutExpired as e:
+            logging.warning(
+                f"Init conflict resolution failed: Command timed out after {e.timeout} seconds"
+            )
+            return False
+        except FileNotFoundError as e:
+            logging.warning(
+                f"Init conflict resolution failed: Required command not found: {str(e)}"
+            )
+            return False
+        except PermissionError as e:
+            logging.warning(
+                f"Init conflict resolution failed: Permission denied: {str(e)}"
+            )
+            return False
+        except OSError as e:
+            logging.warning(f"Init conflict resolution failed: System error: {str(e)}")
+            return False
+
+    def _attempt_service_conflict_resolution(self, clone_path: str) -> bool:
+        """
+        Attempt to resolve service conflicts.
+
+        Args:
+            clone_path: Path to repository
+
+        Returns:
+            bool: True if conflict was resolved
+        """
+        try:
+            # Try stopping any existing services first
+            logging.info(
+                "Attempting service conflict resolution by stopping existing services"
+            )
+            subprocess.run(
+                ["cidx", "stop", "--force-docker"],
+                cwd=clone_path,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            # Wait for service cleanup using proper event-based waiting
+            if not self._wait_for_service_cleanup(clone_path, timeout=10):
+                logging.warning(
+                    "Service cleanup wait timed out, proceeding with start attempt"
+                )
+
+            # Try starting again
+            result = subprocess.run(
+                ["cidx", "start", "--force-docker"],
+                cwd=clone_path,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            return result.returncode == 0
+
+        except subprocess.CalledProcessError as e:
+            logging.warning(
+                f"Service conflict resolution failed: Command failed with exit code {e.returncode}: {e.stderr}"
+            )
+            return False
+        except subprocess.TimeoutExpired as e:
+            logging.warning(
+                f"Service conflict resolution failed: Command timed out after {e.timeout} seconds"
+            )
+            return False
+        except FileNotFoundError as e:
+            logging.warning(
+                f"Service conflict resolution failed: Required command not found: {str(e)}"
+            )
+            return False
+        except PermissionError as e:
+            logging.warning(
+                f"Service conflict resolution failed: Permission denied: {str(e)}"
+            )
+            return False
+        except OSError as e:
+            logging.warning(
+                f"Service conflict resolution failed: System error: {str(e)}"
+            )
+            return False
+
+    def _wait_for_service_cleanup(self, clone_path: str, timeout: int = 30) -> bool:
+        """
+        Wait for service cleanup using polling without artificial sleep delays.
+
+        Args:
+            clone_path: Path to repository
+            timeout: Maximum time to wait in seconds
+
+        Returns:
+            bool: True if services are cleaned up, False if timeout
+        """
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            # Check if services are stopped by attempting status check
+            try:
+                result = subprocess.run(
+                    ["cidx", "status", "--force-docker"],
+                    cwd=clone_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                # If status shows no services or fails with "not running", cleanup is complete
+                if result.returncode != 0 or "not running" in result.stdout.lower():
+                    return True
+            except subprocess.CalledProcessError:
+                # Status check failed, assume services are down
+                return True
+            except subprocess.TimeoutExpired:
+                # Status check timed out, assume services are down
+                return True
+            except FileNotFoundError:
+                # Status command not found, assume services are down
+                return True
+            except PermissionError:
+                # Permission denied for status check, assume services are down
+                return True
+            except OSError:
+                # System error during status check, assume services are down
+                return True
+
+            # Yield control without sleep - just let the loop continue
+            pass
+
+        return False

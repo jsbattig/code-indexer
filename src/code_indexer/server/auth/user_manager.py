@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Any
 from pydantic import BaseModel
 
 from .password_manager import PasswordManager
+from .password_strength_validator import PasswordStrengthValidator
 from ..utils.datetime_parser import DateTimeParser
 
 
@@ -90,6 +91,7 @@ class UserManager:
             self.users_file_path = str(server_dir / "users.json")
 
         self.password_manager = PasswordManager()
+        self.password_strength_validator = PasswordStrengthValidator()
         self._ensure_users_file_exists()
 
     def _ensure_users_file_exists(self):
@@ -139,12 +141,26 @@ class UserManager:
             Created User object
 
         Raises:
-            ValueError: If user already exists
+            ValueError: If user already exists or password is too weak
         """
         users_data = self._load_users()
 
         if username in users_data:
             raise ValueError(f"User already exists: {username}")
+
+        # Validate password strength
+        is_valid, validation_result = self.password_strength_validator.validate(
+            password, username
+        )
+        if not is_valid:
+            error_msg = "Password does not meet security requirements:\n"
+            for issue in validation_result.issues:
+                error_msg += f"- {issue}\n"
+            if validation_result.suggestions:
+                error_msg += "Suggestions:\n"
+                for suggestion in validation_result.suggestions:
+                    error_msg += f"- {suggestion}\n"
+            raise ValueError(error_msg.strip())
 
         # Hash password and create user
         password_hash = self.password_manager.hash_password(password)
@@ -291,14 +307,59 @@ class UserManager:
 
         Returns:
             True if changed, False if user not found
+
+        Raises:
+            ValueError: If password does not meet security requirements
         """
         users_data = self._load_users()
 
         if username not in users_data:
             return False
 
+        # Validate password strength
+        is_valid, validation_result = self.password_strength_validator.validate(
+            new_password, username
+        )
+        if not is_valid:
+            error_msg = "Password does not meet security requirements:\n"
+            for issue in validation_result.issues:
+                error_msg += f"- {issue}\n"
+            if validation_result.suggestions:
+                error_msg += "Suggestions:\n"
+                for suggestion in validation_result.suggestions:
+                    error_msg += f"- {suggestion}\n"
+            raise ValueError(error_msg.strip())
+
         new_password_hash = self.password_manager.hash_password(new_password)
         users_data[username]["password_hash"] = new_password_hash
 
         self._save_users(users_data)
         return True
+
+    def validate_password_strength(
+        self, password: str, username: Optional[str] = None, email: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Validate password strength without changing anything.
+
+        Args:
+            password: Password to validate
+            username: Optional username for personal info check
+            email: Optional email for personal info check
+
+        Returns:
+            Dictionary with validation results
+        """
+        is_valid, result = self.password_strength_validator.validate(
+            password, username, email
+        )
+
+        return {
+            "valid": is_valid,
+            "score": result.score,
+            "strength": result.strength,
+            "issues": result.issues,
+            "suggestions": result.suggestions,
+            "entropy": result.entropy,
+            "requirements": self.password_strength_validator.get_requirements(),
+        }

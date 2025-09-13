@@ -558,6 +558,48 @@ class BackgroundJobManager:
 
         logging.info("Background job manager shutdown complete")
 
+    def get_jobs_by_operation_and_params(
+        self, operation_types: list[str], params_filter: Optional[Dict[str, Any]] = None
+    ) -> list[Dict[str, Any]]:
+        """
+        Get jobs by operation type and optional parameter filtering.
+
+        This is a simplified implementation for repository deletion job cancellation.
+        In a real implementation, this would parse job parameters and filter accordingly.
+
+        Args:
+            operation_types: List of operation types to filter by
+            params_filter: Optional dictionary of parameters to match (currently unused)
+
+        Returns:
+            List of job dictionaries matching the criteria
+        """
+        with self._lock:
+            matching_jobs = []
+            for job in self.jobs.values():
+                if job.operation_type in operation_types:
+                    # For now, return basic job info
+                    # In a real implementation, we'd parse stored parameters and filter
+                    job_dict = {
+                        "job_id": job.job_id,
+                        "operation_type": job.operation_type,
+                        "status": job.status.value,
+                        "username": job.username,
+                        "created_at": job.created_at.isoformat(),
+                        "started_at": (
+                            job.started_at.isoformat() if job.started_at else None
+                        ),
+                        "completed_at": (
+                            job.completed_at.isoformat() if job.completed_at else None
+                        ),
+                        "progress": job.progress,
+                        "result": job.result,
+                        "error": job.error,
+                    }
+                    matching_jobs.append(job_dict)
+
+            return matching_jobs
+
     def _persist_jobs(self) -> None:
         """
         Persist jobs to storage file.

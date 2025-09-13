@@ -98,8 +98,8 @@ class TestDeleteEndpointErrorHandling:
         assert "Failed to clean up repository files" in response.json()["detail"]
         assert "No such file or directory" in response.json()["detail"]
 
-    def test_delete_successful_returns_200(self, client, auth_headers, monkeypatch):
-        """Test successful DELETE returns HTTP 200."""
+    def test_delete_successful_returns_204(self, client, auth_headers, monkeypatch):
+        """Test successful DELETE returns HTTP 204 No Content."""
         mock_manager = MagicMock()
         # Mock successful removal
         mock_manager.remove_golden_repo.return_value = {
@@ -114,8 +114,9 @@ class TestDeleteEndpointErrorHandling:
             "/api/admin/golden-repos/test-repo", headers=auth_headers
         )
 
-        assert response.status_code == 200
-        assert "removed successfully" in response.json()["message"]
+        assert response.status_code == 204
+        # 204 No Content should have no response body
+        assert response.content == b""
 
     def test_delete_generic_error_returns_500(self, client, auth_headers, monkeypatch):
         """Test DELETE with generic error returns HTTP 500."""
