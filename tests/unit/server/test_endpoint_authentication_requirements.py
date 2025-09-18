@@ -44,7 +44,7 @@ class TestEndpointAuthenticationRequirements:
     def test_semantic_search_endpoint_requires_authentication(self, client):
         """Semantic search endpoint must require authentication."""
         # Request without authentication should fail
-        search_data = {"query": "test query", "limit": 10, "include_source": False}
+        search_data = {"query_text": "test query", "limit": 10, "include_source": False}
         response = client.post("/api/repositories/test_repo/search", json=search_data)
 
         assert response.status_code in [

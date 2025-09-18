@@ -208,7 +208,7 @@ class FileChunkingManager:
             return cancelled_future
 
         # SURGICAL FIX: Remove individual callback spam - no more "📥 Queued" messages
-        # ConsolidatedFileTracker will handle the fixed N-line display
+        # CleanSlotTracker will handle the fixed N-line display
 
         # Submit to worker thread (immediate return)
         # Always use clean implementation
@@ -240,6 +240,9 @@ class FileChunkingManager:
         This method creates the point structure expected by Qdrant
         using the existing metadata patterns from HighThroughputProcessor.
 
+        UNIVERSAL TIMESTAMP COLLECTION: Always collects file_last_modified
+        and indexed_timestamp for staleness detection, regardless of git status.
+
         Args:
             chunk: Chunk data from FixedSizeChunker
             embedding: Vector embedding from VectorCalculationManager
@@ -253,6 +256,20 @@ class FileChunkingManager:
         # Import here to avoid circular imports
         from .metadata_schema import GitAwareMetadataSchema
 
+        # UNIVERSAL TIMESTAMP COLLECTION: Always collect file modification timestamp
+        try:
+            file_stat = file_path.stat()
+            file_last_modified = file_stat.st_mtime
+            file_size = file_stat.st_size
+        except (OSError, IOError) as e:
+            # Don't fail indexing for timestamp issues - set to None and continue
+            logger.warning(f"Failed to get file stats for {file_path}: {e}")
+            file_last_modified = None
+            file_size = metadata.get("file_size", 0)  # Fallback to metadata or 0
+
+        # Always record when indexing occurred
+        indexed_timestamp = time.time()
+
         # Create Git-aware metadata
         metadata_info = None
         if metadata.get("git_available", False):
@@ -264,7 +281,7 @@ class FileChunkingManager:
         else:
             metadata_info = {
                 "file_mtime": metadata.get("file_mtime"),
-                "file_size": metadata.get("file_size", file_path.stat().st_size),
+                "file_size": metadata.get("file_size", file_size),
             }
 
         # Create payload using existing schema
@@ -272,7 +289,7 @@ class FileChunkingManager:
             path=str(file_path),
             content=chunk["text"],
             language=chunk["file_extension"],
-            file_size=file_path.stat().st_size,
+            file_size=file_size,  # Use already collected file_size
             chunk_index=chunk["chunk_index"],
             total_chunks=chunk["total_chunks"],
             project_id=metadata["project_id"],
@@ -282,6 +299,8 @@ class FileChunkingManager:
             ),
             line_start=chunk.get("line_start"),
             line_end=chunk.get("line_end"),
+            file_last_modified=file_last_modified,
+            indexed_timestamp=indexed_timestamp,
         )
 
         # Add filesystem metadata for non-git projects
@@ -290,6 +309,8 @@ class FileChunkingManager:
                 payload["filesystem_mtime"] = metadata_info["file_mtime"]
             if "file_size" in metadata_info:
                 payload["filesystem_size"] = metadata_info["file_size"]
+
+        # UNIVERSAL TIMESTAMP COLLECTION: Timestamp fields are now handled by GitAwareMetadataSchema
 
         # Create point ID using hash of file and chunk (ensuring uniqueness)
         point_id_data = (

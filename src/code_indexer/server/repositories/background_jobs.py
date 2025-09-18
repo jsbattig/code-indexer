@@ -76,9 +76,7 @@ class BackgroundJobManager:
         if self.storage_path:
             self._load_jobs()
 
-        logging.info(
-            f"Enhanced background job manager initialized (storage: {storage_path})"
-        )
+        # Background job manager initialized silently
 
     def submit_job(
         self,

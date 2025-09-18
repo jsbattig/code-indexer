@@ -9,6 +9,7 @@ import os
 import subprocess
 import time
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Generator, Optional
 from contextlib import contextmanager
@@ -454,3 +455,43 @@ venv/
         # Cleanup: remove the test repo directory
         if repo_path.exists():
             shutil.rmtree(repo_path, ignore_errors=True)
+
+
+# Authentication Test Helpers - Following MESSI Rule #1: Real components only
+# StandardTestAuth has been REMOVED due to 401 authentication failures
+# Use RealComponentTestInfrastructure from tests.fixtures.test_infrastructure instead
+
+
+@pytest.fixture(autouse=True)
+def clear_rate_limiters():
+    """Clear rate limiter state before each test to prevent cross-test contamination."""
+    try:
+        from code_indexer.server.auth.rate_limiter import (
+            password_change_rate_limiter,
+            refresh_token_rate_limiter,
+        )
+
+        # Complete state reset for password change rate limiter
+        password_change_rate_limiter._attempts.clear()
+
+        # Complete state reset for refresh token rate limiter
+        refresh_token_rate_limiter._attempts.clear()
+
+        # Also clear any app module instances that might have cached rate limiters
+        import code_indexer.server.app as app_module
+
+        if hasattr(app_module, "password_change_rate_limiter"):
+            app_module.password_change_rate_limiter._attempts.clear()
+        if hasattr(app_module, "refresh_token_rate_limiter"):
+            app_module.refresh_token_rate_limiter._attempts.clear()
+
+    except (ImportError, AttributeError):
+        pass  # Rate limiter might not be available in all test contexts
+
+
+@pytest.fixture
+def temp_audit_dir():
+    """Provide temporary directory for audit logging tests."""
+    temp_dir = tempfile.mkdtemp()
+    yield Path(temp_dir)
+    shutil.rmtree(temp_dir, ignore_errors=True)

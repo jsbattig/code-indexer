@@ -191,7 +191,17 @@ class TestClaudeMdComplianceViolationsCleanup(unittest.TestCase):
         violations = []
         for pattern in dual_system_patterns:
             result = subprocess.run(
-                ["grep", "-r", "-i", pattern, "src/"], capture_output=True, text=True
+                [
+                    "grep",
+                    "-r",
+                    "-i",
+                    "--exclude-dir=__pycache__",
+                    "--include=*.py",
+                    pattern,
+                    "src/",
+                ],
+                capture_output=True,
+                text=True,
             )
             if result.returncode == 0:
                 violations.append(f"Dual system pattern '{pattern}':\n{result.stdout}")

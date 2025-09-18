@@ -7,7 +7,7 @@ import logging
 import json
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
-import yaml  # type: ignore
+import yaml  # type: ignore[import-untyped]
 
 from rich.console import Console
 from .health_checker import HealthChecker
@@ -37,6 +37,7 @@ class DockerManager:
         self.indexing_root: Optional[Path] = (
             None  # Will be set via set_indexing_root() for first-time setup
         )
+        self._closed = False  # Track if resources have been closed
 
     def _detect_project_name(self) -> str:
         """Detect project name from current folder name for qdrant collection naming."""
@@ -2190,7 +2191,7 @@ class DockerManager:
         self, endpoint: str, method: str = "GET", data: Optional[Dict] = None
     ) -> Dict[str, Any]:
         """Make a direct HTTP request to Ollama service."""
-        import requests  # type: ignore
+        import requests  # type: ignore[import-untyped]
         import json
 
         base_url = self._get_service_url("ollama")
@@ -2226,7 +2227,7 @@ class DockerManager:
         self, endpoint: str, method: str = "GET", data: Optional[Dict] = None
     ) -> Dict[str, Any]:
         """Make a direct HTTP request to Qdrant service."""
-        import requests  # type: ignore
+        import requests
         import json
 
         base_url = self._get_service_url("qdrant")
@@ -2439,7 +2440,7 @@ class DockerManager:
 
     def _check_qdrant_with_recovery_monitoring(self) -> Tuple[bool, str]:
         """Check Qdrant status with intelligent recovery monitoring."""
-        import requests  # type: ignore
+        import requests
 
         # First try direct HTTP connection
         try:
@@ -2476,7 +2477,7 @@ class DockerManager:
         project_config: Optional[Dict[str, str]] = None,
     ) -> bool:
         """Wait for services to be healthy using retry logic with exponential backoff and intelligent Qdrant monitoring."""
-        import requests  # type: ignore
+        import requests
 
         # Get list of required services dynamically
         required_services = self.get_required_services()
@@ -2854,7 +2855,7 @@ class DockerManager:
 
     def status(self) -> Dict[str, Any]:
         """Get status of services using direct HTTP calls."""
-        import requests  # type: ignore
+        import requests
 
         # Check ollama service availability
         ollama_running = False
@@ -4357,8 +4358,16 @@ class DockerManager:
         # Project-local Qdrant storage - use relative path for CoW compatibility
         project_qdrant_dir = project_root / ".code-indexer" / "qdrant"
 
-        # Ensure project Qdrant directory exists
+        # Ensure project Qdrant directory exists with validation
         project_qdrant_dir.mkdir(parents=True, exist_ok=True)
+
+        # Validate directory is actually accessible
+        if not project_qdrant_dir.exists() or not os.access(
+            project_qdrant_dir, os.W_OK
+        ):
+            raise RuntimeError(
+                f"Qdrant storage directory not accessible: {project_qdrant_dir}"
+            )
 
         # Use relative path from compose file location for CoW clone compatibility
         # The compose file is in ~/.tmp/code-indexer/ so we need to calculate relative path
@@ -5265,6 +5274,43 @@ class DockerManager:
 
         except Exception as e:
             self.console.print(f"⚠️  Could not clean WAL files: {e}", style="yellow")
+
+    def close(self) -> None:
+        """
+        Properly close and clean up resources held by DockerManager.
+
+        This method ensures proper resource cleanup following MESSI Rule #8
+        resource management standards.
+        """
+        if self._closed:
+            return  # Already closed
+
+        try:
+            # Clean up health checker resources
+            if hasattr(self.health_checker, "close"):
+                self.health_checker.close()
+        except Exception as e:
+            # Log but don't raise - cleanup should be best-effort
+            logging.warning(f"Failed to close health checker: {e}")
+
+        try:
+            # Clean up port registry resources
+            if hasattr(self.port_registry, "close"):
+                self.port_registry.close()
+        except Exception as e:
+            # Log but don't raise - cleanup should be best-effort
+            logging.warning(f"Failed to close port registry: {e}")
+
+        # Mark as closed to prevent accidental access
+        self._closed = True
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit with proper resource cleanup."""
+        self.close()
 
 
 def get_project_compose_file_path(

@@ -1,12 +1,14 @@
 """Command line interface for Code Indexer."""
 
+import asyncio
+import logging
 import os
 import subprocess
 import sys
 import signal
 import time
 from pathlib import Path
-from typing import Optional, Union, Callable, Dict, Any
+from typing import Optional, Union, Callable, Dict, Any, List
 
 import click
 from rich.console import Console
@@ -25,16 +27,21 @@ from .services.claude_integration import (
     check_claude_sdk_availability,
 )
 from .services.config_fixer import ConfigurationRepairer, generate_fix_report
+from .disabled_commands import get_command_mode_icons
 from .utils.enhanced_messaging import (
     get_conflicting_flags_message,
     get_service_unavailable_message,
 )
 from .services.cidx_prompt_generator import create_cidx_ai_prompt
+from .mode_detection.command_mode_detector import CommandModeDetector, find_project_root
+from .disabled_commands import require_mode
 
 # MultiThreadedProgressManager imported locally where needed
 
 # CoW-related imports removed as part of CoW cleanup Epic
 from . import __version__
+
+logger = logging.getLogger(__name__)
 
 
 def _generate_language_help_text() -> str:
@@ -547,7 +554,48 @@ class GracefulInterruptHandler:
 console = Console()
 
 
-@click.group(invoke_without_command=True)
+class ModeAwareGroup(click.Group):
+    """Custom Click Group that adds mode compatibility icons to command help."""
+
+    def format_commands(self, ctx, formatter):
+        """Format commands with mode compatibility icons."""
+        commands = []
+        for subcommand in self.list_commands(ctx):
+            cmd = self.get_command(ctx, subcommand)
+            if cmd is None:
+                continue
+
+            # Get mode icons for this command
+            icons = get_command_mode_icons(subcommand)
+
+            # Get help text with much longer limit to avoid early truncation
+            help_text = cmd.get_short_help_str(limit=120)
+
+            commands.append((subcommand, icons, help_text))
+
+        if commands:
+            formatter.write_heading("Commands")
+
+            # Custom formatting with fixed-width columns accounting for emoji width
+            for cmd_name, icons, help_text in sorted(commands):
+                # Emojis take 2 visual columns each, so adjust padding
+                # Calculate visual width: each emoji = 2 chars, regular chars = 1 char
+                emoji_count = icons.count("🌐") + icons.count("🐳")
+                visual_width = len(icons) + emoji_count
+
+                # Target total width for command part is 24 chars
+                padding_needed = max(0, 24 - visual_width - len(cmd_name))
+
+                formatted_line = (
+                    f"  {icons} {cmd_name}{' ' * padding_needed} {help_text}"
+                )
+                formatter.write(formatted_line + "\n")
+
+            formatter.write("\n")
+            formatter.write("Legend: 🌐 Remote | 🐳 Local\n")
+
+
+@click.group(invoke_without_command=True, cls=ModeAwareGroup)
 @click.option("--config", "-c", type=click.Path(exists=False), help="Config file path")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 @click.option(
@@ -648,6 +696,11 @@ def cli(
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
 
+    # Configure logging to suppress noisy third-party messages
+    if not verbose:
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("root").setLevel(logging.WARNING)
+
     # Handle --use-cidx-prompt flag (early return)
     if use_cidx_prompt:
         try:
@@ -685,11 +738,29 @@ def cli(
     if path:
         start_dir = Path(path).resolve()
         ctx.obj["config_manager"] = ConfigManager.create_with_backtrack(start_dir)
+        project_root = find_project_root(start_dir)
     elif config:
         ctx.obj["config_manager"] = ConfigManager(Path(config))
+        project_root = Path(
+            config
+        ).parent.parent  # Assume config is in .code-indexer/config.json
     else:
         # Always use backtracking by default to find config in parent directories
         ctx.obj["config_manager"] = ConfigManager.create_with_backtrack()
+        project_root = find_project_root(Path.cwd())
+
+    # Detect operational mode for command routing
+    mode_detector = CommandModeDetector(project_root)
+    detected_mode = mode_detector.detect_mode()
+
+    # Store mode information in Click context for command routing
+    ctx.obj["mode"] = detected_mode
+    ctx.obj["project_root"] = project_root
+    ctx.obj["mode_detector"] = mode_detector
+
+    if verbose:
+        console.print(f"🔍 Detected mode: {detected_mode}", style="dim")
+        console.print(f"📁 Project root: {project_root}", style="dim")
 
 
 @cli.command()
@@ -739,6 +810,21 @@ def cli(
     default=100,
     help="Qdrant segment size in MB (default: 100MB for optimal performance)",
 )
+@click.option(
+    "--remote",
+    type=str,
+    help="Initialize remote mode with server URL (e.g., https://cidx.example.com)",
+)
+@click.option(
+    "--username",
+    type=str,
+    help="Username for remote server authentication",
+)
+@click.option(
+    "--password",
+    type=str,
+    help="Password for remote server authentication",
+)
 @click.pass_context
 def init(
     ctx,
@@ -751,6 +837,9 @@ def init(
     setup_global_registry: bool,
     create_override_file: bool,
     qdrant_segment_size: int,
+    remote: Optional[str],
+    username: Optional[str],
+    password: Optional[str],
 ):
     """Initialize code indexing in current directory (OPTIONAL).
 
@@ -761,6 +850,11 @@ def init(
     NOTE: This command is optional. If you skip init and run 'start' directly,
     a default configuration will be created automatically with Ollama provider
     and standard settings. Only use init if you want to customize settings.
+
+    \b
+    INITIALIZATION MODES:
+      🏠 Local Mode (default): Creates local configuration with Ollama + Qdrant
+      ☁️  Remote Mode: Connects to existing CIDX server (--remote option)
 
     \b
     CONFIGURATION OPTIONS:
@@ -811,6 +905,62 @@ def init(
     • exclude_dirs: ["node_modules", "dist", "my_temp_folder"]
     • file_extensions: ["py", "js", "ts", "java", "cpp"]
     """
+    # Handle remote mode initialization
+    if remote:
+        if not username or not password:
+            console.print(
+                "❌ Remote initialization requires --username and --password",
+                style="red",
+            )
+            console.print()
+            console.print(
+                "Usage: cidx init --remote <server-url> --username <user> --password <pass>"
+            )
+            console.print()
+            console.print("Example:")
+            console.print(
+                "  cidx init --remote https://cidx.example.com --username john --password secret123"
+            )
+            sys.exit(1)
+
+        # Import remote initialization functionality
+        try:
+            from .remote.initialization import initialize_remote_mode
+            from .remote.exceptions import RemoteInitializationError
+
+            # Determine target directory
+            target_dir = Path(codebase_dir) if codebase_dir else Path.cwd()
+
+            # Run remote initialization asynchronously
+            try:
+                asyncio.run(
+                    initialize_remote_mode(
+                        project_root=target_dir,
+                        server_url=remote,
+                        username=username,
+                        password=password,
+                        console=console,
+                    )
+                )
+                sys.exit(0)
+
+            except RemoteInitializationError as e:
+                console.print(
+                    f"❌ Remote initialization failed: {e.message}", style="red"
+                )
+                if e.details:
+                    console.print(f"   Details: {e.details}", style="red")
+                console.print()
+                console.print(
+                    "Please check your server URL, credentials, and network connectivity."
+                )
+                sys.exit(1)
+
+        except ImportError as e:
+            console.print("❌ Remote functionality not available", style="red")
+            console.print(f"Import error: {e}")
+            sys.exit(1)
+
     # For init command, always create config in current directory (or specified codebase_dir)
     # Don't use the CLI context's config_manager which may have found a parent config
     target_dir = Path(codebase_dir) if codebase_dir else Path.cwd()
@@ -979,6 +1129,10 @@ def init(
         # Save with documentation
         config_manager.save_with_documentation(config)
 
+        # Create qdrant storage directory proactively during init to prevent race condition
+        project_qdrant_dir = config.codebase_dir / ".code-indexer" / "qdrant"
+        project_qdrant_dir.mkdir(parents=True, exist_ok=True)
+
         # Create override file (by default or if explicitly requested)
         project_root = config.codebase_dir
         if (
@@ -1061,6 +1215,7 @@ def init(
     help="Maximum request queue size (default: 512)",
 )
 @click.pass_context
+@require_mode("local")
 def start(
     ctx,
     model: Optional[str],
@@ -1440,6 +1595,7 @@ def start(
     help="Rebuild payload indexes for optimal performance",
 )
 @click.pass_context
+@require_mode("local")
 def index(
     ctx,
     clear: bool,
@@ -1741,14 +1897,16 @@ def index(
 
         # Clean API for components to use directly (no magic parameters!)
         # Note: mypy doesn't like adding attributes to functions, but this works at runtime
-        progress_callback.show_setup_message = show_setup_message  # type: ignore
-        progress_callback.update_file_progress = lambda current, total, info: (  # type: ignore
+        progress_callback.show_setup_message = show_setup_message  # type: ignore[attr-defined]
+        progress_callback.update_file_progress = lambda current, total, info: (  # type: ignore[attr-defined]
             check_for_interruption()
             or update_file_progress_with_concurrent_files(current, total, info)
         )
-        progress_callback.show_error_message = show_error_message  # type: ignore
-        progress_callback.check_for_interruption = check_for_interruption  # type: ignore
-        progress_callback.reset_progress_timers = lambda: progress_manager.reset_progress_timers()  # type: ignore
+        progress_callback.show_error_message = show_error_message  # type: ignore[attr-defined]
+        progress_callback.check_for_interruption = check_for_interruption  # type: ignore[attr-defined]
+        progress_callback.reset_progress_timers = (  # type: ignore[attr-defined]
+            lambda: progress_manager.reset_progress_timers()
+        )
 
         # Check for conflicting flags
         if clear and reconcile:
@@ -1874,6 +2032,7 @@ def index(
 @click.option("--batch-size", default=50, help="Batch size for processing")
 @click.option("--initial-sync", is_flag=True, help="Perform full sync before watching")
 @click.pass_context
+@require_mode("local")
 def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
     """Git-aware watch for file changes with branch support."""
     config_manager = ctx.obj["config_manager"]
@@ -2051,6 +2210,7 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
     help="Quiet mode - only show results, no headers or metadata",
 )
 @click.pass_context
+@require_mode("local", "remote")
 def query(
     ctx,
     query: str,
@@ -2073,6 +2233,12 @@ def query(
       • Natural language: Describe what you're looking for
       • Code patterns: Search for specific implementations
       • Git-aware: Searches within current project/branch context
+
+    \b
+    REMOTE MODE REPOSITORY LINKING:
+      • Remote mode requires git repository context
+      • Uses repository linking to match local repository with remote server
+      • Queries run against your specific repository and branch
 
     \b
     FILTERING OPTIONS:
@@ -2100,6 +2266,222 @@ def query(
 
     Results show file paths, matched content, and similarity scores.
     """
+    # Get mode information from context
+    mode = ctx.obj.get("mode", "uninitialized")
+    project_root = ctx.obj.get("project_root")
+
+    # Handle uninitialized mode
+    if mode == "uninitialized":
+        console.print("❌ Repository not initialized for CIDX", style="red")
+        console.print()
+        console.print("To get started, choose one of these initialization options:")
+        console.print()
+        console.print("🏠 Local Mode (recommended for getting started):")
+        console.print("   cidx init          # Initialize with local Ollama + Qdrant")
+        console.print("   cidx start         # Start local services")
+        console.print("   cidx index         # Index your codebase")
+        console.print()
+        console.print("☁️  Remote Mode (connect to existing CIDX server):")
+        console.print(
+            "   cidx init --remote <server-url> --username <user> --password <pass>"
+        )
+        console.print()
+        console.print("For more help: cidx init --help")
+        sys.exit(1)
+
+    # Handle remote mode
+    if mode == "remote":
+        console.print(
+            "🔗 Remote mode detected - executing query on remote server...",
+            style="blue",
+        )
+
+        try:
+            # Execute remote query with transparent repository linking
+            from .remote.query_execution import execute_remote_query
+
+            results = asyncio.run(
+                execute_remote_query(
+                    query_text=query,
+                    limit=limit,
+                    project_root=project_root,
+                    language=language,
+                    path=path,
+                    min_score=min_score,
+                    include_source=True,
+                    accuracy=accuracy,
+                )
+            )
+
+            if not results:
+                console.print("No results found.", style="yellow")
+                sys.exit(0)
+
+            # Convert API client results to local format for display
+            converted_results: List[Dict[str, Any]] = []
+            for result in results:
+                converted_result = {
+                    "score": getattr(
+                        result, "score", getattr(result, "similarity_score", 0.0)
+                    ),
+                    "payload": {
+                        "path": result.file_path,
+                        "language": getattr(result, "language", None),
+                        "content": getattr(
+                            result, "content", getattr(result, "code_snippet", "")
+                        ),
+                        "line_start": getattr(result, "line_start", result.line_number),
+                        "line_end": getattr(result, "line_end", result.line_number + 1),
+                    },
+                }
+
+                # Add staleness info if available (EnhancedQueryResultItem)
+                if hasattr(result, "staleness_indicator"):
+                    converted_result["staleness"] = {
+                        "is_stale": result.is_stale,
+                        "staleness_indicator": result.staleness_indicator,
+                        "staleness_delta_seconds": result.staleness_delta_seconds,
+                    }
+
+                converted_results.append(converted_result)
+
+            # Use existing display logic for local queries
+            if not quiet:
+                console.print(f"\n✅ Found {len(converted_results)} results:")
+                console.print("=" * 80)
+
+            # Display each result using existing logic
+            for i, result in enumerate(converted_results, 1):
+                payload = result["payload"]
+                score = result["score"]
+
+                # File info
+                file_path = payload.get("path", "unknown")
+                language = payload.get("language", "unknown")
+                content = payload.get("content", "")
+
+                # Line number info
+                line_start = payload.get("line_start")
+                line_end = payload.get("line_end")
+
+                # Create file path with line numbers
+                if line_start is not None and line_end is not None:
+                    if line_start == line_end:
+                        file_path_with_lines = f"{file_path}:{line_start}"
+                    else:
+                        file_path_with_lines = f"{file_path}:{line_start}-{line_end}"
+                else:
+                    file_path_with_lines = file_path
+
+                # Get staleness info if available
+                staleness_info = result.get("staleness", {})
+                staleness_indicator = staleness_info.get("staleness_indicator", "")
+
+                if quiet:
+                    # Quiet mode - minimal output: score, staleness indicator, path with line numbers
+                    if staleness_indicator:
+                        console.print(
+                            f"{score:.3f} {staleness_indicator} {file_path_with_lines}"
+                        )
+                    else:
+                        console.print(f"{score:.3f} {file_path_with_lines}")
+                    if content:
+                        # Show content with line numbers
+                        content_lines = content.split("\n")
+                        if line_start is not None:
+                            numbered_lines = []
+                            for j, line in enumerate(content_lines):
+                                line_num = line_start + j
+                                numbered_lines.append(f"{line_num:3}: {line}")
+                            content_with_line_numbers = "\n".join(numbered_lines)
+                            console.print(content_with_line_numbers)
+                        else:
+                            console.print(content)
+                else:
+                    # Full display mode
+                    header = f"[{i}] Score: {score:.3f}"
+                    if staleness_indicator:
+                        header += f" | {staleness_indicator}"
+                    console.print(f"\n{header}")
+
+                    console.print(f"File: {file_path_with_lines}")
+                    if language != "unknown":
+                        console.print(f"Language: {language}")
+
+                    # Add staleness details in verbose mode
+                    if staleness_info.get("staleness_delta_seconds") is not None:
+                        delta_seconds = staleness_info["staleness_delta_seconds"]
+                        if delta_seconds > 0:
+                            delta_hours = delta_seconds / 3600
+                            if delta_hours < 1:
+                                delta_minutes = int(delta_seconds / 60)
+                                staleness_detail = (
+                                    f"Local file newer by {delta_minutes}m"
+                                )
+                            elif delta_hours < 24:
+                                delta_hours_int = int(delta_hours)
+                                staleness_detail = (
+                                    f"Local file newer by {delta_hours_int}h"
+                                )
+                            else:
+                                delta_days = int(delta_hours / 24)
+                                staleness_detail = f"Local file newer by {delta_days}d"
+                            console.print(f"Staleness: {staleness_detail}")
+
+                    if content:
+                        if not quiet:
+                            console.print(f"Relevance: {score:.3f}/1.0")
+                        console.print("Content:")
+                        console.print("-" * 40)
+                        console.print(content)
+                        console.print("-" * 40)
+
+        except Exception as e:
+            # Check for repository linking related errors and provide helpful guidance
+            error_message = str(e).lower()
+
+            if (
+                "git repository" in error_message
+                or "repository linking" in error_message
+            ):
+                console.print(
+                    "❌ Remote query requires git repository context", style="red"
+                )
+                console.print()
+                console.print(
+                    "🔗 Remote mode uses repository linking to match your local repository"
+                )
+                console.print("   with indexed repositories on the remote CIDX server.")
+                console.print()
+                console.print("📋 To resolve this, choose one of these options:")
+                console.print()
+                console.print("1️⃣  Initialize git repository in current directory:")
+                console.print("   git init")
+                console.print("   git remote add origin <your-repository-url>")
+                console.print()
+                console.print(
+                    "2️⃣  Clone existing repository that's indexed on remote server:"
+                )
+                console.print("   git clone <repository-url>")
+                console.print("   cd <repository-name>")
+                console.print('   cidx query "your search"')
+                console.print()
+                console.print(
+                    "💡 Repository linking ensures you get results relevant to your"
+                )
+                console.print("   current codebase context and branch.")
+            else:
+                console.print(f"❌ Remote query failed: {e}", style="red")
+
+            sys.exit(1)
+
+        # Return early to avoid falling through to local mode execution
+        return
+
+    # Continue with local mode execution
+    if not quiet:
+        console.print(f"🔍 Executing local query in: {project_root}", style="dim")
+
     config_manager = ctx.obj["config_manager"]
 
     try:
@@ -2272,7 +2654,7 @@ def query(
                     {"key": "path", "match": {"text": path}}
                 )
 
-            results = qdrant_client.search(
+            git_results: List[Dict[str, Any]] = qdrant_client.search(
                 query_vector=query_embedding,
                 filter_conditions=git_filter_conditions,
                 limit=limit,
@@ -2282,11 +2664,11 @@ def query(
             # Apply minimum score filtering (language and path already handled by Qdrant filters)
             if min_score:
                 filtered_results = []
-                for result in results:
+                for result in git_results:
                     # Filter by minimum score
                     if result.get("score", 0) >= min_score:
                         filtered_results.append(result)
-                results = filtered_results
+                git_results = filtered_results
         else:
             # Use model-specific search for non-git projects
             raw_results = qdrant_client.search_with_model_filter(
@@ -2301,10 +2683,72 @@ def query(
             # Apply git-aware filtering
             if not quiet:
                 console.print("🔍 Applying git-aware filtering...")
-            results = query_service.filter_results_by_current_branch(raw_results)
+            git_results = query_service.filter_results_by_current_branch(raw_results)
 
         # Limit to requested number after filtering
-        results = results[:limit]
+        results = git_results[:limit]
+
+        # Apply staleness detection to local query results
+        if results:
+            try:
+                # Convert local results to QueryResultItem format for staleness detection
+                from .api_clients.remote_query_client import QueryResultItem
+                from .remote.staleness_detector import StalenessDetector
+
+                query_result_items = []
+                for result in results:
+                    payload = result["payload"]
+
+                    # Extract file metadata for staleness comparison
+                    file_last_modified = payload.get("file_last_modified")
+                    indexed_at = payload.get("indexed_at")
+
+                    query_item = QueryResultItem(
+                        score=result["score"],
+                        file_path=payload.get("path", "unknown"),
+                        line_start=payload.get("line_start", 1),
+                        line_end=payload.get("line_end", 1),
+                        content=payload.get("content", ""),
+                        language=payload.get("language"),
+                        file_last_modified=file_last_modified,
+                        indexed_timestamp=indexed_at,
+                    )
+                    query_result_items.append(query_item)
+
+                # Apply staleness detection in local mode
+                staleness_detector = StalenessDetector()
+                enhanced_results = staleness_detector.apply_staleness_detection(
+                    query_result_items, project_root, mode="local"
+                )
+
+                # Convert enhanced results back to local format but preserve staleness info
+                enhanced_local_results = []
+                for enhanced in enhanced_results:
+                    # Find corresponding original result
+                    original = next(
+                        r
+                        for r in results
+                        if r["payload"].get("path") == enhanced.file_path
+                    )
+
+                    # Add staleness metadata to the result
+                    enhanced_result = original.copy()
+                    enhanced_result["staleness"] = {
+                        "is_stale": enhanced.is_stale,
+                        "staleness_indicator": enhanced.staleness_indicator,
+                        "staleness_delta_seconds": enhanced.staleness_delta_seconds,
+                    }
+                    enhanced_local_results.append(enhanced_result)
+
+                # Replace results with staleness-enhanced results
+                results = enhanced_local_results
+
+            except Exception as e:
+                # Graceful fallback - continue with original results if staleness detection fails
+                if not quiet:
+                    console.print(
+                        f"⚠️  Staleness detection unavailable: {e}", style="dim yellow"
+                    )
 
         if not results:
             if not quiet:
@@ -2324,6 +2768,10 @@ def query(
             language = payload.get("language", "unknown")
             content = payload.get("content", "")
 
+            # Staleness info (if available)
+            staleness_info = result.get("staleness", {})
+            staleness_indicator = staleness_info.get("staleness_indicator", "")
+
             # Line number info
             line_start = payload.get("line_start")
             line_end = payload.get("line_end")
@@ -2338,8 +2786,13 @@ def query(
                 file_path_with_lines = file_path
 
             if quiet:
-                # Quiet mode - minimal output: score, path with line numbers
-                console.print(f"{score:.3f} {file_path_with_lines}")
+                # Quiet mode - minimal output: score, staleness, path with line numbers
+                if staleness_indicator:
+                    console.print(
+                        f"{score:.3f} {staleness_indicator} {file_path_with_lines}"
+                    )
+                else:
+                    console.print(f"{score:.3f} {file_path_with_lines}")
                 if content:
                     # Show full content with line numbers in quiet mode (no truncation)
                     content_lines = content.split("\n")
@@ -2370,10 +2823,30 @@ def query(
                     header += f" | 🏷️  Language: {language}"
                 header += f" | 📊 Score: {score:.3f}"
 
+                # Add staleness indicator to header if available
+                if staleness_indicator:
+                    header += f" | {staleness_indicator}"
+
                 console.print(f"\n[bold cyan]{header}[/bold cyan]")
 
                 # Enhanced metadata display
                 metadata_info = f"📏 Size: {file_size} bytes | 🕒 Indexed: {indexed_at}"
+
+                # Add staleness details in verbose mode
+                if staleness_info.get("staleness_delta_seconds") is not None:
+                    delta_seconds = staleness_info["staleness_delta_seconds"]
+                    if delta_seconds > 0:
+                        delta_hours = delta_seconds / 3600
+                        if delta_hours < 1:
+                            delta_minutes = int(delta_seconds / 60)
+                            staleness_detail = f"Local file newer by {delta_minutes}m"
+                        elif delta_hours < 24:
+                            delta_hours_int = int(delta_hours)
+                            staleness_detail = f"Local file newer by {delta_hours_int}h"
+                        else:
+                            delta_days = int(delta_hours / 24)
+                            staleness_detail = f"Local file newer by {delta_days}d"
+                        metadata_info += f" | ⏰ Staleness: {staleness_detail}"
 
                 if git_available:
                     # Use current branch for display (content points are branch-agnostic)
@@ -2913,34 +3386,46 @@ def claude(
 )
 @click.pass_context
 def status(ctx, force_docker: bool):
-    """Show status of services and index.
+    """Show status of services and index (adapted for current mode).
     \b
     Displays comprehensive information about your code-indexer installation:
     \b
-    SERVICE STATUS:
+    LOCAL MODE:
       • Ollama: AI embedding service status
       • Qdrant: Vector database status
       • Docker containers: Running/stopped state
-    \b
-    INDEX INFORMATION:
       • Project configuration details
       • Git repository information (if applicable)
       • Vector collection statistics
-      • Storage usage and optimization status
-      • Number of indexed files and chunks
     \b
-    CONFIGURATION SUMMARY:
-      • File extensions being indexed
-      • Excluded directories
-      • File size and chunk limits
-      • Model and collection settings
+    REMOTE MODE:
+      • Remote server connection status
+      • Repository linking information
+      • Connection health monitoring
+      • Repository staleness analysis
+      • Authentication status
     \b
-    EXAMPLE OUTPUT:
-      ✅ Services: Ollama (ready), Qdrant (ready)
-      📂 Project: my-app (Git: feature-branch)
-      🔍 Collection: 1,234 chunks, 567 files indexed
-      💾 Storage: 45.2MB vector data, optimized"""
-    _status_impl(ctx, force_docker)
+    UNINITIALIZED MODE:
+      • Configuration status
+      • Getting started guidance
+      • Initialization options
+    \b
+    The status display automatically adapts based on your current configuration."""
+    mode = ctx.obj["mode"]
+    project_root = ctx.obj["project_root"]
+
+    if mode == "local":
+        from .mode_specific_handlers import display_local_status
+
+        display_local_status(project_root, force_docker)
+    elif mode == "remote":
+        from .mode_specific_handlers import display_remote_status
+
+        asyncio.run(display_remote_status(project_root))
+    else:  # uninitialized
+        from .mode_specific_handlers import display_uninitialized_status
+
+        display_uninitialized_status(project_root)
 
 
 def _status_impl(ctx, force_docker: bool):
@@ -3137,7 +3622,7 @@ def _status_impl(ctx, force_docker: bool):
 
                             # Get total documents across all collections for context
                             try:
-                                import requests  # type: ignore
+                                import requests  # type: ignore[import-untyped]
 
                                 response = requests.get(
                                     f"{config.qdrant.host}/collections", timeout=5
@@ -3342,7 +3827,7 @@ def _status_impl(ctx, force_docker: bool):
         data_cleaner_details = "Service down"
 
         try:
-            import requests  # type: ignore
+            import requests
             import subprocess
             import socket
 
@@ -3757,6 +4242,7 @@ def force_flush(ctx, collection: Optional[str]):
     "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
 )
 @click.pass_context
+@require_mode("local")
 def stop(ctx, force_docker: bool):
     """Stop code indexing services while preserving all data.
 
@@ -4397,12 +4883,13 @@ def _check_remaining_root_files(console: Console):
     is_flag=True,
     help="DANGEROUS: Perform complete system wipe including all containers, images, cache, and storage directories",
 )
+@click.option("--confirm", is_flag=True, help="Skip confirmation prompt")
 @click.pass_context
-def uninstall(ctx, force_docker: bool, wipe_all: bool):
-    """Completely remove all containers and data for current project.
+def uninstall(ctx, force_docker: bool, wipe_all: bool, confirm: bool):
+    """Uninstall CIDX configuration (mode-specific behavior).
 
     \b
-    STANDARD CLEANUP:
+    LOCAL MODE - STANDARD CLEANUP:
       • Uses data-cleaner container to remove root-owned files
       • Orchestrated shutdown: stops qdrant/ollama → cleans data → removes containers
       • Removes current project's .code-indexer directory and qdrant storage
@@ -4411,7 +4898,7 @@ def uninstall(ctx, force_docker: bool, wipe_all: bool):
       • Complete cleanup for fresh start with proper permission handling
 
     \b
-    WITH --wipe-all (DANGEROUS):
+    LOCAL MODE - WITH --wipe-all (DANGEROUS):
       • All standard cleanup operations above
       • Removes ALL container images (including cached builds)
       • Cleans container engine cache and build cache
@@ -4422,46 +4909,31 @@ def uninstall(ctx, force_docker: bool, wipe_all: bool):
       • May require sudo for permission-protected files
 
     \b
-    ENHANCED CLEANUP PROCESS:
-      The data-cleaner container runs with elevated privileges to safely
-      remove files created by Docker containers as root user. This ensures
-      complete cleanup without manual sudo commands or permission errors.
+    REMOTE MODE:
+      • Safely removes remote configuration and encrypted credentials
+      • Preserves local project files and directory structure
+      • Clears repository linking information
+      • Provides guidance for re-initialization
 
     \b
-    WARNING:
-      Standard: Removes containers and data for CURRENT PROJECT only.
-      --wipe-all: NUCLEAR OPTION - removes everything including
-      cached images, may affect other projects using same engine!
-
-    \b
-    USE CASES:
-      • Standard: Normal project uninstallation, switching providers
-      • --wipe-all: Test environment cleanup, fixing deep corruption,
-        resolving persistent container/permission issues across all projects
+    The uninstall behavior automatically adapts based on your current configuration.
     """
-    try:
-        if wipe_all:
-            _perform_complete_system_wipe(force_docker, console)
-        else:
-            # Standard uninstall with orchestrated cleanup - operates on current directory
-            project_config_dir = Path(".code-indexer")
-            docker_manager = DockerManager(
-                force_docker=force_docker, project_config_dir=project_config_dir
-            )
+    mode = ctx.obj["mode"]
+    project_root = ctx.obj["project_root"]
 
-            # Use enhanced cleanup to remove root-owned files before stopping containers
-            if not docker_manager.cleanup(remove_data=True, verbose=True):
-                sys.exit(1)
+    if mode == "local":
+        from .mode_specific_handlers import uninstall_local_mode
 
-            # Also clean collections data
-            docker_manager.clean_data_only(all_projects=True)
+        uninstall_local_mode(project_root, force_docker, wipe_all)
+    elif mode == "remote":
+        from .mode_specific_handlers import uninstall_remote_mode
 
-            console.print("✅ Complete uninstallation finished", style="green")
-            console.print("💡 Run 'code-indexer start' to reinstall", style="blue")
-
-    except Exception as e:
-        console.print(f"❌ Uninstall failed: {e}", style="red")
-        sys.exit(1)
+        uninstall_remote_mode(project_root, confirm)
+    else:  # uninitialized
+        console.print("⚠️  No configuration found to uninstall.", style="yellow")
+        console.print(
+            "💡 Use 'cidx init' to initialize a new configuration.", style="blue"
+        )
 
 
 @cli.command("fix-config")
@@ -4979,6 +5451,338 @@ def install_server(ctx, port: Optional[int], force: bool):
 
     except Exception as e:
         console.print(f"❌ Server installation failed: {e}", style="red")
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("repository", required=False)
+@click.option("--all", is_flag=True, help="Sync all activated repositories")
+@click.option(
+    "--full-reindex",
+    is_flag=True,
+    help="Force full re-indexing instead of incremental sync",
+)
+@click.option("--no-pull", is_flag=True, help="Skip git pull, only perform indexing")
+@click.option(
+    "--dry-run", is_flag=True, help="Show what would be synced without executing"
+)
+@click.option(
+    "--timeout", type=int, default=300, help="Job timeout in seconds (default: 300)"
+)
+@click.pass_context
+@require_mode("remote")
+def sync(
+    ctx,
+    repository: Optional[str],
+    all: bool,
+    full_reindex: bool,
+    no_pull: bool,
+    dry_run: bool,
+    timeout: int,
+):
+    """Synchronize repositories with the remote CIDX server.
+
+    \b
+    Submits repository synchronization jobs to the remote server for processing.
+    Supports both individual repository sync and bulk sync of all activated repositories.
+
+    \b
+    SYNC MODES:
+      • Individual: cidx sync [repository-alias]     # Sync specific repository
+      • Current:    cidx sync                        # Sync current repository
+      • All repos:  cidx sync --all                  # Sync all activated repositories
+
+    \b
+    SYNC OPTIONS:
+      • --full-reindex    Force complete re-indexing (slower but thorough)
+      • --no-pull         Skip git pull, only index existing files
+      • --dry-run         Preview what would be synced without execution
+      • --timeout 600     Set job timeout (default: 300 seconds)
+
+    \b
+    EXAMPLES:
+      cidx sync                           # Sync current repository
+      cidx sync my-project               # Sync specific repository
+      cidx sync --all                    # Sync all repositories
+      cidx sync --full-reindex           # Force full re-indexing
+      cidx sync --no-pull --dry-run      # Preview indexing without git pull
+      cidx sync --all --timeout 600     # Sync all with extended timeout
+
+    \b
+    The sync command submits jobs to the server and tracks their progress.
+    Use 'cidx query' after sync completion to search the updated index.
+    """
+    try:
+        # Validate command line arguments
+        if repository and all:
+            console.print(
+                "❌ Error: Cannot specify both repository and --all flag", style="red"
+            )
+            console.print(
+                "   Use either 'cidx sync <repository>' or 'cidx sync --all'",
+                style="dim",
+            )
+            sys.exit(1)
+
+        if timeout <= 0:
+            console.print("❌ Error: Timeout must be a positive number", style="red")
+            sys.exit(1)
+
+        # Import here to avoid circular imports
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.sync_execution import (
+            execute_repository_sync,
+            RemoteSyncExecutionError,
+            RepositoryNotLinkedException,
+        )
+        from .remote.credential_manager import CredentialNotFoundError
+        from .api_clients.base_client import AuthenticationError, NetworkError
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print(
+                "   Run 'cidx init --remote <server-url> --username <user> --password <pass>' to set up remote mode",
+                style="dim",
+            )
+            sys.exit(1)
+
+        # Show sync operation details
+        if dry_run:
+            console.print(
+                "🔍 Dry run mode - showing what would be synced:", style="blue"
+            )
+        else:
+            console.print("🔄 Starting repository synchronization...", style="blue")
+
+        if all:
+            console.print("   Target: All activated repositories", style="dim")
+        elif repository:
+            console.print(f"   Target: {repository}", style="dim")
+        else:
+            console.print("   Target: Current repository", style="dim")
+
+        sync_options = []
+        if full_reindex:
+            sync_options.append("full re-index")
+        else:
+            sync_options.append("incremental")
+
+        if no_pull:
+            sync_options.append("no git pull")
+        else:
+            sync_options.append("with git pull")
+
+        console.print(f"   Options: {', '.join(sync_options)}", style="dim")
+        console.print(f"   Timeout: {timeout} seconds", style="dim")
+
+        # Setup progress display for polling if not in dry run mode
+        progress_callback = None
+        if not dry_run:
+            from .progress import MultiThreadedProgressManager
+            from .progress.progress_display import RichLiveProgressManager
+
+            # Create rich live manager for progress display
+            rich_live_manager = RichLiveProgressManager(console=console)
+            progress_manager = MultiThreadedProgressManager(
+                console=console,
+                live_manager=rich_live_manager,
+            )
+
+            # Start progress display
+            rich_live_manager.start_bottom_display()
+
+            def sync_progress_callback(
+                current, total, file_path, error=None, info=None, **kwargs
+            ):
+                """Progress callback for sync job polling."""
+                try:
+                    # Handle setup messages (total=0)
+                    if total == 0 and info:
+                        console.print(f"ℹ️ {info}", style="blue")
+                        return
+
+                    # Handle progress updates (total > 0)
+                    if total and total > 0 and info:
+                        progress_manager.update_display(info)
+
+                except Exception as e:
+                    # Don't let progress display errors break sync
+                    logger.warning(f"Progress display error: {e}")
+
+            progress_callback = sync_progress_callback
+
+        try:
+            # Execute sync
+            results = asyncio.run(
+                execute_repository_sync(
+                    repository_alias=repository,
+                    project_root=project_root,
+                    sync_all=all,
+                    full_reindex=full_reindex,
+                    no_pull=no_pull,
+                    dry_run=dry_run,
+                    timeout=timeout,
+                    enable_polling=not dry_run,
+                    progress_callback=progress_callback,
+                )
+            )
+
+        finally:
+            # Clean up progress display
+            if progress_callback:
+                try:
+                    rich_live_manager.stop_display()
+                except Exception as e:
+                    logger.warning(f"Error stopping progress display: {e}")
+
+        # Display results
+        if not results:
+            console.print("ℹ️ No repositories to sync", style="yellow")
+            sys.exit(0)
+
+        console.print()
+        if dry_run:
+            console.print("📋 Dry run results:", style="blue bold")
+        else:
+            console.print("✅ Sync jobs submitted:", style="green bold")
+
+        for result in results:
+            if result.status == "would_sync":
+                console.print(
+                    f"   🔍 {result.repository}: {result.message}", style="blue"
+                )
+            elif result.status == "error":
+                console.print(
+                    f"   ❌ {result.repository}: {result.message}", style="red"
+                )
+            else:
+                console.print(
+                    f"   ✅ {result.repository}: {result.message}", style="green"
+                )
+                if result.job_id and not dry_run:
+                    console.print(f"      Job ID: {result.job_id}", style="dim")
+                if result.estimated_duration:
+                    console.print(
+                        f"      Estimated duration: {result.estimated_duration:.1f}s",
+                        style="dim",
+                    )
+
+        if not dry_run:
+            console.print()
+            console.print("🔔 Sync jobs are processing on the server.", style="cyan")
+            console.print(
+                "   Use 'cidx query' to search the updated index after completion.",
+                style="dim",
+            )
+
+    except RepositoryNotLinkedException as e:
+        console.print(f"❌ Repository not linked: {e}", style="red")
+        console.print(
+            "   💡 Use 'cidx link' to link this repository to the remote server",
+            style="dim",
+        )
+        sys.exit(1)
+    except CredentialNotFoundError as e:
+        console.print(f"❌ Authentication error: {e}", style="red")
+        console.print(
+            "   💡 Run 'cidx init --remote' to configure remote authentication",
+            style="dim",
+        )
+        sys.exit(1)
+    except AuthenticationError as e:
+        console.print(f"❌ Authentication failed: {e}", style="red")
+        console.print(
+            "   💡 Check your credentials with 'cidx auth update'", style="dim"
+        )
+        sys.exit(1)
+    except NetworkError as e:
+        console.print(f"❌ Network error: {e}", style="red")
+        console.print(
+            "   💡 Check your internet connection and server URL", style="dim"
+        )
+        sys.exit(1)
+    except RemoteSyncExecutionError as e:
+        console.print(f"❌ Sync failed: {e}", style="red")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"❌ Unexpected error: {e}", style="red")
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+# Authentication management commands
+@cli.group("auth")
+@click.pass_context
+def auth_group(ctx):
+    """Authentication commands for remote mode.
+
+    Manage credentials and authentication for CIDX remote mode operations.
+    """
+    pass
+
+
+@auth_group.command("update")
+@click.option(
+    "--username", required=True, help="New username for remote authentication"
+)
+@click.option(
+    "--password", required=True, help="New password for remote authentication"
+)
+@click.pass_context
+def auth_update(ctx, username: str, password: str):
+    """Update remote credentials while preserving repository configuration.
+
+    Updates authentication credentials for remote mode while preserving
+    server URL, repository links, and all other settings.
+
+    Example:
+        cidx auth update --username newuser --password newpass
+    """
+    try:
+        from code_indexer.remote.credential_rotation import CredentialRotationManager
+        from code_indexer.mode_detection.command_mode_detector import find_project_root
+
+        # Find project root and initialize rotation manager
+        from pathlib import Path
+
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print("Run 'cidx init' to initialize project first", style="dim")
+            sys.exit(1)
+
+        rotation_manager = CredentialRotationManager(project_root)
+
+        with console.status("🔄 Updating credentials..."):
+            success_message = rotation_manager.update_credentials(username, password)
+
+        console.print(f"✅ {success_message}", style="green")
+        console.print("🔑 Credentials have been updated and verified", style="cyan")
+
+    except Exception as e:
+        console.print(f"❌ Credential update failed: {e}", style="red")
+        if "not in remote mode" in str(e):
+            console.print(
+                "💡 This command only works with remote mode projects", style="dim"
+            )
+        elif "Invalid credentials" in str(e):
+            console.print(
+                "💡 Check your username and password are correct", style="dim"
+            )
+        elif "No remote configuration" in str(e):
+            console.print(
+                "💡 Initialize remote mode first with appropriate setup", style="dim"
+            )
+
         if ctx.obj.get("verbose"):
             import traceback
 

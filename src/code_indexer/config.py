@@ -254,6 +254,24 @@ class OverrideConfig(BaseModel):
     )
 
 
+class AutoRecoveryConfig(BaseModel):
+    """Configuration for automatic recovery system."""
+
+    enabled: bool = Field(default=True, description="Enable automatic recovery")
+    max_recovery_attempts: int = Field(
+        default=3, description="Maximum recovery attempts per issue"
+    )
+    recovery_timeout_minutes: int = Field(
+        default=60, description="Recovery timeout in minutes"
+    )
+    backup_before_full_recovery: bool = Field(
+        default=True, description="Create backup before full recovery"
+    )
+    allow_automatic_full_recovery: bool = Field(
+        default=True, description="Allow automatic full recovery"
+    )
+
+
 class Config(BaseModel):
     """Main configuration for Code Indexer."""
 
@@ -372,6 +390,12 @@ class Config(BaseModel):
     override_config: Optional[OverrideConfig] = Field(
         default=None,
         description="Override configuration for file inclusion/exclusion rules",
+    )
+
+    # Auto-recovery configuration
+    auto_recovery: Optional[AutoRecoveryConfig] = Field(
+        default=None,
+        description="Automatic recovery system configuration",
     )
 
     @field_validator("codebase_dir", mode="before")

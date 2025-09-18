@@ -51,33 +51,22 @@ LANGUAGE_EXTENSIONS = {
 
 
 class SemanticSearchService:
-    """Service for semantic code search."""
+    """Service for semantic code search with repository-specific configuration."""
 
     def __init__(self):
-        """Initialize the semantic search service with real dependencies."""
+        """Initialize the semantic search service."""
         # CLAUDE.md Foundation #1: Direct instantiation of real services only
         # NO dependency injection parameters that enable mocking
-        try:
-            config_manager = ConfigManager.create_with_backtrack()
-            self.config = config_manager.get_config()
 
-            # Real QdrantClient integration - not injectable, not mockable
-            self.qdrant_client = QdrantClient(
-                config=self.config.qdrant, project_root=Path.cwd()
-            )
-
-            # Real embedding service - not injectable, not mockable
-            self.embedding_service = EmbeddingProviderFactory.create(config=self.config)
-
-        except Exception as e:
-            logger.error(f"Failed to initialize real dependencies: {e}")
-            raise RuntimeError(f"Cannot initialize semantic search service: {e}")
+        # Note: We don't load any configuration here because each search operation
+        # needs repository-specific configuration (different Qdrant ports and collection names)
+        pass
 
     def search_repository(
         self, repo_id: str, search_request: SemanticSearchRequest
     ) -> SemanticSearchResponse:
         """
-        Perform semantic search in repository.
+        Perform semantic search in repository using repository-specific configuration.
 
         Args:
             repo_id: Repository identifier
@@ -95,13 +84,36 @@ class SemanticSearchService:
         if not os.path.exists(repo_path):
             raise FileNotFoundError(f"Repository {repo_id} not found")
 
+        return self.search_repository_path(repo_path, search_request)
+
+    def search_repository_path(
+        self, repo_path: str, search_request: SemanticSearchRequest
+    ) -> SemanticSearchResponse:
+        """
+        Perform semantic search in repository using direct path.
+
+        Args:
+            repo_path: Direct path to repository directory
+            search_request: Search request parameters
+
+        Returns:
+            Semantic search response with ranked results
+
+        Raises:
+            FileNotFoundError: If repository path doesn't exist
+            ValueError: If search request is invalid
+        """
+        if not os.path.exists(repo_path):
+            raise FileNotFoundError(f"Repository path {repo_path} not found")
+
         # CLAUDE.md Foundation #1: Real semantic search with vector embeddings
-        # 1. Generate embeddings for the query
-        # 2. Search Qdrant vector database
-        # 3. Rank results by semantic similarity
+        # 1. Load repository-specific configuration
+        # 2. Generate embeddings for the query
+        # 3. Search Qdrant vector database with correct collection name
+        # 4. Rank results by semantic similarity
 
         search_results = self._perform_semantic_search(
-            repo_id,
+            repo_path,
             search_request.query,
             search_request.limit,
             search_request.include_source,
@@ -114,15 +126,15 @@ class SemanticSearchService:
         )
 
     def _perform_semantic_search(
-        self, repo_id: str, query: str, limit: int, include_source: bool
+        self, repo_path: str, query: str, limit: int, include_source: bool
     ) -> List[SearchResultItem]:
         """
-        Perform real semantic search using vector embeddings.
+        Perform real semantic search using repository-specific configuration.
 
         CLAUDE.md Foundation #1: Real vector search, no text search fallbacks.
 
         Args:
-            repo_id: Repository identifier
+            repo_path: Path to repository directory
             query: Search query
             limit: Maximum number of results
             include_source: Whether to include source code in results
@@ -134,18 +146,39 @@ class SemanticSearchService:
             RuntimeError: If embedding generation or Qdrant search fails
         """
         try:
-            # Generate real embedding for query
-            query_embedding = self.embedding_service.get_embedding(query)
+            # Load repository-specific configuration
+            config_manager = ConfigManager.create_with_backtrack(Path(repo_path))
+            config = config_manager.get_config()
 
-            # Search Qdrant with vector similarity
-            collection_name = f"repo_{repo_id}"
+            logger.info(f"Loaded repository config from {repo_path}")
+            logger.info(f"Qdrant host: {config.qdrant.host}")
 
-            # Real vector search in Qdrant
-            search_results = self.qdrant_client.search(
+            # Create repository-specific Qdrant client (connects to correct port)
+            qdrant_client = QdrantClient(
+                config=config.qdrant, project_root=Path(repo_path)
+            )
+
+            # Create repository-specific embedding service
+            embedding_service = EmbeddingProviderFactory.create(config=config)
+
+            # Generate real embedding for query using repository's embedding service
+            query_embedding = embedding_service.get_embedding(query)
+
+            # Resolve correct collection name based on repository configuration
+            collection_name = qdrant_client.resolve_collection_name(
+                config, embedding_service
+            )
+
+            logger.info(f"Using collection: {collection_name}")
+
+            # Real vector search in repository-specific Qdrant instance
+            search_results = qdrant_client.search(
                 query_vector=query_embedding,
                 limit=limit,
                 collection_name=collection_name,
             )
+
+            logger.info(f"Found {len(search_results)} results")
 
             # Format results for response
             formatted_results = []
@@ -160,19 +193,18 @@ class SemanticSearchService:
 
                 search_item = SearchResultItem(
                     file_path=payload.get("path", ""),
-                    start_line=payload.get("start_line", 0),
-                    end_line=payload.get("end_line", 0),
-                    relevance_score=score,
-                    snippet=payload.get("snippet", ""),
+                    line_start=payload.get("start_line", 0),
+                    line_end=payload.get("end_line", 0),
+                    score=score,
+                    content=source_content or payload.get("snippet", ""),
                     language=self._detect_language_from_path(payload.get("path", "")),
-                    source_code=source_content,
                 )
                 formatted_results.append(search_item)
 
             return formatted_results
 
         except Exception as e:
-            logger.error(f"Semantic search failed for repo {repo_id}: {e}")
+            logger.error(f"Semantic search failed for repo {repo_path}: {e}")
             raise RuntimeError(f"Semantic search failed: {e}")
 
     def _detect_language_from_path(self, file_path: str) -> Optional[str]:

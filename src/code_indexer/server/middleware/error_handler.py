@@ -347,8 +347,12 @@ class GlobalErrorHandler(BaseHTTPMiddleware):
 
             # Include stack trace for debugging if configured
             if self.config.include_stack_traces_in_logs and exception:
-                # Sanitize stack trace
-                stack_trace = traceback.format_exc()
+                # Sanitize stack trace - use format_exception for passed exceptions
+                stack_trace = "".join(
+                    traceback.format_exception(
+                        type(exception), exception, exception.__traceback__
+                    )
+                )
                 sanitized_trace = self.sanitizer.sanitize_string(stack_trace)
                 log_parts.append(f"Stack trace:\n{sanitized_trace}")
 

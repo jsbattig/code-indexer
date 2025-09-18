@@ -640,7 +640,6 @@ class TestVectorCalculationManager:
             batch_delay_multiplier=0.3,  # Batch processing is much more efficient
         )
 
-        chunk_count = 10
         chunks_per_batch = 5
 
         with VectorCalculationManager(provider, thread_count=2) as manager:

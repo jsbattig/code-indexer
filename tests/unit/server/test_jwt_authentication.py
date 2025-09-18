@@ -461,7 +461,7 @@ class TestUserManager:
     def test_create_new_user(self, user_manager):
         """Test creating new user and persisting to users.json."""
         user = user_manager.create_user(
-            username="testuser", password="testpass", role=UserRole.POWER_USER
+            username="testuser", password="TestPassword123!", role=UserRole.POWER_USER
         )
 
         assert user.username == "testuser"
@@ -475,16 +475,18 @@ class TestUserManager:
 
     def test_create_duplicate_user_raises_error(self, user_manager):
         """Test that creating user with existing username raises error."""
-        user_manager.create_user("testuser", "password", UserRole.NORMAL_USER)
+        user_manager.create_user("testuser", "TestPassword123!", UserRole.NORMAL_USER)
 
         with pytest.raises(ValueError, match="User already exists"):
-            user_manager.create_user("testuser", "password2", UserRole.ADMIN)
+            user_manager.create_user("testuser", "Password2Strong!", UserRole.ADMIN)
 
     def test_authenticate_user_valid_credentials(self, user_manager):
         """Test authenticating user with valid credentials."""
-        user_manager.create_user("testuser", "testpass", UserRole.NORMAL_USER)
+        user_manager.create_user("testuser", "TestPassword123!", UserRole.NORMAL_USER)
 
-        authenticated_user = user_manager.authenticate_user("testuser", "testpass")
+        authenticated_user = user_manager.authenticate_user(
+            "testuser", "TestPassword123!"
+        )
 
         assert authenticated_user is not None
         assert authenticated_user.username == "testuser"
@@ -492,23 +494,29 @@ class TestUserManager:
 
     def test_authenticate_user_invalid_password(self, user_manager):
         """Test authenticating user with invalid password returns None."""
-        user_manager.create_user("testuser", "correctpass", UserRole.NORMAL_USER)
+        user_manager.create_user(
+            "testuser", "CorrectPassword123!", UserRole.NORMAL_USER
+        )
 
-        authenticated_user = user_manager.authenticate_user("testuser", "wrongpass")
+        authenticated_user = user_manager.authenticate_user(
+            "testuser", "WrongPassword123!"
+        )
 
         assert authenticated_user is None
 
     def test_authenticate_user_nonexistent_user(self, user_manager):
         """Test authenticating nonexistent user returns None."""
-        authenticated_user = user_manager.authenticate_user("nonexistent", "password")
+        authenticated_user = user_manager.authenticate_user(
+            "nonexistent", "TestPassword123!"
+        )
 
         assert authenticated_user is None
 
     def test_get_all_users(self, user_manager):
         """Test getting all users from storage."""
-        user_manager.create_user("user1", "pass1", UserRole.ADMIN)
-        user_manager.create_user("user2", "pass2", UserRole.POWER_USER)
-        user_manager.create_user("user3", "pass3", UserRole.NORMAL_USER)
+        user_manager.create_user("user1", "Unique1Passphrase!", UserRole.ADMIN)
+        user_manager.create_user("user2", "Unique2Passphrase!", UserRole.POWER_USER)
+        user_manager.create_user("user3", "Unique3Passphrase!", UserRole.NORMAL_USER)
 
         all_users = user_manager.get_all_users()
 
@@ -520,7 +528,7 @@ class TestUserManager:
 
     def test_delete_user(self, user_manager):
         """Test deleting user from storage."""
-        user_manager.create_user("testuser", "testpass", UserRole.NORMAL_USER)
+        user_manager.create_user("testuser", "TestPassword123!", UserRole.NORMAL_USER)
 
         # Verify user exists
         user = user_manager.get_user("testuser")
@@ -541,7 +549,7 @@ class TestUserManager:
 
     def test_update_user_role(self, user_manager):
         """Test updating user role."""
-        user_manager.create_user("testuser", "testpass", UserRole.NORMAL_USER)
+        user_manager.create_user("testuser", "TestPassword123!", UserRole.NORMAL_USER)
 
         success = user_manager.update_user_role("testuser", UserRole.POWER_USER)
         assert success
@@ -552,23 +560,23 @@ class TestUserManager:
 
     def test_change_user_password(self, user_manager):
         """Test changing user password."""
-        user_manager.create_user("testuser", "oldpass", UserRole.NORMAL_USER)
+        user_manager.create_user("testuser", "OldPassword123!", UserRole.NORMAL_USER)
 
-        success = user_manager.change_password("testuser", "newpass")
+        success = user_manager.change_password("testuser", "NewPassword123!")
         assert success
 
         # Verify old password no longer works
-        user = user_manager.authenticate_user("testuser", "oldpass")
+        user = user_manager.authenticate_user("testuser", "OldPassword123!")
         assert user is None
 
         # Verify new password works
-        user = user_manager.authenticate_user("testuser", "newpass")
+        user = user_manager.authenticate_user("testuser", "NewPassword123!")
         assert user is not None
         assert user.username == "testuser"
 
     def test_users_json_file_format(self, user_manager, temp_users_file):
         """Test that users.json file has correct format."""
-        user_manager.create_user("testuser", "testpass", UserRole.POWER_USER)
+        user_manager.create_user("testuser", "TestPassword123!", UserRole.POWER_USER)
 
         with open(temp_users_file, "r") as f:
             users_data = json.load(f)

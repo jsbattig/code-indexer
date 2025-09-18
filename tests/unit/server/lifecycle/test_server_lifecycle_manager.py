@@ -495,3 +495,112 @@ class TestServerLifecycleManager:
         """Test _load_server_state returns None when no state file exists."""
         state = self.lifecycle_manager._load_server_state()
         assert state is None
+
+    # TDD TESTS FOR SERVER STATUS BUG FIX
+    def test_get_status_detects_stale_pidfile_and_returns_stopped(self):
+        """Test get_status correctly detects when PID file exists but process is not running."""
+        # Create a pidfile with a PID that doesn't exist
+        pidfile_path = self.server_dir / "server.pid"
+        pidfile_path.parent.mkdir(parents=True, exist_ok=True)
+        pidfile_path.write_text("999999")  # PID that doesn't exist
+
+        # Create a state file as well (simulating crashed server scenario)
+        state_file = self.server_dir / "server.state"
+        test_state = {
+            "pid": 999999,
+            "port": 8090,
+            "started_at": "2024-01-01T00:00:00",
+            "host": "127.0.0.1",
+        }
+        state_file.write_text(json.dumps(test_state))
+
+        status = self.lifecycle_manager.get_status()
+
+        # Should return STOPPED status despite pidfile existence
+        assert status.status == ServerStatus.STOPPED
+        assert status.pid is None
+        assert status.uptime is None
+        assert status.port is None
+        assert status.active_jobs == 0
+
+    def test_get_status_cleans_up_stale_files_when_process_not_running(self):
+        """Test get_status cleans up stale pidfile and state file when process is not running."""
+        # Create a pidfile with a PID that doesn't exist
+        pidfile_path = self.server_dir / "server.pid"
+        pidfile_path.parent.mkdir(parents=True, exist_ok=True)
+        pidfile_path.write_text("999999")  # PID that doesn't exist
+
+        # Create a state file as well
+        state_file = self.server_dir / "server.state"
+        test_state = {
+            "pid": 999999,
+            "port": 8090,
+            "started_at": "2024-01-01T00:00:00",
+            "host": "127.0.0.1",
+        }
+        state_file.write_text(json.dumps(test_state))
+
+        # Both files should exist before the call
+        assert pidfile_path.exists()
+        assert state_file.exists()
+
+        status = self.lifecycle_manager.get_status()
+
+        # Files should be cleaned up after detecting stale process
+        assert not pidfile_path.exists()
+        assert not state_file.exists()
+        assert status.status == ServerStatus.STOPPED
+
+    def test_check_server_running_with_stale_pidfile_returns_false(self):
+        """Test _check_server_running returns False for stale pidfile with non-existent process."""
+        # Create a pidfile with a PID that doesn't exist
+        pidfile_path = self.server_dir / "server.pid"
+        pidfile_path.parent.mkdir(parents=True, exist_ok=True)
+        pidfile_path.write_text("999999")  # PID that doesn't exist
+
+        result = self.lifecycle_manager._check_server_running()
+
+        # Should return False even though pidfile exists
+        assert result is False
+
+    def test_start_server_after_stale_crash_scenario(self):
+        """Test start_server works correctly after a previous server crash left stale files."""
+        # Create stale pidfile and state file (simulating previous crash)
+        pidfile_path = self.server_dir / "server.pid"
+        pidfile_path.parent.mkdir(parents=True, exist_ok=True)
+        pidfile_path.write_text("999999")  # Stale PID
+
+        state_file = self.server_dir / "server.state"
+        stale_state = {
+            "pid": 999999,
+            "port": 8090,
+            "started_at": "2024-01-01T00:00:00",
+            "host": "127.0.0.1",
+        }
+        state_file.write_text(json.dumps(stale_state))
+
+        # Create valid config file
+        config_content = {
+            "server_dir": str(self.temp_dir),
+            "host": "127.0.0.1",
+            "port": 8090,
+        }
+        config_path = Path(self.lifecycle_manager.server_dir) / "config.json"
+        with open(config_path, "w") as f:
+            json.dump(config_content, f)
+
+        # Mock the subprocess.Popen to simulate successful server start
+        with patch("subprocess.Popen") as mock_popen:
+            mock_process = Mock()
+            mock_process.pid = 12345  # New PID
+            mock_process.poll.return_value = None  # Process still running
+            mock_popen.return_value = mock_process
+
+            result = self.lifecycle_manager.start_server()
+
+            # Should successfully start despite stale files
+            assert "Server started successfully" in result["message"]
+            assert result["pid"] == 12345
+
+            # Old stale pidfile should be replaced with new PID
+            assert pidfile_path.read_text().strip() == "12345"

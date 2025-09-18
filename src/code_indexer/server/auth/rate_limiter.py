@@ -21,7 +21,7 @@ class PasswordChangeRateLimiter:
     - Automatic cleanup of expired entries
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize rate limiter."""
         self._attempts: Dict[str, Dict] = {}
         self._lock = Lock()
@@ -89,7 +89,7 @@ class PasswordChangeRateLimiter:
             # Increment attempt counter
             user_data["count"] += 1
 
-            # Check if user should be locked out
+            # Check if user should be locked out (at exactly 5 attempts for PasswordChangeRateLimiter)
             if user_data["count"] >= self._max_attempts:
                 lockout_until = now + timedelta(minutes=self._lockout_duration_minutes)
                 user_data["locked_until"] = lockout_until

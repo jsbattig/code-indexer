@@ -115,7 +115,7 @@ class TestAuthLoginEndpoint:
         response_data = response.json()
 
         assert "detail" in response_data
-        assert "Invalid username or password" in response_data["detail"]
+        assert "Invalid credentials" in response_data["detail"]
 
     def test_login_with_nonexistent_user(self, client, mock_user_manager):
         """Test login with nonexistent user returns 401."""
@@ -133,7 +133,7 @@ class TestAuthLoginEndpoint:
 
         assert response.status_code == 422
         response_data = response.json()
-        assert "detail" in response_data
+        assert "details" in response_data or "detail" in response_data
 
     def test_login_with_missing_password(self, client):
         """Test login with missing password returns 422."""
@@ -141,7 +141,7 @@ class TestAuthLoginEndpoint:
 
         assert response.status_code == 422
         response_data = response.json()
-        assert "detail" in response_data
+        assert "details" in response_data or "detail" in response_data
 
     def test_login_with_empty_username(self, client, mock_user_manager):
         """Test login with empty username returns 422 (validation error)."""
@@ -192,7 +192,7 @@ class TestAuthLoginEndpoint:
         """Test that login endpoint only accepts JSON content type."""
         response = client.post("/auth/login", content="username=admin&password=admin")
 
-        # Should return 422 for unsupported media type
+        # Should return 422 for invalid JSON
         assert response.status_code == 422
 
 

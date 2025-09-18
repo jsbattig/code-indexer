@@ -262,7 +262,11 @@ class TestSensitiveDataSanitization:
         for original in sensitive_strings:
             sanitized = sanitizer.sanitize_string(original)
 
-            assert "[SSN]" in sanitized or "[REDACTED]" in sanitized
+            assert (
+                "[SSN]" in sanitized
+                or "[REDACTED]" in sanitized
+                or "[TAX_ID]" in sanitized
+            )
             assert "123-45-6789" not in sanitized
             assert "987654321" not in sanitized
             assert "555-55-5555" not in sanitized

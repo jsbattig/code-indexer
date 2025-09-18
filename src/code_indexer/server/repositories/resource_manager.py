@@ -99,13 +99,13 @@ class MemoryLeakWarning:
 
 class ResourceTracker:
     """
-    Individual resource type tracker for specialized resource management.
+    Resource manager for specialized resource management.
 
     Provides specialized tracking and cleanup for different resource types
     with proper error handling and resource state validation.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize resource tracker with empty resource collections."""
         self.file_handles: Set[Union[TextIO, BinaryIO]] = set()
         self.database_connections: Dict[str, Any] = {}

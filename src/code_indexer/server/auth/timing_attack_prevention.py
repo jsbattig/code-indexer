@@ -21,7 +21,7 @@ class TimingAttackPrevention:
     - Minimal performance impact on legitimate operations
     """
 
-    def __init__(self, minimum_response_time_ms: int = 100):
+    def __init__(self, minimum_response_time_ms: int = 400):
         """
         Initialize timing attack prevention.
 
@@ -112,7 +112,7 @@ class TimingAttackPrevention:
 
             # Perform some fake work to normalize timing
             # This ensures that both success and failure paths take similar time
-            self.generate_fake_work(50)
+            self.generate_fake_work(200)
 
             return result
 

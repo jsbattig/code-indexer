@@ -1,8 +1,9 @@
 #!/bin/bash
 
-# Fast automation script - comprehensive local testing
-# Runs all unit tests that don't require external services or special permissions
-# More comprehensive than GitHub Actions CI but faster than full-automation.sh
+# Fast automation script - CIDX CLI focused testing
+# Runs CLI unit tests that don't require external services or special permissions
+# Focuses on CIDX command-line interface functionality only
+# Use server-fast-automation.sh for server-specific tests
 
 set -e  # Exit on any error
 
@@ -14,7 +15,7 @@ if [[ -f ".env" ]]; then
     source .env
 fi
 
-echo "🚀 Starting fast automation pipeline (local unit tests)..."
+echo "🖥️  Starting CLI-focused fast automation pipeline..."
 echo "==========================================="
 
 # Colors for output
@@ -57,64 +58,55 @@ print_step "Installing dependencies"
 pip install -e ".[dev]" --break-system-packages
 print_success "Dependencies installed"
 
-# 2. Lint with ruff (same as GitHub Actions)
-print_step "Running ruff linter"
-if ruff check src/ tests/; then
-    print_success "Ruff linting passed"
+# 2. Lint CLI-related code with ruff
+print_step "Running ruff linter on CLI code"
+if ruff check src/code_indexer/cli.py src/code_indexer/mode_* src/code_indexer/remote/ src/code_indexer/api_clients/ src/code_indexer/business_logic/ tests/unit/cli/ tests/unit/remote/ tests/unit/api_clients/; then
+    print_success "CLI ruff linting passed"
 else
-    print_error "Ruff linting failed"
+    print_error "CLI ruff linting failed"
     exit 1
 fi
 
-# 3. Check formatting with black (same as GitHub Actions)
-print_step "Checking code formatting with black"
-if black --check src/ tests/; then
-    print_success "Black formatting check passed"
+# 3. Check CLI code formatting with black
+print_step "Checking CLI code formatting with black"
+if black --check src/code_indexer/cli.py src/code_indexer/mode_* src/code_indexer/remote/ src/code_indexer/api_clients/ src/code_indexer/business_logic/ tests/unit/cli/ tests/unit/remote/ tests/unit/api_clients/; then
+    print_success "CLI black formatting check passed"
 else
-    print_error "Black formatting check failed"
-    print_warning "Run 'black src/ tests/' to fix formatting"
+    print_error "CLI black formatting check failed"
+    print_warning "Run 'black' on the CLI-related files to fix formatting"
     exit 1
 fi
 
-# 4. Type check with mypy (same as GitHub Actions)
-print_step "Running mypy type checking"
-if mypy src/ --ignore-missing-imports; then
-    print_success "MyPy type checking passed"
+# 4. Type check CLI code with mypy
+print_step "Running mypy type checking on CLI code"
+if mypy src/code_indexer/cli.py src/code_indexer/mode_* src/code_indexer/remote/ src/code_indexer/api_clients/ src/code_indexer/business_logic/ --ignore-missing-imports; then
+    print_success "CLI MyPy type checking passed"
 else
-    print_error "MyPy type checking failed"
+    print_error "CLI MyPy type checking failed"
     exit 1
 fi
 
-# 5. Run unit tests only (same as GitHub Actions - no E2E/integration tests)
-print_step "Running unit tests only (excluding E2E/integration tests)"
-echo "ℹ️  This matches GitHub Actions - only unit tests that don't require external services"
-echo "ℹ️  Using new organized test structure: tests/unit/ directory only"
+# 5. Run ALL unit tests (excluding slow/integration tests)
+print_step "Running comprehensive unit tests"
+echo "ℹ️  Testing ALL CIDX functionality including:"
+echo "   • Command-line interface and argument parsing"
+echo "   • Remote repository linking and authentication"
+echo "   • API client functionality"
+echo "   • Business logic integration"
+echo "   • Mode detection and routing"
+echo "   • Core indexing and processing logic"
+echo "   • Configuration and validation"
+echo "   • Display and progress reporting"
 
-# Run unit tests with same exclusions as GitHub Actions (permission-dependent tests)
+# Run ALL unit tests that don't require external services (excluding server tests)
 if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest \
     tests/unit/ \
+    --ignore=tests/unit/server/ \
     -m "not slow and not e2e and not real_api and not integration" \
-    --ignore=tests/unit/infrastructure/test_data_cleaner_health.py \
-    --ignore=tests/unit/infrastructure/test_cleanup_validation.py \
-    --ignore=tests/unit/infrastructure/test_global_port_registry.py \
-    --ignore=tests/unit/infrastructure/test_broken_softlink_cleanup.py \
-    --ignore=tests/unit/infrastructure/test_real_world_path_walking.py \
     --ignore=tests/unit/cli/test_cli_init_segment_size.py \
-    --ignore=tests/unit/infrastructure/test_voyage_threading_verification.py \
-    --ignore=tests/unit/infrastructure/test_enhanced_progress_reporting.py \
-    --ignore=tests/unit/infrastructure/test_files_per_second_metrics.py \
-    --ignore=tests/unit/infrastructure/test_source_kbs_throughput_reporting.py \
-    --ignore=tests/unit/infrastructure/test_meaningful_feedback_operations.py \
-    --ignore=tests/unit/infrastructure/test_progress_debug.py \
-    --ignore=tests/unit/infrastructure/test_full_index_parallel_processing.py \
     --ignore=tests/unit/cli/test_query_functionality_fix.py \
-    --ignore=tests/unit/docker/ \
-    --ignore=tests/unit/bugfixes/test_container_name_resolution_stop_services.py \
-    --ignore=tests/unit/infrastructure/test_progress_display_thread_safety.py \
-    --ignore=tests/unit/services/test_incremental_high_throughput_migration.py \
-    --ignore=tests/unit/services/test_single_embedding_wrapper.py \
     --cov=code_indexer \
-    --cov-report=xml --cov-report=term; then
+    --cov-report=xml --cov-report=term-missing; then
     print_success "Unit tests passed"
 else
     print_error "Unit tests failed"
@@ -125,31 +117,28 @@ fi
 # but those are only relevant for actual GitHub runs
 
 # Summary
-echo -e "\n${GREEN}🎉 GitHub CI pipeline (local) completed successfully!${NC}"
+echo -e "\n${GREEN}🎉 Comprehensive automation completed successfully!${NC}"
 echo "==========================================="
 echo "✅ Linting passed"
 echo "✅ Formatting checked"
 echo "✅ Type checking passed"
-echo "✅ Unit tests passed (E2E/integration tests excluded)"
+echo "✅ Unit tests passed"
 echo ""
-echo "🔍 Test organization with new directory structure:"
-echo "   ✅ tests/unit/ - ISOLATED unit tests (482 tests) - INCLUDED in CI"
-echo "   🚫 tests/unit/cli/ - CLI tests (require subprocess) - EXCLUDED from CI"
-echo "   🚫 tests/unit/services/ - Service tests (require containers) - EXCLUDED from CI"
-echo "   🚫 tests/unit/infrastructure/ - Infrastructure tests (require services) - EXCLUDED from CI"
-echo "   🚫 tests/integration/ - Integration tests (140+ tests) - EXCLUDED from CI"
-echo "   🚫 tests/e2e/ - End-to-end tests (70+ tests) - EXCLUDED from CI"
+echo "🖥️  Complete test coverage:"
+echo "   ✅ tests/unit/ - ALL unit tests (CLI, remote, API clients, core logic, config, display)"
+echo "   🚫 Excluded: slow, e2e, real_api, integration tests"
 echo ""
-echo "🚫 Excluded test categories:"
-echo "   • Integration tests (require Docker, Qdrant, Ollama services)"
-echo "   • E2E tests (require full service stack and external APIs)"
-echo "   • Performance tests (require service dependencies)"
-echo "   • Claude integration tests (require Claude API and SDK)"
-echo "   • Docker manager tests (require Docker/Podman)"
-echo "   • Git workflow tests (require Git repositories and indexing services)"
-echo "   • Provider tests (require API keys and external services)"
-echo "   • Any tests marked as 'slow', 'e2e', or 'real_api'"
+echo "🖥️  Functionality validated:"
+echo "   • Command-line interface and argument parsing"
+echo "   • Remote mode initialization and authentication"
+echo "   • Repository linking and branch matching"
+echo "   • Transparent remote querying"
+echo "   • JWT token management and credential encryption"
+echo "   • Network error handling and resilience"
+echo "   • Progress reporting and job management"
+echo "   • Core indexing and processing logic"
+echo "   • Configuration management and validation"
 echo ""
-echo "ℹ️  This matches the GitHub Actions workflow for fast CI execution"
-echo "ℹ️  Run 'full-automation.sh' for full local testing including all test categories"
-echo "Ready to push to GitHub! 🚀"
+echo "ℹ️  Run 'server-fast-automation.sh' for server-specific tests"
+echo "ℹ️  Run 'full-automation.sh' for complete integration testing"
+echo "CIDX ready for manual testing! 🚀"

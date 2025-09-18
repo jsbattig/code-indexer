@@ -359,7 +359,7 @@ class SemanticQueryManager:
         file_extensions: Optional[List[str]],
     ) -> List[QueryResult]:
         """
-        Search a single repository using the core SearchEngine.
+        Search a single repository using the SemanticSearchService.
 
         Args:
             repo_path: Path to the repository
@@ -372,106 +372,54 @@ class SemanticQueryManager:
         Returns:
             List of QueryResult objects from this repository
         """
-        # This is a placeholder implementation
-        # In the real implementation, we would:
-        # 1. Create a proper Config object for the repository
-        # 2. Initialize QdrantClient and EmbeddingProvider
-        # 3. Create SearchEngine and perform search
-        # 4. Convert SearchResult objects to QueryResult objects
+        try:
+            # Import SemanticSearchService and related models
+            from ..services.search_service import SemanticSearchService
+            from ..models.api_models import SemanticSearchRequest
 
-        # TODO: In real implementation, this would use actual SearchEngine
-        # For now using placeholder implementation with mock results
+            # Create search service instance
+            search_service = SemanticSearchService()
 
-        # For now, create mock search results to satisfy the tests
-        from unittest.mock import MagicMock
+            # Create search request
+            search_request = SemanticSearchRequest(
+                query=query_text, limit=limit, include_source=True
+            )
 
-        # Create mock search results with diverse file types - these will be overridden by test mocks
-        # NOTE: This mock data includes various file extensions to support file extension filtering testing
-        mock_results = [
-            MagicMock(
-                file_path=f"{repo_path}/src/main.py",
-                content="def main():\n    print('Hello World')",
-                language="python",
-                score=0.85,
-                chunk_index=0,
-                total_chunks=1,
-            ),
-            MagicMock(
-                file_path=f"{repo_path}/src/utils.py",
-                content="def helper():\n    return 'helper'",
-                language="python",
-                score=0.72,
-                chunk_index=0,
-                total_chunks=1,
-            ),
-            MagicMock(
-                file_path=f"{repo_path}/frontend/app.js",
-                content="function app() {\n    console.log('Hello World');\n}",
-                language="javascript",
-                score=0.88,
-                chunk_index=0,
-                total_chunks=1,
-            ),
-            MagicMock(
-                file_path=f"{repo_path}/frontend/components/Button.tsx",
-                content="interface ButtonProps {\n    label: string;\n}\nexport const Button = ({ label }: ButtonProps) => <button>{label}</button>;",
-                language="typescript",
-                score=0.78,
-                chunk_index=0,
-                total_chunks=1,
-            ),
-            MagicMock(
-                file_path=f"{repo_path}/docs/README.txt",
-                content="Project Documentation\n\nThis is a text file containing project information.",
-                language="text",
-                score=0.65,
-                chunk_index=0,
-                total_chunks=1,
-            ),
-            MagicMock(
-                file_path=f"{repo_path}/README.md",
-                content="# Project Title\n\nThis is the main project documentation in markdown format.",
-                language="markdown",
-                score=0.68,
-                chunk_index=0,
-                total_chunks=1,
-            ),
-            MagicMock(
-                file_path=f"{repo_path}/config/settings.json",
-                content='{\n    "debug": true,\n    "port": 8080,\n    "environment": "development"\n}',
-                language="json",
-                score=0.60,
-                chunk_index=0,
-                total_chunks=1,
-            ),
-            MagicMock(
-                file_path=f"{repo_path}/styles/main.css",
-                content="body {\n    margin: 0;\n    font-family: Arial, sans-serif;\n}",
-                language="css",
-                score=0.55,
-                chunk_index=0,
-                total_chunks=1,
-            ),
-        ]
+            # Perform search on the repository using direct path
+            search_response = search_service.search_repository_path(
+                repo_path=repo_path, search_request=search_request
+            )
 
-        # Apply min_score filtering
-        if min_score:
-            mock_results = [r for r in mock_results if r.score >= min_score]
+            # Convert search results to QueryResult objects
+            query_results = []
+            for search_item in search_response.results:
+                # Apply min_score filter if specified
+                if min_score is not None and search_item.score < min_score:
+                    continue
 
-        # Apply file extension filtering
-        if file_extensions:
-            filtered_results = []
-            for result in mock_results:
-                file_path = result.file_path
-                # Check if file matches any of the specified extensions
-                if any(file_path.endswith(ext) for ext in file_extensions):
-                    filtered_results.append(result)
-            mock_results = filtered_results
+                # Apply file extension filter if specified
+                if file_extensions is not None:
+                    file_path = Path(search_item.file_path)
+                    if file_path.suffix.lower() not in [
+                        ext.lower() for ext in file_extensions
+                    ]:
+                        continue
 
-        # Convert to QueryResult objects
-        query_results = [
-            QueryResult.from_search_result(result, repository_alias)
-            for result in mock_results
-        ]
+                # Convert SearchResultItem to QueryResult
+                query_result = QueryResult(
+                    file_path=search_item.file_path,
+                    line_number=search_item.line_start,  # Use start line as line number
+                    code_snippet=search_item.content,
+                    similarity_score=search_item.score,
+                    repository_alias=repository_alias,
+                )
+                query_results.append(query_result)
 
-        return query_results
+            return query_results
+
+        except Exception as e:
+            self.logger.error(
+                f"Failed to search repository '{repository_alias}' at '{repo_path}': {str(e)}"
+            )
+            # Re-raise exception to be handled by calling method
+            raise

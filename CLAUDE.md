@@ -241,6 +241,178 @@ error: externally-managed-environment
 
 - **🚨 VOYAGEAI BATCH PROCESSING TOKEN LIMITS**: VoyageAI API enforces 120,000 token limit per batch request. The VoyageAI client now implements token-aware batching that automatically splits large file batches to respect this limit while maintaining performance optimization. Files with >100K estimated tokens will be processed in multiple batches transparently. Error "max allowed tokens per submitted batch is 120000" indicates this protection is working correctly.
 
+## 🚀 CIDX REPOSITORY LIFECYCLE AND CONTAINER ARCHITECTURE
+
+**CRITICAL UNDERSTANDING**: The CIDX system operates on a **Golden Repository → Activated Repository → Container Lifecycle** architecture that is fundamental to understanding how semantic search actually works.
+
+### **📋 Complete Repository Lifecycle Workflow**
+
+#### **Phase 1: Golden Repository Creation and Indexing**
+**Location**: `~/.cidx-server/data/golden-repos/<alias>/`
+**Purpose**: Master repositories with full indexing infrastructure
+
+1. **Repository Registration** (`GoldenRepoManager.add_golden_repo()`)
+   - Git clone repository to golden-repos directory
+   - For local repos: Uses regular copy (NOT CoW) to avoid cross-device link issues
+   - For remote repos: Uses `git clone --depth=1` for efficiency
+
+2. **Infrastructure Setup** (`_execute_post_clone_workflow()`)
+   ```bash
+   cidx init --embedding-provider voyage-ai [--force]
+   cidx start --force-docker
+   cidx status --force-docker  # Health check
+   cidx index                  # Full indexing with vector embeddings
+   cidx stop --force-docker    # CRITICAL: Containers are stopped after indexing
+   ```
+
+3. **Golden Repository State**
+   - **Indexed Data**: Complete Qdrant vector database with all embeddings
+   - **Configuration**: Project-specific config with allocated ports
+   - **Container State**: **STOPPED** - No running containers
+   - **Index State**: **COMPLETE** - All files processed and embedded
+
+#### **Phase 2: Repository Activation via CoW Cloning**
+**Location**: `~/.cidx-server/data/activated-repos/<username>/<user_alias>/`
+**Purpose**: User-specific repository instances with CoW-shared index data
+
+1. **Activation Process** (`ActivatedRepoManager.activate_repository()`)
+   - **CoW Clone**: `git clone --local <golden_repo_path> <activated_repo_path>`
+   - **Index Data Sharing**: CoW cloning includes .code-indexer/ directory with complete index
+   - **Branch Setup**: Configures origin remote pointing to golden repository
+   - **Metadata Creation**: User-specific metadata with activation timestamp
+
+2. **Key CoW Benefits**
+   - **Storage Efficiency**: Index data shared between golden and activated repos
+   - **Speed**: No re-indexing required - vector embeddings already exist
+   - **Isolation**: User can switch branches without affecting golden repo
+
+#### **Phase 3: Query-Time Container Lifecycle**
+**CRITICAL**: Containers run in **ACTIVATED** repositories, NOT golden repositories
+
+1. **Semantic Query Request** (`/api/query` → `SemanticQueryManager`)
+   - User makes semantic search request
+   - System locates user's activated repositories
+   - For each repo: `SemanticSearchService.search_repository_path()`
+
+2. **Repository-Specific Container Startup** (`SemanticSearchService._perform_semantic_search()`)
+   ```python
+   # Load repository-specific configuration
+   config_manager = ConfigManager.create_with_backtrack(Path(repo_path))
+   config = config_manager.get_config()
+
+   # Create repository-specific Qdrant client (connects to correct port)
+   qdrant_client = QdrantClient(config=config.qdrant, project_root=Path(repo_path))
+   ```
+
+3. **Container Management Principles**
+   - **Per-Repository Containers**: Each activated repo has its own container set
+   - **Automatic Port Allocation**: GlobalPortRegistry calculates unique ports per project
+   - **On-Demand Startup**: Containers start automatically when queries are made
+   - **Lazy Loading**: Only start containers when actually needed for search
+
+### **🔍 Query Execution Flow**
+
+#### **Container Auto-Start Sequence**
+1. **Query Arrives**: User makes semantic search request
+2. **Repository Resolution**: Find activated repository path
+3. **Configuration Loading**: Load repo-specific config with ports
+4. **Container Check**: QdrantClient detects if containers are running
+5. **Auto-Start**: If containers stopped, automatically start them
+6. **Vector Search**: Execute semantic search with real embeddings
+7. **Results Return**: Format and return search results
+
+#### **Why This Architecture Works**
+- **Golden Repos**: Single-source-of-truth with complete indexing
+- **Activated Repos**: User-specific workspace with shared index data
+- **Container Lifecycle**: Only run containers when actively querying
+- **Resource Efficiency**: No permanent container overhead
+- **Multi-User Isolation**: Each user has independent activated repositories
+
+### **🏗️ Container Architecture Details**
+
+#### **Container Naming Convention**
+```
+cidx-{project_hash}-qdrant
+cidx-{project_hash}-ollama
+cidx-{project_hash}-data-cleaner
+```
+Where `project_hash` is calculated from activated repository path.
+
+#### **Port Allocation Strategy**
+- **Dynamic Calculation**: `GlobalPortRegistry._calculate_project_hash(project_root)`
+- **Per-Project Isolation**: Each activated repo gets unique port range
+- **Configuration Storage**: Ports stored in activated repo's `.code-indexer/config.json`
+- **Health Check Synchronization**: Same ports used for containers and health checks
+
+#### **Container State Management**
+- **Startup**: Triggered by first query to repository
+- **Health Monitoring**: `HealthChecker` validates container availability
+- **Auto-Recovery**: Failed containers can be restarted automatically
+- **Shutdown**: Manual via `cidx stop` or cleanup during deactivation
+
+### **💾 Data Flow and Storage**
+
+#### **Index Data Location**
+- **Golden Repo**: `~/.cidx-server/data/golden-repos/<alias>/.code-indexer/`
+- **Activated Repo**: `~/.cidx-server/data/activated-repos/<user>/<alias>/.code-indexer/`
+- **Shared via CoW**: Vector embeddings and Qdrant collections shared
+
+#### **Configuration Hierarchy**
+1. **Repository Config**: `.code-indexer/config.json` (project-specific ports, embedding provider)
+2. **Global Config**: `~/.cidx-server/config.yaml` (server-wide settings)
+3. **Runtime Config**: Dynamic port allocation and container state
+
+### **🔧 Critical Implementation Details**
+
+#### **SemanticSearchService Integration**
+```python
+# CORRECT: Repository-specific configuration loading
+config_manager = ConfigManager.create_with_backtrack(Path(repo_path))
+config = config_manager.get_config()
+
+# CORRECT: Repository-specific Qdrant client (auto-starts containers)
+qdrant_client = QdrantClient(config=config.qdrant, project_root=Path(repo_path))
+
+# CORRECT: Repository-specific embedding service
+embedding_service = EmbeddingProviderFactory.create(config=config)
+```
+
+#### **Port Resolution Synchronization**
+- **Container Startup**: Uses ports from project configuration
+- **Health Checks**: `DockerManager._get_service_url()` reads same project config
+- **Query Operations**: QdrantClient connects to same calculated ports
+- **Perfect Sync**: All components use identical port resolution logic
+
+### **🚨 Common Architectural Misconceptions**
+
+#### **WRONG Assumptions**
+❌ "Containers run in golden repositories"
+❌ "Ports are hardcoded or use defaults"
+❌ "Index data is duplicated for each user"
+❌ "Containers must be manually started"
+❌ "One container set serves all repositories"
+
+#### **CORRECT Understanding**
+✅ **Containers run in ACTIVATED repositories**
+✅ **Ports are dynamically calculated per project**
+✅ **Index data is CoW-shared between golden and activated repos**
+✅ **Containers auto-start on first query**
+✅ **Each activated repository has its own container set**
+
+### **🔄 Repository Synchronization**
+
+#### **Branch Operations** (`ActivatedRepoManager.switch_branch()`)
+- **Remote Fetch**: Attempts `git fetch origin` if remote accessible
+- **Local Fallback**: Falls back to local branch operations if fetch fails
+- **Graceful Handling**: Handles both connected and offline repository scenarios
+
+#### **Repository Sync** (`ActivatedRepoManager.sync_with_golden_repository()`)
+- **Golden Repo Pull**: Fetches latest changes from golden repository
+- **Merge Conflicts**: Detects and reports merge conflicts requiring manual resolution
+- **Metadata Updates**: Updates last_accessed timestamp after successful sync
+
+This architecture provides the foundation for scalable, multi-user semantic code search with efficient resource utilization and proper isolation between users while sharing expensive index computation through CoW cloning.
+
 - CIDX SEMANTIC CODE SEARCH INTEGRATION
 
 🎯 SEMANTIC SEARCH TOOL - YOUR PRIMARY CODE DISCOVERY METHOD
@@ -362,5 +534,60 @@ Options:
 ✅ `cidx query "user authentication" --quiet` → Finds login, auth, security, credentials, sessions
 ❌ `grep "auth"` → Only finds literal "auth" text, misses related concepts
 
-✅ `cidx query "error handling" --quiet` → Finds exceptions, try-catch, error responses, logging  
+✅ `cidx query "error handling" --quiet` → Finds exceptions, try-catch, error responses, logging
 ❌ `grep "error"` → Only finds "error" text, misses exception handling patterns
+
+## **CIDX SERVER ARCHITECTURE - INTERNAL OPERATIONS ONLY**
+
+**CRITICAL ARCHITECTURAL PRINCIPLE**: The CIDX server contains ALL indexing functionality internally and should NEVER call external `cidx` commands via subprocess.
+
+### **Key Insights**:
+- **Server IS the CIDX application** - It has direct access to all indexing code (FileChunkingManager, ConfigManager, etc.)
+- **No external subprocess calls** except to git operations (git pull, git status, etc.)
+- **Internal API calls only** - Use existing services like `FileChunkingManager.index_repository()` directly
+- **Configuration integration** - Use `ConfigManager.create_with_backtrack()` for repository-specific config
+
+### **WRONG Pattern** (External subprocess):
+```python
+# WRONG - Don't do this in server code
+subprocess.run(["cidx", "index"], cwd=repo_path)
+```
+
+### **CORRECT Pattern** (Internal API):
+```python
+# CORRECT - Use internal services directly
+from ...services.file_chunking_manager import FileChunkingManager
+from ...config import ConfigManager
+
+config_manager = ConfigManager.create_with_backtrack(repo_path)
+chunking_manager = FileChunkingManager(config_manager)
+chunking_manager.index_repository(repo_path=str(repo_path), force_reindex=False)
+```
+
+### **Why This Matters**:
+- **Performance**: No process overhead, direct memory access
+- **Error Handling**: Can catch and handle internal exceptions properly
+- **Progress Reporting**: Can integrate progress callbacks directly
+- **Configuration**: Uses same config context as rest of server
+- **Architecture**: Server components work together, not as separate processes
+
+### **Application**: This applies to ALL server operations including sync jobs, background processing, and API endpoints.
+
+## CRITICAL TEST EXECUTION TIMEOUT REQUIREMENTS
+
+**MANDATORY 20-MINUTE TIMEOUT**: When running automation test scripts (fast-automation.sh, server-fast-automation.sh, full-automation.sh), ALWAYS use 1200000ms (20 minute) timeout to prevent premature termination.
+
+**TIMEOUT KNOWLEDGE**:
+- **fast-automation.sh**: ~8-10 minutes execution time, requires 20-minute timeout for safety
+- **server-fast-automation.sh**: ~8 minutes execution time, requires 20-minute timeout for safety
+- **full-automation.sh**: 10+ minutes execution time, requires 20-minute timeout minimum
+- **Default 2-minute timeout**: Will cause premature failure and incomplete test results
+
+**BASH TIMEOUT SYNTAX**:
+```bash
+./fast-automation.sh          # Use timeout: 1200000 (20 minutes)
+./server-fast-automation.sh   # Use timeout: 1200000 (20 minutes)
+./full-automation.sh          # Use timeout: 1200000 (20 minutes)
+```
+
+**CRITICAL FOR TEST ANALYSIS**: Premature timeout termination prevents proper identification of failing tests and leads to incomplete debugging information. Always use full 20-minute timeout when running these scripts to get complete test results and proper failure analysis.

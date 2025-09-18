@@ -194,7 +194,7 @@ class ErrorHandlerConfiguration(BaseModel):
             ),
             # API key patterns
             SanitizationRule(
-                pattern=r'((?:api_key|apikey|api-key)\s*[:=]\s*)(?:["\']?)([^"\'\s,}]+)(?:["\']?)',
+                pattern=r'((?:api_key|apikey|api-key|x-api-key|client_secret|client-secret)\s*[:=]\s*)(?:["\']?)([^"\'\s,}]+)(?:["\']?)',
                 replacement=r"\1[REDACTED]",
                 case_sensitive=False,
             ),
@@ -206,8 +206,26 @@ class ErrorHandlerConfiguration(BaseModel):
             ),
             # Database URLs
             SanitizationRule(
-                pattern=r"(postgresql|mysql|mongodb|redis)://[^:]+:[^@]+@[^/]+",
-                replacement=r"\1://[REDACTED]:[REDACTED]@[HOST]",
+                pattern=r"(postgres|postgresql|mysql|mongodb|redis)://[^:]+:[^@]+@[^/\s]+(?:/[^\s]*)?",
+                replacement=r"\1://[REDACTED]:[REDACTED]@[HOST]/[DB]",
+                case_sensitive=False,
+            ),
+            # Database password patterns
+            SanitizationRule(
+                pattern=r'((?:database_url|db_password|db_pass)\s*[:=]\s*)(?:["\']?)([^"\'\s,}]+)(?:["\']?)',
+                replacement=r"\1[REDACTED]",
+                case_sensitive=False,
+            ),
+            # Database host patterns
+            SanitizationRule(
+                pattern=r'((?:db_host|database_host|host)\s*[:=]\s*)(?:["\']?)([^"\'\s,}]+)(?:["\']?)',
+                replacement=r"\1[REDACTED]",
+                case_sensitive=False,
+            ),
+            # SQL connection strings
+            SanitizationRule(
+                pattern=r'(connection_string\s*[:=]\s*)(?:["\']?)([^"\'\s]+)(?:["\']?)',
+                replacement=r"\1[REDACTED]",
                 case_sensitive=False,
             ),
             # JWT tokens
@@ -228,6 +246,12 @@ class ErrorHandlerConfiguration(BaseModel):
                 replacement="[SSN]",
                 case_sensitive=True,
             ),
+            # Tax ID patterns
+            SanitizationRule(
+                pattern=r"\b\d{2,3}-?\d{6,7}\b",
+                replacement="[TAX_ID]",
+                case_sensitive=True,
+            ),
             # Email addresses
             SanitizationRule(
                 pattern=r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
@@ -240,9 +264,15 @@ class ErrorHandlerConfiguration(BaseModel):
                 replacement="[IP_ADDRESS]",
                 case_sensitive=True,
             ),
-            # File paths with sensitive directories
+            # File paths with sensitive directories (Unix)
             SanitizationRule(
-                pattern=r"(?:/home/[^/\s]+|/root|/etc/ssl/private|/var/secrets|~/.aws|~/.ssh)[/\w.-]*",
+                pattern=r"(?:/home/[^/\s]+|/root|/etc/ssl/private|/var/secrets|/var/lib/[^/\s]+/secrets|/app/config|~/.aws|~/.ssh|/etc/passwd)[/\w.-]*",
+                replacement="[SENSITIVE_PATH]",
+                case_sensitive=True,
+            ),
+            # Windows file paths with sensitive directories
+            SanitizationRule(
+                pattern=r"[A-Z]:\\Users\\[^\\]+(?:\\[^\\]+)*",
                 replacement="[SENSITIVE_PATH]",
                 case_sensitive=True,
             ),

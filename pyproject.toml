@@ -38,7 +38,7 @@ dependencies = [
     "pathspec>=0.11.0",
     "watchdog>=3.0.0",
     "jsonschema>=4.0.0",
-    "fastapi>=0.104.0",
+    "fastapi>=0.116.0",
     "uvicorn>=0.24.0",
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
@@ -151,8 +151,26 @@ ignore_errors = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 filterwarnings = [
+    # Pydantic v2 deprecations
     "ignore:The `__fields__` attribute is deprecated.*:DeprecationWarning",
+    "ignore:.*`__fields_set__` attribute is deprecated.*:DeprecationWarning",
+    # pytest-asyncio deprecations
+    "ignore:.*pytest-asyncio detected an unclosed event loop.*:DeprecationWarning",
+    "ignore:.*There is no current event loop.*:DeprecationWarning",
+    # httpx deprecations
+    "ignore:.*httpx.AsyncClient.*:DeprecationWarning",
+    "ignore:.*httpcore.*:DeprecationWarning",
+    # Asyncio runtime warnings
+    "ignore:.*coroutine.*was never awaited.*:RuntimeWarning",
+    # Coverage warnings
+    "ignore:.*Coverage.py warning.*:UserWarning",
+    # Generic deprecation from dependencies
+    "ignore:.*pkg_resources is deprecated.*:DeprecationWarning",
+    # Passlib crypt module deprecation (external dependency issue)
+    "ignore:.*'crypt' is deprecated and slated for removal.*:DeprecationWarning",
 ]
 markers = [
     "e2e: End-to-end tests",

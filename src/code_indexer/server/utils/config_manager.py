@@ -14,6 +14,20 @@ from typing import Optional
 
 
 @dataclass
+class PasswordSecurityConfig:
+    """Password strength validation configuration."""
+
+    min_length: int = 12
+    max_length: int = 128
+    required_char_classes: int = 4
+    min_entropy_bits: int = 50
+    check_common_passwords: bool = True
+    check_personal_info: bool = True
+    check_keyboard_patterns: bool = True
+    check_sequential_chars: bool = True
+
+
+@dataclass
 class ServerConfig:
     """
     Server configuration data structure.
@@ -27,6 +41,12 @@ class ServerConfig:
     port: int = 8000
     jwt_expiration_minutes: int = 10
     log_level: str = "INFO"
+    password_security: Optional[PasswordSecurityConfig] = None
+
+    def __post_init__(self):
+        """Initialize nested config objects if not provided."""
+        if self.password_security is None:
+            self.password_security = PasswordSecurityConfig()
 
 
 class ServerConfigManager:

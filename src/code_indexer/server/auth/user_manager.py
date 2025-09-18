@@ -75,12 +75,15 @@ class UserManager:
     Users are stored in ~/.cidx-server/users.json with hashed passwords.
     """
 
-    def __init__(self, users_file_path: Optional[str] = None):
+    def __init__(
+        self, users_file_path: Optional[str] = None, password_security_config=None
+    ):
         """
         Initialize user manager.
 
         Args:
             users_file_path: Path to users.json file (defaults to ~/.cidx-server/users.json)
+            password_security_config: PasswordSecurityConfig for password validation settings
         """
         if users_file_path:
             self.users_file_path = users_file_path
@@ -91,7 +94,9 @@ class UserManager:
             self.users_file_path = str(server_dir / "users.json")
 
         self.password_manager = PasswordManager()
-        self.password_strength_validator = PasswordStrengthValidator()
+        self.password_strength_validator = PasswordStrengthValidator(
+            password_security_config
+        )
         self._ensure_users_file_exists()
 
     def _ensure_users_file_exists(self):

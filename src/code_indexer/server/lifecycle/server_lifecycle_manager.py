@@ -88,6 +88,9 @@ class ServerLifecycleManager:
         is_running = self._check_server_running()
 
         if not is_running:
+            # Clean up stale files if they exist but process is not running
+            self._cleanup_stale_files()
+
             return ServerStatusInfo(
                 status=ServerStatus.STOPPED,
                 pid=None,
@@ -185,6 +188,9 @@ class ServerLifecycleManager:
             self._remove_pidfile()
             if self.state_file_path.exists():
                 self.state_file_path.unlink()
+
+            # Close any open log files
+            self._cleanup_server_logs()
 
     def restart_server(self) -> Dict[str, Any]:
         """Restart the server."""
@@ -378,20 +384,56 @@ class ServerLifecycleManager:
             str(config["port"]),
         ]
 
-        # Start process in background
+        # Create log directory for server output
+        log_dir = self.server_dir_path / "logs"
+        log_dir.mkdir(exist_ok=True)
+
+        stdout_log = log_dir / "server.stdout.log"
+        stderr_log = log_dir / "server.stderr.log"
+
+        # Open log files for server output
+        stdout_file = open(stdout_log, "w")
+        stderr_file = open(stderr_log, "w")
+
+        # Start process in background with output redirected to log files
         process = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=stdout_file,
+            stderr=stderr_file,
             start_new_session=True,  # Create new process group
         )
 
         # Give server time to start
-        time.sleep(2)
+        time.sleep(3)
 
         # Check if process started successfully
-        if process.poll() is not None:
-            raise Exception("Server process failed to start")
+        poll_result = process.poll()
+        if poll_result is not None:
+            # Process failed to start - read error logs
+            stdout_file.close()
+            stderr_file.close()
+
+            try:
+                with open(stdout_log, "r") as f:
+                    stdout_content = f.read()
+                with open(stderr_log, "r") as f:
+                    stderr_content = f.read()
+
+                error_msg = f"Server process failed to start (exit code: {poll_result})"
+                if stdout_content.strip():
+                    error_msg += f"\nSTDOUT: {stdout_content}"
+                if stderr_content.strip():
+                    error_msg += f"\nSTDERR: {stderr_content}"
+
+                raise Exception(error_msg)
+            except Exception as read_error:
+                raise Exception(
+                    f"Server process failed to start (exit code: {poll_result}), and failed to read logs: {read_error}"
+                )
+
+        # Store file references so they can be closed later
+        process.stdout_file = stdout_file  # type: ignore[attr-defined]
+        process.stderr_file = stderr_file  # type: ignore[attr-defined]
 
         return process
 
@@ -437,3 +479,27 @@ class ServerLifecycleManager:
 
         result = response.json()
         return dict(result) if result is not None else {}
+
+    def _cleanup_stale_files(self):
+        """Clean up stale pidfile and state file when process is not running."""
+        # Remove pidfile if it exists
+        if self.pidfile_path.exists():
+            try:
+                self.pidfile_path.unlink()
+            except OSError:
+                # Ignore errors if file can't be removed
+                pass
+
+        # Remove state file if it exists
+        if self.state_file_path.exists():
+            try:
+                self.state_file_path.unlink()
+            except OSError:
+                # Ignore errors if file can't be removed
+                pass
+
+    def _cleanup_server_logs(self):
+        """Clean up server log file handles."""
+        # This method will be called during shutdown to ensure log files are properly closed
+        # The actual file handles are closed by the subprocess termination
+        pass

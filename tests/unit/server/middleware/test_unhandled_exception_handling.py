@@ -8,7 +8,7 @@ Uses real exception scenarios and validates security-compliant error responses.
 import uuid
 import pytest
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from fastapi import Request
 
 from code_indexer.server.middleware.error_handler import GlobalErrorHandler
@@ -17,7 +17,7 @@ from code_indexer.server.middleware.error_handler import GlobalErrorHandler
 class CustomBusinessError(Exception):
     """Custom business exception for testing."""
 
-    def __init__(self, message: str, sensitive_data: Dict[str, Any] = None):
+    def __init__(self, message: str, sensitive_data: Optional[Dict[str, Any]] = None):
         self.message = message
         self.sensitive_data = sensitive_data or {}
         super().__init__(message)

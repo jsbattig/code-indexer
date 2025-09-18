@@ -1301,3 +1301,121 @@ class ActivatedRepoManager:
                 f"Exception switching to local branch '{branch_name}': {e}"
             )
             return False
+
+    def find_by_canonical_url(self, canonical_url: str) -> List[Dict[str, Any]]:
+        """
+        Find activated repositories by canonical git URL.
+
+        Args:
+            canonical_url: Canonical form of git URL (e.g., "github.com/user/repo")
+
+        Returns:
+            List of matching activated repository dictionaries
+        """
+        from ..services.git_url_normalizer import GitUrlNormalizer
+
+        normalizer = GitUrlNormalizer()
+        matching_repos: List[Dict[str, Any]] = []
+
+        # Get all users who have activated repositories
+        if not os.path.exists(self.activated_repos_dir):
+            return matching_repos
+
+        for user_dir_name in os.listdir(self.activated_repos_dir):
+            user_repos_dir = os.path.join(self.activated_repos_dir, user_dir_name)
+            if not os.path.isdir(user_repos_dir):
+                continue
+
+            # List activated repositories for this user
+            user_repos = self.list_activated_repositories(user_dir_name)
+
+            for repo_data in user_repos:
+                try:
+                    golden_repo_alias = repo_data.get("golden_repo_alias")
+                    if not golden_repo_alias:
+                        continue
+
+                    # Get the golden repository URL from the golden repo manager
+                    golden_repo = self.golden_repo_manager.golden_repos.get(
+                        golden_repo_alias
+                    )
+                    if not golden_repo:
+                        continue
+
+                    # Normalize the golden repository's URL
+                    normalized = normalizer.normalize(golden_repo.repo_url)
+
+                    # Check if it matches the target canonical URL
+                    if normalized.canonical_form == canonical_url:
+                        # Add canonical URL and branch information
+                        repo_dict_any = dict(repo_data)  # Convert to Dict[str, Any]
+                        repo_dict_any["canonical_url"] = canonical_url
+                        repo_dict_any["git_url"] = golden_repo.repo_url
+
+                        # Get branch information from the activated repository
+                        repo_path = self.get_activated_repo_path(
+                            user_dir_name, golden_repo_alias
+                        )
+                        repo_dict_any["branches"] = self._get_repository_branches(
+                            repo_path
+                        )
+
+                        matching_repos.append(repo_dict_any)
+
+                except Exception as e:
+                    self.logger.warning(
+                        f"Failed to normalize URL for activated repo {user_dir_name}/{golden_repo_alias}: {str(e)}"
+                    )
+                    continue
+
+        return matching_repos
+
+    def _get_repository_branches(self, repo_path: str) -> List[str]:
+        """
+        Get list of branches for a repository.
+
+        Args:
+            repo_path: Path to the repository
+
+        Returns:
+            List of branch names
+        """
+        try:
+            if not os.path.exists(repo_path):
+                return ["main"]  # Default fallback
+
+            # Get all branches (local and remote)
+            result = subprocess.run(
+                ["git", "branch", "-a"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if result.returncode == 0:
+                branches = []
+                for line in result.stdout.strip().split("\n"):
+                    if line.strip():
+                        # Clean up branch name (remove prefixes and current marker)
+                        branch = line.strip().replace("*", "").strip()
+
+                        # Skip remote tracking references in favor of clean names
+                        if branch.startswith("remotes/origin/"):
+                            branch = branch.replace("remotes/origin/", "")
+
+                        if (
+                            branch
+                            and branch not in ["HEAD", "HEAD -> origin/main"]
+                            and not branch.startswith("remotes/")
+                        ):
+                            if branch not in branches:  # Avoid duplicates
+                                branches.append(branch)
+
+                return branches if branches else ["main"]
+            else:
+                return ["main"]
+
+        except Exception as e:
+            self.logger.warning(f"Failed to get branches for {repo_path}: {str(e)}")
+            return ["main"]

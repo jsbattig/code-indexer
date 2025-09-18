@@ -111,9 +111,22 @@ def create_validation_error_response(
         field_errors=field_errors, error_count=len(field_errors)
     )
 
+    # Create FastAPI-compatible detail for existing tests
+    fastapi_detail = []
+    for pydantic_error in validation_error.errors():
+        fastapi_detail.append(
+            {
+                "loc": pydantic_error.get("loc", []),
+                "msg": pydantic_error.get("msg", ""),
+                "type": pydantic_error.get("type", ""),
+                "input": pydantic_error.get("input"),
+            }
+        )
+
     return {
         "error": ErrorType.VALIDATION_ERROR,
         "message": "Request validation failed. Please check the provided data and try again.",
+        "detail": fastapi_detail,  # FastAPI-compatible format for test compatibility
         "correlation_id": correlation_id,
         "timestamp": format_timestamp(timestamp),
         "details": validation_details.model_dump(),
@@ -247,9 +260,9 @@ def create_json_response(
     error_type = error_data.get("error", ErrorType.INTERNAL_SERVER_ERROR)
     status_code = status_code_map.get(error_type, 500)
 
-    # Override status code to 400 for validation errors (instead of FastAPI's default 422)
+    # Use HTTP standard 422 for validation errors (FastAPI's default behavior)
     if error_type == ErrorType.VALIDATION_ERROR:
-        status_code = 400
+        status_code = 422
 
     # Add Retry-After header for service unavailable errors
     headers = {}

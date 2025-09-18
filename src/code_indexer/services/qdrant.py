@@ -1977,6 +1977,252 @@ class QdrantClient:
             self.console.print(f"❌ Index rebuild failed: {e}")
             return False
 
+    # Validation-specific methods for Story 9
+
+    def get_all_indexed_files(self, collection_name: Optional[str] = None) -> List[str]:
+        """
+        Get all indexed file paths from the collection.
+
+        Args:
+            collection_name: Optional collection name (uses default if not provided)
+
+        Returns:
+            List of file paths that are indexed
+        """
+        collection = (
+            collection_name
+            or self._current_collection_name
+            or self.config.collection_base_name
+        )
+
+        try:
+            # Scroll through all points to get file paths
+            all_files = []
+            offset = None
+            limit = 1000  # Process in batches
+
+            while True:
+                scroll_params = {
+                    "limit": limit,
+                    "with_payload": True,
+                    "with_vector": False,  # We only need metadata
+                }
+
+                if offset:
+                    scroll_params["offset"] = offset
+
+                response = self.client.post(
+                    f"/collections/{collection}/points/scroll",
+                    json=scroll_params,
+                    timeout=30.0,
+                )
+
+                if response.status_code != 200:
+                    break
+
+                data = response.json()
+                points = data.get("result", {}).get("points", [])
+
+                if not points:
+                    break
+
+                # Extract file paths from payloads
+                for point in points:
+                    payload = point.get("payload", {})
+                    file_path = payload.get("file_path")
+                    if file_path and file_path not in all_files:
+                        all_files.append(file_path)
+
+                # Check if we have more points to fetch
+                next_page_offset = data.get("result", {}).get("next_page_offset")
+                if next_page_offset:
+                    offset = next_page_offset
+                else:
+                    break
+
+            return all_files
+
+        except Exception as e:
+            print(f"Error getting indexed files: {e}")
+            return []
+
+    def get_file_index_timestamps(
+        self, collection_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Get file index timestamps from the collection.
+
+        Args:
+            collection_name: Optional collection name (uses default if not provided)
+
+        Returns:
+            Dictionary mapping file paths to their index timestamps
+        """
+        collection = (
+            collection_name
+            or self._current_collection_name
+            or self.config.collection_base_name
+        )
+
+        try:
+            timestamps = {}
+            offset = None
+            limit = 1000  # Process in batches
+
+            while True:
+                scroll_params = {
+                    "limit": limit,
+                    "with_payload": True,
+                    "with_vector": False,  # We only need metadata
+                }
+
+                if offset:
+                    scroll_params["offset"] = offset
+
+                response = self.client.post(
+                    f"/collections/{collection}/points/scroll",
+                    json=scroll_params,
+                    timeout=30.0,
+                )
+
+                if response.status_code != 200:
+                    break
+
+                data = response.json()
+                points = data.get("result", {}).get("points", [])
+
+                if not points:
+                    break
+
+                # Extract timestamps from payloads
+                for point in points:
+                    payload = point.get("payload", {})
+                    file_path = payload.get("file_path")
+                    indexed_at = payload.get("indexed_at")
+
+                    if file_path and indexed_at:
+                        # Parse timestamp string to datetime object
+                        try:
+                            from datetime import datetime, timezone
+
+                            if isinstance(indexed_at, str):
+                                # Handle both ISO format with and without 'Z'
+                                if indexed_at.endswith("Z"):
+                                    timestamp = datetime.fromisoformat(
+                                        indexed_at.replace("Z", "+00:00")
+                                    )
+                                else:
+                                    timestamp = datetime.fromisoformat(indexed_at)
+                                    if timestamp.tzinfo is None:
+                                        timestamp = timestamp.replace(
+                                            tzinfo=timezone.utc
+                                        )
+                                timestamps[file_path] = timestamp
+                        except (ValueError, TypeError):
+                            # Skip malformed timestamps
+                            continue
+
+                # Check if we have more points to fetch
+                next_page_offset = data.get("result", {}).get("next_page_offset")
+                if next_page_offset:
+                    offset = next_page_offset
+                else:
+                    break
+
+            return timestamps
+
+        except Exception as e:
+            print(f"Error getting file timestamps: {e}")
+            return {}
+
+    def sample_vectors(
+        self, sample_size: int, collection_name: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get a random sample of vectors from the collection for health checking.
+
+        Args:
+            sample_size: Number of vectors to sample
+            collection_name: Optional collection name (uses default if not provided)
+
+        Returns:
+            List of vector dictionaries with id, vector, and payload
+        """
+        collection = (
+            collection_name
+            or self._current_collection_name
+            or self.config.collection_base_name
+        )
+
+        try:
+            # Use scroll with limit to get a sample
+            # For true randomization, we'd need to implement reservoir sampling,
+            # but for health checking, sequential sampling is sufficient
+            scroll_params = {
+                "limit": min(sample_size, 1000),  # Don't request too many at once
+                "with_payload": True,
+                "with_vector": True,
+            }
+
+            response = self.client.post(
+                f"/collections/{collection}/points/scroll",
+                json=scroll_params,
+                timeout=30.0,
+            )
+
+            if response.status_code != 200:
+                return []
+
+            data = response.json()
+            points = data.get("result", {}).get("points", [])
+
+            # Convert to expected format
+            sample_vectors = []
+            for point in points:
+                vector_data = {
+                    "id": point.get("id"),
+                    "vector": point.get("vector"),
+                    "payload": point.get("payload", {}),
+                }
+                sample_vectors.append(vector_data)
+
+            return sample_vectors[:sample_size]  # Trim to requested size
+
+        except Exception as e:
+            print(f"Error sampling vectors: {e}")
+            return []
+
+    def validate_embedding_dimensions(
+        self, expected_dimensions: int, collection_name: Optional[str] = None
+    ) -> bool:
+        """
+        Validate that all embeddings have the expected dimensions.
+
+        Args:
+            expected_dimensions: Expected vector dimensions
+            collection_name: Optional collection name (uses default if not provided)
+
+        Returns:
+            True if all embeddings have correct dimensions, False otherwise
+        """
+        try:
+            # Get collection info to check vector configuration
+            collection_info = self.get_collection_info(collection_name)
+
+            if not collection_info:
+                return False
+
+            # Check configured vector size
+            config_info = collection_info.get("config", {})
+            vector_config = config_info.get("params", {}).get("vectors", {})
+            configured_size = int(vector_config.get("size", 0))
+
+            return bool(configured_size == expected_dimensions)
+
+        except Exception as e:
+            print(f"Error validating embedding dimensions: {e}")
+            return False
+
     def close(self) -> None:
         """Close the HTTP client."""
         self.client.close()

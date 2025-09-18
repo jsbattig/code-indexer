@@ -14,7 +14,12 @@ import logging
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from code_indexer.server.models.golden_repo_branch_models import (
+        GoldenRepoBranchInfo,
+    )
 from pydantic import BaseModel
 
 
@@ -238,23 +243,50 @@ class GoldenRepoManager:
         # Get repository info before removal
         golden_repo = self.golden_repos[alias]
 
-        # Clean up repository files - this now returns bool indicating cleanup success
-        cleanup_successful = self._cleanup_repository_files(golden_repo.clone_path)
+        # Perform cleanup BEFORE removing from memory - this is the critical transaction boundary
+        try:
+            cleanup_successful = self._cleanup_repository_files(golden_repo.clone_path)
+        except GitOperationError as cleanup_error:
+            # Critical cleanup failures should prevent deletion
+            logging.error(
+                f"Critical cleanup failure prevents repository deletion: {cleanup_error}"
+            )
+            raise  # Re-raise to prevent deletion
 
-        # Remove from storage - this is the critical operation for deletion success
+        # Only remove from storage after cleanup is complete (successful or recoverable failure)
         del self.golden_repos[alias]
-        self._save_metadata()
+
+        try:
+            self._save_metadata()
+        except Exception as save_error:
+            # If metadata save fails, rollback the deletion
+            logging.error(
+                f"Failed to save metadata after deletion, rolling back: {save_error}"
+            )
+            self.golden_repos[alias] = golden_repo  # Restore repository
+            raise GitOperationError(
+                f"Repository deletion rollback due to metadata save failure: {save_error}"
+            )
 
         # Generate appropriate success message based on cleanup result
+        warnings = []
         if cleanup_successful:
             message = f"Golden repository '{alias}' removed successfully"
         else:
             message = f"Golden repository '{alias}' removed successfully (some cleanup issues occurred)"
+            warnings.append(
+                "resource leak detected: some cleanup operations did not complete fully"
+            )
 
-        return {
+        result = {
             "success": True,
             "message": message,
         }
+
+        if warnings:
+            result["warnings"] = warnings
+
+        return result
 
     def _validate_git_repository(self, repo_url: str) -> bool:
         """
@@ -437,132 +469,224 @@ class GoldenRepoManager:
 
         try:
             from pathlib import Path
-            from ...services.docker_manager import DockerManager
 
-            # Use the same orchestrated cleanup as 'cidx uninstall'
             clone_path_obj = Path(clone_path)
             project_config_dir = clone_path_obj / ".code-indexer"
+            overall_cleanup_successful = True
 
+            # Phase 1: Docker cleanup if project has cidx services
             if project_config_dir.exists():
-                # Repository has cidx services - use orchestrated cleanup
-                try:
-                    docker_manager = None
-                    try:
-                        docker_manager = DockerManager(
-                            force_docker=True,  # Use Docker for server operations
-                            project_config_dir=project_config_dir,
-                        )
+                docker_success = self._perform_docker_cleanup(
+                    clone_path, project_config_dir
+                )
+                if not docker_success:
+                    overall_cleanup_successful = False
 
-                        # Perform orchestrated cleanup with data removal (same as uninstall)
-                        cleanup_success = docker_manager.cleanup(
-                            remove_data=True, verbose=False
-                        )
-                        if not cleanup_success:
-                            logging.warning(
-                                f"Docker cleanup reported some issues for {clone_path}"
-                            )
+            # Phase 2: Final filesystem cleanup
+            filesystem_success = self._cleanup_filesystem(clone_path_obj)
+            if filesystem_success is None:
+                return overall_cleanup_successful  # Directory already removed
+            return filesystem_success and overall_cleanup_successful
 
-                        logging.info(
-                            f"Completed orchestrated cleanup for: {clone_path}"
-                        )
-                    finally:
-                        # DockerManager doesn't require explicit closing
-                        docker_manager = None
+        except (
+            ImportError,
+            PermissionError,
+            OSError,
+            subprocess.CalledProcessError,
+            RuntimeError,
+        ) as e:
+            return self._handle_cleanup_errors(e, clone_path)
 
-                except PermissionError as e:
-                    logging.error(f"Permission denied during Docker cleanup: {e}")
-                    raise GitOperationError(
-                        f"Insufficient permissions for Docker cleanup: {str(e)}"
-                    )
-                except OSError as e:
-                    if e.errno == errno.ENOENT:  # File not found
-                        logging.info(
-                            f"Docker resources already cleaned for {clone_path}"
-                        )
-                    else:
-                        logging.error(f"OS error during Docker cleanup: {e}")
-                        raise GitOperationError(
-                            f"File system error during Docker cleanup: {str(e)}"
-                        )
-                except ImportError as e:
-                    logging.error(f"Missing Docker dependency: {e}")
-                    raise GitOperationError(
-                        f"Docker system dependency unavailable: {str(e)}"
-                    )
-                except subprocess.CalledProcessError as e:
-                    logging.error(f"Docker cleanup process failed: {e}")
-                    raise GitOperationError(
-                        f"Docker cleanup failed with exit code {e.returncode}"
-                    )
-                except (
-                    RuntimeError,
-                    ConnectionError,
-                    TimeoutError,
-                    ValueError,
-                    TypeError,
-                ) as e:
-                    # Docker daemon issues that are non-critical for repository deletion
-                    # These specific Docker-related exceptions should not prevent repository deletion
+    def _perform_docker_cleanup(
+        self, clone_path: str, project_config_dir: Path
+    ) -> bool:
+        """
+        Perform Docker orchestrated cleanup for repository with cidx services.
+
+        Args:
+            clone_path: Path to repository directory
+            project_config_dir: Path to .code-indexer config directory
+
+        Returns:
+            bool: True if Docker cleanup successful, False if issues occurred
+
+        Raises:
+            GitOperationError: For critical failures that should prevent deletion
+        """
+        from ...services.docker_manager import DockerManager
+
+        try:
+            # Use context manager for proper resource management
+            with DockerManager(
+                force_docker=True,  # Use Docker for server operations
+                project_config_dir=project_config_dir,
+            ) as docker_manager:
+                # Perform orchestrated cleanup with data removal (same as uninstall)
+                cleanup_success = docker_manager.cleanup(
+                    remove_data=True, verbose=False
+                )
+                if not cleanup_success:
                     logging.warning(
-                        f"Docker cleanup failed but deletion can proceed: {e}"
-                    )
-                    # Don't raise - this allows deletion to continue
-                finally:
-                    # Ensure docker_manager is properly cleaned up if it was created
-                    if "docker_manager" in locals():
-                        docker_manager = None
-
-            # After orchestrated cleanup, remove the remaining directory structure
-            # This should now work since root-owned files have been cleaned up
-            if clone_path_obj.exists():
-                try:
-                    shutil.rmtree(clone_path)
-                    logging.info(
-                        f"Successfully cleaned up repository files: {clone_path}"
-                    )
-                    return True
-                except (PermissionError, OSError) as fs_error:
-                    # File system cleanup failed - log but don't prevent deletion
-                    logging.warning(
-                        f"File system cleanup incomplete for {clone_path}: {fs_error}. "
-                        "Some files may remain but repository deletion was successful."
+                        f"Docker cleanup reported issues for {clone_path}. "
+                        f"Containers or volumes may still exist but cleanup can proceed."
                     )
                     return False
-            else:
-                return True  # Directory already removed
 
-        except ImportError as import_error:
-            # DockerManager import failed - this is a critical system issue
-            logging.error(f"Critical system error during cleanup: {import_error}")
-            raise GitOperationError(
-                f"System dependency unavailable for cleanup: {str(import_error)}"
-            )
+                logging.info(f"Completed orchestrated cleanup for: {clone_path}")
+                return True
+
         except PermissionError as e:
-            logging.error(f"Permission denied during cleanup: {e}")
-            raise GitOperationError(f"Insufficient permissions for cleanup: {str(e)}")
+            logging.error(f"Permission denied during Docker cleanup: {e}")
+            raise GitOperationError(
+                f"Insufficient permissions for Docker cleanup: {str(e)}"
+            )
         except OSError as e:
             if e.errno == errno.ENOENT:  # File not found
-                return True  # Already cleaned
-            elif e.errno == errno.EACCES:  # Permission denied
-                logging.error(f"Access denied during cleanup: {e}")
-                raise GitOperationError(f"Access denied for cleanup: {str(e)}")
+                logging.info(f"Docker resources already cleaned for {clone_path}")
+                return True
             else:
-                logging.error(f"OS error during cleanup: {e}")
-                raise GitOperationError(f"File system error during cleanup: {str(e)}")
-        except subprocess.CalledProcessError as e:
-            if e.returncode == 126:  # Permission denied
-                logging.error(f"Command permission error during cleanup: {e}")
-                raise GitOperationError(f"Command permission denied: {str(e)}")
-            else:
-                logging.error(f"Process error during cleanup: {e}")
+                logging.error(f"OS error during Docker cleanup: {e}")
                 raise GitOperationError(
-                    f"Process failed with exit code {e.returncode}: {str(e)}"
+                    f"File system error during Docker cleanup: {str(e)}"
                 )
-        except RuntimeError as e:
+        except ImportError as e:
+            logging.error(f"Missing Docker dependency: {e}")
+            raise GitOperationError(f"Docker system dependency unavailable: {str(e)}")
+        except subprocess.CalledProcessError as e:
+            error_output = getattr(e, "stderr", "") or str(e)
+
+            # Handle broken pipe errors gracefully - these are communication issues, not critical failures
+            if "broken pipe" in error_output.lower() or "pipe" in error_output.lower():
+                logging.warning(
+                    f"Docker cleanup had communication issues but deletion can proceed: {error_output}"
+                )
+                return False  # Non-critical failure
+            else:
+                # Other subprocess errors are more serious
+                logging.error(
+                    f"Docker cleanup process failed for {clone_path}: "
+                    f"Command failed with exit code {e.returncode}, stderr: {error_output}"
+                )
+                raise GitOperationError(
+                    f"Docker cleanup failed with exit code {e.returncode}"
+                )
+        except (
+            RuntimeError,
+            ConnectionError,
+            TimeoutError,
+            ValueError,
+            TypeError,
+        ) as e:
+            # Docker daemon issues that are non-critical for repository deletion
+            logging.warning(
+                f"Docker cleanup failed for {clone_path} but deletion can proceed: "
+                f"Docker daemon error: {type(e).__name__}: {e}"
+            )
+            return False  # Non-critical failure
+
+    def _cleanup_filesystem(self, clone_path_obj: Path) -> Optional[bool]:
+        """
+        Clean up remaining filesystem structure after Docker cleanup.
+
+        Args:
+            clone_path_obj: Path object for repository directory
+
+        Returns:
+            bool: True if successful, False if issues occurred
+            None: If directory already removed
+        """
+        if not clone_path_obj.exists():
+            return None  # Directory already removed
+
+        try:
+            shutil.rmtree(str(clone_path_obj))
+            logging.info(f"Successfully cleaned up repository files: {clone_path_obj}")
+            return True
+        except (PermissionError, OSError) as fs_error:
+            # File system cleanup failed - log but don't prevent deletion
+            logging.warning(
+                f"File system cleanup incomplete for {clone_path_obj}: "
+                f"{type(fs_error).__name__}: {fs_error}. "
+                "Some files may remain but repository deletion was successful."
+            )
+            return False
+
+    def _handle_cleanup_errors(self, error: Exception, clone_path: str) -> bool:
+        """
+        Handle specific cleanup errors with appropriate logging and error translation.
+
+        Args:
+            error: The exception that occurred during cleanup
+            clone_path: Path to repository being cleaned
+
+        Returns:
+            bool: For non-critical errors that allow deletion to proceed
+
+        Raises:
+            GitOperationError: For critical failures that should prevent deletion
+        """
+        if isinstance(error, ImportError):
+            # DockerManager import failed - this is a critical system issue
+            logging.error(
+                f"Critical system error during cleanup of {clone_path}: "
+                f"Missing dependency: {error}"
+            )
+            raise GitOperationError(
+                f"System dependency unavailable for cleanup: {str(error)}"
+            )
+        elif isinstance(error, PermissionError):
+            logging.error(
+                f"Permission denied during cleanup of {clone_path}: "
+                f"Insufficient access to: {error.filename or 'unknown file'}"
+            )
+            raise GitOperationError(
+                f"Insufficient permissions for cleanup: {str(error)}"
+            )
+        elif isinstance(error, OSError):
+            if error.errno == errno.ENOENT:  # File not found
+                return True  # Already cleaned
+            elif error.errno == errno.EACCES:  # Permission denied
+                logging.error(
+                    f"Access denied during cleanup of {clone_path}: "
+                    f"Cannot access: {error.filename or 'unknown file'}"
+                )
+                raise GitOperationError(f"Access denied for cleanup: {str(error)}")
+            else:
+                logging.error(
+                    f"OS error during cleanup of {clone_path}: "
+                    f"Error {error.errno}: {error}"
+                )
+                raise GitOperationError(
+                    f"File system error during cleanup: {str(error)}"
+                )
+        elif isinstance(error, subprocess.CalledProcessError):
+            if error.returncode == 126:  # Permission denied
+                logging.error(
+                    f"Command permission error during cleanup of {clone_path}: "
+                    f"Command: {' '.join(error.cmd) if error.cmd else 'unknown'}"
+                )
+                raise GitOperationError(f"Command permission denied: {str(error)}")
+            else:
+                logging.error(
+                    f"Process error during cleanup of {clone_path}: "
+                    f"Command failed with exit code {error.returncode}"
+                )
+                raise GitOperationError(
+                    f"Process failed with exit code {error.returncode}: {str(error)}"
+                )
+        elif isinstance(error, RuntimeError):
             # Critical system errors that prevent cleanup
-            logging.error(f"Critical system error during cleanup: {e}")
-            raise GitOperationError(f"Critical cleanup failure: {str(e)}")
-        # No generic Exception handler - all specific errors are handled above
+            logging.error(
+                f"Critical system error during cleanup of {clone_path}: {error}"
+            )
+            raise GitOperationError(f"Critical cleanup failure: {str(error)}")
+        else:
+            # Shouldn't reach here, but handle unexpected errors
+            logging.error(
+                f"Unexpected error during cleanup of {clone_path}: "
+                f"{type(error).__name__}: {error}"
+            )
+            raise GitOperationError(f"Unexpected cleanup failure: {str(error)}")
 
     def _get_repository_size(self, repo_path: str) -> int:
         """
@@ -1001,3 +1125,159 @@ class GoldenRepoManager:
             pass
 
         return False
+
+    def find_by_canonical_url(self, canonical_url: str) -> List[Dict[str, Any]]:
+        """
+        Find golden repositories by canonical git URL.
+
+        Args:
+            canonical_url: Canonical form of git URL (e.g., "github.com/user/repo")
+
+        Returns:
+            List of matching golden repository dictionaries
+        """
+        from ..services.git_url_normalizer import GitUrlNormalizer
+
+        normalizer = GitUrlNormalizer()
+        matching_repos = []
+
+        for repo in self.golden_repos.values():
+            try:
+                # Normalize the repository's URL
+                normalized = normalizer.normalize(repo.repo_url)
+
+                # Check if it matches the target canonical URL
+                if normalized.canonical_form == canonical_url:
+                    repo_dict = repo.to_dict()
+
+                    # Add canonical URL and branch information - need to cast to Dict[str, Any]
+                    repo_dict_any: Dict[str, Any] = dict(
+                        repo_dict
+                    )  # Convert to Dict[str, Any]
+                    repo_dict_any["canonical_url"] = canonical_url
+                    repo_dict_any["branches"] = self._get_repository_branches(
+                        repo.clone_path
+                    )
+
+                    matching_repos.append(repo_dict_any)
+
+            except Exception as e:
+                logging.warning(
+                    f"Failed to normalize URL for repo {repo.alias}: {str(e)}"
+                )
+                continue
+
+        return matching_repos
+
+    def _get_repository_branches(self, repo_path: str) -> List[str]:
+        """
+        Get list of branches for a repository.
+
+        Args:
+            repo_path: Path to the repository
+
+        Returns:
+            List of branch names
+        """
+        try:
+            if not os.path.exists(repo_path):
+                return ["main"]  # Default fallback
+
+            # Get branches using git command
+            result = subprocess.run(
+                ["git", "branch", "-r"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if result.returncode == 0:
+                branches = []
+                for line in result.stdout.strip().split("\n"):
+                    if line.strip():
+                        # Clean up branch name (remove origin/ prefix)
+                        branch = line.strip().replace("origin/", "")
+                        if branch and branch != "HEAD":
+                            branches.append(branch)
+
+                return branches if branches else ["main"]
+            else:
+                return ["main"]
+
+        except Exception as e:
+            logging.warning(f"Failed to get branches for {repo_path}: {str(e)}")
+            return ["main"]
+
+    def get_golden_repo(self, alias: str) -> Optional[GoldenRepo]:
+        """
+        Get a golden repository by alias.
+
+        Args:
+            alias: Repository alias
+
+        Returns:
+            GoldenRepo object if found, None otherwise
+        """
+        return self.golden_repos.get(alias)
+
+    def golden_repo_exists(self, alias: str) -> bool:
+        """
+        Check if a golden repository exists.
+
+        Args:
+            alias: Repository alias
+
+        Returns:
+            True if repository exists, False otherwise
+        """
+        return alias in self.golden_repos
+
+    def user_can_access_golden_repo(self, alias: str, user: Any) -> bool:
+        """
+        Check if a user can access a golden repository.
+
+        For now, all authenticated users can access all golden repositories.
+        This method exists for future permission system expansion.
+
+        Args:
+            alias: Repository alias
+            user: User object (can be None for unauthenticated)
+
+        Returns:
+            True if user can access repository, False otherwise
+        """
+        # Golden repositories are accessible to all authenticated users
+        return user is not None
+
+    async def get_golden_repo_branches(
+        self, alias: str
+    ) -> List["GoldenRepoBranchInfo"]:
+        """
+        Get branches for a golden repository.
+
+        This method delegates to the branch service for actual branch retrieval.
+        Kept here for compatibility and future enhancement.
+
+        Args:
+            alias: Repository alias
+
+        Returns:
+            List of GoldenRepoBranchInfo objects
+
+        Raises:
+            GoldenRepoError: If repository not found or operation fails
+        """
+        # Import here to avoid circular imports
+        from code_indexer.server.services.golden_repo_branch_service import (
+            GoldenRepoBranchService,
+        )
+
+        if not self.golden_repo_exists(alias):
+            raise GoldenRepoError(f"Golden repository '{alias}' not found")
+
+        branch_service = GoldenRepoBranchService(self)
+        branches: List["GoldenRepoBranchInfo"] = (
+            await branch_service.get_golden_repo_branches(alias)
+        )
+        return branches

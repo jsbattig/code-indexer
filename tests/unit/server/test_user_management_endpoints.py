@@ -958,7 +958,7 @@ class TestChangePasswordEndpoints:
         response = client.put(
             "/api/users/change-password",
             headers=headers,
-            json={"new_password": "NewSecurePass123!"},
+            json={"old_password": "TestPass123!", "new_password": "NewSecurePass123!"},
         )
 
         assert response.status_code == 200
@@ -995,7 +995,9 @@ class TestChangePasswordEndpoints:
 
         headers = {"Authorization": "Bearer power.jwt.token"}
         response = client.put(
-            "/api/users/change-password", headers=headers, json={"new_password": "weak"}
+            "/api/users/change-password",
+            headers=headers,
+            json={"old_password": "TestPass123!", "new_password": "weak"},
         )
 
         assert response.status_code == 422
@@ -1005,7 +1007,11 @@ class TestChangePasswordEndpoints:
         # Check that it's a validation error about password
         assert isinstance(response_data["detail"], list)
         assert len(response_data["detail"]) > 0
-        assert "new_password" in response_data["detail"][0]["loc"]
+        # Check that there's a validation error about new_password in the list
+        password_error_found = any(
+            "new_password" in error.get("loc", []) for error in response_data["detail"]
+        )
+        assert password_error_found
 
     @patch("code_indexer.server.auth.dependencies.jwt_manager")
     @patch("code_indexer.server.auth.dependencies.user_manager")
@@ -1037,7 +1043,7 @@ class TestChangePasswordEndpoints:
         response = client.put(
             "/api/admin/users/testuser/change-password",
             headers=headers,
-            json={"new_password": "AdminSetPass456!"},
+            json={"old_password": "unused", "new_password": "AdminSetPass456!"},
         )
 
         assert response.status_code == 200
@@ -1080,7 +1086,7 @@ class TestChangePasswordEndpoints:
         response = client.put(
             "/api/admin/users/nonexistent/change-password",
             headers=headers,
-            json={"new_password": "ValidPass123!"},
+            json={"old_password": "unused", "new_password": "ValidPass123!"},
         )
 
         assert response.status_code == 404
@@ -1115,7 +1121,7 @@ class TestChangePasswordEndpoints:
         response = client.put(
             "/api/admin/users/otheruser/change-password",
             headers=headers,
-            json={"new_password": "ValidPass123!"},
+            json={"old_password": "unused", "new_password": "ValidPass123!"},
         )
 
         assert response.status_code == 403

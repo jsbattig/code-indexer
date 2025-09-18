@@ -38,8 +38,10 @@ class PasswordChangeAuditLogger:
             server_dir.mkdir(exist_ok=True)
             self.log_file_path = str(server_dir / "password_audit.log")
 
-        # Configure audit logger
-        self.audit_logger = logging.getLogger("password_audit")
+        # Configure audit logger with unique name based on file path
+        # This prevents multiple instances from interfering with each other
+        logger_name = f"password_audit_{hash(self.log_file_path)}"
+        self.audit_logger = logging.getLogger(logger_name)
         self.audit_logger.setLevel(logging.INFO)
 
         # Remove any existing handlers to avoid duplicates

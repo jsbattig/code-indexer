@@ -158,7 +158,7 @@ def get_users():
         repo_id = "search-test-repo"
         headers = {"Authorization": f"Bearer {admin_token}"} if admin_token else {}
 
-        search_request = {"query": "authentication logic", "limit": 10}
+        search_request = {"query_text": "authentication logic", "limit": 10}
 
         response = client.post(
             f"/api/repositories/{repo_id}/search", json=search_request, headers=headers
@@ -175,7 +175,7 @@ def get_users():
         # Test empty query
         response = client.post(
             f"/api/repositories/{repo_id}/search",
-            json={"query": "", "limit": 10},
+            json={"query_text": "", "limit": 10},
             headers=headers,
         )
         # Auth might be checked first, so accept 401/403/422
@@ -185,7 +185,7 @@ def get_users():
         long_query = "a" * 1001
         response = client.post(
             f"/api/repositories/{repo_id}/search",
-            json={"query": long_query, "limit": 10},
+            json={"query_text": long_query, "limit": 10},
             headers=headers,
         )
         # Auth might be checked first, so accept 401/403/422
@@ -194,7 +194,7 @@ def get_users():
         # Test invalid limit
         response = client.post(
             f"/api/repositories/{repo_id}/search",
-            json={"query": "test", "limit": 101},
+            json={"query_text": "test", "limit": 101},
             headers=headers,
         )
         # Auth might be checked first, so accept 401/403/422
@@ -208,12 +208,12 @@ def get_users():
         headers = {"Authorization": f"Bearer {admin_token}"} if admin_token else {}
 
         with patch(
-            "src.code_indexer.server.services.search_service.get_repository_path"
+            "code_indexer.server.services.search_service.SemanticSearchService._get_repository_path"
         ) as mock_path:
             mock_path.return_value = search_test_repo_directory
 
             search_request = {
-                "query": "authentication logic",
+                "query_text": "authentication logic",
                 "limit": 10,
                 "include_source": True,
             }
@@ -261,12 +261,12 @@ def get_users():
         headers = {"Authorization": f"Bearer {admin_token}"} if admin_token else {}
 
         with patch(
-            "src.code_indexer.server.services.search_service.get_repository_path"
+            "code_indexer.server.services.search_service.SemanticSearchService._get_repository_path"
         ) as mock_path:
             mock_path.return_value = search_test_repo_directory
 
             search_request = {
-                "query": "database connection",
+                "query_text": "database connection",
                 "limit": 5,
                 "include_source": True,
             }
@@ -304,12 +304,12 @@ def get_users():
         headers = {"Authorization": f"Bearer {admin_token}"} if admin_token else {}
 
         with patch(
-            "src.code_indexer.server.services.search_service.get_repository_path"
+            "code_indexer.server.services.search_service.SemanticSearchService._get_repository_path"
         ) as mock_path:
             mock_path.return_value = search_test_repo_directory
 
             search_request = {
-                "query": "REST API endpoint",
+                "query_text": "REST API endpoint",
                 "limit": 10,
                 "include_source": True,
             }
@@ -345,12 +345,12 @@ def get_users():
         headers = {"Authorization": f"Bearer {admin_token}"} if admin_token else {}
 
         with patch(
-            "src.code_indexer.server.services.search_service.get_repository_path"
+            "code_indexer.server.services.search_service.SemanticSearchService._get_repository_path"
         ) as mock_path:
             mock_path.return_value = search_test_repo_directory
 
             search_request = {
-                "query": "user authentication",
+                "query_text": "user authentication",
                 "limit": 10,
                 "include_source": True,
             }
@@ -380,12 +380,12 @@ def get_users():
         headers = {"Authorization": f"Bearer {admin_token}"} if admin_token else {}
 
         with patch(
-            "src.code_indexer.server.services.search_service.get_repository_path"
+            "code_indexer.server.services.search_service.SemanticSearchService._get_repository_path"
         ) as mock_path:
             mock_path.return_value = search_test_repo_directory
 
             # Test with limit of 3
-            search_request = {"query": "function", "limit": 3, "include_source": True}
+            search_request = {"query_text": "function", "limit": 3, "include_source": True}
 
             response = client.post(
                 f"/api/repositories/{repo_id}/search",
@@ -408,13 +408,13 @@ def get_users():
         headers = {"Authorization": f"Bearer {admin_token}"} if admin_token else {}
 
         with patch(
-            "src.code_indexer.server.services.search_service.get_repository_path"
+            "code_indexer.server.services.search_service.SemanticSearchService._get_repository_path"
         ) as mock_path:
             mock_path.return_value = search_test_repo_directory
 
             # Test without source code
             search_request = {
-                "query": "authentication",
+                "query_text": "authentication",
                 "limit": 5,
                 "include_source": False,
             }
@@ -439,7 +439,7 @@ def get_users():
         repo_id = "nonexistent-repo"
         headers = {"Authorization": f"Bearer {admin_token}"} if admin_token else {}
 
-        search_request = {"query": "test", "limit": 10}
+        search_request = {"query_text": "test", "limit": 10}
 
         response = client.post(
             f"/api/repositories/{repo_id}/search", json=search_request, headers=headers
@@ -451,7 +451,7 @@ def get_users():
     def test_semantic_search_unauthorized_access(self, client):
         """Test semantic search endpoint without authentication."""
         repo_id = "search-test-repo"
-        search_request = {"query": "test", "limit": 10}
+        search_request = {"query_text": "test", "limit": 10}
 
         response = client.post(
             f"/api/repositories/{repo_id}/search", json=search_request
@@ -470,12 +470,12 @@ def get_users():
         headers = {"Authorization": f"Bearer {admin_token}"} if admin_token else {}
 
         with patch(
-            "src.code_indexer.server.services.search_service.get_repository_path"
+            "code_indexer.server.services.search_service.SemanticSearchService._get_repository_path"
         ) as mock_path:
             mock_path.return_value = search_test_repo_directory
 
             search_request = {
-                "query": "authentication logic",
+                "query_text": "authentication logic",
                 "limit": 10,
                 "include_source": True,
             }
@@ -504,13 +504,13 @@ def get_users():
         headers = {"Authorization": f"Bearer {admin_token}"} if admin_token else {}
 
         with patch(
-            "src.code_indexer.server.services.search_service.get_repository_path"
+            "code_indexer.server.services.search_service.SemanticSearchService._get_repository_path"
         ) as mock_path:
             mock_path.return_value = search_test_repo_directory
 
             # Search for something that shouldn't exist
             search_request = {
-                "query": "nonexistent_function_xyz123",
+                "query_text": "nonexistent_function_xyz123",
                 "limit": 10,
                 "include_source": True,
             }

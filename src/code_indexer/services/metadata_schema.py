@@ -8,6 +8,7 @@ provides validation utilities, and supports migration from legacy metadata forma
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 import re
+import time
 
 
 class MetadataSchemaVersion:
@@ -73,6 +74,12 @@ class GitAwareMetadataSchema:
         "filesystem_size",  # File size from filesystem
     }
 
+    # Universal timestamp fields (for all projects - git and non-git)
+    UNIVERSAL_TIMESTAMP_FIELDS = {
+        "file_last_modified",  # File modification timestamp (from stat().st_mtime) - optional
+        "indexed_timestamp",  # When indexing occurred (time.time())
+    }
+
     # Fixed-size chunking fields (consistent metadata for all chunks)
     CHUNKING_FIELDS = {
         "chunk_size",  # Integer: actual size of the chunk in characters
@@ -88,6 +95,7 @@ class GitAwareMetadataSchema:
         | GIT_FIELDS
         | WORKING_DIR_FIELDS
         | FILESYSTEM_FIELDS
+        | UNIVERSAL_TIMESTAMP_FIELDS
         | LINE_NUMBER_FIELDS
         | CHUNKING_FIELDS
     )
@@ -164,6 +172,9 @@ class GitAwareMetadataSchema:
         if "line_start" in metadata and "line_end" in metadata:
             if metadata["line_end"] < metadata["line_start"]:
                 errors.append("Field 'line_end' must be >= 'line_start'")
+
+        # Validate universal timestamp fields
+        cls._validate_universal_timestamp_metadata(metadata, errors, warnings)
 
         # Check for unknown fields
         unknown_fields = set(metadata.keys()) - cls.ALL_FIELDS
@@ -244,6 +255,29 @@ class GitAwareMetadataSchema:
             staged_at = metadata["staged_at"]
             if staged_at and not cls._is_valid_iso_timestamp(staged_at):
                 errors.append("Field 'staged_at' must be valid ISO timestamp")
+
+    @classmethod
+    def _validate_universal_timestamp_metadata(
+        cls, metadata: Dict[str, Any], errors: List[str], warnings: List[str]
+    ):
+        """Validate universal timestamp metadata fields."""
+        if "file_last_modified" in metadata:
+            file_last_modified = metadata["file_last_modified"]
+            if file_last_modified is not None and not isinstance(
+                file_last_modified, (int, float)
+            ):
+                errors.append(
+                    "Field 'file_last_modified' must be numeric timestamp or None"
+                )
+
+        if "indexed_timestamp" in metadata:
+            indexed_timestamp = metadata["indexed_timestamp"]
+            if indexed_timestamp is not None and not isinstance(
+                indexed_timestamp, (int, float)
+            ):
+                errors.append(
+                    "Field 'indexed_timestamp' must be numeric timestamp or None"
+                )
 
     @classmethod
     def _is_valid_iso_timestamp(cls, timestamp: str) -> bool:
@@ -328,6 +362,8 @@ class GitAwareMetadataSchema:
         git_metadata: Optional[Dict[str, Any]] = None,
         line_start: Optional[int] = None,
         line_end: Optional[int] = None,
+        file_last_modified: Optional[float] = None,
+        indexed_timestamp: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Create git-aware metadata with full schema support.
@@ -344,6 +380,8 @@ class GitAwareMetadataSchema:
             git_metadata: Optional git-specific metadata
             line_start: Starting line number of the chunk
             line_end: Ending line number of the chunk
+            file_last_modified: Optional file modification timestamp (Unix timestamp)
+            indexed_timestamp: Optional indexing timestamp (Unix timestamp)
 
         Returns:
             Git-aware metadata dictionary
@@ -363,6 +401,11 @@ class GitAwareMetadataSchema:
             "line_start": line_start,
             "line_end": line_end,
             "type": "content",  # All indexed points are content points
+            # Universal timestamp fields
+            "file_last_modified": file_last_modified,
+            "indexed_timestamp": (
+                indexed_timestamp if indexed_timestamp is not None else time.time()
+            ),
         }
 
         if git_metadata:

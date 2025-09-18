@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import psutil
 import logging
+import requests  # type: ignore
 from datetime import datetime, timezone
 
 from .auth.jwt_manager import JWTManager
@@ -62,6 +63,10 @@ from .models.api_models import (
     SemanticSearchResponse,
     HealthCheckResponse,
 )
+from .models.repository_discovery import (
+    RepositoryDiscoveryResponse,
+)
+from .services.repository_discovery_service import RepositoryDiscoveryError
 from .services.stats_service import stats_service
 from .services.file_service import file_service
 from .services.search_service import search_service
@@ -575,6 +580,15 @@ class QueryResultItem(BaseModel):
     similarity_score: float
     repository_alias: str
 
+    # Universal timestamp fields for staleness detection
+    file_last_modified: Optional[float] = Field(
+        None,
+        description="Unix timestamp when file was last modified (None if stat failed)",
+    )
+    indexed_timestamp: Optional[float] = Field(
+        None, description="Unix timestamp when file was indexed"
+    )
+
 
 class QueryMetadata(BaseModel):
     """Query execution metadata."""
@@ -719,9 +733,6 @@ class RepositorySyncRequest(BaseModel):
     remote: str = Field(
         default="origin", description="Remote name for git pull operation"
     )
-    branches: Optional[List[str]] = Field(
-        default=["current"], description="Branches to sync (defaults to current branch)"
-    )
     ignore_patterns: Optional[List[str]] = Field(
         default=None, description="Additional ignore patterns for this sync"
     )
@@ -757,6 +768,33 @@ class RepositorySyncJobResponse(BaseModel):
     estimated_completion: Optional[str] = Field(description="Estimated completion time")
     progress: SyncProgress = Field(description="Current sync progress")
     options: SyncJobOptions = Field(description="Sync job options")
+
+
+class GeneralRepositorySyncRequest(BaseModel):
+    """Request model for general repository synchronization via repository alias."""
+
+    repository_alias: str = Field(description="Repository alias to synchronize")
+    force: bool = Field(
+        default=False, description="Force sync by cancelling existing sync jobs"
+    )
+    full_reindex: bool = Field(
+        default=False, description="Perform full reindexing instead of incremental"
+    )
+    incremental: bool = Field(
+        default=True, description="Perform incremental sync for changed files only"
+    )
+    pull_remote: bool = Field(
+        default=False, description="Pull from remote repository before sync"
+    )
+    remote: str = Field(
+        default="origin", description="Remote name for git pull operation"
+    )
+    ignore_patterns: Optional[List[str]] = Field(
+        default=None, description="Additional ignore patterns for this sync"
+    )
+    progress_webhook: Optional[str] = Field(
+        default=None, description="Webhook URL for progress updates"
+    )
 
 
 # Global managers (initialized in create_app)
@@ -1015,7 +1053,14 @@ def create_app() -> FastAPI:
     jwt_manager = JWTManager(
         secret_key=secret_key, token_expiration_minutes=10, algorithm="HS256"
     )
-    user_manager = UserManager()
+
+    # Initialize UserManager with server data directory support
+    server_data_dir = os.environ.get(
+        "CIDX_SERVER_DATA_DIR", str(Path.home() / ".cidx-server")
+    )
+    Path(server_data_dir).mkdir(parents=True, exist_ok=True)
+    users_file_path = str(Path(server_data_dir) / "users.json")
+    user_manager = UserManager(users_file_path=users_file_path)
     refresh_token_manager = RefreshTokenManager(jwt_manager=jwt_manager)
     golden_repo_manager = GoldenRepoManager()
     background_job_manager = BackgroundJobManager()
@@ -1376,7 +1421,6 @@ def create_app() -> FastAPI:
     async def refresh_token_secure(
         refresh_request: RefreshTokenRequest,
         request: Request,
-        current_user: dependencies.User = Depends(dependencies.get_current_user),
     ):
         """
         Secure token refresh endpoint with comprehensive security measures.
@@ -1401,41 +1445,58 @@ def create_app() -> FastAPI:
             HTTPException: 401 for invalid tokens, 429 for rate limiting,
                           409 for concurrent refresh, 500 for other errors
         """
-        username = current_user.username
-
         # Extract client information for audit logging
         client_ip = request.client.host if request.client else "unknown"
         user_agent = request.headers.get("user-agent")
 
-        # Check rate limiting first
-        rate_limit_error = refresh_token_rate_limiter.check_rate_limit(username)
-        if rate_limit_error:
-            # Log rate limit hit
-            password_audit_logger.log_token_refresh_failure(
-                username=username,
-                ip_address=client_ip,
-                reason="Rate limit exceeded",
-                user_agent=user_agent,
-                additional_context={
-                    "attempt_count": refresh_token_rate_limiter.get_attempt_count(
-                        username
-                    )
-                },
-            )
-
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=rate_limit_error
-            )
-
         try:
+            # First validate the refresh token to get user information
             # Validate and rotate refresh token
             result = refresh_token_manager.validate_and_rotate_refresh_token(
-                refresh_token=refresh_request.refresh_token, client_ip=client_ip
+                refresh_token=refresh_request.refresh_token,
+                client_ip=client_ip,
+                user_manager=user_manager,
             )
 
             if not result["valid"]:
+                # Get username from result for logging
+                username = result.get("user_data", {}).get("username", "unknown")
+
+                # Check rate limiting for failed attempts
+                rate_limit_error = refresh_token_rate_limiter.check_rate_limit(username)
+                if rate_limit_error:
+                    # Get current attempt count for logging
+                    attempt_count = refresh_token_rate_limiter.get_attempt_count(
+                        username
+                    )
+
+                    # Log rate limit hit
+                    password_audit_logger.log_rate_limit_triggered(
+                        username=username,
+                        ip_address=client_ip,
+                        attempt_count=attempt_count,
+                        user_agent=user_agent,
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        detail=rate_limit_error,
+                    )
+
                 # Record failed attempt for rate limiting
-                refresh_token_rate_limiter.record_failed_attempt(username)
+                should_lock = refresh_token_rate_limiter.record_failed_attempt(username)
+                if should_lock:
+                    # Get updated attempt count for logging (after recording failed attempt)
+                    attempt_count = refresh_token_rate_limiter.get_attempt_count(
+                        username
+                    )
+
+                    # Log lockout triggered
+                    password_audit_logger.log_rate_limit_triggered(
+                        username=username,
+                        ip_address=client_ip,
+                        attempt_count=attempt_count,
+                        user_agent=user_agent,
+                    )
 
                 # Determine if this is a security incident
                 is_security_incident = result.get("security_incident", False)
@@ -1458,6 +1519,9 @@ def create_app() -> FastAPI:
 
                 raise HTTPException(status_code=status_code, detail=result["error"])
 
+            # Success - get username from successful result
+            username = result["user_data"]["username"]
+
             # Success - clear rate limiting
             refresh_token_rate_limiter.record_successful_attempt(username)
 
@@ -1477,7 +1541,7 @@ def create_app() -> FastAPI:
                 access_token=result["new_access_token"],
                 refresh_token=result["new_refresh_token"],
                 token_type="bearer",
-                user=current_user.to_dict(),
+                user=result["user_data"],
                 access_token_expires_in=jwt_manager.token_expiration_minutes * 60,
                 refresh_token_expires_in=refresh_token_manager.refresh_token_lifetime_days
                 * 24
@@ -1490,9 +1554,10 @@ def create_app() -> FastAPI:
             raise
 
         except Exception as e:
-            # Log unexpected errors
+            # Log unexpected errors (username might not be defined if error occurred early)
+            username_for_log = locals().get("username", "unknown")
             password_audit_logger.log_token_refresh_failure(
-                username=username,
+                username=username_for_log,
                 ip_address=client_ip,
                 reason=f"Internal error: {str(e)}",
                 security_incident=True,
@@ -1507,17 +1572,13 @@ def create_app() -> FastAPI:
 
     @app.post("/auth/refresh", response_model=LoginResponse)
     async def refresh_token(
-        current_user: dependencies.User = Depends(dependencies.get_current_user),
-        credentials: dependencies.HTTPAuthorizationCredentials = Depends(
-            dependencies.security
-        ),
+        refresh_request: RefreshTokenRequest,
     ):
         """
-        Refresh JWT token for authenticated user.
+        Refresh JWT token using refresh token.
 
         Args:
-            current_user: Current authenticated user (validates token)
-            credentials: JWT token from Authorization header
+            refresh_request: Request containing refresh token
 
         Returns:
             New JWT token with extended expiration and user information
@@ -1526,15 +1587,15 @@ def create_app() -> FastAPI:
             HTTPException: If token refresh fails
         """
         try:
-            # Extend the current token's expiration
-            new_access_token = jwt_manager.extend_token_expiration(
-                credentials.credentials
+            # Use the refresh token manager to validate and create new tokens
+            result = refresh_token_manager.validate_and_rotate_refresh_token(
+                refresh_token=refresh_request.refresh_token, client_ip="unknown"
             )
 
             return LoginResponse(
-                access_token=new_access_token,
+                access_token=result["new_access_token"],
                 token_type="bearer",
-                user=current_user.to_dict(),
+                user=result["user_data"],
             )
 
         except Exception as e:
@@ -1809,10 +1870,27 @@ def create_app() -> FastAPI:
                             additional_context={"should_lockout": should_lockout},
                         )
 
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Invalid old password",
-                        )
+                        # Check if this attempt triggered rate limiting
+                        if should_lockout:
+                            # Log rate limit trigger event
+                            password_audit_logger.log_rate_limit_triggered(
+                                username=username,
+                                ip_address=client_ip,
+                                attempt_count=password_change_rate_limiter.get_attempt_count(
+                                    username
+                                ),
+                                user_agent=user_agent,
+                            )
+
+                            raise HTTPException(
+                                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                                detail="Too many failed attempts. Please try again in 15 minutes.",
+                            )
+                        else:
+                            raise HTTPException(
+                                status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="Invalid old password",
+                            )
 
                     # Old password is valid - proceed with password change
                     success = user_manager.change_password(
@@ -2276,9 +2354,7 @@ def create_app() -> FastAPI:
                 # Keep more detail for compatibility with existing tests
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=str(
-                        e
-                    ),  # Preserve original error message for backward compatibility
+                    detail=str(e),  # Preserve original error message
                 )
 
         except GoldenRepoError as e:
@@ -2431,6 +2507,72 @@ def create_app() -> FastAPI:
                 detail=f"Failed to switch branch: {str(e)}",
             )
 
+    # Repository Discovery Endpoint
+    @app.get("/api/repos/discover", response_model=RepositoryDiscoveryResponse)
+    async def discover_repositories(
+        repo_url: str,
+        current_user: dependencies.User = Depends(dependencies.get_current_user),
+    ):
+        """
+        Discover matching repositories by git origin URL.
+
+        Finds matching golden and activated repositories based on the provided
+        git URL, returning repository candidates for intelligent client linking.
+
+        Args:
+            repo_url: Git repository URL to search for
+            current_user: Current authenticated user
+
+        Returns:
+            Repository discovery response with matching repositories
+
+        Raises:
+            HTTPException: 400 if invalid URL, 401 if unauthorized, 500 if server error
+        """
+        try:
+            # Initialize repository discovery service
+            from .services.repository_discovery_service import (
+                RepositoryDiscoveryService,
+            )
+
+            discovery_service = RepositoryDiscoveryService(
+                golden_repo_manager=golden_repo_manager,
+                activated_repo_manager=activated_repo_manager,
+            )
+
+            # Discover matching repositories
+            discovery_response = await discovery_service.discover_repositories(
+                repo_url=repo_url,
+                user=current_user,
+            )
+
+            logging.info(
+                f"Repository discovery for {repo_url} by {current_user.username}: "
+                f"{discovery_response.total_matches} matches found"
+            )
+
+            return discovery_response
+
+        except RepositoryDiscoveryError as e:
+            # Handle known discovery errors with appropriate status codes
+            if "Invalid git URL" in str(e):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid git URL format: {str(e)}",
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Repository discovery failed: {str(e)}",
+                )
+
+        except Exception as e:
+            logging.error(f"Unexpected error in repository discovery: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Repository discovery operation failed: {str(e)}",
+            )
+
     @app.get("/api/repos/{user_alias}", response_model=ActivatedRepositoryInfo)
     async def get_repository_details(
         user_alias: str,
@@ -2521,6 +2663,293 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to sync repository: {str(e)}",
+            )
+
+    @app.post(
+        "/api/repos/sync", response_model=RepositorySyncJobResponse, status_code=202
+    )
+    async def sync_repository_general(
+        sync_request: GeneralRepositorySyncRequest,
+        current_user: dependencies.User = Depends(dependencies.get_current_user),
+    ):
+        """
+        Trigger manual repository synchronization with repository alias in request body.
+
+        This endpoint provides a general sync API that accepts the repository alias
+        in the request body instead of the URL path, matching the format expected
+        by manual testing and external API consumers.
+
+        This endpoint supports the same functionality as POST /api/repositories/{repo_id}/sync
+        but with a more convenient request format for general usage.
+
+        Args:
+            sync_request: Repository sync configuration including repository alias
+            current_user: Current authenticated user
+
+        Returns:
+            Sync job details with tracking information
+
+        Raises:
+            HTTPException: 404 if repository not found, 409 if sync in progress, 500 for errors
+        """
+        try:
+            # Extract repository alias from request body
+            input_alias = sync_request.repository_alias
+
+            # Clean and validate repository alias
+            cleaned_input_alias = input_alias.strip()
+            if not cleaned_input_alias:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Repository alias cannot be empty",
+                )
+
+            def resolve_repository_alias_to_id(alias: str, username: str) -> str:
+                """
+                Resolve repository alias to actual repository ID.
+
+                Args:
+                    alias: Input alias from user request
+                    username: Current user's username
+
+                Returns:
+                    Resolved repository ID
+
+                Raises:
+                    HTTPException: If alias cannot be resolved or access denied
+                """
+                try:
+                    activated_repos = (
+                        activated_repo_manager.list_activated_repositories(username)
+                    )
+
+                    # Strategy 1: Look for exact user_alias match
+                    for repo in activated_repos:
+                        if repo["user_alias"] == alias:
+                            # Return the actual repository ID if available, otherwise use user_alias
+                            return str(repo.get("actual_repo_id", repo["user_alias"]))
+
+                    # Strategy 2: Look for golden_repo_alias match
+                    for repo in activated_repos:
+                        if repo.get("golden_repo_alias") == alias:
+                            return str(repo.get("actual_repo_id", repo["user_alias"]))
+
+                    # Strategy 3: Check if alias is already a repository ID
+                    for repo in activated_repos:
+                        if repo.get("actual_repo_id") == alias:
+                            return alias  # Already resolved ID
+
+                    # Strategy 4: Fall back to repository listing manager for discovery
+                    try:
+                        repository_listing_manager.get_repository_details(
+                            alias, username
+                        )
+                        # If this succeeds, the alias exists but might not be activated
+                        # Return the alias as the ID for now
+                        return alias
+                    except Exception:
+                        pass
+
+                    # If all strategies fail, raise not found error
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=(
+                            f"Repository alias '{alias}' could not be resolved to a valid "
+                            f"repository ID for user '{username}'"
+                        ),
+                    )
+
+                except HTTPException:
+                    raise  # Re-raise HTTP exceptions
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Error resolving repository alias '{alias}': {str(e)}",
+                    )
+
+            # Resolve the alias to actual repository ID
+            resolved_repo_id = resolve_repository_alias_to_id(
+                cleaned_input_alias, current_user.username
+            )
+
+            # Use resolved repository ID for all subsequent operations
+            cleaned_repo_id = resolved_repo_id
+
+            # Check for existing sync jobs if force=False
+            if not sync_request.force:
+                existing_jobs = background_job_manager.get_jobs_by_operation_and_params(
+                    operation_types=["sync_repository"],
+                    params_filter={"repo_id": cleaned_repo_id},
+                )
+
+                if existing_jobs:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=f"Repository '{cleaned_repo_id}' sync already in progress. Use force=true to cancel existing sync.",
+                    )
+
+            # Cancel existing sync jobs if force=True
+            if sync_request.force:
+                existing_jobs = background_job_manager.get_jobs_by_operation_and_params(
+                    operation_types=["sync_repository"],
+                    params_filter={"repo_id": cleaned_repo_id},
+                )
+
+                critical_cancellation_failures = []
+                minor_cancellation_failures = []
+
+                for job in existing_jobs:
+                    try:
+                        background_job_manager.cancel_job(
+                            job["job_id"], current_user.username
+                        )
+                        logging.info(
+                            f"Cancelled existing sync job {job['job_id']} for repository {cleaned_repo_id}"
+                        )
+                    except Exception as e:
+                        error_message = str(e).lower()
+                        job_id = job["job_id"]
+
+                        # Categorize failure types
+                        if any(
+                            critical_keyword in error_message
+                            for critical_keyword in [
+                                "locked",
+                                "permission denied",
+                                "access denied",
+                                "critical",
+                                "in progress",
+                            ]
+                        ):
+                            critical_cancellation_failures.append(
+                                {"job_id": job_id, "error": str(e), "type": "critical"}
+                            )
+                            logging.error(
+                                f"Critical cancellation failure for job {job_id}: {str(e)}"
+                            )
+                        else:
+                            minor_cancellation_failures.append(
+                                {"job_id": job_id, "error": str(e), "type": "minor"}
+                            )
+                            logging.warning(
+                                f"Minor cancellation failure for job {job_id}: {str(e)}"
+                            )
+
+                # If there are critical cancellation failures, abort the new sync
+                if critical_cancellation_failures:
+                    failed_jobs = [
+                        f"job {f['job_id']}: {f['error']}"
+                        for f in critical_cancellation_failures
+                    ]
+                    error_details = "; ".join(failed_jobs)
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Cannot proceed with sync - critical cancellation failures: "
+                            f"{error_details}. Some existing jobs could not be safely cancelled."
+                        ),
+                    )
+
+                # Log minor failures but proceed with sync
+                if minor_cancellation_failures:
+                    failed_jobs = [
+                        f"job {f['job_id']}" for f in minor_cancellation_failures
+                    ]
+                    logging.info(
+                        f"Proceeding with sync despite minor cancellation failures: "
+                        f"{', '.join(failed_jobs)}"
+                    )
+
+            # Submit background job for repository sync
+            sync_options = {
+                "incremental": sync_request.incremental,
+                "force": sync_request.force,
+                "full_reindex": sync_request.full_reindex,
+                "pull_remote": sync_request.pull_remote,
+                "remote": sync_request.remote,
+                "ignore_patterns": sync_request.ignore_patterns,
+                "progress_webhook": sync_request.progress_webhook,
+            }
+
+            def create_webhook_callback(
+                webhook_url: Optional[str],
+            ) -> Optional[Callable[[int], None]]:
+                """Create a webhook callback function if webhook URL is provided."""
+                if not webhook_url:
+                    return None
+
+                def webhook_callback(progress: int) -> None:
+                    """Send progress updates to webhook URL."""
+                    try:
+                        payload = {
+                            "repository_id": cleaned_repo_id,
+                            "progress": progress,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "username": current_user.username,
+                        }
+                        response = requests.post(
+                            webhook_url,
+                            json=payload,
+                            timeout=5,  # Don't wait too long for webhook responses
+                            headers={"Content-Type": "application/json"},
+                        )
+                        # Log webhook failures but don't interrupt sync
+                        if not response.ok:
+                            logging.warning(
+                                f"Webhook {webhook_url} returned {response.status_code}"
+                            )
+                    except Exception as e:
+                        logging.warning(
+                            f"Failed to send webhook to {webhook_url}: {str(e)}"
+                        )
+
+                return webhook_callback
+
+            def sync_job_wrapper():
+                # Create webhook callback if webhook URL provided
+                webhook_callback = create_webhook_callback(
+                    sync_options.get("progress_webhook")
+                )
+
+                return _execute_repository_sync(
+                    repo_id=cleaned_repo_id,
+                    username=current_user.username,
+                    options=sync_options,
+                    progress_callback=webhook_callback,
+                )
+
+            job_id = background_job_manager.submit_job(
+                "sync_repository",
+                sync_job_wrapper,
+                params={"repo_id": cleaned_repo_id},
+                submitter_username=current_user.username,
+            )
+
+            # Return job details
+            return RepositorySyncJobResponse(
+                job_id=job_id,
+                status="queued",
+                repository_id=cleaned_repo_id,
+                created_at=datetime.now(timezone.utc).isoformat(),
+                estimated_completion=None,
+                progress=SyncProgress(
+                    percentage=0, files_processed=0, files_total=0, current_file=None
+                ),
+                options=SyncJobOptions(
+                    force=sync_request.force,
+                    full_reindex=sync_request.full_reindex,
+                    incremental=sync_request.incremental,
+                ),
+            )
+
+        except HTTPException:
+            # Re-raise HTTPExceptions as-is
+            raise
+        except Exception as e:
+            logging.error(f"Failed to submit general repository sync job: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to submit sync job: {str(e)}",
             )
 
     @app.get(
@@ -2684,6 +3113,78 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to get repository details: {str(e)}",
+            )
+
+    @app.get("/api/repos/golden/{alias}/branches")
+    async def list_golden_repository_branches(
+        alias: str,
+        current_user: dependencies.User = Depends(dependencies.get_current_user),
+    ):
+        """
+        List all branches for a golden repository.
+
+        Args:
+            alias: Repository alias to list branches for
+            current_user: Current authenticated user
+
+        Returns:
+            GoldenRepositoryBranchesResponse with branch information
+
+        Raises:
+            HTTPException: 404 if repository not found, 403 if access denied, 500 for errors
+        """
+        try:
+            # Check if golden repository exists
+            if not golden_repo_manager.golden_repo_exists(alias):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Golden repository '{alias}' not found",
+                )
+
+            # Check user permissions
+            if not golden_repo_manager.user_can_access_golden_repo(alias, current_user):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Permission denied: Cannot access golden repository '{alias}'",
+                )
+
+            # Get branch information
+            branches = await golden_repo_manager.get_golden_repo_branches(alias)
+
+            # Find default branch
+            default_branch = None
+            for branch in branches:
+                if branch.is_default:
+                    default_branch = branch.name
+                    break
+
+            # Create response
+            from code_indexer.server.models.golden_repo_branch_models import (
+                GoldenRepositoryBranchesResponse,
+            )
+
+            response = GoldenRepositoryBranchesResponse(
+                repository_alias=alias,
+                total_branches=len(branches),
+                default_branch=default_branch,
+                branches=branches,
+                retrieved_at=datetime.now(timezone.utc),
+            )
+
+            return response
+
+        except HTTPException:
+            # Re-raise HTTP exceptions as-is
+            raise
+        except GitOperationError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Git operation failed: {str(e)}",
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to list repository branches: {str(e)}",
             )
 
     @app.post("/api/query")
@@ -3315,7 +3816,6 @@ def create_app() -> FastAPI:
                 "full_reindex": sync_request.full_reindex,
                 "pull_remote": sync_request.pull_remote,
                 "remote": sync_request.remote,
-                "branches": sync_request.branches,
                 "ignore_patterns": sync_request.ignore_patterns,
                 "progress_webhook": sync_request.progress_webhook,
             }

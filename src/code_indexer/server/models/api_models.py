@@ -151,6 +151,15 @@ class SearchResultItem(BaseModel):
     content: str = Field(..., description="Source code content")
     language: Optional[str] = Field(None, description="Programming language")
 
+    # Universal timestamp fields for staleness detection
+    file_last_modified: Optional[float] = Field(
+        None,
+        description="Unix timestamp when file was last modified (None if stat failed)",
+    )
+    indexed_timestamp: Optional[float] = Field(
+        None, description="Unix timestamp when file was indexed"
+    )
+
 
 class SemanticSearchResponse(BaseModel):
     """Semantic search endpoint response."""

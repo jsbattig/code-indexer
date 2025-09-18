@@ -52,12 +52,33 @@ class PasswordStrengthValidator:
     - Pattern recognition
     """
 
-    def __init__(self):
-        """Initialize password strength validator."""
-        self.min_length = 12
-        self.max_length = 128
-        self.required_char_classes = 4
-        self.min_entropy_bits = 50
+    def __init__(self, config=None):
+        """
+        Initialize password strength validator.
+
+        Args:
+            config: PasswordSecurityConfig object with validation settings.
+                   If None, uses default secure settings.
+        """
+        if config:
+            self.min_length = config.min_length
+            self.max_length = config.max_length
+            self.required_char_classes = config.required_char_classes
+            self.min_entropy_bits = config.min_entropy_bits
+            self.check_common_passwords = config.check_common_passwords
+            self.check_personal_info = config.check_personal_info
+            self.check_keyboard_patterns = config.check_keyboard_patterns
+            self.check_sequential_chars = config.check_sequential_chars
+        else:
+            # Default secure settings
+            self.min_length = 12
+            self.max_length = 128
+            self.required_char_classes = 4
+            self.min_entropy_bits = 50
+            self.check_common_passwords = True
+            self.check_personal_info = True
+            self.check_keyboard_patterns = True
+            self.check_sequential_chars = True
 
         # Load common passwords
         self.common_passwords = self._load_common_passwords()
@@ -125,37 +146,49 @@ class PasswordStrengthValidator:
                 f"Password must be less than {self.max_length} characters long"
             )
 
-        # Character class validation
+        # Always check character classes for scoring
         char_classes = self._check_character_classes(password)
-        missing_classes = []
 
-        if not char_classes["uppercase"]:
-            result.issues.append("Password must contain at least one uppercase letter")
-            missing_classes.append("uppercase letter")
+        # Character class validation (only if required)
+        if self.required_char_classes > 0:
+            missing_classes = []
 
-        if not char_classes["lowercase"]:
-            result.issues.append("Password must contain at least one lowercase letter")
-            missing_classes.append("lowercase letter")
+            if not char_classes["uppercase"]:
+                result.issues.append(
+                    "Password must contain at least one uppercase letter"
+                )
+                missing_classes.append("uppercase letter")
 
-        if not char_classes["digit"]:
-            result.issues.append("Password must contain at least one number")
-            missing_classes.append("number")
+            if not char_classes["lowercase"]:
+                result.issues.append(
+                    "Password must contain at least one lowercase letter"
+                )
+                missing_classes.append("lowercase letter")
 
-        if not char_classes["special"]:
-            result.issues.append("Password must contain at least one special character")
-            missing_classes.append("special character")
+            if not char_classes["digit"]:
+                result.issues.append("Password must contain at least one number")
+                missing_classes.append("number")
 
-        if missing_classes:
-            result.valid = False
-            result.suggestions.append(
-                f"Add {', '.join(missing_classes)} to strengthen your password"
-            )
+            if not char_classes["special"]:
+                result.issues.append(
+                    "Password must contain at least one special character"
+                )
+                missing_classes.append("special character")
+
+            # Check if we have enough character classes
+            present_classes = sum(1 for active in char_classes.values() if active)
+            if present_classes < self.required_char_classes:
+                result.valid = False
+                if missing_classes:
+                    result.suggestions.append(
+                        f"Add {', '.join(missing_classes)} to strengthen your password"
+                    )
 
         # Calculate entropy
         result.entropy = self._calculate_entropy(password)
 
         # Common password detection
-        if self._is_common_password(password):
+        if self.check_common_passwords and self._is_common_password(password):
             result.valid = False
             result.issues.append("Password is too common and easily guessed")
             result.suggestions.extend(
@@ -166,7 +199,9 @@ class PasswordStrengthValidator:
             )
 
         # Personal information detection
-        if self._contains_personal_info(password, username, email):
+        if self.check_personal_info and self._contains_personal_info(
+            password, username, email
+        ):
             result.valid = False
             result.issues.append("Password contains personal information")
             result.suggestions.extend(
@@ -177,15 +212,16 @@ class PasswordStrengthValidator:
             )
 
         # Pattern detection
-        pattern_issues = self._detect_patterns(password)
-        if pattern_issues:
-            result.issues.extend(pattern_issues)
-            result.suggestions.extend(
-                [
-                    "Avoid keyboard patterns and sequences",
-                    "Mix random letters, numbers, and symbols",
-                ]
-            )
+        if self.check_keyboard_patterns or self.check_sequential_chars:
+            pattern_issues = self._detect_patterns(password)
+            if pattern_issues:
+                result.issues.extend(pattern_issues)
+                result.suggestions.extend(
+                    [
+                        "Avoid keyboard patterns and sequences",
+                        "Mix random letters, numbers, and symbols",
+                    ]
+                )
 
         # Calculate overall score
         present_char_classes = sum(1 for active in char_classes.values() if active)
@@ -471,20 +507,22 @@ class PasswordStrengthValidator:
             issues.append("Password contains repeated characters")
 
         # Check for keyboard patterns
-        password_lower = password.lower()
-        for pattern in self.keyboard_patterns:
-            if pattern in password_lower:
-                issues.append("Password contains keyboard patterns")
-                break
+        if self.check_keyboard_patterns:
+            password_lower = password.lower()
+            for pattern in self.keyboard_patterns:
+                if pattern in password_lower:
+                    issues.append("Password contains keyboard patterns")
+                    break
 
         # Check for sequential characters
-        sequential_count = 0
-        for i in range(len(password) - 2):
-            if self._is_sequential(password[i : i + 3]):
-                sequential_count += 1
+        if self.check_sequential_chars:
+            sequential_count = 0
+            for i in range(len(password) - 2):
+                if self._is_sequential(password[i : i + 3]):
+                    sequential_count += 1
 
-        if sequential_count > 0:
-            issues.append("Password contains sequential characters")
+            if sequential_count > 0:
+                issues.append("Password contains sequential characters")
 
         return issues
 

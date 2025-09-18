@@ -370,7 +370,7 @@ class TestRichLiveProgressManagerThreadSafety:
             manager, "_lock"
         ), "RichLiveProgressManager should have a _lock attribute for thread safety"
         assert isinstance(
-            manager._lock, threading.Lock
+            manager._lock, type(threading.Lock())
         ), "The _lock should be a threading.Lock instance"
 
         # Test that critical sections are protected

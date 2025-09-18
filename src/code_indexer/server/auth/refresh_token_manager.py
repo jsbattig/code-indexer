@@ -267,15 +267,16 @@ class RefreshTokenManager:
                 "token_type": "bearer",
                 "access_token_expires_in": self.jwt_manager.token_expiration_minutes
                 * 60,
-                "refresh_token_expires_in": self.refresh_token_lifetime_days
-                * 24
-                * 60
-                * 60,
+                "refresh_token_expires_in": (
+                    max(1, int(self.refresh_token_lifetime_days * 24 * 60 * 60))
+                    if self.refresh_token_lifetime_days > 0
+                    else 0
+                ),
                 "family_id": family_id,
             }
 
     def validate_and_rotate_refresh_token(
-        self, refresh_token: str, client_ip: str = "unknown"
+        self, refresh_token: str, client_ip: str = "unknown", user_manager=None
     ) -> Dict[str, Any]:
         """
         Validate refresh token and create new token pair.
@@ -289,6 +290,7 @@ class RefreshTokenManager:
         Args:
             refresh_token: Refresh token to validate and rotate
             client_ip: Client IP for audit logging
+            user_manager: Optional user manager for retrieving current user role
 
         Returns:
             Dictionary with validation result and new tokens (if valid)
@@ -396,10 +398,31 @@ class RefreshTokenManager:
             new_token_hash = self._hash_token(new_refresh_token)
 
             # Get user data for new access token
-            user_data = {
-                "username": username,
-                "role": "normal_user",
-            }  # This should come from user_manager
+            if user_manager:
+                # Retrieve actual user role from user manager
+                try:
+                    user = user_manager.get_user(username)
+                    user_role = (
+                        user.role.value
+                        if hasattr(user.role, "value")
+                        else str(user.role)
+                    )
+                    user_data = {
+                        "username": username,
+                        "role": user_role,
+                    }
+                except Exception:
+                    # Fallback if user lookup fails
+                    user_data = {
+                        "username": username,
+                        "role": "normal_user",
+                    }
+            else:
+                # Fallback for backwards compatibility
+                user_data = {
+                    "username": username,
+                    "role": "normal_user",
+                }
 
             # Store new refresh token
             expires_at = now + timedelta(days=self.refresh_token_lifetime_days)
