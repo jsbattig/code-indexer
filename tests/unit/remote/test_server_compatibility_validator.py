@@ -11,11 +11,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 
-from code_indexer.api_clients.base_client import (
-    AuthenticationError,
-    APIClientError,
-)
-
 
 class TestCompatibilityResult:
     """Test CompatibilityResult dataclass structure and behavior."""
@@ -82,7 +77,7 @@ class TestServerCompatibilityValidator:
         ]
         assert ServerCompatibilityValidator.REQUIRED_ENDPOINTS == [
             "/api/health",
-            "/api/auth/login",
+            "/auth/login",
             "/api/repos/discover",
             "/api/user/info",
         ]
@@ -390,23 +385,26 @@ class TestAuthenticationValidation:
 
         validator = ServerCompatibilityValidator("https://cidx.example.com")
 
-        with patch(
-            "code_indexer.remote.server_compatibility.CIDXRemoteAPIClient"
-        ) as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client_class.return_value.__aenter__.return_value = mock_client
+        with (
+            patch("httpx.AsyncClient.post") as mock_post,
+            patch("httpx.AsyncClient.get") as mock_get,
+        ):
+            # Mock authentication response
+            auth_response = MagicMock()
+            auth_response.status_code = 200
+            auth_response.json.return_value = {
+                "access_token": "valid.jwt.token",
+            }
+            mock_post.return_value = auth_response
 
-            mock_client._authenticate.return_value = "valid.jwt.token"
-
-            # Mock user info endpoint
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = {
+            # Mock user info endpoint response
+            user_info_response = MagicMock()
+            user_info_response.status_code = 200
+            user_info_response.json.return_value = {
                 "username": "testuser",
                 "permissions": ["read", "write"],
-                "token_expiry": "1h",
             }
-            mock_client._authenticated_request.return_value = mock_response
+            mock_get.return_value = user_info_response
 
             result = await validator._validate_authentication("testuser", "testpass")
 
@@ -414,6 +412,12 @@ class TestAuthenticationValidation:
             assert result["username"] == "testuser"
             assert "read" in result["permissions"]
             assert result["auth_working"] is True
+
+            # Verify correct authentication endpoint was called
+            mock_post.assert_called_once_with(
+                "https://cidx.example.com/auth/login",
+                json={"username": "testuser", "password": "testpass"},
+            )
 
     @pytest.mark.asyncio
     async def test_authentication_validation_invalid_credentials(self):
@@ -424,23 +428,25 @@ class TestAuthenticationValidation:
 
         validator = ServerCompatibilityValidator("https://cidx.example.com")
 
-        with patch(
-            "code_indexer.remote.server_compatibility.CIDXRemoteAPIClient"
-        ) as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client_class.return_value.__aenter__.return_value = mock_client
-
-            mock_client._authenticate.side_effect = AuthenticationError(
-                "Invalid credentials"
-            )
+        with patch("httpx.AsyncClient.post") as mock_post:
+            # Mock 401 Unauthorized response
+            auth_response = MagicMock()
+            auth_response.status_code = 401
+            mock_post.return_value = auth_response
 
             result = await validator._validate_authentication("baduser", "badpass")
 
             assert result["success"] is False
-            assert "Invalid credentials" in result["error"]
+            assert "Invalid username or password" in result["error"]
             assert any(
                 "check username and password" in rec.lower()
                 for rec in result["recommendations"]
+            )
+
+            # Verify correct authentication endpoint was called
+            mock_post.assert_called_once_with(
+                "https://cidx.example.com/auth/login",
+                json={"username": "baduser", "password": "badpass"},
             )
 
     @pytest.mark.asyncio
@@ -452,23 +458,25 @@ class TestAuthenticationValidation:
 
         validator = ServerCompatibilityValidator("https://cidx.example.com")
 
-        with patch(
-            "code_indexer.remote.server_compatibility.CIDXRemoteAPIClient"
-        ) as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client_class.return_value.__aenter__.return_value = mock_client
-
-            mock_client._authenticate.side_effect = APIClientError(
-                "Server error", status_code=500
-            )
+        with patch("httpx.AsyncClient.post") as mock_post:
+            # Mock 500 Server Error response
+            auth_response = MagicMock()
+            auth_response.status_code = 500
+            mock_post.return_value = auth_response
 
             result = await validator._validate_authentication("testuser", "testpass")
 
             assert result["success"] is False
-            assert "Server error during authentication" in result["error"]
+            assert "Authentication failed with status 500" in result["error"]
             assert any(
                 "server administrator" in rec.lower()
                 for rec in result["recommendations"]
+            )
+
+            # Verify correct authentication endpoint was called
+            mock_post.assert_called_once_with(
+                "https://cidx.example.com/auth/login",
+                json={"username": "testuser", "password": "testpass"},
             )
 
 
@@ -598,7 +606,7 @@ class TestComprehensiveCompatibilityValidation:
                 "success": True,
                 "available_endpoints": [
                     "/api/health",
-                    "/api/auth/login",
+                    "/auth/login",
                     "/api/repos/discover",
                     "/api/user/info",
                 ],
@@ -709,7 +717,7 @@ class TestComprehensiveCompatibilityValidation:
                 "success": True,
                 "available_endpoints": [
                     "/api/health",
-                    "/api/auth/login",
+                    "/auth/login",
                     "/api/repos/discover",
                     "/api/user/info",
                 ],

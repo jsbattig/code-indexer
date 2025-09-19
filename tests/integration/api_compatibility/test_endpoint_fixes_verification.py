@@ -7,7 +7,9 @@ Following CLAUDE.md Foundation #1: No mocks - tests verify real endpoint compati
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from src.code_indexer.api_clients.repository_linking_client import RepositoryLinkingClient
+from src.code_indexer.api_clients.repository_linking_client import (
+    RepositoryLinkingClient,
+)
 from src.code_indexer.api_clients.remote_query_client import RemoteQueryClient
 
 
@@ -49,15 +51,13 @@ class TestEndpointFixesVerification:
             "access_permissions": ["read", "query"],
             "query_endpoint": "http://localhost:8000/api/query",
             "expires_at": "2024-01-01T00:00:00Z",
-            "usage_limits": {}
+            "usage_limits": {},
         }
         mock_linking_client._authenticated_request.return_value = mock_response
 
         # Call activation method
         result = await mock_linking_client.activate_repository(
-            golden_alias="test-repo",
-            branch="main",
-            user_alias="test-user"
+            golden_alias="test-repo", branch="main", user_alias="test-user"
         )
 
         # Verify it called the CORRECT endpoint
@@ -67,8 +67,8 @@ class TestEndpointFixesVerification:
             json={
                 "golden_alias": "test-repo",
                 "branch": "main",
-                "user_alias": "test-user"
-            }
+                "user_alias": "test-user",
+            },
         )
 
         # Verify response parsed correctly
@@ -96,7 +96,7 @@ class TestEndpointFixesVerification:
                     "last_updated": "2023-01-01T00:00:00Z",
                     "indexing_status": "indexed",
                     "total_files": 10,
-                    "indexed_files": 10
+                    "indexed_files": 10,
                 }
             ]
         }
@@ -108,7 +108,7 @@ class TestEndpointFixesVerification:
         # Verify it called the CORRECT endpoint
         mock_linking_client._authenticated_request.assert_called_once_with(
             "GET",
-            "/api/repos/golden/test-repo/branches"  # FIXED - now calls correct server endpoint
+            "/api/repos/golden/test-repo/branches",  # FIXED - now calls correct server endpoint
         )
 
         # Verify response parsed correctly
@@ -136,14 +136,16 @@ class TestEndpointFixesVerification:
         # Verify it called the CORRECT endpoint
         mock_linking_client._authenticated_request.assert_called_once_with(
             "DELETE",
-            "/api/repos/test-user-repo"  # FIXED - now calls correct server endpoint
+            "/api/repos/test-user-repo",  # FIXED - now calls correct server endpoint
         )
 
         # Verify response
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_repository_listing_endpoint_fixed_linking_client(self, mock_linking_client):
+    async def test_repository_listing_endpoint_fixed_linking_client(
+        self, mock_linking_client
+    ):
         """
         Verify that repository listing now calls the correct endpoint (linking client).
 
@@ -165,7 +167,7 @@ class TestEndpointFixesVerification:
                     "access_permissions": ["read", "query"],
                     "query_endpoint": "http://localhost:8000/api/query",
                     "expires_at": "2024-01-01T00:00:00Z",
-                    "usage_limits": {}
+                    "usage_limits": {},
                 }
             ]
         }
@@ -176,8 +178,7 @@ class TestEndpointFixesVerification:
 
         # Verify it called the CORRECT endpoint
         mock_linking_client._authenticated_request.assert_called_once_with(
-            "GET",
-            "/api/repos"  # FIXED - now calls correct server endpoint
+            "GET", "/api/repos"  # FIXED - now calls correct server endpoint
         )
 
         # Verify response
@@ -185,7 +186,9 @@ class TestEndpointFixesVerification:
         assert result[0].activation_id == "test-activation"
 
     @pytest.mark.asyncio
-    async def test_repository_listing_endpoint_fixed_query_client(self, mock_query_client):
+    async def test_repository_listing_endpoint_fixed_query_client(
+        self, mock_query_client
+    ):
         """
         Verify that repository listing now calls the correct endpoint (query client).
 
@@ -202,7 +205,7 @@ class TestEndpointFixesVerification:
                     "name": "Test Repository",
                     "path": "/path/to/repo",
                     "branches": ["main", "develop"],
-                    "default_branch": "main"
+                    "default_branch": "main",
                 }
             ]
         }
@@ -213,8 +216,7 @@ class TestEndpointFixesVerification:
 
         # Verify it called the CORRECT endpoint
         mock_query_client._authenticated_request.assert_called_once_with(
-            "GET",
-            "/api/repos"  # FIXED - now calls correct server endpoint
+            "GET", "/api/repos"  # FIXED - now calls correct server endpoint
         )
 
         # Verify response
@@ -231,47 +233,54 @@ class TestEndpointFixesVerification:
             "repository_activation": {
                 "before": "/api/v1/repositories/activate",
                 "after": "/api/repos/activate",
-                "status": "FIXED"
+                "status": "FIXED",
             },
             "branch_listing": {
                 "before": "/api/v1/repositories/{alias}/branches",
                 "after": "/api/repos/golden/{alias}/branches",
-                "status": "FIXED"
+                "status": "FIXED",
             },
             "repository_deactivation": {
                 "before": "/api/v1/repositories/{user_alias}/deactivate",
                 "after": "/api/repos/{user_alias}",
-                "status": "FIXED"
+                "status": "FIXED",
             },
             "repository_listing_linking": {
                 "before": "/api/v1/repositories",
                 "after": "/api/repos",
-                "status": "FIXED"
+                "status": "FIXED",
             },
             "repository_listing_query": {
                 "before": "/api/repositories",
                 "after": "/api/repos",
-                "status": "FIXED"
+                "status": "FIXED",
             },
             "query_history": {
                 "before": "/api/v1/repositories/{alias}/query-history",
                 "after": "NOT IMPLEMENTED ON SERVER",
-                "status": "DOCUMENTED - TODO"
+                "status": "DOCUMENTED - TODO",
             },
             "repository_stats": {
                 "before": "/api/v1/repositories/{alias}/stats",
                 "after": "NOT IMPLEMENTED ON SERVER",
-                "status": "DOCUMENTED - TODO"
-            }
+                "status": "DOCUMENTED - TODO",
+            },
         }
 
         # Verify we addressed all critical issues
-        critical_fixes = ["repository_activation", "branch_listing", "repository_deactivation",
-                         "repository_listing_linking", "repository_listing_query"]
+        critical_fixes = [
+            "repository_activation",
+            "branch_listing",
+            "repository_deactivation",
+            "repository_listing_linking",
+            "repository_listing_query",
+        ]
 
         for fix_name in critical_fixes:
             assert fixes_applied[fix_name]["status"] == "FIXED"
 
         # Total fixes applied
-        fixed_count = sum(1 for fix in fixes_applied.values() if fix["status"] == "FIXED")
+        fixed_count = sum(
+            1 for fix in fixes_applied.values() if fix["status"] == "FIXED"
+        )
         assert fixed_count == 5  # 5 critical endpoints fixed

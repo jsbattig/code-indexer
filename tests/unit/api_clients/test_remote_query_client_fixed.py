@@ -116,7 +116,7 @@ class TestFixedRemoteQueryClient:
 
     @pytest.mark.asyncio
     async def test_fixed_statistics_handles_missing_statistics_field(self, client):
-        """FIXED: Handles cases where statistics field is missing gracefully."""
+        """FIXED: Handles cases where statistics field is missing with proper error."""
         # Server response without statistics field
         server_response = {
             "id": "test-repo",
@@ -131,17 +131,12 @@ class TestFixedRemoteQueryClient:
             mock_response.json.return_value = server_response
             mock_request.return_value = mock_response
 
-            # Call the fixed method
-            stats = await client.get_repository_statistics("test-repo")
-
-            # Verify it returns fallback statistics
-            assert stats == {
-                "total_files": 0,
-                "indexed_files": 0,
-                "total_size_bytes": 0,
-                "embeddings_count": 0,
-                "languages": [],
-            }
+            # Should raise RepositoryAccessError when statistics field is missing
+            with pytest.raises(
+                RepositoryAccessError,
+                match="Repository statistics not available for 'test-repo'",
+            ):
+                await client.get_repository_statistics("test-repo")
 
     @pytest.mark.asyncio
     async def test_fixed_statistics_handles_404_correctly(self, client):

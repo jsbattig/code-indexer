@@ -14,7 +14,7 @@ from src.code_indexer.api_clients.remote_query_client import (
     RemoteQueryClient,
     RepositoryAccessError,
 )
-from tests.unit.api_clients.test_isolation_utils import TestIsolationManager
+from tests.unit.api_clients.test_isolation_utils import MockIsolationManager
 
 
 class TestMessiRule2Compliance(TestCase):
@@ -22,12 +22,16 @@ class TestMessiRule2Compliance(TestCase):
 
     def setUp(self):
         """Set up isolated test environment."""
-        self.isolation = TestIsolationManager()
+        self.isolation = MockIsolationManager()
         self.server_config = self.isolation.start_test_server()
+        credentials = {
+            "username": "test_user",
+            "password": "Test123!Pass",
+            "server_url": f"http://localhost:{self.server_config['port']}",
+        }
         self.client = RemoteQueryClient(
-            base_url=f"http://localhost:{self.server_config['port']}",
-            username="test_user",
-            password="Test123!Pass",
+            server_url=f"http://localhost:{self.server_config['port']}",
+            credentials=credentials,
         )
 
     def tearDown(self):

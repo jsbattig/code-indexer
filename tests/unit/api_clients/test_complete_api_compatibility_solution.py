@@ -15,7 +15,6 @@ from src.code_indexer.api_clients.repository_linking_client import (
 )
 from src.code_indexer.api_clients.remote_query_client import (
     RemoteQueryClient,
-    RepositoryAccessError,
 )
 from src.code_indexer.api_clients.base_client import AuthenticationError
 
@@ -171,28 +170,36 @@ class TestCompleteAPICompatibilitySolution:
 
         query_client._authenticated_request = AsyncMock(return_value=mock_response)
 
-        # Test query history endpoint
-        with pytest.raises(RepositoryAccessError):
-            await query_client.get_query_history("test-repo")
+        # Test query history endpoint (returns empty list directly)
+        history_result = await query_client.get_query_history("test-repo")
 
-        call_args = query_client._authenticated_request.call_args
-        endpoint_url = call_args[0][1]
-
-        # ✅ VERIFY: Now uses CORRECT prefix
-        assert endpoint_url == "/api/repositories/test-repo/query-history"
-        assert endpoint_url.startswith("/api/repositories/")
-        # ✅ NOT the old wrong prefix
-        assert not endpoint_url.startswith("/api/v1/")
+        # ✅ VERIFY: Returns empty list without HTTP calls
+        assert isinstance(history_result, list)
+        assert len(history_result) == 0
 
         # Test repository statistics endpoint
-        with pytest.raises(RepositoryAccessError):
-            await query_client.get_repository_statistics("test-repo")
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "statistics": {
+                "total_files": 100,
+                "indexed_files": 95,
+                "total_size_bytes": 1024000,
+                "embedding_count": 500,
+            }
+        }
+        query_client._authenticated_request = AsyncMock(return_value=mock_response)
+
+        stats_result = await query_client.get_repository_statistics("test-repo")
+
+        # ✅ VERIFY: Returns statistics data
+        assert isinstance(stats_result, dict)
+        assert "total_files" in stats_result
 
         call_args = query_client._authenticated_request.call_args
         endpoint_url = call_args[0][1]
 
-        # ✅ VERIFY: Now uses CORRECT prefix
-        assert endpoint_url == "/api/repositories/test-repo/stats"
+        # ✅ VERIFY: Now uses CORRECT endpoint format
+        assert endpoint_url == "/api/repositories/test-repo"
         assert endpoint_url.startswith("/api/repositories/")
         # ✅ NOT the old wrong prefix
         assert not endpoint_url.startswith("/api/v1/")

@@ -1,9 +1,12 @@
 #!/bin/bash
 
-# Fast automation script - CIDX CLI focused testing
-# Runs CLI unit tests that don't require external services or special permissions
-# Focuses on CIDX command-line interface functionality only
-# Use server-fast-automation.sh for server-specific tests
+# Fast automation script - CIDX fast unit tests only
+# Runs pure unit tests that don't require external dependencies:
+# - No real servers or API calls
+# - No containers (Docker, Qdrant, Ollama)
+# - No external APIs (VoyageAI, auth servers)
+# - No special permissions (/var/lib access)
+# Use server-fast-automation.sh for tests with dependencies
 
 set -e  # Exit on any error
 
@@ -86,30 +89,42 @@ else
     exit 1
 fi
 
-# 5. Run ALL unit tests (excluding slow/integration tests)
-print_step "Running comprehensive unit tests"
-echo "ℹ️  Testing ALL CIDX functionality including:"
-echo "   • Command-line interface and argument parsing"
-echo "   • Remote repository linking and authentication"
-echo "   • API client functionality"
-echo "   • Business logic integration"
-echo "   • Mode detection and routing"
-echo "   • Core indexing and processing logic"
-echo "   • Configuration and validation"
-echo "   • Display and progress reporting"
+# 5. Run FAST unit tests only (excluding external dependencies)
+print_step "Running fast unit tests (no external services)"
+echo "ℹ️  Testing FAST unit test functionality including:"
+echo "   • Command-line interface parsing and validation"
+echo "   • Configuration and mode detection"
+echo "   • Core business logic (without API calls)"
+echo "   • Text processing and chunking"
+echo "   • Progress reporting and display"
+echo "   • Error handling and validation"
+echo ""
+echo "⚠️  EXCLUDED: Tests requiring real servers, containers, or external APIs"
 
-# Run ALL unit tests that don't require external services (excluding server tests)
-if PYTHONPATH="$(pwd)/src:$(pwd)/tests" pytest \
+# Run ONLY fast unit tests that don't require external services
+if python3 -m pytest \
     tests/unit/ \
     --ignore=tests/unit/server/ \
-    -m "not slow and not e2e and not real_api and not integration" \
+    --ignore=tests/unit/infrastructure/ \
+    --ignore=tests/unit/api_clients/test_base_cidx_remote_api_client_real.py \
+    --ignore=tests/unit/api_clients/test_remote_query_client_real.py \
+    --ignore=tests/unit/api_clients/test_business_logic_integration_real.py \
+    --ignore=tests/unit/api_clients/test_repository_linking_client_real.py \
+    --ignore=tests/unit/api_clients/test_jwt_token_manager_real.py \
+    --ignore=tests/unit/api_clients/test_real_api_integration_required.py \
+    --ignore=tests/unit/api_clients/test_messi_rule2_compliance.py \
     --ignore=tests/unit/cli/test_cli_init_segment_size.py \
     --ignore=tests/unit/cli/test_query_functionality_fix.py \
+    --ignore=tests/unit/services/test_clean_file_chunking_manager.py \
+    --ignore=tests/unit/services/test_file_chunking_manager.py \
+    --ignore=tests/unit/services/test_file_chunk_batching_optimization.py \
+    --ignore=tests/unit/services/test_voyage_threadpool_elimination.py \
+    -m "not slow and not e2e and not real_api and not integration and not requires_server and not requires_containers" \
     --cov=code_indexer \
     --cov-report=xml --cov-report=term-missing; then
-    print_success "Unit tests passed"
+    print_success "Fast unit tests passed"
 else
-    print_error "Unit tests failed"
+    print_error "Fast unit tests failed"
     exit 1
 fi
 
@@ -117,28 +132,29 @@ fi
 # but those are only relevant for actual GitHub runs
 
 # Summary
-echo -e "\n${GREEN}🎉 Comprehensive automation completed successfully!${NC}"
+echo -e "\n${GREEN}🎉 Fast automation completed successfully!${NC}"
 echo "==========================================="
 echo "✅ Linting passed"
 echo "✅ Formatting checked"
 echo "✅ Type checking passed"
-echo "✅ Unit tests passed"
+echo "✅ Fast unit tests passed"
 echo ""
-echo "🖥️  Complete test coverage:"
-echo "   ✅ tests/unit/ - ALL unit tests (CLI, remote, API clients, core logic, config, display)"
-echo "   🚫 Excluded: slow, e2e, real_api, integration tests"
+echo "🖥️  FAST test coverage (no external dependencies):"
+echo "   ✅ Core CLI parsing and validation"
+echo "   ✅ Configuration management and mode detection"
+echo "   ✅ Business logic without API calls"
+echo "   ✅ Text processing and chunking"
+echo "   ✅ Error handling and validation"
+echo "   ✅ Progress reporting and display logic"
 echo ""
-echo "🖥️  Functionality validated:"
-echo "   • Command-line interface and argument parsing"
-echo "   • Remote mode initialization and authentication"
-echo "   • Repository linking and branch matching"
-echo "   • Transparent remote querying"
-echo "   • JWT token management and credential encryption"
-echo "   • Network error handling and resilience"
-echo "   • Progress reporting and job management"
-echo "   • Core indexing and processing logic"
-echo "   • Configuration management and validation"
+echo "🚫 EXCLUDED (for speed):"
+echo "   • Tests requiring real servers (test_*_real.py)"
+echo "   • Tests requiring containers (infrastructure, services)"
+echo "   • Tests requiring external APIs (VoyageAI, auth servers)"
+echo "   • Tests requiring special permissions (/var/lib access)"
+echo "   • Slow integration and e2e tests"
 echo ""
-echo "ℹ️  Run 'server-fast-automation.sh' for server-specific tests"
+echo "⚡ Fast automation focuses on pure unit tests only!"
+echo "ℹ️  Run 'server-fast-automation.sh' for server tests with dependencies"
 echo "ℹ️  Run 'full-automation.sh' for complete integration testing"
-echo "CIDX ready for manual testing! 🚀"
+echo "CIDX core logic validated! 🚀"

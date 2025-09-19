@@ -166,7 +166,7 @@ class RepositoryDiscoveryService:
             available_branches=match_result.available_branches,
             default_branch=match_result.default_branch,
             last_indexed=match_result.last_indexed,
-            display_name=match_result.alias.replace('-', ' ').title(),
+            display_name=match_result.alias.replace("-", " ").title(),
             description=f"Repository {match_result.alias} ({match_result.repository_type.value})",
         )
 

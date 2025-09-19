@@ -82,14 +82,16 @@ class TestRepositoryListEndpointDeepInvestigation:
 
         repository_client._authenticated_request = AsyncMock(return_value=mock_response)
 
-        # This should raise ActivationError for 401, not 404
-        with pytest.raises(ActivationError) as exc_info:
+        # This should raise AuthenticationError for 401, not ActivationError
+        from src.code_indexer.api_clients.base_client import AuthenticationError
+
+        with pytest.raises(AuthenticationError) as exc_info:
             await repository_client.list_user_repositories()
 
-        # Verify it's not treated as 404
-        assert "401" not in str(
+        # Verify proper authentication error message
+        assert "Authentication failed: Could not validate credentials" in str(
             exc_info.value
-        ) or "Failed to list repositories:" in str(exc_info.value)
+        )
 
     @pytest.mark.asyncio
     async def test_repository_list_endpoint_server_error_handling(
@@ -115,8 +117,11 @@ class TestRepositoryListEndpointDeepInvestigation:
             with pytest.raises(ActivationError) as exc_info:
                 await repository_client.list_user_repositories()
 
-            # All should be handled as ActivationError
-            assert "Failed to list repositories:" in str(exc_info.value)
+            # 404 should be handled as endpoint not available, others as generic failures
+            if status_code == 404:
+                assert "Repository list endpoint not available:" in str(exc_info.value)
+            else:
+                assert "Failed to list repositories:" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_repository_list_endpoint_malformed_response_handling(
@@ -159,7 +164,7 @@ class TestRepositoryListEndpointDeepInvestigation:
         with pytest.raises(ActivationError) as exc_info:
             await repository_client.list_user_repositories()
 
-        # Should not appear as 404
+        # Network errors should be wrapped as listing failure
         assert "Failed to list repositories:" in str(exc_info.value)
 
     @pytest.mark.asyncio
@@ -178,7 +183,7 @@ class TestRepositoryListEndpointDeepInvestigation:
         with pytest.raises(APIClientError) as exc_info:
             await query_client.list_repositories()
 
-        assert "Failed to list repositories:" in str(exc_info.value)
+        assert "Repository list endpoint not available:" in str(exc_info.value)
 
         # Verify correct endpoint usage
         call_args = query_client._authenticated_request.call_args
@@ -263,8 +268,15 @@ class TestRepositoryListEndpointDeepInvestigation:
                 result = await repository_client.list_user_repositories()
                 assert isinstance(result, list)
                 print(f"SCENARIO {scenario_name}: SUCCESS")
+            elif status_code == 401:
+                # Should fail with AuthenticationError
+                from src.code_indexer.api_clients.base_client import AuthenticationError
+
+                with pytest.raises(AuthenticationError):
+                    await repository_client.list_user_repositories()
+                print(f"SCENARIO {scenario_name}: AUTH FAILED as expected")
             else:
-                # Should fail with appropriate error
+                # Should fail with ActivationError
                 with pytest.raises(ActivationError):
                     await repository_client.list_user_repositories()
                 print(
@@ -293,18 +305,35 @@ class TestRepositoryListEndpointDeepInvestigation:
                 return_value=mock_response
             )
 
-            with pytest.raises(ActivationError) as exc_info:
-                await repository_client.list_user_repositories()
+            if status_code == 401:
+                # Should raise AuthenticationError
+                from src.code_indexer.api_clients.base_client import AuthenticationError
+
+                with pytest.raises(AuthenticationError) as exc_info:
+                    await repository_client.list_user_repositories()
+            else:
+                # Should raise ActivationError
+                with pytest.raises(ActivationError) as exc_info:
+                    await repository_client.list_user_repositories()
 
             error_msg = str(exc_info.value)
 
-            # Analyze error patterns
+            # Analyze error patterns based on actual implementation
             if status_code == 404:
-                assert "Failed to list repositories:" in error_msg
+                assert "Repository list endpoint not available:" in error_msg
                 print(f"TRUE 404: {error_msg}")
+            elif status_code == 401:
+                # 401 should have authentication error message
+                assert "Authentication failed:" in error_msg
+                print(f"AUTH FAILURE: {error_msg}")
+            elif status_code == 403:
+                # 403 has special "Access denied" handling
+                assert "Access denied:" in error_msg
+                print(f"ACCESS DENIED: {error_msg}")
             else:
+                # Other errors (500, 400) use generic "Failed to list repositories" message
                 assert "Failed to list repositories:" in error_msg
-                print(f"MASQUERADING AS 404 (actually {status_code}): {error_msg}")
+                print(f"GENERIC ERROR (status {status_code}): {error_msg}")
 
             # The key insight: all errors currently get wrapped as ActivationError
             # The actual status code information might be lost

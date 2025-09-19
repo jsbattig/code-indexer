@@ -161,32 +161,36 @@ class TestSyncCommandIntegration:
         self.runner = CliRunner()
 
     def test_sync_attempts_api_connection(self):
-        """Test that sync command fails gracefully without remote configuration."""
+        """Test that sync command fails gracefully when repository not found."""
         result = self.runner.invoke(cli, ["sync", "test-repo"])
 
-        # Should fail with remote mode requirement
+        # Should fail when repository is not found or accessible
         assert result.exit_code != 0
-        assert "remote" in result.output.lower() or "mode" in result.output.lower()
+        assert "repository" in result.output.lower() and (
+            "not found" in result.output.lower()
+            or "not accessible" in result.output.lower()
+        )
 
     def test_sync_handles_missing_configuration(self):
         """Test that sync command handles missing remote configuration."""
-        result = self.runner.invoke(cli, ["sync"])
+        with self.runner.isolated_filesystem():
+            result = self.runner.invoke(cli, ["sync"])
 
-        # Should fail gracefully with remote mode requirement
-        assert result.exit_code != 0
-        assert any(
-            word in result.output.lower() for word in ["remote", "mode", "server"]
-        )
+            # Should fail gracefully with remote mode requirement
+            assert result.exit_code != 0
+            # Should mention that sync requires remote mode
+            assert any(word in result.output.lower() for word in ["remote", "mode"])
 
     def test_sync_requires_remote_mode(self):
         """Test that sync command requires remote mode configuration."""
-        result = self.runner.invoke(cli, ["sync"])
+        with self.runner.isolated_filesystem():
+            result = self.runner.invoke(cli, ["sync"])
 
-        # Should fail with mode requirement message
-        assert result.exit_code != 0
-        assert any(
-            word in result.output.lower() for word in ["remote", "mode", "server"]
-        )
+            # Should fail with mode requirement message
+            assert result.exit_code != 0
+            assert any(
+                word in result.output.lower() for word in ["remote", "mode", "server"]
+            )
 
 
 class TestSyncDryRunMode:
@@ -246,20 +250,22 @@ class TestSyncCommandErrorHandling:
         """Test that sync handles network connectivity issues."""
         result = self.runner.invoke(cli, ["sync", "test-repo"])
 
-        # Should fail with remote mode requirement (graceful handling)
+        # Should fail gracefully when repository not found
         assert result.exit_code != 0
         assert any(
-            word in result.output.lower() for word in ["remote", "mode", "error"]
+            word in result.output.lower()
+            for word in ["repository", "not found", "not accessible", "error"]
         )
 
     def test_sync_shows_authentication_errors(self):
         """Test that sync shows clear authentication error messages."""
         result = self.runner.invoke(cli, ["sync", "test-repo"])
 
-        # Should fail with remote mode requirement
+        # Should fail gracefully when repository not found
         assert result.exit_code != 0
         assert any(
-            word in result.output.lower() for word in ["remote", "mode", "error"]
+            word in result.output.lower()
+            for word in ["repository", "not found", "not accessible", "error"]
         )
 
 

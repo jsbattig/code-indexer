@@ -12,7 +12,7 @@ from src.code_indexer.remote.services.repository_service import (
 from src.code_indexer.remote.staleness_detector import StalenessDetector
 
 
-class TestResponse:
+class MockResponse:
     """Test response class that mimics httpx.Response behavior."""
 
     def __init__(self, status_code: int, json_data: Dict[str, Any]):
@@ -23,13 +23,13 @@ class TestResponse:
         return self._json_data
 
 
-class TestAPIClient:
+class MockAPIClient:
     """Test API client that provides real responses without mocking."""
 
     def __init__(self):
         # Predefined responses for different endpoints
         self._responses = {
-            "/repositories": TestResponse(
+            "/repositories": MockResponse(
                 200,
                 {
                     "repositories": [
@@ -51,7 +51,7 @@ class TestAPIClient:
                     ]
                 },
             ),
-            "/repositories/repo1": TestResponse(
+            "/repositories/repo1": MockResponse(
                 200,
                 {
                     "name": "repo1",
@@ -59,17 +59,17 @@ class TestAPIClient:
                     "last_updated": "2024-01-01T10:00:00Z",
                 },
             ),
-            "/repositories/repo1/branches": TestResponse(
+            "/repositories/repo1/branches": MockResponse(
                 200, {"branches": ["main", "develop", "feature/test"]}
             ),
-            "/repositories/repo1/branches/main/timestamps": TestResponse(
+            "/repositories/repo1/branches/main/timestamps": MockResponse(
                 200,
                 {
                     "local_timestamp": "2024-01-01T10:00:00Z",
                     "remote_timestamp": "2024-01-01T11:00:00Z",
                 },
             ),
-            "/repositories/repo2/branches/main/timestamps": TestResponse(
+            "/repositories/repo2/branches/main/timestamps": MockResponse(
                 200,
                 {
                     "local_timestamp": "2024-01-01T10:00:00Z",
@@ -77,9 +77,9 @@ class TestAPIClient:
                 },
             ),
         }
-        self._fallback_response = TestResponse(404, {"error": "Not found"})
+        self._fallback_response = MockResponse(404, {"error": "Not found"})
 
-    async def get(self, endpoint: str, **kwargs) -> TestResponse:
+    async def get(self, endpoint: str, **kwargs) -> MockResponse:
         """Get response for endpoint."""
         return self._responses.get(endpoint, self._fallback_response)
 
@@ -90,7 +90,7 @@ class TestRemoteRepositoryService:
     @pytest.fixture
     def test_api_client(self):
         """Create test API client with real implementation."""
-        return TestAPIClient()
+        return MockAPIClient()
 
     @pytest.fixture
     def test_staleness_detector(self):
@@ -143,10 +143,10 @@ class TestRemoteRepositoryService:
     @pytest.mark.asyncio
     async def test_fetch_repositories_success(self, repository_service):
         """Test successful repository fetching."""
-        # Execute - no mocking, uses real TestAPIClient
+        # Execute - no mocking, uses real MockAPIClient
         repositories = await repository_service._fetch_repositories()
 
-        # Verify - real data from TestAPIClient
+        # Verify - real data from MockAPIClient
         assert len(repositories) == 3
         assert repositories[0]["name"] == "repo1"
         assert repositories[0]["url"] == "https://github.com/user/repo1.git"

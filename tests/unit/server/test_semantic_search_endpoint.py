@@ -385,7 +385,11 @@ def get_users():
             mock_path.return_value = search_test_repo_directory
 
             # Test with limit of 3
-            search_request = {"query_text": "function", "limit": 3, "include_source": True}
+            search_request = {
+                "query_text": "function",
+                "limit": 3,
+                "include_source": True,
+            }
 
             response = client.post(
                 f"/api/repositories/{repo_id}/search",

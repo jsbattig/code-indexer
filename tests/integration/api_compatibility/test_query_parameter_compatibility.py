@@ -9,7 +9,6 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 from src.code_indexer.api_clients.remote_query_client import (
     RemoteQueryClient,
-    QueryExecutionError,
 )
 
 
@@ -42,9 +41,7 @@ class TestQueryParameterCompatibility:
 
         # Execute query
         await mock_client.execute_query(
-            query="test query",
-            repository_alias="test-repo",
-            limit=5
+            query="test query", repository_alias="test-repo", limit=5
         )
 
         # Verify the request was made with correct parameters
@@ -56,7 +53,7 @@ class TestQueryParameterCompatibility:
                 "repository_alias": "test-repo",
                 "limit": 5,
                 "include_source": True,
-            }
+            },
         )
 
     @pytest.mark.asyncio
@@ -85,7 +82,7 @@ class TestQueryParameterCompatibility:
             limit=20,
             min_score=0.7,
             language="python",  # This gets mapped to language filter
-            path_filter="*/tests/*"
+            path_filter="*/tests/*",
         )
 
         # Verify all parameters are correctly sent
@@ -115,8 +112,7 @@ class TestQueryParameterCompatibility:
 
         # Execute query with minimal parameters
         await mock_client.execute_query(
-            query="test query",
-            repository_alias="test-repo"
+            query="test query", repository_alias="test-repo"
         )
 
         # Verify only required/default parameters are sent
@@ -147,7 +143,7 @@ class TestQueryParameterCompatibility:
             "limit": "int (default=10) - Maximum number of results",
             "min_score": "Optional[float] - Minimum similarity score threshold",
             "file_extensions": "Optional[List[str]] - Filter by file extensions",
-            "async_query": "bool (default=False) - Submit as background job"
+            "async_query": "bool (default=False) - Submit as background job",
         }
 
         # Client RemoteQueryClient.execute_query sends:
@@ -158,7 +154,7 @@ class TestQueryParameterCompatibility:
             "include_source": "Client-specific parameter",
             "min_score": "Conditionally included when provided",
             "language": "Client-specific parameter (not in server model)",
-            "path_filter": "Client-specific parameter (not in server model)"
+            "path_filter": "Client-specific parameter (not in server model)",
         }
 
         # Verify we have documentation for both sides
@@ -194,7 +190,7 @@ class TestParameterValidation:
                 {
                     "loc": ["body", "query_text"],
                     "msg": "ensure this value has at least 1 characters",
-                    "type": "value_error.any_str.min_length"
+                    "type": "value_error.any_str.min_length",
                 }
             ]
         }
@@ -205,7 +201,7 @@ class TestParameterValidation:
         with pytest.raises(ValueError) as exc_info:
             await mock_client.execute_query(
                 query="",  # Empty query triggers client-side validation
-                repository_alias="test-repo"
+                repository_alias="test-repo",
             )
 
         # Verify error message
@@ -235,7 +231,9 @@ class TestParameterValidation:
             await mock_client.execute_query(query="test", limit=101)  # Limit too high
 
         with pytest.raises(ValueError, match="min_score must be between 0.0 and 1.0"):
-            await mock_client.execute_query(query="test", min_score=1.5)  # Invalid score
+            await mock_client.execute_query(
+                query="test", min_score=1.5
+            )  # Invalid score
 
         # Verify no server calls were made for client-side validation errors
         mock_client._authenticated_request.assert_not_called()

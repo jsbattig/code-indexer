@@ -6,20 +6,16 @@ Following CLAUDE.md Foundation #1: No mocks - tests use real HTTP calls to verif
 """
 
 import pytest
-import requests
 from unittest.mock import AsyncMock, MagicMock
-from fastapi import HTTPException, status
 from src.code_indexer.api_clients.repository_linking_client import (
     RepositoryLinkingClient,
     ActivationError,
     RepositoryNotFoundError,
-    BranchNotFoundError,
 )
 from src.code_indexer.api_clients.remote_query_client import (
     RemoteQueryClient,
     RepositoryAccessError,
 )
-from src.code_indexer.api_clients.base_client import AuthenticationError
 
 
 class TestRepositoryActivationEndpointMismatch:
@@ -28,7 +24,12 @@ class TestRepositoryActivationEndpointMismatch:
     @pytest.fixture
     def mock_client(self):
         """Create a repository linking client with mocked authentication."""
-        client = RepositoryLinkingClient("http://localhost:8000", "fake-token")
+        credentials = {
+            "username": "test_user",
+            "password": "test_pass",
+            "server_url": "http://localhost:8000"
+        }
+        client = RepositoryLinkingClient("http://localhost:8000", credentials)
         # Mock the authenticated request method to control responses
         client._authenticated_request = AsyncMock()
         return client
@@ -54,13 +55,13 @@ class TestRepositoryActivationEndpointMismatch:
         # This should fail because client calls the wrong endpoint
         with pytest.raises(ActivationError) as exc_info:
             await mock_client.activate_repository(
-                golden_alias="test-repo",
-                branch="main",
-                user_alias="test-user"
+                golden_alias="test-repo", branch="main", user_alias="test-user"
             )
 
         # Verify the error is due to endpoint mismatch
-        assert "404" in str(exc_info.value) or "not found" in str(exc_info.value).lower()
+        assert (
+            "404" in str(exc_info.value) or "not found" in str(exc_info.value).lower()
+        )
 
         # Verify client called the WRONG endpoint
         mock_client._authenticated_request.assert_called_once_with(
@@ -69,12 +70,14 @@ class TestRepositoryActivationEndpointMismatch:
             json={
                 "golden_alias": "test-repo",
                 "branch": "main",
-                "user_alias": "test-user"
-            }
+                "user_alias": "test-user",
+            },
         )
 
     @pytest.mark.asyncio
-    async def test_client_endpoint_vs_server_expectation_documentation(self, mock_client):
+    async def test_client_endpoint_vs_server_expectation_documentation(
+        self, mock_client
+    ):
         """Document the exact endpoint mismatch for troubleshooting."""
         # The client implementation shows it calls this endpoint:
         client_endpoint = "/api/v1/repositories/activate"
@@ -88,7 +91,10 @@ class TestRepositoryActivationEndpointMismatch:
         # This demonstrates why repository activation fails in remote mode
         assert "v1/repositories" in client_endpoint
         assert "repos" in server_endpoint
-        assert client_endpoint.replace("/api/v1/repositories/", "/api/repos/") == server_endpoint
+        assert (
+            client_endpoint.replace("/api/v1/repositories/", "/api/repos/")
+            == server_endpoint
+        )
 
 
 class TestBranchListingEndpointMismatch:
@@ -122,8 +128,7 @@ class TestBranchListingEndpointMismatch:
 
         # Verify client called wrong endpoint
         mock_client._authenticated_request.assert_called_once_with(
-            "GET",
-            "/api/v1/repositories/test-repo/branches"  # WRONG endpoint
+            "GET", "/api/v1/repositories/test-repo/branches"  # WRONG endpoint
         )
 
 
@@ -145,7 +150,9 @@ class TestRepositoryListingEndpointMismatch:
         return client
 
     @pytest.mark.asyncio
-    async def test_repository_listing_endpoint_mismatch_query_client(self, mock_query_client):
+    async def test_repository_listing_endpoint_mismatch_query_client(
+        self, mock_query_client
+    ):
         """
         Test repository listing mismatch in RemoteQueryClient.
 
@@ -164,12 +171,13 @@ class TestRepositoryListingEndpointMismatch:
 
         # Verify the endpoint called
         mock_query_client._authenticated_request.assert_called_once_with(
-            "GET",
-            "/api/repositories"  # Check if this matches server
+            "GET", "/api/repositories"  # Check if this matches server
         )
 
     @pytest.mark.asyncio
-    async def test_repository_listing_endpoint_mismatch_linking_client(self, mock_linking_client):
+    async def test_repository_listing_endpoint_mismatch_linking_client(
+        self, mock_linking_client
+    ):
         """
         Test repository listing mismatch in RepositoryLinkingClient.
 
@@ -187,8 +195,7 @@ class TestRepositoryListingEndpointMismatch:
 
         # Verify wrong endpoint called
         mock_linking_client._authenticated_request.assert_called_once_with(
-            "GET",
-            "/api/v1/repositories"  # WRONG - server expects /api/repos
+            "GET", "/api/v1/repositories"  # WRONG - server expects /api/repos
         )
 
 
@@ -220,8 +227,7 @@ class TestRepositoryDeactivationEndpointMismatch:
 
         # Verify wrong endpoint called
         mock_client._authenticated_request.assert_called_once_with(
-            "DELETE",
-            "/api/v1/repositories/test-user-repo/deactivate"  # WRONG endpoint
+            "DELETE", "/api/v1/repositories/test-user-repo/deactivate"  # WRONG endpoint
         )
 
 
@@ -293,46 +299,44 @@ class TestActualEndpointMapping:
             "activation": {
                 "client": "/api/v1/repositories/activate",
                 "server": "/api/repos/activate",
-                "impact": "Repository activation completely broken"
+                "impact": "Repository activation completely broken",
             },
-
             # Branch listing
             "branch_listing": {
                 "client": "/api/v1/repositories/{alias}/branches",
                 "server": "/api/repos/golden/{alias}/branches",
-                "impact": "Cannot list repository branches"
+                "impact": "Cannot list repository branches",
             },
-
             # Repository listing (linking client)
             "repo_listing_linking": {
                 "client": "/api/v1/repositories",
                 "server": "/api/repos",
-                "impact": "Cannot list user repositories via linking client"
+                "impact": "Cannot list user repositories via linking client",
             },
-
             # Repository deactivation
             "deactivation": {
                 "client": "/api/v1/repositories/{user_alias}/deactivate",
                 "server": "/api/repos/{user_alias}",
-                "impact": "Cannot deactivate repositories"
+                "impact": "Cannot deactivate repositories",
             },
-
             # Missing endpoints
             "query_history": {
                 "client": "/api/v1/repositories/{alias}/query-history",
                 "server": "NOT IMPLEMENTED",
-                "impact": "Query history feature non-functional"
+                "impact": "Query history feature non-functional",
             },
-
             "repo_stats": {
                 "client": "/api/v1/repositories/{alias}/stats",
                 "server": "NOT IMPLEMENTED",
-                "impact": "Repository statistics feature non-functional"
-            }
+                "impact": "Repository statistics feature non-functional",
+            },
         }
 
         # This test documents the issues - all these mismatches need fixing
         assert len(mismatches) == 6
 
         # The most critical issue is repository activation
-        assert mismatches["activation"]["impact"] == "Repository activation completely broken"
+        assert (
+            mismatches["activation"]["impact"]
+            == "Repository activation completely broken"
+        )

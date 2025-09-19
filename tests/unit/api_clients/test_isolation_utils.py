@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 import pytest
 
 
-class TestServerManager:
+class MockServerManager:
     """Manages test server lifecycle and state isolation."""
 
     def __init__(self, server_port: int = 8001):
@@ -40,6 +40,14 @@ class TestServerManager:
     def reset_availability_cache(self):
         """Reset server availability cache for retesting."""
         self._is_available = None
+
+    def start_server(self):
+        """Return server configuration for test setup."""
+        return {
+            "port": self.server_port,
+            "url": self.server_url,
+            "available": self.is_server_available(),
+        }
 
 
 class RateLimitStateManager:
@@ -125,11 +133,11 @@ class NetworkCallTracker:
         return len(self.call_history.get(endpoint, []))
 
 
-class TestIsolationManager:
+class MockIsolationManager:
     """Comprehensive test isolation manager for API client tests."""
 
     def __init__(self, server_port: int = 8001):
-        self.server_manager = TestServerManager(server_port)
+        self.server_manager = MockServerManager(server_port)
         self.rate_limit_manager = RateLimitStateManager(
             f"http://localhost:{server_port}"
         )
@@ -161,6 +169,32 @@ class TestIsolationManager:
         # Small delay for cleanup
         await asyncio.sleep(0.1)
 
+    def start_test_server(self):
+        """Start test server and return configuration."""
+        return self.server_manager.start_server()
+
+    def mock_server_response(
+        self, endpoint: str, response_data: dict, status_code: int = 200
+    ):
+        """Mock server response for testing (placeholder implementation)."""
+        # This is a placeholder - actual mocking would require httpx-mock or similar
+        # For now, we'll just store the mock configuration
+        if not hasattr(self, "_mock_responses"):
+            self._mock_responses = {}
+        self._mock_responses[endpoint] = {
+            "data": response_data,
+            "status_code": status_code,
+        }
+
+    def cleanup(self):
+        """Clean up test isolation manager."""
+        # Reset any stored state
+        if hasattr(self, "_mock_responses"):
+            self._mock_responses.clear()
+
+        # Reset server manager state
+        self.server_manager.reset_availability_cache()
+
     @asynccontextmanager
     async def isolated_test_context(self, test_name: str):
         """Context manager for completely isolated test execution."""
@@ -172,7 +206,7 @@ class TestIsolationManager:
 
 
 # Global test isolation manager for shared use
-_global_isolation_manager = TestIsolationManager()
+_global_isolation_manager = MockIsolationManager()
 
 
 @pytest.fixture
@@ -268,7 +302,7 @@ class RetryWithBackoff:
 # Test helper functions for common isolation patterns
 async def skip_if_no_server(server_port: int = 8001):
     """Skip test if server is not available."""
-    manager = TestServerManager(server_port)
+    manager = MockServerManager(server_port)
     if not manager.is_server_available():
         pytest.skip("Test server not available for real integration testing")
 
@@ -311,13 +345,13 @@ def requires_test_server(test_func):
 
 
 # Error handling for common test isolation issues
-class TestIsolationError(Exception):
+class MockIsolationError(Exception):
     """Base exception for test isolation issues."""
 
     pass
 
 
-class RateLimitContaminationError(TestIsolationError):
+class RateLimitContaminationError(MockIsolationError):
     """Exception raised when rate limit contamination is detected."""
 
     def __init__(self, endpoint: str, call_count: int):
@@ -329,7 +363,7 @@ class RateLimitContaminationError(TestIsolationError):
         self.call_count = call_count
 
 
-class ServerUnavailableError(TestIsolationError):
+class ServerUnavailableError(MockIsolationError):
     """Exception raised when test server is not available."""
 
     def __init__(self, server_url: str):

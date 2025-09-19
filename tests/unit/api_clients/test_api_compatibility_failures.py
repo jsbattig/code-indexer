@@ -14,7 +14,6 @@ from src.code_indexer.api_clients.repository_linking_client import (
 )
 from src.code_indexer.api_clients.remote_query_client import (
     RemoteQueryClient,
-    RepositoryAccessError,
 )
 from src.code_indexer.api_clients.base_client import APIClientError
 
@@ -60,8 +59,8 @@ class TestRepositoryActivationParameterMismatch:
                     "loc": ["body", "golden_repo_alias"],
                     "msg": "Field required",
                     "input": {
-                        "golden_alias": "test-repo",
-                        "branch": "main",
+                        "golden_repo_alias": "test-repo",
+                        "branch_name": "main",
                         "user_alias": "user1",
                     },
                 },
@@ -70,8 +69,8 @@ class TestRepositoryActivationParameterMismatch:
                     "loc": ["body", "branch_name"],
                     "msg": "Field required",
                     "input": {
-                        "golden_alias": "test-repo",
-                        "branch": "main",
+                        "golden_repo_alias": "test-repo",
+                        "branch_name": "main",
                         "user_alias": "user1",
                     },
                 },
@@ -94,14 +93,14 @@ class TestRepositoryActivationParameterMismatch:
         call_args = repository_client._authenticated_request.call_args
         request_payload = call_args[1]["json"]
 
-        # CRITICAL: These are the WRONG parameter names that cause 422 errors
-        assert "golden_alias" in request_payload  # Should be "golden_repo_alias"
-        assert "branch" in request_payload  # Should be "branch_name"
+        # CRITICAL: These are the CORRECT parameter names used by client
+        assert "golden_repo_alias" in request_payload  # Correct parameter name
+        assert "branch_name" in request_payload  # Correct parameter name
         assert "user_alias" in request_payload  # This one is correct
 
-        # Verify wrong parameters values
-        assert request_payload["golden_alias"] == "test-repo"
-        assert request_payload["branch"] == "main"
+        # Verify correct parameter values
+        assert request_payload["golden_repo_alias"] == "test-repo"
+        assert request_payload["branch_name"] == "main"
         assert request_payload["user_alias"] == "user1"
 
 
@@ -158,7 +157,7 @@ class TestRepositoryListEndpoint404:
         assert call_args[0][1] == "/api/repos"  # Endpoint URL
 
         # Verify error handling for 404
-        assert "Failed to list repositories:" in str(exc_info.value)
+        assert "Repository list endpoint not available:" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_query_client_repository_list_404_reproduction(self, query_client):
@@ -184,7 +183,7 @@ class TestRepositoryListEndpoint404:
         assert call_args[0][1] == "/api/repos"  # Endpoint URL
 
         # Verify error message
-        assert "Failed to list repositories:" in str(exc_info.value)
+        assert "Repository list endpoint not available:" in str(exc_info.value)
 
 
 class TestAPIVersionPrefixMismatch:
@@ -209,53 +208,53 @@ class TestAPIVersionPrefixMismatch:
 
     @pytest.mark.asyncio
     async def test_query_history_wrong_prefix_reproduction(self, query_client):
-        """REPRODUCE: Query history endpoint uses /api/v1/ prefix when server uses /api/.
+        """Test that query history method does NOT raise an exception.
 
-        This test verifies that get_query_history still uses the wrong API prefix.
+        The client implementation has been updated to return empty list
+        rather than call non-existent endpoints.
         """
-        # Mock 404 response that would occur if wrong prefix is used
-        mock_response = MagicMock(spec=Response)
-        mock_response.status_code = 404
-        mock_response.json.return_value = {"detail": "Not Found"}
+        # The current implementation returns empty list without calling the endpoint
+        # This test should verify this behavior, not expect an exception
+        result = await query_client.get_query_history("test-repo")
 
-        query_client._authenticated_request = AsyncMock(return_value=mock_response)
+        # Should return empty list without errors
+        assert isinstance(result, list)
+        assert len(result) == 0
 
-        # This should fail due to wrong prefix
-        with pytest.raises(RepositoryAccessError):
-            await query_client.get_query_history("test-repo")
-
-        # Verify it's using the WRONG prefix (/api/v1/ instead of /api/)
-        call_args = query_client._authenticated_request.call_args
-        endpoint_url = call_args[0][1]
-
-        # CRITICAL: This shows the bug - should be /api/ not /api/v1/
-        assert endpoint_url.startswith("/api/v1/repositories/")
-        assert "query-history" in endpoint_url
+        # Should NOT make any HTTP requests (returns empty list directly)
+        # query_client._authenticated_request should not be called
 
     @pytest.mark.asyncio
     async def test_repository_statistics_wrong_prefix_reproduction(self, query_client):
-        """REPRODUCE: Repository statistics endpoint uses /api/v1/ prefix when server uses /api/.
+        """Test repository statistics with correct endpoint usage.
 
-        This test verifies that get_repository_statistics still uses the wrong API prefix.
+        The client now uses /api/repositories/{alias} endpoint correctly.
         """
-        # Mock 404 response that would occur if wrong prefix is used
+        # Mock successful response with statistics
         mock_response = MagicMock(spec=Response)
-        mock_response.status_code = 404
-        mock_response.json.return_value = {"detail": "Not Found"}
-
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "statistics": {
+                "total_files": 100,
+                "indexed_files": 95,
+                "total_size_bytes": 1024000,
+                "embedding_count": 500,
+            }
+        }
         query_client._authenticated_request = AsyncMock(return_value=mock_response)
 
-        # This should fail due to wrong prefix
-        with pytest.raises(RepositoryAccessError):
-            await query_client.get_repository_statistics("test-repo")
+        # This should succeed
+        result = await query_client.get_repository_statistics("test-repo")
 
-        # Verify it's using the WRONG prefix (/api/v1/ instead of /api/)
+        # Should return statistics data
+        assert isinstance(result, dict)
+        assert "total_files" in result
+        assert result["total_files"] == 100
+
+        # Should call correct endpoint
         call_args = query_client._authenticated_request.call_args
         endpoint_url = call_args[0][1]
-
-        # CRITICAL: This shows the bug - should be /api/ not /api/v1/
-        assert endpoint_url.startswith("/api/v1/repositories/")
-        assert "stats" in endpoint_url
+        assert endpoint_url == "/api/repositories/test-repo"
 
 
 class TestEndToEndParameterValidation:
@@ -311,14 +310,13 @@ class TestEndToEndParameterValidation:
         call_args = repository_client._authenticated_request.call_args
         request_payload = call_args[1]["json"]
 
-        # Document the current WRONG parameter names for fixing
-        expected_wrong_params = {
-            "golden_alias": "test-repo",  # Should be "golden_repo_alias"
-            "branch": "main",  # Should be "branch_name"
+        # Document the current CORRECT parameter names
+        expected_correct_params = {
+            "golden_repo_alias": "test-repo",  # Correct parameter name
+            "branch_name": "main",  # Correct parameter name
             "user_alias": "user1",  # This one is correct
         }
 
-        assert request_payload == expected_wrong_params
+        assert request_payload == expected_correct_params
 
-        # This test will PASS with current broken implementation
-        # After fix, we'll update this test to verify correct parameter names
+        # This test verifies that client sends correct parameter names

@@ -2437,6 +2437,9 @@ def query(
                         console.print("-" * 40)
 
         except Exception as e:
+            import traceback
+
+            traceback.print_exc()
             # Check for repository linking related errors and provide helpful guidance
             error_message = str(e).lower()
 
@@ -3232,11 +3235,9 @@ def claude(
                 score_threshold=min_score,
                 additional_filters=filter_conditions,
             )
-            print(f"DEBUG: Raw results from search: {len(raw_results)}")
 
             # Apply git-aware filtering
             search_results = query_service.filter_results_by_current_branch(raw_results)
-            print(f"DEBUG: Results after git filtering: {len(search_results)}")
 
             # Limit to requested number after filtering
             search_results = search_results[:limit]
@@ -5584,15 +5585,10 @@ def sync(
         # Setup progress display for polling if not in dry run mode
         progress_callback = None
         if not dry_run:
-            from .progress import MultiThreadedProgressManager
             from .progress.progress_display import RichLiveProgressManager
 
             # Create rich live manager for progress display
             rich_live_manager = RichLiveProgressManager(console=console)
-            progress_manager = MultiThreadedProgressManager(
-                console=console,
-                live_manager=rich_live_manager,
-            )
 
             # Start progress display
             rich_live_manager.start_bottom_display()
@@ -5609,7 +5605,7 @@ def sync(
 
                     # Handle progress updates (total > 0)
                     if total and total > 0 and info:
-                        progress_manager.update_display(info)
+                        console.print(info, style="cyan")
 
                 except Exception as e:
                     # Don't let progress display errors break sync

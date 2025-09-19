@@ -150,9 +150,6 @@ async def execute_remote_query(
             results, project_root, mode="remote"
         )
 
-        logger.info(
-            f"Remote query executed successfully: {len(enhanced_results)} results with staleness detection"
-        )
         return enhanced_results
 
     except (RepositoryNotLinkedException, ValueError):

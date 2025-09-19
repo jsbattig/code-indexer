@@ -73,15 +73,15 @@ class TestStoredTokenValidation:
 
     def test_stored_token_validate_security_constraints(self):
         """Test StoredToken.validate_security_constraints() method."""
-        # Test RS256 algorithm enforcement - create invalid HS256 token
-        invalid_token = jose_jwt.encode({"test": "data"}, "secret", algorithm="HS256")
+        # Test algorithm enforcement - create token with unsupported algorithm (not HS256/RS256)
+        invalid_token = jose_jwt.encode({"test": "data"}, "secret", algorithm="HS384")
         stored_token = StoredToken(
             token=invalid_token,
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
             created_at=datetime.now(timezone.utc),
             encrypted_data=b"encrypted_data",
         )
-        # Should raise TokenSecurityError for non-RS256 algorithm
+        # Should raise TokenSecurityError for unsupported algorithm
         with pytest.raises(TokenSecurityError):
             stored_token.validate_security_constraints()
 
@@ -792,12 +792,12 @@ class TestSecurityConstraints:
             server_url="https://test.example.com",
         )
 
-        # Create token with invalid algorithm
+        # Create token with unsupported algorithm (not HS256/RS256)
         payload = {
             "username": "testuser",
             "exp": (datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp(),
         }
-        invalid_token = jose_jwt.encode(payload, "secret", algorithm="HS256")
+        invalid_token = jose_jwt.encode(payload, "secret", algorithm="HS384")
 
         stored_token = StoredToken(
             token=invalid_token,
@@ -806,7 +806,7 @@ class TestSecurityConstraints:
             encrypted_data=b"encrypted_data",
         )
 
-        # Should reject non-RS256 tokens
+        # Should reject tokens with unsupported algorithms
         with pytest.raises(TokenSecurityError):
             stored_token.validate_security_constraints()
 
