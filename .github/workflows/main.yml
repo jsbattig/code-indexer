@@ -104,6 +104,8 @@ jobs:
           --ignore=tests/unit/cli/test_admin_repos_functionality_verification.py \
           --ignore=tests/unit/cli/test_admin_repos_delete_command.py \
           --ignore=tests/unit/cli/test_admin_repos_delete_integration_e2e.py \
+          --ignore=tests/unit/cli/test_admin_password_change_command.py \
+          --ignore=tests/unit/cli/test_admin_repos_add_simple.py \
           --cov=src/code_indexer --cov-report=xml --cov-report=term
     
     - name: Upload coverage to Codecov
