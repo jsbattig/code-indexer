@@ -364,9 +364,7 @@ class TestEnhancedSyncRealServerIntegration:
         """Test enhanced sync command with real repository context."""
         # Setup real infrastructure
         user = real_sync_infrastructure.create_test_user()
-        real_sync_infrastructure.get_auth_token(
-            user["username"], user["password"]
-        )
+        real_sync_infrastructure.get_auth_token(user["username"], user["password"])
 
         # Setup real repository
         golden_alias = "sync-test-repo"
@@ -409,9 +407,7 @@ class TestEnhancedSyncRealServerIntegration:
         """Test 'cidx repos sync' command with real server and repository."""
         # Setup real user and authentication
         user = real_sync_infrastructure.create_test_user()
-        real_sync_infrastructure.get_auth_token(
-            user["username"], user["password"]
-        )
+        real_sync_infrastructure.get_auth_token(user["username"], user["password"])
 
         # Setup real repository
         golden_alias = "repos-sync-test"
@@ -448,9 +444,7 @@ class TestEnhancedSyncRealServerIntegration:
         """Test 'cidx repos sync --all' with multiple real repositories."""
         # Setup real user
         user = real_sync_infrastructure.create_test_user()
-        real_sync_infrastructure.get_auth_token(
-            user["username"], user["password"]
-        )
+        real_sync_infrastructure.get_auth_token(user["username"], user["password"])
 
         # Setup multiple real repositories
         repos = [
@@ -486,9 +480,7 @@ class TestEnhancedSyncRealServerIntegration:
         """Test 'cidx repos sync-status' with real repository."""
         # Setup real user and repository
         user = real_sync_infrastructure.create_test_user()
-        real_sync_infrastructure.get_auth_token(
-            user["username"], user["password"]
-        )
+        real_sync_infrastructure.get_auth_token(user["username"], user["password"])
 
         golden_alias = "status-test-repo"
         user_alias = "status-test"

@@ -109,7 +109,10 @@ class TestAPIClientTypeErrors(unittest.TestCase):
         """Verify system_client returns Dict[str, Any] not Any."""
         # Simulate response.json() that returns Any
         mock_response = Mock()
-        mock_response.json.return_value = {"status": "healthy", "timestamp": "2024-01-01"}
+        mock_response.json.return_value = {
+            "status": "healthy",
+            "timestamp": "2024-01-01",
+        }
 
         # The pattern that causes the issue
         health_data = mock_response.json()
@@ -143,10 +146,12 @@ class TestAPIClientTypeErrors(unittest.TestCase):
         # This should work - using correct parameter name
         # The error occurs when using 'repo_alias' instead
         import asyncio
-        result = asyncio.run(client.sync_repository(
-            user_alias="test-repo",  # Correct parameter name
-            force_sync=True
-        ))
+
+        result = asyncio.run(
+            client.sync_repository(
+                user_alias="test-repo", force_sync=True  # Correct parameter name
+            )
+        )
 
         self.assertEqual(result["repository"], "test-repo")
 
@@ -161,7 +166,9 @@ class TestAPIClientTypeErrors(unittest.TestCase):
 
             def _get_async_client(self):
                 if self._async_client is None:
-                    self._async_client = "MockReposAPIClient"  # Simulating ReposAPIClient
+                    self._async_client = (
+                        "MockReposAPIClient"  # Simulating ReposAPIClient
+                    )
                 return self._async_client
 
         client = MockSyncReposClient()
@@ -186,6 +193,7 @@ class TestSyncPollingTypeErrors(unittest.TestCase):
 
         # This should work - no 'reason' parameter
         import asyncio
+
         result = asyncio.run(client.cancel_job("test-job-123"))
 
         self.assertEqual(result["job_id"], "test-job-123")

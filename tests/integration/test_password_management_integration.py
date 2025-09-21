@@ -162,6 +162,7 @@ class TestPasswordPolicyIntegration:
             from code_indexer.mode_detection.command_mode_detector import (
                 find_project_root,
             )
+
             # Use the password policy functions and other imports
             # Test that we can access them without errors
             _ = validate_password_strength
