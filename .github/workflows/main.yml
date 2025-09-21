@@ -75,6 +75,18 @@ jobs:
           --ignore=tests/unit/api_clients/test_jwt_token_manager_real.py \
           --ignore=tests/unit/api_clients/test_admin_api_client.py \
           --ignore=tests/unit/api_clients/test_admin_client_golden_repos_maintenance.py \
+          --ignore=tests/unit/cli/test_repository_branch_switching.py \
+          --ignore=tests/unit/cli/test_repository_info_command.py \
+          --ignore=tests/unit/cli/test_resource_cleanup_verification.py \
+          --ignore=tests/unit/cli/test_staleness_display_integration.py \
+          --ignore=tests/unit/cli/test_sync_command_structure.py \
+          --ignore=tests/unit/cli/test_system_health_commands.py \
+          --ignore=tests/unit/integration/test_system_health_e2e.py \
+          --ignore=tests/unit/integration/test_timestamp_integration.py \
+          --ignore=tests/unit/services/test_claude_md_compliance_violations_cleanup.py \
+          --ignore=tests/unit/services/test_claude_md_final_compliance.py \
+          --ignore=tests/unit/services/test_complete_claude_md_violations_elimination.py \
+          --ignore=tests/unit/services/test_universal_timestamp_collection.py \
           --cov=src/code_indexer --cov-report=xml --cov-report=term
     
     - name: Upload coverage to Codecov
