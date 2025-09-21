@@ -164,7 +164,7 @@ class TestSyncBackwardCompatibilityReal:
     ):
         """Test that enhanced sync doesn't break existing user workflows."""
         # Create a real user and repository setup
-        user = real_compatibility_infrastructure.create_test_user()
+        real_compatibility_infrastructure.create_test_user()
 
         # Test that traditional sync workflow still functions
         runner = CliRunner()

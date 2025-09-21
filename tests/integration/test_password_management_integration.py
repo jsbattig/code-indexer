@@ -20,8 +20,7 @@ class TestPasswordPolicyIntegration:
 
     def test_password_policy_validation_with_cli_import(self):
         """Test that CLI can import and use password validation."""
-        # Import the validation function as the CLI does
-        from code_indexer.password_policy import validate_password_strength
+        # Use the validation function already imported at module level
 
         # Test with a valid password
         is_valid, message = validate_password_strength("ValidPass123!")
@@ -35,7 +34,7 @@ class TestPasswordPolicyIntegration:
 
     def test_password_policy_help_integration(self):
         """Test that password policy help can be imported and used."""
-        from code_indexer.password_policy import get_password_policy_help
+        # Use the help function already imported at module level
 
         help_text = get_password_policy_help()
         assert isinstance(help_text, str)
@@ -163,8 +162,12 @@ class TestPasswordPolicyIntegration:
             from code_indexer.mode_detection.command_mode_detector import (
                 find_project_root,
             )
-            from code_indexer.password_policy import validate_password_strength
-            from code_indexer.password_policy import get_password_policy_help
+            # Use the password policy functions and other imports
+            # Test that we can access them without errors
+            _ = validate_password_strength
+            _ = get_password_policy_help
+            _ = AuthAPIClient
+            _ = find_project_root
 
             # All imports should work without errors
             assert True

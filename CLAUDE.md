@@ -591,3 +591,89 @@ chunking_manager.index_repository(repo_path=str(repo_path), force_reindex=False)
 ```
 
 **CRITICAL FOR TEST ANALYSIS**: Premature timeout termination prevents proper identification of failing tests and leads to incomplete debugging information. Always use full 20-minute timeout when running these scripts to get complete test results and proper failure analysis.
+
+## MANDATORY GITHUB ACTIONS MONITORING WORKFLOW
+
+**CRITICAL REQUIREMENT**: Every time code is pushed to GitHub, you MUST automatically monitor the GitHub Actions workflow and troubleshoot until a clean run is achieved.
+
+### **Mandatory Workflow After Push**
+
+1. **Immediate Monitoring**: After `git push`, immediately run `gh run list --limit 5` to check workflow status
+2. **Failure Analysis**: If workflow fails, run `gh run view <run-id> --log-failed` to get detailed error logs
+3. **Issue Classification**: Categorize failures as:
+   - **Linting Issues**: Unused imports, variables, formatting problems (fix immediately)
+   - **Permission Issues**: Tests requiring containers/external dependencies (exclude from GitHub Actions)
+   - **Real Bugs**: Actual code issues (fix the underlying problem)
+4. **Fix and Retry**: Make necessary fixes, commit, push, and monitor again
+5. **Repeat Until Clean**: Continue the fix → commit → push → monitor cycle until GitHub Actions passes
+
+### **Common GitHub Actions Failure Patterns**
+
+#### **Linting Failures (Fix Immediately)**
+- **F841**: Unused variables (`user`, `auth_token`)
+- **F401**: Unused imports (`pathlib.Path`, `typing.List`, `unittest.mock.MagicMock`)
+- **Solution**: Use `ruff check --fix` to auto-fix, then manual cleanup for complex cases
+
+#### **Permission-Based Failures (Exclude from CI)**
+- **Docker/Container Issues**: Tests requiring Docker daemon or container runtime
+- **File System Permissions**: Tests requiring `/var/lib/code-indexer/` write access
+- **External Dependencies**: Tests requiring VoyageAI API keys or external services
+- **Solution**: Add `--ignore=path/to/test.py` to `.github/workflows/main.yml`
+
+#### **Real Code Issues (Fix Root Cause)**
+- **Import Errors**: Missing imports after refactoring
+- **Type Errors**: Constructor mismatches, parameter changes
+- **Logic Errors**: Actual bugs in implementation
+- **Solution**: Fix the underlying code issue
+
+### **GitHub Actions Monitoring Commands**
+
+```bash
+# Check recent workflow runs
+gh run list --limit 5
+
+# View specific failed run details
+gh run view <run-id>
+
+# Get detailed failure logs
+gh run view <run-id> --log-failed
+
+# Monitor workflow in real-time
+gh run watch <run-id>
+```
+
+### **Auto-Fix Commands for Common Issues**
+
+```bash
+# Fix ruff linting issues automatically
+ruff check --fix src/ tests/
+
+# Fix import sorting
+ruff check --select I --fix src/ tests/
+
+# Check for remaining issues
+ruff check src/ tests/
+```
+
+### **NEVER Ship Broken CI**
+
+- **Zero Tolerance**: Never leave GitHub Actions in a failed state
+- **Immediate Response**: Fix failures within the same development session
+- **Complete Validation**: Ensure clean runs before considering work complete
+- **Learning Documentation**: Record new failure patterns and solutions in CLAUDE.md
+
+### **Typical Issues to Expect**
+
+1. **New Test Files**: Often contain unused imports from template copying
+2. **Integration Tests**: May require exclusion from CI due to external dependencies
+3. **Variable Assignments**: Setup code that creates variables for potential future use
+4. **Import Dependencies**: New modules may import packages not used in test scenarios
+
+### **Success Criteria**
+
+✅ **GitHub Actions Status**: All workflow checks passing (green checkmarks)
+✅ **No Linting Errors**: Clean ruff, black, and mypy output
+✅ **Appropriate Test Coverage**: Tests run in correct environments (CI vs local)
+✅ **Documentation Updated**: Any new exclusions or patterns documented
+
+This workflow ensures that every push maintains CI/CD health and prevents broken builds from accumulating technical debt.

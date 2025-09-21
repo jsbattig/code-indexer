@@ -6,7 +6,6 @@ work correctly in real command execution scenarios.
 
 import json
 import pytest
-from pathlib import Path
 from click.testing import CliRunner
 
 from code_indexer.cli import cli
