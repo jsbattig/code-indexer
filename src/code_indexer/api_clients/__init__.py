@@ -29,6 +29,7 @@ from .remote_query_client import (
     RepositoryAccessError,
     QueryLimitExceededError,
 )
+from .admin_client import AdminAPIClient
 
 __all__ = [
     # Base client
@@ -55,4 +56,6 @@ __all__ = [
     "QueryExecutionError",
     "RepositoryAccessError",
     "QueryLimitExceededError",
+    # Admin client
+    "AdminAPIClient",
 ]

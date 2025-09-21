@@ -463,9 +463,7 @@ class JobPollingEngine:
         try:
             # Check if API client supports job cancellation
             if hasattr(self.api_client, "cancel_job"):
-                await self.api_client.cancel_job(
-                    job_id, reason="Polling timeout exceeded"
-                )
+                await self.api_client.cancel_job(job_id)
                 logger.info(f"Job {job_id} cancelled due to polling timeout")
             else:
                 logger.warning(

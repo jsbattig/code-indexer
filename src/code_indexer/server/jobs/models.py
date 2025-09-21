@@ -13,9 +13,11 @@ from pydantic import BaseModel, Field, field_validator, field_serializer, Config
 
 
 class JobType(str, Enum):
-    """Job type enumeration for different sync operations."""
+    """Job type enumeration for different operations."""
 
     REPOSITORY_SYNC = "repository_sync"
+    REPOSITORY_ACTIVATION = "repository_activation"
+    REPOSITORY_DEACTIVATION = "repository_deactivation"
 
 
 class JobStatus(str, Enum):

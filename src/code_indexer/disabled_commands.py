@@ -86,6 +86,8 @@ COMMAND_COMPATIBILITY: Dict[str, Dict[str, bool]] = {
     "claude": {"local": True, "remote": True, "uninitialized": False},
     # Repository synchronization - remote only since it syncs with remote server
     "sync": {"local": False, "remote": True, "uninitialized": False},
+    # Job management commands - remote only since they manage server-side background jobs
+    "list_jobs": {"local": False, "remote": True, "uninitialized": False},
 }
 
 # Command alternatives mapping for helpful error messages
@@ -100,6 +102,7 @@ COMMAND_ALTERNATIVES: Dict[str, str] = {
     "setup-global-registry": "Remote mode doesn't use local port registries. Server configuration handles resource management.",
     "install-server": "Remote mode connects to existing servers. Use 'cidx init' to configure remote server connection.",
     "server": "Remote mode doesn't manage local server instances. You're already connected to a remote server.",
+    "list_jobs": "Local mode doesn't have background job management. Use remote mode to access server-side job monitoring capabilities.",
 }
 
 

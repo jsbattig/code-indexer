@@ -31,12 +31,12 @@ And display total count of activated repositories
 ```
 
 **Technical Requirements**:
-- [ ] Implement `cidx repos list` command
-- [ ] Integrate with GET `/api/repos` endpoint
-- [ ] Format repository list in readable table format
-- [ ] Show key repository information: alias, branch, sync status, last sync
-- [ ] Handle empty repository list gracefully
-- [ ] Sort repositories by activation date
+- [x] Implement `cidx repos list` command
+- [x] Integrate with GET `/api/repos` endpoint
+- [x] Format repository list in readable table format
+- [x] Show key repository information: alias, branch, sync status, last sync
+- [x] Handle empty repository list gracefully
+- [x] Sort repositories by activation date
 
 ### AC2: Browse Available Golden Repositories
 **Scenario**: User browses available repositories for activation
@@ -57,12 +57,12 @@ And highlight repositories available for activation
 ```
 
 **Technical Requirements**:
-- [ ] Implement `cidx repos available` command
-- [ ] Integrate with GET `/api/repos/available` endpoint
-- [ ] Display golden repository information in formatted table
-- [ ] Show activation status for each repository
-- [ ] Indicate already activated repositories
-- [ ] Provide clear activation guidance
+- [x] Implement `cidx repos available` command
+- [x] Integrate with GET `/api/repos/available` endpoint
+- [x] Display golden repository information in formatted table
+- [x] Show activation status for each repository
+- [x] Indicate already activated repositories
+- [x] Provide clear activation guidance
 
 ### AC3: Repository Discovery from Remote Sources
 **Scenario**: User discovers repositories from remote Git sources
@@ -83,12 +83,12 @@ And show contact information for administrators
 ```
 
 **Technical Requirements**:
-- [ ] Implement `cidx repos discover` command with source parameter
-- [ ] Integrate with GET `/api/repos/discover` endpoint
-- [ ] Support various source formats (GitHub org, GitLab group, direct URLs)
-- [ ] Validate discovered repository accessibility
-- [ ] Show discovery results with actionable next steps
-- [ ] Provide guidance for repository addition requests
+- [x] Implement `cidx repos discover` command with source parameter
+- [x] Integrate with GET `/api/repos/discover` endpoint
+- [x] Support various source formats (GitHub org, GitLab group, direct URLs)
+- [x] Validate discovered repository accessibility
+- [x] Show discovery results with actionable next steps
+- [x] Provide guidance for repository addition requests
 
 ### AC4: Repository Information Filtering and Search
 **Scenario**: User filters and searches repository lists
@@ -106,12 +106,12 @@ And show total matches found
 ```
 
 **Technical Requirements**:
-- [ ] Add `--filter` option to `cidx repos list` command
-- [ ] Add `--search` option to `cidx repos available` command
-- [ ] Support pattern matching for repository filtering
-- [ ] Implement case-insensitive search functionality
-- [ ] Highlight search terms in results when applicable
-- [ ] Maintain consistent table formatting for filtered results
+- [x] Add `--filter` option to `cidx repos list` command
+- [x] Add `--search` option to `cidx repos available` command
+- [x] Support pattern matching for repository filtering
+- [x] Implement case-insensitive search functionality
+- [x] Highlight search terms in results when applicable
+- [x] Maintain consistent table formatting for filtered results
 
 ### AC5: Repository Status Summary Display
 **Scenario**: User gets comprehensive repository status overview
@@ -127,12 +127,12 @@ And provide quick action suggestions based on status
 ```
 
 **Technical Requirements**:
-- [ ] Implement `cidx repos status` command for comprehensive overview
-- [ ] Aggregate data from list and available endpoints
-- [ ] Calculate and display summary statistics
-- [ ] Show recent activity and actionable insights
-- [ ] Provide personalized recommendations based on repository state
-- [ ] Format information in dashboard-style layout
+- [x] Implement `cidx repos status` command for comprehensive overview
+- [x] Aggregate data from list and available endpoints
+- [x] Calculate and display summary statistics
+- [x] Show recent activity and actionable insights
+- [x] Provide personalized recommendations based on repository state
+- [x] Format information in dashboard-style layout
 
 ## Technical Implementation Details
 
@@ -199,25 +199,25 @@ Activated Repositories (3)
 ## Testing Requirements
 
 ### Unit Test Coverage
-- [ ] Repository list formatting and display logic
-- [ ] Repository filtering and search algorithms
-- [ ] Status summary calculation and aggregation
-- [ ] Discovery result processing and validation
-- [ ] Error handling for various API response scenarios
+- [x] Repository list formatting and display logic
+- [x] Repository filtering and search algorithms
+- [x] Status summary calculation and aggregation
+- [x] Discovery result processing and validation
+- [x] Error handling for various API response scenarios
 
 ### Integration Test Coverage
-- [ ] End-to-end repository listing with server data
-- [ ] Available repositories browsing with activation status
-- [ ] Repository discovery workflow validation
-- [ ] Status summary accuracy with real repository data
-- [ ] Error handling for server connectivity issues
+- [x] End-to-end repository listing with server data
+- [x] Available repositories browsing with activation status
+- [x] Repository discovery workflow validation
+- [x] Status summary accuracy with real repository data
+- [x] Error handling for server connectivity issues
 
 ### User Experience Testing
-- [ ] Table formatting readability with various data sizes
-- [ ] Search and filter functionality effectiveness
-- [ ] Status summary usefulness and actionability
-- [ ] Discovery workflow clarity and guidance
-- [ ] Error message clarity and recovery guidance
+- [x] Table formatting readability with various data sizes
+- [x] Search and filter functionality effectiveness
+- [x] Status summary usefulness and actionability
+- [x] Discovery workflow clarity and guidance
+- [x] Error message clarity and recovery guidance
 
 ## Performance Requirements
 
@@ -251,24 +251,24 @@ Activated Repositories (3)
 ## Definition of Done
 
 ### Functional Completion
-- [ ] All repository browsing commands implemented and functional
-- [ ] Repository filtering and search working effectively
-- [ ] Status summary providing comprehensive overview
-- [ ] Discovery functionality working with various sources
-- [ ] Clear guidance provided for all user scenarios
+- [x] All repository browsing commands implemented and functional
+- [x] Repository filtering and search working effectively
+- [x] Status summary providing comprehensive overview
+- [x] Discovery functionality working with various sources
+- [x] Clear guidance provided for all user scenarios
 
 ### Quality Validation
-- [ ] >95% test coverage for repository browsing logic
-- [ ] Performance benchmarks met for all operations
-- [ ] User experience validated through testing
-- [ ] Error scenarios comprehensively handled
-- [ ] Information architecture clear and intuitive
+- [x] >95% test coverage for repository browsing logic
+- [x] Performance benchmarks met for all operations
+- [x] User experience validated through testing
+- [x] Error scenarios comprehensively handled
+- [x] Information architecture clear and intuitive
 
 ### Integration Readiness
-- [ ] Repository browsing foundation ready for activation commands
-- [ ] Discovery results ready for activation workflow
-- [ ] Status information supports operational decision making
-- [ ] Table formatting patterns established for other features
+- [x] Repository browsing foundation ready for activation commands
+- [x] Discovery results ready for activation workflow
+- [x] Status information supports operational decision making
+- [x] Table formatting patterns established for other features
 
 ---
 

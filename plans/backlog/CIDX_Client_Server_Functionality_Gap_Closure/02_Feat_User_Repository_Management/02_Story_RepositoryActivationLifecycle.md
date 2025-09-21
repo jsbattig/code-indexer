@@ -32,13 +32,13 @@ And proceed with activation using the default naming
 ```
 
 **Technical Requirements**:
-- [ ] Implement `cidx repos activate` command with golden-alias and optional user-alias
-- [ ] Integrate with POST `/api/repos/activate` endpoint
-- [ ] Display activation progress with status updates
-- [ ] Handle CoW cloning through server infrastructure
-- [ ] Validate golden repository availability before activation
-- [ ] Support custom user alias or default to golden alias
-- [ ] Provide clear success messaging and next steps
+- [x] Implement `cidx repos activate` command with golden-alias and optional user-alias
+- [x] Integrate with POST `/api/repos/activate` endpoint
+- [x] Display activation progress with status updates
+- [x] Handle CoW cloning through server infrastructure
+- [x] Validate golden repository availability before activation
+- [x] Support custom user alias or default to golden alias
+- [x] Provide clear success messaging and next steps
 
 ### AC2: Repository Activation Conflict Handling
 **Scenario**: User handles activation conflicts and constraints
@@ -58,12 +58,12 @@ And provide guidance for requesting repository addition
 ```
 
 **Technical Requirements**:
-- [ ] Validate user alias uniqueness before activation
-- [ ] Check golden repository availability and accessibility
-- [ ] Provide helpful error messages with alternatives
-- [ ] Suggest available repositories when activation fails
-- [ ] Handle server-side activation constraints gracefully
-- [ ] Preserve existing repository state during failed activations
+- [x] Validate user alias uniqueness before activation
+- [x] Check golden repository availability and accessibility
+- [x] Provide helpful error messages with alternatives
+- [x] Suggest available repositories when activation fails
+- [x] Handle server-side activation constraints gracefully
+- [x] Preserve existing repository state during failed activations
 
 ### AC3: Repository Deactivation with Cleanup
 **Scenario**: User deactivates repository with proper cleanup
@@ -86,13 +86,13 @@ And require explicit confirmation to proceed
 ```
 
 **Technical Requirements**:
-- [ ] Implement `cidx repos deactivate` command with repository alias
-- [ ] Integrate with DELETE `/api/repos/{user_alias}` endpoint
-- [ ] Provide confirmation prompts for destructive operations
-- [ ] Check for uncommitted changes and warn appropriately
-- [ ] Stop containers and clean up resources properly
-- [ ] Remove repository from activated list after successful deactivation
-- [ ] Handle partial deactivation failures with proper error reporting
+- [x] Implement `cidx repos deactivate` command with repository alias
+- [x] Integrate with DELETE `/api/repos/{user_alias}` endpoint
+- [x] Provide confirmation prompts for destructive operations
+- [x] Check for uncommitted changes and warn appropriately
+- [x] Stop containers and clean up resources properly
+- [x] Remove repository from activated list after successful deactivation
+- [x] Handle partial deactivation failures with proper error reporting
 
 ### AC4: Forced Deactivation and Recovery
 **Scenario**: User handles problematic repositories requiring forced deactivation
@@ -114,12 +114,12 @@ And complete deactivation with warnings about partial cleanup
 ```
 
 **Technical Requirements**:
-- [ ] Add `--force` option for problematic repository cleanup
-- [ ] Implement forced container stopping and resource cleanup
-- [ ] Skip normal validation steps during forced deactivation
-- [ ] Provide warnings about potential resource leaks
-- [ ] Log cleanup issues for administrative review
-- [ ] Complete deactivation even with partial cleanup failures
+- [x] Add `--force` option for problematic repository cleanup
+- [x] Implement forced container stopping and resource cleanup
+- [x] Skip normal validation steps during forced deactivation
+- [x] Provide warnings about potential resource leaks
+- [x] Log cleanup issues for administrative review
+- [x] Complete deactivation even with partial cleanup failures
 
 ### AC5: Activation Status and Lifecycle Monitoring
 **Scenario**: User monitors activation lifecycle and status
@@ -146,12 +146,12 @@ And provide troubleshooting guidance
 ```
 
 **Technical Requirements**:
-- [ ] Implement real-time progress reporting during activation
-- [ ] Show activation status in repository status commands
-- [ ] Handle activation cancellation gracefully
-- [ ] Automatic cleanup of failed activation attempts
-- [ ] Detailed error reporting with troubleshooting guidance
-- [ ] Activation state persistence for monitoring
+- [x] Implement real-time progress reporting during activation
+- [x] Show activation status in repository status commands
+- [x] Handle activation cancellation gracefully
+- [x] Automatic cleanup of failed activation attempts
+- [x] Detailed error reporting with troubleshooting guidance
+- [x] Activation state persistence for monitoring
 
 ## Technical Implementation Details
 
@@ -220,25 +220,25 @@ class ActivationProgress:
 ## Testing Requirements
 
 ### Unit Test Coverage
-- [ ] Repository activation command logic and validation
-- [ ] Deactivation workflow with confirmation handling
-- [ ] Error handling for various activation failure scenarios
-- [ ] Progress reporting and status monitoring logic
-- [ ] Forced deactivation and cleanup procedures
+- [x] Repository activation command logic and validation
+- [x] Deactivation workflow with confirmation handling
+- [x] Error handling for various activation failure scenarios
+- [x] Progress reporting and status monitoring logic
+- [x] Forced deactivation and cleanup procedures
 
 ### Integration Test Coverage
-- [ ] End-to-end activation workflow with server CoW cloning
-- [ ] Deactivation workflow with proper resource cleanup
-- [ ] Activation progress monitoring with real server operations
-- [ ] Error recovery and cleanup validation
-- [ ] Container lifecycle integration during activation/deactivation
+- [x] End-to-end activation workflow with server CoW cloning
+- [x] Deactivation workflow with proper resource cleanup
+- [x] Activation progress monitoring with real server operations
+- [x] Error recovery and cleanup validation
+- [x] Container lifecycle integration during activation/deactivation
 
 ### Repository State Testing
-- [ ] CoW cloning verification and shared resource validation
-- [ ] Repository state consistency after activation/deactivation
-- [ ] Container and port allocation validation
-- [ ] Resource cleanup completeness verification
-- [ ] Activation cancellation and recovery testing
+- [x] CoW cloning verification and shared resource validation
+- [x] Repository state consistency after activation/deactivation
+- [x] Container and port allocation validation
+- [x] Resource cleanup completeness verification
+- [x] Activation cancellation and recovery testing
 
 ## Performance Requirements
 
@@ -275,24 +275,24 @@ Network error: Unable to reach server during activation
 ## Definition of Done
 
 ### Functional Completion
-- [ ] Repository activation command working with CoW cloning integration
-- [ ] Repository deactivation with proper cleanup and confirmation
-- [ ] Progress monitoring and status display during operations
-- [ ] Error handling and recovery for all failure scenarios
-- [ ] Forced deactivation for problematic repository cleanup
+- [x] Repository activation command working with CoW cloning integration
+- [x] Repository deactivation with proper cleanup and confirmation
+- [x] Progress monitoring and status display during operations
+- [x] Error handling and recovery for all failure scenarios
+- [x] Forced deactivation for problematic repository cleanup
 
 ### Quality Validation
-- [ ] >95% test coverage for activation/deactivation logic
-- [ ] Performance benchmarks met for all repository operations
-- [ ] Resource cleanup validation for all deactivation scenarios
-- [ ] User experience validated through end-to-end testing
-- [ ] Error recovery procedures thoroughly tested
+- [x] >95% test coverage for activation/deactivation logic
+- [x] Performance benchmarks met for all repository operations
+- [x] Resource cleanup validation for all deactivation scenarios
+- [x] User experience validated through end-to-end testing
+- [x] Error recovery procedures thoroughly tested
 
 ### Integration Readiness
-- [ ] Repository activation ready for branching and info operations
-- [ ] CoW cloning working with container lifecycle management
-- [ ] Resource cleanup supporting system health monitoring
-- [ ] Activation status supporting operational dashboards
+- [x] Repository activation ready for branching and info operations
+- [x] CoW cloning working with container lifecycle management
+- [x] Resource cleanup supporting system health monitoring
+- [x] Activation status supporting operational dashboards
 
 ---
 

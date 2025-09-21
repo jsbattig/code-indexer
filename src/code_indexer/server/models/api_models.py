@@ -5,7 +5,7 @@ Provides Pydantic models for new endpoint requests and responses.
 Following CLAUDE.md Foundation #1: No mocks - these represent real data structures.
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from datetime import datetime
 from pydantic import BaseModel, Field
 from enum import Enum
@@ -180,3 +180,52 @@ class FileListQueryParams(BaseModel):
     sort_by: Optional[str] = Field(
         default="path", description="Sort field: path, size, modified_at"
     )
+
+
+# Repository Status Models for Repository Management
+class ActivatedRepositorySummary(BaseModel):
+    """Summary information for activated repositories."""
+
+    total_count: int = Field(..., description="Total activated repositories")
+    synced_count: int = Field(..., description="Number of synced repositories")
+    needs_sync_count: int = Field(
+        ..., description="Number of repositories needing sync"
+    )
+    conflict_count: int = Field(
+        ..., description="Number of repositories with conflicts"
+    )
+    recent_activations: List[Dict[str, Any]] = Field(
+        ..., description="Recently activated repositories"
+    )
+
+
+class AvailableRepositorySummary(BaseModel):
+    """Summary information for available repositories."""
+
+    total_count: int = Field(..., description="Total available repositories")
+    not_activated_count: int = Field(
+        ..., description="Number of repositories not activated"
+    )
+
+
+class RecentActivity(BaseModel):
+    """Recent repository activity information."""
+
+    recent_syncs: List[Dict[str, Any]] = Field(
+        ..., description="Recent synchronizations"
+    )
+
+
+class RepositoryStatusSummary(BaseModel):
+    """Comprehensive repository status summary."""
+
+    activated_repositories: ActivatedRepositorySummary = Field(
+        ..., description="Activated repositories summary"
+    )
+    available_repositories: AvailableRepositorySummary = Field(
+        ..., description="Available repositories summary"
+    )
+    recent_activity: RecentActivity = Field(
+        ..., description="Recent activity information"
+    )
+    recommendations: List[str] = Field(..., description="Actionable recommendations")

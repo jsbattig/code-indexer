@@ -32,12 +32,12 @@ And suggest "Use 'cidx auth login' to authenticate"
 ```
 
 **Technical Requirements**:
-- [ ] Implement `cidx auth status` command with no parameters
-- [ ] Parse stored JWT token to extract user information
-- [ ] Calculate and display token expiration time in human-readable format
-- [ ] Show current server URL from configuration
-- [ ] Display user role information from token claims
-- [ ] Handle cases where no credentials are stored
+- [x] Implement `cidx auth status` command with no parameters
+- [x] Parse stored JWT token to extract user information
+- [x] Calculate and display token expiration time in human-readable format
+- [x] Show current server URL from configuration
+- [x] Display user role information from token claims
+- [x] Handle cases where no credentials are stored
 
 ### AC2: Token Validity Verification
 **Scenario**: System validates token status and handles expiration
@@ -67,12 +67,12 @@ And clear invalid credentials
 ```
 
 **Technical Requirements**:
-- [ ] Implement JWT token expiration checking
-- [ ] Attempt automatic token refresh using refresh token
-- [ ] Validate token with server when network available
-- [ ] Update stored credentials after successful refresh
-- [ ] Clear invalid credentials when refresh fails
-- [ ] Display clear status for each token state
+- [x] Implement JWT token expiration checking
+- [x] Attempt automatic token refresh using refresh token
+- [x] Validate token with server when network available
+- [x] Update stored credentials after successful refresh
+- [x] Clear invalid credentials when refresh fails
+- [x] Display clear status for each token state
 
 ### AC3: Detailed Credential Information
 **Scenario**: User requests detailed authentication information
@@ -89,13 +89,13 @@ And display "Connection status: <connectivity_status>"
 ```
 
 **Technical Requirements**:
-- [ ] Add `--verbose` option to status command
-- [ ] Extract detailed information from JWT token claims
-- [ ] Show token issuance and refresh timestamps
-- [ ] Display refresh token expiration if available
-- [ ] Show user permissions/roles from token
-- [ ] Test server connectivity and display status
-- [ ] Include server version information if available
+- [x] Add `--verbose` option to status command
+- [x] Extract detailed information from JWT token claims
+- [x] Show token issuance and refresh timestamps
+- [x] Display refresh token expiration if available
+- [x] Show user permissions/roles from token
+- [x] Test server connectivity and display status
+- [x] Include server version information if available
 
 ### AC4: Credential Health Monitoring
 **Scenario**: System monitors and reports credential health
@@ -123,13 +123,13 @@ And suggest checking network connectivity
 ```
 
 **Technical Requirements**:
-- [ ] Add `--health` option for comprehensive credential checking
-- [ ] Verify credential file encryption and decryption
-- [ ] Test server connectivity for token validation
-- [ ] Validate JWT token structure and signature
-- [ ] Check credential file permissions and integrity
-- [ ] Provide specific diagnostics for each failure type
-- [ ] Suggest appropriate recovery actions
+- [x] Add `--health` option for comprehensive credential checking
+- [x] Verify credential file encryption and decryption
+- [x] Test server connectivity for token validation
+- [x] Validate JWT token structure and signature
+- [x] Check credential file permissions and integrity
+- [x] Provide specific diagnostics for each failure type
+- [x] Suggest appropriate recovery actions
 
 ### AC5: Token Lifecycle Management
 **Scenario**: User manages token lifecycle operations
@@ -156,12 +156,12 @@ And not display any output unless --verbose specified
 ```
 
 **Technical Requirements**:
-- [ ] Implement `cidx auth refresh` command for manual token refresh
-- [ ] Implement `cidx auth validate` command for silent validation
-- [ ] Handle refresh token expiration gracefully
-- [ ] Support silent validation for scripting use cases
-- [ ] Return appropriate exit codes for automation
-- [ ] Update credentials after successful refresh operations
+- [x] Implement `cidx auth refresh` command for manual token refresh
+- [x] Implement `cidx auth validate` command for silent validation
+- [x] Handle refresh token expiration gracefully
+- [x] Support silent validation for scripting use cases
+- [x] Return appropriate exit codes for automation
+- [x] Update credentials after successful refresh operations
 
 ## Technical Implementation Details
 
@@ -262,24 +262,24 @@ All credential components are functioning properly.
 ## Testing Requirements
 
 ### Unit Test Coverage
-- [ ] JWT token parsing and validation logic
-- [ ] Token expiration calculation and formatting
-- [ ] Credential health checking algorithms
-- [ ] Status display formatting and output
-- [ ] Silent validation return code logic
+- [x] JWT token parsing and validation logic
+- [x] Token expiration calculation and formatting
+- [x] Credential health checking algorithms
+- [x] Status display formatting and output
+- [x] Silent validation return code logic
 
 ### Integration Test Coverage
-- [ ] End-to-end status checking with server validation
-- [ ] Token refresh workflow testing
-- [ ] Server connectivity testing and error handling
-- [ ] Credential corruption recovery testing
-- [ ] Health check comprehensive validation
+- [x] End-to-end status checking with server validation
+- [x] Token refresh workflow testing
+- [x] Server connectivity testing and error handling
+- [x] Credential corruption recovery testing
+- [x] Health check comprehensive validation
 
 ### Security Test Coverage
-- [ ] Token information display security (no sensitive data exposure)
-- [ ] Credential validation without information disclosure
-- [ ] Health check security (no credential leakage)
-- [ ] Silent validation security for automation use
+- [x] Token information display security (no sensitive data exposure)
+- [x] Credential validation without information disclosure
+- [x] Health check security (no credential leakage)
+- [x] Silent validation security for automation use
 
 ## Performance Requirements
 
@@ -315,24 +315,24 @@ Credential access denied: Insufficient file permissions
 ## Definition of Done
 
 ### Functional Completion
-- [ ] Status command with basic and verbose modes implemented
-- [ ] Health check functionality working comprehensively
-- [ ] Token refresh command operational
-- [ ] Silent validation for automation support
-- [ ] Comprehensive error handling for all scenarios
+- [x] Status command with basic and verbose modes implemented
+- [x] Health check functionality working comprehensively
+- [x] Token refresh command operational
+- [x] Silent validation for automation support
+- [x] Comprehensive error handling for all scenarios
 
 ### Quality Validation
-- [ ] >95% test coverage for status and credential management
-- [ ] Performance benchmarks met for all operations
-- [ ] User experience validated through testing
-- [ ] Silent operation modes working for automation
-- [ ] Error scenarios properly handled and tested
+- [x] >95% test coverage for status and credential management
+- [x] Performance benchmarks met for all operations
+- [x] User experience validated through testing
+- [x] Silent operation modes working for automation
+- [x] Error scenarios properly handled and tested
 
 ### Integration Readiness
-- [ ] Status information supports other features' authentication checks
-- [ ] Health monitoring provides operational insight
-- [ ] Token management ready for long-running operations
-- [ ] Silent validation enables automation and scripting
+- [x] Status information supports other features' authentication checks
+- [x] Health monitoring provides operational insight
+- [x] Token management ready for long-running operations
+- [x] Silent validation enables automation and scripting
 
 ---
 

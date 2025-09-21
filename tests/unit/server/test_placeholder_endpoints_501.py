@@ -36,8 +36,11 @@ class TestPlaceholderEndpoints501:
 
         response_data = response.json()
         assert isinstance(
-            response_data, list
-        )  # Should return list of activated repositories
+            response_data, dict
+        )  # Should return dict with repositories list and total
+        assert "repositories" in response_data
+        assert "total" in response_data
+        assert isinstance(response_data["repositories"], list)
 
     def test_list_golden_repos_is_implemented(self):
         """Test /api/admin/golden-repos is implemented (no longer returns 501)."""

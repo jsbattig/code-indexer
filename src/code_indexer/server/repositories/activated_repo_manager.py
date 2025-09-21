@@ -12,7 +12,7 @@ import subprocess
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Callable
 from pydantic import BaseModel
 
 from .golden_repo_manager import GoldenRepoManager
@@ -232,23 +232,27 @@ class ActivatedRepoManager:
         return job_id
 
     def switch_branch(
-        self, username: str, user_alias: str, branch_name: str
+        self, username: str, user_alias: str, branch_name: str, create: bool = False
     ) -> Dict[str, Any]:
         """
-        Switch branch for an activated repository.
+        Switch branch for an activated repository with optional branch creation.
 
         Handles both local and remote repositories gracefully by:
         1. Attempting to fetch from origin if remote is accessible
         2. Falling back to local branch switching if fetch fails
-        3. Providing clear error messages for different failure scenarios
+        3. Creating new branches when create=True
+        4. Setting up remote tracking branches
+        5. Preserving uncommitted changes when possible
+        6. Providing clear error messages for different failure scenarios
 
         Args:
             username: Username
             user_alias: User's alias for the repository
             branch_name: Branch to switch to
+            create: Whether to create the branch if it doesn't exist
 
         Returns:
-            Result dictionary with success status and message
+            Result dictionary with success status, message, and operation details
 
         Raises:
             ActivatedRepoError: If repository not found
@@ -298,14 +302,47 @@ class ActivatedRepoManager:
                         f"Attempting local branch switching as fallback."
                     )
 
-            # Step 3: Attempt branch switching with appropriate strategy
+            # Step 3: Check for uncommitted changes
+            uncommitted_changes = []
+            git_status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if git_status.returncode == 0 and git_status.stdout.strip():
+                uncommitted_changes = [
+                    line.strip()[3:]
+                    for line in git_status.stdout.strip().split("\n")
+                    if line.strip()
+                ]
+
+            # Step 4: Attempt branch switching with appropriate strategy
             branch_switch_success = False
+            branch_created = False
+            tracking_branch_created = False
+            remote_origin = None
 
             if fetch_successful:
                 # Try with remote tracking branch first
                 branch_switch_success = self._switch_to_remote_tracking_branch(
                     repo_dir, branch_name, user_alias
                 )
+                if branch_switch_success:
+                    # Check if we created a tracking branch
+                    remote_branch = f"origin/{branch_name}"
+                    check_remote = subprocess.run(
+                        ["git", "branch", "-r", "--list", remote_branch],
+                        cwd=repo_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    if check_remote.returncode == 0 and check_remote.stdout.strip():
+                        tracking_branch_created = True
+                        remote_origin = remote_branch
 
             if not branch_switch_success:
                 # Fallback to local branch switching
@@ -313,11 +350,40 @@ class ActivatedRepoManager:
                     repo_dir, branch_name, user_alias
                 )
 
+            if not branch_switch_success and create:
+                # Try to create new branch
+                try:
+                    create_result = subprocess.run(
+                        ["git", "checkout", "-b", branch_name],
+                        cwd=repo_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+
+                    if create_result.returncode == 0:
+                        branch_switch_success = True
+                        branch_created = True
+                        self.logger.info(
+                            f"Created new branch '{branch_name}' in repository '{user_alias}'"
+                        )
+                    else:
+                        self.logger.warning(
+                            f"Failed to create branch '{branch_name}': {create_result.stderr}"
+                        )
+
+                except subprocess.TimeoutExpired:
+                    self.logger.warning(
+                        f"Timeout while creating branch '{branch_name}'"
+                    )
+
             if not branch_switch_success:
                 # Final error - neither remote nor local branch switching worked
                 error_msg = (
                     f"Branch '{branch_name}' not found in repository '{user_alias}'"
                 )
+                if create:
+                    error_msg += " and could not be created"
                 if fetch_attempted and not fetch_successful:
                     error_msg += f" (fetch from remote failed: {remote_info})"
                 raise GitOperationError(error_msg)
@@ -332,8 +398,17 @@ class ActivatedRepoManager:
             with open(metadata_file, "w") as f:
                 json.dump(repo_data, f, indent=2)
 
-            # Step 5: Return success with appropriate message
+            # Step 5: Return success with detailed operation information
             message = f"Successfully switched to branch '{branch_name}' in repository '{user_alias}'"
+
+            if branch_created:
+                message = f"Created and switched to new branch '{branch_name}' in repository '{user_alias}'"
+            elif tracking_branch_created:
+                message = f"Created local tracking branch for '{remote_origin}' in repository '{user_alias}'"
+
+            if uncommitted_changes:
+                message += " with uncommitted changes preserved"
+
             if fetch_attempted:
                 if fetch_successful:
                     message += " (with remote sync)"
@@ -345,6 +420,11 @@ class ActivatedRepoManager:
             return {
                 "success": True,
                 "message": message,
+                "created_new_branch": branch_created,
+                "tracking_branch_created": tracking_branch_created,
+                "remote_origin": remote_origin,
+                "uncommitted_changes": bool(uncommitted_changes),
+                "preserved_files": uncommitted_changes,
             }
 
         except subprocess.TimeoutExpired:
@@ -353,6 +433,61 @@ class ActivatedRepoManager:
             if isinstance(e, (ActivatedRepoError, GitOperationError)):
                 raise
             raise GitOperationError(f"Failed to switch branch: {str(e)}")
+
+    def get_current_branch(self, username: str, user_alias: str) -> str:
+        """
+        Get the current branch name for an activated repository.
+
+        Args:
+            username: Username
+            user_alias: User's alias for the repository
+
+        Returns:
+            Current branch name
+
+        Raises:
+            ActivatedRepoError: If repository not found
+            GitOperationError: If git operations fail
+        """
+        user_dir = os.path.join(self.activated_repos_dir, username)
+        repo_dir = os.path.join(user_dir, user_alias)
+        metadata_file = os.path.join(user_dir, f"{user_alias}_metadata.json")
+
+        # Check if repository exists
+        if not os.path.exists(repo_dir) or not os.path.exists(metadata_file):
+            raise ActivatedRepoError(
+                f"Activated repository '{user_alias}' not found for user '{username}'"
+            )
+
+        try:
+            # First try to get current branch from git directly
+            result = subprocess.run(
+                ["git", "symbolic-ref", "--short", "HEAD"],
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode == 0:
+                return result.stdout.strip()
+
+            # Fallback to metadata if git command fails
+            with open(metadata_file, "r") as f:
+                repo_data = json.load(f)
+
+            return str(repo_data.get("current_branch", "main"))
+
+        except subprocess.TimeoutExpired:
+            raise GitOperationError("Git operation timed out")
+        except Exception as e:
+            # Final fallback to metadata
+            try:
+                with open(metadata_file, "r") as f:
+                    repo_data = json.load(f)
+                return str(repo_data.get("current_branch", "main"))
+            except Exception:
+                raise GitOperationError(f"Failed to get current branch: {str(e)}")
 
     def sync_with_golden_repository(
         self, username: str, user_alias: str
@@ -705,7 +840,12 @@ class ActivatedRepoManager:
         return os.path.join(self.activated_repos_dir, username, user_alias)
 
     def _do_activate_repository(
-        self, username: str, golden_repo_alias: str, branch_name: str, user_alias: str
+        self,
+        username: str,
+        golden_repo_alias: str,
+        branch_name: str,
+        user_alias: str,
+        progress_callback: Optional[Callable[[int], None]] = None,
     ) -> Dict[str, Any]:
         """
         Perform actual repository activation (called by background job).
@@ -715,20 +855,39 @@ class ActivatedRepoManager:
             golden_repo_alias: Golden repository alias to activate
             branch_name: Branch to activate
             user_alias: User's alias for the repo
+            progress_callback: Optional callback for progress updates (0-100)
 
         Returns:
             Result dictionary with success status and message
         """
+
+        def update_progress(percent: int, message: str = "") -> None:
+            """Helper to update progress with logging."""
+            if progress_callback:
+                progress_callback(percent)
+            if message:
+                self.logger.info(f"Activation progress ({percent}%): {message}")
+
         try:
+            update_progress(
+                10,
+                f"Starting activation of '{golden_repo_alias}' as '{user_alias}' for user '{username}'",
+            )
+
             golden_repo = self.golden_repo_manager.golden_repos[golden_repo_alias]
+
+            update_progress(20, "Validating golden repository")
 
             # Create user directory structure
             user_dir = os.path.join(self.activated_repos_dir, username)
             os.makedirs(user_dir, exist_ok=True)
 
+            update_progress(30, "Creating user directory structure")
+
             activated_repo_path = os.path.join(user_dir, user_alias)
 
             # Clone repository with CoW
+            update_progress(40, f"Cloning repository from {golden_repo.clone_path}")
             success = self._clone_with_copy_on_write(
                 golden_repo.clone_path, activated_repo_path
             )
@@ -736,8 +895,11 @@ class ActivatedRepoManager:
             if not success:
                 raise ActivatedRepoError("Failed to clone repository")
 
+            update_progress(60, "Repository clone completed successfully")
+
             # Switch to requested branch if different from default
             if branch_name != golden_repo.default_branch:
+                update_progress(70, f"Switching to branch '{branch_name}'")
                 result = subprocess.run(
                     ["git", "checkout", "-B", branch_name, f"origin/{branch_name}"],
                     cwd=activated_repo_path,
@@ -752,8 +914,12 @@ class ActivatedRepoManager:
                     raise GitOperationError(
                         f"Failed to switch to branch '{branch_name}': {result.stderr}"
                     )
+                update_progress(80, f"Successfully switched to branch '{branch_name}'")
+            else:
+                update_progress(75, f"Using default branch '{branch_name}'")
 
             # Create metadata file
+            update_progress(85, "Creating repository metadata")
             activated_at = datetime.now(timezone.utc).isoformat()
             metadata = {
                 "user_alias": user_alias,
@@ -767,20 +933,35 @@ class ActivatedRepoManager:
             with open(metadata_file, "w") as f:
                 json.dump(metadata, f, indent=2)
 
+            update_progress(95, "Finalizing activation")
+
             self.logger.info(
                 f"Successfully activated repository '{user_alias}' for user '{username}'"
             )
+
+            update_progress(100, f"Repository '{user_alias}' activated successfully")
 
             return {
                 "success": True,
                 "message": f"Repository '{user_alias}' activated successfully",
                 "user_alias": user_alias,
                 "branch": branch_name,
+                "activation_timestamp": activated_at,
+                "details": {
+                    "cloned_from": golden_repo.clone_path,
+                    "current_branch": branch_name,
+                    "is_default_branch": branch_name == golden_repo.default_branch,
+                },
             }
 
         except Exception as e:
             error_msg = f"Failed to activate repository '{user_alias}' for user '{username}': {str(e)}"
             self.logger.error(error_msg)
+
+            # Report failure through progress callback
+            if progress_callback:
+                progress_callback(0)  # Reset progress to indicate failure
+
             raise ActivatedRepoError(error_msg)
 
     def _do_deactivate_repository(
@@ -794,35 +975,225 @@ class ActivatedRepoManager:
             user_alias: User's alias for the repository
 
         Returns:
-            Result dictionary with success status and message
+            Result dictionary with success status and message including resource cleanup details
         """
+        cleanup_warnings = []
+        resource_summary = {
+            "directories_removed": 0,
+            "files_removed": 0,
+            "size_freed_mb": 0,
+            "potential_leaks": [],
+        }
+
         try:
             user_dir = os.path.join(self.activated_repos_dir, username)
             repo_dir = os.path.join(user_dir, user_alias)
             metadata_file = os.path.join(user_dir, f"{user_alias}_metadata.json")
 
-            # Remove repository directory
+            # Pre-deactivation resource analysis
+            initial_size = 0
+            file_count = 0
+
             if os.path.exists(repo_dir):
-                shutil.rmtree(repo_dir)
+                try:
+                    for root, dirs, files in os.walk(repo_dir):
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            try:
+                                file_size = os.path.getsize(file_path)
+                                initial_size += file_size
+                                file_count += 1
+                            except (OSError, IOError):
+                                cleanup_warnings.append(
+                                    f"Unable to analyze file: {file_path}"
+                                )
+                except (OSError, IOError) as e:
+                    cleanup_warnings.append(f"Directory analysis failed: {str(e)}")
 
-            # Remove metadata file
-            if os.path.exists(metadata_file):
-                os.remove(metadata_file)
+            # Check for potential resource leaks before cleanup
+            potential_leaks = self._detect_resource_leaks(repo_dir, user_alias)
+            if potential_leaks:
+                resource_summary["potential_leaks"] = potential_leaks
+                cleanup_warnings.extend(
+                    [f"Resource leak detected: {leak}" for leak in potential_leaks]
+                )
 
-            self.logger.info(
-                f"Successfully deactivated repository '{user_alias}' for user '{username}'"
+            # Administrative logging before cleanup
+            self.logger.warning(
+                "Repository deactivation initiated",
+                extra={
+                    "username": username,
+                    "user_alias": user_alias,
+                    "repo_size_mb": round(initial_size / 1024 / 1024, 2),
+                    "file_count": file_count,
+                    "potential_leaks": len(potential_leaks),
+                    "operation": "deactivation_start",
+                },
             )
 
-            return {
+            # Remove repository directory with detailed tracking
+            if os.path.exists(repo_dir):
+                try:
+                    shutil.rmtree(repo_dir)
+                    resource_summary["directories_removed"] = 1
+                    resource_summary["files_removed"] = file_count
+                    resource_summary["size_freed_mb"] = round(
+                        initial_size / 1024 / 1024, 2
+                    )
+                except (OSError, IOError) as e:
+                    cleanup_warnings.append(
+                        f"Failed to remove repository directory: {str(e)}"
+                    )
+                    # Log as potential resource leak
+                    self.logger.error(
+                        "RESOURCE LEAK WARNING: Failed to remove repository directory",
+                        extra={
+                            "username": username,
+                            "user_alias": user_alias,
+                            "directory": repo_dir,
+                            "error": str(e),
+                            "requires_admin_cleanup": True,
+                        },
+                    )
+
+            # Remove metadata file with error handling
+            if os.path.exists(metadata_file):
+                try:
+                    os.remove(metadata_file)
+                except (OSError, IOError) as e:
+                    cleanup_warnings.append(f"Failed to remove metadata file: {str(e)}")
+                    # Log as administrative issue
+                    self.logger.warning(
+                        "Metadata cleanup issue",
+                        extra={
+                            "username": username,
+                            "user_alias": user_alias,
+                            "metadata_file": metadata_file,
+                            "error": str(e),
+                            "impact": "minor",
+                        },
+                    )
+
+            # Post-cleanup verification
+            cleanup_success = not os.path.exists(repo_dir) and not os.path.exists(
+                metadata_file
+            )
+
+            if not cleanup_success:
+                cleanup_warnings.append(
+                    "Cleanup verification failed - some resources may remain"
+                )
+
+            # Administrative logging for successful cleanup
+            self.logger.info(
+                "Repository deactivation completed",
+                extra={
+                    "username": username,
+                    "user_alias": user_alias,
+                    "cleanup_success": cleanup_success,
+                    "warnings_count": len(cleanup_warnings),
+                    "size_freed_mb": resource_summary["size_freed_mb"],
+                    "operation": "deactivation_complete",
+                },
+            )
+
+            result = {
                 "success": True,
                 "message": f"Repository '{user_alias}' deactivated successfully",
                 "user_alias": user_alias,
+                "resource_summary": resource_summary,
+                "cleanup_warnings": cleanup_warnings if cleanup_warnings else None,
+                "administrative_notes": {
+                    "cleanup_verified": cleanup_success,
+                    "requires_attention": len(cleanup_warnings) > 0
+                    or len(potential_leaks) > 0,
+                },
             }
+
+            # Add warnings to result if any exist
+            if cleanup_warnings:
+                result["warnings"] = cleanup_warnings
+
+            return result
 
         except Exception as e:
             error_msg = f"Failed to deactivate repository '{user_alias}' for user '{username}': {str(e)}"
-            self.logger.error(error_msg)
+
+            # Critical administrative logging for deactivation failures
+            self.logger.error(
+                "CRITICAL: Repository deactivation failed",
+                extra={
+                    "username": username,
+                    "user_alias": user_alias,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "requires_immediate_admin_attention": True,
+                    "potential_resource_leak": True,
+                },
+            )
+
             raise ActivatedRepoError(error_msg)
+
+    def _detect_resource_leaks(self, repo_dir: str, user_alias: str) -> List[str]:
+        """
+        Detect potential resource leaks before repository cleanup.
+
+        Args:
+            repo_dir: Repository directory path
+            user_alias: User alias for the repository
+
+        Returns:
+            List of potential resource leak descriptions
+        """
+        leaks: List[str] = []
+
+        if not os.path.exists(repo_dir):
+            return leaks
+
+        try:
+            # Check for large .git directories that might indicate incomplete cleanup
+            git_dir = os.path.join(repo_dir, ".git")
+            if os.path.exists(git_dir):
+                git_size = 0
+                for root, dirs, files in os.walk(git_dir):
+                    for file in files:
+                        try:
+                            git_size += os.path.getsize(os.path.join(root, file))
+                        except (OSError, IOError):
+                            pass
+
+                # Flag if .git directory is unusually large (>100MB)
+                if git_size > 100 * 1024 * 1024:
+                    leaks.append(
+                        f"Large .git directory ({git_size // 1024 // 1024}MB) - may indicate repository bloat"
+                    )
+
+            # Check for lock files that might indicate incomplete operations
+            for root, dirs, files in os.walk(repo_dir):
+                for file in files:
+                    if file.endswith((".lock", ".tmp")) or file.startswith("~"):
+                        leaks.append(
+                            f"Temporary file detected: {os.path.join(root, file)}"
+                        )
+
+            # Check for very large files that might be accidentally committed
+            for root, dirs, files in os.walk(repo_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    try:
+                        file_size = os.path.getsize(file_path)
+                        # Flag files larger than 50MB
+                        if file_size > 50 * 1024 * 1024:
+                            leaks.append(
+                                f"Large file ({file_size // 1024 // 1024}MB): {file_path}"
+                            )
+                    except (OSError, IOError):
+                        pass
+
+        except Exception as e:
+            leaks.append(f"Resource leak detection failed: {str(e)}")
+
+        return leaks
 
     def _clone_with_copy_on_write(self, source_path: str, dest_path: str) -> bool:
         """

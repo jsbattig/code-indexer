@@ -27,7 +27,7 @@ class TestRepositoryActivationEndpointMismatch:
         credentials = {
             "username": "test_user",
             "password": "test_pass",
-            "server_url": "http://localhost:8000"
+            "server_url": "http://localhost:8000",
         }
         client = RepositoryLinkingClient("http://localhost:8000", credentials)
         # Mock the authenticated request method to control responses

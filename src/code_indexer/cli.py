@@ -1,12 +1,15 @@
 """Command line interface for Code Indexer."""
 
 import asyncio
+import getpass
+import json
 import logging
 import os
 import subprocess
 import sys
 import signal
 import time
+import threading
 from pathlib import Path
 from typing import Optional, Union, Callable, Dict, Any, List
 
@@ -35,11 +38,63 @@ from .utils.enhanced_messaging import (
 from .services.cidx_prompt_generator import create_cidx_ai_prompt
 from .mode_detection.command_mode_detector import CommandModeDetector, find_project_root
 from .disabled_commands import require_mode
+from .remote.credential_manager import ProjectCredentialManager
+from .api_clients.repos_client import ReposAPIClient
+from .api_clients.admin_client import AdminAPIClient
+from . import __version__
+
+
+def run_async(coro):
+    """
+    Run an async coroutine, handling both new event loops and existing ones.
+
+    This utility is crucial for CLI commands that need to work both:
+    1. In normal CLI usage (no event loop running)
+    2. In test environments (event loop already running)
+
+    Args:
+        coro: The coroutine to run
+
+    Returns:
+        The result of the coroutine
+    """
+    try:
+        # Try to get the current event loop
+        asyncio.get_running_loop()
+        # If we get here, there's already a running loop
+        # Create a new thread to run the coroutine
+
+        result = None
+        exception = None
+
+        def run_in_new_loop():
+            nonlocal result, exception
+            try:
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    result = new_loop.run_until_complete(coro)
+                finally:
+                    new_loop.close()
+            except Exception as e:
+                exception = e
+
+        thread = threading.Thread(target=run_in_new_loop)
+        thread.start()
+        thread.join()
+
+        if exception:
+            raise exception
+        return result
+
+    except RuntimeError:
+        # No event loop running, we can use asyncio.run()
+        return asyncio.run(coro)
+
 
 # MultiThreadedProgressManager imported locally where needed
 
 # CoW-related imports removed as part of CoW cleanup Epic
-from . import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -552,6 +607,117 @@ class GracefulInterruptHandler:
 
 # Global console for rich output
 console = Console()
+
+
+def _check_authentication_state(ctx) -> bool:
+    """Check if user is authenticated and session is valid.
+
+    Args:
+        ctx: Click context
+
+    Returns:
+        bool: True if authenticated, False otherwise
+    """
+    try:
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+        from .api_clients.auth_client import create_auth_client
+        from .remote.credential_manager import CredentialNotFoundError
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ Authentication required: Please login first", style="red")
+            console.print("💡 Use 'cidx auth login' to authenticate", style="dim")
+            return False
+
+        # Load remote configuration
+        try:
+            remote_config = load_remote_configuration(project_root)
+            server_url = remote_config["server_url"]
+        except Exception:
+            console.print("❌ Authentication required: Please login first", style="red")
+            console.print("💡 Use 'cidx auth login' to authenticate", style="dim")
+            return False
+
+        # Try to load stored credentials
+        try:
+            # Attempt to create authenticated client
+            auth_client = create_auth_client(server_url, project_root)
+            if not auth_client.credentials:
+                console.print(
+                    "❌ Authentication required: Please login first", style="red"
+                )
+                console.print("💡 Use 'cidx auth login' to authenticate", style="dim")
+                return False
+
+            # Basic validation - we assume if credentials exist, they're valid
+            # The actual API call will validate the session
+            return True
+
+        except CredentialNotFoundError:
+            console.print("❌ Authentication required: Please login first", style="red")
+            console.print("💡 Use 'cidx auth login' to authenticate", style="dim")
+            return False
+        except Exception as e:
+            # Handle expired sessions or invalid credentials
+            if "expired" in str(e).lower() or "invalid" in str(e).lower():
+                console.print("❌ Session expired: Please login again", style="red")
+                console.print(
+                    "💡 Use 'cidx auth login' to re-authenticate", style="dim"
+                )
+                return False
+            else:
+                console.print(
+                    "❌ Authentication required: Please login first", style="red"
+                )
+                console.print("💡 Use 'cidx auth login' to authenticate", style="dim")
+                return False
+
+    except Exception as e:
+        console.print("❌ Authentication check failed", style="red")
+        if ctx.obj.get("verbose"):
+            console.print(f"Error: {e}", style="dim red")
+        return False
+
+
+def _validate_password_strength(password: str) -> tuple:
+    """Validate password strength using project password policy.
+
+    Args:
+        password: Password to validate
+
+    Returns:
+        tuple: (is_valid, message) - validation result and message
+    """
+    from .password_policy import validate_password_strength
+
+    return validate_password_strength(password)
+
+
+def create_auth_client(server_url: str, project_root: Path):
+    """Create authentication client with proper configuration.
+
+    Args:
+        server_url: Server URL for authentication
+        project_root: Project root directory
+
+    Returns:
+        AuthAPIClient: Configured authentication client
+    """
+    from .api_clients.auth_client import create_auth_client as _create_auth_client
+    from .remote.config import load_remote_configuration
+
+    # Try to get username from remote configuration for credential loading
+    username = None
+    try:
+        remote_config = load_remote_configuration(project_root)
+        username = remote_config.get("username")
+    except Exception:
+        # If we can't load remote config, proceed without username
+        pass
+
+    return _create_auth_client(server_url, project_root, username)
 
 
 class ModeAwareGroup(click.Group):
@@ -5542,6 +5708,10 @@ def sync(
         )
         from .remote.credential_manager import CredentialNotFoundError
         from .api_clients.base_client import AuthenticationError, NetworkError
+        from .sync.repository_context_detector import (
+            RepositoryContextDetector,
+            RepositoryContextError,
+        )
 
         # Find project root
         project_root = find_project_root(start_path=Path.cwd())
@@ -5553,20 +5723,52 @@ def sync(
             )
             sys.exit(1)
 
-        # Show sync operation details
-        if dry_run:
-            console.print(
-                "🔍 Dry run mode - showing what would be synced:", style="blue"
-            )
+        # Detect repository context for enhanced sync functionality
+        repository_context = None
+        try:
+            detector = RepositoryContextDetector()
+            repository_context = detector.detect_repository_context(Path.cwd())
+        except RepositoryContextError as e:
+            # Context detection failed, but continue with legacy behavior
+            logger.debug(f"Repository context detection failed: {e}")
+        except Exception as e:
+            # Unexpected error, log but continue with legacy behavior
+            logger.debug(f"Unexpected error during repository context detection: {e}")
+
+        # Show sync operation details with repository context awareness
+        if repository_context:
+            # Repository-aware messaging
+            if dry_run:
+                console.print(
+                    "🔍 Dry run mode - showing what would be synced:", style="blue"
+                )
+            else:
+                console.print("🔄 Starting repository synchronization...", style="blue")
+                console.print(
+                    f"   Syncing repository '{repository_context.user_alias}' with golden repository '{repository_context.golden_repo_alias}'",
+                    style="cyan",
+                )
         else:
-            console.print("🔄 Starting repository synchronization...", style="blue")
+            # Legacy messaging
+            if dry_run:
+                console.print(
+                    "🔍 Dry run mode - showing what would be synced:", style="blue"
+                )
+            else:
+                console.print("🔄 Starting repository synchronization...", style="blue")
 
         if all:
             console.print("   Target: All activated repositories", style="dim")
         elif repository:
             console.print(f"   Target: {repository}", style="dim")
         else:
-            console.print("   Target: Current repository", style="dim")
+            if repository_context:
+                console.print(
+                    f"   Target: {repository_context.user_alias} (detected from current directory)",
+                    style="dim",
+                )
+            else:
+                console.print("   Target: Current repository", style="dim")
 
         sync_options = []
         if full_reindex:
@@ -5786,6 +5988,901 @@ def auth_update(ctx, username: str, password: str):
         sys.exit(1)
 
 
+@auth_group.command("login")
+@click.option("--username", "-u", help="Username for authentication")
+@click.option("--password", "-p", help="Password for authentication")
+@click.pass_context
+@require_mode("remote")
+def auth_login(ctx, username: Optional[str], password: Optional[str]):
+    """Login to CIDX server with credentials.
+
+    Authenticates with the CIDX server and stores encrypted credentials
+    locally for subsequent authenticated operations.
+
+    Examples:
+        cidx auth login --username myuser --password mypass
+        cidx auth login  # Interactive prompts for credentials
+    """
+    try:
+        from .api_clients.auth_client import AuthAPIClient
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print("Run 'cidx init' to initialize project first", style="dim")
+            sys.exit(1)
+
+        # Load remote configuration to get server URL
+        remote_config = load_remote_configuration(project_root)
+        server_url = remote_config["server_url"]
+
+        # Interactive credential collection if not provided
+        if not username:
+            username = click.prompt("Username", type=str)
+
+        if not password:
+            password = getpass.getpass("Password: ")
+
+        # Validate inputs
+        if not username.strip():
+            console.print("❌ Username cannot be empty", style="red")
+            sys.exit(1)
+
+        if not password.strip():
+            console.print("❌ Password cannot be empty", style="red")
+            sys.exit(1)
+
+        # Create auth client and login
+        auth_client = AuthAPIClient(server_url, project_root)
+
+        with console.status("🔐 Authenticating..."):
+            auth_response = asyncio.run(
+                auth_client.login(username.strip(), password.strip())
+            )
+
+        console.print(f"✅ Successfully logged in as {username}", style="green")
+        console.print("🔑 Credentials stored securely", style="cyan")
+
+        if auth_response.get("user_id"):
+            console.print(f"👤 User ID: {auth_response['user_id']}", style="dim")
+
+        # Close the client
+        asyncio.run(auth_client.close())
+
+    except Exception as e:
+        console.print(f"❌ Login failed: {e}", style="red")
+
+        # Provide helpful error guidance
+        error_str = str(e).lower()
+        if "authentication failed" in error_str or "invalid" in error_str:
+            console.print(
+                "💡 Check your username and password are correct", style="dim"
+            )
+        elif "connection" in error_str or "network" in error_str:
+            console.print("💡 Check server connectivity and try again", style="dim")
+        elif "server" in error_str:
+            console.print(
+                "💡 Server may be unreachable or experiencing issues", style="dim"
+            )
+        elif "too many" in error_str:
+            console.print("💡 Wait a moment before trying again", style="dim")
+
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@auth_group.command("register")
+@click.option("--username", "-u", help="Username for new account")
+@click.option("--password", "-p", help="Password for new account")
+@click.option(
+    "--role",
+    default="user",
+    type=click.Choice(["user", "admin"]),
+    help="User role (default: user)",
+)
+@click.pass_context
+@require_mode("remote")
+def auth_register(ctx, username: Optional[str], password: Optional[str], role: str):
+    """Register new user account and login.
+
+    Creates a new user account on the CIDX server and automatically
+    logs in with the new credentials.
+
+    Examples:
+        cidx auth register --username newuser --password newpass
+        cidx auth register --username admin --role admin
+        cidx auth register  # Interactive prompts for credentials
+    """
+    try:
+        from .api_clients.auth_client import AuthAPIClient
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print("Run 'cidx init' to initialize project first", style="dim")
+            sys.exit(1)
+
+        # Load remote configuration to get server URL
+        remote_config = load_remote_configuration(project_root)
+        server_url = remote_config["server_url"]
+
+        # Interactive credential collection if not provided
+        if not username:
+            username = click.prompt("Username", type=str)
+
+        if not password:
+            password = getpass.getpass("Password: ")
+
+        # Validate inputs
+        if not username.strip():
+            console.print("❌ Username cannot be empty", style="red")
+            sys.exit(1)
+
+        if not password.strip():
+            console.print("❌ Password cannot be empty", style="red")
+            sys.exit(1)
+
+        # Create auth client and register
+        auth_client = AuthAPIClient(server_url, project_root)
+
+        with console.status("📝 Creating account..."):
+            auth_response = asyncio.run(
+                auth_client.register(username.strip(), password.strip(), role)
+            )
+
+        console.print(
+            f"✅ Successfully registered and logged in as {username}", style="green"
+        )
+        console.print(f"👤 Account role: {role}", style="cyan")
+        console.print("🔑 Credentials stored securely", style="cyan")
+
+        if auth_response.get("user_id"):
+            console.print(f"🆔 User ID: {auth_response['user_id']}", style="dim")
+
+        # Close the client
+        asyncio.run(auth_client.close())
+
+    except Exception as e:
+        console.print(f"❌ Registration failed: {e}", style="red")
+
+        # Provide helpful error guidance
+        error_str = str(e).lower()
+        if "username already exists" in error_str or "conflict" in error_str:
+            console.print(
+                "💡 Try a different username or login with existing account",
+                style="dim",
+            )
+        elif "password" in error_str and ("weak" in error_str or "policy" in error_str):
+            console.print(
+                "💡 Use a stronger password with numbers and symbols", style="dim"
+            )
+        elif "connection" in error_str or "network" in error_str:
+            console.print("💡 Check server connectivity and try again", style="dim")
+        elif "server" in error_str:
+            console.print(
+                "💡 Server may be unreachable or experiencing issues", style="dim"
+            )
+
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@auth_group.command("logout")
+@click.pass_context
+@require_mode("remote")
+def auth_logout(ctx):
+    """Logout and clear stored credentials.
+
+    Clears all stored authentication credentials and resets
+    authentication state for the current project.
+
+    Example:
+        cidx auth logout
+    """
+    try:
+        from .api_clients.auth_client import AuthAPIClient
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print("Run 'cidx init' to initialize project first", style="dim")
+            sys.exit(1)
+
+        # Load remote configuration to get server URL
+        remote_config = load_remote_configuration(project_root)
+        server_url = remote_config["server_url"]
+
+        # Create auth client for logout
+        auth_client = AuthAPIClient(server_url, project_root)
+
+        with console.status("🚪 Logging out..."):
+            auth_client.logout()
+
+        console.print("✅ Successfully logged out", style="green")
+        console.print("🔐 All credentials cleared", style="cyan")
+
+        # Close the client
+        asyncio.run(auth_client.close())
+
+    except Exception as e:
+        console.print(f"❌ Logout failed: {e}", style="red")
+
+        # Provide helpful error guidance
+        error_str = str(e).lower()
+        if "not authenticated" in error_str or "no credentials" in error_str:
+            console.print("💡 No stored credentials found to clear", style="dim")
+        else:
+            console.print("💡 Credentials may have been partially cleared", style="dim")
+
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@auth_group.command("change-password")
+@click.pass_context
+@require_mode("remote")
+def auth_change_password(ctx):
+    """Change current user password with validation.
+
+    Interactively prompts for current password, new password, and confirmation.
+    Validates password strength and handles secure credential updates.
+
+    Example:
+        cidx auth change-password
+    """
+    try:
+        from .api_clients.auth_client import create_auth_client
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+        from .password_policy import validate_password_strength
+
+        # Check authentication state first
+        if not _check_authentication_state(ctx):
+            return
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print("Run 'cidx init' to initialize project first", style="dim")
+            sys.exit(1)
+
+        # Load remote configuration
+        remote_config = load_remote_configuration(project_root)
+        server_url = remote_config["server_url"]
+
+        console.print("🔐 Change Password", style="bold cyan")
+        console.print("Enter your passwords (input will be hidden)", style="dim")
+
+        # Interactive password collection with validation
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                # Get current password
+                current_password = getpass.getpass("Current Password: ")
+                if not current_password.strip():
+                    console.print("❌ Current password cannot be empty", style="red")
+                    continue
+
+                # Get new password with validation loop
+                while True:
+                    new_password = getpass.getpass("New Password: ")
+                    if not new_password.strip():
+                        console.print("❌ New password cannot be empty", style="red")
+                        continue
+
+                    # Validate password strength
+                    is_valid, message = validate_password_strength(new_password)
+                    if not is_valid:
+                        console.print(f"❌ {message}", style="red")
+                        from .password_policy import get_password_policy_help
+
+                        console.print("\n" + get_password_policy_help(), style="dim")
+                        continue
+                    break
+
+                # Get password confirmation
+                confirm_password = getpass.getpass("Confirm New Password: ")
+
+                # Validate confirmation
+                if new_password != confirm_password:
+                    console.print(
+                        "❌ Password confirmation does not match", style="red"
+                    )
+                    console.print("Please enter both passwords again", style="dim")
+                    continue
+
+                # All validations passed, proceed to server
+                break
+
+            except KeyboardInterrupt:
+                console.print("\n❌ Password change cancelled", style="yellow")
+                sys.exit(1)
+        else:
+            console.print("❌ Too many invalid attempts", style="red")
+            sys.exit(1)
+
+        # Create auth client and change password
+        auth_client = create_auth_client(server_url, project_root)
+        with console.status("🔒 Changing password..."):
+            asyncio.run(
+                auth_client.change_password(
+                    current_password.strip(), new_password.strip()
+                )
+            )
+
+        console.print("✅ Password changed successfully", style="green")
+        console.print("🔐 Credentials updated securely", style="cyan")
+
+        # Close the client
+        asyncio.run(auth_client.close())
+
+    except Exception as e:
+        console.print(f"❌ Password change failed: {e}", style="red")
+        # Provide helpful error guidance
+        error_str = str(e).lower()
+        if "current password is incorrect" in error_str or "invalid" in error_str:
+            console.print("💡 Check your current password is correct", style="dim")
+        elif "password does not meet" in error_str or "too weak" in error_str:
+            console.print(
+                "💡 Ensure new password meets security requirements", style="dim"
+            )
+        elif "authentication" in error_str:
+            console.print("💡 Please login first with 'cidx auth login'", style="dim")
+        else:
+            console.print("💡 Check server connectivity and try again", style="dim")
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@auth_group.command("reset-password")
+@click.option("--username", "-u", help="Username for password reset")
+@click.pass_context
+@require_mode("remote")
+def auth_reset_password(ctx, username: Optional[str]):
+    """Initiate password reset for specified user.
+
+    Sends password reset request to server. Username can be provided
+    as parameter or entered interactively.
+
+    Examples:
+        cidx auth reset-password --username myuser
+        cidx auth reset-password  # Interactive username prompt
+    """
+    try:
+        from .api_clients.auth_client import create_auth_client
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print("Run 'cidx init' to initialize project first", style="dim")
+            sys.exit(1)
+
+        # Load remote configuration
+        remote_config = load_remote_configuration(project_root)
+        server_url = remote_config["server_url"]
+
+        # Get username if not provided
+        if not username:
+            username = click.prompt("Username", type=str)
+
+        # Validate username
+        if not username.strip():
+            console.print("❌ Username cannot be empty", style="red")
+            sys.exit(1)
+
+        console.print("📧 Password Reset Request", style="bold cyan")
+
+        # Create auth client and initiate reset
+        auth_client = create_auth_client(server_url, project_root)
+        with console.status("📤 Sending reset request..."):
+            asyncio.run(auth_client.reset_password(username.strip()))
+
+        console.print(f"✅ Password reset request sent for {username}", style="green")
+        console.print("📧 Check your email for reset instructions", style="blue")
+        console.print(
+            "🔗 Follow the link in the email to complete password reset", style="cyan"
+        )
+
+        # Close the client
+        asyncio.run(auth_client.close())
+
+    except Exception as e:
+        console.print(f"❌ Password reset failed: {e}", style="red")
+        # Provide helpful error guidance
+        error_str = str(e).lower()
+        if "user not found" in error_str or "username" in error_str:
+            console.print("💡 Check the username is correct", style="dim")
+        elif "too many" in error_str or "rate" in error_str:
+            console.print("💡 Wait a few minutes before trying again", style="dim")
+        else:
+            console.print("💡 Check server connectivity and try again", style="dim")
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@auth_group.command("status")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed information")
+@click.option("--health", is_flag=True, help="Check credential health")
+@click.pass_context
+@require_mode("remote")
+def auth_status(ctx, verbose: bool, health: bool):
+    """Display current authentication status.
+
+    Shows authentication state, username, role, token expiration,
+    and server connectivity. Use --verbose for detailed information
+    or --health for comprehensive credential diagnostics.
+
+    Examples:
+        cidx auth status                    # Basic status
+        cidx auth status --verbose          # Detailed information
+        cidx auth status --health           # Health diagnostics
+    """
+    try:
+        import asyncio
+        from .api_clients.auth_client import create_auth_client
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print("Run 'cidx init' to initialize project first", style="dim")
+            sys.exit(1)
+
+        # Load remote configuration
+        try:
+            remote_config = load_remote_configuration(project_root)
+            server_url = remote_config["server_url"]
+        except FileNotFoundError:
+            console.print("❌ Remote mode not configured", style="red")
+            console.print(
+                "This command requires remote mode to be configured.", style="yellow"
+            )
+            console.print("\nTo configure remote mode:", style="dim")
+            console.print(
+                "  1. Run 'cidx init --mode remote --server <server-url>'", style="dim"
+            )
+            console.print(
+                "  2. Or connect to an existing server with 'cidx auth login'",
+                style="dim",
+            )
+            sys.exit(1)
+        except (KeyError, json.JSONDecodeError) as e:
+            console.print("❌ Remote configuration is corrupted", style="red")
+            console.print(f"Error: {str(e)}", style="red")
+            console.print(
+                "\nTry re-initializing with 'cidx init --mode remote --server <server-url>'",
+                style="dim",
+            )
+            sys.exit(1)
+
+        # Try to load existing credentials
+        username = remote_config.get("username")
+
+        # Create auth client
+        auth_client = create_auth_client(
+            server_url=server_url, project_root=project_root, username=username
+        )
+
+        async def run_status_check():
+            if health:
+                # Comprehensive health check
+                health_result = await auth_client.check_credential_health()
+                _display_health_status(health_result)
+            else:
+                # Regular status check
+                status = await auth_client.get_auth_status()
+                _display_auth_status(status, verbose)
+
+        # Run async status check
+        asyncio.run(run_status_check())
+
+    except Exception as e:
+        console.print(f"❌ Error checking authentication status: {e}", style="red")
+        if verbose:
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@auth_group.command("refresh")
+@click.pass_context
+@require_mode("remote")
+def auth_refresh(ctx):
+    """Manually refresh authentication token.
+
+    Attempts to refresh the current authentication token using the
+    stored refresh token. Updates stored credentials on success.
+
+    Examples:
+        cidx auth refresh                   # Refresh current token
+    """
+    try:
+        import asyncio
+        from .api_clients.auth_client import create_auth_client
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print("Run 'cidx init' to initialize project first", style="dim")
+            sys.exit(1)
+
+        # Load remote configuration
+        remote_config = load_remote_configuration(project_root)
+        server_url = remote_config["server_url"]
+
+        # Try to load existing credentials
+        username = remote_config.get("username")
+        if not username:
+            console.print("❌ No stored credentials found", style="red")
+            console.print("Use 'cidx auth login' to authenticate first", style="dim")
+            sys.exit(1)
+
+        # Create auth client
+        auth_client = create_auth_client(
+            server_url=server_url, project_root=project_root, username=username
+        )
+
+        async def run_refresh():
+            try:
+                console.print("🔄 Refreshing authentication token...", style="blue")
+
+                refresh_response = await auth_client.refresh_token()
+
+                console.print("✅ Token refreshed successfully", style="green")
+
+                # Display new expiration time if available
+                if refresh_response.get("access_token"):
+                    from .api_clients.jwt_token_manager import JWTTokenManager
+
+                    jwt_manager = JWTTokenManager()
+                    expiry_time = jwt_manager.get_token_expiry_time(
+                        refresh_response["access_token"]
+                    )
+                    if expiry_time:
+                        console.print(
+                            f"🕒 New token expires: {expiry_time.strftime('%Y-%m-%d %H:%M:%S UTC')}",
+                            style="dim",
+                        )
+
+            except Exception as e:
+                console.print(f"❌ Token refresh failed: {e}", style="red")
+                if "expired" in str(e).lower() or "invalid" in str(e).lower():
+                    console.print(
+                        "💡 Use 'cidx auth login' to re-authenticate",
+                        style="dim yellow",
+                    )
+                else:
+                    console.print(
+                        "💡 Check server connectivity and try again", style="dim yellow"
+                    )
+                raise
+
+        # Run async refresh
+        asyncio.run(run_refresh())
+
+    except Exception:
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@auth_group.command("validate")
+@click.option("--verbose", "-v", is_flag=True, help="Show validation details")
+@click.pass_context
+@require_mode("remote")
+def auth_validate(ctx, verbose: bool):
+    """Validate current credentials (silent by default).
+
+    Silently validates current credentials and returns appropriate
+    exit codes for automation use. Use --verbose for output.
+
+    Exit codes:
+        0 - Credentials are valid
+        1 - Credentials are invalid or validation failed
+
+    Examples:
+        cidx auth validate                  # Silent validation
+        cidx auth validate --verbose        # Show validation details
+    """
+    try:
+        import asyncio
+        from .api_clients.auth_client import create_auth_client
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            if verbose:
+                console.print("❌ No project configuration found", style="red")
+                console.print(
+                    "Run 'cidx init' to initialize project first", style="dim"
+                )
+            sys.exit(1)
+
+        # Load remote configuration
+        try:
+            remote_config = load_remote_configuration(project_root)
+            server_url = remote_config["server_url"]
+        except FileNotFoundError:
+            if verbose:
+                console.print("❌ Remote mode not configured", style="red")
+                console.print(
+                    "This command requires remote mode to be configured.",
+                    style="yellow",
+                )
+                console.print("\nTo configure remote mode:", style="dim")
+                console.print(
+                    "  1. Run 'cidx init --mode remote --server <server-url>'",
+                    style="dim",
+                )
+                console.print(
+                    "  2. Or connect to an existing server with 'cidx auth login'",
+                    style="dim",
+                )
+            sys.exit(1)
+        except (KeyError, json.JSONDecodeError) as e:
+            if verbose:
+                console.print("❌ Remote configuration is corrupted", style="red")
+                console.print(f"Error: {str(e)}", style="red")
+                console.print(
+                    "\nTry re-initializing with 'cidx init --mode remote --server <server-url>'",
+                    style="dim",
+                )
+            sys.exit(1)
+
+        # Try to load existing credentials
+        username = remote_config.get("username")
+        if not username:
+            if verbose:
+                console.print("❌ No stored credentials found", style="red")
+                console.print(
+                    "Use 'cidx auth login' to authenticate first", style="dim"
+                )
+            sys.exit(1)
+
+        # Create auth client
+        auth_client = create_auth_client(
+            server_url=server_url, project_root=project_root, username=username
+        )
+
+        async def run_validation():
+            if verbose:
+                console.print("🔍 Validating credentials...", style="blue")
+
+            is_valid = await auth_client.validate_credentials()
+
+            if verbose:
+                if is_valid:
+                    console.print("✅ Credentials are valid", style="green")
+                else:
+                    console.print("❌ Credentials are invalid", style="red")
+                    console.print(
+                        "💡 Use 'cidx auth login' to re-authenticate",
+                        style="dim yellow",
+                    )
+
+            return is_valid
+
+        # Run async validation
+        is_valid = asyncio.run(run_validation())
+
+        # Exit with appropriate code for automation
+        sys.exit(0 if is_valid else 1)
+
+    except Exception as e:
+        if verbose:
+            console.print(f"❌ Error validating credentials: {e}", style="red")
+            if ctx.obj.get("verbose"):
+                import traceback
+
+                console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+def _display_auth_status(status, verbose: bool = False):
+    """Display authentication status with Rich formatting."""
+    console.print("\n[bold blue]CIDX Authentication Status[/bold blue]")
+    console.print("=" * 30)
+
+    # Defensive type checking to handle error propagation issues
+    if status is None:
+        console.print("❌ [red]Error: No status information available[/red]")
+        console.print(
+            "💡 [yellow]Try running 'cidx auth login' to authenticate[/yellow]"
+        )
+        return
+
+    # Check if we received an error string instead of AuthStatus object
+    if isinstance(status, str):
+        console.print(f"❌ [red]Error: {status}[/red]")
+        console.print(
+            "💡 [yellow]Try running 'cidx auth login' to authenticate[/yellow]"
+        )
+        return
+
+    # Check if we have a dict instead of AuthStatus (shouldn't happen but be defensive)
+    if isinstance(status, dict):
+        console.print("❌ [red]Error: Invalid status format received[/red]")
+        if "error" in status:
+            console.print(f"Details: {status['error']}")
+        console.print(
+            "💡 [yellow]Try running 'cidx auth login' to authenticate[/yellow]"
+        )
+        return
+
+    # Validate we have the expected AuthStatus object with required attributes
+    if not hasattr(status, "authenticated"):
+        console.print("❌ [red]Error: Invalid authentication status object[/red]")
+        console.print(
+            "💡 [yellow]Try running 'cidx auth login' to authenticate[/yellow]"
+        )
+        return
+
+    # Basic status
+    if status.authenticated:
+        console.print("✅ [green]Authenticated: Yes[/green]")
+        console.print(f"👤 Username: {status.username}")
+        console.print(f"🔑 Role: {status.role or 'unknown'}")
+
+        # Token status
+        if status.token_valid:
+            console.print("🟢 [green]Token Status: Valid[/green]")
+        else:
+            console.print("🔴 [red]Token Status: Invalid/Expired[/red]")
+
+        # Token expiration
+        if status.token_expires:
+            from datetime import datetime, timezone
+
+            now = datetime.now(timezone.utc)
+            time_remaining = status.token_expires - now
+
+            if time_remaining.total_seconds() > 0:
+                hours = int(time_remaining.total_seconds() // 3600)
+                minutes = int((time_remaining.total_seconds() % 3600) // 60)
+                console.print(
+                    f"🕒 Token expires: {status.token_expires.strftime('%Y-%m-%d %H:%M:%S UTC')} (in {hours}h {minutes}m)"
+                )
+            else:
+                console.print(
+                    f"⏰ [red]Token expired: {status.token_expires.strftime('%Y-%m-%d %H:%M:%S UTC')}[/red]"
+                )
+
+        # Server connectivity
+        if status.server_reachable is not None:
+            if status.server_reachable:
+                console.print("🌐 [green]Server: Online[/green]")
+            else:
+                console.print("🌐 [red]Server: Unreachable[/red]")
+    else:
+        console.print("❌ [red]Authenticated: No[/red]")
+        console.print("❓ Status: Not logged in")
+        console.print("\n💡 [yellow]Use 'cidx auth login' to authenticate[/yellow]")
+
+    console.print(f"🔗 Server: {status.server_url}")
+
+    # Verbose information
+    if verbose and status.authenticated:
+        console.print("\n[bold]Detailed Information[/bold]")
+        console.print("-" * 25)
+
+        if status.last_refreshed:
+            console.print(
+                f"🔄 Last refreshed: {status.last_refreshed.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+
+        if status.permissions:
+            console.print(f"🛡️  Permissions: {', '.join(status.permissions)}")
+
+        if status.server_version:
+            console.print(f"📦 Server version: {status.server_version}")
+
+        if status.server_reachable is not None:
+            connectivity_status = "Online" if status.server_reachable else "Offline"
+            console.print(f"🔌 Connection status: {connectivity_status}")
+
+
+def _display_health_status(health):
+    """Display credential health status with Rich formatting."""
+    console.print("\n[bold blue]CIDX Credential Health Check[/bold blue]")
+    console.print("=" * 35)
+
+    # Defensive type checking to handle error propagation issues
+    if health is None:
+        console.print("❌ [red]Error: No health information available[/red]")
+        console.print("💡 [yellow]Unable to perform credential health check[/yellow]")
+        return
+
+    # Check if we received an error string instead of CredentialHealth object
+    if isinstance(health, str):
+        console.print(f"❌ [red]Error: {health}[/red]")
+        console.print("💡 [yellow]Check your network connection and try again[/yellow]")
+        return
+
+    # Validate we have the expected CredentialHealth object with required attributes
+    if not hasattr(health, "healthy"):
+        console.print("❌ [red]Error: Invalid health check response[/red]")
+        console.print("💡 [yellow]Unable to verify credential health status[/yellow]")
+        return
+
+    # Overall health
+    if health.healthy:
+        console.print("✅ [green]Overall Health: Healthy[/green] ✓")
+    else:
+        console.print("❌ [red]Overall Health: Issues Found[/red] ✗")
+
+    console.print("\n[bold]Checks Performed[/bold]")
+    console.print("-" * 20)
+
+    # Individual checks
+    checks = [
+        ("Credential file encryption", health.encryption_valid),
+        ("Token signature validation", health.token_signature_valid),
+        ("Server connectivity", health.server_reachable),
+        ("File permissions", health.file_permissions_correct),
+    ]
+
+    for check_name, passed in checks:
+        status_icon = "✓" if passed else "✗"
+        status_color = "green" if passed else "red"
+        console.print(f"  [{status_color}]{status_icon}[/{status_color}] {check_name}")
+
+    # Issues and suggestions
+    if health.issues:
+        console.print("\n[bold red]Issues Found[/bold red]")
+        console.print("-" * 15)
+        for issue in health.issues:
+            console.print(f"  ❗ {issue}")
+
+    if health.recovery_suggestions:
+        console.print("\n[bold yellow]Recovery Suggestions[/bold yellow]")
+        console.print("-" * 25)
+        for suggestion in health.recovery_suggestions:
+            console.print(f"  💡 {suggestion}")
+
+    if health.healthy:
+        console.print(
+            "\n🎉 [green]All credential components are functioning properly.[/green]"
+        )
+
+
 # Server lifecycle management commands
 @cli.group("server")
 @click.pass_context
@@ -5995,6 +7092,4571 @@ def server_restart(ctx, server_dir: Optional[str]):
         sys.exit(1)
     except Exception as e:
         console.print(f"❌ Error: {str(e)}", style="red")
+        sys.exit(1)
+
+
+# System monitoring commands
+@cli.group("system")
+@click.pass_context
+@require_mode("remote")
+def system_group(ctx):
+    """System monitoring and health check commands.
+
+    Monitor CIDX server health, check system status, and view performance metrics.
+    Provides access to server health endpoints for system diagnostics.
+
+    Available commands:
+      health         - Check system health status
+    """
+    pass
+
+
+@system_group.command("health")
+@click.option(
+    "--detailed",
+    "-d",
+    is_flag=True,
+    help="Show detailed health information including component status",
+)
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Show verbose health information with additional details",
+)
+@click.pass_context
+@require_mode("remote")
+def system_health(ctx, detailed: bool, verbose: bool):
+    """Check system health status.
+
+    Performs health checks on the CIDX server to monitor system status,
+    component health, and performance metrics. Provides both basic and
+    detailed health information with response time measurement.
+
+    Examples:
+        cidx system health                    # Basic health check
+        cidx system health --detailed         # Detailed component status
+        cidx system health --verbose          # Verbose information
+        cidx system health --detailed --verbose  # Combined detailed and verbose
+    """
+    try:
+        import asyncio
+        from .api_clients.system_client import create_system_client
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print("Run 'cidx init' to initialize project first", style="dim")
+            sys.exit(1)
+
+        # Load remote configuration
+        try:
+            remote_config = load_remote_configuration(project_root)
+            server_url = remote_config["server_url"]
+        except FileNotFoundError:
+            console.print("❌ Remote mode not configured", style="red")
+            console.print(
+                "This command requires remote mode to be configured.", style="yellow"
+            )
+            console.print("\nTo configure remote mode:", style="dim")
+            console.print(
+                "  1. Run 'cidx init --mode remote --server <server-url>'", style="dim"
+            )
+            console.print(
+                "  2. Or connect to an existing server with 'cidx auth login'",
+                style="dim",
+            )
+            sys.exit(1)
+        except (KeyError, json.JSONDecodeError) as e:
+            console.print("❌ Remote configuration is corrupted", style="red")
+            console.print(f"Error: {str(e)}", style="red")
+            console.print(
+                "\nTry re-initializing with 'cidx init --mode remote --server <server-url>'",
+                style="dim",
+            )
+            sys.exit(1)
+
+        # Try to load existing credentials
+        username = remote_config.get("username")
+
+        # Create system client
+        system_client = create_system_client(
+            server_url=server_url, project_root=project_root, username=username
+        )
+
+        async def run_health_check():
+            try:
+                if detailed or verbose:
+                    # Use detailed health endpoint for rich information
+                    health_result = await system_client.check_detailed_health()
+                    _display_detailed_health_status(health_result, verbose)
+                else:
+                    # Use basic health endpoint for simple check
+                    health_result = await system_client.check_basic_health()
+                    _display_basic_health_status(health_result)
+
+            except Exception as e:
+                from .api_clients.base_client import AuthenticationError, APIClientError
+
+                if isinstance(e, AuthenticationError):
+                    console.print("❌ Authentication failed", style="red")
+                    console.print(f"Error: {str(e)}", style="red")
+                    console.print("Try running 'cidx auth login' first", style="dim")
+                    sys.exit(1)
+                elif isinstance(e, APIClientError):
+                    console.print("❌ Health check failed", style="red")
+                    console.print(f"Error: {str(e)}", style="red")
+                    sys.exit(1)
+                else:
+                    console.print(
+                        "❌ Unexpected error during health check", style="red"
+                    )
+                    console.print(f"Error: {str(e)}", style="red")
+                    sys.exit(1)
+
+        # Run async health check
+        asyncio.run(run_health_check())
+
+    except KeyboardInterrupt:
+        console.print("\n❌ Operation cancelled by user", style="red")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"❌ Error: {str(e)}", style="red")
+        sys.exit(1)
+
+
+def _display_basic_health_status(health_result: dict):
+    """Display basic health status in a clean format."""
+    # Defensive type checking to handle error propagation issues
+    if health_result is None:
+        console.print("❌ [red]Error: No health information available[/red]")
+        console.print(
+            "💡 [yellow]Server may be unreachable. Check your connection[/yellow]"
+        )
+        return
+
+    # Check if we received an error string instead of dict
+    if isinstance(health_result, str):
+        console.print(f"❌ [red]Health Check Error: {health_result}[/red]")
+        console.print(
+            "💡 [yellow]Server may be experiencing issues. Try again later[/yellow]"
+        )
+        return
+
+    # Ensure we have a dict-like object with get method
+    if not hasattr(health_result, "get"):
+        console.print("❌ [red]Error: Invalid health check response format[/red]")
+        console.print(f"Received type: {type(health_result).__name__}")
+        return
+
+    status = health_result.get("status", "unknown")
+    message = health_result.get("message", "No status message")
+    response_time = health_result.get("response_time_ms", 0)
+
+    # Convert status to display format
+    status_display = status.upper() if status == "ok" else status.title()
+
+    console.print(
+        f"System Health: {status_display}", style="green" if status == "ok" else "red"
+    )
+    console.print(f"Response Time: {response_time}ms", style="cyan")
+    console.print(f"Status: {message}", style="dim")
+
+
+def _display_detailed_health_status(health_result: dict, verbose: bool = False):
+    """Display detailed health status with rich formatting."""
+    # Defensive type checking to handle error propagation issues
+    if health_result is None:
+        console.print("❌ [red]Error: No detailed health information available[/red]")
+        console.print(
+            "💡 [yellow]Server may be unreachable. Check your connection[/yellow]"
+        )
+        return
+
+    # Check if we received an error string instead of dict
+    if isinstance(health_result, str):
+        console.print(f"❌ [red]Detailed Health Check Error: {health_result}[/red]")
+        console.print(
+            "💡 [yellow]Server may be experiencing issues. Try again later[/yellow]"
+        )
+        return
+
+    # Ensure we have a dict-like object with get method
+    if not hasattr(health_result, "get"):
+        console.print("❌ [red]Error: Invalid detailed health response format[/red]")
+        console.print(f"Received type: {type(health_result).__name__}")
+        return
+
+    status = health_result.get("status", "unknown")
+    response_time = health_result.get("response_time_ms", 0)
+    services = health_result.get("services", {})
+    system_info = health_result.get("system", {})
+    timestamp = health_result.get("timestamp", "")
+
+    # Overall status section
+    console.print("=== System Health Status ===", style="bold blue")
+    status_display = status.upper() if status in ["ok", "healthy"] else status.title()
+    console.print(
+        f"Overall Status: {status_display}",
+        style="green" if status in ["ok", "healthy"] else "red",
+    )
+    console.print(f"Response Time: {response_time}ms", style="cyan")
+
+    # Detailed component status
+    if services:
+        console.print("\n=== Detailed Component Status ===", style="bold blue")
+        for service_name, service_info in services.items():
+            service_status = service_info.get("status", "unknown")
+            service_name_display = service_name.replace("_", " ").title()
+
+            status_color = "green" if service_status in ["ok", "healthy"] else "red"
+            console.print(
+                f"{service_name_display}: {service_status}", style=status_color
+            )
+
+            if verbose and service_info.get("response_time_ms") is not None:
+                console.print(
+                    f"  Response Time: {service_info['response_time_ms']}ms",
+                    style="dim",
+                )
+
+            if service_info.get("error_message"):
+                console.print(f"  Error: {service_info['error_message']}", style="red")
+
+    # System information
+    if system_info:
+        console.print("\n=== System Information ===", style="bold blue")
+        if "memory_usage_percent" in system_info:
+            console.print(
+                f"Memory Usage: {system_info['memory_usage_percent']}%", style="yellow"
+            )
+        if "cpu_usage_percent" in system_info:
+            console.print(
+                f"CPU Usage: {system_info['cpu_usage_percent']}%", style="yellow"
+            )
+        if "active_jobs" in system_info:
+            console.print(f"Active Jobs: {system_info['active_jobs']}", style="cyan")
+        if "disk_free_space_gb" in system_info:
+            console.print(
+                f"Disk Free Space: {system_info['disk_free_space_gb']} GB", style="cyan"
+            )
+
+    # Verbose information
+    if verbose:
+        console.print("\n=== Verbose Health Information ===", style="bold blue")
+        if timestamp:
+            console.print(f"Timestamp: {timestamp}", style="dim")
+
+        # Show individual service response times
+        if services:
+            for service_name, service_info in services.items():
+                if service_info.get("response_time_ms") is not None:
+                    service_name_display = service_name.replace("_", " ").title()
+                    console.print(
+                        f"{service_name_display} Response Time: {service_info['response_time_ms']}ms",
+                        style="dim",
+                    )
+
+
+# Repository management commands
+@cli.group("repos")
+@click.pass_context
+@require_mode("remote")
+def repos_group(ctx):
+    """Repository management commands.
+
+    Browse, discover, and manage your repositories in the CIDX system.
+
+    Available commands:
+      list           - List your activated repositories
+      available      - Browse available golden repositories
+      discover       - Discover repositories from remote sources
+      status         - Show comprehensive repository status overview
+      info           - Show detailed repository information
+      switch-branch  - Switch branch in activated repository
+      activate       - Activate a golden repository for personal use
+      deactivate     - Deactivate a personal repository
+    """
+    pass
+
+
+@repos_group.command(name="list")
+@click.option("--filter", help="Filter repositories by pattern")
+@click.pass_context
+def list(ctx, filter: Optional[str]):
+    """List activated repositories.
+
+    Shows your currently activated repositories with their sync status,
+    current branch, and last sync information.
+
+    EXAMPLES:
+      cidx repos list                     # List all activated repositories
+      cidx repos list --filter web        # Filter repositories containing 'web'
+    """
+    try:
+        from pathlib import Path
+        import asyncio
+        from .mode_detection.command_mode_detector import find_project_root
+
+        # Get project root and credentials
+        project_root = find_project_root(Path.cwd())
+        if not project_root:
+            console.print("❌ Not in a CIDX project directory", style="red")
+            sys.exit(1)
+
+        # Load remote configuration and credentials
+        try:
+            from .remote.sync_execution import (
+                _load_remote_configuration,
+                _load_and_decrypt_credentials,
+            )
+
+            remote_config = _load_remote_configuration(project_root)
+            server_url = remote_config["server_url"]
+            credentials = _load_and_decrypt_credentials(project_root)
+        except Exception as e:
+            console.print(f"❌ Failed to load credentials: {e}", style="red")
+            console.print(
+                "   Please run 'cidx init --remote' to configure authentication.",
+                style="dim",
+            )
+            sys.exit(1)
+
+        # Create client and fetch repositories with proper cleanup
+        async def fetch_repositories():
+            client = ReposAPIClient(
+                server_url=server_url,
+                credentials=credentials,
+                project_root=project_root,
+            )
+            try:
+                return await client.list_activated_repositories(filter_pattern=filter)
+            finally:
+                # Ensure client is properly closed to avoid resource warnings
+                await client.close()
+
+        repositories = asyncio.run(fetch_repositories())
+
+        # Display results
+        if not repositories:
+            console.print("📦 No repositories activated", style="yellow")
+            console.print("\n💡 To activate repositories:", style="blue")
+            console.print(
+                "   cidx repos available    # Browse available repositories",
+                style="dim",
+            )
+            return
+
+        # Format and display repository table
+        table = Table(title="Activated Repositories", show_header=True)
+        table.add_column("Alias", style="cyan")
+        table.add_column("Branch", style="green")
+        table.add_column("Sync Status", style="yellow")
+        table.add_column("Last Sync", style="magenta")
+        table.add_column("Actions", style="white")
+
+        for repo in repositories:
+            # Format sync status with icons
+            if repo.sync_status == "synced":
+                status = "✓ Synced"
+                status_style = "green"
+            elif repo.sync_status == "needs_sync":
+                status = "⚠ Needs sync"
+                status_style = "yellow"
+            elif repo.sync_status == "conflict":
+                status = "✗ Conflict"
+                status_style = "red"
+            else:
+                status = repo.sync_status
+                status_style = "white"
+
+            # Format last sync time
+            from datetime import datetime, timezone
+
+            try:
+                last_sync = datetime.fromisoformat(
+                    repo.last_sync.replace("Z", "+00:00")
+                )
+                now = datetime.now(timezone.utc)
+                diff = now - last_sync
+
+                if diff.days > 0:
+                    time_str = f"{diff.days}d ago"
+                elif diff.seconds > 3600:
+                    time_str = f"{diff.seconds // 3600}h ago"
+                else:
+                    time_str = f"{diff.seconds // 60}m ago"
+            except (ValueError, TypeError, AttributeError):
+                time_str = "Unknown"
+
+            # Suggest actions
+            actions = ""
+            if repo.sync_status == "needs_sync":
+                actions = "sync"
+            elif repo.sync_status == "conflict":
+                actions = "resolve"
+
+            table.add_row(
+                repo.alias,
+                repo.current_branch,
+                f"[{status_style}]{status}[/{status_style}]",
+                time_str,
+                actions,
+            )
+
+        console.print(table)
+        console.print(f"\n📊 Total: {len(repositories)} repositories", style="blue")
+
+    except ImportError as e:
+        console.print(f"❌ Missing dependency: {e}", style="red")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"❌ Error listing repositories: {e}", style="red")
+        sys.exit(1)
+
+
+@repos_group.command(name="available")
+@click.option("--search", help="Search available repositories")
+@click.pass_context
+def available(ctx, search: Optional[str]):
+    """Show available golden repositories.
+
+    Browse golden repositories available for activation, showing which
+    ones you already have activated.
+
+    EXAMPLES:
+      cidx repos available                  # List all available repositories
+      cidx repos available --search web     # Search for repositories containing 'web'
+    """
+    try:
+        from pathlib import Path
+        import asyncio
+        from .mode_detection.command_mode_detector import find_project_root
+
+        # Get project root and credentials
+        project_root = find_project_root(Path.cwd())
+        if not project_root:
+            console.print("❌ Not in a CIDX project directory", style="red")
+            sys.exit(1)
+
+        # Load remote configuration and credentials
+        try:
+            from .remote.sync_execution import (
+                _load_remote_configuration,
+                _load_and_decrypt_credentials,
+            )
+
+            remote_config = _load_remote_configuration(project_root)
+            server_url = remote_config["server_url"]
+            credentials = _load_and_decrypt_credentials(project_root)
+        except Exception as e:
+            console.print(f"❌ Failed to load credentials: {e}", style="red")
+            console.print(
+                "   Please run 'cidx init --remote' to configure authentication.",
+                style="dim",
+            )
+            sys.exit(1)
+
+        # Create client and fetch repositories
+        async def fetch_repositories():
+            client = ReposAPIClient(
+                server_url=server_url,
+                credentials=credentials,
+                project_root=project_root,
+            )
+            try:
+                return await client.list_available_repositories(search_term=search)
+            finally:
+                await client.close()
+
+        repositories = asyncio.run(fetch_repositories())
+
+        # Display results
+        if not repositories:
+            console.print("📦 No repositories available", style="yellow")
+            return
+
+        # Format and display repository table
+        table = Table(title="Available Golden Repositories", show_header=True)
+        table.add_column("Alias", style="cyan")
+        table.add_column("Description", style="white", max_width=50)
+        table.add_column("Default Branch", style="green")
+        table.add_column("Branches", style="yellow")
+        table.add_column("Status", style="magenta")
+
+        for repo in repositories:
+            # Format activation status
+            if repo.is_activated:
+                status = "✓ Already activated"
+                status_style = "green"
+            else:
+                status = "Available"
+                status_style = "yellow"
+
+            # Format branches (show first few)
+            branches = repo.indexed_branches[:3]
+            if len(repo.indexed_branches) > 3:
+                branches_str = (
+                    ", ".join(branches) + f" (+{len(repo.indexed_branches) - 3} more)"
+                )
+            else:
+                branches_str = ", ".join(branches)
+
+            table.add_row(
+                repo.alias,
+                (
+                    repo.description[:47] + "..."
+                    if len(repo.description) > 50
+                    else repo.description
+                ),
+                repo.default_branch,
+                branches_str,
+                f"[{status_style}]{status}[/{status_style}]",
+            )
+
+        console.print(table)
+        console.print(f"\n📊 Total: {len(repositories)} repositories", style="blue")
+
+        # Show activation guidance
+        available_count = sum(1 for repo in repositories if not repo.is_activated)
+        if available_count > 0:
+            console.print(
+                f"\n💡 {available_count} repositories available for activation",
+                style="blue",
+            )
+            console.print(
+                "   Use: cidx activate <alias>     # Activate a repository", style="dim"
+            )
+
+    except ImportError as e:
+        console.print(f"❌ Missing dependency: {e}", style="red")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"❌ Error listing available repositories: {e}", style="red")
+        sys.exit(1)
+
+
+@repos_group.command(name="discover")
+@click.option("--source", required=True, help="Repository source to discover")
+@click.pass_context
+def discover(ctx, source: str):
+    """Discover repositories from remote sources.
+
+    Search for repositories in GitHub organizations, GitLab groups,
+    or specific Git URLs to see what's available for addition.
+
+    EXAMPLES:
+      cidx repos discover --source github.com/myorg      # GitHub organization
+      cidx repos discover --source gitlab.com/mygroup    # GitLab group
+      cidx repos discover --source https://git.example.com/repo.git  # Direct URL
+    """
+    try:
+        from pathlib import Path
+        import asyncio
+        from .mode_detection.command_mode_detector import find_project_root
+
+        # Get project root and credentials
+        project_root = find_project_root(Path.cwd())
+        if not project_root:
+            console.print("❌ Not in a CIDX project directory", style="red")
+            sys.exit(1)
+
+        # Load remote configuration and credentials
+        try:
+            from .remote.sync_execution import (
+                _load_remote_configuration,
+                _load_and_decrypt_credentials,
+            )
+
+            remote_config = _load_remote_configuration(project_root)
+            server_url = remote_config["server_url"]
+            credentials = _load_and_decrypt_credentials(project_root)
+        except Exception as e:
+            console.print(f"❌ Failed to load credentials: {e}", style="red")
+            console.print(
+                "   Please run 'cidx init --remote' to configure authentication.",
+                style="dim",
+            )
+            sys.exit(1)
+
+        # Create client and discover repositories
+        console.print(f"🔍 Discovering repositories from: {source}", style="blue")
+
+        async def discover_repositories():
+            client = ReposAPIClient(
+                server_url=server_url,
+                credentials=credentials,
+                project_root=project_root,
+            )
+            try:
+                return await client.discover_repositories(source)
+            finally:
+                await client.close()
+
+        result = asyncio.run(discover_repositories())
+
+        # Display results
+        if not result.discovered_repositories:
+            console.print("📦 No repositories discovered", style="yellow")
+            return
+
+        # Format and display discovery results
+        table = Table(
+            title=f"Discovered Repositories from {result.source}", show_header=True
+        )
+        table.add_column("Name", style="cyan")
+        table.add_column("Description", style="white", max_width=40)
+        table.add_column("Default Branch", style="green")
+        table.add_column("Availability", style="magenta")
+        table.add_column("Accessibility", style="yellow")
+
+        for repo in result.discovered_repositories:
+            # Format availability status
+            if repo.is_available:
+                availability = "✓ Already available"
+                availability_style = "green"
+            else:
+                availability = "Not available"
+                availability_style = "yellow"
+
+            # Format accessibility
+            accessibility = "✓ Accessible" if repo.is_accessible else "✗ Not accessible"
+            accessibility_style = "green" if repo.is_accessible else "red"
+
+            table.add_row(
+                repo.name,
+                (
+                    repo.description[:37] + "..."
+                    if len(repo.description) > 40
+                    else repo.description
+                ),
+                repo.default_branch,
+                f"[{availability_style}]{availability}[/{availability_style}]",
+                f"[{accessibility_style}]{accessibility}[/{accessibility_style}]",
+            )
+
+        console.print(table)
+        console.print(f"\n📊 Total discovered: {result.total_discovered}", style="blue")
+
+        # Show access errors if any
+        if result.access_errors:
+            console.print(
+                f"\n⚠️ Access errors ({len(result.access_errors)}):", style="yellow"
+            )
+            for error in result.access_errors:
+                console.print(f"   • {error}", style="dim")
+
+        # Show next steps
+        available_count = sum(
+            1
+            for repo in result.discovered_repositories
+            if not repo.is_available and repo.is_accessible
+        )
+        if available_count > 0:
+            console.print(
+                f"\n💡 {available_count} repositories can be requested for addition",
+                style="blue",
+            )
+            console.print(
+                "   Contact your administrator to add these repositories to the system",
+                style="dim",
+            )
+
+    except ImportError as e:
+        console.print(f"❌ Missing dependency: {e}", style="red")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"❌ Error discovering repositories: {e}", style="red")
+        sys.exit(1)
+
+
+@repos_group.command("status")
+@click.pass_context
+def repos_status(ctx):
+    """Show comprehensive repository status overview.
+
+    Displays a dashboard-style summary of all repository information
+    including activated repositories, available repositories, sync status,
+    and personalized recommendations.
+    """
+    try:
+        from pathlib import Path
+        import asyncio
+        from .mode_detection.command_mode_detector import find_project_root
+
+        # Get project root and credentials
+        project_root = find_project_root(Path.cwd())
+        if not project_root:
+            console.print("❌ Not in a CIDX project directory", style="red")
+            sys.exit(1)
+
+        # Load remote configuration and credentials
+        try:
+            from .remote.sync_execution import (
+                _load_remote_configuration,
+                _load_and_decrypt_credentials,
+            )
+
+            remote_config = _load_remote_configuration(project_root)
+            server_url = remote_config["server_url"]
+            credentials = _load_and_decrypt_credentials(project_root)
+        except Exception as e:
+            console.print(f"❌ Failed to load credentials: {e}", style="red")
+            console.print(
+                "   Please run 'cidx init --remote' to configure authentication.",
+                style="dim",
+            )
+            sys.exit(1)
+
+        # Create client and fetch status
+        async def fetch_status():
+            client = ReposAPIClient(
+                server_url=server_url,
+                credentials=credentials,
+                project_root=project_root,
+            )
+            try:
+                return await client.get_repository_status_summary()
+            finally:
+                await client.close()
+
+        summary = asyncio.run(fetch_status())
+
+        # Display comprehensive status
+        console.print("📊 Repository Status Overview", style="bold blue")
+        console.print()
+
+        # Activated repositories summary
+        activated = summary.activated_repositories
+        console.print("🔗 Activated Repositories", style="bold cyan")
+        console.print(f"   Total: {activated.total_count}", style="white")
+        console.print(f"   ✓ Synced: {activated.synced_count}", style="green")
+        console.print(f"   ⚠ Need sync: {activated.needs_sync_count}", style="yellow")
+        console.print(f"   ✗ Conflicts: {activated.conflict_count}", style="red")
+        console.print()
+
+        # Available repositories summary
+        available = summary.available_repositories
+        console.print("📦 Available Repositories", style="bold cyan")
+        console.print(f"   Total available: {available.total_count}", style="white")
+        console.print(
+            f"   Not activated: {available.not_activated_count}", style="yellow"
+        )
+        console.print()
+
+        # Recent activity
+        if summary.recent_activity.recent_syncs:
+            console.print("📈 Recent Activity", style="bold cyan")
+            for sync in summary.recent_activity.recent_syncs[:3]:  # Show last 3
+                try:
+                    from datetime import datetime, timezone
+
+                    sync_time = datetime.fromisoformat(
+                        sync.get("sync_date", "").replace("Z", "+00:00")
+                    )
+                    now = datetime.now(timezone.utc)
+                    diff = now - sync_time
+
+                    if diff.days > 0:
+                        time_str = f"{diff.days}d ago"
+                    elif diff.seconds > 3600:
+                        time_str = f"{diff.seconds // 3600}h ago"
+                    else:
+                        time_str = f"{diff.seconds // 60}m ago"
+                except (ValueError, TypeError, AttributeError):
+                    time_str = "recently"
+
+                status_icon = "✓" if sync.get("status") == "success" else "⚠"
+                console.print(
+                    f"   {status_icon} {sync.get('alias', 'unknown')} synced {time_str}",
+                    style="white",
+                )
+            console.print()
+
+        # Recent activations
+        if activated.recent_activations:
+            console.print("🆕 Recent Activations", style="bold cyan")
+            for activation in activated.recent_activations[:3]:  # Show last 3
+                console.print(
+                    f"   ✓ {activation.get('alias', 'unknown')}", style="green"
+                )
+            console.print()
+
+        # Recommendations
+        if summary.recommendations:
+            console.print("💡 Recommendations", style="bold cyan")
+            for rec in summary.recommendations:
+                console.print(f"   • {rec}", style="white")
+            console.print()
+
+        # Quick actions
+        console.print("🚀 Quick Actions", style="bold cyan")
+        console.print(
+            "   cidx repos list         # View your repositories", style="dim"
+        )
+        console.print(
+            "   cidx repos available    # Browse new repositories", style="dim"
+        )
+        console.print("   cidx sync --all         # Sync all repositories", style="dim")
+
+    except ImportError as e:
+        console.print(f"❌ Missing dependency: {e}", style="red")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"❌ Error getting repository status: {e}", style="red")
+        sys.exit(1)
+
+
+@repos_group.command(name="activate")
+@click.argument("golden_alias")
+@click.option("--as", "user_alias", help="Alias for activated repository")
+@click.option("--branch", help="Initial branch to activate")
+@click.pass_context
+def activate(ctx, golden_alias: str, user_alias: str, branch: str):
+    """Activate a golden repository for personal use.
+
+    Creates a personal instance of a golden repository with CoW cloning
+    for efficient storage sharing while providing independent access.
+
+    Examples:
+      cidx repos activate web-service                        # Use same alias
+      cidx repos activate web-service --as my-web-app        # Custom alias
+      cidx repos activate web-service --branch feature-v2    # Specific branch
+    """
+    try:
+        # Default user_alias to golden_alias if not provided
+        if not user_alias:
+            user_alias = golden_alias
+
+        execute_repository_activation(
+            golden_alias=golden_alias, user_alias=user_alias, target_branch=branch
+        )
+    except Exception as e:
+        console.print(f"❌ Error activating repository: {e}", style="red")
+        sys.exit(1)
+
+
+@repos_group.command(name="deactivate")
+@click.argument("user_alias")
+@click.option(
+    "--force", is_flag=True, help="Force deactivation of problematic repositories"
+)
+@click.confirmation_option(
+    prompt="Deactivate repository? This will remove all local data."
+)
+@click.pass_context
+def deactivate(ctx, user_alias: str, force: bool):
+    """Deactivate a personal repository.
+
+    Removes the activated repository and cleans up associated resources
+    including containers, configuration, and local data.
+
+    Examples:
+      cidx repos deactivate my-repo                # Normal deactivation
+      cidx repos deactivate broken-repo --force    # Force cleanup
+    """
+    try:
+        execute_repository_deactivation(
+            user_alias=user_alias,
+            force=force,
+            confirmed=True,  # Already confirmed by click.confirmation_option
+        )
+    except Exception as e:
+        console.print(f"❌ Error deactivating repository: {e}", style="red")
+        sys.exit(1)
+
+
+@repos_group.command(name="info")
+@click.argument("user_alias")
+@click.option("--branches", is_flag=True, help="Show detailed branch information")
+@click.option("--health", is_flag=True, help="Show repository health status")
+@click.option("--activity", is_flag=True, help="Show recent repository activity")
+@click.pass_context
+def info(ctx, user_alias: str, branches: bool, health: bool, activity: bool):
+    """Show detailed repository information.
+
+    Displays comprehensive information about an activated repository including
+    basic metadata, branch information, health status, and recent activity.
+
+    EXAMPLES:
+      cidx repos info my-project                    # Basic repository information
+      cidx repos info my-project --branches        # Include branch details
+      cidx repos info my-project --health          # Include health monitoring
+      cidx repos info my-project --activity        # Include activity tracking
+      cidx repos info my-project --branches --health --activity  # Show everything
+    """
+    try:
+        import asyncio
+        from pathlib import Path
+        from .mode_detection.command_mode_detector import find_project_root
+
+        # Get project root and credentials
+        project_root = find_project_root(Path.cwd())
+        if not project_root:
+            console.print("❌ Not in a CIDX project directory", style="red")
+            sys.exit(1)
+
+        # Load remote configuration and credentials
+        try:
+            from .remote.sync_execution import (
+                _load_remote_configuration,
+                _load_and_decrypt_credentials,
+            )
+
+            remote_config = _load_remote_configuration(project_root)
+            server_url = remote_config["server_url"]
+            credentials = _load_and_decrypt_credentials(project_root)
+        except Exception as e:
+            console.print(f"❌ Failed to load credentials: {e}", style="red")
+            console.print(
+                "   Please run 'cidx init --remote' to configure authentication.",
+                style="dim",
+            )
+            sys.exit(1)
+
+        # Execute repository info retrieval
+        asyncio.run(
+            _execute_repository_info(
+                server_url=server_url,
+                credentials=credentials,
+                project_root=project_root,
+                user_alias=user_alias,
+                branches=branches,
+                health=health,
+                activity=activity,
+            )
+        )
+    except Exception as e:
+        console.print(f"❌ Error retrieving repository information: {e}", style="red")
+        sys.exit(1)
+
+
+@repos_group.command(name="switch-branch")
+@click.argument("user_alias")
+@click.argument("branch_name")
+@click.option("--create", is_flag=True, help="Create branch if it doesn't exist")
+@click.pass_context
+def switch_branch(ctx, user_alias: str, branch_name: str, create: bool):
+    """Switch branch in activated repository.
+
+    Switches the specified repository to a different branch, with support
+    for creating new branches and handling remote tracking branches.
+
+    EXAMPLES:
+      cidx repos switch-branch my-project develop           # Switch to existing branch
+      cidx repos switch-branch my-project feature/new --create  # Create and switch
+    """
+    try:
+        import asyncio
+        from pathlib import Path
+        from .mode_detection.command_mode_detector import find_project_root
+
+        # Get project root and credentials
+        project_root = find_project_root(Path.cwd())
+        if not project_root:
+            console.print("❌ Not in a CIDX project directory", style="red")
+            sys.exit(1)
+
+        # Load remote configuration and credentials
+        try:
+            from .remote.sync_execution import (
+                _load_remote_configuration,
+                _load_and_decrypt_credentials,
+            )
+
+            remote_config = _load_remote_configuration(project_root)
+            server_url = remote_config["server_url"]
+            credentials = _load_and_decrypt_credentials(project_root)
+        except Exception as e:
+            console.print(f"❌ Failed to load credentials: {e}", style="red")
+            console.print(
+                "   Please run 'cidx init --remote' to configure authentication.",
+                style="dim",
+            )
+            sys.exit(1)
+
+        # Execute branch switching
+        asyncio.run(
+            _execute_branch_switch(
+                server_url=server_url,
+                credentials=credentials,
+                project_root=project_root,
+                user_alias=user_alias,
+                branch_name=branch_name,
+                create=create,
+            )
+        )
+    except Exception as e:
+        console.print(f"❌ Error switching repository branch: {e}", style="red")
+        sys.exit(1)
+
+
+@repos_group.command("sync")
+@click.argument("user_alias", required=False)
+@click.option("--all", is_flag=True, help="Sync all activated repositories")
+@click.option("--force", is_flag=True, help="Force sync by cancelling existing jobs")
+@click.option(
+    "--full-reindex", is_flag=True, help="Force full re-indexing instead of incremental"
+)
+@click.option("--no-pull", is_flag=True, help="Skip git pull, only perform indexing")
+@click.option("--timeout", type=int, default=300, help="Job timeout in seconds")
+@click.pass_context
+def repos_sync(
+    ctx,
+    user_alias: Optional[str],
+    all: bool,
+    force: bool,
+    full_reindex: bool,
+    no_pull: bool,
+    timeout: int,
+):
+    """Sync repositories with golden repositories.
+
+    \b
+    Synchronize activated repositories with their corresponding golden repositories.
+    Supports both individual repository sync and bulk sync operations.
+
+    \b
+    SYNC MODES:
+      • Individual: cidx repos sync my-project        # Sync specific repository
+      • All repos:  cidx repos sync --all             # Sync all activated repositories
+
+    \b
+    SYNC OPTIONS:
+      • --force           Cancel existing jobs and force new sync
+      • --full-reindex    Force complete re-indexing (slower but thorough)
+      • --no-pull         Skip git pull, only index existing files
+      • --timeout 600     Set job timeout (default: 300 seconds)
+
+    \b
+    EXAMPLES:
+      cidx repos sync my-project              # Sync specific repository
+      cidx repos sync --all                   # Sync all repositories
+      cidx repos sync --all --force           # Force sync all repositories
+      cidx repos sync my-project --no-pull    # Sync without git pull
+    """
+    try:
+        # Import here to avoid circular imports
+        from .mode_detection.command_mode_detector import find_project_root
+        from .api_clients.base_client import (
+            AuthenticationError,
+            NetworkError,
+            APIClientError,
+        )
+
+        # Validate arguments
+        if user_alias and all:
+            console.print(
+                "❌ Error: Cannot specify both repository alias and --all flag",
+                style="red",
+            )
+            console.print(
+                "   Use either 'cidx repos sync <alias>' or 'cidx repos sync --all'",
+                style="dim",
+            )
+            sys.exit(1)
+
+        if timeout <= 0:
+            console.print("❌ Error: Timeout must be a positive number", style="red")
+            sys.exit(1)
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print(
+                "   Run 'cidx init --remote' to set up remote mode", style="dim"
+            )
+            sys.exit(1)
+
+        # Create repos client - use synchronous wrapper
+        from .api_clients.repos_client import SyncReposAPIClient
+
+        repos_client = SyncReposAPIClient(project_root)
+
+        # Show sync operation details
+        if all:
+            console.print("🔄 Syncing all activated repositories...", style="blue")
+        elif user_alias:
+            console.print(f"🔄 Syncing repository '{user_alias}'...", style="blue")
+        else:
+            console.print(
+                "❌ Error: Must specify repository alias or use --all flag", style="red"
+            )
+            console.print(
+                "   Use 'cidx repos sync <alias>' or 'cidx repos sync --all'",
+                style="dim",
+            )
+            sys.exit(1)
+
+        # Execute sync operation
+        if all:
+            results = repos_client.sync_all_repositories(
+                force_sync=force,
+                incremental=not full_reindex,
+                pull_remote=not no_pull,
+                timeout=timeout,
+            )
+        else:
+            # Type guard - we've already validated user_alias is not None above
+            assert user_alias is not None
+            result = repos_client.sync_repository(
+                user_alias,
+                force_sync=force,
+                incremental=not full_reindex,
+                pull_remote=not no_pull,
+                timeout=timeout,
+            )
+            results = [result]
+
+        # Display results
+        console.print()
+        console.print("✅ Sync operation results:", style="green bold")
+
+        successful_count = 0
+        failed_count = 0
+
+        for result in results:
+            if result.status in ["completed", "success"]:
+                console.print(
+                    f"   ✅ {result.repository}: {result.message}", style="green"
+                )
+                successful_count += 1
+            elif result.status in ["failed", "error"]:
+                console.print(
+                    f"   ❌ {result.repository}: {result.message}", style="red"
+                )
+                failed_count += 1
+            elif result.status == "conflict":
+                console.print(
+                    f"   ⚠️  {result.repository}: Sync conflicts detected",
+                    style="yellow",
+                )
+                console.print(f"      {result.message}", style="dim")
+                console.print("      Manual resolution required", style="yellow")
+                failed_count += 1
+            else:
+                console.print(
+                    f"   ℹ️ {result.repository}: {result.message}", style="blue"
+                )
+
+        if len(results) > 1:
+            console.print()
+            console.print(
+                f"📊 Summary: {successful_count} successful, {failed_count} failed",
+                style="cyan",
+            )
+
+        if failed_count > 0:
+            sys.exit(1)
+
+    except AuthenticationError as e:
+        console.print(f"❌ Authentication failed: {e}", style="red")
+        console.print(
+            "   💡 Check your credentials with 'cidx auth update'", style="dim"
+        )
+        sys.exit(1)
+    except NetworkError as e:
+        console.print(f"❌ Network error: {e}", style="red")
+        console.print(
+            "   💡 Check your internet connection and server URL", style="dim"
+        )
+        sys.exit(1)
+    except APIClientError as e:
+        console.print(f"❌ API error: {e}", style="red")
+        if e.status_code == 404:
+            console.print(
+                "   💡 Repository not found - check repository alias", style="dim"
+            )
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"❌ Failed to sync repository: {e}", style="red")
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@repos_group.command("sync-status")
+@click.argument("user_alias", required=False)
+@click.option("--detailed", is_flag=True, help="Show detailed sync history")
+@click.pass_context
+def repos_sync_status(ctx, user_alias: Optional[str], detailed: bool):
+    """Show repository sync status.
+
+    \b
+    Display synchronization status for activated repositories including
+    last sync time, current status, and conflict information.
+
+    \b
+    STATUS MODES:
+      • All repos:  cidx repos sync-status              # Show status for all repositories
+      • Individual: cidx repos sync-status my-project   # Show status for specific repository
+
+    \b
+    STATUS OPTIONS:
+      • --detailed    Show comprehensive sync history and details
+
+    \b
+    EXAMPLES:
+      cidx repos sync-status                    # Show status for all repositories
+      cidx repos sync-status my-project        # Show status for specific repository
+      cidx repos sync-status --detailed        # Show detailed status for all repositories
+    """
+    try:
+        # Import here to avoid circular imports
+        from .mode_detection.command_mode_detector import find_project_root
+        from .api_clients.base_client import (
+            AuthenticationError,
+            NetworkError,
+            APIClientError,
+        )
+        from rich.table import Table
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print(
+                "   Run 'cidx init --remote' to set up remote mode", style="dim"
+            )
+            sys.exit(1)
+
+        # Create repos client - use synchronous wrapper
+        from .api_clients.repos_client import SyncReposAPIClient
+
+        repos_client = SyncReposAPIClient(project_root)
+
+        # Get sync status
+        if user_alias:
+            # Get status for specific repository
+            console.print(f"🔍 Sync Status for '{user_alias}'", style="blue bold")
+
+            status = repos_client.get_sync_status(user_alias)
+
+            # Display repository status
+            table = Table(show_header=True, header_style="bold magenta")
+            table.add_column("Property", style="dim")
+            table.add_column("Value")
+
+            # Basic status information
+            status_style = (
+                "green"
+                if status["sync_status"] == "synced"
+                else "yellow" if status["sync_status"] == "needs_sync" else "red"
+            )
+            table.add_row(
+                "Status", f"[{status_style}]{status['sync_status']}[/{status_style}]"
+            )
+            table.add_row("Current Branch", status["current_branch"])
+            table.add_row("Last Sync", status.get("last_sync_time", "Never"))
+            table.add_row(
+                "Has Conflicts", "Yes" if status.get("has_conflicts", False) else "No"
+            )
+
+            console.print(table)
+
+            # Show detailed history if requested
+            if detailed and "sync_history" in status:
+                console.print("\n📋 Detailed Sync History", style="blue bold")
+
+                history_table = Table(show_header=True, header_style="bold cyan")
+                history_table.add_column("Timestamp")
+                history_table.add_column("Status")
+                history_table.add_column("Message")
+                history_table.add_column("Files", justify="right")
+                history_table.add_column("Duration", justify="right")
+
+                for entry in status["sync_history"][:10]:  # Show last 10 entries
+                    status_style = "green" if entry["status"] == "completed" else "red"
+                    history_table.add_row(
+                        entry["timestamp"],
+                        f"[{status_style}]{entry['status']}[/{status_style}]",
+                        entry["message"],
+                        str(entry.get("files_synced", "N/A")),
+                        f"{entry.get('duration', 0):.1f}s",
+                    )
+
+                console.print(history_table)
+        else:
+            # Get status for all repositories
+            console.print("📊 Repository Sync Status", style="blue bold")
+
+            status_data = repos_client.get_sync_status_all()
+
+            if not status_data:
+                console.print("ℹ️ No activated repositories found", style="yellow")
+                return
+
+            # Create status table
+            table = Table(show_header=True, header_style="bold magenta")
+            table.add_column("Repository", style="bold")
+            table.add_column("Status")
+            table.add_column("Branch")
+            table.add_column("Last Sync")
+            table.add_column("Conflicts")
+
+            for repo_alias, repo_status in status_data.items():
+                status_style = (
+                    "green"
+                    if repo_status["sync_status"] == "synced"
+                    else (
+                        "yellow"
+                        if repo_status["sync_status"] == "needs_sync"
+                        else "red"
+                    )
+                )
+                conflicts_indicator = (
+                    "⚠️" if repo_status.get("has_conflicts", False) else "✅"
+                )
+
+                table.add_row(
+                    repo_alias,
+                    f"[{status_style}]{repo_status['sync_status']}[/{status_style}]",
+                    repo_status["current_branch"],
+                    repo_status.get("last_sync_time", "Never"),
+                    conflicts_indicator,
+                )
+
+            console.print(table)
+
+            # Show summary
+            total_repos = len(status_data)
+            synced_repos = sum(
+                1
+                for status in status_data.values()
+                if status["sync_status"] == "synced"
+            )
+            conflict_repos = sum(
+                1
+                for status in status_data.values()
+                if status.get("has_conflicts", False)
+            )
+
+            console.print()
+            console.print(
+                f"📈 Summary: {synced_repos}/{total_repos} repositories synced",
+                style="cyan",
+            )
+            if conflict_repos > 0:
+                console.print(
+                    f"⚠️  {conflict_repos} repositories have conflicts requiring attention",
+                    style="yellow",
+                )
+
+    except AuthenticationError as e:
+        console.print(f"❌ Authentication failed: {e}", style="red")
+        console.print(
+            "   💡 Check your credentials with 'cidx auth update'", style="dim"
+        )
+        sys.exit(1)
+    except NetworkError as e:
+        console.print(f"❌ Network error: {e}", style="red")
+        console.print(
+            "   💡 Check your internet connection and server URL", style="dim"
+        )
+        sys.exit(1)
+    except APIClientError as e:
+        console.print(f"❌ API error: {e}", style="red")
+        if e.status_code == 404:
+            console.print(
+                "   💡 Repository not found - check repository alias", style="dim"
+            )
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"❌ Failed to get sync status: {e}", style="red")
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+class ActivationProgressDisplay:
+    """Display class for repository activation progress."""
+
+    def __init__(self):
+        """Initialize progress display."""
+        from rich.progress import (
+            Progress,
+            SpinnerColumn,
+            TextColumn,
+            BarColumn,
+            TaskProgressColumn,
+        )
+        from rich.console import Console
+
+        self.console = Console()
+        self.progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=self.console,
+        )
+
+    def show_activation_progress(self, golden_alias: str, user_alias: str):
+        """Display activation progress with real-time updates."""
+        self.console.print(
+            f"🚀 Activating repository '{golden_alias}' as '{user_alias}'",
+            style="bold blue",
+        )
+        self.console.print(
+            "   This may take a moment for large repositories...", style="dim"
+        )
+
+    def show_activation_complete(self, user_alias: str, next_steps: List[str]):
+        """Display completion message with next steps."""
+        self.console.print(
+            f"✅ Repository '{user_alias}' activated successfully!", style="bold green"
+        )
+
+        if next_steps:
+            self.console.print("\n💡 Next Steps:", style="bold cyan")
+            for step in next_steps:
+                self.console.print(f"   • {step}", style="dim")
+
+
+def execute_repository_activation(
+    golden_alias: str, user_alias: str, target_branch: Optional[str] = None
+):
+    """Execute repository activation with progress monitoring."""
+    import asyncio
+    from pathlib import Path
+    from .api_clients.repos_client import ReposAPIClient
+    from .mode_detection.command_mode_detector import find_project_root
+
+    # Get project root and credentials
+    project_root = find_project_root(Path.cwd())
+    if not project_root:
+        raise Exception("Not in a CIDX project directory")
+
+    from .remote.sync_execution import _load_and_decrypt_credentials
+
+    credentials = _load_and_decrypt_credentials(project_root)
+
+    if not credentials:
+        raise Exception("No remote credentials found. Use 'cidx init-remote' first.")
+
+    # Initialize progress display
+    progress_display = ActivationProgressDisplay()
+    progress_display.show_activation_progress(golden_alias, user_alias)
+
+    # Create client and execute activation
+    async def do_activation():
+        client = ReposAPIClient(
+            server_url=credentials["server_url"],
+            credentials=credentials,
+            project_root=project_root,
+        )
+        try:
+            return await client.activate_repository(
+                golden_alias=golden_alias,
+                user_alias=user_alias,
+                target_branch=target_branch,
+            )
+        finally:
+            await client.close()
+
+    asyncio.run(do_activation())
+
+    # Show completion with next steps
+    next_steps = [
+        'Query the repository: cidx query "your search terms"',
+        "Check repository status: cidx repos list",
+        f"Switch branches: cidx repos branch {user_alias} <branch-name>",
+    ]
+
+    progress_display.show_activation_complete(user_alias, next_steps)
+
+
+def execute_repository_deactivation(
+    user_alias: str, force: bool = False, confirmed: bool = False
+):
+    """Execute repository deactivation with cleanup."""
+    import asyncio
+    from pathlib import Path
+    from .api_clients.repos_client import ReposAPIClient
+    from .mode_detection.command_mode_detector import find_project_root
+
+    # Get project root and credentials
+    project_root = find_project_root(Path.cwd())
+    if not project_root:
+        raise Exception("Not in a CIDX project directory")
+
+    from .remote.sync_execution import _load_and_decrypt_credentials
+
+    credentials = _load_and_decrypt_credentials(project_root)
+
+    if not credentials:
+        raise Exception("No remote credentials found. Use 'cidx init-remote' first.")
+
+    if not confirmed:
+        raise Exception("Deactivation not confirmed")
+
+    # Create client and execute deactivation
+    console.print(f"🗑️  Deactivating repository '{user_alias}'...", style="yellow")
+
+    async def do_deactivation():
+        client = ReposAPIClient(
+            server_url=credentials["server_url"],
+            credentials=credentials,
+            project_root=project_root,
+        )
+        try:
+            return await client.deactivate_repository(
+                user_alias=user_alias, force=force
+            )
+        finally:
+            await client.close()
+
+    result = asyncio.run(do_deactivation())
+
+    # Show completion message
+    console.print(
+        f"✅ Repository '{user_alias}' deactivated successfully", style="bold green"
+    )
+
+    if "cleanup_summary" in result:
+        summary = result["cleanup_summary"]
+        console.print("📊 Cleanup Summary:", style="bold cyan")
+        if "containers_stopped" in summary:
+            console.print(
+                f"   • Containers stopped: {summary['containers_stopped']}", style="dim"
+            )
+        if "storage_freed" in summary:
+            console.print(
+                f"   • Storage freed: {summary['storage_freed']}", style="dim"
+            )
+
+    if "warnings" in result:
+        for warning in result["warnings"]:
+            console.print(f"⚠️  {warning}", style="yellow")
+
+
+async def _execute_repository_info(
+    server_url: str,
+    credentials: Dict[str, Any],
+    project_root: Path,
+    user_alias: str,
+    branches: bool = False,
+    health: bool = False,
+    activity: bool = False,
+):
+    """Execute repository information retrieval with rich formatting."""
+    from .api_clients.repos_client import ReposAPIClient
+
+    # Create client and fetch repository information
+    client = ReposAPIClient(
+        server_url=server_url, credentials=credentials, project_root=project_root
+    )
+
+    try:
+        repo_info = await client.get_repository_info(
+            user_alias=user_alias, branches=branches, health=health, activity=activity
+        )
+
+        # Display repository information with rich formatting
+        _display_repository_info(repo_info, branches, health, activity)
+
+    except Exception as e:
+        console.print(f"❌ Failed to get repository info: {e}", style="red")
+        raise
+    finally:
+        await client.close()
+
+
+async def _execute_branch_switch(
+    server_url: str,
+    credentials: Dict[str, Any],
+    project_root: Path,
+    user_alias: str,
+    branch_name: str,
+    create: bool = False,
+):
+    """Execute repository branch switching."""
+    from .api_clients.repos_client import ReposAPIClient
+
+    # Create client and switch branch
+    client = ReposAPIClient(
+        server_url=server_url, credentials=credentials, project_root=project_root
+    )
+
+    try:
+        result = await client.switch_repository_branch(
+            user_alias=user_alias, branch_name=branch_name, create=create
+        )
+
+        # Display switch result
+        _display_branch_switch_result(result)
+
+    except Exception as e:
+        console.print(f"❌ Failed to switch branch: {e}", style="red")
+        raise
+    finally:
+        await client.close()
+
+
+def _display_repository_info(
+    repo_info: Dict[str, Any], branches: bool, health: bool, activity: bool
+):
+    """Display repository information with rich formatting."""
+
+    alias = repo_info.get("alias", "Unknown")
+    console.print(f"\n[bold cyan]Repository Information: {alias}[/bold cyan]")
+    console.print("=" * (25 + len(alias)))
+
+    # Basic Information Section
+    console.print("\n[bold]Basic Information:[/bold]")
+    basic_info = [
+        f"  Alias: {repo_info.get('alias', 'N/A')}",
+        f"  Golden Repository: {repo_info.get('golden_repository', 'N/A')}",
+        f"  Git URL: {repo_info.get('git_url', 'N/A')}",
+        f"  Current Branch: {repo_info.get('current_branch', 'N/A')}",
+        f"  Activated: {repo_info.get('activation_date', 'N/A')}",
+    ]
+    for info in basic_info:
+        console.print(info)
+
+    # Branch Information Section
+    if branches and "branches" in repo_info:
+        console.print("\n[bold]Branch Information:[/bold]")
+        for branch in repo_info["branches"]:
+            if branch.get("is_current", False):
+                console.print(
+                    f"  * [green]{branch['name']} (current)[/green]",
+                    style="bold",
+                )
+            else:
+                console.print(f"    {branch['name']}")
+
+            if "last_commit" in branch:
+                commit = branch["last_commit"]
+                console.print(
+                    f"    └── Last commit: {commit.get('message', 'N/A')} "
+                    f"({commit.get('timestamp', 'N/A')})",
+                    style="dim",
+                )
+
+    # Status Section
+    console.print("\n[bold]Status:[/bold]")
+    sync_status = repo_info.get("sync_status", "unknown")
+    if sync_status == "up_to_date":
+        console.print("  Sync Status: ✓ Up to date with golden repository")
+    else:
+        console.print(f"  Sync Status: ⚠️  {sync_status}")
+
+    console.print(f"  Last Sync: {repo_info.get('last_sync', 'N/A')}")
+
+    container_status = repo_info.get("container_status", "unknown")
+    if container_status == "running":
+        console.print("  Container Status: ✓ Running and ready for queries")
+    else:
+        console.print(f"  Container Status: ⚠️  {container_status}")
+
+    index_status = repo_info.get("index_status", "unknown")
+    if index_status == "complete":
+        console.print("  Index Status: ✓ Fully indexed")
+    else:
+        console.print(f"  Index Status: ⚠️  {index_status}")
+
+    query_ready = repo_info.get("query_ready", False)
+    if query_ready:
+        console.print("  Query Readiness: ✓ Ready")
+    else:
+        console.print("  Query Readiness: ❌ Not ready")
+
+    # Health Information Section
+    if health and "health" in repo_info:
+        console.print("\n[bold]Health Information:[/bold]")
+        health_info = repo_info["health"]
+
+        console.print(
+            f"  Container Status: ✓ {health_info.get('container_status', 'N/A')}"
+        )
+
+        if "services" in health_info:
+            console.print("  Services:")
+            for service, details in health_info["services"].items():
+                status = details.get("status", "unknown")
+                port = details.get("port", "N/A")
+                if status == "healthy":
+                    console.print(f"    {service}: ✓ Healthy (port {port})")
+                else:
+                    console.print(f"    {service}: ❌ {status} (port {port})")
+
+        # Storage Information
+        if "storage" in health_info:
+            console.print("\n[bold]Storage Information:[/bold]")
+            storage = health_info["storage"]
+            console.print(f"  Disk Usage: {storage.get('disk_usage_mb', 'N/A')} MB")
+            console.print(
+                f"  Available Space: {storage.get('available_space_gb', 'N/A')} GB"
+            )
+            console.print(f"  Index Size: {storage.get('index_size_mb', 'N/A')} MB")
+
+        # Recommendations
+        if "recommendations" in health_info and health_info["recommendations"]:
+            console.print("\n[bold]Recommendations:[/bold]")
+            for rec in health_info["recommendations"]:
+                console.print(f"  • {rec}", style="dim")
+
+    # Activity Information Section
+    if activity and "activity" in repo_info:
+        console.print("\n[bold]Activity Information:[/bold]")
+        activity_info = repo_info["activity"]
+
+        if "recent_commits" in activity_info:
+            console.print("  Recent Commits:")
+            for commit in activity_info["recent_commits"][:5]:  # Show last 5
+                console.print(
+                    f"    {commit.get('commit_hash', 'N/A')[:7]}: "
+                    f"{commit.get('message', 'N/A')}",
+                    style="dim",
+                )
+
+        if "sync_history" in activity_info:
+            console.print("  Sync History:")
+            for sync in activity_info["sync_history"][:3]:  # Show last 3
+                console.print(
+                    f"    {sync.get('timestamp', 'N/A')}: "
+                    f"{sync.get('status', 'N/A')} - {sync.get('changes', 'N/A')}",
+                    style="dim",
+                )
+
+        if "query_activity" in activity_info:
+            query_activity = activity_info["query_activity"]
+            console.print("  Query Activity:")
+            console.print(
+                f"    Recent queries: {query_activity.get('recent_queries', 'N/A')}"
+            )
+            console.print(f"    Last query: {query_activity.get('last_query', 'N/A')}")
+
+        if "branch_operations" in activity_info:
+            console.print("  Branch Operations:")
+            for op in activity_info["branch_operations"][:3]:  # Show last 3
+                console.print(
+                    f"    {op.get('operation', 'N/A')}: "
+                    f"{op.get('from_branch', 'N/A')} → {op.get('to_branch', 'N/A')}",
+                    style="dim",
+                )
+
+    console.print()  # Add spacing
+
+
+def _display_branch_switch_result(result: Dict[str, Any]):
+    """Display branch switch operation result."""
+    status = result.get("status", "unknown")
+    message = result.get("message", "Branch switch completed")
+
+    if status == "success":
+        console.print(f"✅ {message}", style="bold green")
+    else:
+        console.print(f"❌ {message}", style="red")
+
+    # Show additional details
+    if "previous_branch" in result:
+        console.print(f"   Previous branch: {result['previous_branch']}", style="dim")
+
+    if "new_branch" in result:
+        console.print(f"   New branch: {result['new_branch']}", style="dim")
+
+    if result.get("branch_created", False):
+        console.print("   ✨ New branch created", style="green")
+
+    if result.get("tracking_branch_created", False):
+        console.print(
+            f"   🔗 Created local tracking branch for {result.get('remote_origin', 'remote')}",
+            style="green",
+        )
+
+    if result.get("uncommitted_changes_preserved", False):
+        console.print("   💾 Uncommitted changes preserved", style="yellow")
+        if "preserved_files" in result:
+            console.print("   Preserved files:", style="dim")
+            for file in result["preserved_files"][:5]:  # Show first 5
+                console.print(f"     • {file}", style="dim")
+
+    if result.get("container_updated", False):
+        console.print("   🔄 Container configuration updated", style="blue")
+
+    if result.get("container_restart_required", False):
+        console.print(
+            "   ⚠️  Container restart may be required for full functionality",
+            style="yellow",
+        )
+
+
+# Repository formatting functions for table display
+def format_repository_list(repositories):
+    """Format activated repository list as a rich table.
+
+    Args:
+        repositories: List of ActivatedRepository objects
+
+    Returns:
+        str: Formatted table output
+    """
+    from rich.table import Table
+    from rich.console import Console
+    from datetime import datetime, timezone
+    from io import StringIO
+
+    # Create table
+    table = Table(title="Activated Repositories", show_header=True)
+    table.add_column("Alias", style="cyan")
+    table.add_column("Branch", style="green")
+    table.add_column("Sync Status", style="yellow")
+    table.add_column("Last Sync", style="magenta")
+    table.add_column("Actions", style="white")
+
+    for repo in repositories:
+        # Format sync status with icons
+        if repo.sync_status == "synced":
+            status = "✓ Synced"
+            status_style = "green"
+        elif repo.sync_status == "needs_sync":
+            status = "⚠ Needs sync"
+            status_style = "yellow"
+        elif repo.sync_status == "conflict":
+            status = "✗ Conflict"
+            status_style = "red"
+        else:
+            status = repo.sync_status
+            status_style = "white"
+
+        # Format last sync time
+        try:
+            last_sync = datetime.fromisoformat(repo.last_sync.replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            diff = now - last_sync
+
+            if diff.days > 0:
+                time_str = f"{diff.days}d ago"
+            elif diff.seconds > 3600:
+                time_str = f"{diff.seconds // 3600}h ago"
+            else:
+                time_str = f"{diff.seconds // 60}m ago"
+        except (ValueError, TypeError, AttributeError):
+            time_str = "Unknown"
+
+        # Suggest actions
+        actions = ""
+        if repo.sync_status == "needs_sync":
+            actions = "sync"
+        elif repo.sync_status == "conflict":
+            actions = "resolve"
+
+        table.add_row(
+            repo.alias,
+            repo.current_branch,
+            f"[{status_style}]{status}[/{status_style}]",
+            time_str,
+            actions,
+        )
+
+    # Capture table output
+    console = Console(file=StringIO(), width=120)
+    console.print(table)
+    output = console.file.getvalue()
+    console.file.close()
+    return output
+
+
+def format_available_repositories(repositories):
+    """Format available repository list as a rich table.
+
+    Args:
+        repositories: List of GoldenRepository objects
+
+    Returns:
+        str: Formatted table output
+    """
+    from rich.table import Table
+    from rich.console import Console
+    from io import StringIO
+
+    # Create table
+    table = Table(title="Available Golden Repositories", show_header=True)
+    table.add_column("Alias", style="cyan")
+    table.add_column("Description", style="white", max_width=50)
+    table.add_column("Default Branch", style="green")
+    table.add_column("Branches", style="yellow")
+    table.add_column("Status", style="magenta")
+
+    for repo in repositories:
+        # Format activation status
+        if repo.is_activated:
+            status = "✓ Already activated"
+            status_style = "green"
+        else:
+            status = "Available"
+            status_style = "yellow"
+
+        # Format branches (show first few)
+        branches = repo.indexed_branches[:3]
+        if len(repo.indexed_branches) > 3:
+            branches_str = (
+                ", ".join(branches) + f" (+{len(repo.indexed_branches) - 3} more)"
+            )
+        else:
+            branches_str = ", ".join(branches)
+
+        table.add_row(
+            repo.alias,
+            repo.description,
+            repo.default_branch,
+            branches_str,
+            f"[{status_style}]{status}[/{status_style}]",
+        )
+
+    # Capture table output
+    console = Console(file=StringIO(), width=120)
+    console.print(table)
+    output = console.file.getvalue()
+    console.file.close()
+    return output
+
+
+def format_discovery_results(discovery_result):
+    """Format repository discovery results.
+
+    Args:
+        discovery_result: RepositoryDiscoveryResult object
+
+    Returns:
+        str: Formatted discovery output
+    """
+    from rich.table import Table
+    from rich.console import Console
+    from io import StringIO
+
+    output_lines = []
+
+    # Header
+    output_lines.append("🔍 Repository Discovery Results")
+    output_lines.append(f"Source: {discovery_result.source}")
+    output_lines.append(f"Total discovered: {discovery_result.total_discovered}")
+    output_lines.append("")
+
+    if discovery_result.discovered_repositories:
+        # Create table for discovered repositories
+        table = Table(title="Discovered Repositories", show_header=True)
+        table.add_column("Name", style="cyan")
+        table.add_column("Description", style="white", max_width=40)
+        table.add_column("URL", style="blue", max_width=50)
+        table.add_column("Status", style="yellow")
+
+        for repo in discovery_result.discovered_repositories:
+            # Format status
+            if repo.is_available:
+                status = "✓ Available"
+                status_style = "green"
+            elif repo.is_accessible:
+                status = "⚠ Accessible"
+                status_style = "yellow"
+            else:
+                status = "✗ Inaccessible"
+                status_style = "red"
+
+            table.add_row(
+                repo.name,
+                repo.description,
+                repo.url,
+                f"[{status_style}]{status}[/{status_style}]",
+            )
+
+        # Capture table output
+        console = Console(file=StringIO(), width=120)
+        console.print(table)
+        table_output = console.file.getvalue()
+        console.file.close()
+        output_lines.append(table_output)
+
+    # Access errors
+    if discovery_result.access_errors:
+        output_lines.append("\n⚠️ Access Errors:")
+        for error in discovery_result.access_errors:
+            output_lines.append(f"   • {error}")
+
+    return "\n".join(output_lines)
+
+
+def format_status_summary(summary):
+    """Format repository status summary in dashboard-style layout.
+
+    Args:
+        summary: RepositoryStatusSummary object
+
+    Returns:
+        str: Formatted dashboard output
+    """
+
+    output_lines = []
+
+    # Title
+    output_lines.append("📊 Repository Status Dashboard")
+    output_lines.append("")
+
+    # Activated repositories summary
+    activated = summary.activated_repositories
+    output_lines.append("📦 Activated Repositories:")
+    output_lines.append(f"   Total: {activated.total_count}")
+    output_lines.append(f"   ✓ Synced: {activated.synced_count}")
+    output_lines.append(f"   ⚠ Need sync: {activated.needs_sync_count}")
+    output_lines.append(f"   ✗ Conflicts: {activated.conflict_count}")
+    output_lines.append("")
+
+    # Available repositories summary
+    available = summary.available_repositories
+    output_lines.append("🏛️ Available Repositories:")
+    output_lines.append(f"   Total: {available.total_count}")
+    output_lines.append(f"   Not activated: {available.not_activated_count}")
+    output_lines.append("")
+
+    # Recent activity
+    if summary.recent_activity.recent_syncs:
+        output_lines.append("🔄 Recent Activity:")
+        for sync in summary.recent_activity.recent_syncs:
+            status_icon = "✓" if sync["status"] == "success" else "✗"
+            output_lines.append(
+                f"   {status_icon} {sync['alias']} - {sync['sync_date']}"
+            )
+        output_lines.append("")
+
+    # Recent activations
+    if activated.recent_activations:
+        output_lines.append("🆕 Recent Activations:")
+        for activation in activated.recent_activations:
+            output_lines.append(
+                f"   • {activation['alias']} - {activation['activation_date']}"
+            )
+        output_lines.append("")
+
+    # Recommendations
+    if summary.recommendations:
+        output_lines.append("💡 Recommendations:")
+        for rec in summary.recommendations:
+            output_lines.append(f"   • {rec}")
+
+    return "\n".join(output_lines)
+
+
+# Jobs command group
+@cli.group()
+def jobs():
+    """Manage background jobs and monitor their status."""
+    pass
+
+
+@jobs.command("list")
+@click.option(
+    "--status",
+    type=click.Choice(["running", "completed", "failed", "cancelled"]),
+    help="Filter jobs by status",
+)
+@click.option(
+    "--limit",
+    type=int,
+    default=10,
+    help="Maximum number of jobs to display (default: 10)",
+)
+@click.pass_context
+@require_mode("remote")
+def list_jobs(ctx, status: Optional[str], limit: int):
+    """List background jobs with their current status.
+
+    \b
+    Shows running, completed, failed, and cancelled jobs with details including:
+    • Job ID and operation type
+    • Current status and progress
+    • Started time and completion time
+    • Associated repository
+
+    \b
+    EXAMPLES:
+      cidx jobs list                    # Show all recent jobs
+      cidx jobs list --status running  # Show only running jobs
+      cidx jobs list --limit 20        # Show up to 20 jobs
+    """
+    import asyncio
+    from pathlib import Path
+    from .api_clients.jobs_client import JobsAPIClient
+    from .remote.credential_manager import load_encrypted_credentials
+    from .remote.config import load_remote_configuration
+
+    try:
+        # Find project root
+        project_root = find_project_root(Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print(
+                "Run 'cidx init --remote <server-url> --username <user> --password <pass>' first"
+            )
+            sys.exit(1)
+
+        # Load remote configuration
+        try:
+            remote_config = load_remote_configuration(project_root)
+        except FileNotFoundError:
+            console.print("❌ No remote configuration found", style="red")
+            console.print(
+                "Run 'cidx init --remote <server-url> --username <user> --password <pass>' first"
+            )
+            sys.exit(1)
+
+        # Load and decrypt credentials
+        try:
+            encrypted_data = load_encrypted_credentials(project_root)
+            credential_manager = ProjectCredentialManager()
+            decrypted_creds = credential_manager.decrypt_credentials(
+                encrypted_data=encrypted_data,
+                username=remote_config["username"],
+                repo_path=str(project_root),
+                server_url=remote_config["server_url"],
+            )
+
+            # Create credentials dict for JobsAPIClient
+            credentials = {
+                "username": decrypted_creds.username,
+                "password": decrypted_creds.password,
+                "server_url": decrypted_creds.server_url,
+            }
+            server_url = decrypted_creds.server_url
+
+        except Exception as e:
+            console.print(f"❌ Failed to load credentials: {e}", style="red")
+            console.print(
+                "Run 'cidx init --remote <server-url> --username <user> --password <pass>' first"
+            )
+            sys.exit(1)
+
+        # Create jobs client and list jobs
+        async def _list_jobs():
+            async with JobsAPIClient(
+                server_url=server_url,
+                credentials=credentials,
+                project_root=project_root,
+            ) as client:
+                jobs_response = await client.list_jobs(
+                    status=status,
+                    limit=limit,
+                )
+                return jobs_response
+
+        # Run async function
+        jobs_response = asyncio.run(_list_jobs())
+
+        # Display results
+        _display_jobs_table(jobs_response, status)
+
+    except Exception as e:
+        console.print(f"❌ Failed to list jobs: {e}", style="red")
+        sys.exit(1)
+
+
+@jobs.command("cancel")
+@click.argument("job_id", required=True)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Skip confirmation prompt and cancel immediately",
+)
+@click.pass_context
+@require_mode("remote")
+def cancel_job(ctx, job_id: str, force: bool):
+    """Cancel a background job.
+
+    \b
+    Cancels a running or queued background job. By default, prompts for
+    confirmation before cancelling. Use --force to skip confirmation.
+
+    \b
+    EXAMPLES:
+      cidx jobs cancel job-123-abc            # Cancel with confirmation
+      cidx jobs cancel job-456-def --force    # Cancel without confirmation
+    """
+    import asyncio
+    from pathlib import Path
+    from .api_clients.jobs_client import JobsAPIClient
+    from .remote.credential_manager import load_encrypted_credentials
+    from .remote.config import load_remote_configuration
+
+    try:
+        # Find project root
+        project_root = find_project_root(Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print(
+                "Run 'cidx init --remote <server-url> --username <user> --password <pass>' first"
+            )
+            sys.exit(1)
+
+        # Load remote configuration
+        try:
+            remote_config = load_remote_configuration(project_root)
+        except FileNotFoundError:
+            console.print("❌ No remote configuration found", style="red")
+            console.print(
+                "Run 'cidx init --remote <server-url> --username <user> --password <pass>' first"
+            )
+            sys.exit(1)
+
+        # Load and decrypt credentials
+        try:
+            encrypted_data = load_encrypted_credentials(project_root)
+            credential_manager = ProjectCredentialManager()
+            decrypted_creds = credential_manager.decrypt_credentials(
+                encrypted_data=encrypted_data,
+                username=remote_config["username"],
+                repo_path=str(project_root),
+                server_url=remote_config["server_url"],
+            )
+
+            # Create credentials dict for JobsAPIClient
+            credentials = {
+                "username": decrypted_creds.username,
+                "password": decrypted_creds.password,
+                "server_url": decrypted_creds.server_url,
+            }
+            server_url = decrypted_creds.server_url
+
+        except Exception as e:
+            console.print(f"❌ Failed to load credentials: {e}", style="red")
+            console.print(
+                "Run 'cidx init --remote <server-url> --username <user> --password <pass>' first"
+            )
+            sys.exit(1)
+
+        # Confirmation prompt unless --force is used
+        if not force:
+            console.print(
+                f"⚠️  You are about to cancel job: [bold]{job_id}[/bold]", style="yellow"
+            )
+            confirmation = (
+                input("Are you sure you want to cancel this job? (y/N): ")
+                .lower()
+                .strip()
+            )
+            if confirmation not in ["y", "yes"]:
+                console.print("Operation cancelled", style="yellow")
+                return
+
+        # Cancel the job
+        async def _cancel_job():
+            async with JobsAPIClient(
+                server_url=server_url,
+                credentials=credentials,
+                project_root=project_root,
+            ) as client:
+                result = await client.cancel_job(job_id)
+                return result
+
+        # Run async function
+        result = asyncio.run(_cancel_job())
+
+        # Display success
+        console.print(f"✅ Job {job_id} cancelled successfully", style="green")
+        if "message" in result:
+            console.print(f"   {result['message']}", style="dim")
+
+    except Exception as e:
+        console.print(f"❌ Failed to cancel job: {e}", style="red")
+        sys.exit(1)
+
+
+@jobs.command("status")
+@click.argument("job_id", required=True)
+@click.pass_context
+@require_mode("remote")
+def job_status(ctx, job_id: str):
+    """Show detailed status of a specific job.
+
+    \b
+    Displays comprehensive information about a background job including:
+    • Job ID and operation type
+    • Current status and progress percentage
+    • Timestamps (created, started, completed)
+    • Associated repository and user
+    • Error details (if failed)
+
+    \b
+    EXAMPLES:
+      cidx jobs status job-123-abc     # Show detailed job status
+    """
+    import asyncio
+    from pathlib import Path
+    from .api_clients.jobs_client import JobsAPIClient
+    from .remote.credential_manager import load_encrypted_credentials
+    from .remote.config import load_remote_configuration
+
+    try:
+        # Find project root
+        project_root = find_project_root(Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print(
+                "Run 'cidx init --remote <server-url> --username <user> --password <pass>' first"
+            )
+            sys.exit(1)
+
+        # Load remote configuration
+        try:
+            remote_config = load_remote_configuration(project_root)
+        except FileNotFoundError:
+            console.print("❌ No remote configuration found", style="red")
+            console.print(
+                "Run 'cidx init --remote <server-url> --username <user> --password <pass>' first"
+            )
+            sys.exit(1)
+
+        # Load and decrypt credentials
+        try:
+            encrypted_data = load_encrypted_credentials(project_root)
+            credential_manager = ProjectCredentialManager()
+            decrypted_creds = credential_manager.decrypt_credentials(
+                encrypted_data=encrypted_data,
+                username=remote_config["username"],
+                repo_path=str(project_root),
+                server_url=remote_config["server_url"],
+            )
+
+            # Create credentials dict for JobsAPIClient
+            credentials = {
+                "username": decrypted_creds.username,
+                "password": decrypted_creds.password,
+                "server_url": decrypted_creds.server_url,
+            }
+            server_url = decrypted_creds.server_url
+
+        except Exception as e:
+            console.print(f"❌ Failed to load credentials: {e}", style="red")
+            console.print(
+                "Run 'cidx init --remote <server-url> --username <user> --password <pass>' first"
+            )
+            sys.exit(1)
+
+        # Get job status
+        async def _get_job_status():
+            async with JobsAPIClient(
+                server_url=server_url,
+                credentials=credentials,
+                project_root=project_root,
+            ) as client:
+                status = await client.get_job_status(job_id)
+                return status
+
+        # Run async function
+        job_data = asyncio.run(_get_job_status())
+
+        # Display detailed status
+        _display_job_details(job_data)
+
+    except Exception as e:
+        console.print(f"❌ Failed to get job status: {e}", style="red")
+        sys.exit(1)
+
+
+def _display_job_details(job_data: dict):
+    """Display detailed job information in a formatted way."""
+    from rich.table import Table
+    from rich.panel import Panel
+    from datetime import datetime
+
+    job_id = job_data.get("id") or job_data.get("job_id", "unknown")
+    operation_type = job_data.get("operation_type", "unknown")
+    status = job_data.get("status", "unknown")
+    progress = job_data.get("progress", 0)
+
+    # Create header with job ID and status
+    if status == "running":
+        status_emoji = "🔄"
+        status_style = "blue"
+    elif status == "completed":
+        status_emoji = "✅"
+        status_style = "green"
+    elif status == "failed":
+        status_emoji = "❌"
+        status_style = "red"
+    elif status == "cancelled":
+        status_emoji = "⏹️"
+        status_style = "yellow"
+    else:
+        status_emoji = "❓"
+        status_style = "white"
+
+    title = f"{status_emoji} Job {job_id[:12]}{'...' if len(job_id) > 12 else ''}"
+
+    # Create details table
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    table.add_column("Field", style="bold cyan", width=15)
+    table.add_column("Value", style="white")
+
+    # Basic info
+    table.add_row("Job ID", job_id)
+    table.add_row("Operation", operation_type.replace("operation_", "").title())
+    table.add_row(
+        "Status", f"[{status_style}]{status_emoji} {status.title()}[/{status_style}]"
+    )
+    table.add_row("Progress", f"{progress}%")
+
+    # Timestamps
+    for field, label in [
+        ("created_at", "Created"),
+        ("started_at", "Started"),
+        ("completed_at", "Completed"),
+        ("updated_at", "Last Update"),
+    ]:
+        timestamp = job_data.get(field, "")
+        if timestamp:
+            try:
+                # Parse ISO format and display in readable format
+                dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                formatted_time = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+                table.add_row(label, formatted_time)
+            except Exception:
+                table.add_row(label, timestamp)
+
+    # Additional info
+    if "repository_id" in job_data:
+        table.add_row("Repository", job_data["repository_id"])
+    if "username" in job_data:
+        table.add_row("User", job_data["username"])
+
+    # Error details for failed jobs
+    if status == "failed" and "error_details" in job_data:
+        table.add_row("Error", f"[red]{job_data['error_details']}[/red]")
+
+    # Display in panel
+    panel = Panel(table, title=title, title_align="left", border_style=status_style)
+    console.print(panel)
+
+
+def _display_jobs_table(jobs_response: dict, status_filter: Optional[str]):
+    """Display jobs in a formatted table."""
+    from rich.table import Table
+    from datetime import datetime
+    import re
+
+    jobs = jobs_response.get("jobs", [])
+    total = jobs_response.get("total", 0)
+
+    if not jobs:
+        if status_filter:
+            console.print(
+                f"No jobs found with status '{status_filter}'", style="yellow"
+            )
+        else:
+            console.print("No jobs found", style="yellow")
+        return
+
+    # Create table
+    table = Table(title=f"Background Jobs ({total} total)")
+    table.add_column("Job ID", style="cyan", no_wrap=True)
+    table.add_column("Type", style="blue")
+    table.add_column("Status", style="green")
+    table.add_column("Progress", style="yellow", justify="right")
+    table.add_column("Started", style="magenta")
+    table.add_column("Username", style="dim")
+
+    for job in jobs:
+        # Format job ID (show first 8 characters)
+        job_id = job.get("id") or job.get("job_id", "")
+        job_id_short = job_id[:8]
+
+        # Format operation type
+        operation_type = job.get("operation_type", "unknown")
+        operation_type = re.sub(r"operation_", "", operation_type)
+
+        # Format status with appropriate styling
+        status = job.get("status", "unknown")
+        if status == "running":
+            status_display = f"🔄 {status}"
+        elif status == "completed":
+            status_display = f"✅ {status}"
+        elif status == "failed":
+            status_display = f"❌ {status}"
+        elif status == "cancelled":
+            status_display = f"⏹️ {status}"
+        else:
+            status_display = f"❓ {status}"
+
+        # Format progress
+        progress = job.get("progress", 0)
+        progress_display = f"{progress}%"
+
+        # Format started time
+        started_at = job.get("started_at", "")
+        if started_at:
+            try:
+                # Parse ISO format and display relative time
+                started_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+                now = datetime.now(started_dt.tzinfo)
+                diff = now - started_dt
+
+                if diff.days > 0:
+                    time_display = f"{diff.days}d ago"
+                elif diff.seconds > 3600:
+                    hours = diff.seconds // 3600
+                    time_display = f"{hours}h ago"
+                elif diff.seconds > 60:
+                    minutes = diff.seconds // 60
+                    time_display = f"{minutes}m ago"
+                else:
+                    time_display = "just now"
+            except Exception:
+                time_display = started_at[:16]  # fallback
+        else:
+            time_display = "unknown"
+
+        # Get username
+        username = job.get("username", "unknown")
+
+        table.add_row(
+            job_id_short,
+            operation_type,
+            status_display,
+            progress_display,
+            time_display,
+            username,
+        )
+
+    console.print(table)
+
+    # Show filter info if applied
+    if status_filter:
+        console.print(f"\nFiltered by status: {status_filter}", style="dim")
+
+
+# Administrative commands
+@cli.group("admin")
+@click.pass_context
+@require_mode("remote")
+def admin_group(ctx):
+    """Administrative commands for CIDX server management.
+
+    Provides administrative functionality including user management,
+    system monitoring, and server configuration. Requires admin privileges.
+    """
+    pass
+
+
+@admin_group.group("users")
+@click.pass_context
+def admin_users_group(ctx):
+    """User management commands.
+
+    Administrative commands for creating, listing, and managing
+    user accounts on the CIDX server.
+    """
+    pass
+
+
+@admin_users_group.command("create")
+@click.argument("username", required=True)
+@click.option(
+    "--email", help="Email address for the new user (optional but recommended)"
+)
+@click.option(
+    "--password", help="Password for the new user (will be prompted if not provided)"
+)
+@click.option(
+    "--role",
+    default="normal_user",
+    type=click.Choice(["admin", "power_user", "normal_user"]),
+    help="Role for the new user (default: normal_user)",
+)
+@click.pass_context
+def admin_users_create(
+    ctx, username: str, email: Optional[str], password: Optional[str], role: str
+):
+    """Create a new user account with specified role.
+
+    Creates a new user account on the CIDX server with the specified
+    username, role, and optionally email. Requires admin privileges.
+
+    Examples:
+        cidx admin users create johndoe --email john@example.com --role power_user
+        cidx admin users create admin_user --role admin
+        cidx admin users create regular_user  # Uses normal_user role by default
+    """
+    try:
+        from .validation.user_validation import (
+            validate_username,
+            validate_email,
+            validate_password,
+            validate_role,
+            UserValidationError,
+        )
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+        from .remote.credential_manager import (
+            CredentialNotFoundError,
+            load_encrypted_credentials,
+            ProjectCredentialManager,
+        )
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print("Run 'cidx init' to initialize project first", style="dim")
+            sys.exit(1)
+
+        # Load remote configuration
+        remote_config = load_remote_configuration(project_root)
+        server_url = remote_config["server_url"]
+
+        # Load and decrypt credentials
+        try:
+            encrypted_data = load_encrypted_credentials(project_root)
+            credential_manager = ProjectCredentialManager()
+
+            # We need username from remote config for decryption
+            username_for_creds = remote_config.get("username")
+            if not username_for_creds:
+                console.print(
+                    "❌ No username found in remote configuration", style="red"
+                )
+                console.print(
+                    "Run 'cidx auth login' to authenticate first", style="dim"
+                )
+                sys.exit(1)
+
+            decrypted_creds = credential_manager.decrypt_credentials(
+                encrypted_data=encrypted_data,
+                username=username_for_creds,
+                repo_path=str(project_root),
+                server_url=server_url,
+            )
+
+            credentials = {
+                "username": decrypted_creds.username,
+                "password": decrypted_creds.password,
+            }
+        except (CredentialNotFoundError, Exception):
+            console.print("❌ No credentials found", style="red")
+            console.print("Run 'cidx auth login' to authenticate first", style="dim")
+            sys.exit(1)
+
+        # Validate input parameters
+        try:
+            username = validate_username(username)
+            role = validate_role(role)
+
+            if email:
+                email = validate_email(email)
+
+        except UserValidationError as e:
+            console.print(f"❌ Validation error: {e}", style="red")
+            sys.exit(1)
+
+        # Get password if not provided
+        if not password:
+            password = getpass.getpass("Password for new user: ")
+            if not password:
+                console.print("❌ Password cannot be empty", style="red")
+                sys.exit(1)
+
+            # Confirm password
+            password_confirm = getpass.getpass("Confirm password: ")
+            if password != password_confirm:
+                console.print("❌ Passwords do not match", style="red")
+                sys.exit(1)
+
+        # Validate password
+        try:
+            password = validate_password(password)
+        except UserValidationError as e:
+            console.print(f"❌ Password validation error: {e}", style="red")
+            sys.exit(1)
+
+        # Create admin client and create user
+        admin_client = AdminAPIClient(
+            server_url=server_url, credentials=credentials, project_root=project_root
+        )
+
+        with console.status("👤 Creating user account..."):
+            user_response = run_async(
+                admin_client.create_user(
+                    username=username, password=password, role=role
+                )
+            )
+
+        console.print(f"✅ Successfully created user: {username}", style="green")
+        console.print(f"👤 Role: {role}", style="cyan")
+        if email:
+            console.print(f"📧 Email: {email}", style="cyan")
+
+        # Display user details if available
+        if "user" in user_response:
+            user_info = user_response["user"]
+            if "username" in user_info:
+                console.print(f"🆔 Username: {user_info['username']}", style="dim")
+            if "created_at" in user_info:
+                console.print(f"📅 Created: {user_info['created_at']}", style="dim")
+
+        # Close the client
+        run_async(admin_client.close())
+
+    except Exception as e:
+        console.print(f"❌ User creation failed: {e}", style="red")
+
+        # Provide helpful error guidance
+        error_str = str(e).lower()
+        if "insufficient privileges" in error_str or "admin role required" in error_str:
+            console.print("💡 You need admin privileges to create users", style="dim")
+        elif "authentication failed" in error_str:
+            console.print(
+                "💡 Check your authentication with 'cidx auth login'", style="dim"
+            )
+        elif "already exists" in error_str or "conflict" in error_str:
+            console.print(
+                "💡 User already exists, try a different username", style="dim"
+            )
+        elif "validation" in error_str:
+            console.print("💡 Check username format and password strength", style="dim")
+        elif "connection" in error_str or "network" in error_str:
+            console.print("💡 Check server connectivity and try again", style="dim")
+
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@admin_users_group.command("list")
+@click.option(
+    "--limit",
+    default=10,
+    type=int,
+    help="Maximum number of users to display (default: 10)",
+)
+@click.option(
+    "--offset",
+    default=0,
+    type=int,
+    help="Number of users to skip for pagination (default: 0)",
+)
+@click.pass_context
+def admin_users_list(ctx, limit: int, offset: int):
+    """List all users in the system.
+
+    Lists all user accounts registered on the CIDX server with their
+    roles and creation information. Requires admin privileges.
+
+    Examples:
+        cidx admin users list
+        cidx admin users list --limit 20
+        cidx admin users list --limit 5 --offset 10
+    """
+    try:
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+        from .remote.credential_manager import (
+            CredentialNotFoundError,
+            load_encrypted_credentials,
+            ProjectCredentialManager,
+        )
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print("Run 'cidx init' to initialize project first", style="dim")
+            sys.exit(1)
+
+        # Load remote configuration
+        remote_config = load_remote_configuration(project_root)
+        server_url = remote_config["server_url"]
+
+        # Load and decrypt credentials
+        try:
+            encrypted_data = load_encrypted_credentials(project_root)
+            credential_manager = ProjectCredentialManager()
+
+            # We need username from remote config for decryption
+            username_for_creds = remote_config.get("username")
+            if not username_for_creds:
+                console.print(
+                    "❌ No username found in remote configuration", style="red"
+                )
+                console.print(
+                    "Run 'cidx auth login' to authenticate first", style="dim"
+                )
+                sys.exit(1)
+
+            decrypted_creds = credential_manager.decrypt_credentials(
+                encrypted_data=encrypted_data,
+                username=username_for_creds,
+                repo_path=str(project_root),
+                server_url=server_url,
+            )
+
+            credentials = {
+                "username": decrypted_creds.username,
+                "password": decrypted_creds.password,
+            }
+        except (CredentialNotFoundError, Exception):
+            console.print("❌ No credentials found", style="red")
+            console.print("Run 'cidx auth login' to authenticate first", style="dim")
+            sys.exit(1)
+
+        # Create admin client and list users
+        admin_client = AdminAPIClient(
+            server_url=server_url, credentials=credentials, project_root=project_root
+        )
+
+        with console.status("👥 Retrieving user list..."):
+            users_response = run_async(
+                admin_client.list_users(limit=limit, offset=offset)
+            )
+
+        # Display users in a table
+        table = Table(title="CIDX Server Users")
+        table.add_column("Username", style="cyan")
+        table.add_column("Role", style="green")
+        table.add_column("Created", style="dim")
+
+        users = users_response.get("users", [])
+
+        if not users:
+            console.print("ℹ️ No users found", style="yellow")
+        else:
+            for user in users:
+                username = user.get("username", "unknown")
+                role = user.get("role", "unknown")
+                created_at = user.get("created_at", "unknown")
+
+                # Format created date
+                if created_at != "unknown":
+                    try:
+                        # Just show the date part for readability
+                        created_display = created_at[:10]
+                    except Exception:
+                        created_display = created_at
+                else:
+                    created_display = "unknown"
+
+                table.add_row(username, role, created_display)
+
+            console.print(table)
+
+            # Show pagination info
+            total = users_response.get("total", len(users))
+            if total > limit:
+                showing_start = offset + 1
+                showing_end = min(offset + limit, total)
+                console.print(
+                    f"\nShowing {showing_start}-{showing_end} of {total} users",
+                    style="dim",
+                )
+
+        # Close the client
+        run_async(admin_client.close())
+
+    except Exception as e:
+        console.print(f"❌ Failed to list users: {e}", style="red")
+
+        # Provide helpful error guidance
+        error_str = str(e).lower()
+        if "insufficient privileges" in error_str or "admin role required" in error_str:
+            console.print("💡 You need admin privileges to list users", style="dim")
+        elif "authentication failed" in error_str:
+            console.print(
+                "💡 Check your authentication with 'cidx auth login'", style="dim"
+            )
+        elif "connection" in error_str or "network" in error_str:
+            console.print("💡 Check server connectivity and try again", style="dim")
+
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+def _validate_username(username: str) -> bool:
+    """Validate username format.
+
+    Args:
+        username: Username to validate
+
+    Returns:
+        True if valid, False otherwise
+    """
+    if not username or len(username.strip()) == 0:
+        return False
+    if len(username) < 3 or len(username) > 50:
+        return False
+    # Allow alphanumeric, underscore, hyphen
+    import re
+
+    if not re.match(r"^[a-zA-Z0-9_-]+$", username):
+        return False
+    return True
+
+
+@admin_users_group.command("show")
+@click.argument("username", required=True)
+@click.pass_context
+def admin_users_show(ctx, username: str):
+    """Show detailed information for a specific user.
+
+    Displays detailed information for the specified user including
+    username, role, and creation date. Requires admin privileges.
+
+    Examples:
+        cidx admin users show johndoe
+        cidx admin users show admin_user
+    """
+    # Validate username format
+    if not _validate_username(username):
+        console.print("❌ Invalid username format", style="red")
+        console.print(
+            "💡 Username must be 3-50 characters, alphanumeric, underscore, or hyphen only",
+            style="dim",
+        )
+        sys.exit(1)
+
+    try:
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+        from .remote.credential_manager import (
+            CredentialNotFoundError,
+            load_encrypted_credentials,
+            ProjectCredentialManager,
+        )
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print("Run 'cidx init' to initialize project first", style="dim")
+            sys.exit(1)
+
+        # Load remote configuration
+        remote_config = load_remote_configuration(project_root)
+        server_url = remote_config["server_url"]
+
+        # Load and decrypt credentials
+        try:
+            encrypted_data = load_encrypted_credentials(project_root)
+            credential_manager = ProjectCredentialManager()
+            username_for_creds = remote_config.get("username")
+            if not username_for_creds:
+                console.print(
+                    "❌ No username found in remote configuration", style="red"
+                )
+                console.print(
+                    "Run 'cidx auth login' to authenticate first", style="dim"
+                )
+                sys.exit(1)
+
+            decrypted_creds = credential_manager.decrypt_credentials(
+                encrypted_data=encrypted_data,
+                username=username_for_creds,
+                repo_path=str(project_root),
+                server_url=server_url,
+            )
+            credentials = {
+                "username": decrypted_creds.username,
+                "password": decrypted_creds.password,
+            }
+        except (CredentialNotFoundError, Exception):
+            console.print("❌ No credentials found", style="red")
+            console.print("Run 'cidx auth login' to authenticate first", style="dim")
+            sys.exit(1)
+
+        # Create admin client and get user
+        admin_client = AdminAPIClient(
+            server_url=server_url, credentials=credentials, project_root=project_root
+        )
+
+        with console.status(f"👤 Retrieving user '{username}'..."):
+            user_response = run_async(admin_client.get_user(username))
+
+        # Display user details
+        user = user_response.get("user", {})
+
+        # Create a simple details display
+        console.print(f"\n[bold cyan]User Details: {username}[/bold cyan]")
+        console.print(f"Username: [green]{user.get('username', 'unknown')}[/green]")
+        console.print(f"Role: [yellow]{user.get('role', 'unknown')}[/yellow]")
+
+        created_at = user.get("created_at", "unknown")
+        if created_at != "unknown":
+            try:
+                # Format the date for better readability
+                created_display = created_at[:19].replace("T", " ")
+            except Exception:
+                created_display = created_at
+        else:
+            created_display = "unknown"
+        console.print(f"Created: [dim]{created_display}[/dim]")
+
+        # Close the client
+        run_async(admin_client.close())
+
+    except Exception as e:
+        console.print(f"❌ Failed to show user: {e}", style="red")
+
+        # Provide helpful error guidance
+        error_str = str(e).lower()
+        if "not found" in error_str:
+            console.print(f"💡 User '{username}' does not exist", style="dim")
+        elif (
+            "insufficient privileges" in error_str or "admin role required" in error_str
+        ):
+            console.print(
+                "💡 You need admin privileges to view user details", style="dim"
+            )
+        elif "authentication failed" in error_str:
+            console.print(
+                "💡 Check your authentication with 'cidx auth login'", style="dim"
+            )
+        elif "connection" in error_str or "network" in error_str:
+            console.print("💡 Check server connectivity and try again", style="dim")
+
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@admin_users_group.command("update")
+@click.argument("username", required=True)
+@click.option(
+    "--role",
+    required=True,
+    type=click.Choice(["admin", "power_user", "normal_user"]),
+    help="New role for the user",
+)
+@click.pass_context
+def admin_users_update(ctx, username: str, role: str):
+    """Update a user's role.
+
+    Updates the role of an existing user. Requires admin privileges.
+    Available roles: admin, power_user, normal_user.
+
+    Examples:
+        cidx admin users update johndoe --role power_user
+        cidx admin users update testuser --role admin
+    """
+    # Validate username format
+    if not _validate_username(username):
+        console.print("❌ Invalid username format", style="red")
+        console.print(
+            "💡 Username must be 3-50 characters, alphanumeric, underscore, or hyphen only",
+            style="dim",
+        )
+        sys.exit(1)
+
+    try:
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+        from .remote.credential_manager import (
+            CredentialNotFoundError,
+            load_encrypted_credentials,
+            ProjectCredentialManager,
+        )
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print("Run 'cidx init' to initialize project first", style="dim")
+            sys.exit(1)
+
+        # Load remote configuration
+        remote_config = load_remote_configuration(project_root)
+        server_url = remote_config["server_url"]
+
+        # Load and decrypt credentials
+        try:
+            encrypted_data = load_encrypted_credentials(project_root)
+            credential_manager = ProjectCredentialManager()
+            username_for_creds = remote_config.get("username")
+            if not username_for_creds:
+                console.print(
+                    "❌ No username found in remote configuration", style="red"
+                )
+                console.print(
+                    "Run 'cidx auth login' to authenticate first", style="dim"
+                )
+                sys.exit(1)
+
+            decrypted_creds = credential_manager.decrypt_credentials(
+                encrypted_data=encrypted_data,
+                username=username_for_creds,
+                repo_path=str(project_root),
+                server_url=server_url,
+            )
+            credentials = {
+                "username": decrypted_creds.username,
+                "password": decrypted_creds.password,
+            }
+        except (CredentialNotFoundError, Exception):
+            console.print("❌ No credentials found", style="red")
+            console.print("Run 'cidx auth login' to authenticate first", style="dim")
+            sys.exit(1)
+
+        # Create admin client
+        admin_client = AdminAPIClient(
+            server_url=server_url, credentials=credentials, project_root=project_root
+        )
+
+        # Check current user role for warnings
+        try:
+            current_user_info = run_async(admin_client.get_user(username))
+            current_role = current_user_info.get("user", {}).get("role", "unknown")
+
+            # Warn about role downgrades for admins
+            if current_role == "admin" and role != "admin":
+                console.print(
+                    f"⚠️  [bold yellow]WARNING:[/bold yellow] Downgrading admin '{username}' to '{role}'",
+                    style="yellow",
+                )
+                console.print("This will remove admin privileges!", style="dim yellow")
+
+                confirm = click.confirm("Are you sure you want to continue?")
+                if not confirm:
+                    run_async(admin_client.close())
+                    console.print("❌ Role update cancelled", style="yellow")
+                    sys.exit(0)
+
+            # Warn about admin promotion
+            elif role == "admin" and current_role != "admin":
+                console.print(
+                    f"⚠️  [bold yellow]INFO:[/bold yellow] Promoting '{username}' to admin role",
+                    style="yellow",
+                )
+                console.print(
+                    "This will grant full administrative privileges!",
+                    style="dim yellow",
+                )
+
+        except Exception:
+            # If we can't get current role, continue without warning
+            pass
+
+        with console.status(f"🔄 Updating user '{username}' role to '{role}'..."):
+            run_async(admin_client.update_user(username, role))
+
+        console.print(
+            f"✅ Successfully updated user '{username}' role to '{role}'", style="green"
+        )
+
+        # Close the client
+        run_async(admin_client.close())
+
+    except Exception as e:
+        console.print(f"❌ Failed to update user: {e}", style="red")
+
+        # Provide helpful error guidance
+        error_str = str(e).lower()
+        if "not found" in error_str:
+            console.print(f"💡 User '{username}' does not exist", style="dim")
+        elif (
+            "insufficient privileges" in error_str or "admin role required" in error_str
+        ):
+            console.print("💡 You need admin privileges to update users", style="dim")
+        elif "authentication failed" in error_str:
+            console.print(
+                "💡 Check your authentication with 'cidx auth login'", style="dim"
+            )
+        elif "connection" in error_str or "network" in error_str:
+            console.print("💡 Check server connectivity and try again", style="dim")
+
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@admin_users_group.command("delete")
+@click.argument("username", required=True)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Skip confirmation prompt",
+)
+@click.pass_context
+def admin_users_delete(ctx, username: str, force: bool):
+    """Delete a user account.
+
+    Deletes the specified user account from the server. This action
+    cannot be undone. Requires admin privileges and confirmation.
+    Last admin user cannot be deleted.
+
+    Examples:
+        cidx admin users delete testuser
+        cidx admin users delete olduser --force
+    """
+    # Validate username format
+    if not _validate_username(username):
+        console.print("❌ Invalid username format", style="red")
+        console.print(
+            "💡 Username must be 3-50 characters, alphanumeric, underscore, or hyphen only",
+            style="dim",
+        )
+        sys.exit(1)
+
+    try:
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+        from .remote.credential_manager import (
+            CredentialNotFoundError,
+            load_encrypted_credentials,
+            ProjectCredentialManager,
+        )
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print("Run 'cidx init' to initialize project first", style="dim")
+            sys.exit(1)
+
+        # Load remote configuration
+        remote_config = load_remote_configuration(project_root)
+        server_url = remote_config["server_url"]
+
+        # Load and decrypt credentials
+        try:
+            encrypted_data = load_encrypted_credentials(project_root)
+            credential_manager = ProjectCredentialManager()
+            username_for_creds = remote_config.get("username")
+            if not username_for_creds:
+                console.print(
+                    "❌ No username found in remote configuration", style="red"
+                )
+                console.print(
+                    "Run 'cidx auth login' to authenticate first", style="dim"
+                )
+                sys.exit(1)
+
+            decrypted_creds = credential_manager.decrypt_credentials(
+                encrypted_data=encrypted_data,
+                username=username_for_creds,
+                repo_path=str(project_root),
+                server_url=server_url,
+            )
+            credentials = {
+                "username": decrypted_creds.username,
+                "password": decrypted_creds.password,
+            }
+        except (CredentialNotFoundError, Exception):
+            console.print("❌ No credentials found", style="red")
+            console.print("Run 'cidx auth login' to authenticate first", style="dim")
+            sys.exit(1)
+
+        # Self-deletion prevention check
+        if username_for_creds == username:
+            console.print(
+                f"❌ Cannot delete your own account '{username}'", style="red"
+            )
+            console.print(
+                "💡 Ask another admin to delete your account if needed", style="dim"
+            )
+            sys.exit(1)
+
+        # Confirmation prompt (unless --force is used)
+        if not force:
+            console.print(
+                f"⚠️  [bold red]WARNING:[/bold red] You are about to delete user '[yellow]{username}[/yellow]'"
+            )
+            console.print("This action cannot be undone!")
+
+            # Show user details before deletion for confirmation
+            try:
+                temp_client = AdminAPIClient(
+                    server_url=server_url,
+                    credentials=credentials,
+                    project_root=project_root,
+                )
+                user_info = asyncio.run(temp_client.get_user(username))
+                user = user_info.get("user", {})
+                console.print(
+                    f"User role: [yellow]{user.get('role', 'unknown')}[/yellow]"
+                )
+                console.print(
+                    f"Created: [dim]{user.get('created_at', 'unknown')[:10]}[/dim]"
+                )
+                asyncio.run(temp_client.close())
+            except Exception:
+                # If we can't get user info, continue with deletion prompt
+                pass
+
+            confirm = click.confirm("Are you sure you want to proceed?")
+            if not confirm:
+                console.print("❌ User deletion cancelled", style="yellow")
+                sys.exit(0)
+
+        # Create admin client and delete user
+        admin_client = AdminAPIClient(
+            server_url=server_url, credentials=credentials, project_root=project_root
+        )
+
+        with console.status(f"🗑️  Deleting user '{username}'..."):
+            run_async(admin_client.delete_user(username))
+
+        console.print(f"✅ Successfully deleted user '{username}'", style="green")
+
+        # Close the client
+        run_async(admin_client.close())
+
+    except Exception as e:
+        console.print(f"❌ Failed to delete user: {e}", style="red")
+
+        # Provide helpful error guidance
+        error_str = str(e).lower()
+        if "not found" in error_str:
+            console.print(f"💡 User '{username}' does not exist", style="dim")
+        elif "last admin" in error_str or "cannot delete" in error_str:
+            console.print("💡 Cannot delete the last admin user", style="dim")
+        elif (
+            "insufficient privileges" in error_str or "admin role required" in error_str
+        ):
+            console.print("💡 You need admin privileges to delete users", style="dim")
+        elif "authentication failed" in error_str:
+            console.print(
+                "💡 Check your authentication with 'cidx auth login'", style="dim"
+            )
+        elif "connection" in error_str or "network" in error_str:
+            console.print("💡 Check server connectivity and try again", style="dim")
+
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@admin_users_group.command("change-password")
+@click.argument("username", required=True)
+@click.option(
+    "--password",
+    help="New password for the user (will be prompted securely if not provided)",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Skip confirmation prompt",
+)
+@click.pass_context
+def admin_users_change_password(ctx, username: str, password: str, force: bool):
+    """Change a user's password (admin only).
+
+    Changes the password for the specified user account. This operation
+    requires admin privileges and can change any user's password without
+    knowing the old password. Use with caution.
+
+    Examples:
+        cidx admin users change-password johndoe
+        cidx admin users change-password testuser --password NewPass123!
+        cidx admin users change-password olduser --force
+    """
+    import getpass
+
+    # Validate username format
+    if not _validate_username(username):
+        console.print("❌ Invalid username format", style="red")
+        console.print(
+            "💡 Username must be 3-50 characters, alphanumeric, underscore, or hyphen only",
+            style="dim",
+        )
+        sys.exit(1)
+
+    # Get password if not provided
+    if not password:
+        console.print(
+            f"📝 Enter new password for user '{username}':", style="bold blue"
+        )
+        password = getpass.getpass("New password: ")
+
+        if not password:
+            console.print("❌ Password cannot be empty", style="red")
+            sys.exit(1)
+
+        # Confirm password
+        password_confirm = getpass.getpass("Confirm password: ")
+        if password != password_confirm:
+            console.print("❌ Passwords do not match", style="red")
+            sys.exit(1)
+
+    # Validate password strength using existing validation
+    is_valid, validation_message = _validate_password_strength(password)
+    if not is_valid:
+        console.print(f"❌ {validation_message}", style="red")
+        from .password_policy import get_password_policy_help
+
+        console.print("\n💡 Password Requirements:", style="dim yellow")
+        console.print(get_password_policy_help(), style="dim")
+        sys.exit(1)
+
+    # Confirmation prompt (unless --force)
+    if not force:
+        console.print(
+            f"⚠️  [bold yellow]WARNING:[/bold yellow] You are about to change the password for user '{username}'",
+            style="yellow",
+        )
+        console.print("This action cannot be undone.", style="dim yellow")
+
+        if not click.confirm("Do you want to continue?"):
+            console.print("❌ Password change cancelled", style="yellow")
+            sys.exit(0)
+
+    try:
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+        from .remote.credential_manager import (
+            CredentialNotFoundError,
+        )
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print(
+                "💡 Run 'cidx remote init' to set up remote mode", style="dim"
+            )
+            sys.exit(1)
+
+        # Load remote configuration
+        remote_config = load_remote_configuration(project_root)
+        if not remote_config:
+            console.print("❌ No remote configuration found", style="red")
+            console.print(
+                "💡 Run 'cidx remote init' to set up remote access", style="dim"
+            )
+            sys.exit(1)
+
+        # Load credentials
+        try:
+            from .remote.sync_execution import _load_and_decrypt_credentials
+
+            credentials = _load_and_decrypt_credentials(project_root)
+        except CredentialNotFoundError:
+            console.print("❌ No stored credentials found", style="red")
+            console.print("💡 Use 'cidx auth login' to authenticate first", style="dim")
+            sys.exit(1)
+
+        # Create admin client
+        admin_client = AdminAPIClient(
+            server_url=remote_config["server_url"],
+            credentials=credentials,
+            project_root=project_root,
+        )
+
+        try:
+            # First verify the user exists by getting user info
+            user_info = run_async(admin_client.get_user(username))
+            current_role = user_info["user"]["role"]
+
+            # Extra warning when changing admin password
+            if current_role == "admin" and not force:
+                console.print(
+                    f"⚠️  [bold yellow]NOTICE:[/bold yellow] User '{username}' has admin role",
+                    style="yellow",
+                )
+                console.print(
+                    "Changing admin password will affect their access!",
+                    style="dim yellow",
+                )
+                if not click.confirm("Are you sure you want to continue?"):
+                    run_async(admin_client.close())
+                    console.print("❌ Password change cancelled", style="yellow")
+                    sys.exit(0)
+
+            # Change the password
+            run_async(admin_client.change_user_password(username, password))
+
+            console.print(
+                f"✅ Password changed successfully for user '{username}'", style="green"
+            )
+            console.print("💡 User should log in with the new password", style="dim")
+
+        finally:
+            run_async(admin_client.close())
+
+    except ImportError as e:
+        console.print(f"❌ Import error: {e}", style="red")
+        console.print("💡 Required dependencies not available", style="dim")
+        sys.exit(1)
+    except Exception as e:
+        error_str = str(e).lower()
+
+        if "not found" in error_str:
+            console.print(f"❌ User '{username}' not found", style="red")
+            console.print(
+                "💡 Use 'cidx admin users list' to see available users", style="dim"
+            )
+        elif (
+            "insufficient privileges" in error_str or "admin role required" in error_str
+        ):
+            console.print("❌ Insufficient privileges for password change", style="red")
+            console.print(
+                "💡 You need admin privileges to change user passwords", style="dim"
+            )
+        elif "invalid password" in error_str or "password" in error_str:
+            console.print("❌ Password validation failed", style="red")
+            console.print("💡 Password must meet security requirements", style="dim")
+        elif "authentication" in error_str or "unauthorized" in error_str:
+            console.print("❌ Authentication failed", style="red")
+            console.print(
+                "💡 Check your authentication with 'cidx auth login'", style="dim"
+            )
+        elif "connection" in error_str or "network" in error_str:
+            console.print("❌ Connection error", style="red")
+            console.print("💡 Check server connectivity and try again", style="dim")
+        else:
+            console.print(f"❌ Failed to change password: {e}", style="red")
+
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+# =============================================================================
+# Admin Repos Commands
+# =============================================================================
+
+
+@admin_group.group("repos")
+@click.pass_context
+def admin_repos_group(ctx):
+    """Repository management commands.
+
+    Administrative commands for adding, managing, and configuring
+    golden repositories on the CIDX server.
+    """
+    pass
+
+
+@admin_repos_group.command("add")
+@click.argument("git_url")
+@click.argument("alias")
+@click.option(
+    "--description", default=None, help="Optional description for the repository"
+)
+@click.option(
+    "--default-branch", default="main", help="Default branch name (default: main)"
+)
+@click.pass_context
+def admin_repos_add(
+    ctx, git_url: str, alias: str, description: str, default_branch: str
+):
+    """Add a new golden repository from Git URL.
+
+    Adds a new golden repository to the CIDX server from the specified
+    Git URL. The repository will be cloned and indexed automatically.
+    Requires admin privileges.
+
+    Args:
+        git_url: Git repository URL (https, ssh, or git protocol)
+        alias: Unique alias for the repository
+
+    Examples:
+        cidx admin repos add https://github.com/example/repo.git example-repo
+        cidx admin repos add git@github.com:example/repo.git example-repo --description "Example repository"
+        cidx admin repos add https://github.com/example/repo.git example-repo --default-branch develop
+    """
+    import re
+
+    try:
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+        from .remote.credential_manager import (
+            CredentialNotFoundError,
+            load_encrypted_credentials,
+            ProjectCredentialManager,
+        )
+
+        # Basic validation
+        if not git_url or not git_url.strip():
+            console.print("❌ Git URL cannot be empty", style="red")
+            sys.exit(1)
+
+        if not alias or not alias.strip():
+            console.print("❌ Alias cannot be empty", style="red")
+            sys.exit(1)
+
+        # Validate Git URL format
+        git_url_pattern = re.compile(
+            r"^(https?://|git@|git://)"
+            r"([a-zA-Z0-9.-]+)"
+            r"[:/]"
+            r"([a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+)"
+            r"(\.git)?/?$"
+        )
+
+        if not git_url_pattern.match(git_url):
+            console.print("❌ Invalid Git URL format", style="red")
+            console.print("💡 Supported formats: https://, git@, git://", style="dim")
+            sys.exit(1)
+
+        # Validate alias format
+        alias_pattern = re.compile(r"^[a-zA-Z0-9._-]+$")
+        if not alias_pattern.match(alias):
+            console.print("❌ Invalid alias format", style="red")
+            console.print(
+                "💡 Alias must contain only alphanumeric characters, dots, underscores, and hyphens",
+                style="dim",
+            )
+            sys.exit(1)
+
+        # Find project root
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project configuration found", style="red")
+            console.print("💡 Run 'cidx init' to initialize project first", style="dim")
+            sys.exit(1)
+
+        # Load remote configuration
+        remote_config = load_remote_configuration(project_root)
+        server_url = remote_config["server_url"]
+
+        # Load and decrypt credentials
+        try:
+            encrypted_data = load_encrypted_credentials(project_root)
+            credential_manager = ProjectCredentialManager()
+
+            # We need username from remote config for decryption
+            username_for_creds = remote_config.get("username")
+            if not username_for_creds:
+                console.print(
+                    "❌ No username found in remote configuration", style="red"
+                )
+                console.print(
+                    "💡 Use 'cidx auth login' to authenticate first", style="dim"
+                )
+                sys.exit(1)
+
+            decrypted_creds = credential_manager.decrypt_credentials(
+                encrypted_data=encrypted_data,
+                username=username_for_creds,
+                repo_path=str(project_root),
+                server_url=server_url,
+            )
+
+            credentials = {
+                "username": decrypted_creds.username,
+                "password": decrypted_creds.password,
+            }
+        except (CredentialNotFoundError, Exception):
+            console.print("❌ No credentials found", style="red")
+            console.print("💡 Use 'cidx auth login' to authenticate first", style="dim")
+            sys.exit(1)
+
+        # Create admin client
+        admin_client = AdminAPIClient(
+            server_url=server_url,
+            credentials=credentials,
+            project_root=project_root,
+        )
+
+        try:
+            console.print(
+                f"📁 Adding golden repository '{alias}' from {git_url}...", style="blue"
+            )
+
+            # Add golden repository
+            result = run_async(
+                admin_client.add_golden_repository(
+                    git_url=git_url,
+                    alias=alias,
+                    description=description,
+                    default_branch=default_branch,
+                )
+            )
+
+            # Display success with job information
+            console.print(
+                "✅ Golden repository addition job submitted successfully",
+                style="green",
+            )
+            console.print(f"📋 Job ID: {result['job_id']}", style="cyan")
+            console.print(f"📝 Status: {result['status']}", style="dim")
+
+            if "message" in result:
+                console.print(f"💬 {result['message']}", style="dim")
+
+            console.print(
+                "\n💡 Use 'cidx jobs status' to monitor the addition progress",
+                style="dim",
+            )
+
+        finally:
+            run_async(admin_client.close())
+
+    except ImportError as e:
+        console.print(f"❌ Import error: {e}", style="red")
+        console.print("💡 Required dependencies not available", style="dim")
+        sys.exit(1)
+    except Exception as e:
+        error_str = str(e).lower()
+
+        if "invalid request data" in error_str or "invalid" in error_str:
+            console.print("❌ Invalid repository data", style="red")
+            console.print(
+                "💡 Check Git URL format and repository accessibility", style="dim"
+            )
+        elif "repository conflict" in error_str or "already exists" in error_str:
+            console.print(f"❌ Repository alias '{alias}' already exists", style="red")
+            console.print(
+                "💡 Choose a different alias or check existing repositories",
+                style="dim",
+            )
+        elif (
+            "insufficient privileges" in error_str or "admin role required" in error_str
+        ):
+            console.print(
+                "❌ Insufficient privileges for repository addition", style="red"
+            )
+            console.print(
+                "💡 You need admin privileges to add golden repositories", style="dim"
+            )
+        elif "authentication" in error_str or "unauthorized" in error_str:
+            console.print("❌ Authentication failed", style="red")
+            console.print(
+                "💡 Check your authentication with 'cidx auth login'", style="dim"
+            )
+        elif "connection" in error_str or "network" in error_str:
+            console.print("❌ Connection error", style="red")
+            console.print("💡 Check server connectivity and try again", style="dim")
+        else:
+            console.print(f"❌ Failed to add golden repository: {e}", style="red")
+
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@admin_repos_group.command("list")
+@click.pass_context
+def admin_repos_list(ctx):
+    """List all golden repositories.
+
+    Displays a formatted table of all golden repositories with their
+    status, last refresh information, and repository details.
+    Requires admin privileges.
+
+    Examples:
+        cidx admin repos list
+    """
+    try:
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+        from .remote.credential_manager import (
+            CredentialNotFoundError,
+            load_encrypted_credentials,
+            ProjectCredentialManager,
+        )
+        from rich.table import Table
+        from datetime import datetime
+        from dateutil import parser as dateutil_parser  # type: ignore[import-untyped]
+
+        console = Console()
+
+        # Find project root for configuration and credentials
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project root found", style="red")
+            console.print(
+                "💡 Run this command from within a project directory", style="dim"
+            )
+            sys.exit(1)
+
+        # Check command mode and load configuration
+        try:
+            config = load_remote_configuration(project_root)
+            if not config:
+                console.print("❌ No remote configuration found", style="red")
+                console.print(
+                    "💡 Use 'cidx remote init' to configure remote access", style="dim"
+                )
+                sys.exit(1)
+
+            server_url = config.get("server_url")
+            if not server_url:
+                console.print("❌ Server URL not found in configuration", style="red")
+                sys.exit(1)
+
+        except Exception as e:
+            console.print(f"❌ Failed to load configuration: {e}", style="red")
+            sys.exit(1)
+
+        # Load and decrypt credentials
+        try:
+            encrypted_data = load_encrypted_credentials(project_root)
+            credential_manager = ProjectCredentialManager()
+
+            # We need username from remote config for decryption
+            username_for_creds = config.get("username")
+            if not username_for_creds:
+                console.print(
+                    "❌ No username found in remote configuration", style="red"
+                )
+                console.print("💡 Use 'cidx auth login' to authenticate", style="dim")
+                sys.exit(1)
+
+            decrypted_creds = credential_manager.decrypt_credentials(
+                encrypted_data=encrypted_data,
+                username=username_for_creds,
+                repo_path=str(project_root),
+                server_url=server_url,
+            )
+
+            credentials = {
+                "username": decrypted_creds.username,
+                "password": decrypted_creds.password,
+            }
+        except CredentialNotFoundError:
+            console.print("❌ No credentials found", style="red")
+            console.print("💡 Use 'cidx auth login' to authenticate", style="dim")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"❌ Failed to load credentials: {e}", style="red")
+            sys.exit(1)
+
+        # Create admin client and list repositories with proper cleanup
+        admin_client = AdminAPIClient(
+            server_url=server_url,
+            credentials=credentials,
+            project_root=project_root,
+        )
+
+        try:
+
+            async def fetch_admin_data():
+                try:
+                    return await admin_client.list_golden_repositories()
+                finally:
+                    # Ensure client is properly closed to avoid resource warnings
+                    await admin_client.close()
+
+            result = run_async(fetch_admin_data())
+            repositories = result.get("golden_repositories", [])
+            total = result.get("total", 0)
+
+            if total == 0:
+                console.print("📂 No golden repositories found", style="yellow")
+                console.print(
+                    "💡 Use 'cidx admin repos add' to add repositories", style="dim"
+                )
+                return
+
+            # Create rich table
+            table = Table(title=f"Golden Repositories ({total})")
+            table.add_column("Alias", style="cyan", no_wrap=True)
+            table.add_column("Repository URL", style="blue")
+            table.add_column("Last Refresh", style="green")
+            table.add_column("Status", style="white")
+
+            for repo in repositories:
+                alias = repo.get("alias", "N/A")
+                repo_url = repo.get("repo_url", "N/A")
+                last_refresh = repo.get("last_refresh")
+                status = repo.get("status", "unknown")
+
+                # Format last refresh time
+                if last_refresh:
+                    try:
+                        refresh_time = dateutil_parser.parse(last_refresh)
+                        now = datetime.now(refresh_time.tzinfo)
+                        time_diff = now - refresh_time
+
+                        if time_diff.days > 0:
+                            refresh_str = f"{time_diff.days} days ago"
+                        elif time_diff.seconds > 3600:
+                            hours = time_diff.seconds // 3600
+                            refresh_str = f"{hours} hours ago"
+                        elif time_diff.seconds > 60:
+                            minutes = time_diff.seconds // 60
+                            refresh_str = f"{minutes} minutes ago"
+                        else:
+                            refresh_str = "Just now"
+                    except Exception:
+                        refresh_str = str(last_refresh)
+                else:
+                    refresh_str = "Never"
+
+                # Format status with indicators
+                if status.lower() == "ready":
+                    status_display = "✓ Ready"
+                elif status.lower() == "indexing":
+                    status_display = "⚡ Indexing"
+                elif status.lower() == "failed":
+                    status_display = "✗ Failed"
+                elif status.lower() == "stale":
+                    status_display = "⚠ Stale"
+                else:
+                    status_display = f"? {status}"
+
+                table.add_row(alias, repo_url, refresh_str, status_display)
+
+            console.print(table)
+
+        finally:
+            run_async(admin_client.close())
+
+    except Exception as e:
+        error_str = str(e).lower()
+        if "insufficient privileges" in error_str or "admin role required" in error_str:
+            console.print(
+                "❌ Insufficient privileges for repository listing", style="red"
+            )
+            console.print(
+                "💡 You need admin privileges to list golden repositories", style="dim"
+            )
+        elif "authentication" in error_str or "unauthorized" in error_str:
+            console.print("❌ Authentication failed", style="red")
+            console.print(
+                "💡 Check your authentication with 'cidx auth login'", style="dim"
+            )
+        elif "connection" in error_str or "network" in error_str:
+            console.print("❌ Connection error", style="red")
+            console.print("💡 Check server connectivity and try again", style="dim")
+        else:
+            console.print(f"❌ Failed to list golden repositories: {e}", style="red")
+
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@admin_repos_group.command("show")
+@click.argument("alias")
+@click.pass_context
+def admin_repos_show(ctx, alias: str):
+    """Show detailed information for a golden repository.
+
+    Displays comprehensive details about a specific golden repository
+    including status, branch information, indexing details, and metadata.
+    Requires admin privileges.
+
+    Args:
+        alias: Repository alias to show details for
+
+    Examples:
+        cidx admin repos show web-app
+        cidx admin repos show api-service
+    """
+    try:
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+        from .remote.credential_manager import (
+            CredentialNotFoundError,
+        )
+        from datetime import datetime
+        from dateutil import parser as dateutil_parser  # type: ignore[import-untyped]
+
+        console = Console()
+
+        # Find project root for configuration and credentials
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project root found", style="red")
+            console.print(
+                "💡 Run this command from within a project directory", style="dim"
+            )
+            sys.exit(1)
+
+        # Check command mode and load configuration
+        try:
+            config = load_remote_configuration(project_root)
+            if not config:
+                console.print("❌ No remote configuration found", style="red")
+                console.print(
+                    "💡 Use 'cidx remote init' to configure remote access", style="dim"
+                )
+                sys.exit(1)
+
+            server_url = config.get("server_url")
+            if not server_url:
+                console.print("❌ Server URL not found in configuration", style="red")
+                sys.exit(1)
+
+        except Exception as e:
+            console.print(f"❌ Failed to load configuration: {e}", style="red")
+            sys.exit(1)
+
+        # Load credentials
+        try:
+            from .remote.sync_execution import _load_and_decrypt_credentials
+
+            credentials = _load_and_decrypt_credentials(project_root)
+            if not credentials:
+                console.print("❌ No credentials found", style="red")
+                console.print("💡 Use 'cidx auth login' to authenticate", style="dim")
+                sys.exit(1)
+
+        except CredentialNotFoundError:
+            console.print("❌ No credentials found", style="red")
+            console.print("💡 Use 'cidx auth login' to authenticate", style="dim")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"❌ Failed to load credentials: {e}", style="red")
+            sys.exit(1)
+
+        # Create admin client and find repository
+        admin_client = AdminAPIClient(
+            server_url=server_url,
+            credentials=credentials,
+            project_root=project_root,
+        )
+
+        try:
+            # List all repositories and find the specific one
+            result = run_async(admin_client.list_golden_repositories())
+            repositories = result.get("golden_repositories", [])
+
+            target_repo = None
+            for repo in repositories:
+                if repo.get("alias") == alias:
+                    target_repo = repo
+                    break
+
+            if not target_repo:
+                console.print(f"❌ Repository '{alias}' not found", style="red")
+                console.print(
+                    "💡 Use 'cidx admin repos list' to see available repositories",
+                    style="dim",
+                )
+                sys.exit(1)
+
+            # Display detailed repository information
+            console.print(f"\n[bold cyan]Repository Details: {alias}[/bold cyan]")
+            console.print("=" * 60)
+
+            # Basic information
+            console.print(f"[bold]Alias:[/bold] {target_repo.get('alias', 'N/A')}")
+            console.print(
+                f"[bold]Repository URL:[/bold] {target_repo.get('repo_url', 'N/A')}"
+            )
+            console.print(
+                f"[bold]Default Branch:[/bold] {target_repo.get('default_branch', 'N/A')}"
+            )
+
+            description = target_repo.get("description")
+            if description:
+                console.print(f"[bold]Description:[/bold] {description}")
+
+            # Status information
+            status = target_repo.get("status", "unknown")
+            if status.lower() == "ready":
+                status_display = "[green]✓ Ready[/green]"
+            elif status.lower() == "indexing":
+                status_display = "[yellow]⚡ Indexing[/yellow]"
+            elif status.lower() == "failed":
+                status_display = "[red]✗ Failed[/red]"
+            elif status.lower() == "stale":
+                status_display = "[yellow]⚠ Stale[/yellow]"
+            else:
+                status_display = f"[white]? {status}[/white]"
+
+            console.print(f"[bold]Status:[/bold] {status_display}")
+
+            # Timestamp information
+            last_refresh = target_repo.get("last_refresh")
+            if last_refresh:
+                try:
+                    refresh_time = dateutil_parser.parse(last_refresh)
+                    console.print(
+                        f"[bold]Last Refresh:[/bold] {refresh_time.strftime('%Y-%m-%d %H:%M:%S %Z')}"
+                    )
+
+                    now = datetime.now(refresh_time.tzinfo)
+                    time_diff = now - refresh_time
+
+                    if time_diff.days > 0:
+                        refresh_str = f"{time_diff.days} days ago"
+                    elif time_diff.seconds > 3600:
+                        hours = time_diff.seconds // 3600
+                        refresh_str = f"{hours} hours ago"
+                    elif time_diff.seconds > 60:
+                        minutes = time_diff.seconds // 60
+                        refresh_str = f"{minutes} minutes ago"
+                    else:
+                        refresh_str = "Just now"
+
+                    console.print(f"[bold]Time Since Refresh:[/bold] {refresh_str}")
+                except Exception:
+                    console.print(f"[bold]Last Refresh:[/bold] {last_refresh}")
+            else:
+                console.print("[bold]Last Refresh:[/bold] [yellow]Never[/yellow]")
+
+            # Additional metadata if available
+            created_at = target_repo.get("created_at")
+            if created_at:
+                try:
+                    create_time = dateutil_parser.parse(created_at)
+                    console.print(
+                        f"[bold]Created:[/bold] {create_time.strftime('%Y-%m-%d %H:%M:%S %Z')}"
+                    )
+                except Exception:
+                    console.print(f"[bold]Created:[/bold] {created_at}")
+
+            # Indexing statistics if available
+            file_count = target_repo.get("indexed_files")
+            if file_count is not None:
+                console.print(f"[bold]Indexed Files:[/bold] {file_count:,}")
+
+            branch_count = target_repo.get("indexed_branches")
+            if branch_count is not None:
+                console.print(f"[bold]Indexed Branches:[/bold] {branch_count}")
+
+            # Current job information if available
+            current_job = target_repo.get("current_job_id")
+            if current_job:
+                console.print(f"[bold]Current Job:[/bold] {current_job}")
+
+            console.print(
+                "\n💡 Use 'cidx admin repos refresh {}' to update this repository".format(
+                    alias
+                ),
+                style="dim",
+            )
+
+        finally:
+            run_async(admin_client.close())
+
+    except Exception as e:
+        error_str = str(e).lower()
+        if "insufficient privileges" in error_str or "admin role required" in error_str:
+            console.print(
+                "❌ Insufficient privileges for repository details", style="red"
+            )
+            console.print(
+                "💡 You need admin privileges to view repository details", style="dim"
+            )
+        elif "authentication" in error_str or "unauthorized" in error_str:
+            console.print("❌ Authentication failed", style="red")
+            console.print(
+                "💡 Check your authentication with 'cidx auth login'", style="dim"
+            )
+        elif "connection" in error_str or "network" in error_str:
+            console.print("❌ Connection error", style="red")
+            console.print("💡 Check server connectivity and try again", style="dim")
+        else:
+            console.print(f"❌ Failed to show repository details: {e}", style="red")
+
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@admin_repos_group.command("refresh")
+@click.argument("alias")
+@click.pass_context
+def admin_repos_refresh(ctx, alias: str):
+    """Refresh a golden repository.
+
+    Triggers a refresh and re-indexing of the specified golden repository.
+    This will pull the latest changes from the Git repository and update
+    the search index. The operation runs asynchronously in the background.
+    Requires admin privileges.
+
+    Args:
+        alias: Repository alias to refresh
+
+    Examples:
+        cidx admin repos refresh web-app
+        cidx admin repos refresh api-service
+    """
+    try:
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+        from .remote.credential_manager import (
+            CredentialNotFoundError,
+        )
+
+        console = Console()
+
+        # Find project root for configuration and credentials
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project root found", style="red")
+            console.print(
+                "💡 Run this command from within a project directory", style="dim"
+            )
+            sys.exit(1)
+
+        # Check command mode and load configuration
+        try:
+            config = load_remote_configuration(project_root)
+            if not config:
+                console.print("❌ No remote configuration found", style="red")
+                console.print(
+                    "💡 Use 'cidx remote init' to configure remote access", style="dim"
+                )
+                sys.exit(1)
+
+            server_url = config.get("server_url")
+            if not server_url:
+                console.print("❌ Server URL not found in configuration", style="red")
+                sys.exit(1)
+
+        except Exception as e:
+            console.print(f"❌ Failed to load configuration: {e}", style="red")
+            sys.exit(1)
+
+        # Load credentials
+        try:
+            from .remote.sync_execution import _load_and_decrypt_credentials
+
+            credentials = _load_and_decrypt_credentials(project_root)
+            if not credentials:
+                console.print("❌ No credentials found", style="red")
+                console.print("💡 Use 'cidx auth login' to authenticate", style="dim")
+                sys.exit(1)
+
+        except CredentialNotFoundError:
+            console.print("❌ No credentials found", style="red")
+            console.print("💡 Use 'cidx auth login' to authenticate", style="dim")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"❌ Failed to load credentials: {e}", style="red")
+            sys.exit(1)
+
+        # Create admin client and refresh repository
+        admin_client = AdminAPIClient(
+            server_url=server_url,
+            credentials=credentials,
+            project_root=project_root,
+        )
+
+        try:
+            console.print(
+                f"🔄 Initiating refresh for repository '{alias}'...", style="yellow"
+            )
+
+            result = run_async(admin_client.refresh_golden_repository(alias))
+
+            job_id = result.get("job_id")
+            message = result.get("message", "Refresh job submitted successfully")
+
+            console.print(f"✅ {message}", style="green")
+
+            if job_id:
+                console.print(f"📋 Job ID: {job_id}", style="cyan")
+                console.print(
+                    "💡 Use 'cidx jobs show {}' to track progress".format(job_id),
+                    style="dim",
+                )
+                console.print(
+                    "💡 Use 'cidx admin repos show {}' to check repository status".format(
+                        alias
+                    ),
+                    style="dim",
+                )
+            else:
+                console.print(
+                    "💡 Use 'cidx admin repos list' to check repository status",
+                    style="dim",
+                )
+
+        finally:
+            run_async(admin_client.close())
+
+    except Exception as e:
+        error_str = str(e).lower()
+        if "repository" in error_str and "not found" in error_str:
+            console.print(f"❌ Repository '{alias}' not found", style="red")
+            console.print(
+                "💡 Use 'cidx admin repos list' to see available repositories",
+                style="dim",
+            )
+        elif (
+            "insufficient privileges" in error_str or "admin role required" in error_str
+        ):
+            console.print(
+                "❌ Insufficient privileges for repository refresh", style="red"
+            )
+            console.print(
+                "💡 You need admin privileges to refresh golden repositories",
+                style="dim",
+            )
+        elif "authentication" in error_str or "unauthorized" in error_str:
+            console.print("❌ Authentication failed", style="red")
+            console.print(
+                "💡 Check your authentication with 'cidx auth login'", style="dim"
+            )
+        elif "connection" in error_str or "network" in error_str:
+            console.print("❌ Connection error", style="red")
+            console.print("💡 Check server connectivity and try again", style="dim")
+        else:
+            console.print(f"❌ Failed to refresh repository: {e}", style="red")
+
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@admin_repos_group.command("delete")
+@click.argument("alias")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Skip confirmation prompt (for automation scenarios)",
+)
+@click.pass_context
+def admin_repos_delete(ctx, alias: str, force: bool):
+    """Delete a golden repository (admin only).
+
+    ⚠️  DESTRUCTIVE OPERATION: This will permanently delete the specified
+    golden repository and all its associated data. This action cannot be undone.
+
+    Deletes a golden repository from the CIDX server including:
+    • Repository metadata and configuration
+    • All indexed content and vector embeddings
+    • Background job history for this repository
+    • All user activations of this repository
+
+    Requires admin privileges for execution.
+
+    SAFETY FEATURES:
+    • Confirmation prompt with repository details (unless --force used)
+    • Repository existence validation before deletion
+    • Warning if repository has active user instances
+    • Comprehensive error handling and rollback on failures
+
+    Args:
+        alias: Repository alias to delete
+
+    Options:
+        --force: Skip confirmation prompt for automation scenarios
+
+    Examples:
+        # Delete with confirmation prompt
+        cidx admin repos delete web-app
+
+        # Force delete without prompts (for automation)
+        cidx admin repos delete web-app --force
+
+        # Show repository details before deciding
+        cidx admin repos show web-app
+        cidx admin repos delete web-app
+    """
+    try:
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+        from .remote.credential_manager import (
+            CredentialNotFoundError,
+        )
+
+        console = Console()
+
+        # Find project root for configuration and credentials
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project root found", style="red")
+            console.print(
+                "💡 Run this command from within a project directory", style="dim"
+            )
+            sys.exit(1)
+
+        # Check command mode and load configuration
+        try:
+            config = load_remote_configuration(project_root)
+            if not config:
+                console.print("❌ No remote configuration found", style="red")
+                console.print(
+                    "💡 Use 'cidx remote init' to configure remote access", style="dim"
+                )
+                sys.exit(1)
+
+            server_url = config.get("server_url")
+            if not server_url:
+                console.print("❌ Server URL not found in configuration", style="red")
+                sys.exit(1)
+        except Exception as e:
+            console.print(f"❌ Failed to load configuration: {e}", style="red")
+            sys.exit(1)
+
+        # Load credentials
+        try:
+            from .remote.sync_execution import _load_and_decrypt_credentials
+
+            credentials = _load_and_decrypt_credentials(project_root)
+            if not credentials:
+                console.print("❌ No credentials found", style="red")
+                console.print("💡 Use 'cidx auth login' to authenticate", style="dim")
+                sys.exit(1)
+        except CredentialNotFoundError:
+            console.print("❌ No credentials found", style="red")
+            console.print("💡 Use 'cidx auth login' to authenticate", style="dim")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"❌ Failed to load credentials: {e}", style="red")
+            sys.exit(1)
+
+        # Create admin client
+        admin_client = AdminAPIClient(
+            server_url=server_url,
+            credentials=credentials,
+            project_root=project_root,
+        )
+
+        try:
+            # If not force, show confirmation prompt
+            if not force:
+                # Get repository details for confirmation
+                try:
+                    repos_result = run_async(admin_client.list_golden_repositories())
+                    repositories = repos_result.get("golden_repositories", [])
+                    target_repo = None
+
+                    for repo in repositories:
+                        if repo.get("alias") == alias:
+                            target_repo = repo
+                            break
+
+                    if not target_repo:
+                        console.print(f"❌ Repository '{alias}' not found", style="red")
+                        console.print(
+                            "💡 Use 'cidx admin repos list' to see available repositories",
+                            style="dim",
+                        )
+                        sys.exit(1)
+
+                    # Show confirmation prompt with repository details
+                    console.print(
+                        f"\n⚠️  This will permanently delete the golden repository '{alias}'.",
+                        style="yellow bold",
+                    )
+                    console.print(
+                        f"📍 Repository: {target_repo.get('repo_url', 'N/A')}"
+                    )
+                    console.print(
+                        f"📂 Description: {target_repo.get('description', 'No description')}"
+                    )
+                    console.print(
+                        f"🌿 Default branch: {target_repo.get('default_branch', 'N/A')}"
+                    )
+
+                    status = target_repo.get("status", "Unknown")
+                    if status == "ready":
+                        console.print("✅ Status: Ready (indexed and available)")
+                    elif status == "indexing":
+                        console.print("🔄 Status: Currently indexing")
+                    else:
+                        console.print(f"📊 Status: {status}")
+
+                    console.print(
+                        "\n🔄 This action cannot be undone.", style="red bold"
+                    )
+
+                    # Prompt for confirmation
+                    confirmation = click.confirm(
+                        f"\nAre you sure you want to delete '{alias}'?", default=False
+                    )
+
+                    if not confirmation:
+                        console.print("❌ Deletion cancelled", style="yellow")
+                        sys.exit(0)
+
+                except Exception:
+                    # If we can't get repository details, still prompt for basic confirmation
+                    console.print(
+                        f"\n⚠️  This will permanently delete the golden repository '{alias}'.",
+                        style="yellow bold",
+                    )
+                    console.print("🔄 This action cannot be undone.", style="red bold")
+
+                    confirmation = click.confirm(
+                        f"\nAre you sure you want to delete '{alias}'?", default=False
+                    )
+
+                    if not confirmation:
+                        console.print("❌ Deletion cancelled", style="yellow")
+                        sys.exit(0)
+
+            # Perform deletion
+            console.print(f"🗑️  Deleting golden repository '{alias}'...", style="red")
+            run_async(admin_client.delete_golden_repository(alias, force=force))
+
+            console.print(
+                f"✅ Golden repository '{alias}' deleted successfully", style="green"
+            )
+            console.print(
+                "💡 Use 'cidx admin repos list' to see remaining repositories",
+                style="dim",
+            )
+
+        finally:
+            run_async(admin_client.close())
+
+    except Exception as e:
+        error_str = str(e).lower()
+
+        if "repository not found" in error_str or "not found" in error_str:
+            console.print(f"❌ Repository '{alias}' not found", style="red")
+            console.print(
+                "💡 Use 'cidx admin repos list' to see available repositories",
+                style="dim",
+            )
+        elif (
+            "repository deletion conflict" in error_str
+            or "active instances" in error_str
+        ):
+            console.print(
+                f"❌ Cannot delete repository '{alias}' - it has active instances",
+                style="red",
+            )
+            console.print(
+                "💡 Deactivate all user instances before deleting the golden repository",
+                style="dim",
+            )
+        elif (
+            "insufficient privileges" in error_str or "admin role required" in error_str
+        ):
+            console.print(
+                "❌ Insufficient privileges for repository deletion", style="red"
+            )
+            console.print(
+                "💡 You need admin privileges to delete golden repositories",
+                style="dim",
+            )
+        elif "authentication" in error_str or "unauthorized" in error_str:
+            console.print("❌ Authentication failed", style="red")
+            console.print(
+                "💡 Check your authentication with 'cidx auth login'", style="dim"
+            )
+        elif "service unavailable" in error_str:
+            console.print("❌ Service temporarily unavailable", style="red")
+            console.print(
+                "💡 Repository deletion failed due to service issues - please try again later",
+                style="dim",
+            )
+        elif "connection" in error_str or "network" in error_str:
+            console.print("❌ Connection error", style="red")
+            console.print("💡 Check server connectivity and try again", style="dim")
+        else:
+            console.print(f"❌ Failed to delete repository: {e}", style="red")
+
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
         sys.exit(1)
 
 

@@ -128,7 +128,11 @@ class GoldenRepoManager:
             json.dump(data, f, indent=2)
 
     def add_golden_repo(
-        self, repo_url: str, alias: str, default_branch: str = "main"
+        self,
+        repo_url: str,
+        alias: str,
+        default_branch: str = "main",
+        description: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Add a golden repository.
@@ -137,6 +141,7 @@ class GoldenRepoManager:
             repo_url: Git repository URL
             alias: Unique alias for the repository
             default_branch: Default branch to clone (default: main)
+            description: Optional description for the repository
 
         Returns:
             Result dictionary with success status and message

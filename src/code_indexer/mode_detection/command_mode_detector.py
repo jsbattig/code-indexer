@@ -7,7 +7,7 @@ based on configuration file presence and validation.
 import json
 import logging
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -51,14 +51,14 @@ def find_project_root(start_path: Path) -> Path:
 class CommandModeDetector:
     """Detects the operational mode for CIDX commands based on configuration files."""
 
-    def __init__(self, project_root: Path):
+    def __init__(self, project_root: Optional[Path]):
         """Initialize mode detector with project root path.
 
         Args:
-            project_root: Path to the project root directory
+            project_root: Path to the project root directory (can be None)
         """
         self.project_root = project_root
-        self.config_dir = project_root / ".code-indexer"
+        self.config_dir = project_root / ".code-indexer" if project_root else None
 
     def detect_mode(self) -> Literal["local", "remote", "uninitialized"]:
         """Detect current operational mode based on configuration files.
@@ -72,7 +72,7 @@ class CommandModeDetector:
             Mode string: "local", "remote", or "uninitialized"
         """
         # Check if .code-indexer directory exists
-        if not self.config_dir.exists():
+        if not self.config_dir or not self.config_dir.exists():
             return "uninitialized"
 
         # Check for remote configuration first (higher priority)

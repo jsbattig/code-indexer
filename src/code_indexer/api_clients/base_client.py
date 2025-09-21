@@ -630,14 +630,11 @@ class CIDXRemoteAPIClient:
                 raise
             raise APIClientError(f"Unexpected error getting job status: {e}")
 
-    async def cancel_job(
-        self, job_id: str, reason: str = "User requested cancellation"
-    ) -> Dict[str, Any]:
+    async def cancel_job(self, job_id: str) -> Dict[str, Any]:
         """Cancel a job on the server.
 
         Args:
             job_id: Job ID to cancel
-            reason: Reason for cancellation
 
         Returns:
             Cancellation response data from server
@@ -648,9 +645,8 @@ class CIDXRemoteAPIClient:
             NetworkError: If network request fails
         """
         try:
-            cancel_payload = {"reason": reason}
             response = await self._authenticated_request(
-                "POST", f"/api/jobs/{job_id}/cancel", json=cancel_payload
+                "DELETE", f"/api/jobs/{job_id}"
             )
 
             if response.status_code == 200:
