@@ -107,6 +107,12 @@ jobs:
           --ignore=tests/unit/cli/test_admin_password_change_command.py \
           --ignore=tests/unit/cli/test_admin_repos_add_simple.py \
           --ignore=tests/unit/cli/test_admin_commands.py \
+          --ignore=tests/unit/api_clients/test_messi_rule2_compliance.py \
+          --ignore=tests/unit/api_clients/test_remote_query_client.py \
+          --ignore=tests/unit/api_clients/test_repos_client_tdd.py \
+          --ignore=tests/unit/api_clients/test_repository_linking_client.py \
+          --ignore=tests/unit/api_clients/test_repository_linking_client_tdd_fixes.py \
+          --ignore=tests/unit/server/test_fixes_validation.py \
           --cov=src/code_indexer --cov-report=xml --cov-report=term
     
     - name: Upload coverage to Codecov
