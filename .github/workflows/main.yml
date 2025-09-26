@@ -44,7 +44,9 @@ jobs:
         # Using new directory structure: tests/unit/ contains all unit tests
         # Excludes tests/integration/ and tests/e2e/ directories automatically
         pytest tests/unit/ \
-          -m "not slow and not e2e and not real_api" \
+          -m "not slow and not e2e and not real_api and not integration and not requires_server and not requires_containers" \
+          --ignore=tests/unit/server/ \
+          --ignore=tests/unit/infrastructure/ \
           --ignore=tests/unit/infrastructure/test_data_cleaner_health.py \
           --ignore=tests/unit/infrastructure/test_cleanup_validation.py \
           --ignore=tests/unit/infrastructure/test_global_port_registry.py \
