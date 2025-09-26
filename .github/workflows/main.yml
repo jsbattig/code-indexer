@@ -42,13 +42,13 @@ jobs:
       run: |
         # Run only safe unit test directories that don't have bcrypt/server dependencies
         python3 -m pytest \
-          tests/unit/chunking/ \
-          tests/unit/config/ \
-          tests/unit/display/ \
-          tests/unit/docker/ \
-          tests/unit/parsers/ \
-          tests/unit/progress/ \
-          tests/unit/services/ \
+          tests/unit/chunking \
+          tests/unit/config \
+          tests/unit/display \
+          tests/unit/docker \
+          tests/unit/parsers \
+          tests/unit/progress \
+          tests/unit/services \
           --ignore=tests/unit/config/test_fix_config_port_bug_specific.py \
           --ignore=tests/unit/services/test_clean_file_chunking_manager.py \
           --ignore=tests/unit/services/test_file_chunking_manager.py \
