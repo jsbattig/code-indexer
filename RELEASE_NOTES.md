@@ -1,5 +1,35 @@
 # Release Notes
 
+## Version 5.2.0 - Critical Uninstall Functionality Fixes
+
+**Release Date**: September 26, 2025
+
+### 🔧 Critical Bug Fixes
+
+#### Uninstall Command Restoration
+- **CLI Registration Fixed**: Resolved `'ModeAwareGroup' object has no attribute 'uninstall'` error
+- **Complete Implementation**: Added comprehensive uninstall logic with proper Docker cleanup orchestration
+- **Data Cleaner Integration**: Fixed root-owned file cleanup using data-cleaner container
+- **Network Cleanup**: Added automatic removal of Docker networks during uninstall
+- **Container Lifecycle**: Proper container stop → clean → remove sequence
+
+#### Architecture Improvements
+- **DockerManager Integration**: Fixed constructor parameter mismatch for proper instantiation
+- **Error Handling**: Comprehensive exception handling with user guidance
+- **Mode-Specific**: Supports both local and remote uninstall modes
+- **Aggressive Cleanup**: `--wipe-all` option for complete system cleanup
+
+### ✅ Testing Verification
+- **Complete Cleanup**: Verified no containers, networks, or directories left behind
+- **Multiple Scenarios**: Tested with running and stopped containers
+- **Docker/Podman**: Full compatibility with both container engines
+- **Cross-Platform**: Validated on multiple environments
+
+### 🎯 User Impact
+- **Uninstall Works**: Users can now properly clean up CIDX installations
+- **No Manual Cleanup**: Automatic removal of all CIDX resources
+- **Production Ready**: Bulletproof uninstall for enterprise environments
+
 ## Version 4.3.0 - Enhanced Language Filtering & Claude Code Integration
 
 **Release Date**: September 12, 2025

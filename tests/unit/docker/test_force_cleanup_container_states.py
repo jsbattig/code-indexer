@@ -114,6 +114,10 @@ class TestForceCleanupContainerStates:
                 # Paused container: kill succeeds, rm succeeds
                 Mock(returncode=0, stdout="", stderr=""),
                 Mock(returncode=0, stdout="", stderr=""),
+                # Network cleanup: check network exists
+                Mock(returncode=0, stdout="cidx-18e970d8-network\n", stderr=""),
+                # Network cleanup: remove network
+                Mock(returncode=0, stdout="", stderr=""),
             ]
 
             result = docker_manager._force_cleanup_containers(verbose=True)
@@ -121,8 +125,8 @@ class TestForceCleanupContainerStates:
             # Should succeed for all container states
             assert result is True
 
-            # Verify proper command sequence: 1 list + 4 containers × (kill + rm)
-            assert mock_run.call_count == 9  # 1 + 8
+            # Verify proper command sequence: 1 list + 4 containers × (kill + rm) + 2 network ops
+            assert mock_run.call_count == 11  # 1 + 8 + 2
 
     def test_cleanup_container_with_exit_codes(self, docker_manager, mock_console):
         """Test cleanup handles containers with specific exit codes like 137.
@@ -190,6 +194,10 @@ class TestForceCleanupContainerStates:
                 # Container 3: kill fails, rm succeeds - should still succeed
                 Mock(returncode=1, stdout="", stderr="Kill failed"),
                 Mock(returncode=0, stdout="", stderr=""),
+                # Network cleanup: check network exists
+                Mock(returncode=0, stdout="cidx-18e970d8-network\n", stderr=""),
+                # Network cleanup: remove network
+                Mock(returncode=0, stdout="", stderr=""),
             ]
 
             result = docker_manager._force_cleanup_containers(verbose=True)
@@ -198,7 +206,7 @@ class TestForceCleanupContainerStates:
             assert result is False  # One container completely failed
 
             # Should have attempted all containers
-            assert mock_run.call_count == 7  # 1 list + 3 containers × 2 ops
+            assert mock_run.call_count == 9  # 1 list + 3 containers × 2 ops + 2 network ops
 
     def test_cleanup_uses_enhanced_filtering(self, docker_manager, mock_console):
         """Test that cleanup uses enhanced filtering to find ALL cidx containers.

@@ -5041,7 +5041,7 @@ def _check_remaining_root_files(console: Console):
         console.print("✅ No root-owned files found")
 
 
-@cli.command()
+@cli.command("uninstall")
 @click.option(
     "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
 )

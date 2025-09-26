@@ -88,6 +88,16 @@ COMMAND_COMPATIBILITY: Dict[str, Dict[str, bool]] = {
     "sync": {"local": False, "remote": True, "uninitialized": False},
     # Job management commands - remote only since they manage server-side background jobs
     "list_jobs": {"local": False, "remote": True, "uninitialized": False},
+    "jobs": {"local": False, "remote": True, "uninitialized": False},
+    # Admin commands - remote only since they manage server-side administration
+    "admin": {"local": False, "remote": True, "uninitialized": False},
+    "admin_group": {"local": False, "remote": True, "uninitialized": False},
+    "admin_users": {"local": False, "remote": True, "uninitialized": False},
+    "admin_repos": {"local": False, "remote": True, "uninitialized": False},
+    # Repository management commands - remote only since they manage server-side repositories
+    "repos": {"local": False, "remote": True, "uninitialized": False},
+    # System health commands - remote only since they check server-side system health
+    "system": {"local": False, "remote": True, "uninitialized": False},
 }
 
 # Command alternatives mapping for helpful error messages
@@ -103,6 +113,13 @@ COMMAND_ALTERNATIVES: Dict[str, str] = {
     "install-server": "Remote mode connects to existing servers. Use 'cidx init' to configure remote server connection.",
     "server": "Remote mode doesn't manage local server instances. You're already connected to a remote server.",
     "list_jobs": "Local mode doesn't have background job management. Use remote mode to access server-side job monitoring capabilities.",
+    "jobs": "Local mode doesn't have background job management. Use remote mode to access server-side job monitoring capabilities.",
+    "admin": "Local mode doesn't have admin functions. Use remote mode to access server administration capabilities.",
+    "admin_group": "Local mode doesn't have admin functions. Use remote mode to access server administration capabilities.",
+    "admin_users": "Local mode doesn't have user management. Use remote mode to access server user administration.",
+    "admin_repos": "Local mode doesn't have repository administration. Use remote mode to access server repository management.",
+    "repos": "Local mode doesn't have repository management. Use remote mode to link and manage repositories on the server.",
+    "system": "Local mode doesn't have system health commands. Use remote mode to access server system monitoring.",
 }
 
 

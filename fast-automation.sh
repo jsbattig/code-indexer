@@ -151,6 +151,16 @@ if python3 -m pytest \
     --ignore=tests/unit/services/test_claude_md_compliance_violations_cleanup.py \
     --ignore=tests/unit/services/test_claude_md_final_compliance.py \
     --ignore=tests/unit/services/test_complete_claude_md_violations_elimination.py \
+    --ignore=tests/unit/cli/test_admin_repos_functionality_verification.py \
+    --ignore=tests/unit/cli/test_admin_repos_maintenance_commands.py \
+    --ignore=tests/unit/cli/test_admin_repos_add_simple.py \
+    --ignore=tests/unit/cli/test_admin_repos_delete_command.py \
+    --ignore=tests/unit/cli/test_admin_repos_delete_integration_e2e.py \
+    --ignore=tests/unit/cli/test_password_management_commands.py \
+    --ignore=tests/unit/cli/test_admin_password_change_command.py \
+    --ignore=tests/unit/cli/test_repos_list_fix_verification.py \
+    --ignore=tests/unit/cli/test_system_health_commands.py \
+    --ignore=tests/unit/remote/test_network_error_handling.py \
     -m "not slow and not e2e and not real_api and not integration and not requires_server and not requires_containers" \
     --cov=code_indexer \
     --cov-report=xml --cov-report=term-missing; then

@@ -3490,18 +3490,19 @@ class DockerManager:
             if not container_info:
                 if verbose:
                     self.console.print("ℹ️  No project containers found to cleanup")
-                return True  # Success - nothing to clean up
+                # Continue to network cleanup even if no containers found
+                container_names = []
+            else:
+                # Extract container names for processing
+                container_names = [name for name, state in container_info]
 
-            if verbose:
+            if container_info and verbose:
                 self.console.print("🔍 Discovered project containers for cleanup:")
                 for name, state in container_info:
                     self.console.print(f"  - {name} (state: {state})")
                 self.console.print(
                     "🛑 Stopping and removing ALL discovered project containers..."
                 )
-
-            # Extract container names for processing
-            container_names = [name for name, state in container_info]
 
         except Exception as e:
             if verbose:
@@ -3580,6 +3581,80 @@ class DockerManager:
             # Track overall success - if any container fails to be removed completely
             if not container_removed:
                 success = False
+
+        # Network cleanup - remove project-specific networks after containers are removed
+        network_cleanup_success = True
+        try:
+            network_name = f"cidx-{project_hash}-network"
+
+            # Check if the project network exists
+            network_check_cmd = [
+                container_engine,
+                "network",
+                "ls",
+                "--format",
+                "{{.Name}}",
+                "--filter",
+                f"name=^{network_name}$",  # Exact match
+            ]
+
+            network_result = subprocess.run(
+                network_check_cmd, capture_output=True, text=True, timeout=10
+            )
+
+            if network_result.returncode == 0 and network_result.stdout.strip():
+                # Network exists, attempt to remove it
+                if verbose:
+                    self.console.print(f"🌐 Removing project network: {network_name}")
+
+                remove_network_cmd = [container_engine, "network", "rm", network_name]
+                remove_result = subprocess.run(
+                    remove_network_cmd, capture_output=True, text=True, timeout=10
+                )
+
+                if remove_result.returncode == 0:
+                    if verbose:
+                        self.console.print(f"✅ Removed network: {network_name}")
+                else:
+                    # Network removal failed - log warning but don't fail overall operation
+                    # Networks may be in use by other containers or have other dependencies
+                    network_cleanup_success = False
+                    if verbose:
+                        self.console.print(
+                            f"⚠️  Failed to remove network {network_name}: {remove_result.stderr}",
+                            style="yellow"
+                        )
+            elif network_result.returncode == 0:
+                # Network check succeeded but no network found (empty output)
+                if verbose:
+                    self.console.print(f"ℹ️  No project network found: {network_name}")
+            else:
+                # Network check command failed
+                network_cleanup_success = False
+                if verbose:
+                    self.console.print(
+                        f"⚠️  Error during network cleanup: Failed to check network existence: {network_result.stderr}",
+                        style="yellow"
+                    )
+
+        except subprocess.TimeoutExpired:
+            # Handle network operation timeouts gracefully
+            network_cleanup_success = False
+            if verbose:
+                self.console.print(
+                    f"⚠️  Error during network cleanup: Network operation timed out",
+                    style="yellow"
+                )
+        except Exception as e:
+            # Network cleanup errors should not fail the overall operation
+            network_cleanup_success = False
+            if verbose:
+                self.console.print(
+                    f"⚠️  Error during network cleanup: {e}", style="yellow"
+                )
+
+        # NOTE: Network cleanup failures don't affect overall container cleanup success
+        # Container removal is the primary goal; network cleanup is secondary
 
         return success
 

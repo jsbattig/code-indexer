@@ -259,30 +259,73 @@ def uninstall_remote_mode(project_root: Path, confirm: bool = False) -> None:
 def uninstall_local_mode(
     project_root: Path, force_docker: bool = False, wipe_all: bool = False
 ) -> None:
-    """Uninstall local mode configuration (delegates to existing implementation).
+    """Uninstall local mode configuration using proper Docker cleanup.
 
     Args:
         project_root: Path to the project root directory
         force_docker: Force use of Docker even if Podman is available
         wipe_all: Perform complete system wipe
     """
-    # Import and delegate to existing uninstall implementation
-    from .cli import cli
-    import click
+    from rich.console import Console
+    from .services.docker_manager import DockerManager
+    import shutil
 
-    # Create real click context for uninstall
-    ctx = click.Context(cli)
-    ctx.obj = {}
+    console = Console()
 
-    # Change to project directory for uninstall
-    import os
-
-    original_cwd = os.getcwd()
     try:
-        os.chdir(project_root)
-        cli.uninstall(ctx, force_docker, wipe_all)
-    finally:
-        os.chdir(original_cwd)
+        # Create Docker manager for this project
+        project_name = project_root.name
+        docker_manager = DockerManager(
+            console=console,
+            project_name=project_name,
+            force_docker=force_docker,
+            project_config_dir=project_root / ".code-indexer",
+        )
+
+        console.print("🗑️  Starting local uninstall process...", style="yellow")
+
+        # Stop running containers first
+        console.print("⏹️  Stopping containers...", style="blue")
+        docker_manager.stop()
+
+        # Use data-cleaner to remove root-owned files
+        console.print("🧹 Cleaning root-owned data files...", style="blue")
+        qdrant_path = str(project_root / ".code-indexer" / "qdrant")
+        docker_manager.clean_with_data_cleaner(paths=[qdrant_path])
+
+        # Perform comprehensive cleanup
+        console.print("🔧 Removing containers and volumes...", style="blue")
+        if wipe_all:
+            # Aggressive cleanup including volumes and images
+            cleanup_success = docker_manager.cleanup_with_final_guidance(
+                remove_data=True, force=True, verbose=True, validate=True
+            )
+        else:
+            # Standard cleanup
+            cleanup_success = docker_manager.cleanup(
+                remove_data=True, force=True, verbose=True, validate=True
+            )
+
+        # Remove .code-indexer directory
+        code_indexer_dir = project_root / ".code-indexer"
+        if code_indexer_dir.exists():
+            console.print("📁 Removing .code-indexer directory...", style="blue")
+            shutil.rmtree(code_indexer_dir)
+
+        if cleanup_success:
+            console.print("✅ Local uninstall completed successfully", style="green")
+        else:
+            console.print("⚠️  Uninstall completed with some issues", style="yellow")
+            console.print(
+                "💡 Check above messages for any manual cleanup needed", style="blue"
+            )
+
+    except Exception as e:
+        console.print(f"❌ Error during local uninstall: {e}", style="red")
+        console.print(
+            "💡 You may need to manually remove .code-indexer directory and containers",
+            style="blue",
+        )
 
 
 def _get_health_details(health_info: Dict[str, Any]) -> str:
