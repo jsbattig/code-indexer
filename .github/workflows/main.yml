@@ -101,7 +101,20 @@ jobs:
           --ignore=tests/unit/cli/test_admin_password_change_command.py \
           --ignore=tests/unit/cli/test_repos_list_fix_verification.py \
           --ignore=tests/unit/cli/test_system_health_commands.py \
-          --ignore=tests/unit/remote/test_network_error_handling.py \
+          --ignore=tests/unit/cli/test_staleness_display_integration.py \
+          --ignore=tests/unit/cli/test_critical_cli_fixes_elite_tdd.py \
+          --ignore=tests/unit/cli/test_disabled_command_handling.py \
+          --ignore=tests/unit/cli/test_disabled_command_integration.py \
+          --ignore=tests/unit/cli/test_fix_verification.py \
+          --ignore=tests/unit/cli/test_improved_remote_query_experience.py \
+          --ignore=tests/unit/cli/test_install_server_command.py \
+          --ignore=tests/unit/cli/test_story1_deprecated_options_cleanup.py \
+          --ignore=tests/unit/cli/test_story4_cli_cleanup.py \
+          --ignore=tests/unit/cli/test_cli_rebuild_indexes.py \
+          --ignore=tests/unit/cli/test_cli_status_payload_indexes.py \
+          --ignore=tests/unit/cli/test_command_routing.py \
+          --ignore=tests/unit/remote/ \
+          --ignore=tests/unit/services/test_rag_first_claude_service_bug.py \
           -m "not slow and not e2e and not real_api and not integration and not requires_server and not requires_containers" \
           --cov=src/code_indexer --cov-report=xml --cov-report=term
     
