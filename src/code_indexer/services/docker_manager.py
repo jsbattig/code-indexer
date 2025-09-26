@@ -3583,7 +3583,6 @@ class DockerManager:
                 success = False
 
         # Network cleanup - remove project-specific networks after containers are removed
-        network_cleanup_success = True
         try:
             network_name = f"cidx-{project_hash}-network"
 
@@ -3618,7 +3617,6 @@ class DockerManager:
                 else:
                     # Network removal failed - log warning but don't fail overall operation
                     # Networks may be in use by other containers or have other dependencies
-                    network_cleanup_success = False
                     if verbose:
                         self.console.print(
                             f"⚠️  Failed to remove network {network_name}: {remove_result.stderr}",
@@ -3630,7 +3628,6 @@ class DockerManager:
                     self.console.print(f"ℹ️  No project network found: {network_name}")
             else:
                 # Network check command failed
-                network_cleanup_success = False
                 if verbose:
                     self.console.print(
                         f"⚠️  Error during network cleanup: Failed to check network existence: {network_result.stderr}",
@@ -3639,15 +3636,13 @@ class DockerManager:
 
         except subprocess.TimeoutExpired:
             # Handle network operation timeouts gracefully
-            network_cleanup_success = False
             if verbose:
                 self.console.print(
-                    f"⚠️  Error during network cleanup: Network operation timed out",
+                    "⚠️  Error during network cleanup: Network operation timed out",
                     style="yellow"
                 )
         except Exception as e:
             # Network cleanup errors should not fail the overall operation
-            network_cleanup_success = False
             if verbose:
                 self.console.print(
                     f"⚠️  Error during network cleanup: {e}", style="yellow"
