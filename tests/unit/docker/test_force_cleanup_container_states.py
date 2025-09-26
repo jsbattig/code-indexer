@@ -206,7 +206,9 @@ class TestForceCleanupContainerStates:
             assert result is False  # One container completely failed
 
             # Should have attempted all containers
-            assert mock_run.call_count == 9  # 1 list + 3 containers × 2 ops + 2 network ops
+            assert (
+                mock_run.call_count == 9
+            )  # 1 list + 3 containers × 2 ops + 2 network ops
 
     def test_cleanup_uses_enhanced_filtering(self, docker_manager, mock_console):
         """Test that cleanup uses enhanced filtering to find ALL cidx containers.

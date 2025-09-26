@@ -3620,7 +3620,7 @@ class DockerManager:
                     if verbose:
                         self.console.print(
                             f"⚠️  Failed to remove network {network_name}: {remove_result.stderr}",
-                            style="yellow"
+                            style="yellow",
                         )
             elif network_result.returncode == 0:
                 # Network check succeeded but no network found (empty output)
@@ -3631,7 +3631,7 @@ class DockerManager:
                 if verbose:
                     self.console.print(
                         f"⚠️  Error during network cleanup: Failed to check network existence: {network_result.stderr}",
-                        style="yellow"
+                        style="yellow",
                     )
 
         except subprocess.TimeoutExpired:
@@ -3639,7 +3639,7 @@ class DockerManager:
             if verbose:
                 self.console.print(
                     "⚠️  Error during network cleanup: Network operation timed out",
-                    style="yellow"
+                    style="yellow",
                 )
         except Exception as e:
             # Network cleanup errors should not fail the overall operation

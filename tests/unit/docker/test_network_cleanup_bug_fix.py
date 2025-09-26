@@ -28,7 +28,9 @@ class TestNetworkCleanupBugFix:
         """Mock console for testing output."""
         return Mock(spec=Console)
 
-    def test_network_cleanup_fails_when_network_check_command_fails(self, docker_manager, mock_console):
+    def test_network_cleanup_fails_when_network_check_command_fails(
+        self, docker_manager, mock_console
+    ):
         """
         FAILING TEST: Network cleanup should handle network check command failures gracefully.
 
@@ -43,8 +45,10 @@ class TestNetworkCleanupBugFix:
             ),
             patch("subprocess.run") as mock_run,
             patch.object(
-                docker_manager.port_registry, "_calculate_project_hash", return_value="abc123"
-            )
+                docker_manager.port_registry,
+                "_calculate_project_hash",
+                return_value="abc123",
+            ),
         ):
             # Mock: Container discovery finds containers, network check fails
             mock_run.side_effect = [
@@ -75,7 +79,8 @@ class TestNetworkCleanupBugFix:
 
             # Verify network check was attempted
             network_check_calls = [
-                call for call in mock_run.call_args_list
+                call
+                for call in mock_run.call_args_list
                 if "network" in str(call) and "ls" in str(call)
             ]
             assert len(network_check_calls) == 1
@@ -83,12 +88,21 @@ class TestNetworkCleanupBugFix:
             # Should show warning about network cleanup failure
             console_calls = [call.args[0] for call in mock_console.print.call_args_list]
             network_warning_messages = [
-                call for call in console_calls
-                if "network cleanup" in call.lower() and ("error" in call.lower() or "failed to check network existence" in call.lower())
+                call
+                for call in console_calls
+                if "network cleanup" in call.lower()
+                and (
+                    "error" in call.lower()
+                    or "failed to check network existence" in call.lower()
+                )
             ]
-            assert len(network_warning_messages) > 0, f"Expected network cleanup error message, but console calls were: {console_calls}"
+            assert (
+                len(network_warning_messages) > 0
+            ), f"Expected network cleanup error message, but console calls were: {console_calls}"
 
-    def test_network_cleanup_fails_when_network_remove_fails_but_containers_succeed(self, docker_manager, mock_console):
+    def test_network_cleanup_fails_when_network_remove_fails_but_containers_succeed(
+        self, docker_manager, mock_console
+    ):
         """
         FAILING TEST: Network removal failure should not cause overall cleanup to fail if containers were cleaned.
 
@@ -103,8 +117,10 @@ class TestNetworkCleanupBugFix:
             ),
             patch("subprocess.run") as mock_run,
             patch.object(
-                docker_manager.port_registry, "_calculate_project_hash", return_value="xyz789"
-            )
+                docker_manager.port_registry,
+                "_calculate_project_hash",
+                return_value="xyz789",
+            ),
         ):
             # Mock: Container cleanup succeeds, network removal fails
             mock_run.side_effect = [
@@ -117,7 +133,9 @@ class TestNetworkCleanupBugFix:
                 # Container operations succeed
                 Mock(returncode=0, stdout="", stderr=""),  # kill qdrant
                 Mock(returncode=0, stdout="", stderr=""),  # rm qdrant
-                Mock(returncode=1, stdout="", stderr="already stopped"),  # kill data-cleaner (expected failure)
+                Mock(
+                    returncode=1, stdout="", stderr="already stopped"
+                ),  # kill data-cleaner (expected failure)
                 Mock(returncode=0, stdout="", stderr=""),  # rm data-cleaner
                 # Network check succeeds - network exists
                 Mock(
@@ -140,20 +158,28 @@ class TestNetworkCleanupBugFix:
 
             # Verify network removal was attempted (filter out network ls calls)
             network_remove_calls = [
-                call for call in mock_run.call_args_list
-                if "network" in str(call) and "rm" in str(call) and "ls" not in str(call)
+                call
+                for call in mock_run.call_args_list
+                if "network" in str(call)
+                and "rm" in str(call)
+                and "ls" not in str(call)
             ]
             assert len(network_remove_calls) == 1
 
             # Should show warning about network removal failure but not fail overall
             console_calls = [call.args[0] for call in mock_console.print.call_args_list]
             network_failure_messages = [
-                call for call in console_calls
+                call
+                for call in console_calls
                 if "failed to remove network" in call.lower()
             ]
-            assert len(network_failure_messages) > 0, f"Expected network removal failure message, but console calls were: {console_calls}"
+            assert (
+                len(network_failure_messages) > 0
+            ), f"Expected network removal failure message, but console calls were: {console_calls}"
 
-    def test_network_cleanup_succeeds_for_both_docker_and_podman(self, docker_manager, mock_console):
+    def test_network_cleanup_succeeds_for_both_docker_and_podman(
+        self, docker_manager, mock_console
+    ):
         """
         FAILING TEST: Network cleanup should work identically for both Docker and Podman engines.
 
@@ -168,8 +194,10 @@ class TestNetworkCleanupBugFix:
                 ),
                 patch("subprocess.run") as mock_run,
                 patch.object(
-                    docker_manager.port_registry, "_calculate_project_hash", return_value="engine123"
-                )
+                    docker_manager.port_registry,
+                    "_calculate_project_hash",
+                    return_value="engine123",
+                ),
             ):
                 # Mock: Complete successful cleanup
                 mock_run.side_effect = [
@@ -199,22 +227,32 @@ class TestNetworkCleanupBugFix:
                 # Verify commands used correct engine
                 all_calls = [str(call) for call in mock_run.call_args_list]
                 engine_calls = [call for call in all_calls if engine in call]
-                assert len(engine_calls) >= 4, f"Expected {engine} commands for container and network operations"
+                assert (
+                    len(engine_calls) >= 4
+                ), f"Expected {engine} commands for container and network operations"
 
                 # Verify network-specific commands
                 network_check_calls = [
-                    call for call in all_calls
+                    call
+                    for call in all_calls
                     if f"{engine}" in call and "network" in call and "ls" in call
                 ]
                 network_remove_calls = [
-                    call for call in all_calls
+                    call
+                    for call in all_calls
                     if f"{engine}" in call and "network" in call and "rm" in call
                 ]
 
-                assert len(network_check_calls) >= 1, f"Expected at least 1 network check call for {engine}"
-                assert len(network_remove_calls) >= 1, f"Expected at least 1 network remove call for {engine}"
+                assert (
+                    len(network_check_calls) >= 1
+                ), f"Expected at least 1 network check call for {engine}"
+                assert (
+                    len(network_remove_calls) >= 1
+                ), f"Expected at least 1 network remove call for {engine}"
 
-    def test_network_cleanup_uses_correct_project_hash_in_network_name(self, docker_manager, mock_console):
+    def test_network_cleanup_uses_correct_project_hash_in_network_name(
+        self, docker_manager, mock_console
+    ):
         """
         FAILING TEST: Network cleanup should use the exact project hash in network name pattern.
 
@@ -230,9 +268,13 @@ class TestNetworkCleanupBugFix:
             ),
             patch("subprocess.run") as mock_run,
             patch.object(
-                docker_manager.port_registry, "_calculate_project_hash", return_value=project_hash
+                docker_manager.port_registry,
+                "_calculate_project_hash",
+                return_value=project_hash,
             ),
-            patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config_mgr,
+            patch(
+                "code_indexer.config.ConfigManager.create_with_backtrack"
+            ) as mock_config_mgr,
         ):
             # Mock config manager to force fallback to port registry calculation
             mock_config = Mock()
@@ -258,18 +300,24 @@ class TestNetworkCleanupBugFix:
 
             # Verify correct network name pattern was used
             network_check_calls = [
-                call for call in mock_run.call_args_list
+                call
+                for call in mock_run.call_args_list
                 if "network" in str(call) and "ls" in str(call)
             ]
-            assert len(network_check_calls) == 1, f"Expected 1 network check call, got {len(network_check_calls)}. All calls: {mock_run.call_args_list}"
+            assert (
+                len(network_check_calls) == 1
+            ), f"Expected 1 network check call, got {len(network_check_calls)}. All calls: {mock_run.call_args_list}"
 
             network_check_cmd = network_check_calls[0][0][0]
             # Should filter by exact network name
             assert f"cidx-{project_hash}-network" in str(network_check_cmd)
 
             network_remove_calls = [
-                call for call in mock_run.call_args_list
-                if "network" in str(call) and "rm" in str(call) and "ls" not in str(call)
+                call
+                for call in mock_run.call_args_list
+                if "network" in str(call)
+                and "rm" in str(call)
+                and "ls" not in str(call)
             ]
             assert len(network_remove_calls) == 1
 
@@ -277,7 +325,9 @@ class TestNetworkCleanupBugFix:
             # Should remove exact network name
             assert f"cidx-{project_hash}-network" in str(network_remove_cmd)
 
-    def test_network_cleanup_handles_no_network_exists_scenario(self, docker_manager, mock_console):
+    def test_network_cleanup_handles_no_network_exists_scenario(
+        self, docker_manager, mock_console
+    ):
         """
         FAILING TEST: Network cleanup should handle scenarios where no project network exists.
 
@@ -291,9 +341,13 @@ class TestNetworkCleanupBugFix:
             ),
             patch("subprocess.run") as mock_run,
             patch.object(
-                docker_manager.port_registry, "_calculate_project_hash", return_value="no_network_123"
+                docker_manager.port_registry,
+                "_calculate_project_hash",
+                return_value="no_network_123",
             ),
-            patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config_mgr,
+            patch(
+                "code_indexer.config.ConfigManager.create_with_backtrack"
+            ) as mock_config_mgr,
         ):
             # Mock config manager to force fallback to port registry calculation
             mock_config = Mock()
@@ -320,28 +374,33 @@ class TestNetworkCleanupBugFix:
 
             # Should attempt network check but no network removal
             network_check_calls = [
-                call for call in mock_run.call_args_list
+                call
+                for call in mock_run.call_args_list
                 if "network" in str(call) and "ls" in str(call)
             ]
             # Check for actual network rm commands (not container rm commands)
             network_remove_calls = []
             for call in mock_run.call_args_list:
                 cmd = call[0][0]  # Get the command list
-                if (len(cmd) >= 3 and
-                    cmd[1] == "network" and
-                    cmd[2] == "rm"):
+                if len(cmd) >= 3 and cmd[1] == "network" and cmd[2] == "rm":
                     network_remove_calls.append(call)
 
             assert len(network_check_calls) == 1
-            assert len(network_remove_calls) == 0  # No removal attempt when network doesn't exist
+            assert (
+                len(network_remove_calls) == 0
+            )  # No removal attempt when network doesn't exist
 
             # Should show info message about no network found
             console_calls = [call.args[0] for call in mock_console.print.call_args_list]
             no_network_messages = [
-                call for call in console_calls
-                if "no project network found" in call.lower() or "no network found" in call.lower()
+                call
+                for call in console_calls
+                if "no project network found" in call.lower()
+                or "no network found" in call.lower()
             ]
-            assert len(no_network_messages) > 0, f"Expected no network found message, but console calls were: {console_calls}"
+            assert (
+                len(no_network_messages) > 0
+            ), f"Expected no network found message, but console calls were: {console_calls}"
 
     def test_network_cleanup_timeout_handling(self, docker_manager, mock_console):
         """
@@ -357,8 +416,10 @@ class TestNetworkCleanupBugFix:
             ),
             patch("subprocess.run") as mock_run,
             patch.object(
-                docker_manager.port_registry, "_calculate_project_hash", return_value="timeout_test"
-            )
+                docker_manager.port_registry,
+                "_calculate_project_hash",
+                return_value="timeout_test",
+            ),
         ):
             # Mock: Container cleanup succeeds, network operations timeout
             mock_run.side_effect = [
@@ -383,10 +444,14 @@ class TestNetworkCleanupBugFix:
             # Should show warning about network operation timeout
             console_calls = [call.args[0] for call in mock_console.print.call_args_list]
             timeout_messages = [
-                call for call in console_calls
-                if "network cleanup" in call.lower() and ("timeout" in call.lower() or "timed out" in call.lower())
+                call
+                for call in console_calls
+                if "network cleanup" in call.lower()
+                and ("timeout" in call.lower() or "timed out" in call.lower())
             ]
-            assert len(timeout_messages) > 0, f"Expected network timeout message, but console calls were: {console_calls}"
+            assert (
+                len(timeout_messages) > 0
+            ), f"Expected network timeout message, but console calls were: {console_calls}"
 
 
 if __name__ == "__main__":
