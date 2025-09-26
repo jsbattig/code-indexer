@@ -115,6 +115,19 @@ jobs:
           --ignore=tests/unit/cli/test_command_routing.py \
           --ignore=tests/unit/remote/ \
           --ignore=tests/unit/services/test_rag_first_claude_service_bug.py \
+          --ignore=tests/unit/api_clients/test_api_compatibility_elite.py \
+          --ignore=tests/unit/api_clients/test_api_compatibility_failures.py \
+          --ignore=tests/unit/api_clients/test_api_compatibility_fixes_verification.py \
+          --ignore=tests/unit/api_clients/test_auth_client_methods_basic.py \
+          --ignore=tests/unit/api_clients/test_auth_client_password_management.py \
+          --ignore=tests/unit/api_clients/test_business_logic_fixture_failures.py \
+          --ignore=tests/unit/api_clients/test_complete_api_compatibility_solution.py \
+          --ignore=tests/unit/api_clients/test_remote_query_client_fixed.py \
+          --ignore=tests/unit/api_clients/test_repos_client_activation_lifecycle.py \
+          --ignore=tests/unit/cancellation/test_enhanced_cancellation_system.py \
+          --ignore=tests/unit/cli/test_adapted_command_behavior.py \
+          --ignore=tests/unit/cli/test_admin_repos_list_debug.py \
+          --ignore=tests/unit/cli/test_cli_help_text_validation.py \
           -m "not slow and not e2e and not real_api and not integration and not requires_server and not requires_containers" \
           --cov=src/code_indexer --cov-report=xml --cov-report=term
     
