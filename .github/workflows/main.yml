@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ master, main ]
 
+permissions:
+  contents: write  # Allow creating tags and releases
+  actions: read    # Allow reading workflow runs
+
 jobs:
   check-version:
     runs-on: ubuntu-latest
