@@ -649,6 +649,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         # STORY 1: Send final progress callback to reach 100% completion
         # This ensures Rich Progress bar shows 100% instead of stopping at ~94%
         if progress_callback and len(files) > 0:
+            progress_callback(0, 0, Path(""), info="Sending final progress callback...")
             # Calculate final KB/s throughput for completion message
             final_kbs_throughput = self._calculate_kbs_throughput()
 
@@ -667,6 +668,8 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             )
 
         # CleanSlotTracker doesn't require explicit cleanup thread management
+        if progress_callback:
+            progress_callback(0, 0, Path(""), info="High-throughput processor finalizing...")
 
         return stats
 
@@ -1072,7 +1075,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             return True
 
     def _batch_hide_files_in_branch(
-        self, file_paths: List[str], branch: str, collection_name: str
+        self, file_paths: List[str], branch: str, collection_name: str, progress_callback: Optional[Callable] = None
     ):
         """Batch process hiding files in branch to avoid sequential locking bottleneck."""
         if not file_paths:
@@ -1084,7 +1087,16 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             try:
                 # Get all content points for all files in a single batch query
                 # This is more efficient than individual queries per file
-                for file_path in file_paths:
+                total_files = len(file_paths)
+                for idx, file_path in enumerate(file_paths):
+                    # Report progress for every file for real-time feedback
+                    if progress_callback:
+                        progress_callback(
+                            idx,
+                            total_files,
+                            Path(file_path),
+                            info=f"🔒 Branch isolation • {idx}/{total_files} database files"
+                        )
                     try:
                         content_points, _ = self.qdrant_client.scroll_points(
                             filter_conditions={
@@ -1132,6 +1144,15 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                         f"Batch updated {len(all_points_to_update)} points for branch hiding"
                     )
 
+                    # Report completion
+                    if progress_callback:
+                        progress_callback(
+                            total_files,
+                            total_files,
+                            Path(""),
+                            info=f"🔒 Branch isolation • {total_files}/{total_files} database files"
+                        )
+
             except Exception as e:
                 logger.error(f"Batch hide operation failed: {e}")
 
@@ -1143,6 +1164,10 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         progress_callback: Optional[Callable] = None,
     ):
         """Thread-safe version of hiding files that don't exist in branch."""
+
+        # Reset progress timers for branch isolation phase transition
+        if progress_callback and hasattr(progress_callback, "reset_progress_timers"):
+            progress_callback.reset_progress_timers()
 
         if progress_callback:
             progress_callback(
@@ -1185,16 +1210,8 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
 
             # Batch process files to hide - avoid sequential locking bottleneck
             self._batch_hide_files_in_branch(
-                list(files_to_hide), branch, collection_name
+                list(files_to_hide), branch, collection_name, progress_callback
             )
-
-            if progress_callback:
-                progress_callback(
-                    0,
-                    0,
-                    Path(""),
-                    info=f"Hidden {len(files_to_hide)} files not in branch '{branch}'",
-                )
         else:
             logger.info(f"Branch isolation: no files to hide for branch '{branch}'")
 

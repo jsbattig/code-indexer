@@ -673,12 +673,16 @@ class SmartIndexer(HighThroughputProcessor):
                     all_relative_files.append(str(file_path))
 
             # Use thread-safe branch isolation directly from high-throughput processor
+            if progress_callback:
+                progress_callback(0, 0, Path(""), info="Applying branch isolation cleanup...")
             self.hide_files_not_in_branch_thread_safe(
                 current_branch, all_relative_files, collection_name, progress_callback
             )
 
             # Use ProcessingStats directly from high-throughput processor
             stats = high_throughput_stats
+            if progress_callback:
+                progress_callback(0, 0, Path(""), info="Processing completed, starting cleanup...")
 
         except Exception as e:
             logger.error(f"High-throughput processor failed during full index: {e}")
@@ -689,6 +693,8 @@ class SmartIndexer(HighThroughputProcessor):
             ) from e
 
         # Update metadata with actual processing results
+        if progress_callback:
+            progress_callback(0, 0, Path(""), info="Updating progress metadata...")
         self.progressive_metadata.update_progress(
             files_processed=stats.files_processed,
             chunks_added=stats.chunks_created,
@@ -699,6 +705,8 @@ class SmartIndexer(HighThroughputProcessor):
         current_branch = git_status.get("current_branch", "master")
         current_commit = git_status.get("current_commit")
         if git_status.get("git_available", False) and current_commit:
+            if progress_callback:
+                progress_callback(0, 0, Path(""), info="Updating git commit watermark...")
             self.progressive_metadata.update_commit_watermark(
                 current_branch, current_commit
             )
@@ -708,6 +716,8 @@ class SmartIndexer(HighThroughputProcessor):
 
         # Mark as completed only if not cancelled
         if not stats.cancelled:
+            if progress_callback:
+                progress_callback(0, 0, Path(""), info="Finalizing indexing session...")
             self.progressive_metadata.complete_indexing()
             self.progress_log.complete_session()
         else:
@@ -979,6 +989,8 @@ class SmartIndexer(HighThroughputProcessor):
             ) from e
 
         # Update metadata with actual processing results
+        if progress_callback:
+            progress_callback(0, 0, Path(""), info="Updating incremental progress metadata...")
         self.progressive_metadata.update_progress(
             files_processed=stats.files_processed,
             chunks_added=stats.chunks_created,
@@ -1370,6 +1382,8 @@ class SmartIndexer(HighThroughputProcessor):
             ) from e
 
         # Update metadata with actual processing results
+        if progress_callback:
+            progress_callback(0, 0, Path(""), info="Updating reconcile progress metadata...")
         self.progressive_metadata.update_progress(
             files_processed=stats.files_processed,
             chunks_added=stats.chunks_created,
@@ -1481,6 +1495,8 @@ class SmartIndexer(HighThroughputProcessor):
             ) from e
 
         # Update metadata with actual processing results
+        if progress_callback:
+            progress_callback(0, 0, Path(""), info="Updating resume progress metadata...")
         self.progressive_metadata.update_progress(
             files_processed=stats.files_processed,
             chunks_added=stats.chunks_created,
@@ -1489,6 +1505,8 @@ class SmartIndexer(HighThroughputProcessor):
 
         # Mark as completed only if not cancelled
         if not stats.cancelled:
+            if progress_callback:
+                progress_callback(0, 0, Path(""), info="Finalizing resume session...")
             self.progressive_metadata.complete_indexing()
             self.progress_log.complete_session()
         else:

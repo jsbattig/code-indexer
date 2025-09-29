@@ -202,6 +202,8 @@ class MultiThreadedProgressManager:
                 self._current_phase = "🔍 Hashing"
             elif "📊" in info:
                 self._current_phase = "🚀 Indexing"
+            elif "🔒" in info:
+                self._current_phase = "🔒 Branch isolation"
             # Keep current phase if no clear indicator
 
         # Initialize progress bar if not started
@@ -282,7 +284,7 @@ class MultiThreadedProgressManager:
                         status_display = "starting"
 
                     line = f"├─ {file_data.filename} ({file_data.file_size/1024:.1f} KB) {status_display}"
-                    main_table.add_row(Text(line, style="dim blue"))
+                    main_table.add_row(Text(line, style="cyan"))
         elif self._concurrent_files:
             # Fallback to concurrent_files when slot_tracker is None (hash phase)
             for file_info in self._concurrent_files:
@@ -307,7 +309,7 @@ class MultiThreadedProgressManager:
                         status_display = status
 
                     line = f"├─ {filename} ({file_size/1024:.1f} KB) {status_display}"
-                    main_table.add_row(Text(line, style="dim blue"))
+                    main_table.add_row(Text(line, style="cyan"))
 
         return main_table
 
