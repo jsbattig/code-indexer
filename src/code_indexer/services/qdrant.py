@@ -1,5 +1,7 @@
 """Qdrant vector database client."""
 
+import json
+import logging
 import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
@@ -12,6 +14,8 @@ from .embedding_provider import EmbeddingProvider
 from .embedding_factory import EmbeddingProviderFactory
 
 # Import will be added when needed to avoid circular imports
+
+logger = logging.getLogger(__name__)
 
 
 class QdrantClient:
@@ -1279,20 +1283,63 @@ class QdrantClient:
         self,
         points: List[Dict[str, Any]],
         collection_name: str,
+        batch_size: int = 100,
     ) -> bool:
-        """Update multiple points with new payload data using merge operation."""
+        """
+        Update multiple points with new payload data using merge operation.
+
+        PERFORMANCE FIX: Groups points with identical payloads and sends batched requests
+        instead of one HTTP request per point (Bug 2 fix).
+
+        Args:
+            points: List of point updates with structure {"id": point_id, "payload": {...}}
+            collection_name: Name of the Qdrant collection
+            batch_size: Maximum number of point IDs per batch request (default: 100)
+
+        Returns:
+            True if all updates succeeded, False otherwise
+        """
         try:
-            # Use set payload operation to merge new fields without overwriting existing ones
+            # Group points by identical payload to maximize batching efficiency
+            # Key: JSON-serialized payload, Value: list of point IDs
+            payload_to_point_ids = {}
+
             for point in points:
-                payload_data = {
-                    "payload": point["payload"],
-                    "points": [point["id"]],
-                }
-                response = self.client.post(
-                    f"/collections/{collection_name}/points/payload",
-                    json=payload_data,
-                )
-                response.raise_for_status()
+                # Serialize payload to use as grouping key
+                payload_key = json.dumps(point["payload"], sort_keys=True)
+
+                if payload_key not in payload_to_point_ids:
+                    payload_to_point_ids[payload_key] = {
+                        "payload": point["payload"],
+                        "point_ids": []
+                    }
+                payload_to_point_ids[payload_key]["point_ids"].append(point["id"])
+
+            # Send batched requests for each unique payload
+            total_requests = 0
+            for payload_key, payload_info in payload_to_point_ids.items():
+                point_ids = payload_info["point_ids"]
+                payload = payload_info["payload"]
+
+                # Split point IDs into batches to respect batch size limit
+                for i in range(0, len(point_ids), batch_size):
+                    batch_point_ids = point_ids[i:i + batch_size]
+
+                    payload_data = {
+                        "payload": payload,
+                        "points": batch_point_ids,  # Multiple point IDs in single request
+                    }
+                    response = self.client.post(
+                        f"/collections/{collection_name}/points/payload",
+                        json=payload_data,
+                    )
+                    response.raise_for_status()
+                    total_requests += 1
+
+            logger.info(
+                f"Batch updated {len(points)} points in {total_requests} HTTP requests "
+                f"({len(points) / total_requests:.1f} points per request)"
+            )
             return True
         except Exception as e:
             self.console.print(f"Batch update failed: {e}", style="red")

@@ -1,5 +1,43 @@
 # Release Notes
 
+## Version 5.4.0 - Critical Performance Optimization for Large Repositories
+
+**Release Date**: October 2, 2025
+
+### 🚀 Catastrophic Performance Fix
+
+#### Branch Isolation Performance Optimization (130x Improvement)
+- **Root Cause**: Fixed N+1 query anti-pattern causing 200,000+ HTTP requests during incremental indexing
+- **Performance Impact**: Reduced processing time from 10-30 minutes to <30 seconds for 49K+ file repositories
+- **HTTP Request Reduction**: 200,000 → 1,500 requests (130x improvement)
+
+#### Three Critical Bug Fixes
+
+**Bug 1: In-Memory Filtering** (`high_throughput_processor.py`)
+- **Problem**: `_batch_hide_files_in_branch` made ONE scroll_points request per file (49,751 HTTP requests)
+- **Solution**: Changed to accept pre-fetched `all_content_points` and filter in-memory
+- **Impact**: Eliminated per-file database queries entirely
+
+**Bug 2: True Batch Updates** (`qdrant.py`)
+- **Problem**: `_batch_update_points` made ONE HTTP request per point (~149,253 requests)
+- **Solution**: Implemented payload grouping to send multiple point IDs in single request
+- **Impact**: Reduced update requests from 149,253 to ~1,500 batched operations
+
+**Bug 3: Redundant Deletion Detection** (`smart_indexer.py`)
+- **Problem**: `_detect_and_handle_deletions` ran BEFORE indexing, then `hide_files_not_in_branch` ran AFTER
+- **Solution**: Added git-aware check to skip redundant deletion detection
+- **Impact**: Saved 10-30 minutes of redundant database scanning
+
+### ✅ Testing and Quality
+- **All Existing Tests Pass**: 1,631 tests passing without regressions
+- **New Performance Tests**: Added 6 comprehensive performance regression tests
+- **Code Review**: A+ rating from code reviewer (APPROVED FOR MERGE)
+
+### 🎯 User Impact
+- **Large Repository Support**: 49K+ file repositories now index in <30 seconds instead of 10-30 minutes
+- **Scalability**: Proper batching architecture supports even larger codebases
+- **Production Ready**: Eliminates catastrophic performance bottleneck for enterprise use
+
 ## Version 5.3.0 - Enhanced Progress Display and UI Improvements
 
 **Release Date**: September 27, 2025

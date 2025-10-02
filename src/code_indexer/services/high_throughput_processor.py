@@ -1075,9 +1075,26 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             return True
 
     def _batch_hide_files_in_branch(
-        self, file_paths: List[str], branch: str, collection_name: str, progress_callback: Optional[Callable] = None
+        self,
+        file_paths: List[str],
+        branch: str,
+        collection_name: str,
+        all_content_points: List[Dict[str, Any]],
+        progress_callback: Optional[Callable] = None
     ):
-        """Batch process hiding files in branch to avoid sequential locking bottleneck."""
+        """
+        Batch process hiding files in branch using in-memory filtering.
+
+        PERFORMANCE FIX: Uses pre-fetched all_content_points for in-memory filtering
+        instead of making one scroll_points request per file (Bug 1 fix).
+
+        Args:
+            file_paths: List of file paths to hide
+            branch: Branch name to add to hidden_branches
+            collection_name: Qdrant collection name
+            all_content_points: Pre-fetched content points from database (avoids N queries)
+            progress_callback: Optional progress reporting callback
+        """
         if not file_paths:
             return
 
@@ -1085,55 +1102,41 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             all_points_to_update = []
 
             try:
-                # Get all content points for all files in a single batch query
-                # This is more efficient than individual queries per file
+                # Build set of file paths for fast lookup
+                files_to_hide_set = set(file_paths)
+
+                # IN-MEMORY FILTERING: Filter all_content_points instead of making N HTTP requests
                 total_files = len(file_paths)
-                for idx, file_path in enumerate(file_paths):
-                    # Report progress for every file for real-time feedback
-                    if progress_callback:
-                        progress_callback(
-                            idx,
-                            total_files,
-                            Path(file_path),
-                            info=f"🔒 Branch isolation • {idx}/{total_files} database files"
-                        )
-                    try:
-                        content_points, _ = self.qdrant_client.scroll_points(
-                            filter_conditions={
-                                "must": [
-                                    {"key": "type", "match": {"value": "content"}},
-                                    {"key": "path", "match": {"value": file_path}},
-                                ]
-                            },
-                            limit=1000,
-                            collection_name=collection_name,
-                        )
+                processed_files = 0
 
-                        if not isinstance(content_points, list):
-                            logger.warning(
-                                f"Unexpected scroll_points return type: {type(content_points)} for {file_path}"
-                            )
-                            continue
+                for point in all_content_points:
+                    file_path = point.get("payload", {}).get("path")
 
-                        # Collect points that need updating
-                        for point in content_points:
-                            current_hidden = point.get("payload", {}).get(
-                                "hidden_branches", []
-                            )
-                            if branch not in current_hidden:
-                                new_hidden = current_hidden + [branch]
-                                all_points_to_update.append(
-                                    {
-                                        "id": point["id"],
-                                        "payload": {"hidden_branches": new_hidden},
-                                    }
-                                )
-
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to get content points for {file_path}: {e}"
-                        )
+                    # Skip points that aren't in our files_to_hide list
+                    if file_path not in files_to_hide_set:
                         continue
+
+                    processed_files += 1
+
+                    # Report progress for real-time feedback
+                    if progress_callback and processed_files % 100 == 0:
+                        progress_callback(
+                            processed_files,
+                            total_files,
+                            Path(file_path) if file_path else Path(""),
+                            info=f"🔒 Branch isolation • {processed_files}/{total_files} database files"
+                        )
+
+                    # Collect points that need updating
+                    current_hidden = point.get("payload", {}).get("hidden_branches", [])
+                    if branch not in current_hidden:
+                        new_hidden = current_hidden + [branch]
+                        all_points_to_update.append(
+                            {
+                                "id": point["id"],
+                                "payload": {"hidden_branches": new_hidden},
+                            }
+                        )
 
                 # Batch update all points at once instead of individual updates
                 if all_points_to_update:
@@ -1208,9 +1211,14 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 f"Branch isolation: hiding {len(files_to_hide)} files not in branch '{branch}'"
             )
 
-            # Batch process files to hide - avoid sequential locking bottleneck
+            # Batch process files to hide - pass pre-fetched all_content_points for in-memory filtering
+            # PERFORMANCE FIX: Avoids making N scroll_points requests (one per file)
             self._batch_hide_files_in_branch(
-                list(files_to_hide), branch, collection_name, progress_callback
+                file_paths=list(files_to_hide),
+                branch=branch,
+                collection_name=collection_name,
+                all_content_points=all_content_points,
+                progress_callback=progress_callback
             )
         else:
             logger.info(f"Branch isolation: no files to hide for branch '{branch}'")

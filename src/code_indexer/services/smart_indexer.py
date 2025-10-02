@@ -424,7 +424,10 @@ class SmartIndexer(HighThroughputProcessor):
                 )
 
             # Handle deletion detection for standard indexing (when not doing reconcile)
-            if detect_deletions and not reconcile_with_database:
+            # PERFORMANCE FIX (Bug 3): Skip deletion detection for git-aware projects
+            # Git-aware projects use branch isolation AFTER indexing, so deletion detection
+            # before indexing is redundant and wastes 10-30 minutes scanning the database
+            if detect_deletions and not reconcile_with_database and not self.is_git_aware():
                 self._detect_and_handle_deletions(progress_callback)
 
             # Determine indexing strategy
