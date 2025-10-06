@@ -1,6 +1,6 @@
 # Release Notes
 
-## Version 5.5.0 - Critical Reconcile Fixes and Production Hardening
+## Version 5.6.0 - Critical Reconcile Fixes and Production Hardening
 
 **Release Date**: October 5, 2025
 
