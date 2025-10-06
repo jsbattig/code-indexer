@@ -1100,6 +1100,12 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             progress_callback: Optional progress reporting callback
         """
         if not file_paths:
+            # Report completion even when there's nothing to hide
+            if progress_callback:
+                progress_callback(
+                    0, 0, Path(""),
+                    info="🔒 Branch isolation • No files to hide (fresh index complete)"
+                )
             return
 
         with self._visibility_lock:
@@ -1245,5 +1251,11 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             )
         else:
             logger.info(f"Branch isolation: no files to hide for branch '{branch}'")
+            # Report completion when there are no files to hide
+            if progress_callback:
+                progress_callback(
+                    0, 0, Path(""),
+                    info="🔒 Branch isolation • 0 files to hide (all files current)"
+                )
 
         return True
