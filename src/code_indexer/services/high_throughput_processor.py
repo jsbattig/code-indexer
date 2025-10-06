@@ -16,6 +16,7 @@ This module contains progress_callback calls that MUST follow the pattern:
 """
 
 import logging
+import os
 import time
 import concurrent.futures
 from concurrent.futures import as_completed, ThreadPoolExecutor
@@ -278,6 +279,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                     threading.Lock()
                 )  # CRITICAL FIX: Thread-safe dictionary access
                 completed_hashes = 0
+                total_bytes_processed = (
+                    0  # Thread-safe accumulator for KB/s calculation
+                )
                 hash_start_time = time.time()
 
                 # Use the passed slot tracker for hash phase (breaking change completion)
@@ -292,7 +296,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                     slot_tracker: CleanSlotTracker,
                 ):
                     """Worker function for parallel hash calculation with slot-based progress tracking."""
-                    nonlocal completed_hashes
+                    nonlocal completed_hashes, total_bytes_processed
 
                     while True:
                         try:
@@ -331,23 +335,22 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                             # Update progress thread-safely
                             with hash_progress_lock:
                                 completed_hashes += 1
+                                total_bytes_processed += (
+                                    file_size  # Accumulate bytes for KB/s calculation
+                                )
                                 current_progress = completed_hashes
 
                             # Update slot to complete status
                             slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
 
-                            # Progress bar update (every file or every 10 files for performance)
-                            if progress_callback and (
-                                current_progress % max(1, len(files) // 100) == 0
-                                or current_progress == len(files)
-                            ):
+                            # Progress bar update - report EVERY file for smooth progress
+                            if progress_callback:
                                 elapsed = time.time() - hash_start_time
                                 files_per_sec = current_progress / max(elapsed, 0.1)
-                                # Calculate KB/s throughput for consistency
-                                total_bytes = sum(
-                                    f.stat().st_size for f in files[:current_progress]
+                                # Calculate KB/s throughput from accumulated total (no redundant stat() calls)
+                                kb_per_sec = (total_bytes_processed / 1024) / max(
+                                    elapsed, 0.1
                                 )
-                                kb_per_sec = (total_bytes / 1024) / max(elapsed, 0.1)
 
                                 # Get active thread count from slot tracker
                                 active_threads = hash_slot_tracker.get_slot_count()
@@ -446,9 +449,8 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 if progress_callback:
                     elapsed = time.time() - hash_start_time
                     files_per_sec = len(files) / max(elapsed, 0.1)
-                    # Calculate total KB/s throughput
-                    total_bytes = sum(f.stat().st_size for f in files)
-                    kb_per_sec = (total_bytes / 1024) / max(elapsed, 0.1)
+                    # Calculate total KB/s throughput from accumulated bytes
+                    kb_per_sec = (total_bytes_processed / 1024) / max(elapsed, 0.1)
 
                     progress_callback(
                         len(files),
@@ -669,7 +671,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
 
         # CleanSlotTracker doesn't require explicit cleanup thread management
         if progress_callback:
-            progress_callback(0, 0, Path(""), info="High-throughput processor finalizing...")
+            progress_callback(
+                0, 0, Path(""), info="High-throughput processor finalizing..."
+            )
 
         return stats
 
@@ -1080,7 +1084,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         branch: str,
         collection_name: str,
         all_content_points: List[Dict[str, Any]],
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
     ):
         """
         Batch process hiding files in branch using in-memory filtering.
@@ -1124,7 +1128,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                             processed_files,
                             total_files,
                             Path(file_path) if file_path else Path(""),
-                            info=f"🔒 Branch isolation • {processed_files}/{total_files} database files"
+                            info=f"🔒 Branch isolation • {processed_files}/{total_files} database files",
                         )
 
                     # Collect points that need updating
@@ -1153,7 +1157,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                             total_files,
                             total_files,
                             Path(""),
-                            info=f"🔒 Branch isolation • {total_files}/{total_files} database files"
+                            info=f"🔒 Branch isolation • {total_files}/{total_files} database files",
                         )
 
             except Exception as e:
@@ -1196,11 +1200,30 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 logger.error(f"Failed to get all content points from database: {e}")
                 return False
 
-        # Extract unique file paths from database
+        # Extract unique file paths from database and NORMALIZE to relative
         db_file_paths = set()
         for point in all_content_points:
             if "path" in point.get("payload", {}):
-                db_file_paths.add(point["payload"]["path"])
+                path = point["payload"]["path"]
+
+                # CRITICAL: Normalize to relative if absolute
+                # This handles paths stored as /tmp/flask/src/file.py
+                if os.path.isabs(path):
+                    try:
+                        # Convert to relative path from project root
+                        relative_path = str(
+                            Path(path).relative_to(self.config.codebase_dir)
+                        )
+                        db_file_paths.add(relative_path)
+                    except ValueError:
+                        # Path is outside project directory - keep as absolute for logging
+                        logger.warning(
+                            f"Found path outside project directory in database: {path}"
+                        )
+                        db_file_paths.add(path)
+                else:
+                    # Already relative, use as-is
+                    db_file_paths.add(path)
 
         # Find files in DB that aren't in current branch
         current_files_set = set(current_files)
@@ -1218,7 +1241,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 branch=branch,
                 collection_name=collection_name,
                 all_content_points=all_content_points,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
             )
         else:
             logger.info(f"Branch isolation: no files to hide for branch '{branch}'")

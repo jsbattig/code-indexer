@@ -218,7 +218,14 @@ class FileIdentifier:
                 ["git", "branch", "--show-current"],
                 cwd=self.project_dir,
             )
-            git_metadata["branch"] = result.stdout.strip()
+            branch_name = result.stdout.strip()
+
+            # Check if empty (detached HEAD returns empty string, not error)
+            if branch_name:
+                git_metadata["branch"] = branch_name
+            else:
+                # Empty means detached HEAD - create synthetic name
+                raise subprocess.CalledProcessError(1, "git branch")  # Trigger fallback
         except subprocess.CalledProcessError:
             # Fallback to HEAD for detached HEAD state
             try:

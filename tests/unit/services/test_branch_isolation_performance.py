@@ -13,8 +13,7 @@ Expected behavior:
 import pytest
 import tempfile
 from pathlib import Path
-from typing import Dict, Any, List
-from unittest.mock import MagicMock, patch, call, Mock
+from unittest.mock import MagicMock, patch, Mock
 from code_indexer.services.high_throughput_processor import HighThroughputProcessor
 from code_indexer.services.qdrant import QdrantClient
 from code_indexer.config import Config, QdrantConfig
@@ -69,6 +68,7 @@ class TestBranchIsolationPerformance:
             client.scroll_points_call_count += 1
             # Return empty list to avoid processing
             return [], None
+
         client.scroll_points = scroll_points_tracker
 
         # Track HTTP POST calls
@@ -77,6 +77,7 @@ class TestBranchIsolationPerformance:
             response = Mock()
             response.raise_for_status = Mock()
             return response
+
         client.client = Mock()
         client.client.post = post_tracker
 
@@ -93,11 +94,13 @@ class TestBranchIsolationPerformance:
         processor = HighThroughputProcessor(
             config=mock_config,
             qdrant_client=mock_qdrant_client,
-            embedding_provider=mock_embedding_provider
+            embedding_provider=mock_embedding_provider,
         )
         return processor
 
-    def test_bug1_batch_hide_files_should_not_make_per_file_requests(self, processor, mock_qdrant_client):
+    def test_bug1_batch_hide_files_should_not_make_per_file_requests(
+        self, processor, mock_qdrant_client
+    ):
         """
         BUG 1: _batch_hide_files_in_branch makes ONE scroll_points request PER FILE.
 
@@ -110,14 +113,16 @@ class TestBranchIsolationPerformance:
         # Create mock all_content_points that would have been fetched by caller
         all_content_points = []
         for i in range(1000):
-            all_content_points.append({
-                "id": f"point_{i}",
-                "payload": {
-                    "type": "content",
-                    "path": f"/path/to/file_{i}.py",
-                    "hidden_branches": []
+            all_content_points.append(
+                {
+                    "id": f"point_{i}",
+                    "payload": {
+                        "type": "content",
+                        "path": f"/path/to/file_{i}.py",
+                        "hidden_branches": [],
+                    },
                 }
-            })
+            )
 
         # Reset counters
         mock_qdrant_client.scroll_points_call_count = 0
@@ -129,7 +134,7 @@ class TestBranchIsolationPerformance:
             branch="main",
             collection_name="test_collection",
             all_content_points=all_content_points,
-            progress_callback=None
+            progress_callback=None,
         )
 
         # ASSERTION: Should make 0 scroll_points calls (using pre-fetched data)
@@ -154,7 +159,7 @@ class TestBranchIsolationPerformance:
             url="http://localhost:6333",
             api_key=None,
             vector_size=768,
-            collection_base_name="test_collection"
+            collection_base_name="test_collection",
         )
 
         client = QdrantClient(config=config, project_root=temp_dir)
@@ -176,16 +181,13 @@ class TestBranchIsolationPerformance:
         # Create 1000 points to update with identical payload
         points_to_update = []
         for i in range(1000):
-            points_to_update.append({
-                "id": f"point_{i}",
-                "payload": {"hidden_branches": ["main"]}
-            })
+            points_to_update.append(
+                {"id": f"point_{i}", "payload": {"hidden_branches": ["main"]}}
+            )
 
         # Call the method (FIXED: should batch points together)
         result = client._batch_update_points(
-            points=points_to_update,
-            collection_name="test_collection",
-            batch_size=100
+            points=points_to_update, collection_name="test_collection", batch_size=100
         )
 
         # ASSERTION: Should make ~10 requests (100 points per batch)
@@ -203,9 +205,13 @@ class TestBranchIsolationPerformance:
         assert len(post_calls) > 0, "Should have made POST requests"
         for call_data in post_calls:
             point_ids = call_data.get("points", [])
-            assert len(point_ids) > 1, f"Each batch should have multiple points, got {len(point_ids)}"
+            assert (
+                len(point_ids) > 1
+            ), f"Each batch should have multiple points, got {len(point_ids)}"
 
-    def test_hide_files_not_in_branch_minimizes_http_requests(self, processor, mock_qdrant_client):
+    def test_hide_files_not_in_branch_minimizes_http_requests(
+        self, processor, mock_qdrant_client
+    ):
         """
         Integration test: hide_files_not_in_branch should minimize total HTTP requests.
 
@@ -216,17 +222,21 @@ class TestBranchIsolationPerformance:
         # Setup: 1000 files in database
         all_content_points = []
         for i in range(1000):
-            all_content_points.append({
-                "id": f"point_{i}",
-                "payload": {
-                    "type": "content",
-                    "path": f"/path/to/file_{i}.py",
-                    "hidden_branches": []
+            all_content_points.append(
+                {
+                    "id": f"point_{i}",
+                    "payload": {
+                        "type": "content",
+                        "path": f"/path/to/file_{i}.py",
+                        "hidden_branches": [],
+                    },
                 }
-            })
+            )
 
         # Mock scroll_points to return all content points
-        mock_qdrant_client.scroll_points = MagicMock(return_value=(all_content_points, None))
+        mock_qdrant_client.scroll_points = MagicMock(
+            return_value=(all_content_points, None)
+        )
         mock_qdrant_client._batch_update_points = MagicMock(return_value=True)
 
         # Only 500 files exist in current branch (500 need to be hidden)
@@ -237,17 +247,17 @@ class TestBranchIsolationPerformance:
         mock_qdrant_client.http_post_call_count = 0
 
         # Execute hide operation
-        result = processor.hide_files_not_in_branch_thread_safe(
+        processor.hide_files_not_in_branch_thread_safe(
             branch="main",
             current_files=current_files,
             collection_name="test_collection",
-            progress_callback=None
+            progress_callback=None,
         )
 
         # Verify minimal HTTP requests
         total_http_requests = (
-            mock_qdrant_client.scroll_points.call_count +
-            mock_qdrant_client._batch_update_points.call_count
+            mock_qdrant_client.scroll_points.call_count
+            + mock_qdrant_client._batch_update_points.call_count
         )
 
         # ASSERTION: Should make <10 total HTTP requests
@@ -267,16 +277,16 @@ class TestBranchIsolationPerformance:
         # Create 300 points with same payload change
         points_same_payload = []
         for i in range(300):
-            points_same_payload.append({
-                "id": f"point_{i}",
-                "payload": {"hidden_branches": ["main"]}
-            })
+            points_same_payload.append(
+                {"id": f"point_{i}", "payload": {"hidden_branches": ["main"]}}
+            )
 
         # Reset counter
         mock_qdrant_client.http_post_call_count = 0
 
         # Mock the actual client.post method to track calls
         post_calls = []
+
         def track_post(*args, **kwargs):
             post_calls.append(kwargs.get("json", {}))
             response = MagicMock()
@@ -287,8 +297,7 @@ class TestBranchIsolationPerformance:
 
         # Call batch update
         mock_qdrant_client._batch_update_points(
-            points=points_same_payload,
-            collection_name="test_collection"
+            points=points_same_payload, collection_name="test_collection"
         )
 
         # Verify batching happened
@@ -301,10 +310,12 @@ class TestBranchIsolationPerformance:
         # Verify each request contains multiple point IDs
         if post_calls:
             # At least one request should have multiple points
-            max_points_in_request = max(len(call.get("points", [])) for call in post_calls)
-            assert max_points_in_request > 1, (
-                "Batch requests should contain multiple point IDs, not just one."
+            max_points_in_request = max(
+                len(call.get("points", [])) for call in post_calls
             )
+            assert (
+                max_points_in_request > 1
+            ), "Batch requests should contain multiple point IDs, not just one."
 
 
 class TestDeletionDetectionGitAwareness:
@@ -315,14 +326,16 @@ class TestDeletionDetectionGitAwareness:
         """Create mock SmartIndexer."""
         from code_indexer.services.smart_indexer import SmartIndexer
 
-        with patch.object(SmartIndexer, '__init__', lambda x, *args, **kwargs: None):
+        with patch.object(SmartIndexer, "__init__", lambda x, *args, **kwargs: None):
             indexer = SmartIndexer(None)
             indexer._detect_and_handle_deletions = MagicMock()
             indexer.progressive_metadata = MagicMock()
             indexer.progressive_metadata.clear = MagicMock()
             return indexer
 
-    def test_bug3_deletion_detection_skipped_for_git_aware_projects(self, mock_smart_indexer):
+    def test_bug3_deletion_detection_skipped_for_git_aware_projects(
+        self, mock_smart_indexer
+    ):
         """
         BUG 3: _detect_and_handle_deletions() called for git projects causing double scan.
 
@@ -348,11 +361,13 @@ class TestDeletionDetectionGitAwareness:
 
         # ASSERTION: Should NOT call deletion detection for git-aware projects
         assert mock_smart_indexer._detect_and_handle_deletions.call_count == 0, (
-            f"BUG 3 DETECTED: Called _detect_and_handle_deletions for git-aware project. "
-            f"This causes redundant database scan (10-30 minutes wasted)."
+            "BUG 3 DETECTED: Called _detect_and_handle_deletions for git-aware project. "
+            "This causes redundant database scan (10-30 minutes wasted)."
         )
 
-    def test_deletion_detection_still_works_for_non_git_projects(self, mock_smart_indexer):
+    def test_deletion_detection_still_works_for_non_git_projects(
+        self, mock_smart_indexer
+    ):
         """
         Verify that deletion detection STILL works for non-git-aware projects.
 
@@ -370,6 +385,6 @@ class TestDeletionDetectionGitAwareness:
                 mock_smart_indexer._detect_and_handle_deletions(None)
 
         # ASSERTION: SHOULD call deletion detection for non-git projects
-        assert mock_smart_indexer._detect_and_handle_deletions.call_count == 1, (
-            "Deletion detection should still work for non-git-aware projects."
-        )
+        assert (
+            mock_smart_indexer._detect_and_handle_deletions.call_count == 1
+        ), "Deletion detection should still work for non-git-aware projects."
