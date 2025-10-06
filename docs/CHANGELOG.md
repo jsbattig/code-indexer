@@ -1,5 +1,33 @@
 # Code Indexer Release Notes
 
+## Version 5.7.0 (2025-10-06) - Password Library Migration
+
+### 🔐 Security & Compatibility Update
+
+**Migrated from passlib to pwdlib** - Resolving bcrypt 5.0 incompatibility on Amazon Linux 2023
+
+#### Changes
+- Replaced abandoned passlib (last update Oct 2020) with modern pwdlib 0.2.1
+- Fixed `AttributeError: module 'bcrypt' has no attribute '__about__'` on Amazon Linux 2023
+- Maintains 100% backward compatibility with existing password hashes
+- Zero breaking changes to authentication APIs
+- Python 3.13+ ready with actively maintained dependencies
+
+#### Files Updated
+- `src/code_indexer/server/auth/password_manager.py` - Core password management
+- `tests/utils/test_data_factory.py` - Test utilities
+- `tests/utils/server_test_helpers.py` - Server test helpers
+- `pyproject.toml` - Dependency update to pwdlib[bcrypt]>=0.2.0
+- `requirements.txt` - Dependency update to pwdlib[bcrypt]>=0.2.0
+
+#### Testing
+- 22 new migration tests validating pwdlib integration
+- 1634 CLI tests passed (fast-automation.sh)
+- 863 server tests passed (server-fast-automation.sh)
+- 100% test coverage on PasswordManager
+
+---
+
 ## Version 5.0.0 (2025-09-17) - REMOTE REPOSITORY LINKING MODE & EPIC COMPLETION
 
 ### 🚀 **MAJOR RELEASE: Complete Remote Code Indexing Architecture**

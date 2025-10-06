@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 import logging
 
-from passlib.context import CryptContext
+from pwdlib import PasswordHash
+from pwdlib.hashers.bcrypt import BcryptHasher
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +34,14 @@ class TestUser:
     user_id: Optional[str] = None
 
     def __post_init__(self):
-        """Initialize password context after creation."""
-        self._pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        """Initialize password hasher after creation."""
+        # Use BcryptHasher explicitly for backward compatibility with passlib hashes
+        self._pwd_hash = PasswordHash((BcryptHasher(),))
 
     def verify_password(self, password: str) -> bool:
         """Verify password against stored hash."""
-        return self._pwd_context.verify(password, self.password_hash)  # type: ignore[no-any-return]
+        # pwdlib.verify() uses same (password, hash) order as passlib
+        return self._pwd_hash.verify(password, self.password_hash)  # type: ignore[no-any-return]
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert user to dictionary for API requests."""
@@ -158,7 +161,8 @@ class TestDataFactory:
 
     def __init__(self):
         """Initialize test data factory."""
-        self._pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        # Use BcryptHasher explicitly for backward compatibility with passlib hashes
+        self._pwd_hash = PasswordHash((BcryptHasher(),))
         self._created_repositories: List[TestRepository] = []
         self._created_users: List[TestUser] = []
         self.logger = logging.getLogger(f"{__name__}.TestDataFactory")
@@ -261,8 +265,8 @@ class TestDataFactory:
         if email is None:
             email = f"{username}@example.com"
 
-        # Hash password
-        password_hash = self._pwd_context.hash(password)
+        # Hash password using pwdlib
+        password_hash = self._pwd_hash.hash(password)
 
         # Create user object
         test_user = TestUser(

@@ -1,22 +1,25 @@
 """
 Password hashing and verification for CIDX Server.
 
-Uses bcrypt for secure password hashing with salt.
+Uses bcrypt for secure password hashing with salt via pwdlib.
 """
 
-from passlib.context import CryptContext
+from pwdlib import PasswordHash
+from pwdlib.hashers.bcrypt import BcryptHasher
 
 
 class PasswordManager:
     """
-    Handles password hashing and verification using bcrypt.
+    Handles password hashing and verification using bcrypt via pwdlib.
 
     Provides secure password storage using bcrypt with automatic salt generation.
+    Backward compatible with existing passlib-generated bcrypt hashes.
     """
 
-    def __init__(self):
-        """Initialize password context with bcrypt."""
-        self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    def __init__(self) -> None:
+        """Initialize password hasher with bcrypt."""
+        # Use BcryptHasher explicitly for backward compatibility with passlib hashes
+        self.pwd_hash = PasswordHash((BcryptHasher(),))
 
     def hash_password(self, password: str) -> str:
         """
@@ -28,7 +31,7 @@ class PasswordManager:
         Returns:
             Hashed password string
         """
-        return str(self.pwd_context.hash(password))
+        return str(self.pwd_hash.hash(password))
 
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """
@@ -41,4 +44,5 @@ class PasswordManager:
         Returns:
             True if password matches, False otherwise
         """
-        return bool(self.pwd_context.verify(plain_password, hashed_password))
+        # PasswordHash.verify() uses (password, hash) order matching passlib CryptContext API
+        return bool(self.pwd_hash.verify(plain_password, hashed_password))

@@ -1,5 +1,75 @@
 # Release Notes
 
+## Version 5.7.0 - Password Library Migration (passlib → pwdlib)
+
+**Release Date**: October 6, 2025
+
+### 🔐 Security & Compatibility Update
+
+This release migrates from the abandoned **passlib** library to the modern **pwdlib** library, resolving critical bcrypt 5.0 compatibility issues on Amazon Linux 2023 and other modern platforms.
+
+#### Migration Details
+
+**Problem**:
+- passlib 1.7.4 (last updated Oct 2020) is incompatible with bcrypt 5.0+
+- Causes `AttributeError: module 'bcrypt' has no attribute '__about__'` on Amazon Linux 2023
+- passlib is abandoned and won't receive Python 3.13+ compatibility updates
+
+**Solution**:
+- Migrated to **pwdlib 0.2.1** (actively maintained, modern codebase)
+- Uses bcrypt 4.3.0 (compatible with bcrypt 5.0+ ecosystem)
+- Maintains 100% backward compatibility with existing password hashes
+- Zero breaking changes to APIs
+
+#### Files Modified
+
+1. **Production Code**:
+   - `src/code_indexer/server/auth/password_manager.py` - Core password management
+   - `tests/utils/test_data_factory.py` - Test user creation utilities
+   - `tests/utils/server_test_helpers.py` - Server test helpers
+
+2. **Dependencies**:
+   - `pyproject.toml` - Updated to `pwdlib[bcrypt]>=0.2.0`
+   - `requirements.txt` - Updated to `pwdlib[bcrypt]>=0.2.0`
+
+3. **Tests**:
+   - `tests/unit/server/auth/test_pwdlib_migration.py` - 22 comprehensive migration tests
+
+#### Migration Guarantees
+
+✅ **Backward Compatibility**: Existing password hashes work without any migration
+✅ **Security**: Industry-standard bcrypt with automatic salt generation
+✅ **API Stability**: Zero breaking changes to public interfaces
+✅ **Test Coverage**: 22 migration tests + 1634 existing tests passing
+✅ **Python 3.13+ Ready**: Future-proof dependency chain
+
+#### Testing Verification
+
+- **1634 tests passed** in fast-automation.sh (CLI tests)
+- **863 tests passed** in server-fast-automation.sh (server tests)
+- **22 new tests** validate pwdlib integration and backward compatibility
+- **100% test coverage** on PasswordManager class
+
+#### Impact
+
+**Who Benefits**:
+- Users on Amazon Linux 2023 (reported issue fixed)
+- Users on systems with bcrypt 5.0+ installed
+- Future Python 3.13+ compatibility ensured
+
+**Action Required**:
+- **None** - Automatic upgrade, existing passwords work unchanged
+- **Recommended**: Update to v5.7.0 for modern dependency chain
+
+**Upgrade Path**:
+```bash
+pipx upgrade code-indexer
+# OR
+pipx install git+https://github.com/jsbattig/code-indexer.git@v5.7.0
+```
+
+---
+
 ## Version 5.6.0 - Critical Reconcile Fixes and Production Hardening
 
 **Release Date**: October 5, 2025

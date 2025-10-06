@@ -16,7 +16,8 @@ from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 
 import requests  # type: ignore[import-untyped]
-from passlib.context import CryptContext
+from pwdlib import PasswordHash
+from pwdlib.hashers.bcrypt import BcryptHasher
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,8 @@ class ServerTestHelper:
         self.server_process: Optional[subprocess.Popen] = None
         self.server_url = f"http://localhost:{self.port}"
 
-        self._pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        # Use BcryptHasher explicitly for backward compatibility with passlib hashes
+        self._pwd_hash = PasswordHash((BcryptHasher(),))
         self.logger = logging.getLogger(f"{__name__}.ServerTestHelper")
 
     def is_server_running(self) -> bool:
@@ -238,7 +240,7 @@ class ServerTestHelper:
         current_time = datetime.now(timezone.utc).isoformat()
 
         for user_spec in test_users:
-            password_hash = self._pwd_context.hash(user_spec["password"])
+            password_hash = self._pwd_hash.hash(user_spec["password"])
 
             users_data[user_spec["username"]] = {
                 "role": user_spec["role"],
