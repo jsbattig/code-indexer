@@ -240,19 +240,28 @@ class GitTopologyService:
             return None
 
     def _get_changed_files(self, old_branch: str, new_branch: str) -> List[str]:
-        """Get files that changed between branches using efficient git diff."""
+        """Get files that changed between branches using efficient git diff.
+
+        CRITICAL: Handles synthetic branch names like "detached-6a649690" by using HEAD.
+        These synthetic names are not valid git references and would cause git diff to fail.
+        """
         try:
             # If old_branch is not a valid git reference (e.g., "unknown"),
             # treat this as a new branch scenario and return all tracked files
             if old_branch == "unknown" or not self._is_valid_git_ref(old_branch):
                 logger.info(
-                    f"Old branch '{old_branch}' is not a valid git reference, treating as new branch scenario"
+                    f"Old_branch '{old_branch}' is not a valid git reference, treating as new branch scenario"
                 )
                 return self._get_all_tracked_files()
 
+            # Handle synthetic branch names (detached-*) by using HEAD
+            # These are created by get_current_branch() for detached HEAD states
+            old_git_ref = "HEAD" if old_branch.startswith("detached-") else old_branch
+            new_git_ref = "HEAD" if new_branch.startswith("detached-") else new_branch
+
             # Use git diff with name-only to get just the file names
             result = subprocess.run(
-                ["git", "diff", "--name-only", f"{old_branch}..{new_branch}"],
+                ["git", "diff", "--name-only", f"{old_git_ref}..{new_git_ref}"],
                 cwd=self.codebase_dir,
                 capture_output=True,
                 text=True,
@@ -291,10 +300,19 @@ class GitTopologyService:
             return False
 
     def _get_all_tracked_files(self, branch: str = "HEAD") -> List[str]:
-        """Get all files tracked by git in specified branch."""
+        """Get all files tracked by git in specified branch.
+
+        CRITICAL: Handles synthetic branch names like "detached-6a649690" by using HEAD.
+        These synthetic names are not valid git references and would cause git ls-tree to fail.
+        """
         try:
+            # Handle synthetic branch names (detached-*) by using HEAD
+            # These are created by get_current_branch() for detached HEAD states
+            # and are not valid git references
+            git_ref = "HEAD" if branch.startswith("detached-") else branch
+
             result = subprocess.run(
-                ["git", "ls-tree", "-r", "--name-only", "--full-tree", branch],
+                ["git", "ls-tree", "-r", "--name-only", "--full-tree", git_ref],
                 cwd=self.codebase_dir,
                 capture_output=True,
                 text=True,
@@ -305,8 +323,14 @@ class GitTopologyService:
                 files = [
                     f.strip() for f in result.stdout.strip().split("\n") if f.strip()
                 ]
+                logger.debug(
+                    f"Found {len(files)} tracked files in {branch} (git ref: {git_ref})"
+                )
                 return files
             else:
+                logger.warning(
+                    f"git ls-tree failed for branch '{branch}' (git ref: {git_ref}): {result.stderr}"
+                )
                 return []
 
         except (subprocess.TimeoutExpired, subprocess.SubprocessError) as e:

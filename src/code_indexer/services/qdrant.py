@@ -1311,7 +1311,7 @@ class QdrantClient:
                 if payload_key not in payload_to_point_ids:
                     payload_to_point_ids[payload_key] = {
                         "payload": point["payload"],
-                        "point_ids": []
+                        "point_ids": [],
                     }
                 payload_to_point_ids[payload_key]["point_ids"].append(point["id"])
 
@@ -1323,7 +1323,7 @@ class QdrantClient:
 
                 # Split point IDs into batches to respect batch size limit
                 for i in range(0, len(point_ids), batch_size):
-                    batch_point_ids = point_ids[i:i + batch_size]
+                    batch_point_ids = point_ids[i : i + batch_size]
 
                     payload_data = {
                         "payload": payload,

@@ -16,6 +16,7 @@ This module contains progress_callback calls that MUST follow the pattern:
 """
 
 import logging
+import os
 import time
 import concurrent.futures
 from concurrent.futures import as_completed, ThreadPoolExecutor
@@ -1196,11 +1197,30 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 logger.error(f"Failed to get all content points from database: {e}")
                 return False
 
-        # Extract unique file paths from database
+        # Extract unique file paths from database and NORMALIZE to relative
         db_file_paths = set()
         for point in all_content_points:
             if "path" in point.get("payload", {}):
-                db_file_paths.add(point["payload"]["path"])
+                path = point["payload"]["path"]
+
+                # CRITICAL: Normalize to relative if absolute
+                # This handles paths stored as /tmp/flask/src/file.py
+                if os.path.isabs(path):
+                    try:
+                        # Convert to relative path from project root
+                        relative_path = str(
+                            Path(path).relative_to(self.config.codebase_dir)
+                        )
+                        db_file_paths.add(relative_path)
+                    except ValueError:
+                        # Path is outside project directory - keep as absolute for logging
+                        logger.warning(
+                            f"Found path outside project directory in database: {path}"
+                        )
+                        db_file_paths.add(path)
+                else:
+                    # Already relative, use as-is
+                    db_file_paths.add(path)
 
         # Find files in DB that aren't in current branch
         current_files_set = set(current_files)

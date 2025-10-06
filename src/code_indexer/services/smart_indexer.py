@@ -292,8 +292,8 @@ class SmartIndexer(HighThroughputProcessor):
                 logger.warning(f"Failed to install git hook for branch tracking: {e}")
                 # Continue without hook - branch tracking will fall back to git subprocess
 
-            # Check for branch topology optimization (only if not forcing full and collection exists)
-            if not force_full:
+            # Check for branch topology optimization (only if not forcing full, not reconciling, and collection exists)
+            if not force_full and not reconcile_with_database:
                 # Invalidate cache to get fresh branch info
                 self.git_topology_service.invalidate_cache()
                 current_branch = self.git_topology_service.get_current_branch()
@@ -427,7 +427,11 @@ class SmartIndexer(HighThroughputProcessor):
             # PERFORMANCE FIX (Bug 3): Skip deletion detection for git-aware projects
             # Git-aware projects use branch isolation AFTER indexing, so deletion detection
             # before indexing is redundant and wastes 10-30 minutes scanning the database
-            if detect_deletions and not reconcile_with_database and not self.is_git_aware():
+            if (
+                detect_deletions
+                and not reconcile_with_database
+                and not self.is_git_aware()
+            ):
                 self._detect_and_handle_deletions(progress_callback)
 
             # Determine indexing strategy
@@ -677,7 +681,9 @@ class SmartIndexer(HighThroughputProcessor):
 
             # Use thread-safe branch isolation directly from high-throughput processor
             if progress_callback:
-                progress_callback(0, 0, Path(""), info="Applying branch isolation cleanup...")
+                progress_callback(
+                    0, 0, Path(""), info="Applying branch isolation cleanup..."
+                )
             self.hide_files_not_in_branch_thread_safe(
                 current_branch, all_relative_files, collection_name, progress_callback
             )
@@ -685,7 +691,9 @@ class SmartIndexer(HighThroughputProcessor):
             # Use ProcessingStats directly from high-throughput processor
             stats = high_throughput_stats
             if progress_callback:
-                progress_callback(0, 0, Path(""), info="Processing completed, starting cleanup...")
+                progress_callback(
+                    0, 0, Path(""), info="Processing completed, starting cleanup..."
+                )
 
         except Exception as e:
             logger.error(f"High-throughput processor failed during full index: {e}")
@@ -709,7 +717,9 @@ class SmartIndexer(HighThroughputProcessor):
         current_commit = git_status.get("current_commit")
         if git_status.get("git_available", False) and current_commit:
             if progress_callback:
-                progress_callback(0, 0, Path(""), info="Updating git commit watermark...")
+                progress_callback(
+                    0, 0, Path(""), info="Updating git commit watermark..."
+                )
             self.progressive_metadata.update_commit_watermark(
                 current_branch, current_commit
             )
@@ -993,7 +1003,9 @@ class SmartIndexer(HighThroughputProcessor):
 
         # Update metadata with actual processing results
         if progress_callback:
-            progress_callback(0, 0, Path(""), info="Updating incremental progress metadata...")
+            progress_callback(
+                0, 0, Path(""), info="Updating incremental progress metadata..."
+            )
         self.progressive_metadata.update_progress(
             files_processed=stats.files_processed,
             chunks_added=stats.chunks_created,
@@ -1094,23 +1106,37 @@ class SmartIndexer(HighThroughputProcessor):
                     relative_path
                 )
 
-                # Check what's currently visible for this file in current branch
-                currently_visible_id = self._get_currently_visible_content_id(
-                    relative_path, current_branch, collection_name
-                )
+                # RECONCILE FIX: Check if file exists in database AT ALL, not just visible in current branch
+                # Reconcile is about disk-to-database consistency, not branch visibility
+                file_in_db = relative_path in [
+                    (
+                        str(Path(p).relative_to(self.config.codebase_dir))
+                        if Path(p).is_absolute()
+                        else p
+                    )
+                    for p in indexed_files_with_timestamps.keys()
+                ]
 
-                if currently_visible_id is None:
-                    # File exists on disk but no visible content in current branch
+                if not file_in_db:
+                    # File exists on disk but NOT in database at all
                     files_to_index.append(file_path)
                     missing_files += 1
-                elif current_effective_id != currently_visible_id:
-                    # File exists but current state differs from what's visible
-                    files_to_index.append(file_path)
-                    modified_files += 1
-                    # Log the difference for debugging with more details
-                    logger.info(
-                        f"RECONCILE: Content ID mismatch for {relative_path}: current='{current_effective_id}' vs visible='{currently_visible_id}' - will re-index"
+                else:
+                    # File exists in database - check if content changed
+                    # Get ANY version of this file from database (not branch-filtered)
+                    db_content_id = self._get_any_content_id_for_file(
+                        relative_path, collection_name
                     )
+
+                    if db_content_id and current_effective_id != db_content_id:
+                        # Content changed - needs re-indexing
+                        files_to_index.append(file_path)
+                        modified_files += 1
+                        logger.info(
+                            f"RECONCILE: Content ID mismatch for {relative_path}: "
+                            f"current='{current_effective_id}' vs db='{db_content_id}' - will re-index"
+                        )
+                    # else: file is up-to-date, don't re-index
 
             except Exception as e:
                 # File might have issues, log and skip
@@ -1354,12 +1380,30 @@ class SmartIndexer(HighThroughputProcessor):
             # Get current branch for indexing
             current_branch = self.git_topology_service.get_current_branch() or "master"
 
+            # Calculate unchanged files (all disk files NOT in files_to_index)
+            # This is critical for branch isolation - prevents hiding files that should be visible
+            files_to_index_set = set(files_to_index)
+            unchanged_file_paths = []
+            for file_path in all_files_to_index:
+                if file_path not in files_to_index_set:
+                    try:
+                        # Convert to relative path (same pattern as changed_files above)
+                        if file_path.is_absolute():
+                            unchanged_file_paths.append(
+                                str(file_path.relative_to(self.config.codebase_dir))
+                            )
+                        else:
+                            unchanged_file_paths.append(str(file_path))
+                    except ValueError:
+                        # Path is not within codebase_dir, use as-is
+                        unchanged_file_paths.append(str(file_path))
+
             # Use high-throughput parallel processing for reconcile (4-8x faster)
             branch_result = self.process_branch_changes_high_throughput(
                 old_branch="",  # No old branch for reconcile
                 new_branch=current_branch,
                 changed_files=relative_files,
-                unchanged_files=[],
+                unchanged_files=unchanged_file_paths,  # ✅ FIX: Pass all unchanged files!
                 collection_name=collection_name,
                 progress_callback=progress_callback,
                 vector_thread_count=vector_thread_count,
@@ -1386,7 +1430,9 @@ class SmartIndexer(HighThroughputProcessor):
 
         # Update metadata with actual processing results
         if progress_callback:
-            progress_callback(0, 0, Path(""), info="Updating reconcile progress metadata...")
+            progress_callback(
+                0, 0, Path(""), info="Updating reconcile progress metadata..."
+            )
         self.progressive_metadata.update_progress(
             files_processed=stats.files_processed,
             chunks_added=stats.chunks_created,
@@ -1499,7 +1545,9 @@ class SmartIndexer(HighThroughputProcessor):
 
         # Update metadata with actual processing results
         if progress_callback:
-            progress_callback(0, 0, Path(""), info="Updating resume progress metadata...")
+            progress_callback(
+                0, 0, Path(""), info="Updating resume progress metadata..."
+            )
         self.progressive_metadata.update_progress(
             files_processed=stats.files_processed,
             chunks_added=stats.chunks_created,
@@ -1965,13 +2013,15 @@ class SmartIndexer(HighThroughputProcessor):
 
             all_points.extend(points)
 
-            # Safety check to prevent infinite loops
-            if next_offset == offset:
-                logger.error(f"Pagination stuck at offset {offset} - breaking")
-                break
-
+            # Update offset first
             offset = next_offset
             if offset is None:
+                # Normal completion - no more data
+                break
+
+            # Safety check to prevent infinite loops (only check if offset is not None)
+            if next_offset == offset:
+                logger.error(f"Pagination stuck at offset {offset} - breaking")
                 break
 
         return all_points
@@ -2086,6 +2136,61 @@ class SmartIndexer(HighThroughputProcessor):
             logger.warning(
                 f"Failed to get visible content ID for {file_path} in branch {branch}: {e}"
             )
+            return None
+
+    def _get_any_content_id_for_file(
+        self, file_path: str, collection_name: str
+    ) -> Optional[str]:
+        """Get ANY content ID for this file, ignoring branch visibility.
+
+        Used by reconcile to check if file exists in database regardless of branch.
+        This is different from _get_currently_visible_content_id which filters by branch.
+        """
+        try:
+            # Query for ANY content for this file (no branch filtering)
+            # Try absolute path first (what's actually stored in /tmp directories)
+            absolute_path = str(self.config.codebase_dir / file_path)
+
+            points, _ = self.qdrant_client.scroll_points(
+                filter_conditions={
+                    "must": [
+                        {"key": "type", "match": {"value": "content"}},
+                        {"key": "path", "match": {"value": absolute_path}},
+                    ]
+                    # NO must_not for hidden_branches - we want ANY version
+                },
+                limit=1,
+                collection_name=collection_name,
+            )
+
+            # If not found with absolute, try relative
+            if not points:
+                points, _ = self.qdrant_client.scroll_points(
+                    filter_conditions={
+                        "must": [
+                            {"key": "type", "match": {"value": "content"}},
+                            {"key": "path", "match": {"value": file_path}},
+                        ]
+                    },
+                    limit=1,
+                    collection_name=collection_name,
+                )
+
+            if not points:
+                return None
+
+            # Return the content ID from database
+            payload = points[0].get("payload", {})
+            git_commit = payload.get("git_commit_hash", "unknown")
+
+            # Check if this is working_dir content
+            if "working_dir" in str(points[0].get("id", "")):
+                return f"{file_path}:working_dir:{payload.get('filesystem_mtime', 'unknown')}:{payload.get('file_size', 0)}"
+            else:
+                return f"{file_path}:{git_commit}"
+
+        except Exception as e:
+            logger.warning(f"Failed to get content ID for {file_path}: {e}")
             return None
 
     def _cleanup_multiple_visible_content_points(
