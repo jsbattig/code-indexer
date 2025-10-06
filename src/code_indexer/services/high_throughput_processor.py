@@ -115,6 +115,34 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             self._cancellation_event.set()
         logger.info("High throughput processing cancellation requested")
 
+    def _normalize_path_for_storage(self, file_path: Path) -> str:
+        """
+        Normalize file path to relative for portable database storage.
+
+        CRITICAL FOR COW CLONING: All paths stored in Qdrant must be relative
+        to codebase_dir to ensure database portability across different filesystem
+        locations (CoW clones, repository moves, etc.).
+
+        Args:
+            file_path: File path (absolute or relative)
+
+        Returns:
+            Relative path string for database storage
+
+        Raises:
+            ValueError: If file_path is not under codebase_dir
+        """
+        if file_path.is_absolute():
+            try:
+                return str(file_path.relative_to(self.config.codebase_dir))
+            except ValueError as e:
+                logger.error(
+                    f"Cannot normalize path {file_path} - not under codebase_dir "
+                    f"{self.config.codebase_dir}: {e}"
+                )
+                raise
+        return str(file_path)
+
     def _initialize_file_rate_tracking(self):
         """Initialize file processing rate tracking."""
         with self._file_rate_lock:
@@ -268,6 +296,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 qdrant_client=self.qdrant_client,
                 thread_count=vector_thread_count,
                 slot_tracker=local_slot_tracker,
+                codebase_dir=self.config.codebase_dir,
             ) as file_manager:
 
                 # PARALLEL HASH CALCULATION - eliminate serial bottleneck
@@ -701,7 +730,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
 
         # Create payload
         payload = GitAwareMetadataSchema.create_git_aware_metadata(
-            path=str(chunk_task.file_path),
+            path=self._normalize_path_for_storage(chunk_task.file_path),
             content=chunk_task.chunk_data["text"],
             language=chunk_task.chunk_data["file_extension"],
             file_size=chunk_task.file_path.stat().st_size,

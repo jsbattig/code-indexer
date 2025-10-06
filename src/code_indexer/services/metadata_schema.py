@@ -369,7 +369,7 @@ class GitAwareMetadataSchema:
         Create git-aware metadata with full schema support.
 
         Args:
-            path: Absolute file path
+            path: Relative file path from codebase_dir (for database portability)
             content: Chunk content
             language: Programming language
             file_size: File size in bytes
@@ -441,7 +441,7 @@ class GitAwareMetadataSchema:
         Create branch topology metadata with working directory support.
 
         Args:
-            path: Absolute file path
+            path: Relative file path from codebase_dir (for database portability)
             content: Chunk content
             language: Programming language
             file_size: File size in bytes

@@ -97,7 +97,7 @@ def mock_slot_tracker():
 
 @pytest.fixture
 def file_chunking_manager(
-    mock_chunker, mock_vector_manager, mock_qdrant_client, mock_slot_tracker
+    mock_chunker, mock_vector_manager, mock_qdrant_client, mock_slot_tracker, tmp_path
 ):
     """Create FileChunkingManager with mocked dependencies."""
     manager = FileChunkingManager(
@@ -106,6 +106,7 @@ def file_chunking_manager(
         qdrant_client=mock_qdrant_client,
         thread_count=4,
         slot_tracker=mock_slot_tracker,
+        codebase_dir=tmp_path,
     )
 
     # TOKEN COUNTING FIX: Mock the voyage client count_tokens method

@@ -1,5 +1,69 @@
 # Release Notes
 
+## Version 5.8.0 - CoW Cloning Portability Fix (Relative Path Storage)
+
+**Release Date**: October 6, 2025
+
+### 🔧 Critical Database Portability Fix
+
+This release fixes a critical bug where **absolute file paths** were stored in Qdrant database, breaking CoW (copy-on-write) cloning portability and repository moves.
+
+#### Problem
+- Qdrant database stored absolute paths like `/home/user/golden-repos/myproject/src/main.py`
+- After CoW cloning to new location, paths pointed to **old location**
+- Caused `--reconcile` failures, RAG extraction errors, and database corruption
+- Made indexed databases **non-portable** across filesystem locations
+
+#### Solution
+- **All paths now stored as relative**: `src/main.py` instead of `/home/user/.../src/main.py`
+- Added `_normalize_path_for_storage()` to 3 indexing components
+- Database is now **fully portable** - can be moved/cloned to any location
+- Backward compatible with existing databases via defensive normalization
+
+#### Files Modified
+
+**Production Code**:
+- `src/code_indexer/services/high_throughput_processor.py` - Path normalization for parallel processing
+- `src/code_indexer/services/file_chunking_manager.py` - Path normalization + codebase_dir parameter
+- `src/code_indexer/services/git_aware_processor.py` - Path normalization for git-aware indexing
+- `src/code_indexer/services/metadata_schema.py` - Fixed documentation (absolute → relative)
+
+**Tests**:
+- `tests/unit/services/test_relative_path_storage.py` - Comprehensive portability test suite
+- Updated 33 test sites with new `codebase_dir` parameter requirement
+
+#### Impact
+
+**Who Benefits**:
+- CIDX Server users with CoW cloning (golden → activated repos)
+- Users moving indexed repositories to new locations
+- CI/CD pipelines sharing indexed databases
+- Multi-user environments with repository cloning
+
+**Upgrade Impact**:
+- ✅ **New indexes**: Automatically portable with relative paths
+- ✅ **Existing indexes**: Continue to work via backward-compatible normalization
+- ✅ **No re-indexing required**: Defensive code handles both formats
+- ⚠️ **API Change**: `FileChunkingManager` now requires `codebase_dir` parameter
+
+**After Upgrade**:
+```bash
+# CoW cloning now works seamlessly
+cp --reflink=always -r original-repo/ cloned-repo/
+cd cloned-repo
+cidx fix-config  # Update codebase_dir to new location
+cidx index --reconcile  # ✅ Works perfectly with relative paths!
+```
+
+#### Testing Verification
+
+- **1637 tests passed** in fast-automation.sh
+- **17 skipped** (including 6 TDD specification tests)
+- **0 failures** - No regressions introduced
+- **30% code coverage** maintained
+
+---
+
 ## Version 5.7.0 - Password Library Migration (passlib → pwdlib)
 
 **Release Date**: October 6, 2025

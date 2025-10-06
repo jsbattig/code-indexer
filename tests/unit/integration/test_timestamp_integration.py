@@ -105,6 +105,7 @@ class TestTimestampIntegrationWorkflow:
             mock_dependencies["qdrant_client"],
             4,
             mock_dependencies["slot_tracker"],
+            codebase_dir=file_path.parent,
         ) as manager:
 
             metadata = {
@@ -277,6 +278,7 @@ class TestTimestampIntegrationWorkflow:
             mock_dependencies["qdrant_client"],
             4,
             mock_dependencies["slot_tracker"],
+            codebase_dir=file_path.parent,
         ) as manager:
 
             chunk = {
@@ -328,7 +330,7 @@ class TestTimestampIntegrationWorkflow:
                 assert isinstance(payload["indexed_timestamp"], float)
 
     def test_timestamp_collection_performance_acceptable_in_integration(
-        self, mock_dependencies
+        self, mock_dependencies, tmp_path
     ):
         """
         Test that timestamp collection doesn't significantly impact performance.
@@ -351,6 +353,7 @@ class TestTimestampIntegrationWorkflow:
                 mock_dependencies["qdrant_client"],
                 4,
                 mock_dependencies["slot_tracker"],
+                codebase_dir=tmp_path,
             ) as manager:
 
                 chunk = {
@@ -392,7 +395,7 @@ class TestTimestampIntegrationWorkflow:
                 file_path.unlink(missing_ok=True)
 
     def test_error_handling_integration_preserves_indexing_workflow(
-        self, mock_dependencies
+        self, mock_dependencies, tmp_path
     ):
         """
         Test that timestamp collection errors don't break the indexing workflow.
@@ -408,6 +411,7 @@ class TestTimestampIntegrationWorkflow:
             mock_dependencies["qdrant_client"],
             4,
             mock_dependencies["slot_tracker"],
+            codebase_dir=tmp_path,
         ) as manager:
 
             chunk = {

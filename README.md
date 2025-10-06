@@ -2,7 +2,7 @@
 
 AI-powered semantic code search for your codebase. Find code by meaning, not just keywords.
 
-## Version 5.7.0
+## Version 5.8.0
 
 ## Two Operating Modes
 
@@ -52,7 +52,7 @@ The code-indexer uses a sophisticated dual-phase parallel processing architectur
 ### pipx (Recommended)
 ```bash
 # Install the package
-pipx install git+https://github.com/jsbattig/code-indexer.git@v5.7.0
+pipx install git+https://github.com/jsbattig/code-indexer.git@v5.8.0
 
 # Setup global registry (standalone command - requires sudo)
 cidx setup-global-registry
@@ -65,7 +65,7 @@ cidx setup-global-registry
 ```bash
 python3 -m venv code-indexer-env
 source code-indexer-env/bin/activate
-pip install git+https://github.com/jsbattig/code-indexer.git@v5.7.0
+pip install git+https://github.com/jsbattig/code-indexer.git@v5.8.0
 
 # Setup global registry (standalone command - requires sudo)
 cidx setup-global-registry
@@ -130,7 +130,7 @@ The CIDX server provides a FastAPI-based multi-user semantic code search service
 
 ```bash
 # 1. Install and setup (same as CLI)
-pipx install git+https://github.com/jsbattig/code-indexer.git@v5.7.0
+pipx install git+https://github.com/jsbattig/code-indexer.git@v5.8.0
 cidx setup-global-registry
 
 # 2. Install and configure the server

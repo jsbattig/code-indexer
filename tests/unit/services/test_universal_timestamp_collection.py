@@ -98,7 +98,12 @@ class TestUniversalTimestampCollection:
         file_path, expected_mtime = test_file
 
         with FileChunkingManager(
-            mock_vector_manager, mock_chunker, mock_qdrant_client, 4, mock_slot_tracker
+            mock_vector_manager,
+            mock_chunker,
+            mock_qdrant_client,
+            4,
+            mock_slot_tracker,
+            codebase_dir=file_path.parent,
         ) as manager:
 
             chunk = {
@@ -141,7 +146,12 @@ class TestUniversalTimestampCollection:
         start_time = time.time()
 
         with FileChunkingManager(
-            mock_vector_manager, mock_chunker, mock_qdrant_client, 4, mock_slot_tracker
+            mock_vector_manager,
+            mock_chunker,
+            mock_qdrant_client,
+            4,
+            mock_slot_tracker,
+            codebase_dir=file_path.parent,
         ) as manager:
 
             chunk = {
@@ -184,7 +194,12 @@ class TestUniversalTimestampCollection:
         file_path, expected_mtime = test_file
 
         with FileChunkingManager(
-            mock_vector_manager, mock_chunker, mock_qdrant_client, 4, mock_slot_tracker
+            mock_vector_manager,
+            mock_chunker,
+            mock_qdrant_client,
+            4,
+            mock_slot_tracker,
+            codebase_dir=file_path.parent,
         ) as manager:
 
             chunk = {
@@ -225,7 +240,12 @@ class TestUniversalTimestampCollection:
         file_path = Path("/nonexistent/permission_denied.py")
 
         with FileChunkingManager(
-            mock_vector_manager, mock_chunker, mock_qdrant_client, 4, mock_slot_tracker
+            mock_vector_manager,
+            mock_chunker,
+            mock_qdrant_client,
+            4,
+            mock_slot_tracker,
+            codebase_dir=file_path.parent,
         ) as manager:
 
             chunk = {
@@ -295,7 +315,12 @@ class TestUniversalTimestampCollection:
         mock_vector_manager.submit_batch_task.return_value = mock_future
 
         with FileChunkingManager(
-            mock_vector_manager, mock_chunker, mock_qdrant_client, 4, mock_slot_tracker
+            mock_vector_manager,
+            mock_chunker,
+            mock_qdrant_client,
+            4,
+            mock_slot_tracker,
+            codebase_dir=file_path.parent,
         ) as manager:
 
             metadata = {
@@ -351,6 +376,7 @@ class TestUniversalTimestampCollection:
                 mock_qdrant_client,
                 4,
                 mock_slot_tracker,
+                codebase_dir=Path(temp_dir),
             ) as manager:
 
                 chunk = {
@@ -394,7 +420,12 @@ class TestUniversalTimestampCollection:
         file_path, expected_mtime = test_file
 
         with FileChunkingManager(
-            mock_vector_manager, mock_chunker, mock_qdrant_client, 4, mock_slot_tracker
+            mock_vector_manager,
+            mock_chunker,
+            mock_qdrant_client,
+            4,
+            mock_slot_tracker,
+            codebase_dir=file_path.parent,
         ) as manager:
 
             chunk = {
@@ -448,7 +479,12 @@ class TestUniversalTimestampCollection:
         file_path, _ = test_file
 
         with FileChunkingManager(
-            mock_vector_manager, mock_chunker, mock_qdrant_client, 4, mock_slot_tracker
+            mock_vector_manager,
+            mock_chunker,
+            mock_qdrant_client,
+            4,
+            mock_slot_tracker,
+            codebase_dir=file_path.parent,
         ) as manager:
 
             chunk = {

@@ -60,6 +60,7 @@ class FileChunkingManager:
         qdrant_client,  # Pass from HighThroughputProcessor
         thread_count: int,
         slot_tracker: CleanSlotTracker,
+        codebase_dir: Path,  # CRITICAL FOR COW CLONING: Needed for path normalization
     ):
         """
         Initialize FileChunkingManager with complete functionality.
@@ -70,6 +71,7 @@ class FileChunkingManager:
             qdrant_client: Qdrant client for atomic writes
             thread_count: Number of worker threads (thread_count + 2 per specs)
             slot_tracker: CleanSlotTracker for progress tracking and slot management
+            codebase_dir: Repository root directory for path normalization
 
         Raises:
             ValueError: If thread_count is invalid or dependencies are None
@@ -84,12 +86,15 @@ class FileChunkingManager:
             raise ValueError("qdrant_client cannot be None")
         if not slot_tracker:
             raise ValueError("slot_tracker cannot be None")
+        if not codebase_dir:
+            raise ValueError("codebase_dir cannot be None")
 
         self.vector_manager = vector_manager
         self.chunker = chunker
         self.qdrant_client = qdrant_client
         self.thread_count = thread_count
         self.slot_tracker = slot_tracker
+        self.codebase_dir = codebase_dir
 
         # CRITICAL FIX: Single cancellation event shared with VectorCalculationManager
         self._cancellation_requested = False
@@ -103,6 +108,34 @@ class FileChunkingManager:
         self.voyage_client = voyageai.Client()
 
         logger.info(f"Initialized FileChunkingManager with {thread_count} base threads")
+
+    def _normalize_path_for_storage(self, file_path: Path) -> str:
+        """
+        Normalize file path to relative for portable database storage.
+
+        CRITICAL FOR COW CLONING: All paths stored in Qdrant must be relative
+        to codebase_dir to ensure database portability across different filesystem
+        locations (CoW clones, repository moves, etc.).
+
+        Args:
+            file_path: File path (absolute or relative)
+
+        Returns:
+            Relative path string for database storage
+
+        Raises:
+            ValueError: If file_path is not under codebase_dir
+        """
+        if file_path.is_absolute():
+            try:
+                return str(file_path.relative_to(self.codebase_dir))
+            except ValueError as e:
+                logger.error(
+                    f"Cannot normalize path {file_path} - not under codebase_dir "
+                    f"{self.codebase_dir}: {e}"
+                )
+                raise
+        return str(file_path)
 
     def __enter__(self):
         """Context manager entry - start thread pool."""
@@ -286,7 +319,7 @@ class FileChunkingManager:
 
         # Create payload using existing schema
         payload = GitAwareMetadataSchema.create_git_aware_metadata(
-            path=str(file_path),
+            path=self._normalize_path_for_storage(file_path),
             content=chunk["text"],
             language=chunk["file_extension"],
             file_size=file_size,  # Use already collected file_size

@@ -65,6 +65,10 @@ class TestDynamicThreadCountFix:
             processor.embedding_provider = Mock()
             processor.qdrant_client = Mock()
 
+            # Mock config object (required for codebase_dir parameter)
+            processor.config = Mock()
+            processor.config.codebase_dir = Path("/test/codebase")
+
             # Mock the VectorCalculationManager and FileChunkingManager contexts
 
             # Test with specific thread count

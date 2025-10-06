@@ -2,6 +2,7 @@
 Git-aware document processor that extends the base DocumentProcessor.
 """
 
+import logging
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -17,6 +18,8 @@ from code_indexer.services.metadata_schema import (
 )
 from code_indexer.services.vector_calculation_manager import VectorCalculationManager
 
+logger = logging.getLogger(__name__)
+
 
 class GitAwareDocumentProcessor(DocumentProcessor):
     """Document processor with git-aware metadata enhancement."""
@@ -30,6 +33,34 @@ class GitAwareDocumentProcessor(DocumentProcessor):
         super().__init__(config, embedding_provider, qdrant_client)
         self.file_identifier = FileIdentifier(config.codebase_dir, config)
         self.git_detection = GitDetectionService(config.codebase_dir, config)
+
+    def _normalize_path_for_storage(self, file_path: Path) -> str:
+        """
+        Normalize file path to relative for portable database storage.
+
+        CRITICAL FOR COW CLONING: All paths stored in Qdrant must be relative
+        to codebase_dir to ensure database portability across different filesystem
+        locations (CoW clones, repository moves, etc.).
+
+        Args:
+            file_path: File path (absolute or relative)
+
+        Returns:
+            Relative path string for database storage
+
+        Raises:
+            ValueError: If file_path is not under codebase_dir
+        """
+        if file_path.is_absolute():
+            try:
+                return str(file_path.relative_to(self.config.codebase_dir))
+            except ValueError as e:
+                logger.error(
+                    f"Cannot normalize path {file_path} - not under codebase_dir "
+                    f"{self.config.codebase_dir}: {e}"
+                )
+                raise
+        return str(file_path)
 
     def process_file(self, file_path: Path) -> List[Dict[str, Any]]:
         """Process a single file with git-aware metadata."""
@@ -112,7 +143,7 @@ class GitAwareDocumentProcessor(DocumentProcessor):
 
                     # Create payload using create_git_aware_metadata
                     payload = GitAwareMetadataSchema.create_git_aware_metadata(
-                        path=str(file_path),
+                        path=self._normalize_path_for_storage(file_path),
                         content=chunk["text"],
                         language=chunk["file_extension"],
                         file_size=file_path.stat().st_size,

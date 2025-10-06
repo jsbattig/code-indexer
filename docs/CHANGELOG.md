@@ -1,5 +1,38 @@
 # Code Indexer Release Notes
 
+## Version 5.8.0 (2025-10-06) - CoW Cloning Portability Fix
+
+### 🔧 Critical Database Portability Fix
+
+**Fixed absolute path storage bug breaking CoW cloning**
+
+#### Changes
+- All Qdrant paths now stored as relative (e.g., `src/main.py` not `/home/user/.../src/main.py`)
+- Added `_normalize_path_for_storage()` to 3 indexing components
+- Database now fully portable across filesystem locations
+- Backward compatible with existing databases via defensive normalization in reconcile
+- API change: `FileChunkingManager` now requires `codebase_dir` parameter
+
+#### Files Updated
+- `high_throughput_processor.py` - Path normalization for parallel processing
+- `file_chunking_manager.py` - Path normalization + codebase_dir parameter
+- `git_aware_processor.py` - Path normalization for git-aware indexing
+- `metadata_schema.py` - Fixed documentation (absolute → relative paths)
+- Updated 33 test sites for new API
+
+#### Impact
+- CoW cloning works: Clone indexed repos, run `fix-config`, then reconcile works
+- Repository moves supported: Move dirs, update config, database still works
+- CIDX Server golden→activated repo cloning now fully functional
+- No re-indexing required for existing databases (backward compatible)
+
+#### Testing
+- 1637 tests passed (fast-automation.sh)
+- 6 TDD specification tests added documenting expected behavior
+- Zero regressions introduced
+
+---
+
 ## Version 5.7.0 (2025-10-06) - Password Library Migration
 
 ### 🔐 Security & Compatibility Update

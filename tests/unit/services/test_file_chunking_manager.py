@@ -233,6 +233,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             qdrant_client=self.mock_qdrant_client,
             thread_count=thread_count,
             slot_tracker=CleanSlotTracker(max_slots=thread_count + 2),
+            codebase_dir=self.test_file_path.parent,
         )
 
         # Then creates ThreadPoolExecutor with (thread_count + 2) workers per user specs
@@ -255,6 +256,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
+            codebase_dir=self.test_file_path.parent,
         ) as manager:
 
             metadata = {"project_id": "test", "file_hash": "abc123"}
@@ -281,6 +283,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
+            codebase_dir=self.test_file_path.parent,
         ) as manager:
 
             metadata = {"project_id": "test", "file_hash": "abc123"}
@@ -316,6 +319,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
+            codebase_dir=self.test_file_path.parent,
         ) as manager:
             # TOKEN COUNTING FIX: Add voyage client mock
             self._add_voyage_client_mock(manager)
@@ -355,6 +359,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
+            codebase_dir=self.test_file_path.parent,
         ) as manager:
             # TOKEN COUNTING FIX: Add voyage client mock
             self._add_voyage_client_mock(manager)
@@ -393,6 +398,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
+            codebase_dir=self.test_file_path.parent,
         ) as manager:
 
             metadata = {"project_id": "test", "file_hash": "abc123"}
@@ -447,6 +453,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
+            codebase_dir=self.test_file_path.parent,
         ) as manager:
             # TOKEN COUNTING FIX: Add voyage client mock
             self._add_voyage_client_mock(manager)
@@ -475,6 +482,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
+            codebase_dir=self.test_file_path.parent,
         ) as manager:
             # TOKEN COUNTING FIX: Add voyage client mock
             self._add_voyage_client_mock(manager)
@@ -500,6 +508,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             qdrant_client=self.mock_qdrant_client,
             thread_count=3,
             slot_tracker=CleanSlotTracker(max_slots=5),
+            codebase_dir=self.test_file_path.parent,
         )
 
         # Context manager should start thread pool
@@ -538,6 +547,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
                 qdrant_client=self.mock_qdrant_client,
                 thread_count=2,
                 slot_tracker=CleanSlotTracker(max_slots=4),
+                codebase_dir=self.test_file_path.parent,
             ) as manager:
                 # TOKEN COUNTING FIX: Add voyage client mock
                 self._add_voyage_client_mock(manager)
@@ -591,6 +601,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
+            codebase_dir=self.test_file_path.parent,
         ) as manager:
             # TOKEN COUNTING FIX: Add voyage client mock
             self._add_voyage_client_mock(manager)
@@ -636,6 +647,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             qdrant_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
+            codebase_dir=self.test_file_path.parent,
         ) as manager:
             # TOKEN COUNTING FIX: Add voyage client mock
             self._add_voyage_client_mock(manager)
@@ -677,6 +689,7 @@ class TestFileChunkingManagerValidation:
                 qdrant_client=mock_qdrant_client,
                 thread_count=0,
                 slot_tracker=CleanSlotTracker(max_slots=2),
+                codebase_dir=self.test_file_path.parent,
             )
 
         with pytest.raises(ValueError, match="thread_count must be positive"):
@@ -686,6 +699,7 @@ class TestFileChunkingManagerValidation:
                 qdrant_client=mock_qdrant_client,
                 thread_count=-1,
                 slot_tracker=CleanSlotTracker(max_slots=2),
+                codebase_dir=self.test_file_path.parent,
             )
 
     def test_none_dependencies_validation(self):
@@ -701,6 +715,7 @@ class TestFileChunkingManagerValidation:
                 qdrant_client=mock_qdrant_client,
                 thread_count=2,
                 slot_tracker=CleanSlotTracker(max_slots=4),
+                codebase_dir=self.test_file_path.parent,
             )
 
         with pytest.raises(ValueError, match="chunker cannot be None"):
@@ -710,6 +725,7 @@ class TestFileChunkingManagerValidation:
                 qdrant_client=mock_qdrant_client,
                 thread_count=2,
                 slot_tracker=CleanSlotTracker(max_slots=4),
+                codebase_dir=self.test_file_path.parent,
             )
 
         with pytest.raises(ValueError, match="qdrant_client cannot be None"):
@@ -719,6 +735,7 @@ class TestFileChunkingManagerValidation:
                 qdrant_client=None,
                 thread_count=2,
                 slot_tracker=CleanSlotTracker(max_slots=4),
+                codebase_dir=self.test_file_path.parent,
             )
 
     def test_submit_without_context_manager_raises_error(self):
@@ -729,6 +746,7 @@ class TestFileChunkingManagerValidation:
             qdrant_client=MockQdrantClient(),
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
+            codebase_dir=self.test_file_path.parent,
         )
 
         metadata = {"project_id": "test", "file_hash": "abc123"}
@@ -748,6 +766,7 @@ class TestFileChunkingManagerValidation:
             qdrant_client=MockQdrantClient(),
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
+            codebase_dir=self.test_file_path.parent,
         ) as manager:
 
             test_file = tempfile.NamedTemporaryFile(
