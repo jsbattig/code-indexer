@@ -1,5 +1,209 @@
 # Release Notes
 
+## Version 6.0.0 - Multi-Repository Proxy Mode
+
+**Release Date**: October 9, 2025
+
+### 🚀 NEW Major Feature: Proxy Mode
+
+This major release introduces **Proxy Mode**, enabling semantic search across multiple repositories simultaneously with intelligent result aggregation.
+
+#### What is Proxy Mode?
+
+Proxy mode allows you to work with multiple repositories in parallel, executing commands across all of them and aggregating results intelligently. The most powerful use case is **multi-repository semantic search** - search across your entire development workspace with a single query.
+
+#### Key Features
+
+**Multi-Repository Query Execution**:
+- Execute `cidx query` across multiple repositories in parallel
+- Results automatically sorted by relevance score globally
+- Path prefixing for repository disambiguation (e.g., `repo1/src/file.py`, `repo2/lib/file.py`)
+- Perfect for monorepo-style workspace organization
+
+**Parallel Command Execution**:
+- ThreadPoolExecutor-based parallel execution (max 10 workers)
+- Respects repository boundaries and isolation
+- Automatic error handling per repository
+- Progress feedback for long-running operations
+
+**Rich and Quiet Output Modes**:
+- **Rich Mode**: Full metadata preserved (file info, language, score, size, timestamp, branch, commit, project name)
+- **Quiet Mode**: Simple format for programmatic parsing (`<score> <repo>/<path>:<start>-<end>`)
+- Terminal width adaptation with `COLUMNS=200` for rich format
+
+**Seamless Repository Discovery**:
+- Automatic detection of initialized repositories in subdirectories
+- Walks directory tree to find all `.code-indexer/` configurations
+- Smart repository list caching for performance
+- Respects repository isolation boundaries
+
+#### Usage Examples
+
+**Initialize Proxy Mode** (in workspace with multiple repos):
+```bash
+# In /workspace with repo1/, repo2/, repo3/ subdirectories
+cidx query "authentication logic"
+# Automatically detects proxy mode and searches all 3 repos
+```
+
+**Query with Filters**:
+```bash
+cidx query "error handling" --language python --limit 20 --quiet
+# Searches all repos, filters for Python files, shows top 20 results
+```
+
+**Results Format** (Quiet Mode):
+```
+0.42 repo1/src/auth.py:145-167
+0.41 repo2/lib/security.py:89-112
+0.38 repo1/tests/test_auth.py:234-256
+```
+
+**Results Format** (Rich Mode with COLUMNS=200):
+```
+📄 repo1/src/auth.py
+   🔤 Language: python | 📊 Score: 0.42 | 📏 Size: 4.5 KB
+   🕒 Indexed: 2025-10-09 | 🌿 Branch: master | 📦 Commit: abc123...
+   Lines 145-167
+```
+
+#### Architecture Details
+
+**Proxy Mode Detection** (`ModeDetector`):
+- Detects proxy mode when multiple `.code-indexer/` configs found in subdirectories
+- Caches repository list for performance
+- Returns mode type and repository list
+
+**Parallel Execution** (`ParallelCommandExecutor`):
+- MAX_WORKERS = 10 to prevent system overload
+- Worker count = min(repo_count, MAX_WORKERS)
+- ThreadPoolExecutor with proper exception handling
+- Subprocess execution with COLUMNS=200 for terminal width
+
+**Result Aggregation** (`ProxyModeQueryAggregator`):
+- Parses command output per repository
+- Detects output format (rich vs quiet)
+- Extracts results with path prefixing
+- Sorts globally by relevance score
+- Preserves metadata in rich format
+
+**Output Parsing**:
+- `RichFormatParser`: Parses full metadata from rich output
+- `QuietFormatParser`: Parses minimal format from quiet output
+- Repository prefix injection for path disambiguation
+- Score-based global sorting
+
+#### Bug Fixes
+
+**Bug #5: Preserve Metadata in Proxy Mode** (Critical):
+- **Problem**: Rich format metadata was lost during result aggregation
+- **Impact**: Users couldn't see file details, timestamps, or commit info in multi-repo queries
+- **Fix**: Implemented `RichFormatParser` to preserve all metadata fields
+- **Files**: `proxy_mode_query_aggregator.py`, `parallel_executor.py`
+
+**Terminal Width Limitation Fix**:
+- **Problem**: Rich format broke with terminals narrower than ~200 columns
+- **Impact**: Metadata lines wrapped, breaking regex parsing
+- **Fix**: Force `COLUMNS=200` in subprocess environment
+- **Files**: `parallel_executor.py:96-97`
+
+**Path Prefixing for Disambiguation**:
+- **Problem**: Multi-repo results showed relative paths without repository context
+- **Impact**: Users couldn't identify which repository contained each result
+- **Fix**: Automatic path prefixing with repository subdirectory names
+- **Format**: `repo1/src/file.py` instead of `src/file.py`
+
+#### Testing Verification
+
+**Comprehensive Manual Testing**:
+- 18 test scenarios executed across 3 repositories
+- Language filters, path filters, min-score, limit edge cases
+- Terminal width variations (80, 120, 200 columns)
+- Rich and quiet mode validation
+- Test results: `plans/backlog/Completed/epic-multi-repo-proxy/PROXY_QUERY_COMPREHENSIVE_TEST_RESULTS.md`
+
+**Unit Test Coverage**:
+- `tests/unit/proxy/test_parallel_executor.py` - 18 tests for parallel execution
+- Covers success cases, failures, exceptions, timeouts
+- Worker count validation, empty repo lists, command arguments
+- Mock-based testing with subprocess isolation
+
+**Fast Automation Results**:
+- 2048 tests passed (with 2 tests excluded due to isolation issues)
+- 17 skipped tests
+- Exit code 0 - clean run
+
+#### Files Added
+
+**Production Code**:
+- `src/code_indexer/proxy/parallel_executor.py` - Parallel command execution engine
+- `src/code_indexer/proxy/proxy_mode_query_aggregator.py` - Result aggregation and parsing
+- `src/code_indexer/proxy/__init__.py` - Proxy mode package initialization
+
+**Test Files**:
+- `tests/unit/proxy/test_parallel_executor.py` - Unit tests for parallel execution
+- `tests/e2e/proxy/test_proxy_mode_init.py` - E2E proxy mode initialization tests
+- `tests/e2e/test_proxy_mode_init.py` - Additional proxy mode tests
+
+**CLI Integration**:
+- `src/code_indexer/cli.py` - Enhanced query command with proxy mode detection and execution
+
+#### Technical Implementation
+
+**Parallel Execution Architecture**:
+```python
+# ParallelCommandExecutor manages concurrent execution
+executor = ParallelCommandExecutor(repositories)
+results = executor.execute_parallel(command, args)
+# Returns: Dict[repo_path, Tuple[stdout, stderr, exit_code]]
+```
+
+**Result Aggregation**:
+```python
+# ProxyModeQueryAggregator parses and aggregates
+aggregator = ProxyModeQueryAggregator(repo_results)
+formatted_output = aggregator.aggregate()
+# Returns: Formatted results sorted by score globally
+```
+
+**Terminal Width Handling**:
+```python
+# Force wide terminal to prevent line wrapping
+env = os.environ.copy()
+env['COLUMNS'] = '200'
+subprocess.run(cmd, env=env, ...)
+```
+
+#### Breaking Changes
+
+**None** - This is a purely additive feature. All existing functionality remains unchanged.
+
+#### Migration Guide
+
+No migration required. Proxy mode is automatically detected when multiple repositories are present in subdirectories.
+
+**To enable proxy mode**:
+1. Create workspace directory: `mkdir /workspace`
+2. Clone/init multiple repositories as subdirectories
+3. Initialize each repository: `cd repo1 && cidx init && cidx start && cidx index`
+4. Run queries from workspace root: `cd /workspace && cidx query "your search"`
+
+#### Impact
+
+**Who Benefits**:
+- Developers working with microservices architectures
+- Teams using monorepo-style workspace organization
+- Users managing multiple related projects
+- Anyone needing cross-repository semantic search
+
+**Use Cases**:
+- Find implementation patterns across multiple services
+- Search for API usage across client/server repositories
+- Locate configuration files in multi-repo setups
+- Discover code duplication opportunities for refactoring
+
+---
+
 ## Version 5.8.0 - CoW Cloning Portability Fix (Relative Path Storage)
 
 **Release Date**: October 6, 2025

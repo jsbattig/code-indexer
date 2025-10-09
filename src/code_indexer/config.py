@@ -275,6 +275,16 @@ class AutoRecoveryConfig(BaseModel):
 class Config(BaseModel):
     """Main configuration for Code Indexer."""
 
+    # Proxy mode configuration
+    proxy_mode: bool = Field(
+        default=False,
+        description="Enable proxy mode for managing multiple repositories"
+    )
+    discovered_repos: List[str] = Field(
+        default_factory=list,
+        description="List of relative paths to discovered repositories in proxy mode"
+    )
+
     codebase_dir: Path = Field(default=Path("."), description="Directory to index")
     file_extensions: List[str] = Field(
         default=[
@@ -718,6 +728,84 @@ code-indexer index --clear
                 return config_path
 
         return None
+
+    @classmethod
+    def detect_mode(
+        cls, start_path: Optional[Path] = None
+    ) -> Tuple[Optional[Path], Optional[str]]:
+        """Detect configuration mode (regular/proxy) by walking up directory tree.
+
+        This method implements automatic proxy mode detection by searching for
+        .code-indexer/config.json files and checking the proxy_mode flag.
+
+        Args:
+            start_path: Directory to start searching from (default: current directory)
+
+        Returns:
+            Tuple of (config_root_path, mode) where:
+            - config_root_path: Path to directory containing .code-indexer/, or None
+            - mode: "proxy" if proxy_mode is true, "regular" if false/missing, None if no config
+
+        Raises:
+            ValueError: If configuration file is malformed or cannot be parsed
+            PermissionError: If configuration file cannot be read due to permissions
+        """
+        # Get starting directory
+        if start_path:
+            current = Path(start_path).resolve()
+        else:
+            try:
+                current = Path.cwd()
+            except (FileNotFoundError, OSError):
+                # Working directory deleted - use temp directory as fallback
+                import tempfile
+
+                current = Path(tempfile.gettempdir())
+
+        # Walk up the directory tree looking for .code-indexer/config.json
+        while current != current.parent:
+            config_dir = current / ".code-indexer"
+            config_file = config_dir / "config.json"
+
+            if config_file.exists():
+                # Check if it's actually a file (not a directory)
+                if not config_file.is_file():
+                    # Skip and continue searching
+                    current = current.parent
+                    continue
+
+                try:
+                    with open(config_file, "r") as f:
+                        config_data = json.load(f)
+
+                    # Check proxy_mode flag
+                    proxy_mode = config_data.get("proxy_mode", False)
+
+                    if proxy_mode:
+                        return current, "proxy"
+                    else:
+                        return current, "regular"
+
+                except json.JSONDecodeError as e:
+                    raise ValueError(
+                        f"Invalid JSON in configuration file {config_file}: {e}"
+                    )
+                except PermissionError as e:
+                    raise PermissionError(
+                        f"Cannot read configuration file {config_file}: {e}"
+                    )
+                except OSError as e:
+                    # Handle other OS errors (broken symlinks, etc.)
+                    if not config_file.exists():
+                        # File disappeared during processing (broken symlink, etc.)
+                        current = current.parent
+                        continue
+                    raise
+
+            current = current.parent
+
+        # No config found
+        return None, None
 
     @classmethod
     def create_with_backtrack(cls, start_dir: Optional[Path] = None) -> "ConfigManager":

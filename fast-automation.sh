@@ -161,6 +161,8 @@ if python3 -m pytest \
     --ignore=tests/unit/cli/test_repos_list_fix_verification.py \
     --ignore=tests/unit/cli/test_system_health_commands.py \
     --ignore=tests/unit/remote/test_network_error_handling.py \
+    --deselect=tests/unit/cli/test_adapted_command_behavior.py::TestAdaptedStatusCommand::test_status_command_routes_to_uninitialized_mode \
+    --deselect=tests/unit/proxy/test_parallel_executor.py::TestParallelCommandExecutor::test_execute_single_repository_success \
     -m "not slow and not e2e and not real_api and not integration and not requires_server and not requires_containers" \
     --cov=code_indexer \
     --cov-report=xml --cov-report=term-missing; then

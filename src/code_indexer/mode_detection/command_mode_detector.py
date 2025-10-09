@@ -59,17 +59,19 @@ class CommandModeDetector:
         """
         self.project_root = project_root
         self.config_dir = project_root / ".code-indexer" if project_root else None
+        self._is_proxy_mode = False
 
-    def detect_mode(self) -> Literal["local", "remote", "uninitialized"]:
+    def detect_mode(self) -> Literal["local", "remote", "proxy", "uninitialized"]:
         """Detect current operational mode based on configuration files.
 
         Detection priority:
         1. Remote config (.remote-config) takes precedence if valid
-        2. Local config (config.json) if valid
-        3. Uninitialized if no valid configuration found
+        2. Proxy mode (if proxy_mode: true in config.json)
+        3. Local config (config.json) if valid
+        4. Uninitialized if no valid configuration found
 
         Returns:
-            Mode string: "local", "remote", or "uninitialized"
+            Mode string: "local", "remote", "proxy", or "uninitialized"
         """
         # Check if .code-indexer directory exists
         if not self.config_dir or not self.config_dir.exists():
@@ -85,6 +87,9 @@ class CommandModeDetector:
         local_config_path = self.config_dir / "config.json"
         if local_config_path.exists():
             if self._validate_local_config(local_config_path):
+                # Check if proxy mode is enabled
+                if self._is_proxy_mode:
+                    return "proxy"
                 return "local"
 
         # No valid configuration found
@@ -141,7 +146,10 @@ class CommandModeDetector:
         """
         try:
             with open(config_path, "r") as f:
-                json.load(f)  # Just check if it's valid JSON
+                config_data = json.load(f)  # Check if it's valid JSON
+
+            # Check if proxy_mode is enabled
+            self._is_proxy_mode = config_data.get("proxy_mode", False)
 
             return True
 

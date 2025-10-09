@@ -22,7 +22,7 @@ from tests.infrastructure.test_cidx_server import CIDXServerTestContext
 
 # Import test isolation utilities
 from tests.unit.api_clients.test_isolation_utils import (
-    TestIsolationManager,
+    MockIsolationManager,
     skip_if_no_server,
     with_rate_limit_protection,
     create_test_credentials,
@@ -35,7 +35,7 @@ class TestRealRemoteQueryClientSemanticSearch:
     @pytest_asyncio.fixture
     async def isolation_manager(self):
         """Test isolation manager for preventing rate limit contamination."""
-        manager = TestIsolationManager()
+        manager = MockIsolationManager()
         yield manager
 
     @pytest_asyncio.fixture

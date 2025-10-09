@@ -746,11 +746,11 @@ class ModeAwareGroup(click.Group):
             for cmd_name, icons, help_text in sorted(commands):
                 # Emojis take 2 visual columns each, so adjust padding
                 # Calculate visual width: each emoji = 2 chars, regular chars = 1 char
-                emoji_count = icons.count("🌐") + icons.count("🐳")
+                emoji_count = icons.count("🌐") + icons.count("🐳") + icons.count("🔗")
                 visual_width = len(icons) + emoji_count
 
-                # Target total width for command part is 24 chars
-                padding_needed = max(0, 24 - visual_width - len(cmd_name))
+                # Target total width for command part is 26 chars (increased for 3 icons)
+                padding_needed = max(0, 26 - visual_width - len(cmd_name))
 
                 formatted_line = (
                     f"  {icons} {cmd_name}{' ' * padding_needed} {help_text}"
@@ -758,7 +758,7 @@ class ModeAwareGroup(click.Group):
                 formatter.write(formatted_line + "\n")
 
             formatter.write("\n")
-            formatter.write("Legend: 🌐 Remote | 🐳 Local\n")
+            formatter.write("Legend: 🌐 Remote | 🐳 Local | 🔗 Proxy\n")
 
 
 @click.group(invoke_without_command=True, cls=ModeAwareGroup)
@@ -991,6 +991,11 @@ def cli(
     type=str,
     help="Password for remote server authentication",
 )
+@click.option(
+    "--proxy-mode",
+    is_flag=True,
+    help="Initialize as proxy directory for managing multiple indexed repositories",
+)
 @click.pass_context
 def init(
     ctx,
@@ -1006,6 +1011,7 @@ def init(
     remote: Optional[str],
     username: Optional[str],
     password: Optional[str],
+    proxy_mode: bool,
 ):
     """Initialize code indexing in current directory (OPTIONAL).
 
@@ -1125,6 +1131,79 @@ def init(
         except ImportError as e:
             console.print("❌ Remote functionality not available", style="red")
             console.print(f"Import error: {e}")
+            sys.exit(1)
+
+    # Handle proxy mode initialization
+    if proxy_mode:
+        from .proxy.proxy_initializer import (
+            ProxyInitializer,
+            ProxyInitializationError,
+            NestedProxyError,
+        )
+
+        # Determine target directory
+        target_dir = Path(codebase_dir) if codebase_dir else Path.cwd()
+
+        try:
+            # Create ProxyInitializer instance
+            initializer = ProxyInitializer(target_dir=target_dir)
+
+            # Run initialization
+            initializer.initialize(force=force)
+
+            # Get discovered repositories for user feedback
+            config_file = target_dir / ".code-indexer" / "config.json"
+            with open(config_file) as f:
+                config_data = json.load(f)
+
+            discovered_repos = config_data.get("discovered_repos", [])
+
+            # Display success message
+            console.print("✅ Proxy mode initialized successfully", style="green")
+            console.print(
+                f"📂 Configuration saved to: {target_dir / '.code-indexer' / 'config.json'}",
+                style="dim",
+            )
+            console.print()
+
+            # Show discovered repositories
+            console.print(
+                f"📚 Discovered {len(discovered_repos)} repositories", style="cyan"
+            )
+            if discovered_repos:
+                for repo in discovered_repos:
+                    console.print(f"   • {repo}", style="dim")
+            else:
+                console.print()
+                console.print(
+                    "📭 No repositories found in this directory", style="yellow"
+                )
+                console.print(
+                    "   Add indexed repositories as subdirectories and re-run with --force",
+                    style="dim",
+                )
+
+            sys.exit(0)
+
+        except NestedProxyError as e:
+            console.print("❌ Cannot create nested proxy configuration", style="red")
+            console.print(f"   {str(e)}", style="red")
+            sys.exit(1)
+
+        except ProxyInitializationError as e:
+            console.print("❌ Proxy initialization failed", style="red")
+            console.print(f"   {str(e)}", style="red")
+            console.print()
+            console.print(
+                "💡 Use --force to overwrite existing configuration", style="dim"
+            )
+            sys.exit(1)
+
+        except Exception as e:
+            console.print(
+                "❌ Unexpected error during proxy initialization", style="red"
+            )
+            console.print(f"   {str(e)}", style="red")
             sys.exit(1)
 
     # For init command, always create config in current directory (or specified codebase_dir)
@@ -1381,7 +1460,7 @@ def init(
     help="Maximum request queue size (default: 512)",
 )
 @click.pass_context
-@require_mode("local")
+@require_mode("local", "proxy")
 def start(
     ctx,
     model: Optional[str],
@@ -1393,6 +1472,8 @@ def start(
     queue_size: int,
 ):
     """Intelligently start required services, performing setup if needed.
+
+    In proxy mode, starts services sequentially across all configured repositories.
 
     \b
     SMART BEHAVIOR - automatically handles different scenarios:
@@ -1455,6 +1536,23 @@ def start(
     The command is fully idempotent - running it multiple times is safe and will only
     start missing services or perform setup if needed.
     """
+    # Handle proxy mode (Story 2.3 - Sequential Execution)
+    project_root, mode = ctx.obj["project_root"], ctx.obj["mode"]
+    if mode == "proxy":
+        from .proxy import execute_proxy_command
+
+        # Build args list from options
+        args = []
+        if force_docker:
+            args.append("--force-docker")
+        if force_recreate:
+            args.append("--force-recreate")
+        if quiet:
+            args.append("--quiet")
+
+        exit_code = execute_proxy_command(project_root, "start", args)
+        sys.exit(exit_code)
+
     config_manager = ctx.obj["config_manager"]
 
     try:
@@ -2198,9 +2296,24 @@ def index(
 @click.option("--batch-size", default=50, help="Batch size for processing")
 @click.option("--initial-sync", is_flag=True, help="Perform full sync before watching")
 @click.pass_context
-@require_mode("local")
+@require_mode("local", "proxy")
 def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
     """Git-aware watch for file changes with branch support."""
+    # Handle proxy mode (Story 2.2)
+    mode = ctx.obj.get("mode")
+    if mode == "proxy":
+        from .proxy import execute_proxy_command
+
+        project_root = ctx.obj["project_root"]
+
+        # Build args list for watch command
+        args = ["--debounce", str(debounce), "--batch-size", str(batch_size)]
+        if initial_sync:
+            args.append("--initial-sync")
+
+        exit_code = execute_proxy_command(project_root, "watch", args)
+        sys.exit(exit_code)
+
     config_manager = ctx.obj["config_manager"]
 
     try:
@@ -2376,7 +2489,7 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
     help="Quiet mode - only show results, no headers or metadata",
 )
 @click.pass_context
-@require_mode("local", "remote")
+@require_mode("local", "remote", "proxy")
 def query(
     ctx,
     query: str,
@@ -2435,6 +2548,26 @@ def query(
     # Get mode information from context
     mode = ctx.obj.get("mode", "uninitialized")
     project_root = ctx.obj.get("project_root")
+
+    # Handle proxy mode (Story 2.2)
+    if mode == "proxy":
+        from .proxy import execute_proxy_command
+
+        # Build args list from command parameters
+        args = [query, "--limit", str(limit)]
+        if language:
+            args.extend(["--language", language])
+        if path:
+            args.extend(["--path", path])
+        if min_score is not None:
+            args.extend(["--min-score", str(min_score)])
+        if accuracy != "balanced":
+            args.extend(["--accuracy", accuracy])
+        if quiet:
+            args.append("--quiet")
+
+        exit_code = execute_proxy_command(project_root, "query", args)
+        sys.exit(exit_code)
 
     # Handle uninitialized mode
     if mode == "uninitialized":
@@ -3552,6 +3685,7 @@ def claude(
     "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
 )
 @click.pass_context
+@require_mode("local", "remote", "proxy", "uninitialized")
 def status(ctx, force_docker: bool):
     """Show status of services and index (adapted for current mode).
     \b
@@ -3580,6 +3714,18 @@ def status(ctx, force_docker: bool):
     The status display automatically adapts based on your current configuration."""
     mode = ctx.obj["mode"]
     project_root = ctx.obj["project_root"]
+
+    # Handle proxy mode (Story 2.2)
+    if mode == "proxy":
+        from .proxy import execute_proxy_command
+
+        # Build args list for status command
+        args = []
+        if force_docker:
+            args.append("--force-docker")
+
+        exit_code = execute_proxy_command(project_root, "status", args)
+        sys.exit(exit_code)
 
     if mode == "local":
         from .mode_specific_handlers import display_local_status
@@ -4409,9 +4555,11 @@ def force_flush(ctx, collection: Optional[str]):
     "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
 )
 @click.pass_context
-@require_mode("local")
+@require_mode("local", "proxy")
 def stop(ctx, force_docker: bool):
     """Stop code indexing services while preserving all data.
+
+    In proxy mode, stops services sequentially across all configured repositories.
 
     \b
     Stops Docker containers for Ollama and Qdrant services without
@@ -4457,6 +4605,19 @@ def stop(ctx, force_docker: bool):
       Use 'code-indexer start' to resume services with all data intact.
       Much faster than running 'start' again.
     """
+    # Handle proxy mode (Story 2.3 - Sequential Execution)
+    project_root, mode = ctx.obj["project_root"], ctx.obj["mode"]
+    if mode == "proxy":
+        from .proxy import execute_proxy_command
+
+        # Build args list from options
+        args = []
+        if force_docker:
+            args.append("--force-docker")
+
+        exit_code = execute_proxy_command(project_root, "stop", args)
+        sys.exit(exit_code)
+
     try:
         # Use configuration from CLI context
         config_manager = ctx.obj["config_manager"]
@@ -5052,6 +5213,7 @@ def _check_remaining_root_files(console: Console):
 )
 @click.option("--confirm", is_flag=True, help="Skip confirmation prompt")
 @click.pass_context
+@require_mode("local", "remote", "proxy")
 def uninstall(ctx, force_docker: bool, wipe_all: bool, confirm: bool):
     """Uninstall CIDX configuration (mode-specific behavior).
 
@@ -5083,12 +5245,33 @@ def uninstall(ctx, force_docker: bool, wipe_all: bool, confirm: bool):
       • Provides guidance for re-initialization
 
     \b
+    PROXY MODE (Story 2.3):
+      • Uninstalls services sequentially across all configured repositories
+      • Prevents resource contention during cleanup
+      • Shows progress for each repository
+
+    \b
     The uninstall behavior automatically adapts based on your current configuration.
     """
     mode = ctx.obj["mode"]
     project_root = ctx.obj["project_root"]
 
-    if mode == "local":
+    if mode == "proxy":
+        # Handle proxy mode (Story 2.3 - Sequential Execution)
+        from .proxy import execute_proxy_command
+
+        # Build args list from options
+        args = []
+        if force_docker:
+            args.append("--force-docker")
+        if wipe_all:
+            args.append("--wipe-all")
+        if confirm:
+            args.append("--confirm")
+
+        exit_code = execute_proxy_command(project_root, "uninstall", args)
+        sys.exit(exit_code)
+    elif mode == "local":
         from .mode_specific_handlers import uninstall_local_mode
 
         uninstall_local_mode(project_root, force_docker, wipe_all)
@@ -5110,6 +5293,7 @@ def uninstall(ctx, force_docker: bool, wipe_all: bool, confirm: bool):
 @click.option("--verbose", is_flag=True, help="Show detailed information about fixes")
 @click.option("--force", is_flag=True, help="Apply fixes without confirmation prompts")
 @click.pass_context
+@require_mode("local", "remote", "proxy")
 def fix_config(ctx, dry_run: bool, verbose: bool, force: bool):
     """Fix corrupted configuration files.
 
@@ -5150,6 +5334,25 @@ def fix_config(ctx, dry_run: bool, verbose: bool, force: bool):
       • When git information is outdated
       • When metadata contains test data
     """
+    # Handle proxy mode (Story 2.2)
+    mode = ctx.obj.get("mode")
+    if mode == "proxy":
+        from .proxy import execute_proxy_command
+
+        project_root = ctx.obj["project_root"]
+
+        # Build args list for fix-config command
+        args = []
+        if dry_run:
+            args.append("--dry-run")
+        if verbose:
+            args.append("--verbose")
+        if force:
+            args.append("--force")
+
+        exit_code = execute_proxy_command(project_root, "fix-config", args)
+        sys.exit(exit_code)
+
     try:
         # Use configuration from CLI context
         config_manager = ctx.obj["config_manager"]

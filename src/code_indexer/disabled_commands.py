@@ -24,80 +24,108 @@ logger = logging.getLogger(__name__)
 # Command compatibility matrix defining which commands work in which modes
 COMMAND_COMPATIBILITY: Dict[str, Dict[str, bool]] = {
     # Always available commands - help and version work in all scenarios
-    "help": {"local": True, "remote": True, "uninitialized": True},
-    "version": {"local": True, "remote": True, "uninitialized": True},
+    "help": {"local": True, "remote": True, "proxy": True, "uninitialized": True},
+    "version": {"local": True, "remote": True, "proxy": True, "uninitialized": True},
     # Core functionality commands - work in initialized modes only
-    "query": {"local": True, "remote": True, "uninitialized": False},
+    "query": {"local": True, "remote": True, "proxy": True, "uninitialized": False},
     "ask": {
         "local": True,
         "remote": True,
+        "proxy": False,
         "uninitialized": False,
     },  # Claude integration
     # Initialization commands - always available since they set up the system
-    "init": {"local": True, "remote": True, "uninitialized": True},
+    "init": {"local": True, "remote": True, "proxy": True, "uninitialized": True},
     # Local-only infrastructure commands - require local container management
-    "start": {"local": True, "remote": False, "uninitialized": False},
-    "stop": {"local": True, "remote": False, "uninitialized": False},
-    "index": {"local": True, "remote": False, "uninitialized": False},
-    "watch": {"local": True, "remote": False, "uninitialized": False},
+    "start": {"local": True, "remote": False, "proxy": True, "uninitialized": False},
+    "stop": {"local": True, "remote": False, "proxy": True, "uninitialized": False},
+    "index": {"local": True, "remote": False, "proxy": False, "uninitialized": False},
+    "watch": {"local": True, "remote": False, "proxy": True, "uninitialized": False},
     # Mode-adapted commands - different behavior per mode but available in both
-    "status": {"local": True, "remote": True, "uninitialized": False},
-    "uninstall": {"local": True, "remote": True, "uninitialized": False},
+    "status": {"local": True, "remote": True, "proxy": True, "uninitialized": False},
+    "uninstall": {"local": True, "remote": True, "proxy": True, "uninitialized": False},
     "optimize": {
         "local": True,
         "remote": False,
+        "proxy": False,
         "uninitialized": False,
     },  # Local optimization only
     "force-flush": {
         "local": True,
         "remote": False,
+        "proxy": False,
         "uninitialized": False,
     },  # Local DB operations
     "clean-data": {
         "local": True,
         "remote": False,
+        "proxy": False,
         "uninitialized": False,
     },  # Local cleanup
     "fix-config": {
         "local": True,
         "remote": True,
+        "proxy": True,
         "uninitialized": True,
     },  # Config fixes always available
     "set-claude-prompt": {
         "local": True,
         "remote": True,
+        "proxy": False,
         "uninitialized": True,
     },  # Prompt setup
     "setup-global-registry": {
         "local": True,
         "remote": False,
+        "proxy": False,
         "uninitialized": True,
     },  # Local registry
     "install-server": {
         "local": True,
         "remote": False,
+        "proxy": False,
         "uninitialized": True,
     },  # Server installation
     # Server management commands - local only since they manage local server instances
-    "server": {"local": True, "remote": False, "uninitialized": True},
+    "server": {"local": True, "remote": False, "proxy": False, "uninitialized": True},
     # Authentication commands - remote only since they manage remote server credentials
-    "auth": {"local": False, "remote": True, "uninitialized": False},
+    "auth": {"local": False, "remote": True, "proxy": False, "uninitialized": False},
     # Claude AI integration - available in both modes
-    "claude": {"local": True, "remote": True, "uninitialized": False},
+    "claude": {"local": True, "remote": True, "proxy": False, "uninitialized": False},
     # Repository synchronization - remote only since it syncs with remote server
-    "sync": {"local": False, "remote": True, "uninitialized": False},
+    "sync": {"local": False, "remote": True, "proxy": False, "uninitialized": False},
     # Job management commands - remote only since they manage server-side background jobs
-    "list_jobs": {"local": False, "remote": True, "uninitialized": False},
-    "jobs": {"local": False, "remote": True, "uninitialized": False},
+    "list_jobs": {
+        "local": False,
+        "remote": True,
+        "proxy": False,
+        "uninitialized": False,
+    },
+    "jobs": {"local": False, "remote": True, "proxy": False, "uninitialized": False},
     # Admin commands - remote only since they manage server-side administration
-    "admin": {"local": False, "remote": True, "uninitialized": False},
-    "admin_group": {"local": False, "remote": True, "uninitialized": False},
-    "admin_users": {"local": False, "remote": True, "uninitialized": False},
-    "admin_repos": {"local": False, "remote": True, "uninitialized": False},
+    "admin": {"local": False, "remote": True, "proxy": False, "uninitialized": False},
+    "admin_group": {
+        "local": False,
+        "remote": True,
+        "proxy": False,
+        "uninitialized": False,
+    },
+    "admin_users": {
+        "local": False,
+        "remote": True,
+        "proxy": False,
+        "uninitialized": False,
+    },
+    "admin_repos": {
+        "local": False,
+        "remote": True,
+        "proxy": False,
+        "uninitialized": False,
+    },
     # Repository management commands - remote only since they manage server-side repositories
-    "repos": {"local": False, "remote": True, "uninitialized": False},
+    "repos": {"local": False, "remote": True, "proxy": False, "uninitialized": False},
     # System health commands - remote only since they check server-side system health
-    "system": {"local": False, "remote": True, "uninitialized": False},
+    "system": {"local": False, "remote": True, "proxy": False, "uninitialized": False},
 }
 
 # Command alternatives mapping for helpful error messages
@@ -156,6 +184,7 @@ class DisabledCommandError(ClickException):
         mode_contexts = {
             "remote": "remote mode connects to server-side infrastructure",
             "local": "local mode manages containers and services on this machine",
+            "proxy": "proxy mode coordinates operations across multiple discovered repositories",
             "uninitialized": "no configuration found - project needs initialization",
         }
 
@@ -195,14 +224,14 @@ class DisabledCommandError(ClickException):
         return "\n".join(message_parts)
 
 
-def detect_current_mode() -> Literal["local", "remote", "uninitialized"]:
+def detect_current_mode() -> Literal["local", "remote", "proxy", "uninitialized"]:
     """Detect current operational mode using project root discovery.
 
     Integrates with CommandModeDetector from Story 1 to provide consistent
     mode detection across the CLI system.
 
     Returns:
-        Current operational mode: "local", "remote", or "uninitialized"
+        Current operational mode: "local", "remote", "proxy", or "uninitialized"
     """
     try:
         # Find project root using the same logic as other CLI components
@@ -210,7 +239,9 @@ def detect_current_mode() -> Literal["local", "remote", "uninitialized"]:
 
         # Use CommandModeDetector to determine mode
         detector = CommandModeDetector(project_root)
-        mode: Literal["local", "remote", "uninitialized"] = detector.detect_mode()
+        mode: Literal["local", "remote", "proxy", "uninitialized"] = (
+            detector.detect_mode()
+        )
         return mode
 
     except Exception as e:
@@ -324,20 +355,21 @@ def get_command_mode_icons(command_name: str) -> str:
 
     Returns:
         String with aligned mode icons accounting for emoji display width
+        Format: 🌐 (remote) 🐳 (local) 🔗 (proxy)
     """
     compatibility = COMMAND_COMPATIBILITY.get(command_name, {})
-    local_support = compatibility.get("local", False)
     remote_support = compatibility.get("remote", False)
+    local_support = compatibility.get("local", False)
+    proxy_support = compatibility.get("proxy", False)
 
-    # Emojis take 2 visual columns each in most terminals
-    if local_support and remote_support:
-        return "🌐🐳"  # Both icons, no padding needed
-    elif remote_support:
-        return "🌐  "  # Remote + 2 spaces to match 🐳 width
-    elif local_support:
-        return "  🐳"  # 2 spaces + local to align with 🌐
-    else:
-        return "    "  # 4 spaces for unknown commands
+    # Build icon string - each emoji takes 2 visual columns
+    # Always show in order: Remote, Local, Proxy
+    icons = ""
+    icons += "🌐" if remote_support else "  "
+    icons += "🐳" if local_support else "  "
+    icons += "🔗" if proxy_support else "  "
+
+    return icons
 
 
 def validate_command_compatibility_matrix() -> Dict[str, Any]:
@@ -354,11 +386,12 @@ def validate_command_compatibility_matrix() -> Dict[str, Any]:
             "always_available": 0,
             "local_only": 0,
             "remote_compatible": 0,
+            "proxy_compatible": 0,
             "initialization_required": 0,
         },
     }
 
-    required_modes = ["local", "remote", "uninitialized"]
+    required_modes = ["local", "remote", "proxy", "uninitialized"]
 
     for command_name, compatibility in COMMAND_COMPATIBILITY.items():
         # Check all required modes are defined
@@ -378,6 +411,9 @@ def validate_command_compatibility_matrix() -> Dict[str, Any]:
 
         if compatibility.get("remote", False):
             validation_results["stats"]["remote_compatible"] += 1
+
+        if compatibility.get("proxy", False):
+            validation_results["stats"]["proxy_compatible"] += 1
 
         if not compatibility.get("uninitialized", False):
             validation_results["stats"]["initialization_required"] += 1
