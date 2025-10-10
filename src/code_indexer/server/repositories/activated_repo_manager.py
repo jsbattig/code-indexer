@@ -97,12 +97,74 @@ class ActivatedRepoManager:
     def activate_repository(
         self,
         username: str,
-        golden_repo_alias: str,
+        golden_repo_alias: Optional[str] = None,
+        golden_repo_aliases: Optional[List[str]] = None,
         branch_name: Optional[str] = None,
         user_alias: Optional[str] = None,
     ) -> str:
         """
         Activate a repository for a user (background job).
+
+        Supports both single repository and composite repository activation.
+
+        Args:
+            username: Username requesting activation
+            golden_repo_alias: Golden repository alias to activate (single repo)
+            golden_repo_aliases: Golden repository aliases for composite activation
+            branch_name: Branch to activate (defaults to golden repo's default branch)
+            user_alias: User's alias for the repo (defaults to golden_repo_alias)
+
+        Returns:
+            Job ID for tracking activation progress
+
+        Raises:
+            ValueError: If both or neither golden_repo parameters provided, or invalid list
+            ActivatedRepoError: If golden repo not found or already activated
+        """
+        # Validate mutual exclusivity and requirements
+        if golden_repo_alias and golden_repo_aliases:
+            raise ValueError(
+                "Cannot specify both golden_repo_alias and golden_repo_aliases"
+            )
+
+        # Validate composite repository requirements BEFORE checking if at least one is provided
+        # This ensures empty lists get the correct error message
+        if golden_repo_aliases is not None:
+            if len(golden_repo_aliases) < 2:
+                raise ValueError(
+                    "Composite activation requires at least 2 repositories"
+                )
+
+        if not golden_repo_alias and not golden_repo_aliases:
+            raise ValueError(
+                "Must specify either golden_repo_alias or golden_repo_aliases"
+            )
+
+        # Route to appropriate activation method
+        if golden_repo_aliases:
+            return self._activate_composite_repository(
+                username=username,
+                golden_repo_aliases=golden_repo_aliases,
+                user_alias=user_alias,
+            )
+
+        # Single repository activation (existing logic)
+        return self._activate_single_repository(
+            username=username,
+            golden_repo_alias=golden_repo_alias,  # type: ignore[arg-type]
+            branch_name=branch_name,
+            user_alias=user_alias,
+        )
+
+    def _activate_single_repository(
+        self,
+        username: str,
+        golden_repo_alias: str,
+        branch_name: Optional[str] = None,
+        user_alias: Optional[str] = None,
+    ) -> str:
+        """
+        Activate a single repository for a user (internal method).
 
         Args:
             username: Username requesting activation
@@ -154,6 +216,253 @@ class ActivatedRepoManager:
         )
 
         return job_id
+
+    def _activate_composite_repository(
+        self,
+        username: str,
+        golden_repo_aliases: List[str],
+        user_alias: Optional[str] = None,
+    ) -> str:
+        """
+        Activate a composite repository for a user (internal method).
+
+        This is a stub implementation that will be completed in Story 1.2.
+
+        Args:
+            username: Username requesting activation
+            golden_repo_aliases: List of golden repository aliases to combine
+            user_alias: User's alias for the composite repo
+
+        Returns:
+            Job ID for tracking activation progress
+
+        Raises:
+            ActivatedRepoError: If validation or activation fails
+        """
+        # Submit background job for composite activation
+        job_id = self.background_job_manager.submit_job(
+            "activate_composite_repository",
+            self._do_activate_composite_repository,  # type: ignore[arg-type]
+            # Function arguments as keyword args
+            username=username,
+            golden_repo_aliases=golden_repo_aliases,
+            user_alias=user_alias,
+            # Job submitter
+            submitter_username=username,
+        )
+
+        return job_id
+
+    def _do_activate_composite_repository(
+        self,
+        username: str,
+        golden_repo_aliases: List[str],
+        user_alias: Optional[str] = None,
+        progress_callback: Optional[Callable[[int], None]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Perform actual composite repository activation.
+
+        Creates a composite repository structure using ProxyInitializer and
+        CoW clones of each golden repository.
+
+        Args:
+            username: Username requesting activation
+            golden_repo_aliases: List of golden repository aliases to combine
+            user_alias: User's alias for the composite repo
+            progress_callback: Optional callback for progress updates
+
+        Returns:
+            Result dictionary with success status and message
+
+        Raises:
+            ActivatedRepoError: If validation or activation fails
+        """
+
+        def update_progress(percent: int, message: str = "") -> None:
+            """Helper to update progress with logging."""
+            if progress_callback:
+                progress_callback(percent)
+            if message:
+                self.logger.info(
+                    f"Composite activation progress ({percent}%): {message}"
+                )
+
+        try:
+            # Step 0: Validate golden repositories exist
+            update_progress(
+                5, f"Validating {len(golden_repo_aliases)} golden repositories"
+            )
+            for alias in golden_repo_aliases:
+                if alias not in self.golden_repo_manager.golden_repos:
+                    raise ActivatedRepoError(f"Golden repository '{alias}' not found")
+
+            # Step 1: Determine user_alias (default to joined names if not provided)
+            if user_alias is None:
+                user_alias = "_".join(golden_repo_aliases)
+                self.logger.info(
+                    f"User alias not provided, defaulting to: {user_alias}"
+                )
+
+            update_progress(
+                10,
+                f"Starting composite activation '{user_alias}' for user '{username}'",
+            )
+
+            # Step 2: Create base directory structure
+            user_dir = os.path.join(self.activated_repos_dir, username)
+            os.makedirs(user_dir, exist_ok=True)
+
+            composite_path = Path(user_dir) / user_alias
+
+            # Check if already exists
+            if composite_path.exists():
+                raise ActivatedRepoError(
+                    f"Composite repository '{user_alias}' already exists for user '{username}'"
+                )
+
+            composite_path.mkdir(parents=True, exist_ok=True)
+            update_progress(20, f"Created composite directory at {composite_path}")
+
+            # Step 3: Use ProxyInitializer to create proxy configuration
+            update_progress(25, "Initializing proxy configuration")
+            try:
+                from ...proxy.proxy_initializer import ProxyInitializer
+
+                proxy_init = ProxyInitializer(composite_path)
+                proxy_init.initialize(force=True)
+                update_progress(30, "Proxy configuration initialized")
+            except Exception as e:
+                # Clean up on failure
+                if composite_path.exists():
+                    shutil.rmtree(composite_path, ignore_errors=True)
+                raise ActivatedRepoError(
+                    f"Failed to initialize proxy configuration: {str(e)}"
+                )
+
+            # Step 4: CoW clone each golden repository as subdirectory
+            total_repos = len(golden_repo_aliases)
+            cloned_count = 0
+
+            for idx, alias in enumerate(golden_repo_aliases):
+                progress_percent = 30 + int((idx / total_repos) * 50)
+                update_progress(
+                    progress_percent,
+                    f"Cloning repository {idx + 1}/{total_repos}: {alias}",
+                )
+
+                golden_repo = self.golden_repo_manager.golden_repos[alias]
+                subrepo_path = composite_path / alias
+
+                try:
+                    # Reuse existing CoW clone method
+                    success = self._clone_with_copy_on_write(
+                        str(golden_repo.clone_path), str(subrepo_path)
+                    )
+
+                    if not success:
+                        raise ActivatedRepoError(
+                            f"Failed to clone repository '{alias}'"
+                        )
+
+                    cloned_count += 1
+                    self.logger.info(
+                        f"Successfully cloned {alias} ({cloned_count}/{total_repos})"
+                    )
+
+                except Exception as e:
+                    # Clean up on failure
+                    self.logger.error(f"Failed to clone repository '{alias}': {str(e)}")
+                    if composite_path.exists():
+                        shutil.rmtree(composite_path, ignore_errors=True)
+                    raise ActivatedRepoError(
+                        f"Failed to clone repository '{alias}': {str(e)}"
+                    )
+
+            update_progress(80, f"All {total_repos} repositories cloned successfully")
+
+            # Step 5: Refresh discovered repositories using ProxyConfigManager
+            update_progress(85, "Discovering cloned repositories")
+            try:
+                from ...proxy.config_manager import ProxyConfigManager
+
+                proxy_config = ProxyConfigManager(composite_path)
+                proxy_config.refresh_repositories()
+                update_progress(90, "Repository discovery completed")
+            except Exception as e:
+                # Clean up on failure
+                self.logger.error(f"Failed to refresh repositories: {str(e)}")
+                if composite_path.exists():
+                    shutil.rmtree(composite_path, ignore_errors=True)
+                raise ActivatedRepoError(
+                    f"Failed to refresh repository configuration: {str(e)}"
+                )
+
+            # Step 6: Create metadata file with discovered repos
+            update_progress(95, "Creating composite repository metadata")
+            activated_at = datetime.now(timezone.utc).isoformat()
+
+            # Get discovered repos from proxy config
+            discovered_repos = proxy_config.get_repositories()
+
+            metadata = {
+                "user_alias": user_alias,
+                "username": username,
+                "path": str(composite_path),
+                "is_composite": True,
+                "golden_repo_aliases": golden_repo_aliases,
+                "discovered_repos": discovered_repos,
+                "activated_at": activated_at,
+                "last_accessed": activated_at,
+            }
+
+            metadata_file = os.path.join(user_dir, f"{user_alias}_metadata.json")
+            try:
+                with open(metadata_file, "w") as f:
+                    json.dump(metadata, f, indent=2)
+            except Exception as e:
+                # Clean up on failure
+                self.logger.error(f"Failed to create metadata file: {str(e)}")
+                if composite_path.exists():
+                    shutil.rmtree(composite_path, ignore_errors=True)
+                raise ActivatedRepoError(f"Failed to create metadata: {str(e)}")
+
+            update_progress(
+                100, f"Composite repository '{user_alias}' activated successfully"
+            )
+
+            self.logger.info(
+                f"Successfully activated composite repository '{user_alias}' for user '{username}' "
+                f"with {len(golden_repo_aliases)} component repositories"
+            )
+
+            return {
+                "success": True,
+                "message": f"Composite repository '{user_alias}' activated successfully",
+                "user_alias": user_alias,
+                "is_composite": True,
+                "component_count": len(golden_repo_aliases),
+                "component_aliases": golden_repo_aliases,
+                "activation_timestamp": activated_at,
+                "details": {
+                    "composite_path": str(composite_path),
+                    "repositories_cloned": cloned_count,
+                    "proxy_mode_enabled": True,
+                },
+            }
+
+        except Exception as e:
+            error_msg = f"Failed to activate composite repository '{user_alias}' for user '{username}': {str(e)}"
+            self.logger.error(error_msg)
+
+            # Report failure through progress callback
+            if progress_callback:
+                progress_callback(0)  # Reset progress to indicate failure
+
+            # Re-raise ActivatedRepoError, wrap other exceptions
+            if isinstance(e, ActivatedRepoError):
+                raise
+            raise ActivatedRepoError(error_msg)
 
     def list_activated_repositories(self, username: str) -> List[Dict[str, Any]]:
         """
@@ -826,6 +1135,66 @@ class ActivatedRepoManager:
                 raise
             raise GitOperationError(f"Failed to list branches: {str(e)}")
 
+    def get_repository(
+        self, username: str, user_alias: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get repository metadata with fresh discovered_repos for composite repos.
+
+        For composite repositories, refreshes the discovered_repos list from
+        the proxy configuration to ensure it reflects current state.
+
+        Args:
+            username: Username
+            user_alias: User's alias for the repository
+
+        Returns:
+            Repository metadata dictionary or None if not found
+
+        Raises:
+            ActivatedRepoError: If metadata loading or refresh fails
+        """
+        user_dir = os.path.join(self.activated_repos_dir, username)
+        repo_path = os.path.join(user_dir, user_alias)
+        metadata_file = os.path.join(user_dir, f"{user_alias}_metadata.json")
+
+        # Check if repository exists
+        if not os.path.exists(repo_path) or not os.path.exists(metadata_file):
+            return None
+
+        try:
+            # Load metadata from file
+            with open(metadata_file, "r") as f:
+                metadata: Dict[str, Any] = json.load(f)
+
+            # For composite repos, refresh discovered_repos from config
+            if metadata.get("is_composite", False):
+                try:
+                    from ...proxy.config_manager import ProxyConfigManager
+
+                    proxy_config = ProxyConfigManager(Path(repo_path))
+                    metadata["discovered_repos"] = proxy_config.get_repositories()
+                except Exception as e:
+                    # Log warning but don't fail - use existing discovered_repos
+                    self.logger.warning(
+                        f"Failed to refresh discovered_repos for '{user_alias}': {str(e)}. "
+                        f"Using cached list."
+                    )
+
+            # Update last_accessed timestamp
+            metadata["last_accessed"] = datetime.now(timezone.utc).isoformat()
+
+            # Save updated metadata
+            with open(metadata_file, "w") as f:
+                json.dump(metadata, f, indent=2)
+
+            return metadata
+
+        except (json.JSONDecodeError, KeyError, IOError) as e:
+            raise ActivatedRepoError(
+                f"Failed to load metadata for repository '{user_alias}': {str(e)}"
+            )
+
     def get_activated_repo_path(self, username: str, user_alias: str) -> str:
         """
         Get the filesystem path to an activated repository.
@@ -970,12 +1339,66 @@ class ActivatedRepoManager:
         """
         Perform actual repository deactivation (called by background job).
 
+        Handles both single and composite repository deactivation by detecting
+        repository type and routing to appropriate cleanup method.
+
         Args:
             username: Username requesting deactivation
             user_alias: User's alias for the repository
 
         Returns:
             Result dictionary with success status and message including resource cleanup details
+        """
+        try:
+            # Load metadata to determine repository type
+            user_dir = os.path.join(self.activated_repos_dir, username)
+            metadata_file = os.path.join(user_dir, f"{user_alias}_metadata.json")
+
+            if not os.path.exists(metadata_file):
+                raise ActivatedRepoError(
+                    f"Metadata file not found for repository '{user_alias}'"
+                )
+
+            with open(metadata_file, "r") as f:
+                metadata = json.load(f)
+
+            # Route to appropriate deactivation method
+            if metadata.get("is_composite", False):
+                return self._do_deactivate_composite(username, user_alias, metadata)
+            else:
+                return self._do_deactivate_single(username, user_alias, metadata)
+
+        except Exception as e:
+            error_msg = f"Failed to deactivate repository '{user_alias}' for user '{username}': {str(e)}"
+
+            # Critical administrative logging for deactivation failures
+            self.logger.error(
+                "CRITICAL: Repository deactivation failed",
+                extra={
+                    "username": username,
+                    "user_alias": user_alias,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "requires_immediate_admin_attention": True,
+                    "potential_resource_leak": True,
+                },
+            )
+
+            raise ActivatedRepoError(error_msg)
+
+    def _do_deactivate_single(
+        self, username: str, user_alias: str, metadata: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Perform deactivation for single repository.
+
+        Args:
+            username: Username requesting deactivation
+            user_alias: User's alias for the repository
+            metadata: Repository metadata dictionary
+
+        Returns:
+            Result dictionary with success status and cleanup details
         """
         cleanup_warnings = []
         resource_summary = {
@@ -1117,22 +1540,204 @@ class ActivatedRepoManager:
             return result
 
         except Exception as e:
-            error_msg = f"Failed to deactivate repository '{user_alias}' for user '{username}': {str(e)}"
+            error_msg = (
+                f"Failed to deactivate single repository '{user_alias}': {str(e)}"
+            )
+            self.logger.error(error_msg)
+            raise ActivatedRepoError(error_msg)
 
-            # Critical administrative logging for deactivation failures
-            self.logger.error(
-                "CRITICAL: Repository deactivation failed",
-                extra={
-                    "username": username,
-                    "user_alias": user_alias,
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "requires_immediate_admin_attention": True,
-                    "potential_resource_leak": True,
-                },
+    def _do_deactivate_composite(
+        self, username: str, user_alias: str, metadata: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Perform deactivation for composite repository.
+
+        Handles complete cleanup of composite repository including:
+        - Stopping any running services
+        - Removing all component repositories
+        - Removing proxy configuration
+        - Removing composite directory
+        - Removing metadata file
+
+        Args:
+            username: Username requesting deactivation
+            user_alias: User's alias for the repository
+            metadata: Repository metadata dictionary
+
+        Returns:
+            Result dictionary with success status and cleanup details
+        """
+        cleanup_warnings = []
+        components_removed = 0
+
+        try:
+            user_dir = os.path.join(self.activated_repos_dir, username)
+            repo_path = Path(metadata["path"])
+            metadata_file = os.path.join(user_dir, f"{user_alias}_metadata.json")
+
+            self.logger.info(
+                f"Starting composite repository deactivation for '{user_alias}'"
             )
 
+            # Step 1: Stop any running services (non-fatal if fails)
+            self._stop_composite_services(repo_path)
+
+            # Step 2: Clean up component repositories
+            if repo_path.exists():
+                try:
+                    from ...proxy.config_manager import ProxyConfigManager
+
+                    proxy_config = ProxyConfigManager(repo_path)
+                    discovered_repos = proxy_config.get_repositories()
+
+                    for repo_name in discovered_repos:
+                        subrepo_path = repo_path / repo_name
+                        if subrepo_path.exists():
+                            try:
+                                shutil.rmtree(subrepo_path)
+                                components_removed += 1
+                                self.logger.info(f"Removed component: {repo_name}")
+                            except (OSError, IOError) as e:
+                                cleanup_warnings.append(
+                                    f"Failed to remove component '{repo_name}': {str(e)}"
+                                )
+                except Exception as e:
+                    # Non-fatal - we'll still remove the entire directory
+                    cleanup_warnings.append(f"Failed to enumerate components: {str(e)}")
+                    self.logger.warning(
+                        f"Component enumeration failed, will remove entire directory: {str(e)}"
+                    )
+
+            # Step 3: Remove entire composite repository directory
+            # This includes .code-indexer config and any remaining components
+            if repo_path.exists():
+                try:
+                    shutil.rmtree(repo_path)
+                    self.logger.info(
+                        f"Removed composite repository directory: {repo_path}"
+                    )
+                except (OSError, IOError) as e:
+                    cleanup_warnings.append(
+                        f"Failed to remove composite directory: {str(e)}"
+                    )
+                    self.logger.error(
+                        "RESOURCE LEAK WARNING: Failed to remove composite directory",
+                        extra={
+                            "username": username,
+                            "user_alias": user_alias,
+                            "directory": str(repo_path),
+                            "error": str(e),
+                            "requires_admin_cleanup": True,
+                        },
+                    )
+
+            # Step 4: Remove metadata file
+            if os.path.exists(metadata_file):
+                try:
+                    os.remove(metadata_file)
+                    self.logger.info(f"Removed metadata file: {metadata_file}")
+                except (OSError, IOError) as e:
+                    cleanup_warnings.append(f"Failed to remove metadata file: {str(e)}")
+                    self.logger.warning(
+                        "Metadata cleanup issue",
+                        extra={
+                            "username": username,
+                            "user_alias": user_alias,
+                            "metadata_file": metadata_file,
+                            "error": str(e),
+                            "impact": "minor",
+                        },
+                    )
+
+            # Post-cleanup verification
+            cleanup_success = not repo_path.exists() and not os.path.exists(
+                metadata_file
+            )
+
+            if not cleanup_success:
+                cleanup_warnings.append(
+                    "Cleanup verification failed - some resources may remain"
+                )
+
+            self.logger.info(
+                f"Composite repository '{user_alias}' deactivated successfully"
+            )
+
+            result = {
+                "success": True,
+                "message": f"Composite repository '{user_alias}' deactivated successfully",
+                "user_alias": user_alias,
+                "is_composite": True,
+                "components_removed": components_removed,
+                "cleanup_warnings": cleanup_warnings if cleanup_warnings else None,
+                "administrative_notes": {
+                    "cleanup_verified": cleanup_success,
+                    "requires_attention": len(cleanup_warnings) > 0,
+                },
+            }
+
+            if cleanup_warnings:
+                result["warnings"] = cleanup_warnings
+
+            return result
+
+        except Exception as e:
+            error_msg = (
+                f"Failed to deactivate composite repository '{user_alias}': {str(e)}"
+            )
+            self.logger.error(error_msg)
             raise ActivatedRepoError(error_msg)
+
+    def _stop_composite_services(self, repo_path: Path) -> None:
+        """
+        Stop any services running for composite repository.
+
+        Attempts to stop containers gracefully. This is non-fatal - if services
+        aren't running or stop fails, deactivation continues.
+
+        Args:
+            repo_path: Path to composite repository
+        """
+        try:
+            self.logger.debug(f"Attempting to stop services for {repo_path}")
+
+            # Check if .code-indexer directory exists (has configuration)
+            config_dir = repo_path / ".code-indexer"
+            if not config_dir.exists():
+                self.logger.debug("No .code-indexer directory, skipping service stop")
+                return
+
+            # Attempt to stop services using cidx stop command
+            # This is the safest way to ensure containers are properly stopped
+            result = subprocess.run(
+                ["cidx", "stop"],
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode == 0:
+                self.logger.info(
+                    f"Successfully stopped services for composite repository at {repo_path}"
+                )
+            else:
+                # Non-fatal - services might not be running
+                self.logger.debug(
+                    f"Service stop returned non-zero exit code (likely not running): {result.stderr}"
+                )
+
+        except subprocess.TimeoutExpired:
+            # Non-fatal - continue with cleanup
+            self.logger.warning(
+                f"Timeout while stopping services for {repo_path}, continuing with cleanup"
+            )
+        except FileNotFoundError:
+            # cidx command not found - non-fatal
+            self.logger.debug("cidx command not found, skipping service stop")
+        except Exception as e:
+            # Non-fatal - services might not be running
+            self.logger.debug(f"Service stop attempted but failed: {str(e)}")
 
     def _detect_resource_leaks(self, repo_dir: str, user_alias: str) -> List[str]:
         """

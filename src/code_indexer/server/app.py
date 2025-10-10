@@ -6,9 +6,10 @@ Multi-user semantic code search server with JWT authentication and role-based ac
 
 from fastapi import FastAPI, HTTPException, status, Depends, Response, Request, Query
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Dict, Any, Optional, List, Callable
 import os
+import json
 from pathlib import Path
 import psutil
 import logging
@@ -53,11 +54,12 @@ from .query.semantic_query_manager import (
 )
 from .auth.refresh_token_manager import RefreshTokenManager
 from .models.branch_models import BranchListResponse
+from .models.activated_repository import ActivatedRepository
 from .services.branch_service import BranchService
 from code_indexer.services.git_topology_service import GitTopologyService
+from .validators.composite_repo_validator import CompositeRepoValidator
 from .models.api_models import (
     RepositoryStatsResponse,
-    FileListResponse,
     FileListQueryParams,
     SemanticSearchRequest,
     SemanticSearchResponse,
@@ -75,6 +77,7 @@ from .services.stats_service import stats_service
 from .services.file_service import file_service
 from .services.search_service import search_service
 from .services.health_service import health_service
+from .managers.composite_file_listing import _list_composite_files
 
 
 # Constants for job operations and status
@@ -436,11 +439,15 @@ class JobCleanupResponse(BaseModel):
 class ActivateRepositoryRequest(BaseModel):
     """Request model for activating repositories."""
 
-    golden_repo_alias: str = Field(
-        ...,
+    golden_repo_alias: Optional[str] = Field(
+        None,
         min_length=1,
         max_length=255,
-        description="Golden repository alias to activate",
+        description="Golden repository alias to activate (single repo)",
+    )
+    golden_repo_aliases: Optional[List[str]] = Field(
+        None,
+        description="Golden repository aliases for composite activation (multi-repo)",
     )
     branch_name: Optional[str] = Field(
         None,
@@ -454,15 +461,50 @@ class ActivateRepositoryRequest(BaseModel):
         description="User's alias for the repo (defaults to golden_repo_alias)",
     )
 
+    @model_validator(mode="after")
+    def validate_repo_parameters(self) -> "ActivateRepositoryRequest":
+        """Validate mutual exclusivity and requirements for repository parameters."""
+        golden_alias = self.golden_repo_alias
+        golden_aliases = self.golden_repo_aliases
+
+        # Check mutual exclusivity
+        if golden_alias and golden_aliases:
+            raise ValueError(
+                "Cannot specify both golden_repo_alias and golden_repo_aliases"
+            )
+
+        # Validate composite repository requirements BEFORE checking if at least one is provided
+        # This ensures empty lists get the correct error message
+        if golden_aliases is not None:
+            if len(golden_aliases) < 2:
+                raise ValueError(
+                    "Composite activation requires at least 2 repositories"
+                )
+
+            # Validate each alias in the list
+            for alias in golden_aliases:
+                if not alias or not alias.strip():
+                    raise ValueError(
+                        "Golden repo aliases cannot contain empty or whitespace-only strings"
+                    )
+
+        # Check that at least one is provided (after composite validation)
+        if not golden_alias and not golden_aliases:
+            raise ValueError(
+                "Must specify either golden_repo_alias or golden_repo_aliases"
+            )
+
+        return self
+
     @field_validator("golden_repo_alias")
     @classmethod
-    def validate_golden_repo_alias(cls, v: str) -> str:
+    def validate_golden_repo_alias(cls, v: Optional[str]) -> Optional[str]:
         """Validate golden repo alias is not empty or whitespace-only."""
-        if not v or not v.strip():
+        if v is not None and (not v or not v.strip()):
             raise ValueError(
                 "Golden repo alias cannot be empty or contain only whitespace"
             )
-        return v.strip()
+        return v.strip() if v else None
 
     @field_validator("user_alias")
     @classmethod
@@ -474,11 +516,17 @@ class ActivateRepositoryRequest(BaseModel):
 
 
 class ActivatedRepositoryInfo(BaseModel):
-    """Model for activated repository information."""
+    """
+    Model for activated repository information.
+
+    Supports both single and composite repositories:
+    - Single repos: Have golden_repo_alias and current_branch
+    - Composite repos: Have golden_repo_aliases and discovered_repos instead
+    """
 
     user_alias: str
-    golden_repo_alias: str
-    current_branch: str
+    golden_repo_alias: Optional[str] = None  # Optional for composite repos
+    current_branch: Optional[str] = None  # Optional for composite repos
     activated_at: str
     last_accessed: str
 
@@ -721,6 +769,35 @@ class RepositoryDetailsV2Response(BaseModel):
     git_info: GitInfo
     configuration: RepositoryConfiguration
     errors: List[str]
+
+
+class ComponentRepoInfo(BaseModel):
+    """Information about each component repository in a composite repository."""
+
+    name: str
+    path: str
+    has_index: bool
+    collection_exists: bool
+    indexed_files: int
+    last_indexed: Optional[datetime] = None
+    size_mb: float
+
+
+class CompositeRepositoryDetails(BaseModel):
+    """Details for a composite repository with aggregated component information."""
+
+    user_alias: str
+    is_composite: bool = True
+    activated_at: datetime
+    last_accessed: datetime
+    component_repositories: List[ComponentRepoInfo]
+    total_files: int
+    total_size_mb: float
+
+    class Config:
+        """Pydantic configuration."""
+
+        json_encoders = {datetime: lambda v: v.isoformat()}
 
 
 class RepositorySyncRequest(BaseModel):
@@ -1019,6 +1096,106 @@ def _execute_repository_sync(
             raise
         # Wrap unknown exceptions
         raise GitOperationError(f"Repository sync failed: {str(e)}")
+
+
+# Helper functions for composite repository details (Story 3.2)
+def _analyze_component_repo(repo_path: Path, name: str) -> ComponentRepoInfo:
+    """
+    Analyze a single component repository.
+
+    Args:
+        repo_path: Path to the component repository
+        name: Name of the component repository
+
+    Returns:
+        ComponentRepoInfo with repository analysis
+    """
+    # Check for index
+    index_dir = repo_path / ".code-indexer"
+    has_index = index_dir.exists()
+
+    # Get file count from metadata
+    file_count = 0
+    last_indexed = None
+    if has_index:
+        metadata_file = index_dir / "metadata.json"
+        if metadata_file.exists():
+            try:
+                metadata = json.loads(metadata_file.read_text())
+                file_count = metadata.get("indexed_files", 0)
+                # Try to get last_indexed timestamp if available
+                if "last_indexed" in metadata:
+                    try:
+                        last_indexed = datetime.fromisoformat(metadata["last_indexed"])
+                    except (ValueError, TypeError):
+                        pass
+            except (json.JSONDecodeError, IOError):
+                # If metadata is corrupted, treat as 0 files
+                file_count = 0
+
+    # Calculate repo size
+    total_size = 0
+    for item in repo_path.rglob("*"):
+        if item.is_file():
+            try:
+                total_size += item.stat().st_size
+            except (OSError, IOError):
+                # Skip files we can't stat
+                continue
+
+    return ComponentRepoInfo(
+        name=name,
+        path=str(repo_path),
+        has_index=has_index,
+        collection_exists=has_index,
+        indexed_files=file_count,
+        last_indexed=last_indexed,
+        size_mb=total_size / (1024 * 1024),
+    )
+
+
+def _get_composite_details(repo: ActivatedRepository) -> CompositeRepositoryDetails:
+    """
+    Aggregate details from all component repositories.
+
+    Args:
+        repo: ActivatedRepository instance (must be composite)
+
+    Returns:
+        CompositeRepositoryDetails with aggregated information
+    """
+    from code_indexer.proxy.config_manager import ProxyConfigManager
+
+    component_info = []
+    total_files = 0
+    total_size = 0.0
+
+    # Use ProxyConfigManager to get component repos
+    proxy_config = ProxyConfigManager(repo.path)
+
+    try:
+        discovered_repos = proxy_config.get_repositories()
+    except Exception:
+        # If we can't load proxy config, use discovered_repos from metadata
+        discovered_repos = repo.discovered_repos
+
+    for repo_name in discovered_repos:
+        subrepo_path = repo.path / repo_name
+        if subrepo_path.exists():
+            info = _analyze_component_repo(subrepo_path, repo_name)
+            component_info.append(info)
+            total_files += info.indexed_files
+            total_size += info.size_mb
+
+    return CompositeRepositoryDetails(
+        user_alias=repo.user_alias,
+        is_composite=True,
+        activated_at=repo.activated_at,
+        last_accessed=repo.last_accessed,
+        component_repositories=component_info,
+        total_files=total_files,
+        total_size_mb=total_size,
+    )
 
 
 def create_app() -> FastAPI:
@@ -2405,6 +2582,8 @@ def create_app() -> FastAPI:
         """
         Activate repository for querying (power user or admin only) - async operation.
 
+        Supports both single repository and composite repository activation.
+
         Args:
             request: Repository activation request data
             current_user: Current authenticated power user or admin
@@ -2419,15 +2598,29 @@ def create_app() -> FastAPI:
             job_id = activated_repo_manager.activate_repository(
                 username=current_user.username,
                 golden_repo_alias=request.golden_repo_alias,
+                golden_repo_aliases=request.golden_repo_aliases,
                 branch_name=request.branch_name,
                 user_alias=request.user_alias,
             )
 
-            user_alias = request.user_alias or request.golden_repo_alias
-            return JobResponse(
-                job_id=job_id,
-                message=f"Repository '{user_alias}' activation started for user '{current_user.username}'",
-            )
+            # Determine appropriate user_alias for response message
+            if request.golden_repo_aliases:
+                # Composite activation
+                user_alias_str: str = request.user_alias or "composite_repository"
+                repo_count = len(request.golden_repo_aliases)
+                return JobResponse(
+                    job_id=job_id,
+                    message=f"Composite repository '{user_alias_str}' activation started for user '{current_user.username}' ({repo_count} repositories)",
+                )
+            else:
+                # Single repository activation
+                user_alias_str = (
+                    request.user_alias or request.golden_repo_alias or "repository"
+                )
+                return JobResponse(
+                    job_id=job_id,
+                    message=f"Repository '{user_alias_str}' activation started for user '{current_user.username}'",
+                )
 
         except ActivatedRepoError as e:
             error_msg = str(e)
@@ -2449,25 +2642,27 @@ def create_app() -> FastAPI:
                 )
             elif "already activated" in error_msg:
                 # Provide conflict resolution guidance
-                user_alias = request.user_alias or request.golden_repo_alias
+                user_alias_conflict: str = (
+                    request.user_alias or request.golden_repo_alias or "repository"
+                )
                 conflict_detail: Dict[str, Any] = {
                     "error": error_msg,
                     "conflict_resolution": {
                         "options": [
                             {
                                 "action": "switch_branch",
-                                "description": f"Switch to different branch in existing repository '{user_alias}'",
-                                "endpoint": f"PUT /api/repos/{user_alias}/branch",
+                                "description": f"Switch to different branch in existing repository '{user_alias_conflict}'",
+                                "endpoint": f"PUT /api/repos/{user_alias_conflict}/branch",
                             },
                             {
                                 "action": "use_different_alias",
                                 "description": "Choose a different user_alias for this activation",
-                                "example": f"{user_alias}_v2",
+                                "example": f"{user_alias_conflict}_v2",
                             },
                             {
                                 "action": "deactivate_first",
-                                "description": f"Deactivate existing repository '{user_alias}' before reactivating",
-                                "endpoint": f"DELETE /api/repos/{user_alias}",
+                                "description": f"Deactivate existing repository '{user_alias_conflict}' before reactivating",
+                                "endpoint": f"DELETE /api/repos/{user_alias_conflict}",
                             },
                         ]
                     },
@@ -2711,6 +2906,13 @@ def create_app() -> FastAPI:
             HTTPException: If repository not found or branch switch fails
         """
         try:
+            # Get repository path and validate it's not a composite repository
+            repo_path = activated_repo_manager.get_activated_repo_path(
+                username=current_user.username,
+                user_alias=user_alias,
+            )
+            CompositeRepoValidator.check_operation(Path(repo_path), "branch_switch")
+
             result = activated_repo_manager.switch_branch(
                 username=current_user.username,
                 user_alias=user_alias,
@@ -2826,6 +3028,13 @@ def create_app() -> FastAPI:
             HTTPException: If repository not found or sync operation fails
         """
         try:
+            # Get repository path and validate it's not a composite repository
+            repo_path = activated_repo_manager.get_activated_repo_path(
+                username=current_user.username,
+                user_alias=user_alias,
+            )
+            CompositeRepoValidator.check_operation(Path(repo_path), "sync")
+
             result = activated_repo_manager.sync_with_golden_repository(
                 username=current_user.username,
                 user_alias=user_alias,
@@ -3406,7 +3615,7 @@ def create_app() -> FastAPI:
                 detail=f"Internal search error: {str(e)}",
             )
 
-    @app.get("/api/repositories/{repo_id}", response_model=RepositoryDetailsV2Response)
+    @app.get("/api/repositories/{repo_id}")
     async def get_repository_details_v2(
         repo_id: str,
         current_user: dependencies.User = Depends(dependencies.get_current_user),
@@ -3459,7 +3668,45 @@ def create_app() -> FastAPI:
             # Look for repository by user_alias (matches repo_id)
             for repo in activated_repos:
                 if repo["user_alias"] == cleaned_repo_id:
-                    # Found activated repository - build response from real data
+                    # Check if this is a composite repository (Story 3.2)
+                    if repo.get("is_composite", False):
+                        # Route to composite details handler
+                        try:
+                            # Convert dict to ActivatedRepository model
+                            from datetime import datetime as dt
+
+                            activated_repo_model = ActivatedRepository(
+                                user_alias=repo["user_alias"],
+                                username=repo["username"],
+                                path=Path(repo["path"]),
+                                activated_at=(
+                                    dt.fromisoformat(repo["activated_at"])
+                                    if isinstance(repo["activated_at"], str)
+                                    else repo["activated_at"]
+                                ),
+                                last_accessed=(
+                                    dt.fromisoformat(repo["last_accessed"])
+                                    if isinstance(repo["last_accessed"], str)
+                                    else repo["last_accessed"]
+                                ),
+                                is_composite=True,
+                                golden_repo_aliases=repo.get("golden_repo_aliases", []),
+                                discovered_repos=repo.get("discovered_repos", []),
+                            )
+
+                            composite_details = _get_composite_details(
+                                activated_repo_model
+                            )
+                            # Return composite details as dict for JSON response
+                            return composite_details.model_dump()
+
+                        except Exception as e:
+                            raise HTTPException(
+                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                detail=f"Failed to retrieve composite repository details: {str(e)}",
+                            )
+
+                    # Found activated repository (single repo) - build response from real data
                     try:
                         repo_path = activated_repo_manager.get_activated_repo_path(
                             current_user.username, cleaned_repo_id
@@ -3790,6 +4037,9 @@ def create_app() -> FastAPI:
                     detail=f"Repository '{cleaned_repo_id}' not found or not accessible",
                 )
 
+            # Validate it's not a composite repository
+            CompositeRepoValidator.check_operation(repo_path, "branch_list")
+
             # Initialize git topology service
             git_topology_service = GitTopologyService(repo_path)
 
@@ -4046,7 +4296,7 @@ def create_app() -> FastAPI:
             )
 
     # File Listing Endpoint
-    @app.get("/api/repositories/{repo_id}/files", response_model=FileListResponse)
+    @app.get("/api/repositories/{repo_id}/files")
     async def list_repository_files(
         repo_id: str,
         page: int = 1,
@@ -4054,14 +4304,35 @@ def create_app() -> FastAPI:
         path_pattern: Optional[str] = None,
         language: Optional[str] = None,
         sort_by: str = "path",
+        path: Optional[str] = None,
+        recursive: bool = False,
         current_user: dependencies.User = Depends(dependencies.get_current_user),
     ):
         """
         List files in repository with pagination and filtering.
 
-        Supports filtering by path pattern, programming language, and sorting.
+        Supports both single and composite repository file listing.
+        For composite repos, use path and recursive parameters.
+        For single repos, use existing pagination and filtering.
         Uses real file system operations following CLAUDE.md Foundation #1.
         """
+        # Check if this is a composite repository
+        try:
+            repo_dict = activated_repo_manager.get_repository(
+                current_user.username, repo_id
+            )
+            if repo_dict and repo_dict.get("is_composite", False):
+                # Composite repository - use simple file listing
+                # Convert dict to ActivatedRepository object
+                repo = ActivatedRepository.from_dict(repo_dict)
+                files = _list_composite_files(
+                    repo, path=path or "", recursive=recursive
+                )
+                return {"files": [f.model_dump() for f in files]}
+        except Exception as e:
+            logging.debug(f"Could not check composite status for {repo_id}: {e}")
+            # Fall through to regular file listing
+
         # Validate query parameters
         if page < 1:
             raise HTTPException(
