@@ -98,7 +98,7 @@ Controls indexing behavior and chunking strategies.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `chunk_size` | int | 1000 | Legacy setting (ignored, chunker uses model-aware sizing) |
+| `chunk_size` | int | 1500 | Legacy setting (ignored, chunker uses model-aware sizing) |
 | `chunk_overlap` | int | 150 | Legacy setting (ignored, chunker uses 15% of chunk size) |
 | `max_file_size` | int | 1048576 | Max file size in bytes (1MB) |
 | `index_comments` | bool | True | Include comments in indexing |

@@ -502,7 +502,7 @@ Code Indexer uses slot-based parallel file processing for efficient throughput:
 - **Thread allocation** - Base threadcount configured via `voyage_ai.parallel_requests` in config.json
 
 **Thread Configuration:**
-- **VoyageAI default**: 12 vectorization threads → 14 file processing workers (12+2)
+- **VoyageAI default**: 8 vectorization threads → 10 file processing workers (8+2)
 - **Ollama default**: 1 vectorization thread → 3 file processing workers (1+2)  
 - **Frontend thread pool**: threadcount+2 workers handle file reading, chunking, and coordination (provides preemptive capacity)
 - **Backend thread pool**: threadcount workers handle vector embedding calculations
