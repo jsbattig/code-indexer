@@ -1,5 +1,87 @@
 # Release Notes
 
+## Version 6.2.0 - Alpine Linux Container Support
+
+**Release Date**: October 15, 2025
+
+### 🐛 Critical Dependency Fix
+
+This release resolves installation failures in Alpine Linux-based containers by ensuring pre-built binary wheels are available for all dependencies.
+
+#### Problem
+
+The `zstandard` library (transitive dependency via `voyageai` → `langchain-text-splitters` → `langchain-core` → `langsmith`) requires C compilation when installed from source. In Alpine Linux containers, this caused installation failures:
+
+```
+error: command 'gcc' failed: No such file or directory
+```
+
+Users encountered this issue when:
+- Installing `code-indexer` in Alpine-based Docker containers
+- Running CI/CD pipelines with minimal Alpine images
+- Deploying to containerized environments without build tools
+
+#### Solution
+
+**Explicit Version Pin**: Added `zstandard>=0.25.0` to direct dependencies
+
+The `zstandard` 0.25.0 release (September 2025) includes pre-built **musllinux wheels** for Alpine Linux:
+- **Architectures**: x86-64, aarch64, i686, ppc64le, s390x
+- **Python versions**: 3.9 through 3.14
+- **No compilation required**: Works out-of-the-box on Alpine
+
+#### Impact
+
+**Before Fix**:
+- 👎👎 Alpine containers: Installation failed without gcc/musl-dev
+- 👍 Debian/Ubuntu: Worked fine (glibc wheels available)
+- 👍 Local development: Worked fine
+
+**After Fix**:
+- 👍👍 Alpine containers: Works seamlessly with musllinux wheels
+- 👍 Debian/Ubuntu: Still works
+- 👍 Local development: Still works
+
+#### Files Modified
+
+- `pyproject.toml`: Added `zstandard>=0.25.0` to dependencies
+- `src/code_indexer/__init__.py`: Version bump to 6.2.0
+- `README.md`: Updated installation version to v6.2.0
+
+#### Technical Details
+
+**Dependency Chain**:
+```
+code-indexer
+  └─ voyageai>=0.3.5
+      └─ langchain-text-splitters>=0.3.8
+          └─ langchain-core
+              └─ langsmith==0.4.27
+                  └─ zstandard>=0.23.0
+```
+
+**Version Compatibility**:
+- Previous: `zstandard==0.23.0` (no musllinux wheels, requires compilation)
+- Updated: `zstandard>=0.25.0` (musllinux wheels included)
+- `langsmith` requirement: `>=0.23.0` (fully compatible)
+
+#### Upgrade Notes
+
+**No Breaking Changes**: This is a purely additive fix. Existing installations continue to work.
+
+**Automatic Upgrade**: When users upgrade to v6.2.0, `zstandard` will automatically upgrade to 0.25.0+.
+
+**Alpine Installation Now Works**:
+```bash
+# Previously FAILED on Alpine
+pip install code-indexer
+
+# Now WORKS on Alpine (no build tools needed!)
+pip install git+https://github.com/jsbattig/code-indexer.git@v6.2.0
+```
+
+---
+
 ## Version 6.1.0 - Server Composite Repository Activation
 
 **Release Date**: October 10, 2025

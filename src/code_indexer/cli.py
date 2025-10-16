@@ -3814,46 +3814,31 @@ def _status_impl(ctx, force_docker: bool):
             )
             service_status = {"status": "not_configured", "services": {}}
 
-        # Check embedding provider - only if container is running
+        # Check embedding provider - ALWAYS attempt health check via HTTP
         try:
             embedding_provider = EmbeddingProviderFactory.create(config, console)
             provider_name = embedding_provider.get_provider_name().title()
 
-            # Check if embedding provider needs a container (Ollama)
-            if config.embedding_provider == "ollama":
-                # Check if ollama container is running first
-                ollama_container_running = False
-                if service_status["services"]:  # Only check if services dict exists
-                    for container_name, container_info in service_status[
-                        "services"
-                    ].items():
-                        if (
-                            "ollama" in container_name
-                            and container_info["state"] == "running"
-                        ):
-                            ollama_container_running = True
-                            break
+            # Always try health check via HTTP (works across containers)
+            provider_ok = embedding_provider.health_check()
+            provider_status = "✅ Ready" if provider_ok else "❌ Not Available"
 
-                if ollama_container_running:
-                    provider_ok = embedding_provider.health_check()
-                    provider_status = "✅ Ready" if provider_ok else "❌ Not Available"
+            if provider_ok:
+                provider_details = f"Model: {embedding_provider.get_current_model()}"
+            else:
+                # Check if container exists for debugging info
+                if config.embedding_provider == "ollama":
+                    ollama_container_found = any(
+                        "ollama" in name and info["state"] == "running"
+                        for name, info in service_status.get("services", {}).items()
+                    )
                     provider_details = (
-                        f"Model: {embedding_provider.get_current_model()}"
-                        if provider_ok
-                        else "Service down"
+                        f"Service unreachable at {config.ollama.host}"
+                        if ollama_container_found
+                        else "Service down (container stopped)"
                     )
                 else:
-                    provider_status = "❌ Container not running"
-                    provider_details = "Ollama container is not running"
-            else:
-                # For non-container providers (VoyageAI), do health check
-                provider_ok = embedding_provider.health_check()
-                provider_status = "✅ Ready" if provider_ok else "❌ Not Available"
-                provider_details = (
-                    f"Model: {embedding_provider.get_current_model()}"
-                    if provider_ok
-                    else "Service down"
-                )
+                    provider_details = "Service unreachable"
 
             table.add_row(
                 f"{provider_name} Provider", provider_status, provider_details
@@ -3871,21 +3856,15 @@ def _status_impl(ctx, force_docker: bool):
                 "Ollama", "✅ Not needed", f"Using {config.embedding_provider}"
             )
 
-        # Check Qdrant - only if container is running
-        qdrant_container_running = False
+        # Check Qdrant - ALWAYS attempt health check via HTTP
         qdrant_ok = False  # Initialize to False
         qdrant_client = None  # Initialize to None
-        if service_status["services"]:  # Only check if services dict exists
-            for container_name, container_info in service_status["services"].items():
-                if "qdrant" in container_name and container_info["state"] == "running":
-                    qdrant_container_running = True
-                    break
-
-        if qdrant_container_running:
+        try:
             qdrant_client = QdrantClient(config.qdrant)
             qdrant_ok = qdrant_client.health_check()
             qdrant_status = "✅ Ready" if qdrant_ok else "❌ Not Available"
             qdrant_details = ""
+
             if qdrant_ok:
                 try:
                     # Get the correct collection name using the current embedding provider
@@ -3998,12 +3977,20 @@ def _status_impl(ctx, force_docker: bool):
                     else:
                         qdrant_details = f"Error: {str(e)[:50]}..."
             else:
-                qdrant_details = "Service down"
-        else:
-            qdrant_status = "❌ Container not running"
-            qdrant_details = "Qdrant container is not running"
+                # Check if container exists for debugging info
+                qdrant_container_found = any(
+                    "qdrant" in name and info["state"] == "running"
+                    for name, info in service_status.get("services", {}).items()
+                )
+                qdrant_details = (
+                    f"Service unreachable at {config.qdrant.host}"
+                    if qdrant_container_found
+                    else "Service down (container stopped)"
+                )
 
-        table.add_row("Qdrant", qdrant_status, qdrant_details)
+            table.add_row("Qdrant", qdrant_status, qdrant_details)
+        except Exception as e:
+            table.add_row("Qdrant", "❌ Error", str(e))
 
         # Add payload index status - only if Qdrant is running and healthy
         if qdrant_ok and qdrant_client:
