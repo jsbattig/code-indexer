@@ -65,7 +65,7 @@ cidx setup-global-registry
 ```bash
 python3 -m venv code-indexer-env
 source code-indexer-env/bin/activate
-pip install git+https://github.com/jsbattig/code-indexer.git@v6.2.0
+pip install git+https://github.com/jsbattig/code-indexer.git@v6.3.0
 
 # Setup global registry (standalone command - requires sudo)
 cidx setup-global-registry

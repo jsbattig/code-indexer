@@ -1,5 +1,84 @@
 # Release Notes
 
+## Version 6.3.0 - Config Fixer Import Bug Fix
+
+**Release Date**: October 16, 2025
+
+### 🐛 Bug Fix
+
+This release fixes a critical import error in the `cidx fix-config` command caused by outdated code references after a refactoring.
+
+#### Problem
+
+The `config_fixer.py` module attempted to import a non-existent `FileManager` class from a non-existent `file_manager` module:
+
+```python
+from code_indexer.services.file_manager import FileManager
+```
+
+This caused the following error when running `cidx fix-config`:
+
+```
+Warning: Could not analyze project files: No module named 'code_indexer.services.file_manager'
+```
+
+#### Solution
+
+**Updated Import and Method Calls**: Fixed the import to use the correct `FileIdentifier` class from the `file_identifier` module:
+
+```python
+# Before (broken):
+from code_indexer.services.file_manager import FileManager
+file_manager = FileManager(config)
+actual_files = file_manager.get_indexable_files()
+
+# After (fixed):
+from code_indexer.services.file_identifier import FileIdentifier
+file_identifier = FileIdentifier(codebase_dir, config)
+actual_files = file_identifier.get_current_files()
+```
+
+#### Impact
+
+**Before Fix**:
+- `cidx fix-config` displayed import error warning
+- File analysis section of config validation failed silently
+- Configuration repair operations incomplete
+
+**After Fix**:
+- `cidx fix-config` runs without import errors
+- File analysis works correctly
+- Configuration validation completes successfully
+
+#### Testing Verification
+
+**Unit Tests**:
+- Added comprehensive test suite: `tests/unit/services/test_config_fixer_file_analyzer.py`
+- 5 new tests validating correct `FileIdentifier` usage
+- All 2053 tests passing (fast-automation.sh)
+
+**Manual Testing**:
+- Tested in fresh project directories (/tmp)
+- Validated with git repositories
+- Tested with empty directories
+- Confirmed no import errors in all scenarios
+
+**Quality Checks**:
+- ✅ Ruff linting: Clean
+- ✅ MyPy type checking: Clean
+- ✅ Black formatting: Applied
+- ✅ Code review: Approved for production
+
+#### Files Modified
+
+**Production Code**:
+- `src/code_indexer/services/config_fixer.py` - Fixed import and method calls (lines 199-202)
+
+**Tests**:
+- `tests/unit/services/test_config_fixer_file_analyzer.py` - New comprehensive test suite (5 tests)
+
+---
+
 ## Version 6.2.0 - Alpine Linux Container Support
 
 **Release Date**: October 15, 2025
