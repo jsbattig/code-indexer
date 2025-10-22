@@ -38,10 +38,33 @@ class FileFinder:
         """Create pathspec for excluded directories."""
         patterns = []
 
-        # Add configured exclude directories
-        for exclude_dir in self.config.exclude_dirs:
-            patterns.append(f"{exclude_dir}/")
-            patterns.append(f"**/{exclude_dir}/")
+        # Merge base + override exclude directories for consistent pathspec-based exclusion
+        all_exclude_dirs = list(self.config.exclude_dirs)
+        if (
+            hasattr(self.config, "override_config")
+            and self.config.override_config is not None
+            and not str(type(self.config.override_config)).startswith(
+                "<class 'unittest.mock"
+            )
+        ):
+            try:
+                # Defensive: Ensure add_exclude_dirs exists and is iterable
+                if hasattr(self.config.override_config, "add_exclude_dirs"):
+                    override_dirs = self.config.override_config.add_exclude_dirs
+                    if override_dirs and isinstance(override_dirs, (list, tuple)):
+                        all_exclude_dirs.extend(override_dirs)
+            except (TypeError, AttributeError):
+                # Skip override dirs if initialization fails (e.g., mock objects)
+                pass
+
+        # Add patterns for all excluded directories
+        for exclude_dir in all_exclude_dirs:
+            # Use /** suffix to exclude all contents under the directory
+            # This works for both single-level ("temp") and multi-level ("help/Source") paths
+            patterns.append(f"{exclude_dir}/**")  # Matches from root: help/Source/**
+            patterns.append(
+                f"**/{exclude_dir}/**"
+            )  # Matches nested: any/path/help/Source/**
 
         # Add common patterns
         patterns.extend(

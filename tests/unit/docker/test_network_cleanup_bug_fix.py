@@ -49,7 +49,14 @@ class TestNetworkCleanupBugFix:
                 "_calculate_project_hash",
                 return_value="abc123",
             ),
+            patch(
+                "code_indexer.config.ConfigManager.create_with_backtrack"
+            ) as mock_config_mgr,
         ):
+            # Mock config manager to force fallback to port registry calculation
+            mock_config = Mock()
+            mock_config.project_containers = None
+            mock_config_mgr.return_value.load.return_value = mock_config
             # Mock: Container discovery finds containers, network check fails
             mock_run.side_effect = [
                 # Container discovery succeeds
@@ -121,7 +128,14 @@ class TestNetworkCleanupBugFix:
                 "_calculate_project_hash",
                 return_value="xyz789",
             ),
+            patch(
+                "code_indexer.config.ConfigManager.create_with_backtrack"
+            ) as mock_config_mgr,
         ):
+            # Mock config manager to force fallback to port registry calculation
+            mock_config = Mock()
+            mock_config.project_containers = None
+            mock_config_mgr.return_value.load.return_value = mock_config
             # Mock: Container cleanup succeeds, network removal fails
             mock_run.side_effect = [
                 # Container discovery succeeds
@@ -198,7 +212,14 @@ class TestNetworkCleanupBugFix:
                     "_calculate_project_hash",
                     return_value="engine123",
                 ),
+                patch(
+                    "code_indexer.config.ConfigManager.create_with_backtrack"
+                ) as mock_config_mgr,
             ):
+                # Mock config manager to force fallback to port registry calculation
+                mock_config = Mock()
+                mock_config.project_containers = None
+                mock_config_mgr.return_value.load.return_value = mock_config
                 # Mock: Complete successful cleanup
                 mock_run.side_effect = [
                     # Container discovery
@@ -340,9 +361,8 @@ class TestNetworkCleanupBugFix:
                 docker_manager, "_get_available_runtime", return_value="docker"
             ),
             patch("subprocess.run") as mock_run,
-            patch.object(
-                docker_manager.port_registry,
-                "_calculate_project_hash",
+            patch(
+                "code_indexer.services.docker_manager.GlobalPortRegistry._calculate_project_hash",
                 return_value="no_network_123",
             ),
             patch(
@@ -420,7 +440,14 @@ class TestNetworkCleanupBugFix:
                 "_calculate_project_hash",
                 return_value="timeout_test",
             ),
+            patch(
+                "code_indexer.config.ConfigManager.create_with_backtrack"
+            ) as mock_config_mgr,
         ):
+            # Mock config manager to force fallback to port registry calculation
+            mock_config = Mock()
+            mock_config.project_containers = None
+            mock_config_mgr.return_value.load.return_value = mock_config
             # Mock: Container cleanup succeeds, network operations timeout
             mock_run.side_effect = [
                 # Container discovery succeeds

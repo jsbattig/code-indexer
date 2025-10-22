@@ -58,7 +58,13 @@ print_success "Python version checked"
 
 # 1. Install dependencies (same as GitHub Actions)
 print_step "Installing dependencies"
-pip install -e ".[dev]" --break-system-packages
+if pip install -e ".[dev]" --break-system-packages 2>/dev/null; then
+    :
+elif pip install -e ".[dev]" --user 2>/dev/null; then
+    :
+else
+    pip install -e ".[dev]"
+fi
 print_success "Dependencies installed"
 
 # 2. Lint CLI-related code with ruff
