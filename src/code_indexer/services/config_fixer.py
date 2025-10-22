@@ -575,17 +575,16 @@ class ConfigurationRepairer:
                 collection_name
             )
 
-        # If no collection stats, analyze file system
+        # If no collection stats, use minimal placeholder without expensive file scanning
+        # NOTE: Config fixing should NOT require analyzing every file in repository
+        # Metadata will be rebuilt on next index operation
         if not collection_stats:
-            file_analysis = FileSystemAnalyzer.analyze_project_files(
-                correct_codebase_dir, config
-            )
             collection_stats = {
                 "files_processed": 0,
                 "chunks_indexed": 0,
                 "completed_files": [],
-                "files_to_index": file_analysis["discovered_files"],
-                "total_files_to_index": file_analysis["total_files_to_index"],
+                "files_to_index": [],  # Empty - no need to scan filesystem
+                "total_files_to_index": 0,  # Zero - will be populated on next index operation
                 "status": "needs_indexing",
             }
 
