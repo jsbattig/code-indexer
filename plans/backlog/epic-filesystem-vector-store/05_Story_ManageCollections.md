@@ -375,6 +375,157 @@ def clean_command(
         console.print(f"❌ Collection '{target_collection}' not found", style="red")
         raise Exit(1)
 
+## Unit Test Coverage Requirements
+
+**Test Strategy:** Use real filesystem operations to test collection management (NO mocking)
+
+**Test File:** `tests/unit/storage/test_collection_management.py`
+
+**Required Tests:**
+
+```python
+class TestCollectionManagementWithRealFilesystem:
+    """Test collection operations using real filesystem."""
+
+    def test_create_collection_initializes_structure(self, tmp_path):
+        """GIVEN a collection name
+        WHEN create_collection() is called
+        THEN directory and metadata files created on real filesystem"""
+        store = FilesystemVectorStore(tmp_path, config)
+
+        result = store.create_collection('test_coll', vector_size=1536)
+
+        assert result is True
+
+        # Verify actual filesystem structure
+        coll_path = tmp_path / 'test_coll'
+        assert coll_path.exists()
+        assert coll_path.is_dir()
+        assert (coll_path / 'collection_meta.json').exists()
+        assert (coll_path / 'projection_matrix.npy').exists()
+
+        # Verify metadata content
+        with open(coll_path / 'collection_meta.json') as f:
+            meta = json.load(f)
+        assert meta['vector_size'] == 1536
+        assert meta['depth_factor'] == 4
+
+    def test_delete_collection_removes_directory_tree(self, tmp_path):
+        """GIVEN a collection with 100 vectors
+        WHEN delete_collection() is called
+        THEN entire directory tree removed from filesystem"""
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        # Add 100 vectors
+        points = [
+            {'id': f'vec_{i}', 'vector': np.random.randn(1536).tolist(),
+             'payload': {'file_path': f'file_{i}.py'}}
+            for i in range(100)
+        ]
+        store.upsert_points_batched('test_coll', points)
+
+        # Verify collection exists with data
+        assert (tmp_path / 'test_coll').exists()
+        assert store.count_points('test_coll') == 100
+
+        # Delete collection
+        result = store.delete_collection('test_coll')
+
+        assert result is True
+        assert not (tmp_path / 'test_coll').exists()  # Actually removed
+        assert store.count_points('test_coll') == 0
+
+    def test_clear_collection_preserves_structure(self, tmp_path):
+        """GIVEN a collection with vectors
+        WHEN clear_collection() is called
+        THEN vectors deleted but collection structure preserved"""
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        # Add 50 vectors
+        points = [
+            {'id': f'vec_{i}', 'vector': np.random.randn(1536).tolist(),
+             'payload': {'file_path': f'file_{i}.py'}}
+            for i in range(50)
+        ]
+        store.upsert_points('test_coll', points)
+
+        assert store.count_points('test_coll') == 50
+
+        # Clear collection
+        result = store.clear_collection('test_coll')
+
+        assert result is True
+        assert (tmp_path / 'test_coll').exists()  # Collection still exists
+        assert (tmp_path / 'test_coll' / 'projection_matrix.npy').exists()  # Preserved
+        assert (tmp_path / 'test_coll' / 'collection_meta.json').exists()  # Preserved
+        assert store.count_points('test_coll') == 0  # Vectors removed
+
+    def test_list_collections_returns_all_collections(self, tmp_path):
+        """GIVEN multiple collections on filesystem
+        WHEN list_collections() is called
+        THEN all collection names returned"""
+        store = FilesystemVectorStore(tmp_path, config)
+
+        collections = ['coll_a', 'coll_b', 'coll_c']
+        for coll in collections:
+            store.create_collection(coll, 1536)
+
+        result = store.list_collections()
+
+        assert set(result) == set(collections)
+
+    def test_cleanup_removes_all_data(self, tmp_path):
+        """GIVEN multiple collections with data
+        WHEN cleanup(remove_data=True) is called
+        THEN all vectors and collections removed"""
+        backend = FilesystemBackend(config)
+        backend.initialize(config)
+
+        store = backend.get_vector_store_client()
+
+        # Create 3 collections with data
+        for i in range(3):
+            store.create_collection(f'coll_{i}', 1536)
+            points = [
+                {'id': f'vec_{j}', 'vector': np.random.randn(1536).tolist(),
+                 'payload': {'file_path': f'file.py'}}
+                for j in range(10)
+            ]
+            store.upsert_points(f'coll_{i}', points)
+
+        # Verify data exists
+        vectors_dir = tmp_path / ".code-indexer" / "vectors"
+        assert vectors_dir.exists()
+        assert len(list(vectors_dir.iterdir())) == 3
+
+        # Cleanup
+        result = backend.cleanup(remove_data=True)
+
+        assert result is True
+        assert not vectors_dir.exists()  # Actually removed from filesystem
+```
+
+**Coverage Requirements:**
+- ✅ Collection creation (real directory/file creation)
+- ✅ Collection deletion (actual filesystem removal)
+- ✅ Collection clearing (structure preserved, vectors removed)
+- ✅ Collection listing (real directory enumeration)
+- ✅ Cleanup operations (verify all data removed)
+- ✅ Metadata persistence
+
+**Test Data:**
+- Multiple collections (3-5)
+- Various vector counts (10, 50, 100)
+- Real filesystem directories in tmp_path
+
+**Performance Assertions:**
+- Collection creation: <100ms
+- Collection deletion: <1s for 100 vectors
+- Collection clearing: <500ms for 50 vectors
+- List collections: <50ms
+
     # Show impact
     if delete_collection:
         console.print(f"⚠️  This will DELETE entire collection: {target_collection}", style="yellow")

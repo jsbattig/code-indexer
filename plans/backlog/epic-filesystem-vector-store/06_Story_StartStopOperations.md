@@ -227,6 +227,130 @@ class QdrantContainerBackend(VectorStoreBackend):
                 "data_cleaner": self.config.data_cleaner_port
             }
         }
+
+## Unit Test Coverage Requirements
+
+**Test Strategy:** Test both backends with real operations (NO mocking for filesystem, container mocking acceptable for Qdrant)
+
+**Test File:** `tests/unit/backends/test_backend_start_stop.py`
+
+**Required Tests:**
+
+```python
+class TestBackendStartStopOperations:
+    """Test start/stop operations for both backends."""
+
+    def test_filesystem_start_returns_immediately(self, tmp_path):
+        """GIVEN filesystem backend
+        WHEN start() is called
+        THEN returns True in <10ms"""
+        backend = FilesystemBackend(config)
+        backend.initialize(config)
+
+        start_time = time.perf_counter()
+        result = backend.start()
+        duration = time.perf_counter() - start_time
+
+        assert result is True
+        assert duration < 0.01  # <10ms (essentially instant)
+
+    def test_filesystem_stop_returns_immediately(self, tmp_path):
+        """GIVEN filesystem backend
+        WHEN stop() is called
+        THEN returns True in <10ms"""
+        backend = FilesystemBackend(config)
+
+        start_time = time.perf_counter()
+        result = backend.stop()
+        duration = time.perf_counter() - start_time
+
+        assert result is True
+        assert duration < 0.01  # <10ms
+
+    def test_filesystem_query_works_after_stop(self, tmp_path):
+        """GIVEN filesystem backend
+        WHEN stop() is called and then query is executed
+        THEN query still works (nothing actually stopped)"""
+        backend = FilesystemBackend(config)
+        backend.initialize(config)
+
+        store = backend.get_vector_store_client()
+        store.create_collection('test_coll', 1536)
+
+        # Index some data
+        points = [
+            {'id': 'vec_1', 'vector': np.random.randn(1536).tolist(),
+             'payload': {'file_path': 'file.py'}}
+        ]
+        store.upsert_points('test_coll', points)
+
+        # Stop backend
+        backend.stop()
+
+        # Query should still work
+        results = store.search('test_coll', np.random.randn(1536), limit=1)
+        assert len(results) == 1
+
+    def test_get_status_shows_always_ready(self, tmp_path):
+        """GIVEN filesystem backend
+        WHEN get_status() is called (before or after start/stop)
+        THEN status always shows 'ready'"""
+        backend = FilesystemBackend(config)
+        backend.initialize(config)
+
+        # Before start
+        status_before = backend.get_status()
+        assert status_before['type'] == 'filesystem'
+        assert status_before['requires_services'] is False
+
+        # After start
+        backend.start()
+        status_after_start = backend.get_status()
+        assert status_after_start == status_before  # No change
+
+        # After stop
+        backend.stop()
+        status_after_stop = backend.get_status()
+        assert status_after_stop == status_before  # Still no change
+
+    def test_qdrant_backend_start_stop_delegate_to_docker(self):
+        """GIVEN Qdrant backend
+        WHEN start/stop called
+        THEN delegates to DockerManager"""
+        # Mock DockerManager for this test
+        mock_docker = Mock()
+        mock_docker.start_containers.return_value = True
+        mock_docker.stop_containers.return_value = True
+
+        backend = QdrantContainerBackend(mock_docker, config)
+
+        # Start
+        result_start = backend.start()
+        assert result_start is True
+        mock_docker.start_containers.assert_called_once()
+
+        # Stop
+        result_stop = backend.stop()
+        assert result_stop is True
+        mock_docker.stop_containers.assert_called_once()
+```
+
+**Coverage Requirements:**
+- ✅ Filesystem start/stop timing (<10ms)
+- ✅ No-op verification (status unchanged)
+- ✅ Query functionality after stop
+- ✅ Qdrant backend delegation to DockerManager
+- ✅ Status reporting accuracy
+
+**Test Data:**
+- Real filesystem operations for FilesystemBackend
+- Mock DockerManager for QdrantContainerBackend
+- Small dataset for query verification
+
+**Performance Assertions:**
+- start(): <10ms for filesystem
+- stop(): <10ms for filesystem
+- get_status(): <50ms for both backends
 ```
 
 ### CLI Start Command

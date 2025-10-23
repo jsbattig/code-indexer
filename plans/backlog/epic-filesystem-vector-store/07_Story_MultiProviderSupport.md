@@ -427,6 +427,128 @@ def init_command(
 
     # Initialize backend
     backend = VectorStoreBackendFactory.create_backend(config)
+
+## Unit Test Coverage Requirements
+
+**Test Strategy:** Test with real filesystem and actual provider dimensions (NO mocking)
+
+**Test File:** `tests/unit/providers/test_multi_provider_filesystem.py`
+
+**Required Tests:**
+
+```python
+class TestMultiProviderFilesystemSupport:
+    """Test filesystem backend with multiple embedding providers."""
+
+    def test_voyage_provider_creates_1536_dim_collection(self, tmp_path):
+        """GIVEN VoyageAI provider (1536 dims)
+        WHEN create_collection() is called
+        THEN collection configured for 1536-dim vectors"""
+        config = Config(
+            embedding_provider='voyage-ai',
+            vector_store={'provider': 'filesystem'}
+        )
+        store = FilesystemVectorStore(tmp_path, config)
+
+        result = store.create_collection('voyage_coll', vector_size=1536)
+
+        assert result is True
+
+        # Verify collection metadata
+        with open(tmp_path / 'voyage_coll' / 'collection_meta.json') as f:
+            meta = json.load(f)
+        assert meta['vector_size'] == 1536
+
+        # Verify projection matrix dimensions
+        proj_matrix = np.load(tmp_path / 'voyage_coll' / 'projection_matrix.npy')
+        assert proj_matrix.shape == (1536, 64)  # 1536 input, 64 output
+
+    def test_ollama_provider_creates_768_dim_collection(self, tmp_path):
+        """GIVEN Ollama provider (768 dims)
+        WHEN create_collection() is called
+        THEN collection configured for 768-dim vectors"""
+        config = Config(
+            embedding_provider='ollama',
+            vector_store={'provider': 'filesystem'}
+        )
+        store = FilesystemVectorStore(tmp_path, config)
+
+        result = store.create_collection('ollama_coll', vector_size=768)
+
+        assert result is True
+
+        # Verify projection matrix dimensions
+        proj_matrix = np.load(tmp_path / 'ollama_coll' / 'projection_matrix.npy')
+        assert proj_matrix.shape == (768, 64)  # 768 input, 64 output
+
+    def test_multiple_provider_collections_coexist(self, tmp_path):
+        """GIVEN both VoyageAI and Ollama collections
+        WHEN both are indexed and searched
+        THEN they coexist without conflicts"""
+        store = FilesystemVectorStore(tmp_path, config)
+
+        # Create both collections
+        store.create_collection('voyage_coll', 1536)
+        store.create_collection('ollama_coll', 768)
+
+        # Add vectors to each
+        voyage_points = [
+            {'id': 'v_1', 'vector': np.random.randn(1536).tolist(),
+             'payload': {'file_path': 'file.py', 'provider': 'voyage'}}
+        ]
+        ollama_points = [
+            {'id': 'o_1', 'vector': np.random.randn(768).tolist(),
+             'payload': {'file_path': 'file.py', 'provider': 'ollama'}}
+        ]
+
+        store.upsert_points('voyage_coll', voyage_points)
+        store.upsert_points('ollama_coll', ollama_points)
+
+        # Both collections have data
+        assert store.count_points('voyage_coll') == 1
+        assert store.count_points('ollama_coll') == 1
+
+        # Collections are independent
+        collections = store.list_collections()
+        assert 'voyage_coll' in collections
+        assert 'ollama_coll' in collections
+
+    def test_collection_naming_includes_model_slug(self, tmp_path):
+        """GIVEN specific embedding model
+        WHEN resolve_collection_name() is called
+        THEN collection name includes model slug"""
+        store = FilesystemVectorStore(tmp_path, config)
+
+        # Test VoyageAI model slug
+        voyage_name = store.resolve_collection_name(
+            config,
+            embedding_model='voyage-code-3'
+        )
+        assert 'voyage_code_3' in voyage_name or 'voyage-code-3' in voyage_name
+
+        # Test Ollama model slug
+        ollama_name = store.resolve_collection_name(
+            config,
+            embedding_model='nomic-embed-text'
+        )
+        assert 'nomic' in ollama_name
+```
+
+**Coverage Requirements:**
+- ✅ Provider-specific vector dimensions (1536 vs 768)
+- ✅ Projection matrix creation for different input dimensions
+- ✅ Multiple provider collections coexistence
+- ✅ Collection naming with model slugs
+- ✅ Independent collection operations
+
+**Test Data:**
+- Real vectors with provider-specific dimensions
+- Multiple collections with different configurations
+- Real filesystem directories
+
+**Performance Assertions:**
+- Collection creation: <100ms regardless of provider
+- Model-specific operations work identically
     backend.initialize(config)
 
     # Report dimensions

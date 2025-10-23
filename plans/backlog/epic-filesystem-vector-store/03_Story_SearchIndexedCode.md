@@ -447,6 +447,283 @@ Key optimizations:
 
 **High mode** for comprehensive search:
 - Hamming distance 3 searches 2000-5000 vectors
+
+## Unit Test Coverage Requirements
+
+**Test Strategy:** Use real filesystem with deterministic vectors that have known semantic relationships (NO mocking)
+
+**Test File:** `tests/unit/search/test_filesystem_semantic_search.py`
+
+**Required Tests:**
+
+```python
+class TestSemanticSearchWithRealFilesystem:
+    """Test semantic search using real filesystem and predictable vectors."""
+
+    @pytest.fixture
+    def semantic_test_data(self, tmp_path, embedding_provider):
+        """Create collection with known semantic relationships."""
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        # Use real embedding provider for actual semantic relationships
+        auth_texts = [
+            "User authentication with JWT tokens and password validation",
+            "Login function validates user credentials against database",
+            "OAuth2 authentication flow implementation with token refresh"
+        ]
+        db_texts = [
+            "Database connection pooling and query execution",
+            "SQL query builder for complex database operations",
+            "Database transaction management and rollback handling"
+        ]
+
+        # Embed texts (or use pre-computed vectors for speed)
+        points = []
+        for i, text in enumerate(auth_texts):
+            vector = embedding_provider.embed(text)
+            points.append({
+                'id': f'auth_{i}',
+                'vector': vector,
+                'payload': {
+                    'file_path': f'src/auth/file{i}.py',
+                    'start_line': i*10,
+                    'end_line': i*10+20,
+                    'language': 'python',
+                    'category': 'authentication',
+                    'type': 'content'
+                }
+            })
+
+        for i, text in enumerate(db_texts):
+            vector = embedding_provider.embed(text)
+            points.append({
+                'id': f'db_{i}',
+                'vector': vector,
+                'payload': {
+                    'file_path': f'src/db/file{i}.py',
+                    'start_line': i*10,
+                    'end_line': i*10+20,
+                    'language': 'python',
+                    'category': 'database',
+                    'type': 'content'
+                }
+            })
+
+        store.upsert_points('test_coll', points)
+        return store, embedding_provider
+
+    def test_semantic_search_returns_related_chunks(self, semantic_test_data):
+        """GIVEN indexed chunks with known semantic relationships
+        WHEN searching for "authentication"
+        THEN auth chunks ranked higher than db chunks"""
+        store, provider = semantic_test_data
+        query_vector = provider.embed("user authentication and login")
+
+        results = store.search(
+            collection_name='test_coll',
+            query_vector=query_vector,
+            limit=6
+        )
+
+        # Top 3 should be auth-related
+        assert len(results) >= 3
+        top_3_ids = [r['id'] for r in results[:3]]
+        assert all('auth' in id for id in top_3_ids)
+
+        # Scores should be descending
+        scores = [r['score'] for r in results]
+        assert scores == sorted(scores, reverse=True)
+
+        # Top result should have high similarity
+        assert results[0]['score'] > 0.7
+
+    def test_search_with_language_filter(self, semantic_test_data):
+        """GIVEN vectors with python and javascript files
+        WHEN searching with --language python filter
+        THEN only Python files returned"""
+        store, provider = semantic_test_data
+
+        # Add JavaScript vectors
+        js_points = [{
+            'id': 'js_001',
+            'vector': provider.embed("JavaScript function definition").tolist(),
+            'payload': {'file_path': 'app.js', 'language': 'javascript', 'type': 'content'}
+        }]
+        store.upsert_points('test_coll', js_points)
+
+        query = provider.embed("function definition")
+        results = store.search(
+            collection_name='test_coll',
+            query_vector=query,
+            filter_conditions={'language': 'python'},
+            limit=10
+        )
+
+        # All results must be Python
+        assert all(r['payload']['language'] == 'python' for r in results)
+        assert not any(r['id'] == 'js_001' for r in results)
+
+    def test_search_performance_meets_requirement(self, tmp_path):
+        """GIVEN 5000 vectors in filesystem
+        WHEN performing search
+        THEN query completes in <1s"""
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('perf_test', 1536)
+
+        # Generate 5000 test vectors (use seeded random for speed)
+        np.random.seed(42)
+        points = [
+            {
+                'id': f'vec_{i}',
+                'vector': np.random.randn(1536).tolist(),
+                'payload': {'file_path': f'file_{i}.py', 'type': 'content'}
+            }
+            for i in range(5000)
+        ]
+        store.upsert_points_batched('perf_test', points)
+
+        # Search with timing
+        query_vector = np.random.randn(1536)
+
+        start = time.time()
+        results = store.search('perf_test', query_vector, limit=10)
+        duration = time.time() - start
+
+        assert duration < 1.0  # User requirement
+        assert len(results) == 10
+        assert results[0]['score'] >= results[-1]['score']  # Sorted descending
+
+    def test_score_threshold_filters_low_scores(self, semantic_test_data):
+        """GIVEN indexed vectors
+        WHEN searching with score_threshold=0.8
+        THEN only results with score >= 0.8 returned"""
+        store, provider = semantic_test_data
+        query = provider.embed("authentication")
+
+        results_all = store.search('test_coll', query, limit=10)
+        results_filtered = store.search('test_coll', query, limit=10, score_threshold=0.8)
+
+        # Filtered should have <= results than unfiltered
+        assert len(results_filtered) <= len(results_all)
+
+        # All filtered results must meet threshold
+        assert all(r['score'] >= 0.8 for r in results_filtered)
+
+    def test_accuracy_modes_affect_candidate_count(self, semantic_test_data):
+        """GIVEN indexed vectors
+        WHEN using different accuracy modes
+        THEN 'high' examines more candidates than 'fast'"""
+        store, provider = semantic_test_data
+        query = provider.embed("test query")
+
+        # Note: Implementation should track candidates_examined metric
+        results_fast = store.search('test_coll', query, limit=5, accuracy='fast')
+        results_high = store.search('test_coll', query, limit=5, accuracy='high')
+
+        # Both should return results
+        assert len(results_fast) >= 1
+        assert len(results_high) >= 1
+
+        # High may find additional relevant results (test with larger dataset)
+
+    def test_path_pattern_filtering(self, tmp_path):
+        """GIVEN vectors from various paths
+        WHEN searching with path filter "*/tests/*"
+        THEN only test files returned"""
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        points = []
+        for i in range(5):
+            points.append({
+                'id': f'src_{i}',
+                'vector': np.random.randn(1536).tolist(),
+                'payload': {'file_path': f'src/file_{i}.py', 'type': 'content'}
+            })
+        for i in range(5):
+            points.append({
+                'id': f'test_{i}',
+                'vector': np.random.randn(1536).tolist(),
+                'payload': {'file_path': f'tests/test_file_{i}.py', 'type': 'content'}
+            })
+
+        store.upsert_points('test_coll', points)
+
+        # Search with path filter
+        query = np.random.randn(1536)
+        results = store.search(
+            'test_coll',
+            query,
+            limit=10,
+            filter_conditions={'file_path': '*/tests/*'}  # Pattern matching
+        )
+
+        # Only test files
+        assert all('tests/' in r['payload']['file_path'] for r in results)
+
+    def test_empty_collection_returns_empty_results(self, tmp_path):
+        """GIVEN empty collection
+        WHEN searching
+        THEN empty results list returned"""
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('empty', 1536)
+
+        results = store.search('empty', np.random.randn(1536), limit=10)
+
+        assert results == []
+
+    def test_concurrent_queries_thread_safety(self, tmp_path):
+        """GIVEN indexed collection
+        WHEN multiple searches execute concurrently
+        THEN all return correct results without errors"""
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        # Index 100 vectors
+        points = [
+            {'id': f'vec_{i}', 'vector': np.random.randn(1536).tolist(),
+             'payload': {'file_path': f'file_{i}.py'}}
+            for i in range(100)
+        ]
+        store.upsert_points('test_coll', points)
+
+        from concurrent.futures import ThreadPoolExecutor
+
+        def search_task():
+            return store.search('test_coll', np.random.randn(1536), limit=5)
+
+        # Run 20 concurrent searches
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(search_task) for _ in range(20)]
+            results = [f.result() for f in futures]
+
+        # All searches succeed and return 5 results
+        assert all(len(r) == 5 for r in results)
+```
+
+**Coverage Requirements:**
+- ✅ Semantic search with real embeddings
+- ✅ Metadata filtering (language, branch, type, path patterns)
+- ✅ Score threshold filtering
+- ✅ Accuracy modes (fast/balanced/high)
+- ✅ Performance validation (<1s for 5K vectors)
+- ✅ Result ranking (scores descending)
+- ✅ Empty results handling
+- ✅ Concurrent queries (thread safety)
+- ✅ Neighbor bucket search effectiveness
+
+**Test Data:**
+- Known semantic relationships (auth vs db chunks)
+- Real embeddings from VoyageAI or Ollama (or pre-computed fixtures)
+- Deterministic query vectors for reproducibility
+- Multiple metadata combinations for filter testing
+
+**Performance Assertions:**
+- Search <1s for 5K vectors (unit test scale)
+- Search <100ms for 100 vectors
+- Filter overhead <50ms
+- Result sorting <10ms
 - Query time ~800-1000ms (still under 1s target)
 - Maximum recall
 

@@ -440,6 +440,153 @@ def backend_info_command():
 ### External Dependencies
 - None (uses existing CLI infrastructure)
 
+## Unit Test Coverage Requirements
+
+**Test Strategy:** Test backend switching workflow with real filesystem operations
+
+**Test File:** `tests/unit/backends/test_backend_switching.py`
+
+**Required Tests:**
+
+```python
+class TestBackendSwitching:
+    """Test switching between Qdrant and Filesystem backends."""
+
+    def test_switch_from_filesystem_to_qdrant(self, tmp_path):
+        """GIVEN filesystem backend with indexed data
+        WHEN switching to Qdrant backend
+        THEN old filesystem data removed, Qdrant initialized"""
+        # Start with filesystem
+        config_fs = Config(vector_store={'provider': 'filesystem'})
+        backend_fs = FilesystemBackend(config_fs)
+        backend_fs.initialize(config_fs)
+
+        store_fs = backend_fs.get_vector_store_client()
+        store_fs.create_collection('test_coll', 1536)
+
+        # Add vectors
+        points = [
+            {'id': f'vec_{i}', 'vector': np.random.randn(1536).tolist(),
+             'payload': {'file_path': f'file_{i}.py'}}
+            for i in range(10)
+        ]
+        store_fs.upsert_points('test_coll', points)
+
+        # Verify filesystem data exists
+        assert store_fs.count_points('test_coll') == 10
+
+        # Switch to Qdrant (cleanup filesystem)
+        backend_fs.cleanup(remove_data=True)
+
+        # Verify filesystem data removed
+        vectors_dir = tmp_path / ".code-indexer" / "vectors"
+        assert not vectors_dir.exists()
+
+        # Initialize Qdrant backend (mock containers for unit test)
+        config_qd = Config(vector_store={'provider': 'qdrant'})
+        backend_qd = QdrantContainerBackend(Mock(), config_qd)
+        # (Full Qdrant test would require containers - test structure only)
+
+    def test_switch_from_qdrant_to_filesystem(self, tmp_path):
+        """GIVEN Qdrant backend
+        WHEN switching to filesystem backend
+        THEN containers cleaned up, filesystem initialized"""
+        # Mock Qdrant backend
+        mock_docker = Mock()
+        config_qd = Config(vector_store={'provider': 'qdrant'})
+        backend_qd = QdrantContainerBackend(mock_docker, config_qd)
+
+        # Cleanup Qdrant
+        backend_qd.cleanup(remove_data=True)
+        mock_docker.cleanup.assert_called_once()
+
+        # Initialize filesystem
+        config_fs = Config(vector_store={'provider': 'filesystem'}, codebase_dir=tmp_path)
+        backend_fs = FilesystemBackend(config_fs)
+        result = backend_fs.initialize(config_fs)
+
+        assert result is True
+        assert (tmp_path / ".code-indexer" / "vectors").exists()
+
+    def test_config_updated_reflects_new_backend(self, tmp_path):
+        """GIVEN config file
+        WHEN backend is switched
+        THEN config file reflects new provider"""
+        config_path = tmp_path / ".code-indexer" / "config.json"
+
+        # Write initial config (filesystem)
+        initial_config = {
+            'vector_store': {'provider': 'filesystem'},
+            'codebase_dir': str(tmp_path)
+        }
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_path, 'w') as f:
+            json.dump(initial_config, f)
+
+        # Load and verify
+        with open(config_path) as f:
+            loaded = json.load(f)
+        assert loaded['vector_store']['provider'] == 'filesystem'
+
+        # Update to Qdrant
+        updated_config = {
+            'vector_store': {'provider': 'qdrant'},
+            'codebase_dir': str(tmp_path)
+        }
+        with open(config_path, 'w') as f:
+            json.dump(updated_config, f)
+
+        # Verify update
+        with open(config_path) as f:
+            loaded = json.load(f)
+        assert loaded['vector_store']['provider'] == 'qdrant'
+
+    def test_no_leftover_artifacts_after_switch(self, tmp_path):
+        """GIVEN filesystem backend with data
+        WHEN switching and cleaning up
+        THEN no filesystem artifacts remain"""
+        backend = FilesystemBackend(config)
+        backend.initialize(config)
+
+        store = backend.get_vector_store_client()
+        store.create_collection('test_coll', 1536)
+
+        # Add data
+        points = [
+            {'id': 'vec_1', 'vector': np.random.randn(1536).tolist(),
+             'payload': {'file_path': 'file.py'}}
+        ]
+        store.upsert_points('test_coll', points)
+
+        # Cleanup
+        backend.cleanup(remove_data=True)
+
+        # Verify complete removal
+        vectors_dir = tmp_path / ".code-indexer" / "vectors"
+        assert not vectors_dir.exists()
+
+        # No JSON files left
+        leftover_files = list(tmp_path.rglob('*.json'))
+        vector_files = [f for f in leftover_files if 'vectors' in str(f)]
+        assert len(vector_files) == 0
+```
+
+**Coverage Requirements:**
+- ✅ Filesystem → Qdrant switching
+- ✅ Qdrant → Filesystem switching
+- ✅ Configuration updates
+- ✅ Data cleanup verification
+- ✅ No leftover artifacts
+
+**Test Data:**
+- Real filesystem for FilesystemBackend tests
+- Mock DockerManager for QdrantBackend tests
+- Configuration files with actual JSON
+
+**Performance Assertions:**
+- Backend switching workflow: <2s total
+- Cleanup: <1s for 100 vectors
+
 ## Success Metrics
 
 1. ✅ Can switch from Qdrant → Filesystem without errors

@@ -298,6 +298,176 @@ class FilesystemHealthValidation:
         collection_path = self.base_path / collection_name
         samples = []
 
+## Unit Test Coverage Requirements
+
+**Test Strategy:** Use real filesystem with actual JSON files (NO mocking)
+
+**Test File:** `tests/unit/validation/test_filesystem_health.py`
+
+**Required Tests:**
+
+```python
+class TestHealthValidationWithRealData:
+    """Test health and validation using real filesystem operations."""
+
+    def test_get_all_indexed_files_returns_unique_paths(self, tmp_path):
+        """GIVEN 100 chunks from 20 files
+        WHEN get_all_indexed_files() is called
+        THEN 20 unique file paths returned"""
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        # Create 100 chunks from 20 files (5 chunks per file)
+        points = []
+        for file_idx in range(20):
+            for chunk_idx in range(5):
+                points.append({
+                    'id': f'file{file_idx}_chunk{chunk_idx}',
+                    'vector': np.random.randn(1536).tolist(),
+                    'payload': {
+                        'file_path': f'src/file_{file_idx}.py',
+                        'start_line': chunk_idx * 10
+                    }
+                })
+
+        store.upsert_points('test_coll', points)
+
+        # Get unique file paths
+        files = store.get_all_indexed_files('test_coll')
+
+        assert len(files) == 20  # Unique files
+        assert all('src/file_' in f for f in files)
+
+    def test_validate_embedding_dimensions(self, tmp_path):
+        """GIVEN vectors with specific dimensions
+        WHEN validate_embedding_dimensions() is called
+        THEN it correctly detects dimension mismatches"""
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        # Store correct dimension vectors
+        correct_points = [{
+            'id': 'correct',
+            'vector': np.random.randn(1536).tolist(),
+            'payload': {'file_path': 'file.py'}
+        }]
+        store.upsert_points('test_coll', correct_points)
+
+        assert store.validate_embedding_dimensions('test_coll', 1536) is True
+        assert store.validate_embedding_dimensions('test_coll', 768) is False
+
+        # Add vector with wrong dimensions (corruption test)
+        wrong_points = [{
+            'id': 'wrong',
+            'vector': np.random.randn(768).tolist(),  # Wrong size
+            'payload': {'file_path': 'wrong.py'}
+        }]
+        store.upsert_points('test_coll', wrong_points)
+
+        # Validation should fail
+        validation = store.validate_embedding_dimensions('test_coll', 1536)
+        assert validation is False
+
+    def test_sample_vectors_loads_actual_files(self, tmp_path):
+        """GIVEN 1000 indexed vectors
+        WHEN sample_vectors(50) is called
+        THEN 50 vectors loaded from real JSON files"""
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        # Store 1000 vectors
+        points = [
+            {'id': f'vec_{i}', 'vector': np.random.randn(1536).tolist(),
+             'payload': {'file_path': f'file_{i}.py'}}
+            for i in range(1000)
+        ]
+        store.upsert_points_batched('test_coll', points)
+
+        # Sample
+        samples = store.sample_vectors('test_coll', sample_size=50)
+
+        assert len(samples) == 50
+        assert all('vector' in s for s in samples)
+        assert all(len(s['vector']) == 1536 for s in samples)
+        assert all('id' in s for s in samples)
+
+    def test_count_points_accuracy(self, tmp_path):
+        """GIVEN known number of vectors
+        WHEN count_points() is called
+        THEN it returns exact count from filesystem"""
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        # Store 137 vectors (odd number to catch off-by-one errors)
+        points = [
+            {'id': f'vec_{i}', 'vector': np.random.randn(1536).tolist(),
+             'payload': {'file_path': f'file.py'}}
+            for i in range(137)
+        ]
+        store.upsert_points_batched('test_coll', points)
+
+        count = store.count_points('test_coll')
+
+        assert count == 137  # Exact match
+
+        # Verify by manually counting files
+        actual_files = sum(1 for _ in (tmp_path / 'test_coll').rglob('*.json')
+                          if 'collection_meta' not in _.name)
+        assert count == actual_files
+
+    def test_get_file_index_timestamps(self, tmp_path):
+        """GIVEN vectors with indexed_at timestamps
+        WHEN get_file_index_timestamps() is called
+        THEN all timestamps extracted and parsed"""
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        # Store vectors with known timestamps
+        from datetime import datetime, timezone
+        test_time = datetime(2025, 1, 23, 10, 30, 0, tzinfo=timezone.utc)
+
+        points = [
+            {
+                'id': f'vec_{i}',
+                'vector': np.random.randn(1536).tolist(),
+                'payload': {
+                    'file_path': f'file_{i}.py',
+                    'indexed_at': test_time.isoformat()
+                }
+            }
+            for i in range(10)
+        ]
+        store.upsert_points('test_coll', points)
+
+        # Get timestamps
+        timestamps = store.get_file_index_timestamps('test_coll')
+
+        assert len(timestamps) == 10
+        for file_path, timestamp in timestamps.items():
+            assert isinstance(timestamp, datetime)
+            assert timestamp == test_time
+```
+
+**Coverage Requirements:**
+- ✅ File enumeration from real filesystem
+- ✅ Dimension validation from actual JSON files
+- ✅ Vector sampling (random file selection)
+- ✅ Timestamp extraction and parsing
+- ✅ Count accuracy (exact filesystem count)
+- ✅ Corrupt file handling (skip corrupt JSON)
+
+**Test Data:**
+- Multiple scales: 10, 100, 1000 vectors
+- Known timestamps for validation
+- Intentional dimension mismatches for error testing
+- Corrupt JSON files for robustness testing
+
+**Performance Assertions:**
+- count_points(): <100ms for any collection
+- get_all_indexed_files(): <500ms for 1000 files
+- validate_embedding_dimensions(): <1s for 1000 vectors
+- sample_vectors(): <200ms for 50 samples
+
         for i, json_file in enumerate(collection_path.rglob("*.json")):
             if i >= sample_size:
                 break

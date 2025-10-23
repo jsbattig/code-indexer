@@ -193,6 +193,118 @@ def init_command(vector_store: str, **kwargs):
 - **Story 6**: Seamless Start and Stop Operations (uses backend abstraction)
 - **Story 8**: Switch Between Qdrant and Filesystem Backends (builds on this foundation)
 
+## Unit Test Coverage Requirements
+
+**Test Strategy:** Use real filesystem operations with tmp_path fixtures (NO mocking)
+
+**Test File:** `tests/unit/backends/test_filesystem_backend.py`
+
+**Required Tests:**
+
+```python
+class TestFilesystemBackendInitialization:
+    """Test backend initialization without mocking filesystem."""
+
+    def test_initialize_creates_directory_structure(self, tmp_path):
+        """GIVEN a config with filesystem backend
+        WHEN initialize() is called
+        THEN .code-indexer/vectors/ directory is created"""
+        config = Config(codebase_dir=tmp_path, vector_store={'provider': 'filesystem'})
+        backend = FilesystemBackend(config)
+
+        result = backend.initialize(config)
+
+        assert result is True
+        assert (tmp_path / ".code-indexer" / "vectors").exists()
+        assert (tmp_path / ".code-indexer" / "vectors").is_dir()
+
+    def test_start_returns_true_immediately(self, tmp_path):
+        """GIVEN a filesystem backend
+        WHEN start() is called
+        THEN it returns True in <10ms (no services to start)"""
+        backend = FilesystemBackend(config)
+
+        start_time = time.perf_counter()
+        result = backend.start()
+        duration = time.perf_counter() - start_time
+
+        assert result is True
+        assert duration < 0.01  # <10ms
+
+    def test_health_check_validates_write_access(self, tmp_path):
+        """GIVEN a filesystem backend
+        WHEN health_check() is called
+        THEN it verifies directory exists and is writable"""
+        backend = FilesystemBackend(config)
+        backend.initialize(config)
+
+        assert backend.health_check() is True
+
+        # Make directory read-only
+        vectors_dir = tmp_path / ".code-indexer" / "vectors"
+        os.chmod(vectors_dir, 0o444)
+
+        assert backend.health_check() is False
+
+    def test_backend_factory_creates_correct_backend(self):
+        """GIVEN config with provider='filesystem'
+        WHEN BackendFactory.create_backend() is called
+        THEN FilesystemBackend is created"""
+        config_fs = Config(vector_store={'provider': 'filesystem'})
+        config_qd = Config(vector_store={'provider': 'qdrant'})
+
+        backend_fs = VectorStoreBackendFactory.create_backend(config_fs)
+        backend_qd = VectorStoreBackendFactory.create_backend(config_qd)
+
+        assert isinstance(backend_fs, FilesystemBackend)
+        assert isinstance(backend_qd, QdrantContainerBackend)
+
+    def test_get_vector_store_client_returns_filesystem_store(self, tmp_path):
+        """GIVEN a FilesystemBackend
+        WHEN get_vector_store_client() is called
+        THEN FilesystemVectorStore instance is returned"""
+        backend = FilesystemBackend(config)
+        backend.initialize(config)
+
+        client = backend.get_vector_store_client()
+
+        assert isinstance(client, FilesystemVectorStore)
+        assert client.base_path == tmp_path / ".code-indexer" / "vectors"
+
+    def test_cleanup_removes_vectors_directory(self, tmp_path):
+        """GIVEN initialized filesystem backend with data
+        WHEN cleanup(remove_data=True) is called
+        THEN .code-indexer/vectors/ is removed"""
+        backend = FilesystemBackend(config)
+        backend.initialize(config)
+
+        # Create some test data
+        vectors_dir = tmp_path / ".code-indexer" / "vectors"
+        (vectors_dir / "test_file.json").write_text("{}")
+
+        result = backend.cleanup(remove_data=True)
+
+        assert result is True
+        assert not vectors_dir.exists()
+```
+
+**Coverage Requirements:**
+- ✅ Directory creation (real filesystem)
+- ✅ Start/stop operations (timing validation)
+- ✅ Health checks (write permission validation)
+- ✅ Backend factory selection
+- ✅ Client creation
+- ✅ Cleanup operations (actual removal)
+
+**Test Data:**
+- Use pytest tmp_path fixtures for isolated test directories
+- No mocking of pathlib or os operations
+- Real directory creation and removal
+
+**Performance Assertions:**
+- start() completes in <10ms (no services)
+- initialize() completes in <100ms
+
 ## Implementation Notes
 
 **Critical Design Decision:** No port allocation for filesystem backend. The existing port registry code should be skipped entirely when `vector_store.provider == "filesystem"`.

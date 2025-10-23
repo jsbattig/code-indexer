@@ -312,6 +312,73 @@ def run_complete_poc():
 4. **Results Report** - JSON with all metrics
 5. **Go/No-Go Decision** - Clear recommendation
 
+## Unit Test Coverage Requirements
+
+**Test Strategy:** POC framework IS the test - use real filesystem operations with deterministic data
+
+**Required Tests:**
+
+### Performance Validation Tests
+```python
+def test_40k_vectors_query_under_1_second():
+    """GIVEN 40K vectors in filesystem with optimal config
+    WHEN performing 100 query simulations
+    THEN P95 query time < 1s"""
+    # Generate 40K test vectors
+    # Run query simulations
+    # Assert P95 < 1000ms
+
+def test_depth_factor_4_has_optimal_files_per_directory():
+    """GIVEN depth factor 4 with 40K vectors
+    WHEN analyzing directory distribution
+    THEN average files per directory is 1-10"""
+    # Generate data with depth=4
+    # Count files in all leaf directories
+    # Assert 1 <= avg_files <= 10
+
+def test_over_fetch_ratio_acceptable():
+    """GIVEN search with 2-level neighbors
+    WHEN measuring over-fetch
+    THEN ratio < 20x (acceptable RAM usage)"""
+    # Search simulation
+    # Count: files loaded / results returned
+    # Assert ratio < 20
+```
+
+### Determinism Tests
+```python
+def test_same_vector_produces_same_path():
+    """GIVEN the same 1536-dim vector quantized twice
+    WHEN using same projection matrix
+    THEN produces identical filesystem path"""
+    # Use seeded random for reproducibility
+
+def test_projection_matrix_is_reusable():
+    """GIVEN saved projection matrix
+    WHEN loaded and used for quantization
+    THEN produces same paths as original"""
+    # Save matrix, reload, verify paths match
+```
+
+### Scalability Tests
+```python
+def test_scales_sublinearly():
+    """GIVEN tests at 10K, 40K, 100K vectors
+    WHEN measuring query time
+    THEN time increase is sublinear"""
+    # 100K should NOT be 10x slower than 10K
+```
+
+**Test Data:**
+- Deterministic vectors (seeded random: np.random.seed(42))
+- Real filesystem directories in /tmp
+- No mocking of file I/O operations
+
+**Performance Assertions:**
+- Query time P95 < 1s for 40K vectors
+- Files per directory 1-10 (optimal range)
+- Over-fetch ratio < 20x
+
 ## Definition of Done
 
 ✅ POC scripts created and tested
@@ -320,3 +387,4 @@ def run_complete_poc():
 ✅ Go/No-Go recommendation provided
 ✅ Optimal depth factor identified for 40K vectors
 ✅ Performance report shows <1s query time achievable
+✅ **Unit tests validate determinism and scalability**

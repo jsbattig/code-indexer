@@ -379,3 +379,235 @@ Parallel writes require:
 **From CLAUDE.md:** "When indexing, progress reporting is done real-time, in a single line at the bottom, showing a progress bar, and right next to it we show speed metrics and current file being processed."
 
 Format: `⏳ Indexing files: [=========>  ] 45/100 files (45%) | 12 emb/s | src/module/file.py`
+
+## Unit Test Coverage Requirements
+
+**Test Strategy:** Use real filesystem operations with deterministic test data (NO mocking of file I/O)
+
+**Test File:** `tests/unit/storage/test_filesystem_vector_store.py`
+
+**Required Tests:**
+
+```python
+class TestVectorQuantizationAndStorage:
+    """Test vector quantization and storage without filesystem mocking."""
+
+    @pytest.fixture
+    def test_vectors(self):
+        """Generate deterministic test vectors."""
+        np.random.seed(42)
+        return {
+            'small': np.random.randn(10, 1536),
+            'medium': np.random.randn(100, 1536),
+            'large': np.random.randn(1000, 1536)
+        }
+
+    def test_deterministic_quantization(self, tmp_path, test_vectors):
+        """GIVEN the same vector quantized twice
+        WHEN using the same projection matrix
+        THEN it produces the same filesystem path"""
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        vector = test_vectors['small'][0]
+        path1 = store._vector_to_path(vector, 'test_coll')
+        path2 = store._vector_to_path(vector, 'test_coll')
+
+        assert path1 == path2  # Deterministic
+
+    def test_upsert_creates_json_at_quantized_path(self, tmp_path, test_vectors):
+        """GIVEN vectors to store
+        WHEN upsert_points() is called
+        THEN JSON files created at quantized paths with NO chunk text"""
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        points = [{
+            'id': 'test_001',
+            'vector': test_vectors['small'][0].tolist(),
+            'payload': {
+                'file_path': 'src/test.py',
+                'start_line': 10,
+                'end_line': 20,
+                'language': 'python',
+                'type': 'content'
+            }
+        }]
+
+        result = store.upsert_points('test_coll', points)
+
+        assert result['status'] == 'ok'
+
+        # Verify JSON file exists on actual filesystem
+        json_files = list((tmp_path / 'test_coll').rglob('*.json'))
+        assert len(json_files) >= 1  # At least collection_meta + 1 vector
+
+        # Find vector file (not collection_meta)
+        vector_files = [f for f in json_files if 'collection_meta' not in f.name]
+        assert len(vector_files) == 1
+
+        # Verify JSON structure (CRITICAL: NO chunk text)
+        with open(vector_files[0]) as f:
+            data = json.load(f)
+
+        assert data['id'] == 'test_001'
+        assert data['file_path'] == 'src/test.py'
+        assert data['start_line'] == 10
+        assert len(data['vector']) == 1536
+        assert 'chunk_text' not in data  # CRITICAL
+        assert 'content' not in data  # CRITICAL
+        assert 'text' not in data  # CRITICAL
+
+    def test_batch_upsert_performance(self, tmp_path, test_vectors):
+        """GIVEN 1000 vectors to store
+        WHEN upsert_points_batched() is called
+        THEN all vectors stored in <5s"""
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        points = [
+            {
+                'id': f'vec_{i}',
+                'vector': test_vectors['large'][i].tolist(),
+                'payload': {'file_path': f'file_{i}.py', 'start_line': i}
+            }
+            for i in range(1000)
+        ]
+
+        start = time.time()
+        result = store.upsert_points_batched('test_coll', points, batch_size=100)
+        duration = time.time() - start
+
+        assert result['status'] == 'ok'
+        assert duration < 5.0  # Performance requirement
+        assert store.count_points('test_coll') == 1000
+
+        # Verify files actually exist on filesystem
+        json_count = sum(1 for _ in (tmp_path / 'test_coll').rglob('*.json')
+                        if 'collection_meta' not in _.name)
+        assert json_count == 1000
+
+    def test_delete_points_removes_files(self, tmp_path, test_vectors):
+        """GIVEN vectors stored in filesystem
+        WHEN delete_points() is called
+        THEN JSON files are actually removed from filesystem"""
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        # Store 10 vectors
+        points = [
+            {'id': f'vec_{i}', 'vector': test_vectors['small'][i].tolist(),
+             'payload': {'file_path': f'file_{i}.py'}}
+            for i in range(10)
+        ]
+        store.upsert_points('test_coll', points)
+
+        initial_count = store.count_points('test_coll')
+        assert initial_count == 10
+
+        # Delete specific points
+        result = store.delete_points('test_coll', ['vec_1', 'vec_2', 'vec_3'])
+
+        assert result['result']['deleted'] == 3
+        assert store.count_points('test_coll') == 7
+
+        # Verify files actually deleted from filesystem
+        remaining = sum(1 for _ in (tmp_path / 'test_coll').rglob('*.json')
+                       if 'collection_meta' not in _.name)
+        assert remaining == 7
+
+    def test_delete_by_filter_with_metadata(self, tmp_path, test_vectors):
+        """GIVEN vectors with various metadata
+        WHEN delete_by_filter() is called
+        THEN only matching vectors deleted from filesystem"""
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        # Store vectors with different branches
+        points = []
+        for i in range(5):
+            points.append({
+                'id': f'main_{i}',
+                'vector': test_vectors['small'][i].tolist(),
+                'payload': {'git_branch': 'main', 'file_path': f'file_{i}.py'}
+            })
+        for i in range(5, 10):
+            points.append({
+                'id': f'feat_{i}',
+                'vector': test_vectors['small'][i].tolist(),
+                'payload': {'git_branch': 'feature', 'file_path': f'file_{i}.py'}
+            })
+
+        store.upsert_points('test_coll', points)
+        assert store.count_points('test_coll') == 10
+
+        # Delete only feature branch vectors
+        result = store.delete_by_filter('test_coll', {'git_branch': 'feature'})
+
+        assert result['result']['deleted'] == 5
+        assert store.count_points('test_coll') == 5
+
+        # Verify only main branch vectors remain
+        remaining = store.scroll_points('test_coll', limit=100)[0]
+        assert all(p['payload']['git_branch'] == 'main' for p in remaining)
+
+    def test_concurrent_writes_thread_safety(self, tmp_path, test_vectors):
+        """GIVEN concurrent upsert operations
+        WHEN multiple threads write simultaneously
+        THEN all vectors stored without corruption"""
+        from concurrent.futures import ThreadPoolExecutor
+
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        def write_batch(start_idx):
+            points = [
+                {
+                    'id': f'vec_{start_idx}_{i}',
+                    'vector': np.random.randn(1536).tolist(),
+                    'payload': {'file_path': f'file_{i}.py'}
+                }
+                for i in range(10)
+            ]
+            return store.upsert_points('test_coll', points)
+
+        # Write 100 vectors across 10 threads
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(write_batch, i*10) for i in range(10)]
+            results = [f.result() for f in futures]
+
+        # All writes succeed
+        assert all(r['status'] == 'ok' for r in results)
+        assert store.count_points('test_coll') == 100
+
+        # No corrupted JSON files
+        for json_file in (tmp_path / 'test_coll').rglob('*.json'):
+            if 'collection_meta' in json_file.name:
+                continue
+            with open(json_file) as f:
+                data = json.load(f)  # Should not raise JSONDecodeError
+            assert 'vector' in data
+            assert len(data['vector']) == 1536
+```
+
+**Coverage Requirements:**
+- ✅ Deterministic quantization (same vector → same path)
+- ✅ JSON file creation at correct paths (real filesystem)
+- ✅ NO chunk text in JSON files (critical validation)
+- ✅ Batch performance (1000 vectors in <5s)
+- ✅ Delete operations (files actually removed)
+- ✅ Filter-based deletion (metadata filtering)
+- ✅ Concurrent writes (thread safety)
+- ✅ ID index consistency
+
+**Test Data:**
+- Deterministic vectors using seeded random (np.random.seed(42))
+- Multiple scales: 10, 100, 1000 vectors
+- Use pytest tmp_path for isolated test directories
+- No mocking of pathlib, os, or json operations
+
+**Performance Assertions:**
+- Batch upsert: <5s for 1000 vectors
+- Single upsert: <50ms
+- Delete: <500ms for 100 vectors
+- Count: <100ms for any collection
