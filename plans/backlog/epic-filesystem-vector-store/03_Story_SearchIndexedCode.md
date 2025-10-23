@@ -30,9 +30,13 @@
 2. ✅ Neighbor discovery using Hamming distance
 3. ✅ All candidate JSON files loaded into RAM
 4. ✅ Exact cosine similarity computed with full 1536-dim vectors
-5. ✅ Results sorted by similarity score
-6. ✅ Top-k results returned
-7. ✅ No containers required for search operations
+5. ✅ **Chunk content retrieval:** Results always include `payload['content']` (transparent to caller)
+   - Git repos: Retrieve from current file or git blob (3-tier fallback)
+   - Non-git repos: Load chunk_text from JSON metadata
+6. ✅ Results sorted by similarity score
+7. ✅ Top-k results returned
+8. ✅ No containers required for search operations
+9. ✅ **QdrantClient interface compatibility:** search() returns identical structure
 
 ### Performance Requirements
 **Conversation Reference:** "~1s is fine" - User explicitly accepted 1-second query latency for 40K vectors.

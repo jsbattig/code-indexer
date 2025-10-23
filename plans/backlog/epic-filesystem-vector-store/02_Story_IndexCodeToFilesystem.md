@@ -38,8 +38,25 @@
 
 1. ✅ JSON format includes: file_path, start_line, end_line, start_offset, end_offset, chunk_hash
 2. ✅ Full 1536-dim vector stored for exact ranking
-3. ✅ No chunk text duplication in JSON files
-4. ✅ Metadata includes: indexed_at, embedding_model, branch
+3. ✅ Git-aware storage:
+   - **Git repos:** Store git blob hash, NO chunk text (space efficient)
+   - **Non-git repos:** Store chunk_text in metadata (fallback mode)
+4. ✅ Metadata includes: indexed_at, embedding_model, branch, git_blob_hash (if git)
+
+### Chunk Content Retrieval Requirements
+
+**User Requirement:** "when querying our system for a match, we will lift up the chunk from the disk using our reference, we will calculate the hash and match against our metadata, and if it doesn't match, we will need to find in git the file that was actually indexed"
+
+**Implementation Strategy:**
+
+1. ✅ **Transparent retrieval:** `search()` results always include `payload['content']` (identical to Qdrant interface)
+2. ✅ **3-tier fallback for git repos:**
+   - Try current file (hash verification)
+   - Try git blob (fast: `git cat-file -p <blob_hash>`)
+   - Return error message if both fail
+3. ✅ **Direct retrieval for non-git repos:** Load chunk_text from JSON metadata
+4. ✅ **Clean git state mandate:** Indexing requires `git status --porcelain` == empty
+5. ✅ **Batch git metadata collection:** Use `git ls-tree -r HEAD` for all blob hashes in single command (~100ms)
 
 ## Manual Testing Steps
 
@@ -611,3 +628,183 @@ class TestVectorQuantizationAndStorage:
 - Single upsert: <50ms
 - Delete: <500ms for 100 vectors
 - Count: <100ms for any collection
+
+### Chunk Content Retrieval Tests
+
+```python
+class TestChunkContentRetrieval:
+    """Test chunk content retrieval with git fallback."""
+
+    def test_git_repo_stores_blob_hash_not_content(self, tmp_path):
+        """GIVEN a git repository
+        WHEN indexing chunks
+        THEN git blob hash stored, NO chunk_text in JSON"""
+        # Initialize git repo
+        subprocess.run(['git', 'init'], cwd=tmp_path)
+        test_file = tmp_path / 'test.py'
+        test_file.write_text("def foo():\n    return 42\n")
+        subprocess.run(['git', 'add', '.'], cwd=tmp_path)
+        subprocess.run(['git', 'commit', '-m', 'test'], cwd=tmp_path)
+
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        points = [{
+            'id': 'test_001',
+            'vector': np.random.randn(1536).tolist(),
+            'payload': {
+                'path': 'test.py',
+                'start_line': 0,
+                'end_line': 2,
+                'content': 'def foo():\n    return 42\n'  # Provided by core
+            }
+        }]
+
+        store.upsert_points('test_coll', points)
+
+        # Verify JSON does NOT contain chunk text
+        json_files = [f for f in (tmp_path / 'test_coll').rglob('*.json')
+                     if 'collection_meta' not in f.name]
+        with open(json_files[0]) as f:
+            data = json.load(f)
+
+        assert 'git_blob_hash' in data  # Git blob stored
+        assert 'chunk_text' not in data  # Chunk text NOT stored
+        assert 'content' not in data  # Content NOT duplicated
+        assert 'chunk_hash' in data  # Content hash stored
+
+    def test_non_git_repo_stores_chunk_text(self, tmp_path):
+        """GIVEN a non-git directory
+        WHEN indexing chunks
+        THEN chunk_text stored in JSON (no git fallback)"""
+        # No git init - plain directory
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        points = [{
+            'id': 'test_001',
+            'vector': np.random.randn(1536).tolist(),
+            'payload': {
+                'path': 'test.py',
+                'start_line': 0,
+                'end_line': 2,
+                'content': 'def foo():\n    return 42\n'
+            }
+        }]
+
+        store.upsert_points('test_coll', points)
+
+        # Verify JSON DOES contain chunk text (no git fallback)
+        json_files = [f for f in (tmp_path / 'test_coll').rglob('*.json')
+                     if 'collection_meta' not in f.name]
+        with open(json_files[0]) as f:
+            data = json.load(f)
+
+        assert 'chunk_text' in data  # Chunk text stored
+        assert data['chunk_text'] == 'def foo():\n    return 42\n'
+        assert 'git_blob_hash' not in data  # No git metadata
+
+    def test_search_retrieves_content_from_current_file(self, tmp_path):
+        """GIVEN indexed git repo
+        WHEN file unchanged and searching
+        THEN content retrieved from current file (fast path)"""
+        # Setup git repo with file
+        subprocess.run(['git', 'init'], cwd=tmp_path)
+        test_file = tmp_path / 'test.py'
+        test_content = "def foo():\n    return 42\n"
+        test_file.write_text(test_content)
+        subprocess.run(['git', 'add', '.'], cwd=tmp_path)
+        subprocess.run(['git', 'commit', '-m', 'test'], cwd=tmp_path)
+
+        # Index
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+        store.upsert_points('test_coll', [{
+            'id': 'test_001',
+            'vector': np.random.randn(1536).tolist(),
+            'payload': {'path': 'test.py', 'start_line': 0, 'end_line': 2,
+                       'content': test_content}
+        }])
+
+        # Search
+        results = store.search('test_coll', np.random.randn(1536), limit=1)
+
+        # Content should be retrieved and included
+        assert len(results) == 1
+        assert 'content' in results[0]['payload']
+        assert results[0]['payload']['content'] == test_content
+
+    def test_search_falls_back_to_git_blob_when_file_modified(self, tmp_path):
+        """GIVEN indexed file that was later modified
+        WHEN searching
+        THEN content retrieved from git blob (hash verified)"""
+        # Setup and index
+        subprocess.run(['git', 'init'], cwd=tmp_path)
+        test_file = tmp_path / 'test.py'
+        original_content = "def foo():\n    return 42\n"
+        test_file.write_text(original_content)
+        subprocess.run(['git', 'add', '.'], cwd=tmp_path)
+        subprocess.run(['git', 'commit', '-m', 'original'], cwd=tmp_path)
+
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+        store.upsert_points('test_coll', [{
+            'id': 'test_001',
+            'vector': np.random.randn(1536).tolist(),
+            'payload': {'path': 'test.py', 'start_line': 0, 'end_line': 2,
+                       'content': original_content}
+        }])
+
+        # Modify file (break hash)
+        test_file.write_text("def foo():\n    return 99\n")
+
+        # Search - should fall back to git blob
+        results = store.search('test_coll', np.random.randn(1536), limit=1)
+
+        assert len(results) == 1
+        assert results[0]['payload']['content'] == original_content  # From git!
+
+    def test_indexing_requires_clean_git_state(self, tmp_path):
+        """GIVEN git repo with uncommitted changes
+        WHEN attempting to index
+        THEN error raised requiring clean state"""
+        subprocess.run(['git', 'init'], cwd=tmp_path)
+        test_file = tmp_path / 'test.py'
+        test_file.write_text("def foo(): pass")
+        # Don't commit - leave dirty
+
+        store = FilesystemVectorStore(tmp_path, config)
+
+        with pytest.raises(ValueError, match="uncommitted changes"):
+            store.validate_git_state_before_indexing()
+
+    def test_batch_git_metadata_collection_performance(self, tmp_path):
+        """GIVEN 100 files to index
+        WHEN collecting git blob hashes
+        THEN completes in <500ms using batch command"""
+        # Setup git repo with 100 files
+        subprocess.run(['git', 'init'], cwd=tmp_path)
+        for i in range(100):
+            (tmp_path / f'file_{i}.py').write_text(f"# File {i}")
+        subprocess.run(['git', 'add', '.'], cwd=tmp_path)
+        subprocess.run(['git', 'commit', '-m', 'test'], cwd=tmp_path)
+
+        store = FilesystemVectorStore(tmp_path, config)
+
+        # Measure git metadata collection
+        start = time.time()
+        blob_hashes = store._get_blob_hashes_batch([f'file_{i}.py' for i in range(100)])
+        duration = time.time() - start
+
+        assert len(blob_hashes) == 100
+        assert duration < 0.5  # <500ms for batch operation
+```
+
+**Additional Coverage:**
+- ✅ Git vs non-git detection
+- ✅ Git blob hash storage (git repos)
+- ✅ Chunk text storage (non-git repos)
+- ✅ Content retrieval with current file (fast path)
+- ✅ Content retrieval with git blob fallback
+- ✅ Clean git state validation
+- ✅ Batch git metadata collection performance
