@@ -1,0 +1,381 @@
+# Story 2: Index Code to Filesystem Without Containers
+
+**Story ID:** S02
+**Epic:** Filesystem-Based Vector Database Backend
+**Priority:** High
+**Estimated Effort:** 8-12 days
+**Implementation Order:** 3
+
+## User Story
+
+**As a** developer with a filesystem-initialized project
+**I want to** index my codebase to filesystem-based vector storage
+**So that** I can create searchable semantic embeddings without running containers
+
+**Conversation Reference:** "I don't want to run ANY containers, zero. I want to store my index, side by side, with my code, and I want it to go inside git, as the code." - User explicitly requested container-free indexing with git-trackable storage.
+
+## Acceptance Criteria
+
+### Functional Requirements
+1. ✅ `cidx index` stores vectors as JSON files in `.code-indexer/vectors/`
+2. ✅ Path-as-vector quantization creates directory hierarchy for efficient lookups
+3. ✅ Projection matrix generated once per collection (deterministic, reusable)
+4. ✅ JSON files contain only file references, not chunk text content
+5. ✅ Progress reporting shows indexing speed and file counts
+6. ✅ Works with both VoyageAI and Ollama embedding providers
+7. ✅ Branch-aware indexing (separate collections per branch)
+
+### Technical Requirements
+1. ✅ FilesystemVectorStore implements QdrantClient-compatible interface
+2. ✅ Vector storage pipeline: 1536-dim → Random Projection → 64-dim → 2-bit Quantization → Path
+3. ✅ Directory structure uses depth factor 4 (from POC optimal results)
+4. ✅ Concurrent vector writes with thread safety
+5. ✅ ID indexing for fast lookups by point ID
+6. ✅ Collection management (create, exists, list collections)
+
+### Storage Requirements
+**Conversation Reference:** "no chunk data is stored in the json objects, but relative references to the files that contain the chunks" - Storage must only contain file references.
+
+1. ✅ JSON format includes: file_path, start_line, end_line, start_offset, end_offset, chunk_hash
+2. ✅ Full 1536-dim vector stored for exact ranking
+3. ✅ No chunk text duplication in JSON files
+4. ✅ Metadata includes: indexed_at, embedding_model, branch
+
+## Manual Testing Steps
+
+```bash
+# Test 1: Index repository to filesystem
+cd /path/to/test-repo
+cidx init --vector-store filesystem
+cidx index
+
+# Expected output:
+# ℹ️ Using filesystem vector store at .code-indexer/vectors/
+# ℹ️ Creating projection matrix for collection...
+# ⏳ Indexing files: [=========>  ] 45/100 files (45%) | 12 emb/s | file.py
+# ✅ Indexed 100 files, 523 vectors to filesystem
+# 📁 Vectors stored in .code-indexer/vectors/voyage-code-3/
+
+# Verify directory structure
+ls -la .code-indexer/vectors/voyage-code-3/
+# Expected: projection_matrix.npy, collection_meta.json, [hex directories]
+
+# Test 2: Verify JSON structure (no chunk text)
+cat .code-indexer/vectors/voyage-code-3/a3/b7/2f/vector_abc123.json
+# Expected JSON:
+# {
+#   "id": "file.py:42-87:hash",
+#   "file_path": "src/module/file.py",
+#   "start_line": 42,
+#   "end_line": 87,
+#   "start_offset": 1234,
+#   "end_offset": 2567,
+#   "chunk_hash": "abc123...",
+#   "vector": [0.123, -0.456, ...],  // 1536 dimensions
+#   "metadata": {
+#     "indexed_at": "2025-01-23T10:00:00Z",
+#     "embedding_model": "voyage-code-3",
+#     "branch": "main"
+#   }
+# }
+
+# Test 3: Force reindex
+cidx index --force-reindex
+# Expected: Clears existing vectors, reindexes all files
+
+# Test 4: Branch-aware indexing
+git checkout feature-branch
+cidx index
+# Expected: Separate collection for feature-branch
+
+ls .code-indexer/vectors/
+# Expected: voyage-code-3_main/, voyage-code-3_feature-branch/
+
+# Test 5: Multi-provider support
+cidx init --vector-store filesystem --embedding-provider ollama
+cidx index
+# Expected: Collection with ollama-nomic-embed-text, 768-dim vectors
+```
+
+## Technical Implementation Details
+
+### Quantization Pipeline Architecture
+
+**Conversation Reference:** "can't you lay, on disk, json files that represent the metadata related to the vector, and the entire path IS the vector?" - User proposed path-as-vector quantization strategy.
+
+```python
+# Step 1: Random Projection (1536 → 64 dimensions)
+projection_matrix = np.random.randn(1536, 64)  # Deterministic seed
+reduced_vector = vector @ projection_matrix
+
+# Step 2: 2-bit Quantization (64 floats → 128 bits → 32 hex chars)
+quantized = quantize_to_2bit(reduced_vector)  # Each dim → 2 bits
+hex_path = convert_to_hex(quantized)  # 32 hex characters
+
+# Step 3: Directory Structure (depth factor 4)
+# 32 hex chars split: 2/2/2/2/24
+# Example: a3/b7/2f/c9/d8e4f1a2b5c3...
+path_segments = split_with_depth_factor(hex_path, depth_factor=4)
+storage_path = Path(*path_segments) / f"vector_{point_id}.json"
+```
+
+### FilesystemVectorStore Implementation
+
+```python
+class FilesystemVectorStore:
+    """Filesystem-based vector storage with QdrantClient interface."""
+
+    def __init__(self, base_path: Path, config: Config):
+        self.base_path = base_path
+        self.config = config
+        self.operations = FilesystemVectorOperations(base_path)
+        self.collections = FilesystemCollectionManager(base_path)
+        self.quantizer = VectorQuantizer(
+            depth_factor=config.vector_store.depth_factor,
+            reduced_dimensions=config.vector_store.reduced_dimensions
+        )
+
+    # Core CRUD Operations (QdrantClient-compatible)
+
+    def upsert_points(
+        self,
+        collection_name: str,
+        points: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Store vectors as JSON files at quantized paths."""
+        for point in points:
+            vector = np.array(point['vector'])
+            payload = point['payload']
+
+            # Get quantized path
+            hex_path = self.quantizer.quantize_vector(vector)
+            storage_path = self._resolve_storage_path(
+                collection_name,
+                hex_path,
+                point['id']
+            )
+
+            # Prepare JSON (NO CHUNK TEXT - only file references)
+            vector_data = {
+                'id': point['id'],
+                'file_path': payload['file_path'],
+                'start_line': payload['start_line'],
+                'end_line': payload['end_line'],
+                'start_offset': payload.get('start_offset', 0),
+                'end_offset': payload.get('end_offset', 0),
+                'chunk_hash': payload.get('chunk_hash', ''),
+                'vector': vector.tolist(),  # Full 1536-dim vector
+                'metadata': {
+                    'indexed_at': datetime.utcnow().isoformat(),
+                    'embedding_model': self.config.embedding_model,
+                    'branch': payload.get('branch', 'main')
+                }
+            }
+
+            # Write atomically
+            self._write_vector_json(storage_path, vector_data)
+
+    def create_collection(
+        self,
+        collection_name: str,
+        vector_size: int = 1536
+    ) -> bool:
+        """Create collection with deterministic projection matrix."""
+        collection_path = self.base_path / collection_name
+        collection_path.mkdir(parents=True, exist_ok=True)
+
+        # Generate deterministic projection matrix
+        projection_matrix = self._create_projection_matrix(
+            input_dim=vector_size,
+            output_dim=self.config.vector_store.reduced_dimensions
+        )
+
+        # Save projection matrix (reusable for same collection)
+        np.save(collection_path / "projection_matrix.npy", projection_matrix)
+
+        # Create collection metadata
+        metadata = {
+            "name": collection_name,
+            "vector_size": vector_size,
+            "created_at": datetime.utcnow().isoformat(),
+            "depth_factor": self.config.vector_store.depth_factor,
+            "reduced_dimensions": self.config.vector_store.reduced_dimensions
+        }
+
+        meta_path = collection_path / "collection_meta.json"
+        meta_path.write_text(json.dumps(metadata, indent=2))
+
+        return True
+
+    def delete_points(
+        self,
+        collection_name: str,
+        point_ids: List[str]
+    ) -> Dict[str, Any]:
+        """Delete vectors by removing JSON files."""
+        deleted = 0
+        for point_id in point_ids:
+            file_path = self._find_vector_by_id(collection_name, point_id)
+            if file_path and file_path.exists():
+                file_path.unlink()
+                deleted += 1
+        return {"status": "ok", "deleted": deleted}
+
+    def count_points(self, collection_name: str) -> int:
+        """Count JSON files in collection."""
+        collection_path = self.base_path / collection_name
+        return sum(1 for _ in collection_path.rglob('*.json')
+                   if _.name != "collection_meta.json")
+```
+
+### Vector Quantizer
+
+```python
+class VectorQuantizer:
+    """Quantize high-dimensional vectors to filesystem paths."""
+
+    def __init__(self, depth_factor: int = 4, reduced_dimensions: int = 64):
+        self.depth_factor = depth_factor
+        self.reduced_dimensions = reduced_dimensions
+
+    def quantize_vector(self, vector: np.ndarray) -> str:
+        """Convert vector to hex path string.
+
+        Pipeline: 1536-dim → project → 64-dim → quantize → 128 bits → 32 hex chars
+        """
+        # Load projection matrix from collection
+        reduced = self._project_vector(vector)
+
+        # 2-bit quantization
+        quantized_bits = self._quantize_to_2bit(reduced)
+
+        # Convert to hex
+        hex_string = self._bits_to_hex(quantized_bits)
+
+        return hex_string  # 32 hex characters
+
+    def _quantize_to_2bit(self, vector: np.ndarray) -> np.ndarray:
+        """Quantize float vector to 2-bit representation."""
+        # Compute thresholds (quartiles)
+        q1, q2, q3 = np.percentile(vector, [25, 50, 75])
+
+        # Map to 2 bits: 00, 01, 10, 11
+        quantized = np.zeros(len(vector), dtype=np.uint8)
+        quantized[vector >= q3] = 3
+        quantized[(vector >= q2) & (vector < q3)] = 2
+        quantized[(vector >= q1) & (vector < q2)] = 1
+        quantized[vector < q1] = 0
+
+        return quantized
+```
+
+### Projection Matrix Manager
+
+```python
+class ProjectionMatrixManager:
+    """Manage deterministic projection matrices for collections."""
+
+    def create_projection_matrix(
+        self,
+        input_dim: int,
+        output_dim: int,
+        seed: Optional[int] = None
+    ) -> np.ndarray:
+        """Create deterministic projection matrix.
+
+        Uses random projection for dimensionality reduction.
+        Deterministic seed ensures reproducibility.
+        """
+        if seed is None:
+            # Use collection name hash as seed for determinism
+            seed = hash(f"projection_matrix_{input_dim}_{output_dim}") % (2**32)
+
+        np.random.seed(seed)
+        matrix = np.random.randn(input_dim, output_dim)
+
+        # Normalize for stable projection
+        matrix /= np.sqrt(output_dim)
+
+        return matrix
+
+    def load_matrix(self, collection_path: Path) -> np.ndarray:
+        """Load existing projection matrix."""
+        matrix_path = collection_path / "projection_matrix.npy"
+        return np.load(matrix_path)
+
+    def save_matrix(self, matrix: np.ndarray, collection_path: Path):
+        """Save projection matrix to collection."""
+        matrix_path = collection_path / "projection_matrix.npy"
+        np.save(matrix_path, matrix)
+```
+
+## Dependencies
+
+### Internal Dependencies
+- Story 1: Backend abstraction layer (FilesystemBackend)
+- Story 0: POC results (optimal depth factor = 4)
+- Existing embedding providers (VoyageAI, Ollama)
+- Existing file chunking logic
+
+### External Dependencies
+- NumPy for vector operations and projection
+- Python `json` for serialization
+- Python `pathlib` for filesystem operations
+- ThreadPoolExecutor for parallel writes
+
+## Success Metrics
+
+1. ✅ Indexing completes without errors
+2. ✅ Vector JSON files created with correct structure
+3. ✅ No chunk text stored in JSON files (only file references)
+4. ✅ Projection matrix saved and reusable
+5. ✅ Directory structure matches quantization scheme
+6. ✅ Indexing performance comparable to Qdrant workflow
+7. ✅ Progress reporting shows real-time feedback
+
+## Non-Goals
+
+- Query/search functionality (covered in Story 3)
+- Health monitoring (covered in Story 4)
+- Backend switching (covered in Story 8)
+- Migration from existing Qdrant data
+
+## Follow-Up Stories
+
+- **Story 3**: Search Indexed Code from Filesystem (searches these vectors)
+- **Story 4**: Monitor Filesystem Index Status and Health (validates this indexing)
+- **Story 7**: Multi-Provider Support (extends indexing to multiple providers)
+
+## Implementation Notes
+
+### Critical Storage Constraint
+
+**Conversation Reference:** "no chunk data is stored in the json objects, but relative references to the files that contain the chunks" - This is NON-NEGOTIABLE.
+
+The JSON files MUST NOT contain chunk text. They contain ONLY:
+- File path references (relative to repo root)
+- Line and byte offsets for chunk boundaries
+- The full vector for exact ranking
+- Metadata (timestamps, model, branch)
+
+Chunk text is retrieved from actual source files during result display.
+
+### Directory Structure Optimization
+
+**From POC Results:** Depth factor 4 provides optimal balance of:
+- 1-10 files per directory (avoids filesystem performance issues)
+- Fast neighbor discovery for search
+- Reasonable directory depth (8 levels)
+
+### Thread Safety
+
+Parallel writes require:
+- Atomic file writes (write to temp, then rename)
+- No shared mutable state during indexing
+- ID index updates synchronized
+
+### Progress Reporting Format
+
+**From CLAUDE.md:** "When indexing, progress reporting is done real-time, in a single line at the bottom, showing a progress bar, and right next to it we show speed metrics and current file being processed."
+
+Format: `⏳ Indexing files: [=========>  ] 45/100 files (45%) | 12 emb/s | src/module/file.py`
