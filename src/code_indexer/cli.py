@@ -2854,14 +2854,16 @@ def query(
         git_topology_service = GitTopologyService(config.codebase_dir)
         is_git_aware = git_topology_service.is_git_available()
 
-        # Initialize query service based on project type
+        # Initialize query service for git-aware filtering
+        query_service = GenericQueryService(config.codebase_dir, config)
+
+        # Determine if we should use branch-aware querying
         if is_git_aware:
             # Use git-aware filtering for git projects
             current_branch = git_topology_service.get_current_branch() or "master"
             use_branch_aware_query = True
         else:
             # Use generic query service for non-git projects
-            query_service = GenericQueryService(config.codebase_dir, config)
             use_branch_aware_query = False
 
         # Apply embedding provider's model filtering when searching
@@ -2935,33 +2937,36 @@ def query(
             if not quiet:
                 console.print("🔍 Applying git-aware filtering...")
 
-            # Use branch-aware search with git filtering
-            # Content is visible if it was indexed from current branch
-            git_filter_conditions = {
-                "must": [
-                    # Match content from the current branch
-                    {"key": "git_branch", "match": {"value": current_branch}},
-                    # Ensure git is available (exclude non-git content)
-                    {"key": "git_available", "match": {"value": True}},
-                ],
-            }
+            # Build filter conditions (NO git_branch filter - let post-filtering handle it)
+            filter_conditions_list = []
 
-            # Add additional filters
+            # Only filter by git_available to exclude non-git content
+            filter_conditions_list.append(
+                {"key": "git_available", "match": {"value": True}}
+            )
+
+            # Add user-specified filters
             if language:
                 language_mapper = LanguageMapper()
                 language_filter = language_mapper.build_language_filter(language)
-                git_filter_conditions["must"].append(language_filter)
+                filter_conditions_list.append(language_filter)
             if path:
-                git_filter_conditions["must"].append(
-                    {"key": "path", "match": {"text": path}}
-                )
+                filter_conditions_list.append({"key": "path", "match": {"text": path}})
 
-            git_results: List[Dict[str, Any]] = qdrant_client.search(
+            query_filter_conditions = (
+                {"must": filter_conditions_list} if filter_conditions_list else None
+            )
+
+            # Query Qdrant (get more results to allow for git filtering)
+            raw_results: List[Dict[str, Any]] = qdrant_client.search(
                 query_vector=query_embedding,
-                filter_conditions=git_filter_conditions,
-                limit=limit,
+                filter_conditions=query_filter_conditions,
+                limit=limit * 2,  # Get more to account for post-filtering
                 collection_name=collection_name,
             )
+
+            # Apply git-aware post-filtering (checks file existence in current branch)
+            git_results = query_service.filter_results_by_current_branch(raw_results)
 
             # Apply minimum score filtering (language and path already handled by Qdrant filters)
             if min_score:

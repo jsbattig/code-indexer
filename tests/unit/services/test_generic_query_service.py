@@ -87,8 +87,8 @@ class TestGenericQueryService:
     def test_filter_results_no_git(self, query_service):
         """Test that all results are returned when git is not available."""
         test_results = [
-            {"payload": {"file_path": "test1.py", "git_available": False}},
-            {"payload": {"file_path": "test2.py", "git_available": False}},
+            {"payload": {"path": "test1.py", "git_available": False}},
+            {"payload": {"path": "test2.py", "git_available": False}},
         ]
 
         with patch.object(query_service.file_identifier, "git_available", False):
@@ -102,16 +102,16 @@ class TestGenericQueryService:
         query_service = GenericQueryService(git_repo, config)
 
         test_results = [
-            {"payload": {"file_path": "main.py", "git_available": True}},
-            {"payload": {"file_path": "nonexistent.py", "git_available": True}},
-            {"payload": {"file_path": "utils.py", "git_available": True}},
+            {"payload": {"path": "main.py", "git_available": True}},
+            {"payload": {"path": "nonexistent.py", "git_available": True}},
+            {"payload": {"path": "utils.py", "git_available": True}},
         ]
 
         filtered = query_service.filter_results_by_branch(test_results)
 
         # Should only include files that exist in current branch
         assert len(filtered) == 2
-        file_paths = [r["payload"]["file_path"] for r in filtered]
+        file_paths = [r["payload"]["path"] for r in filtered]
         assert "main.py" in file_paths
         assert "utils.py" in file_paths
         assert "nonexistent.py" not in file_paths
@@ -154,14 +154,14 @@ class TestGenericQueryService:
 
     def test_is_result_current_branch_filesystem(self, query_service):
         """Test that filesystem-based results are always included."""
-        result = {"payload": {"file_path": "test.py", "git_available": False}}
+        result = {"payload": {"path": "test.py", "git_available": False}}
         branch_context = {"branch": "main", "commit": "abc123", "files": set()}
 
         assert query_service._is_result_current_branch(result, branch_context) is True
 
     def test_is_result_current_branch_git_exists(self, query_service):
         """Test git-based result when file exists in current branch."""
-        result = {"payload": {"file_path": "test.py", "git_available": True}}
+        result = {"payload": {"path": "test.py", "git_available": True}}
         branch_context = {
             "branch": "main",
             "commit": "abc123",
@@ -172,7 +172,7 @@ class TestGenericQueryService:
 
     def test_is_result_current_branch_git_missing(self, query_service):
         """Test git-based result when file doesn't exist in current branch."""
-        result = {"payload": {"file_path": "missing.py", "git_available": True}}
+        result = {"payload": {"path": "missing.py", "git_available": True}}
         branch_context = {
             "branch": "main",
             "commit": "abc123",
@@ -256,11 +256,65 @@ class TestGenericQueryService:
     def test_different_result_formats(self, query_service):
         """Test handling different result payload formats."""
         # Test direct metadata (no payload wrapper)
-        result1 = {"file_path": "test.py", "git_available": False}
+        result1 = {"path": "test.py", "git_available": False}
         # Test wrapped metadata
-        result2 = {"payload": {"file_path": "test.py", "git_available": False}}
+        result2 = {"payload": {"path": "test.py", "git_available": False}}
 
         branch_context = {"branch": "main", "commit": "abc123", "files": set()}
 
         assert query_service._is_result_current_branch(result1, branch_context) is True
         assert query_service._is_result_current_branch(result2, branch_context) is True
+
+    def test_branch_filtering_uses_correct_qdrant_field_name(self, query_service):
+        """Test that branch filtering uses 'path' field (Qdrant format) not 'file_path'.
+
+        BUG REPRODUCTION: Qdrant stores file paths as 'path' field in payloads,
+        but GenericQueryService was looking for 'file_path', causing all results
+        to be filtered out on feature branches.
+
+        GIVEN search results with 'path' field (actual Qdrant format)
+        WHEN filtering by current branch with file in branch_context
+        THEN file path correctly extracted and result included
+        """
+        # Mock result with ACTUAL Qdrant structure (uses "path" not "file_path")
+        result = {
+            "payload": {
+                "path": "src/auth/login.py",  # Qdrant uses "path"
+                "git_available": True,
+                "content": "test content",
+            }
+        }
+
+        branch_context = {
+            "branch": "feature-branch",
+            "commit": "abc123def456",
+            "files": {"src/auth/login.py", "src/other.py"},  # File exists in branch
+        }
+
+        # Should return True because file exists in current branch
+        # BUG: Returns False because it looks for "file_path" instead of "path"
+        assert query_service._is_result_current_branch(result, branch_context) is True
+
+    def test_branch_filtering_path_field_not_in_branch(self, query_service):
+        """Test that results with 'path' field are correctly filtered when file NOT in branch."""
+        # Mock result with ACTUAL Qdrant structure
+        result = {
+            "payload": {
+                "path": "src/deleted_file.py",  # Qdrant uses "path"
+                "git_available": True,
+                "content": "old content",
+            }
+        }
+
+        branch_context = {
+            "branch": "feature-branch",
+            "commit": "abc123def456",
+            "files": {"src/auth/login.py", "src/other.py"},  # File NOT in branch
+        }
+
+        # Mock commit reachability check to return False
+        with patch.object(query_service, "_is_commit_reachable", return_value=False):
+            # Should return False because file doesn't exist in current branch
+            assert (
+                query_service._is_result_current_branch(result, branch_context) is False
+            )
