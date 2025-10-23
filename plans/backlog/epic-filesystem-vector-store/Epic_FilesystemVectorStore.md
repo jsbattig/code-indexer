@@ -218,10 +218,21 @@ class VectorStoreBackend(ABC):
 ## Implementation Notes
 
 ### Key Design Decisions
-1. **No Chunk Text Storage:** Only store references (file_path, line ranges)
-2. **Deterministic Projection:** Reusable projection matrix for consistency
-3. **No Fallback to Qdrant:** User: *"no. if we use this, we use this"*
-4. **Clean Migration Path:** Destroy, reinit, reindex (no complex migration)
+
+1. **Filesystem is Default Backend**
+   - **User Requirement:** *"make sure we specify that if the user doesn't specify the db storage subsystem, we default to filesystem, only if the user asks for qdrant, we use qdrant"*
+   - `cidx init` → Filesystem backend (NO containers)
+   - `cidx init --vector-store qdrant` → Qdrant backend (WITH containers)
+   - New users get zero-dependency experience by default
+   - Existing projects unaffected (config already specifies provider)
+
+2. **No Chunk Text Storage:** Only store references (file_path, line ranges)
+
+3. **Deterministic Projection:** Reusable projection matrix for consistency
+
+4. **No Fallback to Qdrant:** User: *"no. if we use this, we use this"*
+
+5. **Clean Migration Path:** Destroy, reinit, reindex (no complex migration)
 
 ### Performance Optimization Opportunities
 1. Parallel JSON file loading

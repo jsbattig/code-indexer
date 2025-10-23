@@ -17,11 +17,13 @@
 ## Acceptance Criteria
 
 ### Functional Requirements
-1. ✅ `cidx init --vector-store filesystem` creates filesystem backend configuration
-2. ✅ Creates `.code-indexer/vectors/` directory structure
-3. ✅ Generates configuration file without port allocations
-4. ✅ Backend abstraction layer supports both Qdrant and filesystem backends
-5. ✅ `cidx init --vector-store qdrant` continues to work as before (backward compatibility)
+1. ✅ `cidx init` (no flag) creates filesystem backend configuration (DEFAULT BEHAVIOR)
+2. ✅ `cidx init --vector-store filesystem` explicitly creates filesystem backend (same as default)
+3. ✅ `cidx init --vector-store qdrant` opts into Qdrant backend with containers
+4. ✅ Creates `.code-indexer/vectors/` directory structure for filesystem backend
+5. ✅ Generates configuration file without port allocations for filesystem
+6. ✅ Backend abstraction layer supports both Qdrant and filesystem backends
+7. ✅ Existing projects with Qdrant config continue to work (no breaking changes)
 
 ### Technical Requirements
 1. ✅ VectorStoreBackend abstract interface defined with methods:
@@ -41,37 +43,47 @@
 ## Manual Testing Steps
 
 ```bash
-# Test 1: Initialize with filesystem backend
-cd /tmp/test-project
-git init
-cidx init --vector-store filesystem
-
-# Expected output:
-# ✅ Filesystem backend initialized
-# 📁 Vectors will be stored in .code-indexer/vectors/
-# ✅ Project initialized
-
-# Verify directory structure created
-ls -la .code-indexer/
-# Expected: vectors/ directory exists, no container ports in config
-
-# Test 2: Verify configuration
-cat .code-indexer/config.json
-# Expected: "vector_store": {"provider": "filesystem", "path": ".code-indexer/vectors"}
-
-# Test 3: Initialize with Qdrant (backward compatibility)
-cd /tmp/test-project-qdrant
-git init
-cidx init --vector-store qdrant
-
-# Expected: Traditional container-based initialization with port allocation
-
-# Test 4: Default behavior (should remain Qdrant for backward compatibility)
+# Test 1: Default initialization (filesystem - NO containers)
 cd /tmp/test-project-default
 git init
 cidx init
 
-# Expected: Qdrant backend (existing behavior preserved)
+# Expected output:
+# ✅ Filesystem backend initialized (default)
+# 📁 Vectors will be stored in .code-indexer/vectors/
+# ℹ️  No containers required - ready to index
+# ✅ Project initialized
+
+# Verify directory structure created
+ls -la .code-indexer/
+# Expected: vectors/ directory exists, NO container ports in config
+
+# Test 2: Verify default configuration
+cat .code-indexer/config.json
+# Expected: "vector_store": {"provider": "filesystem", "path": ".code-indexer/vectors"}
+
+# Test 3: Explicitly request filesystem (same as default)
+cd /tmp/test-project-filesystem
+git init
+cidx init --vector-store filesystem
+
+# Expected: Same as Test 1 (explicit flag redundant with default)
+
+# Test 4: Opt-in to Qdrant (requires explicit flag)
+cd /tmp/test-project-qdrant
+git init
+cidx init --vector-store qdrant
+
+# Expected output:
+# ℹ️  Using Qdrant container backend
+# 🐳 Checking Docker/Podman availability...
+# 📋 Allocating ports for containers...
+# ✅ Qdrant backend initialized
+
+# Test 5: Verify existing projects unaffected
+cd /existing/project/with/qdrant
+cidx status
+# Expected: Uses Qdrant backend (config already specifies provider)
 ```
 
 ## Technical Implementation Details
@@ -246,10 +258,20 @@ class TestFilesystemBackendInitialization:
 
         assert backend.health_check() is False
 
-    def test_backend_factory_creates_correct_backend(self):
-        """GIVEN config with provider='filesystem'
+    def test_default_backend_is_filesystem(self):
+        """GIVEN config without explicit vector_store provider
         WHEN BackendFactory.create_backend() is called
-        THEN FilesystemBackend is created"""
+        THEN FilesystemBackend is created (default)"""
+        config_default = Config()  # No vector_store specified
+
+        backend = VectorStoreBackendFactory.create_backend(config_default)
+
+        assert isinstance(backend, FilesystemBackend)
+
+    def test_backend_factory_creates_correct_backend(self):
+        """GIVEN config with provider='filesystem' or 'qdrant'
+        WHEN BackendFactory.create_backend() is called
+        THEN appropriate backend is created"""
         config_fs = Config(vector_store={'provider': 'filesystem'})
         config_qd = Config(vector_store={'provider': 'qdrant'})
 
@@ -258,6 +280,19 @@ class TestFilesystemBackendInitialization:
 
         assert isinstance(backend_fs, FilesystemBackend)
         assert isinstance(backend_qd, QdrantContainerBackend)
+
+    def test_explicit_filesystem_same_as_default(self):
+        """GIVEN two configs: one with 'filesystem', one default
+        WHEN creating backends
+        THEN both create FilesystemBackend"""
+        config_explicit = Config(vector_store={'provider': 'filesystem'})
+        config_default = Config()  # Defaults to filesystem
+
+        backend_explicit = VectorStoreBackendFactory.create_backend(config_explicit)
+        backend_default = VectorStoreBackendFactory.create_backend(config_default)
+
+        assert type(backend_explicit) == type(backend_default)
+        assert isinstance(backend_explicit, FilesystemBackend)
 
     def test_get_vector_store_client_returns_filesystem_store(self, tmp_path):
         """GIVEN a FilesystemBackend
@@ -307,8 +342,37 @@ class TestFilesystemBackendInitialization:
 
 ## Implementation Notes
 
-**Critical Design Decision:** No port allocation for filesystem backend. The existing port registry code should be skipped entirely when `vector_store.provider == "filesystem"`.
+### Default Backend Behavior
 
-**Backward Compatibility:** Default behavior remains Qdrant to ensure existing workflows continue working without changes.
+**USER REQUIREMENT:** "make sure we specify that if the user doesn't specify the db storage subsystem, we default to filesystem, only if the user asks for qdrant, we use qdrant"
+
+**Default Behavior:**
+- `cidx init` → **Defaults to FILESYSTEM backend** (no --vector-store flag needed)
+- `cidx init --vector-store qdrant` → Explicitly use Qdrant with containers
+- `cidx init --vector-store filesystem` → Explicitly use filesystem (redundant with default)
+
+**Configuration:**
+```python
+@click.option(
+    "--vector-store",
+    type=click.Choice(["qdrant", "filesystem"]),
+    default="filesystem",  # DEFAULT CHANGED: filesystem is now default
+    help="Vector storage backend (default: filesystem - no containers)"
+)
+```
+
+**Rationale:**
+- Filesystem backend eliminates container dependencies (simpler setup)
+- Users explicitly opt-in to Qdrant when they want container-based storage
+- New users get zero-dependency experience by default
+
+**Migration for Existing Users:**
+- Existing projects with Qdrant continue working (config already specifies provider)
+- Only NEW projects default to filesystem
+- No breaking changes to existing installations
+
+### Technical Implementation
+
+**Critical Design Decision:** No port allocation for filesystem backend. The existing port registry code should be skipped entirely when `vector_store.provider == "filesystem"`.
 
 **Directory Placement:** All vectors stored in `.code-indexer/vectors/` to keep alongside existing config files.
