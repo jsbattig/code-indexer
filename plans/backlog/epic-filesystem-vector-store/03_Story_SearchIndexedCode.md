@@ -20,10 +20,12 @@
 1. ✅ `cidx query "search text"` returns semantically similar code chunks
 2. ✅ Search uses quantized path lookup + exact ranking in RAM
 3. ✅ Query performance <1s for 40K vectors (user acceptance criterion)
-4. ✅ Results include similarity scores, file paths, and line ranges
-5. ✅ Support for accuracy modes: `--accuracy fast|balanced|high`
-6. ✅ Support for minimum score threshold: `--min-score 0.8`
-7. ✅ Metadata filtering: `--language python`, `--path "*/tests/*"`
+4. ✅ Results include similarity scores, file paths, line ranges, and **chunk content**
+5. ✅ **Staleness detection:** Results indicate if file modified after indexing (git repos only)
+6. ✅ Support for accuracy modes: `--accuracy fast|balanced|high`
+7. ✅ Support for minimum score threshold: `--min-score 0.8`
+8. ✅ Metadata filtering: `--language python`, `--path "*/tests/*"`
+9. ✅ **Transparent retrieval:** Content always present regardless of storage mode (git blob / chunk_text)
 
 ### Technical Requirements
 1. ✅ Query vector quantized to filesystem path

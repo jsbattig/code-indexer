@@ -20,10 +20,14 @@
 1. ✅ `cidx index` stores vectors as JSON files in `.code-indexer/vectors/`
 2. ✅ Path-as-vector quantization creates directory hierarchy for efficient lookups
 3. ✅ Projection matrix generated once per collection (deterministic, reusable)
-4. ✅ JSON files contain only file references, not chunk text content
+4. ✅ **Smart chunk storage** (transparent, functionally consistent with Qdrant):
+   - Clean git: Only file references + git_blob_hash (space efficient)
+   - Dirty git: File references + chunk_text (ensures correctness)
+   - Non-git: File references + chunk_text (no git fallback)
 5. ✅ Progress reporting shows indexing speed and file counts
 6. ✅ Works with both VoyageAI and Ollama embedding providers
 7. ✅ Branch-aware indexing (separate collections per branch)
+8. ✅ **No git state requirements:** Dirty repos allowed, handled transparently
 
 ### Technical Requirements
 1. ✅ FilesystemVectorStore implements QdrantClient-compatible interface
@@ -32,16 +36,25 @@
 4. ✅ Concurrent vector writes with thread safety
 5. ✅ ID indexing for fast lookups by point ID
 6. ✅ Collection management (create, exists, list collections)
+7. ✅ **Automatic storage mode detection:**
+   - Detect git repo: `git rev-parse --git-dir`
+   - Check clean state: `git status --porcelain`
+   - Apply storage mode: clean git → blob hash | dirty git/non-git → chunk_text
+8. ✅ **Batch git operations:** Collect all blob hashes in single `git ls-tree` command (<500ms for 100 files)
 
 ### Storage Requirements
 **Conversation Reference:** "no chunk data is stored in the json objects, but relative references to the files that contain the chunks" - Storage must only contain file references.
 
 1. ✅ JSON format includes: file_path, start_line, end_line, start_offset, end_offset, chunk_hash
 2. ✅ Full 1536-dim vector stored for exact ranking
-3. ✅ Git-aware storage:
-   - **Git repos:** Store git blob hash, NO chunk text (space efficient)
-   - **Non-git repos:** Store chunk_text in metadata (fallback mode)
-4. ✅ Metadata includes: indexed_at, embedding_model, branch, git_blob_hash (if git)
+3. ✅ **Smart git-aware storage** (functionally consistent with Qdrant):
+   - **Clean git repos:** Store git blob hash, NO chunk text (space efficient)
+   - **Dirty git repos:** Store chunk_text in JSON (like non-git, ensures correctness)
+   - **Non-git repos:** Store chunk_text in JSON (fallback mode)
+4. ✅ Metadata includes: indexed_at, embedding_model, branch
+5. ✅ **Git metadata** (conditional):
+   - `git_blob_hash` - only if indexed from clean git state
+   - `indexed_with_uncommitted_changes` - flag for debugging
 
 ### Chunk Content Retrieval Requirements
 
@@ -50,13 +63,19 @@
 **Implementation Strategy:**
 
 1. ✅ **Transparent retrieval:** `search()` results always include `payload['content']` (identical to Qdrant interface)
-2. ✅ **3-tier fallback for git repos:**
+2. ✅ **Smart storage decision during indexing:**
+   - Detect if git repo: `git rev-parse --git-dir`
+   - Check if clean state: `git status --porcelain`
+   - Clean git → store git_blob_hash (space efficient)
+   - Dirty git → store chunk_text (ensures correctness)
+   - Non-git → store chunk_text
+3. ✅ **3-tier retrieval for clean git:**
    - Try current file (hash verification)
    - Try git blob (fast: `git cat-file -p <blob_hash>`)
    - Return error message if both fail
-3. ✅ **Direct retrieval for non-git repos:** Load chunk_text from JSON metadata
-4. ✅ **Clean git state mandate:** Indexing requires `git status --porcelain` == empty
-5. ✅ **Batch git metadata collection:** Use `git ls-tree -r HEAD` for all blob hashes in single command (~100ms)
+4. ✅ **Direct retrieval for dirty git / non-git:** Load chunk_text from JSON
+5. ✅ **Batch git metadata collection:** Use `git ls-tree -r HEAD` for all blob hashes (~100ms)
+6. ✅ **No git state requirements:** Dirty state allowed, handled transparently
 
 ## Manual Testing Steps
 
@@ -764,19 +783,85 @@ class TestChunkContentRetrieval:
         assert len(results) == 1
         assert results[0]['payload']['content'] == original_content  # From git!
 
-    def test_indexing_requires_clean_git_state(self, tmp_path):
+    def test_dirty_git_state_stores_chunk_text(self, tmp_path):
         """GIVEN git repo with uncommitted changes
-        WHEN attempting to index
-        THEN error raised requiring clean state"""
+        WHEN indexing
+        THEN chunk_text stored (not git_blob_hash) to ensure correctness"""
         subprocess.run(['git', 'init'], cwd=tmp_path)
         test_file = tmp_path / 'test.py'
-        test_file.write_text("def foo(): pass")
-        # Don't commit - leave dirty
+        test_file.write_text("def foo(): pass\n")
+        subprocess.run(['git', 'add', '.'], cwd=tmp_path)
+        subprocess.run(['git', 'commit', '-m', 'initial'], cwd=tmp_path)
+
+        # Modify without committing (dirty state)
+        dirty_content = "def foo(): return 99\n"
+        test_file.write_text(dirty_content)
 
         store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
 
-        with pytest.raises(ValueError, match="uncommitted changes"):
-            store.validate_git_state_before_indexing()
+        points = [{
+            'id': 'test_001',
+            'vector': np.random.randn(1536).tolist(),
+            'payload': {
+                'path': 'test.py',
+                'start_line': 0,
+                'end_line': 1,
+                'content': dirty_content  # Dirty version
+            }
+        }]
+
+        store.upsert_points('test_coll', points)
+
+        # Verify chunk_text stored (not git_blob_hash)
+        json_files = [f for f in (tmp_path / 'test_coll').rglob('*.json')
+                     if 'collection_meta' not in f.name]
+        with open(json_files[0]) as f:
+            data = json.load(f)
+
+        assert 'chunk_text' in data  # Stored like non-git
+        assert data['chunk_text'] == dirty_content
+        assert 'git_blob_hash' not in data  # Not stored for dirty state
+        assert data.get('indexed_with_uncommitted_changes') is True
+
+    def test_clean_git_state_uses_blob_hash(self, tmp_path):
+        """GIVEN clean git repo
+        WHEN indexing
+        THEN git_blob_hash stored (no chunk_text) for space efficiency"""
+        subprocess.run(['git', 'init'], cwd=tmp_path)
+        test_file = tmp_path / 'test.py'
+        content = "def foo(): return 42\n"
+        test_file.write_text(content)
+        subprocess.run(['git', 'add', '.'], cwd=tmp_path)
+        subprocess.run(['git', 'commit', '-m', 'test'], cwd=tmp_path)
+
+        # No modifications - clean state
+
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        points = [{
+            'id': 'test_001',
+            'vector': np.random.randn(1536).tolist(),
+            'payload': {
+                'path': 'test.py',
+                'start_line': 0,
+                'end_line': 1,
+                'content': content
+            }
+        }]
+
+        store.upsert_points('test_coll', points)
+
+        # Verify git_blob_hash stored (no chunk_text)
+        json_files = [f for f in (tmp_path / 'test_coll').rglob('*.json')
+                     if 'collection_meta' not in f.name]
+        with open(json_files[0]) as f:
+            data = json.load(f)
+
+        assert 'git_blob_hash' in data  # Git blob reference
+        assert 'chunk_text' not in data  # Space efficient
+        assert data.get('indexed_with_uncommitted_changes', False) is False
 
     def test_batch_git_metadata_collection_performance(self, tmp_path):
         """GIVEN 100 files to index
@@ -802,9 +887,11 @@ class TestChunkContentRetrieval:
 
 **Additional Coverage:**
 - ✅ Git vs non-git detection
-- ✅ Git blob hash storage (git repos)
-- ✅ Chunk text storage (non-git repos)
+- ✅ Clean vs dirty git state detection
+- ✅ Git blob hash storage (clean git repos only)
+- ✅ Chunk text storage (dirty git / non-git repos)
 - ✅ Content retrieval with current file (fast path)
 - ✅ Content retrieval with git blob fallback
-- ✅ Clean git state validation
+- ✅ Smart storage decision based on git state
 - ✅ Batch git metadata collection performance
+- ✅ `indexed_with_uncommitted_changes` flag for debugging
