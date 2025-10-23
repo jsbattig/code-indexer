@@ -46,6 +46,31 @@
 3. ✅ Efficient JSON loading (parallel reads)
 4. ✅ In-memory filtering and sorting
 
+### Staleness Detection Requirements
+
+**User Requirement:** "we need to return back a flag telling the chunk is 'dirty' so that when cidx returns the result back it tells this file was modified after indexing"
+
+1. ✅ Search results include staleness information (identical interface to Qdrant)
+2. ✅ **FilesystemVectorStore (git repos):** Hash-based staleness detection
+   - Compare current file hash with stored chunk_hash
+   - If mismatch: mark as stale, retrieve from git blob
+   - More precise than mtime (detects actual content changes)
+3. ✅ **FilesystemVectorStore (non-git repos):** Never stale (chunk_text stored in JSON)
+4. ✅ **QdrantClient:** mtime-based staleness (current behavior maintained)
+5. ✅ Staleness info structure (same for both backends):
+   ```python
+   {
+       'is_stale': True/False,
+       'staleness_indicator': '⚠️ Modified' | '🗑️ Deleted' | '❌ Error',
+       'staleness_reason': 'file_modified_after_indexing' | 'file_deleted' | 'retrieval_failed',
+       'hash_mismatch': True  # FilesystemVectorStore only
+       # OR
+       'staleness_delta_seconds': 3600  # QdrantClient only (mtime-based)
+   }
+   ```
+6. ✅ Display shows staleness indicator next to results (already implemented in CLI)
+7. ✅ Staleness detection happens during content retrieval (transparent)
+
 ## Manual Testing Steps
 
 ```bash
@@ -100,6 +125,30 @@ cidx query "xyzabc123nonexistent"
 # Expected output:
 # 🔍 Searching for: "xyzabc123nonexistent"
 # No results found matching your query.
+
+# Test 8: Staleness detection (git repos only)
+# Index file, then modify it
+cidx index
+echo "# Modified after indexing" >> src/auth/login.py
+
+cidx query "authentication logic"
+
+# Expected output:
+# 1. Score: 0.89 | ⚠️ Modified src/auth/login.py:42-87
+#    [Original content from git blob shown]
+#    (File modified after indexing - showing indexed version)
+#
+# Staleness indicator shows file was modified
+
+# Test 9: Non-git repo (no staleness)
+cd /tmp/non-git-project
+cidx init --vector-store filesystem
+cidx index
+# Modify file
+echo "# Modified" >> file.py
+cidx query "test"
+
+# Expected: No staleness indicator (chunk_text stored in JSON, always current)
 ```
 
 ## Technical Implementation Details
@@ -704,6 +753,115 @@ class TestSemanticSearchWithRealFilesystem:
 
         # All searches succeed and return 5 results
         assert all(len(r) == 5 for r in results)
+
+class TestStalenessDetection:
+    """Test staleness detection for both backends."""
+
+    def test_filesystem_detects_modified_file_via_hash(self, tmp_path):
+        """GIVEN indexed file later modified
+        WHEN searching
+        THEN staleness detected via hash mismatch"""
+        subprocess.run(['git', 'init'], cwd=tmp_path)
+        test_file = tmp_path / 'test.py'
+        original = "def foo():\n    return 42\n"
+        test_file.write_text(original)
+        subprocess.run(['git', 'add', '.'], cwd=tmp_path)
+        subprocess.run(['git', 'commit', '-m', 'test'], cwd=tmp_path)
+
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+        store.upsert_points('test_coll', [{
+            'id': 'test_001',
+            'vector': np.random.randn(1536).tolist(),
+            'payload': {'path': 'test.py', 'start_line': 0, 'end_line': 2,
+                       'content': original}
+        }])
+
+        # Modify file
+        test_file.write_text("def foo():\n    return 99\n")
+
+        # Search
+        results = store.search('test_coll', np.random.randn(1536), limit=1)
+
+        # Staleness detected
+        assert results[0]['staleness']['is_stale'] is True
+        assert results[0]['staleness']['staleness_indicator'] == '⚠️ Modified'
+        assert results[0]['staleness']['hash_mismatch'] is True
+        assert results[0]['payload']['content'] == original  # From git blob
+
+    def test_filesystem_non_git_never_stale(self, tmp_path):
+        """GIVEN non-git repo with chunk_text in JSON
+        WHEN searching
+        THEN staleness always False (content in JSON)"""
+        # No git init
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+
+        store.upsert_points('test_coll', [{
+            'id': 'test_001',
+            'vector': np.random.randn(1536).tolist(),
+            'payload': {'path': 'test.py', 'content': 'test content'}
+        }])
+
+        results = store.search('test_coll', np.random.randn(1536), limit=1)
+
+        assert results[0]['staleness']['is_stale'] is False
+
+    def test_filesystem_detects_deleted_file(self, tmp_path):
+        """GIVEN indexed file later deleted
+        WHEN searching
+        THEN staleness indicates deletion, content from git"""
+        subprocess.run(['git', 'init'], cwd=tmp_path)
+        test_file = tmp_path / 'test.py'
+        content = "def foo(): pass"
+        test_file.write_text(content)
+        subprocess.run(['git', 'add', '.'], cwd=tmp_path)
+        subprocess.run(['git', 'commit', '-m', 'test'], cwd=tmp_path)
+
+        store = FilesystemVectorStore(tmp_path, config)
+        store.create_collection('test_coll', 1536)
+        store.upsert_points('test_coll', [{
+            'id': 'test_001',
+            'vector': np.random.randn(1536).tolist(),
+            'payload': {'path': 'test.py', 'start_line': 0, 'end_line': 1,
+                       'content': content}
+        }])
+
+        # Delete file
+        test_file.unlink()
+
+        results = store.search('test_coll', np.random.randn(1536), limit=1)
+
+        assert results[0]['staleness']['is_stale'] is True
+        assert results[0]['staleness']['staleness_indicator'] == '🗑️ Deleted'
+        assert results[0]['staleness']['staleness_reason'] == 'file_deleted'
+        assert results[0]['payload']['content'] == content  # From git
+
+    def test_staleness_interface_matches_qdrant(self):
+        """GIVEN search results from both backends
+        WHEN staleness info is present
+        THEN structure is identical (same keys, same format)"""
+        # This validates interface compatibility
+
+        filesystem_staleness = {
+            'is_stale': True,
+            'staleness_indicator': '⚠️ Modified',
+            'staleness_reason': 'file_modified_after_indexing',
+            'hash_mismatch': True
+        }
+
+        qdrant_staleness = {
+            'is_stale': True,
+            'staleness_indicator': '⚠️ Modified',
+            'staleness_reason': 'file_modified_after_indexing',
+            'staleness_delta_seconds': 3600
+        }
+
+        # Both have required keys
+        for staleness in [filesystem_staleness, qdrant_staleness]:
+            assert 'is_stale' in staleness
+            assert 'staleness_indicator' in staleness
+            assert 'staleness_reason' in staleness
 ```
 
 **Coverage Requirements:**
@@ -716,6 +874,9 @@ class TestSemanticSearchWithRealFilesystem:
 - ✅ Empty results handling
 - ✅ Concurrent queries (thread safety)
 - ✅ Neighbor bucket search effectiveness
+- ✅ **Staleness detection (hash-based for git, never stale for non-git)**
+- ✅ **Staleness indicator display compatibility**
+- ✅ **Content retrieval from git blob on staleness**
 
 **Test Data:**
 - Known semantic relationships (auth vs db chunks)
