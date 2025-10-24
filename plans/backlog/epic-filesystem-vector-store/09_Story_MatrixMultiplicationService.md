@@ -1,10 +1,10 @@
-# Story 10: Matrix Multiplication Resident Service
+# Story 9: Matrix Multiplication Resident Service
 
-**Story ID:** S10
+**Story ID:** S09
 **Epic:** Filesystem-Based Vector Database Backend
 **Priority:** High
 **Estimated Effort:** 5-7 days
-**Implementation Order:** 10
+**Implementation Order:** 9
 
 ## User Story
 
