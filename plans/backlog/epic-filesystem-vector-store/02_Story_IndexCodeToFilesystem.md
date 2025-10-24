@@ -17,7 +17,7 @@
 ## Acceptance Criteria
 
 ### Functional Requirements
-1. ✅ `cidx index` stores vectors as JSON files in `.code-indexer/vectors/`
+1. ✅ `cidx index` stores vectors as JSON files in `.code-indexer/index/`
 2. ✅ Path-as-vector quantization creates directory hierarchy for efficient lookups
 3. ✅ Projection matrix generated once per collection (deterministic, reusable)
 4. ✅ **Smart chunk storage** (transparent, functionally consistent with Qdrant):
@@ -86,18 +86,18 @@ cidx init --vector-store filesystem
 cidx index
 
 # Expected output:
-# ℹ️ Using filesystem vector store at .code-indexer/vectors/
+# ℹ️ Using filesystem vector store at .code-indexer/index/
 # ℹ️ Creating projection matrix for collection...
 # ⏳ Indexing files: [=========>  ] 45/100 files (45%) | 12 emb/s | file.py
 # ✅ Indexed 100 files, 523 vectors to filesystem
-# 📁 Vectors stored in .code-indexer/vectors/voyage-code-3/
+# 📁 Vectors stored in .code-indexer/index/voyage-code-3/
 
 # Verify directory structure
-ls -la .code-indexer/vectors/voyage-code-3/
+ls -la .code-indexer/index/voyage-code-3/
 # Expected: projection_matrix.npy, collection_meta.json, [hex directories]
 
 # Test 2: Verify JSON structure (no chunk text)
-cat .code-indexer/vectors/voyage-code-3/a3/b7/2f/vector_abc123.json
+cat .code-indexer/index/voyage-code-3/a3/b7/2f/vector_abc123.json
 # Expected JSON:
 # {
 #   "id": "file.py:42-87:hash",
@@ -124,7 +124,7 @@ git checkout feature-branch
 cidx index
 # Expected: Separate collection for feature-branch
 
-ls .code-indexer/vectors/
+ls .code-indexer/index/
 # Expected: voyage-code-3_main/, voyage-code-3_feature-branch/
 
 # Test 5: Multi-provider support

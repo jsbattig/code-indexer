@@ -42,7 +42,7 @@ Replace the container-based Qdrant vector database with a zero-dependency filesy
 
 **Storage Structure:**
 ```
-.code-indexer/vectors/{collection_name}/
+.code-indexer/index/{collection_name}/
 ├── projection_matrix.json       # Deterministic projection matrix
 ├── a3/                          # First level (depth factor determines split)
 │   ├── b7/                      # Second level
@@ -207,7 +207,7 @@ class VectorStoreBackend(ABC):
 ## Acceptance Criteria
 
 1. ✅ Zero containers required for operation
-2. ✅ Vector index stored in `.code-indexer/vectors/`
+2. ✅ Vector index stored in `.code-indexer/index/`
 3. ✅ Git-trackable JSON files
 4. ✅ Query performance <1s for 40K vectors
 5. ✅ Drop-in replacement via `--vector-store filesystem` flag

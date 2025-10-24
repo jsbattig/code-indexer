@@ -20,7 +20,7 @@
 1. ✅ `cidx init` (no flag) creates filesystem backend configuration (DEFAULT BEHAVIOR)
 2. ✅ `cidx init --vector-store filesystem` explicitly creates filesystem backend (same as default)
 3. ✅ `cidx init --vector-store qdrant` opts into Qdrant backend with containers
-4. ✅ Creates `.code-indexer/vectors/` directory structure for filesystem backend
+4. ✅ Creates `.code-indexer/index/` directory structure for filesystem backend
 5. ✅ Generates configuration file without port allocations for filesystem
 6. ✅ Backend abstraction layer supports both Qdrant and filesystem backends
 7. ✅ Existing projects with Qdrant config continue to work (no breaking changes)
@@ -76,17 +76,17 @@ cidx init
 
 # Expected output:
 # ✅ Filesystem backend initialized (default)
-# 📁 Vectors will be stored in .code-indexer/vectors/
+# 📁 Vectors will be stored in .code-indexer/index/
 # ℹ️  No containers required - ready to index
 # ✅ Project initialized
 
 # Verify directory structure created
 ls -la .code-indexer/
-# Expected: vectors/ directory exists, NO container ports in config
+# Expected: index/ directory exists, NO container ports in config
 
 # Test 2: Verify default configuration
 cat .code-indexer/config.json
-# Expected: "vector_store": {"provider": "filesystem", "path": ".code-indexer/vectors"}
+# Expected: "vector_store": {"provider": "filesystem", "path": ".code-indexer/index"}
 
 # Test 3: Explicitly request filesystem (same as default)
 cd /tmp/test-project-filesystem
@@ -144,8 +144,8 @@ class VectorStoreBackend(ABC):
 # FilesystemBackend implementation
 class FilesystemBackend(VectorStoreBackend):
     def initialize(self, config: Dict) -> bool:
-        """Create .code-indexer/vectors/ directory."""
-        self.base_path = Path(config.codebase_dir) / ".code-indexer" / "vectors"
+        """Create .code-indexer/index/ directory."""
+        self.base_path = Path(config.codebase_dir) / ".code-indexer" / "index"
         self.base_path.mkdir(parents=True, exist_ok=True)
         return True
 
@@ -199,13 +199,15 @@ class VectorStoreBackendFactory:
 @dataclass
 class VectorStoreConfig:
     provider: str = "filesystem"  # "qdrant" or "filesystem" (default: filesystem)
-    filesystem_path: Optional[str] = ".code-indexer/vectors"
+    filesystem_path: Optional[str] = ".code-indexer/index"  # Updated location
     depth_factor: int = 4  # From POC results
     reduced_dimensions: int = 64
     quantization_bits: int = 2
 ```
 
 **Note:** New configs default to "filesystem", but missing provider field defaults to "qdrant" for backward compatibility.
+
+**Directory Location:** All filesystem-based indexes stored in `.code-indexer/index/` subdirectory within the indexed repository.
 
 ### CLI Integration
 
@@ -506,4 +508,4 @@ class TestCommandBehaviorWithFilesystemBackend:
 
 **Critical Design Decision:** No port allocation for filesystem backend. The existing port registry code should be skipped entirely when `vector_store.provider == "filesystem"`.
 
-**Directory Placement:** All vectors stored in `.code-indexer/vectors/` to keep alongside existing config files.
+**Directory Placement:** All filesystem-based vector indexes stored in `.code-indexer/index/` subdirectory within the indexed repository. This keeps the index data organized separately from configuration files while remaining in the same .code-indexer structure.

@@ -19,7 +19,7 @@
 ### Functional Requirements
 1. ✅ `cidx clean` removes all vectors from current collection
 2. ✅ `cidx clean --collection <name>` cleans specific collection
-3. ✅ `cidx uninstall` removes entire `.code-indexer/vectors/` directory
+3. ✅ `cidx uninstall` removes entire `.code-indexer/index/` directory
 4. ✅ Collection deletion preserves projection matrix (optional flag to remove)
 5. ✅ List collections with metadata
 6. ✅ Clear confirmation prompts before destructive operations
@@ -56,7 +56,7 @@ cidx clean
 # 📁 Collection structure preserved (projection matrix retained)
 
 # Verify vectors removed but structure intact
-ls .code-indexer/vectors/voyage-code-3_main/
+ls .code-indexer/index/voyage-code-3_main/
 # Expected: projection_matrix.npy, collection_meta.json (no vector files)
 
 # Test 2: Clean specific collection
@@ -77,7 +77,7 @@ cidx clean --collection voyage-code-3_main --delete-collection
 # ✅ Deleted collection: voyage-code-3_main
 
 # Verify collection directory removed
-ls .code-indexer/vectors/
+ls .code-indexer/index/
 # Expected: voyage-code-3_main/ no longer exists
 
 # Test 4: Uninstall entire backend
@@ -88,7 +88,7 @@ cidx uninstall
 #    Collections: 2
 #    Total Vectors: 1,247
 #    Storage: 15.3 MB
-#    Path: /path/to/repo/.code-indexer/vectors/
+#    Path: /path/to/repo/.code-indexer/index/
 #
 # This operation cannot be undone!
 # Are you sure? (y/N):
@@ -109,7 +109,7 @@ cidx clean --force
 cidx collections
 
 # Expected output:
-# 📚 Collections in .code-indexer/vectors/:
+# 📚 Collections in .code-indexer/index/:
 #   1. voyage-code-3_main
 #      Vectors: 852
 #      Created: 2025-01-23 10:15:00
@@ -710,7 +710,7 @@ Confirmation should show:
 
 After `uninstall`, provide helpful git commands:
 ```bash
-git rm -r .code-indexer/vectors/
+git rm -r .code-indexer/index/
 git commit -m 'Remove filesystem vector index'
 ```
 
