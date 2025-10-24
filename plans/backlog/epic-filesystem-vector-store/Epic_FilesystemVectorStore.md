@@ -155,7 +155,7 @@ class VectorStoreBackend(ABC):
 
 ## Stories Overview
 
-**Epic Structure:** 9 user-value stories (S00-S08) focused on end-to-end testable functionality via `cidx` CLI.
+**Epic Structure:** 10 user-value stories (S00-S09) focused on end-to-end testable functionality via `cidx` CLI.
 
 | ID | Story | Priority | Estimated Effort | Implementation Order |
 |----|-------|----------|------------------|---------------------|
@@ -168,8 +168,9 @@ class VectorStoreBackend(ABC):
 | S06 | Seamless Start and Stop Operations | High | 2-3 days | 7 |
 | S07 | Multi-Provider Support with Filesystem Backend | Medium | 2-3 days | 8 |
 | S08 | Switch Between Qdrant and Filesystem Backends | High | 2-3 days | 9 |
+| S09 | Matrix Multiplication Resident Service | High | 5-7 days | 10 |
 
-**Total Estimated Effort:** 30-44 days
+**Total Estimated Effort:** 35-51 days
 
 ## Dependencies
 
