@@ -33,6 +33,32 @@
 3. ✅ QdrantContainerBackend wraps existing Docker/Qdrant functionality
 4. ✅ VectorStoreBackendFactory creates appropriate backend from config
 5. ✅ Configuration schema includes `vector_store.provider` field
+6. ✅ **Backward compatibility:** If `vector_store.provider` not in config, assume `"qdrant"`
+   - Old configs (created before filesystem support) default to Qdrant
+   - Ensures existing installations continue working without changes
+
+### Command Behavior Matrix
+
+**User Requirement:** "you will need to ensure we have a matrix/table created in a story to specific exactly how commands that are qdrant bound/docker bound needs to behave in the context of filesystem db"
+
+| Command | Filesystem Backend | Qdrant Backend | Notes |
+|---------|-------------------|----------------|-------|
+| `cidx init` | Creates `.code-indexer/vectors/` | Creates config, allocates ports | Default changed to filesystem |
+| `cidx start` | ✅ Succeeds immediately (no-op) | Starts Docker containers | Filesystem: logs "No services to start" |
+| `cidx stop` | ✅ Succeeds immediately (no-op) | Stops Docker containers | Filesystem: logs "No services to stop" |
+| `cidx status` | Shows filesystem stats (files, size) | Shows container status, Qdrant stats | Different info, same structure |
+| `cidx index` | Writes to `.code-indexer/vectors/` | Writes to Qdrant containers | Identical interface |
+| `cidx query` | Reads from filesystem | Reads from Qdrant | Identical interface |
+| `cidx clean` | Deletes collection directory | Deletes Qdrant collection | Identical behavior |
+| `cidx uninstall` | Removes `.code-indexer/vectors/` | Stops/removes containers | Cleans up backend |
+| `cidx optimize` | ✅ Succeeds immediately (no-op) | Triggers Qdrant optimization | Filesystem: logs "No optimization needed" |
+| `cidx force-flush` | ✅ Succeeds immediately (no-op) | Forces Qdrant flush | Filesystem: logs "Already on disk" |
+
+**Transparent Success Pattern:**
+- Docker/Qdrant-specific commands succeed silently when using filesystem backend
+- No errors, no warnings (unless --verbose)
+- Optional informational message: "Filesystem backend - no X needed"
+- User workflow unaffected by backend choice
 
 ### User Experience
 1. Clear feedback during initialization showing filesystem backend selection
@@ -138,17 +164,48 @@ class QdrantContainerBackend(VectorStoreBackend):
         return self.docker_manager.start_containers()
 ```
 
+### Backend Factory with Backward Compatibility
+
+```python
+class VectorStoreBackendFactory:
+    """Factory for creating appropriate backend with backward compatibility."""
+
+    @staticmethod
+    def create_backend(config: Config) -> VectorStoreBackend:
+        """Create backend based on configuration.
+
+        Backward compatibility: If vector_store.provider not in config,
+        assume 'qdrant' (old configs created before filesystem support).
+        """
+        # Get provider from config, default to 'qdrant' for old configs
+        if hasattr(config, 'vector_store') and config.vector_store:
+            provider = config.vector_store.get('provider', 'qdrant')
+        else:
+            # Old config without vector_store section → Qdrant
+            provider = 'qdrant'
+
+        if provider == 'filesystem':
+            return FilesystemBackend(config)
+        elif provider == 'qdrant':
+            docker_manager = DockerManager(config)
+            return QdrantContainerBackend(docker_manager, config)
+        else:
+            raise ValueError(f"Unknown backend provider: {provider}")
+```
+
 ### Configuration Schema Changes
 
 ```python
 @dataclass
 class VectorStoreConfig:
-    provider: str = "qdrant"  # "qdrant" or "filesystem"
+    provider: str = "filesystem"  # "qdrant" or "filesystem" (default: filesystem)
     filesystem_path: Optional[str] = ".code-indexer/vectors"
     depth_factor: int = 4  # From POC results
     reduced_dimensions: int = 64
     quantization_bits: int = 2
 ```
+
+**Note:** New configs default to "filesystem", but missing provider field defaults to "qdrant" for backward compatibility.
 
 ### CLI Integration
 
@@ -293,6 +350,80 @@ class TestFilesystemBackendInitialization:
 
         assert type(backend_explicit) == type(backend_default)
         assert isinstance(backend_explicit, FilesystemBackend)
+
+    def test_legacy_config_without_provider_defaults_to_qdrant(self, tmp_path):
+        """GIVEN old config file without vector_store.provider field
+        WHEN loading config and creating backend
+        THEN Qdrant backend is created (backward compatibility)"""
+        # Simulate old config file (no vector_store section)
+        old_config = {
+            'codebase_dir': str(tmp_path),
+            'embedding_provider': 'voyage-ai',
+            'qdrant': {
+                'host': 'http://localhost:6333',
+                'collection_base_name': 'code_index'
+            }
+            # NO vector_store field - old config
+        }
+
+        config_path = tmp_path / '.code-indexer' / 'config.json'
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_path, 'w') as f:
+            json.dump(old_config, f)
+
+        # Load and create backend
+        config = Config.from_file(config_path)
+        backend = VectorStoreBackendFactory.create_backend(config)
+
+        # Should default to Qdrant for backward compatibility
+        assert isinstance(backend, QdrantContainerBackend)
+
+class TestCommandBehaviorWithFilesystemBackend:
+    """Test Docker/Qdrant-specific command behavior with filesystem backend."""
+
+    def test_start_command_succeeds_immediately(self, tmp_path):
+        """GIVEN filesystem backend
+        WHEN start() is called
+        THEN succeeds immediately with no-op"""
+        backend = FilesystemBackend(config)
+
+        start_time = time.perf_counter()
+        result = backend.start()
+        duration = time.perf_counter() - start_time
+
+        assert result is True
+        assert duration < 0.01  # Immediate
+
+    def test_stop_command_succeeds_immediately(self, tmp_path):
+        """GIVEN filesystem backend
+        WHEN stop() is called
+        THEN succeeds immediately with no-op"""
+        backend = FilesystemBackend(config)
+
+        result = backend.stop()
+
+        assert result is True  # Transparent success
+
+    def test_optimize_command_behavior(self, tmp_path):
+        """GIVEN filesystem backend
+        WHEN optimize operation requested
+        THEN succeeds immediately (no optimization needed)"""
+        store = FilesystemVectorStore(tmp_path, config)
+
+        # optimize_collection should succeed as no-op
+        result = store.optimize_collection('test_coll')
+
+        assert result is True
+
+    def test_force_flush_command_behavior(self, tmp_path):
+        """GIVEN filesystem backend
+        WHEN force_flush operation requested
+        THEN succeeds immediately (already on disk)"""
+        store = FilesystemVectorStore(tmp_path, config)
+
+        result = store.force_flush_to_disk('test_coll')
+
+        assert result is True
 
     def test_get_vector_store_client_returns_filesystem_store(self, tmp_path):
         """GIVEN a FilesystemBackend
