@@ -272,6 +272,20 @@ class AutoRecoveryConfig(BaseModel):
     )
 
 
+class VectorStoreConfig(BaseModel):
+    """Configuration for vector storage backend.
+
+    Determines which vector storage backend to use:
+    - filesystem: Container-free storage using local filesystem
+    - qdrant: Container-based storage using Docker/Podman + Qdrant
+    """
+
+    provider: Literal["filesystem", "qdrant"] = Field(
+        default="filesystem",
+        description="Vector storage provider: 'filesystem' for container-free, 'qdrant' for containers"
+    )
+
+
 class Config(BaseModel):
     """Main configuration for Code Indexer."""
 
@@ -378,6 +392,12 @@ class Config(BaseModel):
     embedding_provider: Literal["ollama", "voyage-ai"] = Field(
         default="ollama",
         description="Embedding provider to use: 'ollama' for local Ollama, 'voyage-ai' for VoyageAI API",
+    )
+
+    # Vector storage backend selection
+    vector_store: Optional[VectorStoreConfig] = Field(
+        default=None,
+        description="Vector storage backend configuration (default: filesystem)",
     )
 
     # Provider-specific configurations
@@ -794,7 +814,7 @@ code-indexer index --clear
                     raise PermissionError(
                         f"Cannot read configuration file {config_file}: {e}"
                     )
-                except OSError as e:
+                except OSError:
                     # Handle other OS errors (broken symlinks, etc.)
                     if not config_file.exists():
                         # File disappeared during processing (broken symlink, etc.)

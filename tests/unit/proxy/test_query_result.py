@@ -5,7 +5,6 @@ from individual repositories with proper metadata preservation.
 """
 
 import pytest
-from pathlib import Path
 from dataclasses import asdict
 
 from code_indexer.proxy.query_result import QueryResult

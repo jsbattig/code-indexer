@@ -5,7 +5,7 @@ from parallel command executions and calculates overall exit codes.
 """
 
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from code_indexer.proxy.result_aggregator import ParallelResultAggregator
 

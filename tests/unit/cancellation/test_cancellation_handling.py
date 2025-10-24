@@ -99,7 +99,7 @@ class TestCancellationHandling:
             processor = HighThroughputProcessor(
                 config=self.config,
                 embedding_provider=self.mock_embedding_provider,
-                qdrant_client=self.mock_qdrant,
+                vector_store_client=self.mock_qdrant,
             )
 
             # Track progress calls and simulate cancellation after processing 3 files
@@ -232,7 +232,7 @@ class TestCancellationHandling:
             processor = HighThroughputProcessor(
                 config=self.config,
                 embedding_provider=self.mock_embedding_provider,
-                qdrant_client=self.mock_qdrant,
+                vector_store_client=self.mock_qdrant,
             )
 
             # Track progress calls without cancellation

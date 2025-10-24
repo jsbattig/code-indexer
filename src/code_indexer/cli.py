@@ -25,6 +25,7 @@ from .services.smart_indexer import SmartIndexer
 from .services.generic_query_service import GenericQueryService
 from .services.language_mapper import LanguageMapper
 from .services.language_validator import LanguageValidator
+from .backends.backend_factory import BackendFactory
 from .services.claude_integration import (
     ClaudeIntegrationService,
     check_claude_sdk_availability,
@@ -996,6 +997,12 @@ def cli(
     is_flag=True,
     help="Initialize as proxy directory for managing multiple indexed repositories",
 )
+@click.option(
+    "--vector-store",
+    type=click.Choice(["filesystem", "qdrant"], case_sensitive=False),
+    default="filesystem",
+    help="Vector storage backend: 'filesystem' (container-free) or 'qdrant' (containers required)",
+)
 @click.pass_context
 def init(
     ctx,
@@ -1012,6 +1019,7 @@ def init(
     username: Optional[str],
     password: Optional[str],
     proxy_mode: bool,
+    vector_store: str,
 ):
     """Initialize code indexing in current directory (OPTIONAL).
 
@@ -1256,11 +1264,53 @@ def init(
             raise
 
     # Check if config already exists
-    if config_manager.config_path.exists() and not force:
+    if config_manager.config_path.exists():
+        # Load existing config to check for backend changes
+        existing_config = config_manager.load()
+        existing_backend = (
+            existing_config.vector_store.provider
+            if existing_config.vector_store
+            else "qdrant"  # Default if not set
+        )
+
+        # Check if switching backends with --force
+        if force and existing_backend != vector_store:
+            console.print(
+                "⚠️  Backend switch detected: {} → {}".format(
+                    existing_backend, vector_store
+                ),
+                style="yellow bold",
+            )
+            console.print()
+            console.print(
+                "🔄 Switching vector storage backends requires:", style="yellow"
+            )
+            console.print("   • Removing existing vector index data", style="blue")
+            console.print("   • Re-indexing your entire codebase", style="blue")
+            console.print("   • Your source code files are preserved", style="green")
+            console.print()
+            console.print(
+                "💡 Recommended workflow for backend switching:", style="cyan"
+            )
+            console.print("   1. cidx stop", style="dim")
+            console.print("   2. cidx uninstall --confirm", style="dim")
+            console.print(f"   3. cidx init --vector-store {vector_store}", style="dim")
+            console.print("   4. cidx start", style="dim")
+            console.print("   5. cidx index", style="dim")
+            console.print()
+
+            from rich.prompt import Confirm
+
+            if not Confirm.ask(
+                "Proceed with backend switch (will overwrite config)?", default=False
+            ):
+                console.print("❌ Backend switch cancelled", style="yellow")
+                sys.exit(0)
+
         # Special case: if only --create-override-file is requested, allow it
-        if create_override_file:
+        if not force and create_override_file:
             # Load existing config and create override file
-            config = config_manager.load()
+            config = existing_config
             project_root = config.codebase_dir
             if _create_default_override_file(project_root, force=False):
                 console.print(
@@ -1271,7 +1321,7 @@ def init(
                 console.print("📝 Override file already exists, not overwriting")
                 console.print("Use --force to overwrite existing override file")
             return
-        else:
+        elif not force:
             console.print(
                 f"❌ Configuration already exists at {config_manager.config_path}"
             )
@@ -1316,16 +1366,21 @@ def init(
             else:
                 embedding_provider = "ollama"
 
-        # Create default config with relative path for CoW clone compatibility
-        # Use "." for current directory to ensure CoW clones work without intervention
-        config = Config(codebase_dir=Path("."))
+        # Create default config with target_dir for proper initialization
+        # target_dir respects --codebase-dir parameter
+        config = Config(codebase_dir=target_dir)
         config_manager._config = config
 
         # Update config with provided options
-        updates = {}
+        updates: Dict[str, Any] = {}
 
         # Set embedding provider
         updates["embedding_provider"] = embedding_provider
+
+        # Set vector store backend
+        from .config import VectorStoreConfig
+
+        updates["vector_store"] = VectorStoreConfig(provider=vector_store).model_dump()
 
         # Provider-specific configuration
         if embedding_provider == "voyage-ai":
@@ -1367,6 +1422,17 @@ def init(
         if isinstance(qdrant_config, dict):
             qdrant_config["max_segment_size_kb"] = segment_size_kb
 
+        # Conditionally allocate ports based on vector store backend
+        # Filesystem backend doesn't need containers, so no port allocation
+        if vector_store == "filesystem":
+            # Create ProjectPortsConfig with all None values for filesystem backend
+            # Don't set to None directly as that causes Pydantic validation errors
+            from .config import ProjectPortsConfig
+
+            updates["project_ports"] = ProjectPortsConfig(
+                qdrant_port=None, ollama_port=None, data_cleaner_port=None
+            )
+
         # Apply updates if any
         if updates:
             config = config_manager.update_config(**updates)
@@ -1374,9 +1440,25 @@ def init(
         # Save with documentation
         config_manager.save_with_documentation(config)
 
+        # Initialize vector storage backend
+        from .backends.backend_factory import BackendFactory
+
+        backend = BackendFactory.create(config=config, project_root=config.codebase_dir)
+        try:
+            backend.initialize()
+            console.print(
+                f"✅ Initialized {config.vector_store.provider} vector storage backend"  # type: ignore
+            )
+        except Exception as e:
+            console.print(
+                f"⚠️  Warning: Failed to initialize backend: {e}", style="yellow"
+            )
+
         # Create qdrant storage directory proactively during init to prevent race condition
-        project_qdrant_dir = config.codebase_dir / ".code-indexer" / "qdrant"
-        project_qdrant_dir.mkdir(parents=True, exist_ok=True)
+        # Only needed for qdrant backend
+        if config.vector_store and config.vector_store.provider == "qdrant":  # type: ignore
+            project_qdrant_dir = config.codebase_dir / ".code-indexer" / "qdrant"
+            project_qdrant_dir.mkdir(parents=True, exist_ok=True)
 
         # Create override file (by default or if explicitly requested)
         project_root = config.codebase_dir
@@ -1635,39 +1717,69 @@ def start(
         # Save updated configuration
         config_manager.save(config)
 
-        # Check Docker availability (auto-detect project name)
-        project_config_dir = config_manager.config_path.parent
-        docker_manager = DockerManager(
-            setup_console,
-            force_docker=force_docker,
-            project_config_dir=project_config_dir,
-        )
+        # Create backend based on configuration
+        backend = BackendFactory.create(config, Path(config.codebase_dir))
+        backend_info = backend.get_service_info()
 
-        # Ensure project has container names and ports configured
-        project_root = config.codebase_dir
-        project_config = docker_manager.ensure_project_configuration(
-            config_manager, project_root
-        )
+        # Check if backend requires containers
+        requires_containers = backend_info.get("requires_containers", False)
 
-        setup_console.print(
-            f"📋 Project containers: {project_config['qdrant_name'][:12]}...",
-            style="dim",
-        )
-        # Display assigned ports for active services only
-        port_display = []
-        if "qdrant_port" in project_config:
-            port_display.append(f"Qdrant={project_config['qdrant_port']}")
-        if "ollama_port" in project_config:
-            port_display.append(f"Ollama={project_config['ollama_port']}")
-        if "data_cleaner_port" in project_config:
-            port_display.append(f"DataCleaner={project_config['data_cleaner_port']}")
+        if requires_containers:
+            # Qdrant backend - use existing Docker flow
+            setup_console.print("🔧 Using Qdrant vector store (containers required)")
 
-        if port_display:
-            setup_console.print(
-                f"🔌 Assigned ports: {', '.join(port_display)}",
-                style="dim",
+            # Check Docker availability (auto-detect project name)
+            project_config_dir = config_manager.config_path.parent
+            docker_manager = DockerManager(
+                setup_console,
+                force_docker=force_docker,
+                project_config_dir=project_config_dir,
             )
 
+            # Ensure project has container names and ports configured
+            project_root = config.codebase_dir
+            project_config = docker_manager.ensure_project_configuration(
+                config_manager, project_root
+            )
+
+            setup_console.print(
+                f"📋 Project containers: {project_config['qdrant_name'][:12]}...",
+                style="dim",
+            )
+            # Display assigned ports for active services only
+            port_display = []
+            if "qdrant_port" in project_config:
+                port_display.append(f"Qdrant={project_config['qdrant_port']}")
+            if "ollama_port" in project_config:
+                port_display.append(f"Ollama={project_config['ollama_port']}")
+            if "data_cleaner_port" in project_config:
+                port_display.append(
+                    f"DataCleaner={project_config['data_cleaner_port']}"
+                )
+
+            if port_display:
+                setup_console.print(
+                    f"🔌 Assigned ports: {', '.join(port_display)}",
+                    style="dim",
+                )
+        else:
+            # Filesystem backend - no containers needed
+            setup_console.print("📁 Using filesystem vector store (container-free)")
+            setup_console.print(
+                f"💾 Index directory: {backend_info.get('vectors_dir', 'N/A')}"
+            )
+
+            # Call backend start (no-op for filesystem)
+            if backend.start():
+                setup_console.print("✅ Filesystem backend ready")
+                return
+            else:
+                setup_console.print(
+                    "❌ Failed to start filesystem backend", style="red"
+                )
+                sys.exit(1)
+
+        # Continue with Docker checks only for Qdrant backend
         if not docker_manager.is_docker_available():
             if force_docker:
                 setup_console.print(
@@ -1974,8 +2086,13 @@ def index(
         config = config_manager.load()
 
         # Initialize services
+        from .backends.backend_factory import BackendFactory
+
         embedding_provider = EmbeddingProviderFactory.create(config, console)
-        qdrant_client = QdrantClient(config.qdrant, console, Path(config.codebase_dir))
+        backend = BackendFactory.create(
+            config=config, project_root=Path(config.codebase_dir)
+        )
+        vector_store_client = backend.get_vector_store_client()
 
         # Health checks
         if not embedding_provider.health_check():
@@ -1984,15 +2101,18 @@ def index(
             console.print(error_message, style="red")
             sys.exit(1)
 
-        if not qdrant_client.health_check():
-            error_message = get_service_unavailable_message("Qdrant", "cidx start")
+        if not backend.health_check():
+            provider = config.vector_store.provider if config.vector_store else "Qdrant"
+            error_message = get_service_unavailable_message(
+                provider.title(), "cidx start"
+            )
             console.print(error_message, style="red")
             sys.exit(1)
 
         # Initialize smart indexer with progressive metadata
         metadata_path = config_manager.config_path.parent / "metadata.json"
         smart_indexer = SmartIndexer(
-            config, embedding_provider, qdrant_client, metadata_path
+            config, embedding_provider, vector_store_client, metadata_path
         )
 
         # Get git status and display
@@ -2193,13 +2313,13 @@ def index(
                 interrupt_handler = handler
 
                 # Get collection name for operations
-                collection_name = qdrant_client.resolve_collection_name(
+                collection_name = vector_store_client.resolve_collection_name(
                     config, embedding_provider
                 )
 
                 # Handle rebuild indexes flag
                 if rebuild_indexes:
-                    if qdrant_client.rebuild_payload_indexes(collection_name):
+                    if vector_store_client.rebuild_payload_indexes(collection_name):
                         console.print("Index rebuild completed successfully")
                     else:
                         console.print("Index rebuild failed - check logs for details")
@@ -2209,7 +2329,7 @@ def index(
                 # For non-clear operations, ensure payload indexes exist before indexing
                 # For --clear operations, skip this since collection will be recreated fresh
                 if not clear:
-                    qdrant_client.ensure_payload_indexes(
+                    vector_store_client.ensure_payload_indexes(
                         collection_name, context="index"
                     )
 
@@ -2790,8 +2910,13 @@ def query(
         config = config_manager.load()
 
         # Initialize services
+        from .backends.backend_factory import BackendFactory
+
         embedding_provider = EmbeddingProviderFactory.create(config, console)
-        qdrant_client = QdrantClient(config.qdrant, console, Path(config.codebase_dir))
+        backend = BackendFactory.create(
+            config=config, project_root=Path(config.codebase_dir)
+        )
+        vector_store_client = backend.get_vector_store_client()
 
         # Health checks
         if not embedding_provider.health_check():
@@ -2801,18 +2926,18 @@ def query(
             )
             sys.exit(1)
 
-        if not qdrant_client.health_check():
-            console.print("❌ Qdrant service not available", style="red")
+        if not vector_store_client.health_check():
+            console.print("❌ Vector store service not available", style="red")
             sys.exit(1)
 
         # Ensure provider-aware collection is set for search
-        collection_name = qdrant_client.resolve_collection_name(
+        collection_name = vector_store_client.resolve_collection_name(
             config, embedding_provider
         )
-        qdrant_client._current_collection_name = collection_name
+        vector_store_client._current_collection_name = collection_name
 
         # Ensure payload indexes exist (read-only check for query operations)
-        qdrant_client.ensure_payload_indexes(collection_name, context="query")
+        vector_store_client.ensure_payload_indexes(collection_name, context="query")
 
         # Get query embedding
         if not quiet:
@@ -2957,8 +3082,8 @@ def query(
                 {"must": filter_conditions_list} if filter_conditions_list else None
             )
 
-            # Query Qdrant (get more results to allow for git filtering)
-            raw_results: List[Dict[str, Any]] = qdrant_client.search(
+            # Query vector store (get more results to allow for git filtering)
+            raw_results: List[Dict[str, Any]] = vector_store_client.search(
                 query_vector=query_embedding,
                 filter_conditions=query_filter_conditions,
                 limit=limit * 2,  # Get more to account for post-filtering
@@ -2978,7 +3103,7 @@ def query(
                 git_results = filtered_results
         else:
             # Use model-specific search for non-git projects
-            raw_results = qdrant_client.search_with_model_filter(
+            raw_results = vector_store_client.search_with_model_filter(
                 query_vector=query_embedding,
                 embedding_model=current_model,
                 limit=limit * 2,  # Get more results to allow for git filtering
@@ -3010,15 +3135,25 @@ def query(
                     file_last_modified = payload.get("file_last_modified")
                     indexed_at = payload.get("indexed_at")
 
+                    # Convert indexed_at ISO timestamp to Unix timestamp float
+                    indexed_timestamp = None
+                    if indexed_at:
+                        try:
+                            from datetime import datetime
+
+                            dt = datetime.fromisoformat(indexed_at.rstrip("Z"))
+                            indexed_timestamp = dt.timestamp()
+                        except (ValueError, AttributeError):
+                            indexed_timestamp = None
+
                     query_item = QueryResultItem(
-                        score=result["score"],
+                        similarity_score=result["score"],
                         file_path=payload.get("path", "unknown"),
-                        line_start=payload.get("line_start", 1),
-                        line_end=payload.get("line_end", 1),
-                        content=payload.get("content", ""),
-                        language=payload.get("language"),
+                        line_number=payload.get("line_start", 1),
+                        code_snippet=payload.get("content", ""),
+                        repository_alias=project_root.name,
                         file_last_modified=file_last_modified,
-                        indexed_timestamp=indexed_at,
+                        indexed_timestamp=indexed_timestamp,
                     )
                     query_result_items.append(query_item)
 
@@ -3793,31 +3928,40 @@ def _status_impl(ctx, force_docker: bool):
         table.add_column("Status", style="magenta")
         table.add_column("Details", style="green")
 
-        # Check Docker services (auto-detect project name)
-        project_config_dir = config_manager.config_path.parent
-        docker_manager = DockerManager(
-            force_docker=force_docker, project_config_dir=project_config_dir
-        )
-        try:
-            service_status = docker_manager.get_service_status()
-            docker_status = (
-                "✅ Running"
-                if service_status["status"] == "running"
-                else "❌ Not Running"
+        # Check backend provider first to determine if containers are needed
+        backend_provider = getattr(config, "vector_store", None)
+        backend_provider = (
+            backend_provider.provider if backend_provider else "qdrant"
+        )  # Default to qdrant for backward compatibility
+
+        # Only check Docker services if using Qdrant backend (containers required)
+        service_status: Dict[str, Any] = {"status": "not_configured", "services": {}}
+        if backend_provider != "filesystem":
+            # Check Docker services (auto-detect project name)
+            project_config_dir = config_manager.config_path.parent
+            docker_manager = DockerManager(
+                force_docker=force_docker, project_config_dir=project_config_dir
             )
-            table.add_row(
-                "Docker Services",
-                docker_status,
-                f"{len(service_status['services'])} services",
-            )
-        except Exception:
-            # Handle case where containers haven't been created yet
-            table.add_row(
-                "Docker Services",
-                "❌ Not Configured",
-                "Run 'code-indexer start' to create containers",
-            )
-            service_status = {"status": "not_configured", "services": {}}
+            try:
+                service_status = docker_manager.get_service_status()
+                docker_status = (
+                    "✅ Running"
+                    if service_status["status"] == "running"
+                    else "❌ Not Running"
+                )
+                table.add_row(
+                    "Docker Services",
+                    docker_status,
+                    f"{len(service_status['services'])} services",
+                )
+            except Exception:
+                # Handle case where containers haven't been created yet
+                table.add_row(
+                    "Docker Services",
+                    "❌ Not Configured",
+                    "Run 'code-indexer start' to create containers",
+                )
+                service_status = {"status": "not_configured", "services": {}}
 
         # Check embedding provider - ALWAYS attempt health check via HTTP
         try:
@@ -3861,141 +4005,206 @@ def _status_impl(ctx, force_docker: bool):
                 "Ollama", "✅ Not needed", f"Using {config.embedding_provider}"
             )
 
-        # Check Qdrant - ALWAYS attempt health check via HTTP
+        # Check Vector Storage Backend (Qdrant or Filesystem)
+        # backend_provider already determined above
         qdrant_ok = False  # Initialize to False
         qdrant_client = None  # Initialize to None
-        try:
-            qdrant_client = QdrantClient(config.qdrant)
-            qdrant_ok = qdrant_client.health_check()
-            qdrant_status = "✅ Ready" if qdrant_ok else "❌ Not Available"
-            qdrant_details = ""
 
-            if qdrant_ok:
-                try:
-                    # Get the correct collection name using the current embedding provider
-                    embedding_provider = EmbeddingProviderFactory.create(
-                        config, console
-                    )
-                    collection_name = qdrant_client.resolve_collection_name(
-                        config, embedding_provider
-                    )
+        if backend_provider == "filesystem":
+            # Filesystem backend - no containers required
+            from .storage.filesystem_vector_store import FilesystemVectorStore
 
-                    # Check collection health before counting points
+            try:
+                # Get filesystem storage path
+                index_path = Path(config.codebase_dir) / ".code-indexer" / "index"
+                fs_store = FilesystemVectorStore(
+                    base_path=index_path, project_root=Path(config.codebase_dir)
+                )
+
+                # Health check - verify filesystem accessibility
+                fs_ok = fs_store.health_check()
+                fs_status = "✅ Ready" if fs_ok else "❌ Not Accessible"
+
+                if fs_ok:
+                    # Get collection info
                     try:
-                        collection_info = qdrant_client.get_collection_info(
-                            collection_name
+                        embedding_provider = EmbeddingProviderFactory.create(
+                            config, console
                         )
-                        collection_status = collection_info.get("status", "unknown")
+                        collection_name = fs_store.resolve_collection_name(
+                            config, embedding_provider
+                        )
 
-                        if collection_status == "red":
-                            # Collection has errors - show error details
-                            optimizer_status = collection_info.get(
-                                "optimizer_status", {}
+                        if fs_store.collection_exists(collection_name):
+                            vector_count = fs_store.count_points(collection_name)
+                            file_count = len(
+                                fs_store.get_all_indexed_files(collection_name)
                             )
-                            error_msg = optimizer_status.get("error", "Unknown error")
 
-                            # Translate common errors to user-friendly messages
-                            if "No such file or directory" in error_msg:
-                                friendly_error = "Storage corruption detected - collection data is damaged"
-                            elif "Permission denied" in error_msg:
-                                friendly_error = (
-                                    "Storage permission error - check file permissions"
+                            # Validate dimensions
+                            expected_dims = embedding_provider.get_model_info()[
+                                "dimensions"
+                            ]
+                            dims_ok = fs_store.validate_embedding_dimensions(
+                                collection_name, expected_dims
+                            )
+                            dims_status = "✅" if dims_ok else "⚠️"
+
+                            fs_details = f"Collection: {collection_name}\nVectors: {vector_count:,} | Files: {file_count} | Dims: {dims_status}{expected_dims}"
+                        else:
+                            fs_details = f"Collection: {collection_name}\nStatus: Not created - run 'cidx index'"
+                    except Exception as e:
+                        fs_details = f"Error checking collection: {str(e)[:50]}"
+                else:
+                    fs_details = f"Storage path: {index_path}\nStatus: Not accessible"
+
+                table.add_row("Vector Storage", fs_status, fs_details)
+                table.add_row("Storage Path", "📁", str(index_path))
+
+            except Exception as e:
+                table.add_row("Vector Storage", "❌ Error", str(e))
+
+        else:
+            # Qdrant backend - original container-based logic
+            try:
+                qdrant_client = QdrantClient(config.qdrant)
+                qdrant_ok = qdrant_client.health_check()
+                qdrant_status = "✅ Ready" if qdrant_ok else "❌ Not Available"
+                qdrant_details = ""
+
+                if qdrant_ok:
+                    try:
+                        # Get the correct collection name using the current embedding provider
+                        embedding_provider = EmbeddingProviderFactory.create(
+                            config, console
+                        )
+                        collection_name = qdrant_client.resolve_collection_name(
+                            config, embedding_provider
+                        )
+
+                        # Check collection health before counting points
+                        try:
+                            collection_info = qdrant_client.get_collection_info(
+                                collection_name
+                            )
+                            collection_status = collection_info.get("status", "unknown")
+
+                            if collection_status == "red":
+                                # Collection has errors - show error details
+                                optimizer_status = collection_info.get(
+                                    "optimizer_status", {}
                                 )
-                            elif "disk space" in error_msg.lower():
-                                friendly_error = (
-                                    "Insufficient disk space for collection operations"
+                                error_msg = optimizer_status.get(
+                                    "error", "Unknown error"
+                                )
+
+                                # Translate common errors to user-friendly messages
+                                if "No such file or directory" in error_msg:
+                                    friendly_error = "Storage corruption detected - collection data is damaged"
+                                elif "Permission denied" in error_msg:
+                                    friendly_error = "Storage permission error - check file permissions"
+                                elif "disk space" in error_msg.lower():
+                                    friendly_error = "Insufficient disk space for collection operations"
+                                else:
+                                    friendly_error = f"Collection error: {error_msg}"
+
+                                qdrant_status = "❌ Collection Error"
+                                qdrant_details = f"🚨 {friendly_error}"
+                            elif collection_status == "yellow":
+                                qdrant_status = "⚠️ Collection Warning"
+                                qdrant_details = (
+                                    "Collection has warnings but is functional"
                                 )
                             else:
-                                friendly_error = f"Collection error: {error_msg}"
-
-                            qdrant_status = "❌ Collection Error"
-                            qdrant_details = f"🚨 {friendly_error}"
-                        elif collection_status == "yellow":
-                            qdrant_status = "⚠️ Collection Warning"
-                            qdrant_details = "Collection has warnings but is functional"
-                        else:
-                            # Collection is healthy, proceed with normal status
-                            project_count = qdrant_client.count_points(collection_name)
-
-                            # Get total documents across all collections for context
-                            try:
-                                import requests  # type: ignore[import-untyped]
-
-                                response = requests.get(
-                                    f"{config.qdrant.host}/collections", timeout=5
+                                # Collection is healthy, proceed with normal status
+                                project_count = qdrant_client.count_points(
+                                    collection_name
                                 )
-                                if response.status_code == 200:
-                                    collections_data = response.json()
-                                    total_count = 0
-                                    for collection_info in collections_data.get(
-                                        "result", {}
-                                    ).get("collections", []):
-                                        coll_name = collection_info["name"]
-                                        coll_count = qdrant_client.count_points(
-                                            coll_name
-                                        )
-                                        total_count += coll_count
-                                    qdrant_details = f"Project: {project_count} docs | Total: {total_count} docs"
-                                else:
+
+                                # Get total documents across all collections for context
+                                try:
+                                    import requests  # type: ignore[import-untyped]
+
+                                    response = requests.get(
+                                        f"{config.qdrant.host}/collections", timeout=5
+                                    )
+                                    if response.status_code == 200:
+                                        collections_data = response.json()
+                                        total_count = 0
+                                        for collection_info in collections_data.get(
+                                            "result", {}
+                                        ).get("collections", []):
+                                            coll_name = collection_info["name"]
+                                            coll_count = qdrant_client.count_points(
+                                                coll_name
+                                            )
+                                            total_count += coll_count
+                                        qdrant_details = f"Project: {project_count} docs | Total: {total_count} docs"
+                                    else:
+                                        qdrant_details = f"Documents: {project_count}"
+                                except Exception:
                                     qdrant_details = f"Documents: {project_count}"
-                            except Exception:
-                                qdrant_details = f"Documents: {project_count}"
 
-                            # Add progressive metadata info if available and different from Qdrant count
-                            try:
-                                metadata_path = (
-                                    config_manager.config_path.parent / "metadata.json"
+                                # Add progressive metadata info if available and different from Qdrant count
+                                try:
+                                    metadata_path = (
+                                        config_manager.config_path.parent
+                                        / "metadata.json"
+                                    )
+                                    if metadata_path.exists():
+                                        import json
+
+                                        with open(metadata_path) as f:
+                                            metadata = json.load(f)
+                                        files_processed = metadata.get(
+                                            "files_processed", 0
+                                        )
+                                        chunks_indexed = metadata.get(
+                                            "chunks_indexed", 0
+                                        )
+                                        status = metadata.get("status", "unknown")
+
+                                        # Show progressive info if recent activity or if counts differ
+                                        if files_processed > 0 and (
+                                            status == "in_progress"
+                                            or chunks_indexed != project_count
+                                        ):
+                                            qdrant_details += f" | Progress: {files_processed} files, {chunks_indexed} chunks"
+                                            if status == "in_progress":
+                                                qdrant_details += " (🔄 not complete)"
+                                except Exception:
+                                    pass  # Don't fail status display if metadata reading fails
+                        except Exception as e:
+                            if "doesn't exist" in str(e):
+                                qdrant_details = (
+                                    "Collection not found - run 'cidx index' to create"
                                 )
-                                if metadata_path.exists():
-                                    import json
-
-                                    with open(metadata_path) as f:
-                                        metadata = json.load(f)
-                                    files_processed = metadata.get("files_processed", 0)
-                                    chunks_indexed = metadata.get("chunks_indexed", 0)
-                                    status = metadata.get("status", "unknown")
-
-                                    # Show progressive info if recent activity or if counts differ
-                                    if files_processed > 0 and (
-                                        status == "in_progress"
-                                        or chunks_indexed != project_count
-                                    ):
-                                        qdrant_details += f" | Progress: {files_processed} files, {chunks_indexed} chunks"
-                                        if status == "in_progress":
-                                            qdrant_details += " (🔄 not complete)"
-                            except Exception:
-                                pass  # Don't fail status display if metadata reading fails
+                            else:
+                                qdrant_details = (
+                                    f"Error checking collection: {str(e)[:50]}..."
+                                )
                     except Exception as e:
                         if "doesn't exist" in str(e):
                             qdrant_details = (
                                 "Collection not found - run 'cidx index' to create"
                             )
                         else:
-                            qdrant_details = (
-                                f"Error checking collection: {str(e)[:50]}..."
-                            )
-                except Exception as e:
-                    if "doesn't exist" in str(e):
-                        qdrant_details = (
-                            "Collection not found - run 'cidx index' to create"
-                        )
-                    else:
-                        qdrant_details = f"Error: {str(e)[:50]}..."
-            else:
-                # Check if container exists for debugging info
-                qdrant_container_found = any(
-                    "qdrant" in name and info["state"] == "running"
-                    for name, info in service_status.get("services", {}).items()
-                )
-                qdrant_details = (
-                    f"Service unreachable at {config.qdrant.host}"
-                    if qdrant_container_found
-                    else "Service down (container stopped)"
-                )
+                            qdrant_details = f"Error: {str(e)[:50]}..."
+                else:
+                    # Check if container exists for debugging info
+                    qdrant_container_found = any(
+                        "qdrant" in name and info["state"] == "running"
+                        for name, info in service_status.get("services", {}).items()
+                    )
+                    qdrant_details = (
+                        f"Service unreachable at {config.qdrant.host}"
+                        if qdrant_container_found
+                        else "Service down (container stopped)"
+                    )
 
-            table.add_row("Qdrant", qdrant_status, qdrant_details)
-        except Exception as e:
-            table.add_row("Qdrant", "❌ Error", str(e))
+                table.add_row("Qdrant", qdrant_status, qdrant_details)
+            except Exception as e:
+                table.add_row("Qdrant", "❌ Error", str(e))
 
         # Add payload index status - only if Qdrant is running and healthy
         if qdrant_ok and qdrant_client:
@@ -4036,68 +4245,75 @@ def _status_impl(ctx, force_docker: bool):
                     "Payload Indexes", "❌ Error", f"Check failed: {str(e)[:40]}..."
                 )
 
-        # Add Qdrant storage and collection information
-        try:
-            # Get storage path from configuration instead of container inspection
-            # Use the actual project-specific storage path from config
-            project_qdrant_dir = (
-                Path(config.codebase_dir).resolve() / ".code-indexer" / "qdrant"
-            )
-            table.add_row("Qdrant Storage", "📁", f"Host:\n{project_qdrant_dir}")
-
-            # Add current project collection information
-            if qdrant_ok and qdrant_client:
-                try:
-                    embedding_provider = EmbeddingProviderFactory.create(
-                        config, console
-                    )
-                    collection_name = qdrant_client.resolve_collection_name(
-                        config, embedding_provider
-                    )
-
-                    # Check if collection exists and get basic info
-                    collection_exists = qdrant_client.collection_exists(collection_name)
-                    if collection_exists:
-                        collection_count = qdrant_client.count_points(collection_name)
-                        collection_status = "✅ Active"
-
-                        # Get local collection path - should be in project's .code-indexer/qdrant_collection/
-                        project_root = config.codebase_dir
-                        local_collection_path = (
-                            project_root
-                            / ".code-indexer"
-                            / "qdrant_collection"
-                            / collection_name
-                        )
-
-                        symlink_status = (
-                            "Local symlinked"
-                            if local_collection_path.exists()
-                            else "Global storage"
-                        )
-                        # Show full collection name and details
-                        collection_details = f"Name:\n{collection_name}\nPoints: {collection_count:,} | Storage: {symlink_status}"
-                    else:
-                        collection_status = "❌ Missing"
-                        # Show full collection name for missing collections too
-                        collection_details = f"Name:\n{collection_name}\nStatus: Not created yet - run 'index' command"
-
-                    table.add_row(
-                        "Project Collection", collection_status, collection_details
-                    )
-                except Exception as e:
-                    table.add_row(
-                        "Project Collection", "⚠️  Error", f"Check failed: {str(e)[:50]}"
-                    )
-            else:
-                table.add_row(
-                    "Project Collection", "❌ Unavailable", "Qdrant service down"
+        # Add Qdrant storage and collection information - only for Qdrant backend
+        if backend_provider != "filesystem":
+            try:
+                # Get storage path from configuration instead of container inspection
+                # Use the actual project-specific storage path from config
+                project_qdrant_dir = (
+                    Path(config.codebase_dir).resolve() / ".code-indexer" / "qdrant"
                 )
+                table.add_row("Qdrant Storage", "📁", f"Host:\n{project_qdrant_dir}")
 
-        except Exception as e:
-            table.add_row(
-                "Qdrant Storage", "⚠️  Error", f"Inspection failed: {str(e)[:30]}"
-            )
+                # Add current project collection information
+                if qdrant_ok and qdrant_client:
+                    try:
+                        embedding_provider = EmbeddingProviderFactory.create(
+                            config, console
+                        )
+                        collection_name = qdrant_client.resolve_collection_name(
+                            config, embedding_provider
+                        )
+
+                        # Check if collection exists and get basic info
+                        collection_exists = qdrant_client.collection_exists(
+                            collection_name
+                        )
+                        if collection_exists:
+                            collection_count = qdrant_client.count_points(
+                                collection_name
+                            )
+                            collection_status = "✅ Active"
+
+                            # Get local collection path - should be in project's .code-indexer/qdrant_collection/
+                            project_root = config.codebase_dir
+                            local_collection_path = (
+                                project_root
+                                / ".code-indexer"
+                                / "qdrant_collection"
+                                / collection_name
+                            )
+
+                            symlink_status = (
+                                "Local symlinked"
+                                if local_collection_path.exists()
+                                else "Global storage"
+                            )
+                            # Show full collection name and details
+                            collection_details = f"Name:\n{collection_name}\nPoints: {collection_count:,} | Storage: {symlink_status}"
+                        else:
+                            collection_status = "❌ Missing"
+                            # Show full collection name for missing collections too
+                            collection_details = f"Name:\n{collection_name}\nStatus: Not created yet - run 'index' command"
+
+                        table.add_row(
+                            "Project Collection", collection_status, collection_details
+                        )
+                    except Exception as e:
+                        table.add_row(
+                            "Project Collection",
+                            "⚠️  Error",
+                            f"Check failed: {str(e)[:50]}",
+                        )
+                else:
+                    table.add_row(
+                        "Project Collection", "❌ Unavailable", "Qdrant service down"
+                    )
+
+            except Exception as e:
+                table.add_row(
+                    "Qdrant Storage", "⚠️  Error", f"Inspection failed: {str(e)[:30]}"
+                )
 
         # Check Data Cleaner
         #
@@ -4630,38 +4846,68 @@ def stop(ctx, force_docker: bool):
         console.print(f"📁 Found configuration: {config_path}")
         console.print(f"🏗️  Project directory: {config.codebase_dir}")
 
-        # Initialize Docker manager
-        project_config_dir = config_path.parent
-        docker_manager = DockerManager(
-            console, force_docker=force_docker, project_config_dir=project_config_dir
-        )
+        # Create backend based on configuration
+        backend = BackendFactory.create(config, Path(config.codebase_dir))
+        backend_info = backend.get_service_info()
 
-        # Check current status
-        status = docker_manager.get_service_status()
-        if status["status"] == "not_configured":
-            console.print("ℹ️  Services not configured - nothing to stop", style="blue")
-            return
+        # Check if backend requires containers
+        requires_containers = backend_info.get("requires_containers", False)
 
-        running_services = [
-            svc
-            for svc in status["services"].values()
-            if svc.get("state", "").lower() == "running"
-        ]
+        if requires_containers:
+            # Qdrant backend - use existing Docker flow
+            console.print("🔧 Stopping Qdrant vector store containers...")
 
-        if not running_services:
-            console.print("ℹ️  No services currently running", style="blue")
-            return
+            # Initialize Docker manager
+            project_config_dir = config_path.parent
+            docker_manager = DockerManager(
+                console,
+                force_docker=force_docker,
+                project_config_dir=project_config_dir,
+            )
 
-        # Stop services
-        console.print("🛑 Stopping code indexing services...")
-        console.print("💾 All data will be preserved for restart")
+            # Check current status
+            status = docker_manager.get_service_status()
+            if status["status"] == "not_configured":
+                console.print(
+                    "ℹ️  Services not configured - nothing to stop", style="blue"
+                )
+                return
 
-        if docker_manager.stop_services():
-            console.print("✅ Services stopped successfully!", style="green")
-            console.print("💡 Use 'code-indexer start' to resume with all data intact")
+            running_services = [
+                svc
+                for svc in status["services"].values()
+                if svc.get("state", "").lower() == "running"
+            ]
+
+            if not running_services:
+                console.print("ℹ️  No services currently running", style="blue")
+                return
+
+            # Stop services
+            console.print("🛑 Stopping code indexing services...")
+            console.print("💾 All data will be preserved for restart")
+
+            if docker_manager.stop_services():
+                console.print("✅ Services stopped successfully!", style="green")
+                console.print(
+                    "💡 Use 'code-indexer start' to resume with all data intact"
+                )
+            else:
+                console.print("❌ Failed to stop some services", style="red")
+                sys.exit(1)
         else:
-            console.print("❌ Failed to stop some services", style="red")
-            sys.exit(1)
+            # Filesystem backend - no containers to stop
+            console.print("📁 Using filesystem vector store (container-free)")
+            console.print(
+                "💾 No containers to stop - filesystem backend is always available"
+            )
+
+            # Call backend stop (no-op for filesystem)
+            if backend.stop():
+                console.print("✅ Filesystem backend stop complete (no-op)")
+            else:
+                console.print("❌ Failed to stop filesystem backend", style="red")
+                sys.exit(1)
 
     except Exception as e:
         console.print(f"❌ Stop failed: {e}", style="red")
@@ -5194,6 +5440,267 @@ def _check_remaining_root_files(console: Console):
         console.print("✅ No root-owned files found")
 
 
+@cli.command("clean")
+@click.option(
+    "--collection",
+    help="Specific collection to clean (if not specified, cleans default collection)",
+)
+@click.option(
+    "--remove-projection-matrix",
+    is_flag=True,
+    help="Also remove projection matrix (requires re-indexing to restore)",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Skip confirmation prompt",
+)
+@click.option(
+    "--show-recommendations",
+    is_flag=True,
+    help="Show git-aware cleanup recommendations",
+)
+@click.pass_context
+@require_mode("local", "remote")
+def clean(
+    ctx,
+    collection: Optional[str],
+    remove_projection_matrix: bool,
+    force: bool,
+    show_recommendations: bool,
+):
+    """Clear vectors from collection without removing structure.
+
+    \b
+    Removes all indexed vectors from a collection while preserving:
+      • Collection metadata
+      • Projection matrix (unless --remove-projection-matrix is specified)
+      • Collection directory structure
+
+    \b
+    This is faster than full uninstall and allows quick re-indexing
+    without recreating the collection structure.
+
+    \b
+    OPTIONS:
+      --collection NAME              Clean specific collection
+      --remove-projection-matrix     Also remove projection matrix
+      --force                        Skip confirmation prompt
+      --show-recommendations         Show git-aware cleanup recommendations
+    """
+    try:
+        config_manager = ctx.obj.get("config_manager")
+        project_root = ctx.obj.get("project_root")
+
+        if not config_manager or not project_root:
+            console.print("❌ Configuration not found", style="red")
+            sys.exit(1)
+
+        config = config_manager.get_config()
+
+        # Create backend
+        from .backends.backend_factory import BackendFactory
+
+        backend = BackendFactory.create(config, project_root)
+
+        # Get vector store client
+        vector_store = backend.get_vector_store_client()
+
+        # Determine collection to clean
+        if collection is None:
+            collections = vector_store.list_collections()
+            if len(collections) == 0:
+                console.print("ℹ️  No collections found to clean", style="blue")
+                return
+            elif len(collections) == 1:
+                collection = collections[0]
+            else:
+                console.print(
+                    "❌ Multiple collections exist. Please specify --collection",
+                    style="red",
+                )
+                console.print(f"\nAvailable collections: {', '.join(collections)}")
+                sys.exit(1)
+
+        # Check if collection exists
+        if not vector_store.collection_exists(collection):
+            console.print(f"❌ Collection '{collection}' does not exist", style="red")
+            sys.exit(1)
+
+        # Get impact information
+        vector_count = vector_store.count_points(collection)
+        collection_size = 0
+        if hasattr(vector_store, "get_collection_size"):
+            collection_size = vector_store.get_collection_size(collection)
+
+        # Show git-aware recommendations if requested
+        if show_recommendations:
+            console.print("\n📋 [bold]Git-Aware Cleanup Recommendations:[/bold]")
+            try:
+                import subprocess
+
+                result = subprocess.run(
+                    ["git", "status", "--porcelain"],
+                    cwd=project_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+
+                if result.returncode == 0 and result.stdout.strip():
+                    console.print("⚠️  You have uncommitted changes:")
+                    console.print(
+                        "💡 Consider committing changes before cleanup to avoid losing indexed data for modified files"
+                    )
+                else:
+                    console.print("✅ No uncommitted changes detected")
+            except Exception:
+                pass  # Silently ignore git errors
+
+        # Show impact and confirmation
+        if not force:
+            console.print(
+                f"\n⚠️  [bold yellow]About to clean collection '{collection}'[/bold yellow]"
+            )
+            console.print(f"   • Vectors to remove: {vector_count}")
+            if collection_size > 0:
+                size_mb = collection_size / (1024 * 1024)
+                console.print(f"   • Storage to reclaim: {size_mb:.2f} MB")
+            if remove_projection_matrix:
+                console.print(
+                    "   • Projection matrix will be REMOVED (requires full re-indexing)"
+                )
+            else:
+                console.print("   • Projection matrix will be PRESERVED")
+
+            if not click.confirm("\nProceed with cleanup?"):
+                console.print("❌ Cleanup cancelled", style="yellow")
+                return
+
+        # Record size before cleanup
+        size_before = collection_size if collection_size > 0 else 0
+
+        # Perform cleanup
+        success = vector_store.clear_collection(
+            collection, remove_projection_matrix=remove_projection_matrix
+        )
+
+        if success:
+            console.print(
+                f"✅ Collection '{collection}' cleaned successfully", style="green"
+            )
+
+            # Report space reclaimed
+            if size_before > 0:
+                size_mb = size_before / (1024 * 1024)
+                console.print(f"💾 Storage reclaimed: {size_mb:.2f} MB")
+        else:
+            console.print(f"❌ Failed to clean collection '{collection}'", style="red")
+            sys.exit(1)
+
+    except Exception as e:
+        console.print(f"❌ Clean failed: {e}", style="red")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command("list-collections")
+@click.pass_context
+@require_mode("local", "remote")
+def list_collections_cmd(ctx):
+    """List all collections with metadata and statistics.
+
+    \b
+    Shows collection information including:
+      • Collection name
+      • Vector count
+      • Vector dimensions
+      • Storage size
+      • Creation date
+    """
+    try:
+        config_manager = ctx.obj.get("config_manager")
+        project_root = ctx.obj.get("project_root")
+
+        if not config_manager or not project_root:
+            console.print("❌ Configuration not found", style="red")
+            sys.exit(1)
+
+        config = config_manager.get_config()
+
+        # Create backend
+        from .backends.backend_factory import BackendFactory
+
+        backend = BackendFactory.create(config, project_root)
+
+        # Get vector store client
+        vector_store = backend.get_vector_store_client()
+
+        # Get all collections
+        collections = vector_store.list_collections()
+
+        if not collections:
+            console.print("ℹ️  No collections found", style="blue")
+            return
+
+        # Create table
+        table = Table(title="Collections")
+        table.add_column("Name", style="cyan")
+        table.add_column("Vectors", justify="right", style="green")
+        table.add_column("Dimensions", justify="right", style="yellow")
+        table.add_column("Size", justify="right", style="magenta")
+        table.add_column("Created", style="blue")
+
+        # Populate table
+        for coll_name in collections:
+            # Get vector count
+            vector_count = vector_store.count_points(coll_name)
+
+            # Get metadata
+            try:
+                metadata = vector_store.get_collection_info(coll_name)
+                vector_size = metadata.get("vector_size", "N/A")
+                created_at = metadata.get("created_at", "N/A")
+                if created_at != "N/A":
+                    # Format datetime
+                    from datetime import datetime
+
+                    dt = datetime.fromisoformat(created_at)
+                    created_at = dt.strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                vector_size = "N/A"
+                created_at = "N/A"
+
+            # Get collection size
+            collection_size = 0
+            if hasattr(vector_store, "get_collection_size"):
+                collection_size = vector_store.get_collection_size(coll_name)
+
+            size_str = "N/A"
+            if collection_size > 0:
+                size_mb = collection_size / (1024 * 1024)
+                if size_mb >= 1.0:
+                    size_str = f"{size_mb:.2f} MB"
+                else:
+                    size_kb = collection_size / 1024
+                    size_str = f"{size_kb:.2f} KB"
+
+            table.add_row(
+                coll_name, str(vector_count), str(vector_size), size_str, created_at
+            )
+
+        console.print(table)
+
+    except Exception as e:
+        console.print(f"❌ Failed to list collections: {e}", style="red")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
 @cli.command("uninstall")
 @click.option(
     "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
@@ -5266,7 +5773,7 @@ def uninstall(ctx, force_docker: bool, wipe_all: bool, confirm: bool):
     elif mode == "local":
         from .mode_specific_handlers import uninstall_local_mode
 
-        uninstall_local_mode(project_root, force_docker, wipe_all)
+        uninstall_local_mode(project_root, force_docker, wipe_all, confirm)
     elif mode == "remote":
         from .mode_specific_handlers import uninstall_remote_mode
 

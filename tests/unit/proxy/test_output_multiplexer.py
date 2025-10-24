@@ -4,10 +4,9 @@ Tests unified output streaming from multiple watch processes.
 """
 
 import pytest
-import queue
 import threading
 import time
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 from io import StringIO
 from code_indexer.proxy.output_multiplexer import OutputMultiplexer
 

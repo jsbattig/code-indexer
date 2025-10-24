@@ -230,7 +230,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         manager = FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            qdrant_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_qdrant_client,
             thread_count=thread_count,
             slot_tracker=CleanSlotTracker(max_slots=thread_count + 2),
             codebase_dir=self.test_file_path.parent,
@@ -253,7 +253,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         with FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            qdrant_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -280,7 +280,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         with FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            qdrant_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -316,7 +316,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         with FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            qdrant_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -356,7 +356,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         with FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            qdrant_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -395,7 +395,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         with FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=failing_chunker,
-            qdrant_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -450,7 +450,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         with FileChunkingManager(
             vector_manager=failing_vector_manager,
             chunker=self.mock_chunker,
-            qdrant_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -479,7 +479,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         with FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            qdrant_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -505,7 +505,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         manager = FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            qdrant_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_qdrant_client,
             thread_count=3,
             slot_tracker=CleanSlotTracker(max_slots=5),
             codebase_dir=self.test_file_path.parent,
@@ -544,7 +544,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
             with FileChunkingManager(
                 vector_manager=self.mock_vector_manager,
                 chunker=self.mock_chunker,
-                qdrant_client=self.mock_qdrant_client,
+                vector_store_client=self.mock_qdrant_client,
                 thread_count=2,
                 slot_tracker=CleanSlotTracker(max_slots=4),
                 codebase_dir=self.test_file_path.parent,
@@ -598,7 +598,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         with FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            qdrant_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -644,7 +644,7 @@ class TestFileChunkingManagerAcceptanceCriteria:
         with FileChunkingManager(
             vector_manager=self.mock_vector_manager,
             chunker=self.mock_chunker,
-            qdrant_client=self.mock_qdrant_client,
+            vector_store_client=self.mock_qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -686,7 +686,7 @@ class TestFileChunkingManagerValidation:
             FileChunkingManager(
                 vector_manager=mock_vector_manager,
                 chunker=mock_chunker,
-                qdrant_client=mock_qdrant_client,
+                vector_store_client=mock_qdrant_client,
                 thread_count=0,
                 slot_tracker=CleanSlotTracker(max_slots=2),
                 codebase_dir=self.test_file_path.parent,
@@ -696,7 +696,7 @@ class TestFileChunkingManagerValidation:
             FileChunkingManager(
                 vector_manager=mock_vector_manager,
                 chunker=mock_chunker,
-                qdrant_client=mock_qdrant_client,
+                vector_store_client=mock_qdrant_client,
                 thread_count=-1,
                 slot_tracker=CleanSlotTracker(max_slots=2),
                 codebase_dir=self.test_file_path.parent,
@@ -712,7 +712,7 @@ class TestFileChunkingManagerValidation:
             FileChunkingManager(
                 vector_manager=None,
                 chunker=mock_chunker,
-                qdrant_client=mock_qdrant_client,
+                vector_store_client=mock_qdrant_client,
                 thread_count=2,
                 slot_tracker=CleanSlotTracker(max_slots=4),
                 codebase_dir=self.test_file_path.parent,
@@ -722,7 +722,7 @@ class TestFileChunkingManagerValidation:
             FileChunkingManager(
                 vector_manager=mock_vector_manager,
                 chunker=None,
-                qdrant_client=mock_qdrant_client,
+                vector_store_client=mock_qdrant_client,
                 thread_count=2,
                 slot_tracker=CleanSlotTracker(max_slots=4),
                 codebase_dir=self.test_file_path.parent,
@@ -732,7 +732,7 @@ class TestFileChunkingManagerValidation:
             FileChunkingManager(
                 vector_manager=mock_vector_manager,
                 chunker=mock_chunker,
-                qdrant_client=None,
+                vector_store_client=None,
                 thread_count=2,
                 slot_tracker=CleanSlotTracker(max_slots=4),
                 codebase_dir=self.test_file_path.parent,
@@ -743,7 +743,7 @@ class TestFileChunkingManagerValidation:
         manager = FileChunkingManager(
             vector_manager=MockVectorCalculationManager(),
             chunker=MockFixedSizeChunker(),
-            qdrant_client=MockQdrantClient(),
+            vector_store_client=MockQdrantClient(),
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,
@@ -763,7 +763,7 @@ class TestFileChunkingManagerValidation:
         with FileChunkingManager(
             vector_manager=MockVectorCalculationManager(),
             chunker=empty_chunker,
-            qdrant_client=MockQdrantClient(),
+            vector_store_client=MockQdrantClient(),
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=self.test_file_path.parent,

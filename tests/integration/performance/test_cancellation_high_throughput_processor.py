@@ -50,7 +50,7 @@ class TestHighThroughputProcessorCancellation:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
-            qdrant_client=self.qdrant_client,
+            vector_store_client=self.qdrant_client,
         )
 
         # Initially not cancelled
@@ -71,7 +71,7 @@ class TestHighThroughputProcessorCancellation:
             processor = HighThroughputProcessor(
                 config=self.config,
                 embedding_provider=self.embedding_provider,
-                qdrant_client=self.qdrant_client,
+                vector_store_client=self.qdrant_client,
             )
 
             # Create test files
@@ -166,7 +166,7 @@ class TestHighThroughputProcessorCancellation:
             processor = HighThroughputProcessor(
                 config=self.config,
                 embedding_provider=self.embedding_provider,
-                qdrant_client=self.qdrant_client,
+                vector_store_client=self.qdrant_client,
             )
 
             # Create test files
@@ -274,7 +274,7 @@ class TestHighThroughputProcessorCancellation:
             processor = HighThroughputProcessor(
                 config=self.config,
                 embedding_provider=self.embedding_provider,
-                qdrant_client=self.qdrant_client,
+                vector_store_client=self.qdrant_client,
             )
 
             # Create test files
@@ -369,7 +369,7 @@ class TestHighThroughputProcessorCancellation:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
-            qdrant_client=self.qdrant_client,
+            vector_store_client=self.qdrant_client,
         )
 
         # Initially not cancelled

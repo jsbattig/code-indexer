@@ -6,9 +6,7 @@ across multiple repositories concurrently using ThreadPoolExecutor.
 
 import unittest
 from unittest.mock import patch, MagicMock
-from pathlib import Path
 import subprocess
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 
 from code_indexer.proxy.parallel_executor import ParallelCommandExecutor
 

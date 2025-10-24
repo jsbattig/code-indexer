@@ -61,7 +61,7 @@ class TestParallelProcessingPerformance:
         processor = HighThroughputProcessor(
             config=config,
             embedding_provider=embedding_provider,
-            qdrant_client=qdrant_client,
+            vector_store_client=qdrant_client,
         )
 
         # Mock the chunker to return predictable chunks with all required fields
@@ -246,7 +246,7 @@ class TestParallelProcessingPerformance:
         processor = HighThroughputProcessor(
             config=config,
             embedding_provider=embedding_provider,
-            qdrant_client=qdrant_client,
+            vector_store_client=qdrant_client,
         )
 
         # Test thread-safe content ID generation under concurrent access
@@ -346,7 +346,7 @@ class TestParallelProcessingPerformance:
         processor = HighThroughputProcessor(
             config=config,
             embedding_provider=embedding_provider,
-            qdrant_client=qdrant_client,
+            vector_store_client=qdrant_client,
         )
 
         # Test concurrent branch visibility operations

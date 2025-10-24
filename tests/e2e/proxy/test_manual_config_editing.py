@@ -10,7 +10,6 @@ AC #5: Configuration changes take effect immediately on next command
 
 import json
 import pytest
-from pathlib import Path
 
 from code_indexer.proxy.proxy_initializer import ProxyInitializer
 from code_indexer.proxy.config_manager import ProxyConfigManager

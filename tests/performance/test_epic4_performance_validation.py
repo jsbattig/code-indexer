@@ -656,13 +656,13 @@ class TestEpic4PerformanceValidation:
             baseline_processor = GitAwareDocumentProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                qdrant_client=mock_qdrant_client,
+                vector_store_client=mock_qdrant_client,
             )
 
             optimized_processor = HighThroughputProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                qdrant_client=mock_qdrant_client,
+                vector_store_client=mock_qdrant_client,
             )
 
             # Measure baseline (sequential) performance
@@ -806,13 +806,13 @@ class TestEpic4PerformanceValidation:
             baseline_processor = GitAwareDocumentProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                qdrant_client=mock_qdrant_client,
+                vector_store_client=mock_qdrant_client,
             )
 
             optimized_processor = HighThroughputProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                qdrant_client=mock_qdrant_client,
+                vector_store_client=mock_qdrant_client,
             )
 
             # Measure baseline performance (sequential full index)
@@ -953,13 +953,13 @@ class TestEpic4PerformanceValidation:
             baseline_processor = GitAwareDocumentProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                qdrant_client=mock_qdrant_client,
+                vector_store_client=mock_qdrant_client,
             )
 
             optimized_processor = HighThroughputProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                qdrant_client=mock_qdrant_client,
+                vector_store_client=mock_qdrant_client,
             )
 
             # Measure baseline performance (sequential incremental)
@@ -1098,7 +1098,7 @@ class TestEpic4PerformanceValidation:
             optimized_processor = HighThroughputProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                qdrant_client=mock_qdrant_client,
+                vector_store_client=mock_qdrant_client,
             )
 
             # Track worker activity with more detailed monitoring
@@ -1227,13 +1227,13 @@ class TestEpic4PerformanceValidation:
             baseline_processor = GitAwareDocumentProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                qdrant_client=mock_qdrant_client,
+                vector_store_client=mock_qdrant_client,
             )
 
             optimized_processor = HighThroughputProcessor(
                 config=mock_config,
                 embedding_provider=mock_embedding_provider,
-                qdrant_client=mock_qdrant_client,
+                vector_store_client=mock_qdrant_client,
             )
 
             # Test git-aware operations - content ID generation

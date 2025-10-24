@@ -89,6 +89,121 @@ Code Indexer supports both Docker and Podman container engines:
 
 **Global Port Registry**: The `setup-global-registry` command configures system-wide port coordination at `/var/lib/code-indexer/port-registry`, preventing conflicts when running multiple code-indexer projects simultaneously. This is required for proper multi-project support.
 
+### Vector Storage Backends
+
+Code Indexer supports two vector storage backends for different deployment scenarios:
+
+#### Filesystem Backend (Default)
+Container-free vector storage using the local filesystem - ideal for environments where containers are restricted or unavailable.
+
+**Features:**
+- **No containers required** - Stores vector data directly in `.code-indexer/index/` directory
+- **Zero setup overhead** - Works immediately without Docker/Podman
+- **Lightweight** - Minimal resource footprint, no container orchestration
+- **Portable** - Vector data travels with your repository
+
+**Usage:**
+```bash
+# Default behavior (no flag needed)
+cidx init
+
+# Or explicitly specify filesystem backend
+cidx init --vector-store filesystem
+```
+
+**Directory Structure:**
+```
+your-project/
+└── .code-indexer/
+    ├── config.json
+    └── index/           # Vector data stored here
+        └── (vector storage files)
+```
+
+#### Qdrant Backend
+Container-based vector storage using Docker/Podman + Qdrant vector database - provides advanced vector database features and scalability.
+
+**Features:**
+- **High performance** - Optimized vector similarity search with HNSW indexing
+- **Advanced filtering** - Complex queries and metadata filtering
+- **Horizontal scaling** - Suitable for large codebases and production deployments
+- **Container isolation** - Clean separation of concerns with containerized services
+
+**Usage:**
+```bash
+# Initialize with Qdrant backend
+cidx init --vector-store qdrant
+
+# Requires: Docker or Podman installed
+# Automatically allocates unique ports per project
+# Requires global port registry: cidx setup-global-registry
+```
+
+**When to use each backend:**
+- **Filesystem**: Development environments, CI/CD pipelines, container-restricted systems, quick prototyping
+- **Qdrant**: Production deployments, large teams, advanced vector search requirements, high-performance needs
+
+### Switching Between Backends
+
+You can switch between filesystem and Qdrant backends at any time. **Warning:** Switching backends requires destroying existing vector data and re-indexing your codebase. Your source code is never affected - only the vector index data is removed.
+
+**Complete Switching Workflow:**
+
+```bash
+# Method 1: Manual step-by-step (recommended for first-time users)
+cidx stop                                  # Stop any running services
+cidx uninstall --confirm                   # Remove current backend data
+cidx init --vector-store <new-backend>     # Initialize new backend (filesystem or qdrant)
+cidx start                                 # Start services for new backend
+cidx index                                 # Re-index codebase with new backend
+
+# Method 2: Force reinitialize (quick switch, skips uninstall)
+cidx init --vector-store <new-backend> --force
+cidx start
+cidx index
+```
+
+**Examples:**
+
+```bash
+# Switch from Qdrant to filesystem (container-free)
+cidx stop
+cidx uninstall --confirm
+cidx init --vector-store filesystem
+cidx start
+cidx index
+
+# Switch from filesystem to Qdrant (containerized)
+cidx stop  # No-op for filesystem, safe to run
+cidx uninstall --confirm
+cidx init --vector-store qdrant
+cidx start
+cidx index
+
+# Quick switch using --force flag
+cidx init --vector-store qdrant --force
+cidx start
+cidx index
+```
+
+**What gets preserved:**
+- ✅ All source code files
+- ✅ Git repository and history
+- ✅ Project structure and dependencies
+- ✅ Configuration settings (file exclusions, size limits, etc.)
+
+**What gets removed:**
+- ❌ Vector embeddings and index data
+- ❌ Cached search results
+- ❌ Backend-specific containers (when switching from Qdrant)
+- ❌ Backend-specific storage directories
+
+**Safety considerations:**
+- The `--confirm` flag skips the confirmation prompt for `uninstall`
+- The `--force` flag overwrites existing configuration when using `init`
+- Always ensure you have a backup if you've customized your `.code-indexer/config.json`
+- Re-indexing time depends on codebase size (typically seconds to minutes)
+
 ## Quick Start
 
 ```bash

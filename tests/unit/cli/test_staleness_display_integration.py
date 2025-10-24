@@ -95,11 +95,18 @@ class TestCLIStalenessDisplayIntegration:
         # Mock local mode components
         with (
             patch("code_indexer.cli.EmbeddingProviderFactory") as mock_factory,
-            patch("code_indexer.cli.QdrantClient") as mock_qdrant,
-            patch("code_indexer.cli.GenericQueryService") as mock_query_service,
+            patch(
+                "code_indexer.backends.backend_factory.BackendFactory"
+            ) as mock_backend_factory,
+            patch(
+                "code_indexer.services.generic_query_service.GenericQueryService"
+            ) as mock_query_service,
+            patch(
+                "code_indexer.services.git_topology_service.GitTopologyService"
+            ) as mock_git_service,
         ):
 
-            # Setup mocks
+            # Setup embedding provider mock
             mock_provider = Mock()
             mock_provider.health_check.return_value = True
             mock_provider.get_embedding.return_value = [0.1] * 1536
@@ -108,11 +115,21 @@ class TestCLIStalenessDisplayIntegration:
             mock_provider.get_current_model.return_value = "test-model"
             mock_factory.create.return_value = mock_provider
 
-            mock_qdrant_client = Mock()
-            mock_qdrant_client.health_check.return_value = True
-            mock_qdrant_client.resolve_collection_name.return_value = "test_collection"
-            mock_qdrant_client.search_with_model_filter.return_value = []
-            mock_qdrant.return_value = mock_qdrant_client
+            # Setup backend factory mock
+            mock_backend = Mock()
+            mock_vector_store = Mock()
+            mock_backend_factory.create.return_value = mock_backend
+            mock_backend.get_vector_store_client.return_value = mock_vector_store
+            mock_vector_store.health_check.return_value = True
+            mock_vector_store.resolve_collection_name.return_value = "test_collection"
+            mock_vector_store._current_collection_name = "test_collection"
+            mock_vector_store.ensure_payload_indexes.return_value = None
+            mock_vector_store.search_with_model_filter.return_value = []
+
+            # Setup git service mock
+            mock_git_instance = Mock()
+            mock_git_service.return_value = mock_git_instance
+            mock_git_instance.is_git_available.return_value = False
 
             mock_service = Mock()
             mock_service.filter_results_by_current_branch.return_value = []
@@ -124,8 +141,10 @@ class TestCLIStalenessDisplayIntegration:
             # Create proper mock config
             mock_config = Mock()
             mock_config.embedding_provider = "ollama"
-            mock_config.codebase_dir = str(temp_project_root)  # Fix: use string path
+            mock_config.codebase_dir = temp_project_root  # Use Path object directly
             mock_config.qdrant = Mock()  # Add qdrant config mock
+            mock_config.vector_store = Mock()  # Add vector_store config mock
+            mock_config.vector_store.provider = "qdrant"
 
             mock_config_manager = Mock()
             mock_config_manager.load.return_value = mock_config
@@ -143,6 +162,9 @@ class TestCLIStalenessDisplayIntegration:
 
             # This will initially fail - local mode doesn't apply staleness detection
             # We'll need to integrate staleness detection into local mode
+            if result.exit_code != 0:
+                print(f"CLI output: {result.output}")
+                print(f"Exception: {result.exception}")
             assert result.exit_code == 0
             # No staleness indicators expected yet - this will need to be implemented
 

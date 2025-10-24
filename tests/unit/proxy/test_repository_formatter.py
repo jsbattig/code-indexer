@@ -4,7 +4,6 @@ Tests repository identification and prefix formatting for multiplexed output.
 """
 
 import pytest
-from pathlib import Path
 from code_indexer.proxy.repository_formatter import RepositoryPrefixFormatter
 
 

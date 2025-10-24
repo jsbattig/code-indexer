@@ -98,7 +98,7 @@ class TestIndexResumeRoutingLogicBug:
         indexer = SmartIndexer(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            qdrant_client=mock_qdrant_client,
+            vector_store_client=mock_qdrant_client,
             metadata_path=temp_metadata_path,
         )
 
@@ -206,7 +206,7 @@ class TestIndexResumeRoutingLogicBug:
         indexer = SmartIndexer(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            qdrant_client=mock_qdrant_client,
+            vector_store_client=mock_qdrant_client,
             metadata_path=temp_metadata_path,
         )
 
@@ -301,7 +301,7 @@ class TestIndexResumeRoutingLogicBug:
         indexer = SmartIndexer(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            qdrant_client=mock_qdrant_client,
+            vector_store_client=mock_qdrant_client,
             metadata_path=temp_metadata_path,
         )
 

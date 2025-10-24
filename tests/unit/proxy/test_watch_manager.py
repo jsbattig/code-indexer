@@ -5,9 +5,7 @@ Tests parallel watch process management across multiple repositories.
 
 import pytest
 import subprocess
-import time
-from unittest.mock import Mock, MagicMock, patch, call
-from pathlib import Path
+from unittest.mock import Mock, patch
 from code_indexer.proxy.watch_manager import ParallelWatchManager
 
 

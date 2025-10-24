@@ -50,7 +50,7 @@ class TestStory02ParallelFileProcessing:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
-            qdrant_client=self.qdrant_client,
+            vector_store_client=self.qdrant_client,
         )
 
         # Create test files
@@ -153,7 +153,7 @@ class TestStory02ParallelFileProcessing:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
-            qdrant_client=self.qdrant_client,
+            vector_store_client=self.qdrant_client,
         )
 
         # Create test files
@@ -289,7 +289,7 @@ class TestStory02ParallelFileProcessing:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
-            qdrant_client=self.qdrant_client,
+            vector_store_client=self.qdrant_client,
         )
 
         # Create test files
@@ -382,7 +382,7 @@ class TestStory02ParallelFileProcessing:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
-            qdrant_client=self.qdrant_client,
+            vector_store_client=self.qdrant_client,
         )
 
         # Create test files
@@ -497,7 +497,7 @@ class TestStory02ParallelFileProcessing:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.embedding_provider,
-            qdrant_client=self.qdrant_client,
+            vector_store_client=self.qdrant_client,
         )
 
         # Create test files

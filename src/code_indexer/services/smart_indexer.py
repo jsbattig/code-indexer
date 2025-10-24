@@ -16,7 +16,6 @@ from typing import List, Dict, Any, Optional, Callable
 from dataclasses import dataclass
 
 from ..config import Config
-from ..services import QdrantClient
 from ..services.embedding_provider import EmbeddingProvider
 from ..indexing.processor import ProcessingStats
 from .progressive_metadata import ProgressiveMetadata
@@ -91,10 +90,10 @@ class SmartIndexer(HighThroughputProcessor):
         self,
         config: Config,
         embedding_provider: EmbeddingProvider,
-        qdrant_client: QdrantClient,
+        vector_store_client: Any,  # QdrantClient or FilesystemVectorStore
         metadata_path: Path,
     ):
-        super().__init__(config, embedding_provider, qdrant_client)
+        super().__init__(config, embedding_provider, vector_store_client)
         self.progressive_metadata = ProgressiveMetadata(metadata_path)
 
         # Initialize branch topology services

@@ -7,16 +7,11 @@ proper handling of both single and composite repositories.
 
 import json
 import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-from datetime import datetime
+from unittest.mock import patch, MagicMock
 
 from code_indexer.server.query.semantic_query_manager import (
     SemanticQueryManager,
     QueryResult,
-)
-from code_indexer.server.repositories.activated_repo_manager import (
-    ActivatedRepoManager,
 )
 
 

@@ -107,7 +107,7 @@ class TestClass_{i}:
         smart_indexer = SmartIndexer(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            qdrant_client=self.mock_qdrant,
+            vector_store_client=self.mock_qdrant,
             metadata_path=self.metadata_path,
         )
 
@@ -160,7 +160,7 @@ class TestClass_{i}:
         smart_indexer = SmartIndexer(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            qdrant_client=self.mock_qdrant,
+            vector_store_client=self.mock_qdrant,
             metadata_path=self.metadata_path,
         )
 
@@ -213,7 +213,7 @@ class TestClass_{i}:
         smart_indexer = SmartIndexer(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            qdrant_client=self.mock_qdrant,
+            vector_store_client=self.mock_qdrant,
             metadata_path=self.metadata_path,
         )
 

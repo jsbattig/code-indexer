@@ -143,7 +143,7 @@ class TestClass_{i}:
             processor = HighThroughputProcessor(
                 config=self.config,
                 embedding_provider=provider,
-                qdrant_client=self.mock_qdrant,
+                vector_store_client=self.mock_qdrant,
             )
 
             start_time = time.time()
@@ -185,7 +185,7 @@ class TestClass_{i}:
             processor = HighThroughputProcessor(
                 config=self.config,
                 embedding_provider=provider,
-                qdrant_client=self.mock_qdrant,
+                vector_store_client=self.mock_qdrant,
             )
 
             # Process files
@@ -234,7 +234,7 @@ class TestClass_{i}:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=provider,
-            qdrant_client=self.mock_qdrant,
+            vector_store_client=self.mock_qdrant,
         )
 
         start_time = time.time()

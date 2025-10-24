@@ -6,8 +6,7 @@ commands one repository at a time to prevent resource contention.
 
 import subprocess
 from pathlib import Path
-from unittest.mock import Mock, patch, call, MagicMock
-import pytest
+from unittest.mock import Mock, patch
 
 from code_indexer.proxy.sequential_executor import (
     SequentialCommandExecutor,

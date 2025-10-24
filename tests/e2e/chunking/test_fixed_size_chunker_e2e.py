@@ -416,7 +416,7 @@ class DataProcessor:
         processor = DocumentProcessor(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            qdrant_client=mock_qdrant_client,
+            vector_store_client=mock_qdrant_client,
         )
 
         # Verify that the processor uses FixedSizeChunker
@@ -476,7 +476,7 @@ class DataProcessor:
         processor = DocumentProcessor(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            qdrant_client=mock_qdrant_client,
+            vector_store_client=mock_qdrant_client,
         )
 
         # Test with Python file
@@ -555,7 +555,7 @@ class DataProcessor:
         processor = DocumentProcessor(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            qdrant_client=mock_qdrant_client,
+            vector_store_client=mock_qdrant_client,
         )
 
         java_file = mock_config.codebase_dir / "TestService.java"
@@ -614,7 +614,7 @@ class DataProcessor:
         processor = DocumentProcessor(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            qdrant_client=mock_qdrant_client,
+            vector_store_client=mock_qdrant_client,
         )
 
         # Test with both files
@@ -689,7 +689,7 @@ class DataProcessor:
         processor = DocumentProcessor(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            qdrant_client=mock_qdrant_client,
+            vector_store_client=mock_qdrant_client,
         )
 
         # Create a file that might cause issues
@@ -740,7 +740,7 @@ class DataProcessor:
         processor = DocumentProcessor(
             config=mock_config,
             embedding_provider=mock_embedding_provider,
-            qdrant_client=mock_qdrant_client,
+            vector_store_client=mock_qdrant_client,
         )
 
         # Test files

@@ -4,9 +4,7 @@ Tests the aggregation, merging, sorting, and limiting of query results
 from multiple repositories (Stories 3.2, 3.3, 3.4).
 """
 
-import pytest
 from code_indexer.proxy.query_aggregator import QueryResultAggregator
-from code_indexer.proxy.query_result import QueryResult
 
 
 class TestQueryResultAggregator:

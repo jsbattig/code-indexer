@@ -17,7 +17,6 @@ from code_indexer.config import Config, ConfigManager
 from code_indexer.services.high_throughput_processor import HighThroughputProcessor
 from code_indexer.services.file_chunking_manager import FileChunkingManager
 from code_indexer.services.git_aware_processor import GitAwareDocumentProcessor
-from code_indexer.services.smart_indexer import SmartIndexer
 from code_indexer.services.qdrant import QdrantClient
 
 

@@ -190,8 +190,9 @@ class TestAdaptedUninstallCommand:
                 cli_runner.invoke(cli, ["uninstall", "--confirm"])
 
                 # Test should work now that routing is implemented
+                # Parameters: project_root, force_docker, wipe_all, confirm
                 mock_local_uninstall.assert_called_once_with(
-                    temp_project_root, False, False
+                    temp_project_root, False, False, True
                 )
 
     def test_uninstall_command_routes_to_remote_mode(

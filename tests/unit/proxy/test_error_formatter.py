@@ -4,7 +4,6 @@ Tests the ErrorMessageFormatter class that provides clear, visually distinct
 error reporting for failed repositories.
 """
 
-import pytest
 
 from code_indexer.proxy.error_formatter import (
     ErrorMessage,
