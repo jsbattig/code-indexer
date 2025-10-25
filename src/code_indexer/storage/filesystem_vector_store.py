@@ -11,13 +11,17 @@ import os
 import random
 import subprocess
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from datetime import datetime
 import threading
 import numpy as np
 
 from .vector_quantizer import VectorQuantizer
 from .projection_matrix_manager import ProjectionMatrixManager
+
+# Lazy import to avoid circular dependency
+if TYPE_CHECKING:
+    from ..services.matrix_service_client import MatrixServiceClient
 
 
 class FilesystemVectorStore:
@@ -31,12 +35,13 @@ class FilesystemVectorStore:
     - ID indexing for fast lookups
     """
 
-    def __init__(self, base_path: Path, project_root: Optional[Path] = None):
+    def __init__(self, base_path: Path, project_root: Optional[Path] = None, use_matrix_service: bool = True):
         """Initialize filesystem vector store.
 
         Args:
             base_path: Base directory for all collections
             project_root: Root directory of the project being indexed (for git operations)
+            use_matrix_service: Use resident matrix multiplication service (default: True)
         """
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
@@ -52,6 +57,14 @@ class FilesystemVectorStore:
         # Initialize components
         self.quantizer = VectorQuantizer(depth_factor=4, reduced_dimensions=64)
         self.matrix_manager = ProjectionMatrixManager()
+
+        # Matrix service client (with in-process fallback)
+        # Lazy import to avoid circular dependency
+        self.use_matrix_service = use_matrix_service
+        self.matrix_client: Optional['MatrixServiceClient'] = None
+        if use_matrix_service:
+            from ..services.matrix_service_client import MatrixServiceClient
+            self.matrix_client = MatrixServiceClient(auto_start=True)
 
         # Thread safety for file writes
         self._write_lock = threading.Lock()
@@ -204,7 +217,18 @@ class FilesystemVectorStore:
                 # Quantize vector to hex path
                 if projection_matrix is None:
                     raise RuntimeError(f"Projection matrix is None for collection {collection_name}")
-                hex_path = self.quantizer.quantize_vector(vector, projection_matrix)
+
+                # Use matrix service if enabled, otherwise direct multiplication
+                if self.use_matrix_service and self.matrix_client:
+                    # Perform matrix multiplication via service (with in-process fallback)
+                    reduced = self.matrix_client.multiply(collection_path, vector)
+                else:
+                    # Direct in-process multiplication
+                    reduced = vector @ projection_matrix
+
+                # Continue quantization pipeline with reduced vector
+                quantized_bits = self.quantizer._quantize_to_2bit(reduced)
+                hex_path = self.quantizer._bits_to_hex(quantized_bits)
             except Exception as e:
                 import traceback
                 print(f"ERROR in upsert_points loop iteration {idx}: {e}")

@@ -3,11 +3,15 @@
 Implements deterministic random projection for reducing vector dimensions
 while preserving relative distances (Johnson-Lindenstrauss lemma).
 Following Story 2 requirements for reusable projection matrices.
+
+Story 9: Updated to support YAML format for git-friendly storage.
 """
 
 import numpy as np
 from pathlib import Path
 from typing import Optional
+
+from .yaml_matrix_format import save_matrix_yaml, load_matrix_yaml, convert_npy_to_yaml
 
 
 class ProjectionMatrixManager:
@@ -54,7 +58,7 @@ class ProjectionMatrixManager:
         return matrix
 
     def save_matrix(self, matrix: np.ndarray, collection_path: Path) -> None:
-        """Save projection matrix to collection directory.
+        """Save projection matrix to collection directory in YAML format.
 
         Args:
             matrix: Projection matrix to save
@@ -63,11 +67,20 @@ class ProjectionMatrixManager:
         collection_path = Path(collection_path)
         collection_path.mkdir(parents=True, exist_ok=True)
 
-        matrix_path = collection_path / "projection_matrix.npy"
-        np.save(matrix_path, matrix)
+        # Save in YAML format (git-friendly)
+        matrix_path = collection_path / "projection_matrix.yaml"
+        save_matrix_yaml(matrix, matrix_path)
+
+        # Also convert old .npy files if they exist
+        old_npy_path = collection_path / "projection_matrix.npy"
+        if old_npy_path.exists() and not matrix_path.exists():
+            convert_npy_to_yaml(old_npy_path)
 
     def load_matrix(self, collection_path: Path) -> np.ndarray:
         """Load existing projection matrix from collection.
+
+        Supports both YAML (preferred) and legacy NPY formats.
+        Automatically converts NPY to YAML when found.
 
         Args:
             collection_path: Path to collection directory
@@ -79,11 +92,20 @@ class ProjectionMatrixManager:
             FileNotFoundError: If matrix file does not exist
         """
         collection_path = Path(collection_path)
-        matrix_path = collection_path / "projection_matrix.npy"
+        yaml_path = collection_path / "projection_matrix.yaml"
+        npy_path = collection_path / "projection_matrix.npy"
 
-        if not matrix_path.exists():
-            raise FileNotFoundError(
-                f"Projection matrix not found at {matrix_path}"
-            )
+        # Try YAML first (preferred format)
+        if yaml_path.exists():
+            return load_matrix_yaml(yaml_path)
 
-        return np.load(matrix_path)
+        # Fall back to NPY and convert to YAML
+        if npy_path.exists():
+            matrix = np.load(npy_path)
+            # Convert to YAML for future use
+            save_matrix_yaml(matrix, yaml_path)
+            return matrix
+
+        raise FileNotFoundError(
+            f"Projection matrix not found at {collection_path}"
+        )
