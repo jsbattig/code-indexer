@@ -126,16 +126,24 @@ class QdrantContainerBackend(VectorStoreBackend):
     def get_vector_store_client(self) -> Any:
         """Get Qdrant client instance.
 
-        TODO: Full implementation in Story S05
-        - Return properly configured QdrantClient instance
-        - Ensure connection to running container
-        - Handle connection errors gracefully
+        Returns actual QdrantClient for existing Qdrant repositories.
 
         Returns:
             Qdrant client instance
         """
-        logger.info("QdrantContainerBackend.get_vector_store_client() - STUB (Story S01)")
-        return None
+        from ..services.qdrant import QdrantClient
+        from ..config import ConfigManager
+
+        # Load config to get Qdrant settings
+        try:
+            config_manager = ConfigManager.create_with_backtrack(self.project_root)
+            config = config_manager.get_config()
+
+            # Create and return QdrantClient
+            return QdrantClient(config.qdrant, project_root=self.project_root)
+        except Exception as e:
+            logger.error(f"Failed to create QdrantClient: {e}")
+            raise RuntimeError(f"Failed to get Qdrant client: {e}")
 
     def health_check(self) -> bool:
         """Check health of Qdrant containers.

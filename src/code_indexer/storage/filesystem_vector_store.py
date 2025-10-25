@@ -73,6 +73,10 @@ class FilesystemVectorStore:
         self._id_index: Dict[str, Dict[str, Path]] = {}
         self._id_index_lock = threading.Lock()
 
+        # In-process matrix cache: {collection_path: matrix}
+        self._matrix_cache: Dict[str, np.ndarray] = {}
+        self._matrix_cache_lock = threading.Lock()
+
     def create_collection(self, collection_name: str, vector_size: int) -> bool:
         """Create a new collection with projection matrix.
 
@@ -179,8 +183,17 @@ class FilesystemVectorStore:
         if not self.collection_exists(collection_name):
             raise ValueError(f"Collection '{collection_name}' does not exist")
 
-        # Load projection matrix
-        projection_matrix = self.matrix_manager.load_matrix(collection_path)
+        # Load projection matrix (with caching for in-process mode)
+        if self.use_matrix_service:
+            # Service handles matrix caching, load here for validation only
+            projection_matrix = self.matrix_manager.load_matrix(collection_path)
+        else:
+            # In-process mode: cache matrix to avoid reloading for every point
+            cache_key = str(collection_path)
+            with self._matrix_cache_lock:
+                if cache_key not in self._matrix_cache:
+                    self._matrix_cache[cache_key] = self.matrix_manager.load_matrix(collection_path)
+                projection_matrix = self._matrix_cache[cache_key]
 
         # Detect git repo root once for batch operation
         repo_root = self._get_repo_root()
@@ -218,13 +231,13 @@ class FilesystemVectorStore:
                 if projection_matrix is None:
                     raise RuntimeError(f"Projection matrix is None for collection {collection_name}")
 
-                # Use matrix service if enabled, otherwise direct multiplication
+                # Use matrix service if enabled, otherwise cached in-process multiplication
                 if self.use_matrix_service and self.matrix_client:
                     # Perform matrix multiplication via service (with in-process fallback)
                     reduced = self.matrix_client.multiply(collection_path, vector)
                 else:
-                    # Direct in-process multiplication
-                    reduced = vector @ projection_matrix
+                    # In-process multiplication with caching (optimized)
+                    reduced = vector @ projection_matrix  # Matrix already loaded once
 
                 # Continue quantization pipeline with reduced vector
                 quantized_bits = self.quantizer._quantize_to_2bit(reduced)
