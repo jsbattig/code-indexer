@@ -638,27 +638,14 @@ def _display_query_timing(console: Console, timing_info: Dict[str, Any]) -> None
         "index_load_ms",
         "hnsw_search_ms",
         "id_index_load_ms",
-        "hamming_search_ms",
-        "candidate_load_ms",
-        "quantized_lookup_ms",
-        "full_scan_ms",
         "staleness_detection_ms",
     ]
 
-    search_path = timing_info.get("search_path", "binary_index")
-    index_type_label = (
-        "HNSW index load" if search_path == "hnsw_index" else "Binary index load"
-    )
-
     search_breakdown_labels = {
         "matrix_load_ms": "    ├─ Matrix load",
-        "index_load_ms": f"    ├─ {index_type_label}",
+        "index_load_ms": "    ├─ HNSW index load",
         "hnsw_search_ms": "    ├─ HNSW search",
         "id_index_load_ms": "    ├─ ID index load",
-        "hamming_search_ms": "    ├─ Hamming distance search",
-        "candidate_load_ms": "    ├─ Candidate vector loading",
-        "quantized_lookup_ms": "    ├─ Quantized directory lookup",
-        "full_scan_ms": "    ├─ Full collection scan",
         "staleness_detection_ms": "    └─ Content & staleness detection",
     }
 
@@ -686,7 +673,9 @@ def _display_query_timing(console: Console, timing_info: Dict[str, Any]) -> None
                 for breakdown_key in search_breakdown_keys:
                     if breakdown_key in timing_info and timing_info[breakdown_key] > 0:
                         breakdown_ms = timing_info[breakdown_key]
-                        breakdown_percentage = (breakdown_ms / total_ms * 100) if total_ms > 0 else 0
+                        breakdown_percentage = (
+                            (breakdown_ms / total_ms * 100) if total_ms > 0 else 0
+                        )
 
                         # Format time
                         if breakdown_ms < 1:
@@ -696,8 +685,12 @@ def _display_query_timing(console: Console, timing_info: Dict[str, Any]) -> None
                         else:
                             breakdown_time_str = f"{breakdown_ms/1000:.2f}s"
 
-                        breakdown_label = search_breakdown_labels.get(breakdown_key, breakdown_key)
-                        console.print(f"  {breakdown_label:<30} {breakdown_time_str:>10} ({breakdown_percentage:>5.1f}%)")
+                        breakdown_label = search_breakdown_labels.get(
+                            breakdown_key, breakdown_key
+                        )
+                        console.print(
+                            f"  {breakdown_label:<30} {breakdown_time_str:>10} ({breakdown_percentage:>5.1f}%)"
+                        )
                 console.print("")
 
     # Display search path indicator
@@ -705,9 +698,6 @@ def _display_query_timing(console: Console, timing_info: Dict[str, Any]) -> None
         search_path = timing_info["search_path"]
         path_emoji = {
             "hnsw_index": "⚡",  # Lightning bolt for fast HNSW
-            "binary_index": "🚀",
-            "quantized_lookup": "📂",
-            "full_scan": "🐌",
             "none": "❌",
         }
         emoji = path_emoji.get(search_path, "❓")
@@ -2054,6 +2044,40 @@ def start(
         sys.exit(1)
 
 
+def validate_index_flags(ctx, param, value):
+    """Validate flag combinations for the index command before execution."""
+    if not value:
+        return value
+
+    # Access all params - they're stored in ctx.params as options are processed
+    params = ctx.params
+
+    # Check for --detect-deletions + --reconcile conflict
+    if param.name == "detect_deletions" and value:
+        if params.get("reconcile"):
+            console.print(
+                "❌ Cannot use --detect-deletions with --reconcile", style="red"
+            )
+            console.print(
+                "💡 --reconcile mode includes deletion detection automatically",
+                style="yellow",
+            )
+            ctx.exit(1)
+
+    if param.name == "reconcile" and value:
+        if params.get("detect_deletions"):
+            console.print(
+                "❌ Cannot use --detect-deletions with --reconcile", style="red"
+            )
+            console.print(
+                "💡 --reconcile mode includes deletion detection automatically",
+                style="yellow",
+            )
+            ctx.exit(1)
+
+    return value
+
+
 @cli.command()
 @click.option(
     "--clear", "-c", is_flag=True, help="Clear existing index and perform full reindex"
@@ -2062,6 +2086,7 @@ def start(
     "--reconcile",
     "-r",
     is_flag=True,
+    callback=validate_index_flags,
     help="Reconcile disk files with database and index missing files + timestamp-based changes",
 )
 @click.option(
@@ -2077,6 +2102,7 @@ def start(
 @click.option(
     "--detect-deletions",
     is_flag=True,
+    callback=validate_index_flags,
     help="Detect and handle files deleted from filesystem but still in database (for standard indexing only; --reconcile includes this automatically)",
 )
 @click.option(
@@ -2087,13 +2113,7 @@ def start(
 @click.option(
     "--rebuild-index",
     is_flag=True,
-    help="Rebuild vector index from existing vector files (filesystem backend only)",
-)
-@click.option(
-    "--index-type",
-    type=click.Choice(["binary", "hnsw"], case_sensitive=False),
-    default="hnsw",
-    help="Type of vector index: binary (fast build, 8s queries) or hnsw (slow build, 50ms queries)",
+    help="Rebuild HNSW index from existing vector files (filesystem backend only)",
 )
 @click.pass_context
 @require_mode("local")
@@ -2106,7 +2126,6 @@ def index(
     detect_deletions: bool,
     rebuild_indexes: bool,
     rebuild_index: bool,
-    index_type: str,
 ):
     """Index the codebase for semantic search.
 
@@ -2171,17 +2190,10 @@ def index(
       • Configure thread count in config.json: voyage_ai.parallel_requests
 
     \b
-    INDEX TYPES:
-      • binary: Fast build (~1s), slower queries (~8s) - good for frequent reindexing
-      • hnsw: Slower build (~25s), fast queries (~50ms) - good for frequent querying
-
-    \b
     EXAMPLES:
-      code-indexer index                 # Smart incremental indexing (binary index, default)
+      code-indexer index                 # Smart incremental indexing
       code-indexer index --clear         # Force full reindex (clears existing data)
-      code-indexer index --index-type hnsw  # Use HNSW index for fast queries
-      code-indexer index --index-type hnsw --clear  # Switch to HNSW and reindex
-      code-indexer index --rebuild-index    # Rebuild current index type from vectors
+      code-indexer index --rebuild-index    # Rebuild HNSW index from vectors
       code-indexer index --reconcile     # Reconcile disk vs database and index missing/modified files
       code-indexer index --detect-deletions  # Standard indexing + cleanup deleted files
       code-indexer index -b 100          # Larger batch size for speed
@@ -2493,49 +2505,29 @@ def index(
                     with open(metadata_file) as f:
                         metadata = json.load(f)
 
-                    current_index_type = metadata.get("index_type", "binary")
+                    # Rebuild HNSW index
+                    console.print(
+                        "🔄 Rebuilding HNSW index from existing vector files..."
+                    )
+                    from code_indexer.storage.hnsw_index_manager import (
+                        HNSWIndexManager,
+                    )
 
-                    # Rebuild appropriate index type
-                    if current_index_type == "hnsw":
+                    try:
+                        hnsw_manager = HNSWIndexManager(
+                            vector_dim=metadata.get("vector_size", 1536)
+                        )
+                        vectors_rebuilt = hnsw_manager.rebuild_from_vectors(
+                            collection_path
+                        )
                         console.print(
-                            "🔄 Rebuilding HNSW index from existing vector files..."
+                            f"\n✅ HNSW index rebuilt successfully - {vectors_rebuilt} vectors processed"
                         )
-                        from code_indexer.storage.hnsw_index_manager import (
-                            HNSWIndexManager,
-                        )
-
-                        try:
-                            hnsw_manager = HNSWIndexManager(
-                                vector_dim=metadata.get("vector_size", 1536)
-                            )
-                            vectors_rebuilt = hnsw_manager.rebuild_from_vectors(
-                                collection_path
-                            )
-                            console.print(
-                                f"\n✅ HNSW index rebuilt successfully - {vectors_rebuilt} vectors processed"
-                            )
-                        except Exception as e:
-                            console.print(
-                                f"\n❌ Failed to rebuild HNSW index: {e}", style="red"
-                            )
-                            sys.exit(1)
-                    else:
+                    except Exception as e:
                         console.print(
-                            "🔄 Rebuilding binary index from existing vector files..."
+                            f"\n❌ Failed to rebuild HNSW index: {e}", style="red"
                         )
-                        from code_indexer.storage.vector_index_manager import (
-                            VectorIndexManager,
-                        )
-
-                        try:
-                            index_manager = VectorIndexManager()
-                            index_manager.rebuild_from_vectors(collection_path)
-                            console.print("\n✅ Binary index rebuilt successfully")
-                        except Exception as e:
-                            console.print(
-                                f"\n❌ Failed to rebuild binary index: {e}", style="red"
-                            )
-                            sys.exit(1)
+                        sys.exit(1)
                     return
 
                 # Handle rebuild indexes flag
@@ -2553,18 +2545,6 @@ def index(
                     vector_store_client.ensure_payload_indexes(
                         collection_name, context="index"
                     )
-
-                # Set index type if specified (filesystem backend only)
-                if index_type:
-                    from code_indexer.storage.filesystem_vector_store import (
-                        FilesystemVectorStore,
-                    )
-
-                    if isinstance(vector_store_client, FilesystemVectorStore):
-                        vector_store_client.set_index_type(
-                            collection_name, index_type.lower()
-                        )
-                        console.print(f"📊 Using {index_type} index type")
 
                 stats = smart_indexer.smart_index(
                     force_full=clear,
@@ -3333,11 +3313,15 @@ def query(
 
             # Calculate vector_search_ms as sum of breakdown components for accurate reporting
             breakdown_keys = [
-                "matrix_load_ms", "index_load_ms", "hnsw_search_ms", "id_index_load_ms",
-                "hamming_search_ms", "candidate_load_ms", "quantized_lookup_ms",
-                "full_scan_ms", "staleness_detection_ms"
+                "matrix_load_ms",
+                "index_load_ms",
+                "hnsw_search_ms",
+                "id_index_load_ms",
+                "staleness_detection_ms",
             ]
-            timing_info["vector_search_ms"] = sum(search_timing.get(k, 0) for k in breakdown_keys)
+            timing_info["vector_search_ms"] = sum(
+                search_timing.get(k, 0) for k in breakdown_keys
+            )
 
             # Apply git-aware post-filtering (checks file existence in current branch)
             git_filter_start = time.time()

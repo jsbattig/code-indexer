@@ -876,14 +876,22 @@ class TestProgressReporting:
             progress_callback=progress_callback
         )
 
-        # Verify callback was called 5 times
-        assert len(callbacks) == 5, "Callback should be called for each point"
+        # Verify callback was called 7 times: 5 for points + 2 for HNSW index building
+        assert len(callbacks) == 7, "Callback should be called for each point plus HNSW index building"
 
-        # Verify callback parameters
+        # Verify first 5 callbacks are for individual points
         assert callbacks[0]['current'] == 1
         assert callbacks[0]['total'] == 5
         assert callbacks[4]['current'] == 5
         assert callbacks[4]['total'] == 5
+
+        # Verify last 2 callbacks are for HNSW index building
+        assert callbacks[5]['info'] == 'Building HNSW index'
+        assert callbacks[5]['current'] == 0
+        assert callbacks[5]['total'] == 5
+        assert callbacks[6]['info'] == 'HNSW index complete'
+        assert callbacks[6]['current'] == 5
+        assert callbacks[6]['total'] == 5
 
 
 class TestQdrantClientCompatibility:
@@ -1257,7 +1265,7 @@ class TestStory3ContentRetrievalAndStaleness:
             'vector': np.random.randn(1536).tolist(),
             'payload': {
                 'path': 'test.py',
-                'start_line': 0,
+                'start_line': 1,
                 'end_line': 2,
                 'content': content
             }
@@ -1305,7 +1313,7 @@ class TestStory3ContentRetrievalAndStaleness:
             'vector': np.random.randn(1536).tolist(),
             'payload': {
                 'path': 'test.py',
-                'start_line': 0,
+                'start_line': 1,
                 'end_line': 2,
                 'content': original_content
             }
@@ -1360,7 +1368,7 @@ class TestStory3ContentRetrievalAndStaleness:
             'vector': np.random.randn(1536).tolist(),
             'payload': {
                 'path': 'test.py',
-                'start_line': 0,
+                'start_line': 1,
                 'end_line': 1,
                 'content': content
             }
@@ -1448,9 +1456,9 @@ class TestStory3ContentRetrievalAndStaleness:
         )
         blob_hash = result.stdout.split()[2]
 
-        # Retrieve chunk (lines 1-3)
+        # Retrieve chunk (1-based lines 2-3, which are "line 1" and "line 2")
         store = FilesystemVectorStore(base_path=tmp_path, project_root=tmp_path)
-        chunk = store._retrieve_from_git_blob(blob_hash, start_line=1, end_line=3)
+        chunk = store._retrieve_from_git_blob(blob_hash, start_line=2, end_line=3)
 
         assert chunk == "line 1\nline 2\n"
 

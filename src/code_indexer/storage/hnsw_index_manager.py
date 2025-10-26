@@ -14,6 +14,7 @@ import numpy as np
 # Try to import hnswlib, gracefully degrade if not available
 try:
     import hnswlib
+
     HNSWLIB_AVAILABLE = True
 except ImportError:
     HNSWLIB_AVAILABLE = False
@@ -30,9 +31,9 @@ class HNSWIndexManager:
     """
 
     INDEX_FILENAME = "hnsw_index.bin"
-    VALID_SPACES = {'cosine', 'l2', 'ip'}  # inner product
+    VALID_SPACES = {"cosine", "l2", "ip"}  # inner product
 
-    def __init__(self, vector_dim: int = 1536, space: str = 'cosine'):
+    def __init__(self, vector_dim: int = 1536, space: str = "cosine"):
         """Initialize HNSW index manager.
 
         Args:
@@ -50,8 +51,7 @@ class HNSWIndexManager:
 
         if space not in self.VALID_SPACES:
             raise ValueError(
-                f"Invalid space metric: {space}. "
-                f"Must be one of {self.VALID_SPACES}"
+                f"Invalid space metric: {space}. " f"Must be one of {self.VALID_SPACES}"
             )
 
         self.vector_dim = vector_dim
@@ -64,7 +64,7 @@ class HNSWIndexManager:
         ids: List[str],
         M: int = 16,
         ef_construction: int = 200,
-        progress_callback: Optional[Callable[[int, int], None]] = None
+        progress_callback: Optional[Any] = None,
     ) -> None:
         """Build HNSW index from vectors and save to disk.
 
@@ -76,7 +76,7 @@ class HNSWIndexManager:
                (higher = more accurate, larger index)
             ef_construction: HNSW parameter - size of dynamic candidate list
                            (higher = better quality, slower build)
-            progress_callback: Optional callback(current, total) for progress tracking
+            progress_callback: Optional callback(current, total, file_path, info) for progress tracking
 
         Raises:
             ValueError: If vector dimensions don't match or IDs length doesn't match
@@ -97,11 +97,7 @@ class HNSWIndexManager:
 
         # Create HNSW index
         index = hnswlib.Index(space=self.space, dim=self.vector_dim)
-        index.init_index(
-            max_elements=num_vectors,
-            M=M,
-            ef_construction=ef_construction
-        )
+        index.init_index(max_elements=num_vectors, M=M, ef_construction=ef_construction)
 
         # Add vectors to index with labels (use indices as labels)
         # We'll store the ID mapping separately in metadata
@@ -109,13 +105,15 @@ class HNSWIndexManager:
 
         # Report progress before adding items
         if progress_callback:
-            progress_callback(0, num_vectors)
+            progress_callback(0, num_vectors, Path(""), info="Building HNSW index")
 
         index.add_items(vectors, labels)
 
         # Report progress after adding items
         if progress_callback:
-            progress_callback(num_vectors, num_vectors)
+            progress_callback(
+                num_vectors, num_vectors, Path(""), info="HNSW index complete"
+            )
 
         # Save index to disk
         index_file = collection_path / self.INDEX_FILENAME
@@ -128,13 +126,11 @@ class HNSWIndexManager:
             M=M,
             ef_construction=ef_construction,
             ids=ids,
-            index_file_size=index_file.stat().st_size
+            index_file_size=index_file.stat().st_size,
         )
 
     def load_index(
-        self,
-        collection_path: Path,
-        max_elements: int = 100000
+        self, collection_path: Path, max_elements: int = 100000
     ) -> Optional[Any]:
         """Load HNSW index from disk.
 
@@ -164,7 +160,7 @@ class HNSWIndexManager:
         query_vector: np.ndarray,
         collection_path: Path,
         k: int = 10,
-        ef: int = 50
+        ef: int = 50,
     ) -> Tuple[List[str], List[float]]:
         """Query HNSW index for k nearest neighbors.
 
@@ -206,8 +202,7 @@ class HNSWIndexManager:
         id_mapping = self._load_id_mapping(collection_path)
 
         # Convert labels to IDs
-        result_ids = [id_mapping.get(int(label), f"vec_{label}")
-                     for label in labels[0]]
+        result_ids = [id_mapping.get(int(label), f"vec_{label}") for label in labels[0]]
         result_distances = [float(d) for d in distances[0]]
 
         return result_ids, result_distances
@@ -233,7 +228,7 @@ class HNSWIndexManager:
         Returns:
             Dictionary with index statistics or None if index doesn't exist
         """
-        meta_file = collection_path / 'collection_meta.json'
+        meta_file = collection_path / "collection_meta.json"
 
         if not meta_file.exists():
             return None
@@ -242,25 +237,23 @@ class HNSWIndexManager:
             with open(meta_file) as f:
                 metadata = json.load(f)
 
-            if 'hnsw_index' not in metadata:
+            if "hnsw_index" not in metadata:
                 return None
 
-            hnsw_meta: Dict[str, Any] = metadata['hnsw_index']
+            hnsw_meta: Dict[str, Any] = metadata["hnsw_index"]
             return hnsw_meta
 
         except (json.JSONDecodeError, KeyError):
             return None
 
     def rebuild_from_vectors(
-        self,
-        collection_path: Path,
-        progress_callback: Optional[Callable[[int, int], None]] = None
+        self, collection_path: Path, progress_callback: Optional[Any] = None
     ) -> int:
         """Rebuild HNSW index by scanning all vector JSON files.
 
         Args:
             collection_path: Path to collection directory
-            progress_callback: Optional callback(current, total) for progress tracking
+            progress_callback: Optional callback(current, total, file_path, info) for progress tracking
 
         Returns:
             Number of vectors indexed
@@ -269,18 +262,16 @@ class HNSWIndexManager:
             FileNotFoundError: If collection metadata is missing
         """
         # Load collection metadata to get vector dimension
-        meta_file = collection_path / 'collection_meta.json'
+        meta_file = collection_path / "collection_meta.json"
         if not meta_file.exists():
-            raise FileNotFoundError(
-                f"Collection metadata not found at {meta_file}"
-            )
+            raise FileNotFoundError(f"Collection metadata not found at {meta_file}")
 
         with open(meta_file) as f:
             metadata = json.load(f)
-            expected_dim = metadata.get('vector_dim', self.vector_dim)
+            expected_dim = metadata.get("vector_dim", self.vector_dim)
 
         # Scan all vector JSON files
-        vector_files = list(collection_path.rglob('vector_*.json'))
+        vector_files = list(collection_path.rglob("vector_*.json"))
         total_files = len(vector_files)
 
         if total_files == 0:
@@ -295,8 +286,8 @@ class HNSWIndexManager:
                 with open(vector_file) as f:
                     data = json.load(f)
 
-                vector = np.array(data['vector'], dtype=np.float32)
-                point_id = data['id']
+                vector = np.array(data["vector"], dtype=np.float32)
+                point_id = data["id"]
 
                 # Validate dimension
                 if len(vector) != expected_dim:
@@ -324,7 +315,7 @@ class HNSWIndexManager:
             collection_path=collection_path,
             vectors=vectors,
             ids=ids_list,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
         )
 
         return len(vectors)
@@ -336,7 +327,7 @@ class HNSWIndexManager:
         M: int,
         ef_construction: int,
         ids: List[str],
-        index_file_size: int
+        index_file_size: int,
     ) -> None:
         """Update collection metadata with HNSW index information.
 
@@ -348,34 +339,47 @@ class HNSWIndexManager:
             ids: List of vector IDs
             index_file_size: Size of index file in bytes
         """
-        meta_file = collection_path / 'collection_meta.json'
+        import fcntl
 
-        # Load existing metadata or create new
-        if meta_file.exists():
-            with open(meta_file) as f:
-                metadata = json.load(f)
-        else:
-            metadata = {}
+        meta_file = collection_path / "collection_meta.json"
 
-        # Create ID mapping (label -> ID)
-        id_mapping = {str(i): ids[i] for i in range(len(ids))}
+        # Use file locking to prevent race conditions in concurrent writes
+        lock_file = collection_path / ".metadata.lock"
+        lock_file.touch(exist_ok=True)
 
-        # Update HNSW index metadata
-        metadata['hnsw_index'] = {
-            'version': 1,
-            'vector_count': vector_count,
-            'vector_dim': self.vector_dim,
-            'M': M,
-            'ef_construction': ef_construction,
-            'space': self.space,
-            'last_rebuild': datetime.now(timezone.utc).isoformat(),
-            'file_size_bytes': index_file_size,
-            'id_mapping': id_mapping
-        }
+        with open(lock_file, "r") as lock_f:
+            # Acquire exclusive lock
+            fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
+            try:
+                # Load existing metadata or create new
+                if meta_file.exists():
+                    with open(meta_file) as f:
+                        metadata = json.load(f)
+                else:
+                    metadata = {}
 
-        # Save metadata
-        with open(meta_file, 'w') as f:
-            json.dump(metadata, f, indent=2)
+                # Create ID mapping (label -> ID)
+                id_mapping = {str(i): ids[i] for i in range(len(ids))}
+
+                # Update HNSW index metadata
+                metadata["hnsw_index"] = {
+                    "version": 1,
+                    "vector_count": vector_count,
+                    "vector_dim": self.vector_dim,
+                    "M": M,
+                    "ef_construction": ef_construction,
+                    "space": self.space,
+                    "last_rebuild": datetime.now(timezone.utc).isoformat(),
+                    "file_size_bytes": index_file_size,
+                    "id_mapping": id_mapping,
+                }
+
+                # Save metadata
+                with open(meta_file, "w") as f:
+                    json.dump(metadata, f, indent=2)
+            finally:
+                # Release lock
+                fcntl.flock(lock_f.fileno(), fcntl.LOCK_UN)
 
     def _load_id_mapping(self, collection_path: Path) -> Dict[int, str]:
         """Load ID mapping from metadata.
@@ -386,7 +390,7 @@ class HNSWIndexManager:
         Returns:
             Dictionary mapping label (int) to vector ID (str)
         """
-        meta_file = collection_path / 'collection_meta.json'
+        meta_file = collection_path / "collection_meta.json"
 
         if not meta_file.exists():
             return {}
@@ -395,10 +399,10 @@ class HNSWIndexManager:
             with open(meta_file) as f:
                 metadata = json.load(f)
 
-            if 'hnsw_index' not in metadata:
+            if "hnsw_index" not in metadata:
                 return {}
 
-            id_mapping_str = metadata['hnsw_index'].get('id_mapping', {})
+            id_mapping_str = metadata["hnsw_index"].get("id_mapping", {})
 
             # Convert string keys back to int
             return {int(k): v for k, v in id_mapping_str.items()}

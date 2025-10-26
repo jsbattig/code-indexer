@@ -42,11 +42,17 @@ class TestCLIStalenessDisplayIntegration:
 
         # Mock remote mode detection
         with (
+            patch(
+                "code_indexer.disabled_commands.detect_current_mode"
+            ) as mock_detect_mode,
             patch("code_indexer.cli.asyncio.run") as mock_asyncio,
             patch(
                 "code_indexer.mode_detection.command_mode_detector.CommandModeDetector"
             ) as mock_detector,
         ):
+
+            # Mock the mode detection for require_mode decorator
+            mock_detect_mode.return_value = "remote"
 
             # Setup mocks
             mock_instance = Mock()
@@ -94,6 +100,9 @@ class TestCLIStalenessDisplayIntegration:
 
         # Mock local mode components
         with (
+            patch(
+                "code_indexer.disabled_commands.detect_current_mode"
+            ) as mock_detect_mode,
             patch("code_indexer.cli.EmbeddingProviderFactory") as mock_factory,
             patch(
                 "code_indexer.backends.backend_factory.BackendFactory"
@@ -105,6 +114,8 @@ class TestCLIStalenessDisplayIntegration:
                 "code_indexer.services.git_topology_service.GitTopologyService"
             ) as mock_git_service,
         ):
+            # Mock the mode detection for require_mode decorator
+            mock_detect_mode.return_value = "local"
 
             # Setup embedding provider mock
             mock_provider = Mock()
@@ -235,7 +246,13 @@ class TestCLIStalenessDisplayIntegration:
         """Test that quiet mode includes staleness indicators alongside score and path."""
 
         # This test will initially fail - quiet mode doesn't show staleness indicators yet
-        with patch("code_indexer.cli.asyncio.run") as mock_asyncio:
+        with (
+            patch(
+                "code_indexer.disabled_commands.detect_current_mode"
+            ) as mock_detect_mode,
+            patch("code_indexer.cli.asyncio.run") as mock_asyncio,
+        ):
+            mock_detect_mode.return_value = "remote"
             enhanced_result = EnhancedQueryResultItem(
                 similarity_score=0.87,
                 file_path="quiet_test.py",
@@ -273,7 +290,13 @@ class TestCLIStalenessDisplayIntegration:
         """Test that verbose mode includes detailed staleness information."""
 
         # This test will initially fail - verbose mode doesn't show staleness details yet
-        with patch("code_indexer.cli.asyncio.run") as mock_asyncio:
+        with (
+            patch(
+                "code_indexer.disabled_commands.detect_current_mode"
+            ) as mock_detect_mode,
+            patch("code_indexer.cli.asyncio.run") as mock_asyncio,
+        ):
+            mock_detect_mode.return_value = "remote"
             enhanced_result = EnhancedQueryResultItem(
                 similarity_score=0.92,
                 file_path="verbose_test.py",
@@ -388,7 +411,13 @@ class TestCLIStalenessDisplayIntegration:
         )
 
         # This test will initially fail - need graceful fallback handling
-        with patch("code_indexer.cli.asyncio.run") as mock_asyncio:
+        with (
+            patch(
+                "code_indexer.disabled_commands.detect_current_mode"
+            ) as mock_detect_mode,
+            patch("code_indexer.cli.asyncio.run") as mock_asyncio,
+        ):
+            mock_detect_mode.return_value = "remote"
             mock_asyncio.return_value = [basic_result]
 
             result = cli_runner.invoke(

@@ -7,6 +7,15 @@ import json
 from unittest.mock import Mock, patch
 from click.testing import CliRunner
 import pytest
+from contextlib import contextmanager
+
+
+@contextmanager
+def mock_local_mode():
+    """Context manager to mock detect_current_mode to return 'local'."""
+    with patch("code_indexer.disabled_commands.detect_current_mode") as mock_detect:
+        mock_detect.return_value = "local"
+        yield
 
 
 @pytest.fixture
@@ -58,8 +67,12 @@ def mock_backend():
     # Mock vector store client with collection operations
     vector_store = Mock()
     vector_store.list_collections = Mock(return_value=["voyage_code_3"])
+    vector_store.collection_exists = Mock(
+        return_value=True
+    )  # Always return True for any collection
     vector_store.clear_collection = Mock(return_value=True)
     vector_store.count_points = Mock(return_value=150)
+    vector_store.get_collection_size = Mock(return_value=1024 * 1024)  # 1MB
 
     backend.get_vector_store_client.return_value = vector_store
 
@@ -77,11 +90,19 @@ class TestCleanCommand:
 
         runner = CliRunner()
 
-        with patch(
-            "code_indexer.backends.backend_factory.BackendFactory.create",
-            return_value=mock_backend,
+        with (
+            mock_local_mode(),
+            patch(
+                "code_indexer.backends.backend_factory.BackendFactory.create",
+                return_value=mock_backend,
+            ),
         ):
-            runner.invoke(cli, ["clean"], input="y\n", obj=cli_context)
+            runner.invoke(
+                cli,
+                ["--path", str(test_project_root), "clean"],
+                input="y\n",
+                obj=cli_context,
+            )
 
         # Should call backend's vector store client to list and clear collections
         mock_backend.get_vector_store_client.assert_called_once()
@@ -99,19 +120,29 @@ class TestCleanCommand:
 
         runner = CliRunner()
 
-        with patch(
-            "code_indexer.backends.filesystem_backend.FilesystemBackend",
-            return_value=mock_backend,
+        with (
+            mock_local_mode(),
+            patch(
+                "code_indexer.backends.backend_factory.BackendFactory.create",
+                return_value=mock_backend,
+            ),
         ):
             runner.invoke(
                 cli,
-                ["clean", "--collection", "custom_collection"],
+                [
+                    "--path",
+                    str(test_project_root),
+                    "clean",
+                    "--collection",
+                    "custom_collection",
+                ],
                 input="y\n",
-                obj={"project_root": test_project_root, "mode": "local"},
             )
 
         vector_store = mock_backend.get_vector_store_client.return_value
-        vector_store.clear_collection.assert_called_once_with("custom_collection")
+        vector_store.clear_collection.assert_called_once_with(
+            "custom_collection", remove_projection_matrix=False
+        )
 
     def test_clean_shows_confirmation_prompt(self, test_project_root, mock_backend):
         """Test clean shows confirmation prompt with impact details."""
@@ -119,16 +150,18 @@ class TestCleanCommand:
 
         runner = CliRunner()
 
-        with patch(
-            "code_indexer.backends.filesystem_backend.FilesystemBackend",
-            return_value=mock_backend,
+        with (
+            mock_local_mode(),
+            patch(
+                "code_indexer.backends.backend_factory.BackendFactory.create",
+                return_value=mock_backend,
+            ),
         ):
             # Decline confirmation
             result = runner.invoke(
                 cli,
-                ["clean"],
+                ["--path", str(test_project_root), "clean"],
                 input="n\n",
-                obj={"project_root": test_project_root, "mode": "local"},
             )
 
         # Should show prompt in output
@@ -148,15 +181,17 @@ class TestCleanCommand:
 
         runner = CliRunner()
 
-        with patch(
-            "code_indexer.backends.filesystem_backend.FilesystemBackend",
-            return_value=mock_backend,
+        with (
+            mock_local_mode(),
+            patch(
+                "code_indexer.backends.backend_factory.BackendFactory.create",
+                return_value=mock_backend,
+            ),
         ):
             runner.invoke(
                 cli,
-                ["clean"],
+                ["--path", str(test_project_root), "clean"],
                 input="y\n",
-                obj={"project_root": test_project_root, "mode": "local"},
             )
 
         # Should query vector count for impact assessment
@@ -171,14 +206,16 @@ class TestCleanCommand:
 
         runner = CliRunner()
 
-        with patch(
-            "code_indexer.backends.filesystem_backend.FilesystemBackend",
-            return_value=mock_backend,
+        with (
+            mock_local_mode(),
+            patch(
+                "code_indexer.backends.backend_factory.BackendFactory.create",
+                return_value=mock_backend,
+            ),
         ):
             result = runner.invoke(
                 cli,
                 ["clean", "--force"],
-                obj={"project_root": test_project_root, "mode": "local"},
             )
 
         # Should clear collection without prompting
@@ -205,17 +242,24 @@ class TestCleanCommand:
         assert matrix_file.exists()
 
         runner = CliRunner()
-        runner.invoke(
-            cli,
-            ["clean", "--collection", "test_collection", "--force"],
-            obj={"project_root": test_project_root, "mode": "local"},
-        )
+        with mock_local_mode():
+            runner.invoke(
+                cli,
+                [
+                    "--path",
+                    str(test_project_root),
+                    "clean",
+                    "--collection",
+                    "test_collection",
+                    "--force",
+                ],
+            )
 
         # Projection matrix should still exist
         assert matrix_file.exists()
 
     def test_clean_with_remove_matrix_flag_deletes_projection_matrix(
-        self, test_project_root
+        self, test_project_root, cli_context
     ):
         """Test clean with --remove-projection-matrix flag deletes matrix."""
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
@@ -232,17 +276,27 @@ class TestCleanCommand:
         assert matrix_file.exists()
 
         runner = CliRunner()
-        runner.invoke(
-            cli,
-            [
-                "clean",
-                "--collection",
-                "test_collection",
-                "--remove-projection-matrix",
-                "--force",
-            ],
-            obj={"project_root": test_project_root, "mode": "local"},
-        )
+        with mock_local_mode():
+            # Use --path to specify the test project directory
+            # This makes the CLI use the test project's config instead of CWD
+            result = runner.invoke(
+                cli,
+                [
+                    "--path",
+                    str(test_project_root),
+                    "clean",
+                    "--collection",
+                    "test_collection",
+                    "--remove-projection-matrix",
+                    "--force",
+                ],
+            )
+
+            # Check if command succeeded
+            if result.exit_code != 0:
+                print(f"CLI output: {result.output}")
+                if result.exception:
+                    raise result.exception
 
         # Projection matrix should be deleted
         assert not matrix_file.exists()
@@ -257,14 +311,16 @@ class TestUninstallCommand:
 
         runner = CliRunner()
 
-        with patch(
-            "code_indexer.backends.filesystem_backend.FilesystemBackend",
-            return_value=mock_backend,
+        with (
+            mock_local_mode(),
+            patch(
+                "code_indexer.backends.backend_factory.BackendFactory.create",
+                return_value=mock_backend,
+            ),
         ):
             runner.invoke(
                 cli,
-                ["uninstall", "--confirm"],
-                obj={"project_root": test_project_root, "mode": "local"},
+                ["--path", str(test_project_root), "uninstall", "--confirm"],
             )
 
         # Should call backend cleanup
@@ -281,11 +337,11 @@ class TestUninstallCommand:
         assert index_dir.exists()
 
         runner = CliRunner()
-        runner.invoke(
-            cli,
-            ["uninstall", "--confirm"],
-            obj={"project_root": test_project_root, "mode": "local"},
-        )
+        with mock_local_mode():
+            runner.invoke(
+                cli,
+                ["--path", str(test_project_root), "uninstall", "--confirm"],
+            )
 
         # Index directory should be completely removed
         assert not index_dir.exists()
@@ -296,16 +352,18 @@ class TestUninstallCommand:
 
         runner = CliRunner()
 
-        with patch(
-            "code_indexer.backends.filesystem_backend.FilesystemBackend",
-            return_value=mock_backend,
+        with (
+            mock_local_mode(),
+            patch(
+                "code_indexer.backends.backend_factory.BackendFactory.create",
+                return_value=mock_backend,
+            ),
         ):
             # Decline confirmation
             result = runner.invoke(
                 cli,
-                ["uninstall"],
+                ["--path", str(test_project_root), "uninstall"],
                 input="n\n",
-                obj={"project_root": test_project_root, "mode": "local"},
             )
 
         # Should show confirmation prompt
@@ -325,11 +383,11 @@ class TestUninstallCommand:
         large_file.write_text("x" * 1024 * 1024)  # 1MB
 
         runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            ["uninstall", "--confirm"],
-            obj={"project_root": test_project_root, "mode": "local"},
-        )
+        with mock_local_mode():
+            result = runner.invoke(
+                cli,
+                ["--path", str(test_project_root), "uninstall", "--confirm"],
+            )
 
         # Should report storage reclaimed
         assert (
@@ -346,14 +404,16 @@ class TestUninstallCommand:
 
         runner = CliRunner()
 
-        with patch(
-            "code_indexer.backends.filesystem_backend.FilesystemBackend",
-            return_value=mock_backend,
+        with (
+            mock_local_mode(),
+            patch(
+                "code_indexer.backends.backend_factory.BackendFactory.create",
+                return_value=mock_backend,
+            ),
         ):
             result = runner.invoke(
                 cli,
-                ["uninstall", "--confirm"],
-                obj={"project_root": test_project_root, "mode": "local"},
+                ["--path", str(test_project_root), "uninstall", "--confirm"],
             )
 
         # Should cleanup without prompting
@@ -370,17 +430,19 @@ class TestUninstallCommand:
 
         runner = CliRunner()
 
-        with patch(
-            "code_indexer.backends.filesystem_backend.FilesystemBackend",
-            return_value=mock_backend,
+        with (
+            mock_local_mode(),
+            patch(
+                "code_indexer.backends.backend_factory.BackendFactory.create",
+                return_value=mock_backend,
+            ),
         ):
             with patch(
                 "code_indexer.services.docker_manager.DockerManager"
             ) as mock_docker:
                 runner.invoke(
                     cli,
-                    ["uninstall", "--confirm"],
-                    obj={"project_root": test_project_root, "mode": "local"},
+                    ["--path", str(test_project_root), "uninstall", "--confirm"],
                 )
 
                 # Should NOT instantiate DockerManager for filesystem backend
@@ -405,11 +467,11 @@ class TestListCollectionsWithMetadata:
         vector_store.create_collection("collection2", vector_size=768)
 
         runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            ["list-collections"],
-            obj={"project_root": test_project_root, "mode": "local"},
-        )
+        with mock_local_mode():
+            result = runner.invoke(
+                cli,
+                ["--path", str(test_project_root), "list-collections"],
+            )
 
         # Should show both collections
         assert "collection1" in result.output
@@ -444,11 +506,11 @@ class TestListCollectionsWithMetadata:
         vector_store.upsert_points("test_collection", points)
 
         runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            ["list-collections"],
-            obj={"project_root": test_project_root, "mode": "local"},
-        )
+        with mock_local_mode():
+            result = runner.invoke(
+                cli,
+                ["--path", str(test_project_root), "list-collections"],
+            )
 
         # Should show vector count
         assert "10" in result.output or "vectors" in result.output.lower()
@@ -464,7 +526,14 @@ class TestGitAwareCleanupRecommendations:
         from code_indexer.cli import cli
 
         # Mock git status to show uncommitted files
-        with patch("subprocess.run") as mock_run:
+        with (
+            mock_local_mode(),
+            patch("subprocess.run") as mock_run,
+            patch(
+                "code_indexer.backends.backend_factory.BackendFactory.create",
+                return_value=mock_backend,
+            ),
+        ):
             mock_result = Mock()
             mock_result.returncode = 0
             mock_result.stdout = "M  src/file1.py\nM  src/file2.py\n"
@@ -473,8 +542,7 @@ class TestGitAwareCleanupRecommendations:
             runner = CliRunner()
             result = runner.invoke(
                 cli,
-                ["clean", "--show-recommendations"],
-                obj={"project_root": test_project_root, "mode": "local"},
+                ["--path", str(test_project_root), "clean", "--show-recommendations"],
             )
 
             # Should mention uncommitted changes in recommendations
@@ -484,14 +552,21 @@ class TestGitAwareCleanupRecommendations:
             )
 
     def test_clean_recommends_selective_deletion_for_dirty_files(
-        self, test_project_root
+        self, test_project_root, mock_backend
     ):
         """Test clean recommends selective deletion for files with uncommitted changes."""
         from code_indexer.cli import cli
 
         runner = CliRunner()
 
-        with patch("subprocess.run") as mock_run:
+        with (
+            mock_local_mode(),
+            patch("subprocess.run") as mock_run,
+            patch(
+                "code_indexer.backends.backend_factory.BackendFactory.create",
+                return_value=mock_backend,
+            ),
+        ):
             # Mock git status showing modified files
             mock_result = Mock()
             mock_result.returncode = 0
@@ -500,8 +575,7 @@ class TestGitAwareCleanupRecommendations:
 
             result = runner.invoke(
                 cli,
-                ["clean", "--show-recommendations"],
-                obj={"project_root": test_project_root, "mode": "local"},
+                ["--path", str(test_project_root), "clean", "--show-recommendations"],
             )
 
             # Should recommend reviewing uncommitted changes before cleanup
@@ -542,11 +616,18 @@ class TestStorageSpaceReporting:
         vector_store.upsert_points("test_collection", points)
 
         runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            ["clean", "--collection", "test_collection", "--force"],
-            obj={"project_root": test_project_root, "mode": "local"},
-        )
+        with mock_local_mode():
+            result = runner.invoke(
+                cli,
+                [
+                    "--path",
+                    str(test_project_root),
+                    "clean",
+                    "--collection",
+                    "test_collection",
+                    "--force",
+                ],
+            )
 
         # Should report storage reclaimed
         assert "reclaimed" in result.output.lower() or "freed" in result.output.lower()
@@ -569,14 +650,16 @@ class TestAtomicOperations:
 
         runner = CliRunner()
 
-        with patch(
-            "code_indexer.backends.filesystem_backend.FilesystemBackend",
-            return_value=mock_backend,
+        with (
+            mock_local_mode(),
+            patch(
+                "code_indexer.backends.backend_factory.BackendFactory.create",
+                return_value=mock_backend,
+            ),
         ):
             result = runner.invoke(
                 cli,
-                ["clean", "--force"],
-                obj={"project_root": test_project_root, "mode": "local"},
+                ["--path", str(test_project_root), "clean", "--force"],
             )
 
         # Should report failure
@@ -591,14 +674,16 @@ class TestAtomicOperations:
 
         runner = CliRunner()
 
-        with patch(
-            "code_indexer.backends.filesystem_backend.FilesystemBackend",
-            return_value=mock_backend,
+        with (
+            mock_local_mode(),
+            patch(
+                "code_indexer.backends.backend_factory.BackendFactory.create",
+                return_value=mock_backend,
+            ),
         ):
             result = runner.invoke(
                 cli,
-                ["uninstall", "--confirm"],
-                obj={"project_root": test_project_root, "mode": "local"},
+                ["--path", str(test_project_root), "uninstall", "--confirm"],
             )
 
         # Should report error
