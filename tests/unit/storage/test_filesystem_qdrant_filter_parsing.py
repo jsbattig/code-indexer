@@ -4,10 +4,9 @@ Tests that FilesystemVectorStore correctly parses Qdrant-style filter conditions
 to be a true drop-in replacement for QdrantClient.
 """
 
-import json
 from pathlib import Path
+from unittest.mock import Mock
 import pytest
-import numpy as np
 from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
 
@@ -28,45 +27,45 @@ def populated_store(temp_store):
     # Add test vectors with different payloads
     points = [
         {
-            'id': 'python_file1',
-            'vector': [1.0, 0.0, 0.0, 0.0],
-            'payload': {
-                'path': 'src/test.py',
-                'language': 'python',
-                'git_available': True,
-                'type': 'content'
-            }
+            "id": "python_file1",
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "payload": {
+                "path": "src/test.py",
+                "language": "python",
+                "git_available": True,
+                "type": "content",
+            },
         },
         {
-            'id': 'python_file2',
-            'vector': [0.9, 0.1, 0.0, 0.0],
-            'payload': {
-                'path': 'src/main.py',
-                'language': 'python',
-                'git_available': True,
-                'type': 'content'
-            }
+            "id": "python_file2",
+            "vector": [0.9, 0.1, 0.0, 0.0],
+            "payload": {
+                "path": "src/main.py",
+                "language": "python",
+                "git_available": True,
+                "type": "content",
+            },
         },
         {
-            'id': 'js_file',
-            'vector': [0.8, 0.2, 0.0, 0.0],
-            'payload': {
-                'path': 'app.js',
-                'language': 'javascript',
-                'git_available': False,
-                'type': 'content'
-            }
+            "id": "js_file",
+            "vector": [0.8, 0.2, 0.0, 0.0],
+            "payload": {
+                "path": "app.js",
+                "language": "javascript",
+                "git_available": False,
+                "type": "content",
+            },
         },
         {
-            'id': 'python_test',
-            'vector': [0.7, 0.3, 0.0, 0.0],
-            'payload': {
-                'path': 'tests/test_foo.py',
-                'language': 'python',
-                'git_available': False,
-                'type': 'test'
-            }
-        }
+            "id": "python_test",
+            "vector": [0.7, 0.3, 0.0, 0.0],
+            "payload": {
+                "path": "tests/test_foo.py",
+                "language": "python",
+                "git_available": False,
+                "type": "test",
+            },
+        },
     ]
 
     temp_store.upsert_points(collection_name, points)
@@ -78,24 +77,24 @@ def test_qdrant_filter_single_must_condition(populated_store):
     store, collection_name = populated_store
 
     # Qdrant-style filter: language = python
-    filter_conditions = {
-        "must": [
-            {"key": "language", "match": {"value": "python"}}
-        ]
-    }
+    filter_conditions = {"must": [{"key": "language", "match": {"value": "python"}}]}
 
     query_vector = [1.0, 0.0, 0.0, 0.0]
+    mock_embedding_provider = Mock()
+    mock_embedding_provider.get_embedding.return_value = query_vector
+
     results = store.search(
-        query_vector=query_vector,
+        query="test query",
+        embedding_provider=mock_embedding_provider,
         collection_name=collection_name,
         limit=10,
-        filter_conditions=filter_conditions
+        filter_conditions=filter_conditions,
     )
 
     # Should return 3 python files
     assert len(results) == 3
     for result in results:
-        assert result['payload']['language'] == 'python'
+        assert result["payload"]["language"] == "python"
 
 
 def test_qdrant_filter_multiple_must_conditions(populated_store):
@@ -106,23 +105,27 @@ def test_qdrant_filter_multiple_must_conditions(populated_store):
     filter_conditions = {
         "must": [
             {"key": "language", "match": {"value": "python"}},
-            {"key": "git_available", "match": {"value": True}}
+            {"key": "git_available", "match": {"value": True}},
         ]
     }
 
     query_vector = [1.0, 0.0, 0.0, 0.0]
+    mock_embedding_provider = Mock()
+    mock_embedding_provider.get_embedding.return_value = query_vector
+
     results = store.search(
-        query_vector=query_vector,
+        query="test query",
+        embedding_provider=mock_embedding_provider,
         collection_name=collection_name,
         limit=10,
-        filter_conditions=filter_conditions
+        filter_conditions=filter_conditions,
     )
 
     # Should return 2 python files with git_available=True
     assert len(results) == 2
     for result in results:
-        assert result['payload']['language'] == 'python'
-        assert result['payload']['git_available'] is True
+        assert result["payload"]["language"] == "python"
+        assert result["payload"]["git_available"] is True
 
 
 def test_qdrant_filter_should_conditions(populated_store):
@@ -133,16 +136,20 @@ def test_qdrant_filter_should_conditions(populated_store):
     filter_conditions = {
         "should": [
             {"key": "language", "match": {"value": "python"}},
-            {"key": "language", "match": {"value": "javascript"}}
+            {"key": "language", "match": {"value": "javascript"}},
         ]
     }
 
     query_vector = [1.0, 0.0, 0.0, 0.0]
+    mock_embedding_provider = Mock()
+    mock_embedding_provider.get_embedding.return_value = query_vector
+
     results = store.search(
-        query_vector=query_vector,
+        query="test query",
+        embedding_provider=mock_embedding_provider,
         collection_name=collection_name,
         limit=10,
-        filter_conditions=filter_conditions
+        filter_conditions=filter_conditions,
     )
 
     # Should return all 4 files (3 python + 1 javascript)
@@ -155,23 +162,25 @@ def test_qdrant_filter_must_not_conditions(populated_store):
 
     # Qdrant-style filter: NOT git_available = False
     filter_conditions = {
-        "must_not": [
-            {"key": "git_available", "match": {"value": False}}
-        ]
+        "must_not": [{"key": "git_available", "match": {"value": False}}]
     }
 
     query_vector = [1.0, 0.0, 0.0, 0.0]
+    mock_embedding_provider = Mock()
+    mock_embedding_provider.get_embedding.return_value = query_vector
+
     results = store.search(
-        query_vector=query_vector,
+        query="test query",
+        embedding_provider=mock_embedding_provider,
         collection_name=collection_name,
         limit=10,
-        filter_conditions=filter_conditions
+        filter_conditions=filter_conditions,
     )
 
     # Should return 2 files with git_available=True
     assert len(results) == 2
     for result in results:
-        assert result['payload']['git_available'] is True
+        assert result["payload"]["git_available"] is True
 
 
 def test_qdrant_filter_combined_conditions(populated_store):
@@ -180,28 +189,30 @@ def test_qdrant_filter_combined_conditions(populated_store):
 
     # Qdrant-style filter: git_available = True AND (language = python OR language = javascript)
     filter_conditions = {
-        "must": [
-            {"key": "git_available", "match": {"value": True}}
-        ],
+        "must": [{"key": "git_available", "match": {"value": True}}],
         "should": [
             {"key": "language", "match": {"value": "python"}},
-            {"key": "language", "match": {"value": "javascript"}}
-        ]
+            {"key": "language", "match": {"value": "javascript"}},
+        ],
     }
 
     query_vector = [1.0, 0.0, 0.0, 0.0]
+    mock_embedding_provider = Mock()
+    mock_embedding_provider.get_embedding.return_value = query_vector
+
     results = store.search(
-        query_vector=query_vector,
+        query="test query",
+        embedding_provider=mock_embedding_provider,
         collection_name=collection_name,
         limit=10,
-        filter_conditions=filter_conditions
+        filter_conditions=filter_conditions,
     )
 
     # Should return 2 python files with git_available=True
     assert len(results) == 2
     for result in results:
-        assert result['payload']['git_available'] is True
-        assert result['payload']['language'] == 'python'
+        assert result["payload"]["git_available"] is True
+        assert result["payload"]["language"] == "python"
 
 
 def test_qdrant_filter_no_filter(populated_store):
@@ -209,11 +220,15 @@ def test_qdrant_filter_no_filter(populated_store):
     store, collection_name = populated_store
 
     query_vector = [1.0, 0.0, 0.0, 0.0]
+    mock_embedding_provider = Mock()
+    mock_embedding_provider.get_embedding.return_value = query_vector
+
     results = store.search(
-        query_vector=query_vector,
+        query="test query",
+        embedding_provider=mock_embedding_provider,
         collection_name=collection_name,
         limit=10,
-        filter_conditions=None
+        filter_conditions=None,
     )
 
     # Should return all 4 files
@@ -225,11 +240,15 @@ def test_qdrant_filter_empty_filter(populated_store):
     store, collection_name = populated_store
 
     query_vector = [1.0, 0.0, 0.0, 0.0]
+    mock_embedding_provider = Mock()
+    mock_embedding_provider.get_embedding.return_value = query_vector
+
     results = store.search(
-        query_vector=query_vector,
+        query="test query",
+        embedding_provider=mock_embedding_provider,
         collection_name=collection_name,
         limit=10,
-        filter_conditions={}
+        filter_conditions={},
     )
 
     # Should return all 4 files
@@ -241,18 +260,18 @@ def test_qdrant_filter_no_matches(populated_store):
     store, collection_name = populated_store
 
     # Filter for non-existent language
-    filter_conditions = {
-        "must": [
-            {"key": "language", "match": {"value": "rust"}}
-        ]
-    }
+    filter_conditions = {"must": [{"key": "language", "match": {"value": "rust"}}]}
 
     query_vector = [1.0, 0.0, 0.0, 0.0]
+    mock_embedding_provider = Mock()
+    mock_embedding_provider.get_embedding.return_value = query_vector
+
     results = store.search(
-        query_vector=query_vector,
+        query="test query",
+        embedding_provider=mock_embedding_provider,
         collection_name=collection_name,
         limit=10,
-        filter_conditions=filter_conditions
+        filter_conditions=filter_conditions,
     )
 
     # Should return 0 results
@@ -261,19 +280,19 @@ def test_qdrant_filter_no_matches(populated_store):
 
 def test_parse_qdrant_filter_method_exists():
     """Test that _parse_qdrant_filter method exists."""
-    store = FilesystemVectorStore(base_path=Path("/tmp/test"), project_root=Path("/tmp"))
-    assert hasattr(store, '_parse_qdrant_filter')
+    store = FilesystemVectorStore(
+        base_path=Path("/tmp/test"), project_root=Path("/tmp")
+    )
+    assert hasattr(store, "_parse_qdrant_filter")
 
 
 def test_parse_qdrant_filter_returns_callable():
     """Test that _parse_qdrant_filter returns a callable."""
-    store = FilesystemVectorStore(base_path=Path("/tmp/test"), project_root=Path("/tmp"))
+    store = FilesystemVectorStore(
+        base_path=Path("/tmp/test"), project_root=Path("/tmp")
+    )
 
-    filter_conditions = {
-        "must": [
-            {"key": "language", "match": {"value": "python"}}
-        ]
-    }
+    filter_conditions = {"must": [{"key": "language", "match": {"value": "python"}}]}
 
     filter_func = store._parse_qdrant_filter(filter_conditions)
     assert callable(filter_func)
@@ -281,12 +300,14 @@ def test_parse_qdrant_filter_returns_callable():
 
 def test_parse_qdrant_filter_evaluates_correctly():
     """Test that parsed filter evaluates payloads correctly."""
-    store = FilesystemVectorStore(base_path=Path("/tmp/test"), project_root=Path("/tmp"))
+    store = FilesystemVectorStore(
+        base_path=Path("/tmp/test"), project_root=Path("/tmp")
+    )
 
     filter_conditions = {
         "must": [
             {"key": "language", "match": {"value": "python"}},
-            {"key": "git_available", "match": {"value": True}}
+            {"key": "git_available", "match": {"value": True}},
         ]
     }
 
@@ -310,22 +331,16 @@ def test_scroll_points_with_qdrant_filters(populated_store):
     store, collection_name = populated_store
 
     # This should also use Qdrant filter parser
-    filter_conditions = {
-        "must": [
-            {"key": "language", "match": {"value": "python"}}
-        ]
-    }
+    filter_conditions = {"must": [{"key": "language", "match": {"value": "python"}}]}
 
     points, next_offset = store.scroll_points(
-        collection_name=collection_name,
-        limit=100,
-        filter_conditions=filter_conditions
+        collection_name=collection_name, limit=100, filter_conditions=filter_conditions
     )
 
     # Should return 3 python files
     assert len(points) == 3
     for point in points:
-        assert point['payload']['language'] == 'python'
+        assert point["payload"]["language"] == "python"
 
 
 def test_flat_dict_filter_format_backward_compatibility(populated_store):
@@ -333,22 +348,24 @@ def test_flat_dict_filter_format_backward_compatibility(populated_store):
     store, collection_name = populated_store
 
     # Flat dict filter (legacy format)
-    filter_conditions = {
-        "language": "python"
-    }
+    filter_conditions = {"language": "python"}
 
     query_vector = [1.0, 0.0, 0.0, 0.0]
+    mock_embedding_provider = Mock()
+    mock_embedding_provider.get_embedding.return_value = query_vector
+
     results = store.search(
-        query_vector=query_vector,
+        query="test query",
+        embedding_provider=mock_embedding_provider,
         collection_name=collection_name,
         limit=10,
-        filter_conditions=filter_conditions
+        filter_conditions=filter_conditions,
     )
 
     # Should return 3 python files
     assert len(results) == 3
     for result in results:
-        assert result['payload']['language'] == 'python'
+        assert result["payload"]["language"] == "python"
 
 
 def test_flat_dict_filter_multiple_conditions(populated_store):
@@ -356,21 +373,22 @@ def test_flat_dict_filter_multiple_conditions(populated_store):
     store, collection_name = populated_store
 
     # Flat dict filter: language = python AND git_available = True
-    filter_conditions = {
-        "language": "python",
-        "git_available": True
-    }
+    filter_conditions = {"language": "python", "git_available": True}
 
     query_vector = [1.0, 0.0, 0.0, 0.0]
+    mock_embedding_provider = Mock()
+    mock_embedding_provider.get_embedding.return_value = query_vector
+
     results = store.search(
-        query_vector=query_vector,
+        query="test query",
+        embedding_provider=mock_embedding_provider,
         collection_name=collection_name,
         limit=10,
-        filter_conditions=filter_conditions
+        filter_conditions=filter_conditions,
     )
 
     # Should return 2 python files with git_available=True
     assert len(results) == 2
     for result in results:
-        assert result['payload']['language'] == 'python'
-        assert result['payload']['git_available'] is True
+        assert result["payload"]["language"] == "python"
+        assert result["payload"]["git_available"] is True

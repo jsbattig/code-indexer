@@ -6,7 +6,6 @@ Following Story 2 requirements for 1536→64→2-bit→path quantization pipelin
 
 import numpy as np
 import pytest
-from pathlib import Path
 
 
 class TestVectorQuantizer:
@@ -17,9 +16,9 @@ class TestVectorQuantizer:
         """Generate deterministic test vectors."""
         np.random.seed(42)
         return {
-            'small': np.random.randn(10, 1536),
-            'medium': np.random.randn(100, 1536),
-            'large': np.random.randn(1000, 1536)
+            "small": np.random.randn(10, 1536),
+            "medium": np.random.randn(100, 1536),
+            "large": np.random.randn(1000, 1536),
         }
 
     def test_deterministic_quantization_same_vector_same_path(self, test_vectors):
@@ -37,13 +36,15 @@ class TestVectorQuantizer:
         np.random.seed(42)
         projection_matrix = np.random.randn(1536, 64) / np.sqrt(64)
 
-        vector = test_vectors['small'][0]
+        vector = test_vectors["small"][0]
         path1 = quantizer.quantize_vector(vector, projection_matrix)
         path2 = quantizer.quantize_vector(vector, projection_matrix)
 
         assert path1 == path2, "Quantization must be deterministic"
         assert isinstance(path1, str), "Path must be string"
-        assert len(path1) == 32, "32 hex characters expected (64 dims * 2 bits / 4 bits per hex)"
+        assert (
+            len(path1) == 32
+        ), "32 hex characters expected (64 dims * 2 bits / 4 bits per hex)"
 
     def test_quantize_to_2bit_quartile_mapping(self):
         """GIVEN a float vector
@@ -87,7 +88,7 @@ class TestVectorQuantizer:
 
         assert isinstance(hex_string, str), "Must return string"
         assert len(hex_string) == 32, "Must be 32 hex characters"
-        assert all(c in '0123456789abcdef' for c in hex_string), "Must be valid hex"
+        assert all(c in "0123456789abcdef" for c in hex_string), "Must be valid hex"
 
     def test_path_segments_with_depth_factor_4(self):
         """GIVEN 32-character hex string
@@ -127,14 +128,14 @@ class TestVectorQuantizer:
         np.random.seed(42)
         projection_matrix = np.random.randn(1536, 64) / np.sqrt(64)
 
-        vector = test_vectors['small'][0]
+        vector = test_vectors["small"][0]
 
         hex_path = quantizer.quantize_vector(vector, projection_matrix)
 
         # Verify output
         assert isinstance(hex_path, str)
         assert len(hex_path) == 32
-        assert all(c in '0123456789abcdef' for c in hex_path)
+        assert all(c in "0123456789abcdef" for c in hex_path)
 
         # Verify determinism
         hex_path2 = quantizer.quantize_vector(vector, projection_matrix)
@@ -154,8 +155,8 @@ class TestVectorQuantizer:
         np.random.seed(42)
         projection_matrix = np.random.randn(1536, 64) / np.sqrt(64)
 
-        vector1 = test_vectors['small'][0]
-        vector2 = test_vectors['small'][1]
+        vector1 = test_vectors["small"][0]
+        vector2 = test_vectors["small"][1]
 
         path1 = quantizer.quantize_vector(vector1, projection_matrix)
         path2 = quantizer.quantize_vector(vector2, projection_matrix)
@@ -177,7 +178,7 @@ class TestVectorQuantizer:
         np.random.seed(42)
         projection_matrix = np.random.randn(1536, 64) / np.sqrt(64)
 
-        vectors = test_vectors['large']  # 1000 vectors
+        vectors = test_vectors["large"]  # 1000 vectors
 
         start = time.time()
         paths = [quantizer.quantize_vector(v, projection_matrix) for v in vectors]

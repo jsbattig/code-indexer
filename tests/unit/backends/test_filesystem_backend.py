@@ -168,8 +168,12 @@ class TestFilesystemBackendInitialization:
         backend.initialize()
         client = backend.get_vector_store_client()
 
-        assert client is not None, "get_vector_store_client should return FilesystemVectorStore"
-        assert isinstance(client, FilesystemVectorStore), "Should return FilesystemVectorStore instance"
+        assert (
+            client is not None
+        ), "get_vector_store_client should return FilesystemVectorStore"
+        assert isinstance(
+            client, FilesystemVectorStore
+        ), "Should return FilesystemVectorStore instance"
 
     def test_health_check_fails_when_not_initialized(self, tmp_path: Path):
         """FilesystemBackend.health_check() should return False when not initialized."""
@@ -208,10 +212,14 @@ class TestFilesystemBackendInitialization:
 class TestBackendFactory:
     """Test BackendFactory creates appropriate backend from configuration."""
 
-    def test_programmatic_config_without_vector_store_defaults_to_qdrant(self, tmp_path: Path):
+    def test_programmatic_config_without_vector_store_defaults_to_qdrant(
+        self, tmp_path: Path
+    ):
         """BackendFactory should create QdrantContainerBackend when no vector_store config (backward compat)."""
         from code_indexer.backends.backend_factory import BackendFactory
-        from code_indexer.backends.qdrant_container_backend import QdrantContainerBackend
+        from code_indexer.backends.qdrant_container_backend import (
+            QdrantContainerBackend,
+        )
         from code_indexer.config import Config
 
         project_root = tmp_path / "test_project"
@@ -354,7 +362,12 @@ class TestBackendFactory:
 
     def test_qdrant_config_has_ports(self, tmp_path: Path):
         """Qdrant backend configuration should allocate ports."""
-        from code_indexer.config import Config, VectorStoreConfig, ConfigManager, ProjectPortsConfig
+        from code_indexer.config import (
+            Config,
+            VectorStoreConfig,
+            ConfigManager,
+            ProjectPortsConfig,
+        )
         from code_indexer.services.global_port_registry import GlobalPortRegistry
 
         project_root = tmp_path / "test_project"

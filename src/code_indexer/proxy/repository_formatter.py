@@ -24,11 +24,7 @@ class RepositoryPrefixFormatter:
         """
         self.proxy_root = Path(proxy_root).resolve()
 
-    def format_prefix(
-        self,
-        repo_path: str,
-        use_relative: bool = True
-    ) -> str:
+    def format_prefix(self, repo_path: str, use_relative: bool = True) -> str:
         """Format repository path as prefix.
 
         Args:
@@ -58,16 +54,12 @@ class RepositoryPrefixFormatter:
             repo = Path(repo_path).resolve()
             relative = repo.relative_to(self.proxy_root)
             # Use forward slashes for consistency across platforms
-            return str(relative).replace('\\', '/')
+            return str(relative).replace("\\", "/")
         except ValueError:
             # Path not relative to proxy root, use as-is
             return repo_path
 
-    def format_output_line(
-        self,
-        repo_path: str,
-        content: str
-    ) -> str:
+    def format_output_line(self, repo_path: str, content: str) -> str:
         """Format complete output line with prefix.
 
         Args:

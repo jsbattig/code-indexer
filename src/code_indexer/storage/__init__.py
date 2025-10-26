@@ -6,8 +6,8 @@ from .filesystem_vector_store import FilesystemVectorStore
 from .hnsw_index_manager import HNSWIndexManager
 
 __all__ = [
-    'VectorQuantizer',
-    'ProjectionMatrixManager',
-    'FilesystemVectorStore',
-    'HNSWIndexManager',
+    "VectorQuantizer",
+    "ProjectionMatrixManager",
+    "FilesystemVectorStore",
+    "HNSWIndexManager",
 ]

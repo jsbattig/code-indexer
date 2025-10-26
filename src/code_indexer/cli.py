@@ -624,15 +624,39 @@ def _display_query_timing(console: Console, timing_info: Dict[str, Any]) -> None
     console.print("-" * 60)
 
     # Calculate total time from high-level steps only (not breakdown components)
-    high_level_steps = {
-        "embedding_ms": "Embedding generation",
-        "vector_search_ms": "Vector search (total)",
-        "git_filter_ms": "Git-aware filtering",
-    }
+    # For parallel execution, use parallel_load_ms instead of embedding_ms + index_load_ms
+    if "parallel_load_ms" in timing_info:
+        # Parallel execution path (FilesystemVectorStore)
+        high_level_steps = {
+            "parallel_load_ms": "Parallel load (embedding + index)",
+            "hnsw_search_ms": "Vector search",
+            "git_filter_ms": "Git-aware filtering",
+        }
+    else:
+        # Sequential execution path (QdrantClient or legacy)
+        high_level_steps = {
+            "embedding_ms": "Embedding generation",
+            "vector_search_ms": "Vector search (total)",
+            "git_filter_ms": "Git-aware filtering",
+        }
 
     total_ms = sum(timing_info.get(key, 0) for key in high_level_steps.keys())
 
-    # Prepare breakdown keys and labels
+    # Prepare breakdown keys and labels (shown under parallel_load_ms or vector_search_ms)
+    parallel_breakdown_keys = [
+        "embedding_ms",  # Concurrent with index loading
+        "index_load_ms",  # Concurrent with embedding
+        "id_index_load_ms",  # Part of index loading
+        "parallel_overhead_ms",  # Threading coordination overhead
+    ]
+
+    parallel_breakdown_labels = {
+        "embedding_ms": "    ├─ Embedding generation (concurrent)",
+        "index_load_ms": "    ├─ HNSW index load (concurrent)",
+        "id_index_load_ms": "    ├─ ID index load (concurrent)",
+        "parallel_overhead_ms": "    └─ Threading overhead",
+    }
+
     search_breakdown_keys = [
         "matrix_load_ms",
         "index_load_ms",
@@ -649,9 +673,10 @@ def _display_query_timing(console: Console, timing_info: Dict[str, Any]) -> None
         "staleness_detection_ms": "    └─ Content & staleness detection",
     }
 
-    has_breakdown = any(key in timing_info for key in search_breakdown_keys)
+    has_parallel_breakdown = "parallel_load_ms" in timing_info
+    has_search_breakdown = any(key in timing_info for key in search_breakdown_keys)
 
-    # Display each high-level step, with breakdown inserted after vector search
+    # Display each high-level step, with breakdown inserted appropriately
     for key, label in high_level_steps.items():
         if key in timing_info:
             ms = timing_info[key]
@@ -667,8 +692,49 @@ def _display_query_timing(console: Console, timing_info: Dict[str, Any]) -> None
 
             console.print(f"  • {label:<30} {time_str:>10} ({percentage:>5.1f}%)")
 
-            # Insert breakdown immediately after vector search
-            if key == "vector_search_ms" and has_breakdown:
+            # Insert parallel breakdown immediately after parallel_load_ms
+            if key == "parallel_load_ms" and has_parallel_breakdown:
+                console.print("")
+                for breakdown_key in parallel_breakdown_keys:
+                    if breakdown_key in timing_info and timing_info[breakdown_key] > 0:
+                        breakdown_ms = timing_info[breakdown_key]
+                        # Note: Don't calculate percentage from total_ms - these are concurrent!
+                        # Exception: For overhead, show percentage of parallel load time
+
+                        # Format time
+                        if breakdown_ms < 1:
+                            breakdown_time_str = f"{breakdown_ms:.2f}ms"
+                        elif breakdown_ms < 1000:
+                            breakdown_time_str = f"{breakdown_ms:.0f}ms"
+                        else:
+                            breakdown_time_str = f"{breakdown_ms/1000:.2f}s"
+
+                        breakdown_label = parallel_breakdown_labels.get(
+                            breakdown_key, breakdown_key
+                        )
+
+                        # For overhead, show percentage of parallel load time
+                        if (
+                            breakdown_key == "parallel_overhead_ms"
+                            and "parallel_load_ms" in timing_info
+                        ):
+                            parallel_load_ms = timing_info["parallel_load_ms"]
+                            overhead_pct = (
+                                (breakdown_ms / parallel_load_ms * 100)
+                                if parallel_load_ms > 0
+                                else 0
+                            )
+                            console.print(
+                                f"  {breakdown_label:<30} {breakdown_time_str:>10} ({overhead_pct:>4.1f}% overhead)"
+                            )
+                        else:
+                            console.print(
+                                f"  {breakdown_label:<30} {breakdown_time_str:>10}"
+                            )
+                console.print("")
+
+            # Insert search breakdown immediately after vector_search_ms (for non-parallel path)
+            elif key == "vector_search_ms" and has_search_breakdown:
                 console.print("")
                 for breakdown_key in search_breakdown_keys:
                     if breakdown_key in timing_info and timing_info[breakdown_key] > 0:
@@ -3155,14 +3221,8 @@ def query(
         # Initialize timing dictionary for telemetry
         timing_info = {}
 
-        # Get query embedding
-        embedding_start = time.time()
-        if not quiet:
-            with console.status("Generating query embedding..."):
-                query_embedding = embedding_provider.get_embedding(query)
-        else:
-            query_embedding = embedding_provider.get_embedding(query)
-        timing_info["embedding_ms"] = (time.time() - embedding_start) * 1000
+        # NOTE: Embedding generation now happens in parallel with index loading
+        # inside vector_store_client.search() - do NOT pre-compute embedding here
 
         # Build filter conditions for non-git path only
         filter_conditions: Dict[str, Any] = {}
@@ -3301,13 +3361,33 @@ def query(
             )
 
             # Query vector store (get more results to allow for git filtering)
-            raw_results, search_timing = vector_store_client.search(
-                query_vector=query_embedding,
-                filter_conditions=query_filter_conditions,
-                limit=limit * 2,  # Get more to account for post-filtering
-                collection_name=collection_name,
-                return_timing=True,
+            # FilesystemVectorStore: parallel execution (query + embedding_provider)
+            # QdrantClient: requires pre-computed query_vector
+            from code_indexer.storage.filesystem_vector_store import (
+                FilesystemVectorStore,
             )
+
+            if isinstance(vector_store_client, FilesystemVectorStore):
+                # Parallel execution: embedding generation + index loading happen concurrently
+                raw_results, search_timing = vector_store_client.search(
+                    query=query,  # Pass query text for parallel embedding
+                    embedding_provider=embedding_provider,  # Provider for parallel execution
+                    filter_conditions=query_filter_conditions,
+                    limit=limit * 2,  # Get more to account for post-filtering
+                    collection_name=collection_name,
+                    return_timing=True,
+                )
+            else:
+                # QdrantClient: pre-compute embedding (no parallel support yet)
+                query_embedding = embedding_provider.get_embedding(query)
+                raw_results_list = vector_store_client.search(
+                    query_vector=query_embedding,
+                    filter_conditions=query_filter_conditions,
+                    limit=limit * 2,
+                    collection_name=collection_name,
+                )
+                raw_results = raw_results_list  # Type compatibility
+                search_timing = {}  # Qdrant doesn't return timing yet
             # Merge detailed search timing into main timing info
             timing_info.update(search_timing)
 
@@ -3325,7 +3405,8 @@ def query(
 
             # Apply git-aware post-filtering (checks file existence in current branch)
             git_filter_start = time.time()
-            git_results = query_service.filter_results_by_current_branch(raw_results)
+            # Type hint: raw_results is always List[Dict[str, Any]] here
+            git_results = query_service.filter_results_by_current_branch(raw_results)  # type: ignore[arg-type]
             timing_info["git_filter_ms"] = (time.time() - git_filter_start) * 1000
 
             # Apply minimum score filtering (language and path already handled by Qdrant filters)
@@ -3338,22 +3419,45 @@ def query(
                 git_results = filtered_results
         else:
             # Use model-specific search for non-git projects
-            search_start = time.time()
-            raw_results = vector_store_client.search_with_model_filter(
-                query_vector=query_embedding,
-                embedding_model=current_model,
-                limit=limit * 2,  # Get more results to allow for git filtering
-                score_threshold=min_score,
-                additional_filters=filter_conditions,
-                accuracy=accuracy,
+            # FilesystemVectorStore: Use regular search (no model filter needed - single provider)
+            # QdrantClient: Use search_with_model_filter for multi-provider support
+            from code_indexer.storage.filesystem_vector_store import (
+                FilesystemVectorStore,
             )
-            timing_info["vector_search_ms"] = (time.time() - search_start) * 1000
+
+            if isinstance(vector_store_client, FilesystemVectorStore):
+                # Filesystem backend: parallel execution
+                raw_results, search_timing = vector_store_client.search(
+                    query=query,
+                    embedding_provider=embedding_provider,
+                    filter_conditions=filter_conditions if filter_conditions else None,
+                    limit=limit * 2,
+                    score_threshold=min_score,
+                    collection_name=collection_name,
+                    return_timing=True,
+                )
+                timing_info.update(search_timing)
+            else:
+                # Qdrant backend: pre-compute embedding
+                search_start = time.time()
+                query_embedding = embedding_provider.get_embedding(query)
+                raw_results_list = vector_store_client.search_with_model_filter(
+                    query_vector=query_embedding,
+                    embedding_model=current_model,
+                    limit=limit * 2,
+                    score_threshold=min_score,
+                    additional_filters=filter_conditions,
+                    accuracy=accuracy,
+                )
+                raw_results = raw_results_list  # Type compatibility
+                timing_info["vector_search_ms"] = (time.time() - search_start) * 1000
 
             # Apply git-aware filtering
             if not quiet:
                 console.print("🔍 Applying git-aware filtering...")
             git_filter_start = time.time()
-            git_results = query_service.filter_results_by_current_branch(raw_results)
+            # Type hint: raw_results is always List[Dict[str, Any]] here
+            git_results = query_service.filter_results_by_current_branch(raw_results)  # type: ignore[arg-type]
             timing_info["git_filter_ms"] = (time.time() - git_filter_start) * 1000
 
         # Limit to requested number after filtering

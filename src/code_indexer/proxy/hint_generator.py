@@ -39,32 +39,32 @@ class ErrorCategoryDetector:
 
     # Pre-compiled regex patterns for performance
     ERROR_PATTERNS = {
-        'connection': [
-            r'cannot connect',
-            r'connection refused',
-            r'no.*service.*found',
-            r'qdrant.*not.*running',
-            r'not responding',
+        "connection": [
+            r"cannot connect",
+            r"connection refused",
+            r"no.*service.*found",
+            r"qdrant.*not.*running",
+            r"not responding",
         ],
-        'port_conflict': [
-            r'port.*already in use',
-            r'address already in use',
-            r'bind.*failed',
+        "port_conflict": [
+            r"port.*already in use",
+            r"address already in use",
+            r"bind.*failed",
         ],
-        'permission': [
-            r'permission denied',
-            r'access denied',
-            r'forbidden',
+        "permission": [
+            r"permission denied",
+            r"access denied",
+            r"forbidden",
         ],
-        'configuration': [
-            r'invalid.*config',
-            r'missing.*config',
-            r'config.*error',
+        "configuration": [
+            r"invalid.*config",
+            r"missing.*config",
+            r"config.*error",
         ],
-        'timeout': [
-            r'timeout',
-            r'timed out',
-            r'deadline exceeded',
+        "timeout": [
+            r"timeout",
+            r"timed out",
+            r"deadline exceeded",
         ],
     }
 
@@ -91,7 +91,7 @@ class ErrorCategoryDetector:
                 if pattern.search(error_text):
                     return str(category)  # Explicit str() for mypy
 
-        return 'unknown'
+        return "unknown"
 
 
 class HintGenerator:
@@ -106,10 +106,7 @@ class HintGenerator:
         self.detector = ErrorCategoryDetector()
 
     def generate_hint(
-        self,
-        command: str,
-        error_text: str,
-        repository: str
+        self, command: str, error_text: str, repository: str
     ) -> ActionableHint:
         """Generate actionable hint based on context.
 
@@ -122,21 +119,19 @@ class HintGenerator:
             ActionableHint with specific guidance for the error
         """
         # Command-specific hint generation
-        if command == 'query':
+        if command == "query":
             return self._hint_for_query_failure(error_text, repository)
-        elif command in ['start', 'stop']:
+        elif command in ["start", "stop"]:
             return self._hint_for_container_failure(error_text, repository)
-        elif command == 'status':
+        elif command == "status":
             return self._hint_for_status_failure(error_text, repository)
-        elif command == 'fix-config':
+        elif command == "fix-config":
             return self._hint_for_config_failure(error_text, repository)
         else:
             return self._generic_hint(command, repository)
 
     def _hint_for_query_failure(
-        self,
-        error_text: str,
-        repository: str
+        self, error_text: str, repository: str
     ) -> ActionableHint:
         """Generate hint for query command failures.
 
@@ -153,7 +148,7 @@ class HintGenerator:
         # Detect error category for context
         category = self.detector.detect_category(error_text)
 
-        if category == 'connection':
+        if category == "connection":
             # CONVERSATION CRITICAL: Explicitly suggest grep for connection failures
             return ActionableHint(
                 message=f"Use grep or other search tools to search '{repository}' manually",
@@ -162,7 +157,7 @@ class HintGenerator:
                     f"rg 'your-search-term' {repository}",
                     f"cd {repository} && cidx status",
                 ],
-                explanation="Qdrant service not available - alternative search methods can still find code"
+                explanation="Qdrant service not available - alternative search methods can still find code",
             )
         else:
             # Generic query failure - still suggest grep as fallback
@@ -173,13 +168,11 @@ class HintGenerator:
                     f"rg 'your-search-term' {repository}",
                     f"cd {repository} && cidx fix-config",
                 ],
-                explanation="Semantic search unavailable - use text-based search tools"
+                explanation="Semantic search unavailable - use text-based search tools",
             )
 
     def _hint_for_container_failure(
-        self,
-        error_text: str,
-        repository: str
+        self, error_text: str, repository: str
     ) -> ActionableHint:
         """Generate hint for container-related failures.
 
@@ -192,7 +185,7 @@ class HintGenerator:
         """
         category = self.detector.detect_category(error_text)
 
-        if category == 'port_conflict':
+        if category == "port_conflict":
             return ActionableHint(
                 message="Check for port conflicts with existing containers",
                 suggested_commands=[
@@ -201,9 +194,13 @@ class HintGenerator:
                     f"cd {repository} && cidx status",
                     f"cd {repository} && cidx fix-config",
                 ],
-                explanation="Port already in use - need to resolve conflict"
+                explanation="Port already in use - need to resolve conflict",
             )
-        elif category == 'connection' or 'docker' in error_text.lower() or 'podman' in error_text.lower():
+        elif (
+            category == "connection"
+            or "docker" in error_text.lower()
+            or "podman" in error_text.lower()
+        ):
             return ActionableHint(
                 message="Ensure Docker/Podman is running and accessible",
                 suggested_commands=[
@@ -212,7 +209,7 @@ class HintGenerator:
                     "docker ps",
                     "podman ps",
                 ],
-                explanation="Container runtime not accessible"
+                explanation="Container runtime not accessible",
             )
         else:
             return ActionableHint(
@@ -222,13 +219,11 @@ class HintGenerator:
                     "cidx status",
                     "cidx start",
                 ],
-                explanation="Container operation failed - investigate in repository context"
+                explanation="Container operation failed - investigate in repository context",
             )
 
     def _hint_for_status_failure(
-        self,
-        error_text: str,
-        repository: str
+        self, error_text: str, repository: str
     ) -> ActionableHint:
         """Generate hint for status check failures.
 
@@ -246,13 +241,11 @@ class HintGenerator:
                 "cidx fix-config",
                 "cidx start",
             ],
-            explanation="Status check failed - may need configuration repair"
+            explanation="Status check failed - may need configuration repair",
         )
 
     def _hint_for_config_failure(
-        self,
-        error_text: str,
-        repository: str
+        self, error_text: str, repository: str
     ) -> ActionableHint:
         """Generate hint for configuration failures.
 
@@ -270,14 +263,10 @@ class HintGenerator:
                 "cat .code-indexer/config.json",
                 "cidx init --force",
             ],
-            explanation="Configuration repair failed - manual intervention needed"
+            explanation="Configuration repair failed - manual intervention needed",
         )
 
-    def _generic_hint(
-        self,
-        command: str,
-        repository: str
-    ) -> ActionableHint:
+    def _generic_hint(self, command: str, repository: str) -> ActionableHint:
         """Generate generic hint when specific hint not available.
 
         Args:
@@ -293,5 +282,5 @@ class HintGenerator:
                 f"cd {repository}",
                 f"cidx {command}",
             ],
-            explanation="Direct execution in repository context may provide more details"
+            explanation="Direct execution in repository context may provide more details",
         )

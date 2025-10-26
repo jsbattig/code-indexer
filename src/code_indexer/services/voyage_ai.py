@@ -11,10 +11,11 @@ from pathlib import Path
 # Suppress tokenizers parallelism warning
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-import voyageai
-
 from ..config import VoyageAIConfig
 from .embedding_provider import EmbeddingProvider, EmbeddingResult, BatchEmbeddingResult
+
+# NOTE: VoyageTokenizer is imported lazily inside _count_tokens_accurately()
+# to avoid triggering the import chain at module load time
 
 
 class VoyageAIClient(EmbeddingProvider):
@@ -35,9 +36,6 @@ class VoyageAIClient(EmbeddingProvider):
 
         # Load model specifications from YAML
         self._load_model_specs()
-
-        # Initialize VoyageAI client for accurate token counting
-        self.voyage_client = voyageai.Client()
 
         # HTTP client will be created per request to avoid threading issues
         # ThreadPoolExecutor removed - parallel processing handled by VectorCalculationManager
@@ -66,8 +64,11 @@ class VoyageAIClient(EmbeddingProvider):
             }
 
     def _count_tokens_accurately(self, text: str) -> int:
-        """Count tokens accurately using VoyageAI's official count_tokens function."""
-        return self.voyage_client.count_tokens([text], model=self.config.model)  # type: ignore[no-any-return]
+        """Count tokens accurately using VoyageAI's embedded tokenizer."""
+        # Lazy import to avoid loading tokenizer at module import time
+        from .embedded_voyage_tokenizer import VoyageTokenizer
+
+        return VoyageTokenizer.count_tokens([text], model=self.config.model)
 
     def _get_model_token_limit(self) -> int:
         """Get token limit for current model."""

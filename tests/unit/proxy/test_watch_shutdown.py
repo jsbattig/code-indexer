@@ -43,7 +43,9 @@ class TestWatchShutdown:
         # Create mock process that times out on wait()
         mock_process = Mock(spec=subprocess.Popen)
         mock_process.terminate = Mock()
-        mock_process.wait = Mock(side_effect=subprocess.TimeoutExpired(cmd="cidx watch", timeout=5))
+        mock_process.wait = Mock(
+            side_effect=subprocess.TimeoutExpired(cmd="cidx watch", timeout=5)
+        )
         mock_process.kill = Mock()
         manager.processes["/repo1"] = mock_process
 
@@ -59,7 +61,7 @@ class TestWatchShutdown:
         # Verify: kill() called on unresponsive process
         mock_process.kill.assert_called_once()
         # Verify: Graceful process didn't need kill
-        assert not hasattr(mock_process2, 'kill') or not mock_process2.kill.called
+        assert not hasattr(mock_process2, "kill") or not mock_process2.kill.called
 
     def test_stop_all_watchers_handles_termination_errors(self):
         """Test that stop_all_watchers handles errors during termination gracefully."""
@@ -110,7 +112,9 @@ class TestWatchShutdown:
         # Create mock process that requires force kill
         mock_process2 = Mock(spec=subprocess.Popen)
         mock_process2.terminate = Mock()
-        mock_process2.wait = Mock(side_effect=subprocess.TimeoutExpired(cmd="cidx watch", timeout=5))
+        mock_process2.wait = Mock(
+            side_effect=subprocess.TimeoutExpired(cmd="cidx watch", timeout=5)
+        )
         mock_process2.kill = Mock()
         manager.processes["/repo2"] = mock_process2
 
@@ -158,10 +162,12 @@ class TestWatchShutdownSequence:
         # Create mock output queue with items
         mock_queue = Mock()
         mock_queue.empty = Mock(side_effect=[False, False, True])
-        mock_queue.get_nowait = Mock(side_effect=[
-            ("/repo1", "line1"),
-            ("/repo2", "line2"),
-        ])
+        mock_queue.get_nowait = Mock(
+            side_effect=[
+                ("/repo1", "line1"),
+                ("/repo2", "line2"),
+            ]
+        )
 
         # Simulate queue draining (from OutputMultiplexer.stop_multiplexing)
         drained_items = []
@@ -188,7 +194,9 @@ class TestExitCodeDetermination:
         all_terminated = True
         forced_kills = 0
 
-        exit_code = self._determine_exit_code(requested_shutdown, all_terminated, forced_kills)
+        exit_code = self._determine_exit_code(
+            requested_shutdown, all_terminated, forced_kills
+        )
         assert exit_code == 0
 
     def test_exit_code_1_for_forced_kills(self):
@@ -198,7 +206,9 @@ class TestExitCodeDetermination:
         all_terminated = True
         forced_kills = 2
 
-        exit_code = self._determine_exit_code(requested_shutdown, all_terminated, forced_kills)
+        exit_code = self._determine_exit_code(
+            requested_shutdown, all_terminated, forced_kills
+        )
         assert exit_code == 1
 
     def test_exit_code_2_for_partial_shutdown(self):
@@ -208,14 +218,13 @@ class TestExitCodeDetermination:
         all_terminated = False
         forced_kills = 0
 
-        exit_code = self._determine_exit_code(requested_shutdown, all_terminated, forced_kills)
+        exit_code = self._determine_exit_code(
+            requested_shutdown, all_terminated, forced_kills
+        )
         assert exit_code == 2
 
     def _determine_exit_code(
-        self,
-        requested_shutdown: bool,
-        all_terminated: bool,
-        forced_kills: int
+        self, requested_shutdown: bool, all_terminated: bool, forced_kills: int
     ) -> int:
         """Helper to determine exit code (will be implemented in actual code)."""
         if requested_shutdown and all_terminated and forced_kills == 0:

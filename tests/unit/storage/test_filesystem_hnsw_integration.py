@@ -5,16 +5,13 @@ with mutual exclusivity enforcement and CLI support.
 """
 
 import json
-import tempfile
 from pathlib import Path
-from typing import Any, Dict, List
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
 
 from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
-from code_indexer.storage.hnsw_index_manager import HNSWIndexManager
 
 
 class TestCollectionMetadata:
@@ -33,9 +30,7 @@ class TestCollectionMetadata:
         assert metadata["vector_size"] == 1536
         assert "created_at" in metadata
 
-    def test_backward_compatibility_with_old_collections(
-        self, tmp_path: Path
-    ):
+    def test_backward_compatibility_with_old_collections(self, tmp_path: Path):
         """Test that old collections without new metadata fields still work."""
         # Simulate old collection without HNSW metadata
         collection_path = tmp_path / "old_collection"
@@ -127,10 +122,14 @@ class TestHNSWSearchPath:
 
         store.upsert_points("test_collection", points)
 
-        # Perform search
+        # Perform search with parallel API
         query_vector = np.random.randn(128).tolist()
+        mock_embedding_provider = Mock()
+        mock_embedding_provider.get_embedding.return_value = query_vector
+
         results, timing = store.search(
-            query_vector=query_vector,
+            query="test query",
+            embedding_provider=mock_embedding_provider,
             collection_name="test_collection",
             limit=10,
             return_timing=True,
@@ -139,10 +138,9 @@ class TestHNSWSearchPath:
         # Verify search path indicates HNSW was used
         assert timing.get("search_path") == "hnsw_index"
         assert len(results) > 0
+        mock_embedding_provider.get_embedding.assert_called_once_with("test query")
 
-    def test_search_raises_error_if_hnsw_index_missing(
-        self, tmp_path: Path
-    ):
+    def test_search_raises_error_if_hnsw_index_missing(self, tmp_path: Path):
         """Test that search raises error if HNSW index is missing."""
         store = FilesystemVectorStore(tmp_path, project_root=tmp_path)
         store.create_collection("test_collection", vector_size=64)
@@ -151,17 +149,23 @@ class TestHNSWSearchPath:
 
         # Perform search - should raise RuntimeError
         query_vector = np.random.randn(64).tolist()
+        mock_embedding_provider = Mock()
+        mock_embedding_provider.get_embedding.return_value = query_vector
 
         with pytest.raises(RuntimeError, match="HNSW index not found"):
             store.search(
-                query_vector=query_vector,
+                query="test query",
+                embedding_provider=mock_embedding_provider,
                 collection_name="test_collection",
                 limit=5,
             )
 
-    def test_hnsw_search_path_activation_with_timing_metrics(self, tmp_path: Path, caplog):
+    def test_hnsw_search_path_activation_with_timing_metrics(
+        self, tmp_path: Path, caplog
+    ):
         """Test that HNSW search path is activated and timing metrics show correct path."""
         import logging
+
         caplog.set_level(logging.DEBUG)
 
         store = FilesystemVectorStore(tmp_path, project_root=tmp_path)
@@ -178,7 +182,7 @@ class TestHNSWSearchPath:
                     "start_line": i * 10,
                     "end_line": i * 10 + 5,
                     "language": "python",
-                    "type": "content"
+                    "type": "content",
                 },
             }
             for i in range(100)
@@ -190,10 +194,14 @@ class TestHNSWSearchPath:
         hnsw_index_file = tmp_path / "test_collection" / "hnsw_index.bin"
         assert hnsw_index_file.exists(), "HNSW index file should exist"
 
-        # Perform search with timing
+        # Perform search with timing using parallel API
         query_vector = np.random.randn(128).tolist()
+        mock_embedding_provider = Mock()
+        mock_embedding_provider.get_embedding.return_value = query_vector
+
         results, timing = store.search(
-            query_vector=query_vector,
+            query="test query",
+            embedding_provider=mock_embedding_provider,
             collection_name="test_collection",
             limit=10,
             return_timing=True,
@@ -208,15 +216,21 @@ class TestHNSWSearchPath:
 
         # 2. HNSW-specific timing metrics should be present
         assert "hnsw_search_ms" in timing, "HNSW search timing should be present"
-        assert timing.get("hnsw_search_ms", 0) > 0, "HNSW search should have non-zero time"
+        assert (
+            timing.get("hnsw_search_ms", 0) > 0
+        ), "HNSW search should have non-zero time"
 
         # 3. Results should be returned
         assert len(results) > 0, "Should return search results"
 
         # 4. Results should have proper structure
         assert all("payload" in r for r in results), "All results should have payload"
-        assert all("content" in r.get("payload", {}) for r in results), "All results should have content"
-        assert all("staleness" in r for r in results), "All results should have staleness"
+        assert all(
+            "content" in r.get("payload", {}) for r in results
+        ), "All results should have content"
+        assert all(
+            "staleness" in r for r in results
+        ), "All results should have staleness"
 
 
 class TestHNSWIndexBuildParameters:

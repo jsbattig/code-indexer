@@ -47,20 +47,22 @@ class TestVoyageAISupport:
 
         # Store VoyageAI vector
         voyageai_vector = np.random.randn(voyageai_dims).tolist()
-        points = [{
-            'id': 'voyageai_test_1',
-            'vector': voyageai_vector,
-            'payload': {
-                'path': 'test.py',
-                'content': 'def hello(): pass',
-                'language': 'python',
-                'embedding_model': 'voyage-code-3'
+        points = [
+            {
+                "id": "voyageai_test_1",
+                "vector": voyageai_vector,
+                "payload": {
+                    "path": "test.py",
+                    "content": "def hello(): pass",
+                    "language": "python",
+                    "embedding_model": "voyage-code-3",
+                },
             }
-        }]
+        ]
 
         result = store.upsert_points(collection_name, points)
-        assert result['status'] == 'ok'
-        assert result['count'] == 1
+        assert result["status"] == "ok"
+        assert result["count"] == 1
 
         # Verify storage
         count = store.count_points(collection_name)
@@ -82,8 +84,10 @@ class TestVoyageAISupport:
         collection_path = base_path / collection_name
         projection_matrix = store.matrix_manager.load_matrix(collection_path)
 
-        assert projection_matrix.shape == (voyageai_dims, 64), \
-            f"Projection matrix should be {voyageai_dims}x64 for VoyageAI"
+        assert projection_matrix.shape == (
+            voyageai_dims,
+            64,
+        ), f"Projection matrix should be {voyageai_dims}x64 for VoyageAI"
 
 
 class TestOllamaSupport:
@@ -105,20 +109,22 @@ class TestOllamaSupport:
 
         # Store Ollama vector
         ollama_vector = np.random.randn(ollama_dims).tolist()
-        points = [{
-            'id': 'ollama_test_1',
-            'vector': ollama_vector,
-            'payload': {
-                'path': 'test.py',
-                'content': 'def hello(): pass',
-                'language': 'python',
-                'embedding_model': 'nomic-embed-text'
+        points = [
+            {
+                "id": "ollama_test_1",
+                "vector": ollama_vector,
+                "payload": {
+                    "path": "test.py",
+                    "content": "def hello(): pass",
+                    "language": "python",
+                    "embedding_model": "nomic-embed-text",
+                },
             }
-        }]
+        ]
 
         result = store.upsert_points(collection_name, points)
-        assert result['status'] == 'ok'
-        assert result['count'] == 1
+        assert result["status"] == "ok"
+        assert result["count"] == 1
 
         # Verify storage
         count = store.count_points(collection_name)
@@ -140,8 +146,10 @@ class TestOllamaSupport:
         collection_path = base_path / collection_name
         projection_matrix = store.matrix_manager.load_matrix(collection_path)
 
-        assert projection_matrix.shape == (ollama_dims, 64), \
-            f"Projection matrix should be {ollama_dims}x64 for Ollama"
+        assert projection_matrix.shape == (
+            ollama_dims,
+            64,
+        ), f"Projection matrix should be {ollama_dims}x64 for Ollama"
 
 
 class TestProjectionMatrixAdaptation:
@@ -156,11 +164,11 @@ class TestProjectionMatrixAdaptation:
 
         # Test various input dimensions
         test_cases = [
-            ("test_384", 384),   # Smaller embedding
-            ("test_768", 768),   # Ollama
-            ("test_1024", 1024), # VoyageAI voyage-code-3
-            ("test_1536", 1536), # VoyageAI voyage-large-2
-            ("test_2048", 2048), # Hypothetical larger model
+            ("test_384", 384),  # Smaller embedding
+            ("test_768", 768),  # Ollama
+            ("test_1024", 1024),  # VoyageAI voyage-code-3
+            ("test_1536", 1536),  # VoyageAI voyage-large-2
+            ("test_2048", 2048),  # Hypothetical larger model
         ]
 
         for collection_name, input_dims in test_cases:
@@ -171,12 +179,16 @@ class TestProjectionMatrixAdaptation:
             collection_path = base_path / collection_name
             projection_matrix = store.matrix_manager.load_matrix(collection_path)
 
-            assert projection_matrix.shape == (input_dims, 64), \
-                f"Projection matrix for {input_dims}-dim should be {input_dims}x64"
+            assert projection_matrix.shape == (
+                input_dims,
+                64,
+            ), f"Projection matrix for {input_dims}-dim should be {input_dims}x64"
 
     def test_projection_matrix_deterministic_for_same_dimensions(self, tmp_path: Path):
         """AC7: Dynamic projection matrix creation is deterministic."""
-        from code_indexer.storage.projection_matrix_manager import ProjectionMatrixManager
+        from code_indexer.storage.projection_matrix_manager import (
+            ProjectionMatrixManager,
+        )
 
         manager = ProjectionMatrixManager()
 
@@ -185,8 +197,11 @@ class TestProjectionMatrixAdaptation:
         matrix2 = manager.create_projection_matrix(input_dim=1024, output_dim=64)
 
         # Should be identical (deterministic seed based on dimensions)
-        np.testing.assert_array_equal(matrix1, matrix2,
-            "Projection matrices with same dimensions should be identical")
+        np.testing.assert_array_equal(
+            matrix1,
+            matrix2,
+            "Projection matrices with same dimensions should be identical",
+        )
 
 
 class TestProviderAwareNaming:
@@ -228,8 +243,9 @@ class TestProviderAwareNaming:
         collection_name = store.resolve_collection_name(mock_config, mock_provider)
 
         # Should use model name (/ and : replaced, - is valid in filesystem)
-        assert collection_name == "voyage-code-3", \
-            "Collection name should be based on model name"
+        assert (
+            collection_name == "voyage-code-3"
+        ), "Collection name should be based on model name"
 
 
 class TestMultipleProviderCoexistence:
@@ -253,17 +269,35 @@ class TestMultipleProviderCoexistence:
         voyageai_vector = np.random.randn(1024).tolist()
         ollama_vector = np.random.randn(768).tolist()
 
-        store.upsert_points(voyageai_collection, [{
-            'id': 'v1',
-            'vector': voyageai_vector,
-            'payload': {'path': 'test1.py', 'content': 'code', 'embedding_model': 'voyage-code-3'}
-        }])
+        store.upsert_points(
+            voyageai_collection,
+            [
+                {
+                    "id": "v1",
+                    "vector": voyageai_vector,
+                    "payload": {
+                        "path": "test1.py",
+                        "content": "code",
+                        "embedding_model": "voyage-code-3",
+                    },
+                }
+            ],
+        )
 
-        store.upsert_points(ollama_collection, [{
-            'id': 'o1',
-            'vector': ollama_vector,
-            'payload': {'path': 'test2.py', 'content': 'code', 'embedding_model': 'nomic-embed-text'}
-        }])
+        store.upsert_points(
+            ollama_collection,
+            [
+                {
+                    "id": "o1",
+                    "vector": ollama_vector,
+                    "payload": {
+                        "path": "test2.py",
+                        "content": "code",
+                        "embedding_model": "nomic-embed-text",
+                    },
+                }
+            ],
+        )
 
         # Verify both collections have data
         assert store.count_points(voyageai_collection) == 1
@@ -296,17 +330,35 @@ class TestMultipleProviderCoexistence:
         voyageai_vector = np.random.randn(1024).tolist()
         ollama_vector = np.random.randn(768).tolist()
 
-        store.upsert_points(voyageai_collection, [{
-            'id': 'example_py_voyageai',
-            'vector': voyageai_vector,
-            'payload': {'path': file_path, 'content': content, 'embedding_model': 'voyage-code-3'}
-        }])
+        store.upsert_points(
+            voyageai_collection,
+            [
+                {
+                    "id": "example_py_voyageai",
+                    "vector": voyageai_vector,
+                    "payload": {
+                        "path": file_path,
+                        "content": content,
+                        "embedding_model": "voyage-code-3",
+                    },
+                }
+            ],
+        )
 
-        store.upsert_points(ollama_collection, [{
-            'id': 'example_py_ollama',
-            'vector': ollama_vector,
-            'payload': {'path': file_path, 'content': content, 'embedding_model': 'nomic-embed-text'}
-        }])
+        store.upsert_points(
+            ollama_collection,
+            [
+                {
+                    "id": "example_py_ollama",
+                    "vector": ollama_vector,
+                    "payload": {
+                        "path": file_path,
+                        "content": content,
+                        "embedding_model": "nomic-embed-text",
+                    },
+                }
+            ],
+        )
 
         # Verify both collections have the file
         voyageai_files = store.get_all_indexed_files(voyageai_collection)
@@ -327,14 +379,17 @@ class TestQuantizationAdaptation:
 
         # Test quantization for different input dimensions
         test_cases = [
-            768,   # Ollama
+            768,  # Ollama
             1024,  # VoyageAI voyage-code-3
             1536,  # VoyageAI voyage-large-2
         ]
 
         for input_dims in test_cases:
             # Create projection matrix
-            from code_indexer.storage.projection_matrix_manager import ProjectionMatrixManager
+            from code_indexer.storage.projection_matrix_manager import (
+                ProjectionMatrixManager,
+            )
+
             manager = ProjectionMatrixManager()
             projection_matrix = manager.create_projection_matrix(input_dims, 64)
 
@@ -345,12 +400,14 @@ class TestQuantizationAdaptation:
             hex_path = quantizer.quantize_vector(vector, projection_matrix)
 
             # Verify hex path is always 32 characters (regardless of input dimensions)
-            assert len(hex_path) == 32, \
-                f"Hex path should be 32 chars for {input_dims}-dim input"
+            assert (
+                len(hex_path) == 32
+            ), f"Hex path should be 32 chars for {input_dims}-dim input"
 
             # Verify hex path contains only valid hex characters
-            assert all(c in '0123456789abcdef' for c in hex_path), \
-                "Hex path should contain only hex characters"
+            assert all(
+                c in "0123456789abcdef" for c in hex_path
+            ), "Hex path should contain only hex characters"
 
 
 class TestDimensionValidation:
@@ -372,11 +429,16 @@ class TestDimensionValidation:
         # Store vectors with correct dimensions
         for i in range(5):
             vector = np.random.randn(expected_dims).tolist()
-            store.upsert_points(collection_name, [{
-                'id': f'test_{i}',
-                'vector': vector,
-                'payload': {'path': f'file_{i}.py', 'content': 'code'}
-            }])
+            store.upsert_points(
+                collection_name,
+                [
+                    {
+                        "id": f"test_{i}",
+                        "vector": vector,
+                        "payload": {"path": f"file_{i}.py", "content": "code"},
+                    }
+                ],
+            )
 
         # Validate dimensions
         is_valid = store.validate_embedding_dimensions(collection_name, expected_dims)
@@ -415,21 +477,27 @@ class TestEmbeddingModelMetadata:
         point_id = "test_with_metadata"
         embedding_model = "voyage-code-3"
 
-        store.upsert_points(collection_name, [{
-            'id': point_id,
-            'vector': vector,
-            'payload': {
-                'path': 'test.py',
-                'content': 'code',
-                'embedding_model': embedding_model
-            }
-        }])
+        store.upsert_points(
+            collection_name,
+            [
+                {
+                    "id": point_id,
+                    "vector": vector,
+                    "payload": {
+                        "path": "test.py",
+                        "content": "code",
+                        "embedding_model": embedding_model,
+                    },
+                }
+            ],
+        )
 
         # Retrieve and verify metadata
         point = store.get_point(point_id, collection_name)
         assert point is not None
-        assert point['payload']['embedding_model'] == embedding_model, \
-            "Embedding model should be stored in payload"
+        assert (
+            point["payload"]["embedding_model"] == embedding_model
+        ), "Embedding model should be stored in payload"
 
     def test_create_point_includes_embedding_model(self, tmp_path: Path):
         """AC11: create_point() helper includes embedding_model in payload."""
@@ -440,19 +508,19 @@ class TestEmbeddingModelMetadata:
 
         # Create point with embedding model
         vector = np.random.randn(1024).tolist()
-        payload = {'path': 'test.py', 'content': 'code'}
+        payload = {"path": "test.py", "content": "code"}
         embedding_model = "voyage-code-3"
 
         point = store.create_point(
             vector=vector,
             payload=payload,
             point_id="test_point",
-            embedding_model=embedding_model
+            embedding_model=embedding_model,
         )
 
         # Verify embedding_model in payload
-        assert 'embedding_model' in point['payload']
-        assert point['payload']['embedding_model'] == embedding_model
+        assert "embedding_model" in point["payload"]
+        assert point["payload"]["embedding_model"] == embedding_model
 
 
 class TestProviderAgnosticImplementation:
@@ -468,10 +536,10 @@ class TestProviderAgnosticImplementation:
 
         # Should NOT contain provider-specific logic
         forbidden_terms = [
-            'voyage',
-            'ollama',
-            'VoyageAI',
-            'Ollama',
+            "voyage",
+            "ollama",
+            "VoyageAI",
+            "Ollama",
             # Allow mentions in comments/docstrings but not in code logic
         ]
 
@@ -487,9 +555,10 @@ class TestProviderAgnosticImplementation:
                 pass
 
         # The real test: verify code uses generic dimension parameters
-        assert 'vector_size' in source, "Should use generic vector_size parameter"
-        assert 'input_dim' in source or 'vector_size' in source, \
-            "Should use dimension-agnostic parameters"
+        assert "vector_size" in source, "Should use generic vector_size parameter"
+        assert (
+            "input_dim" in source or "vector_size" in source
+        ), "Should use dimension-agnostic parameters"
 
     def test_vector_store_works_with_arbitrary_dimensions(self, tmp_path: Path):
         """AC12,13: All existing embedding providers work unchanged, no provider-specific code."""
@@ -506,11 +575,16 @@ class TestProviderAgnosticImplementation:
 
         # Store and retrieve vector
         vector = np.random.randn(arbitrary_dims).tolist()
-        store.upsert_points(collection_name, [{
-            'id': 'test_1',
-            'vector': vector,
-            'payload': {'path': 'test.py', 'content': 'code'}
-        }])
+        store.upsert_points(
+            collection_name,
+            [
+                {
+                    "id": "test_1",
+                    "vector": vector,
+                    "payload": {"path": "test.py", "content": "code"},
+                }
+            ],
+        )
 
         # Should work without any provider-specific handling
         count = store.count_points(collection_name)
@@ -539,9 +613,12 @@ class TestCollectionMetadata:
             # Get collection info
             info = store.get_collection_info(collection_name)
 
-            assert 'vector_size' in info, "Collection metadata should include vector_size"
-            assert info['vector_size'] == vector_size, \
-                f"vector_size should match {vector_size}"
+            assert (
+                "vector_size" in info
+            ), "Collection metadata should include vector_size"
+            assert (
+                info["vector_size"] == vector_size
+            ), f"vector_size should match {vector_size}"
 
 
 class TestEndToEndMultiProvider:
@@ -566,26 +643,36 @@ class TestEndToEndMultiProvider:
         ollama_vectors = [np.random.randn(768).tolist() for _ in range(5)]
 
         for i, vector in enumerate(voyageai_vectors):
-            store.upsert_points(voyageai_collection, [{
-                'id': f'voyageai_{i}',
-                'vector': vector,
-                'payload': {
-                    'path': f'file_{i}.py',
-                    'content': f'code {i}',
-                    'embedding_model': 'voyage-code-3'
-                }
-            }])
+            store.upsert_points(
+                voyageai_collection,
+                [
+                    {
+                        "id": f"voyageai_{i}",
+                        "vector": vector,
+                        "payload": {
+                            "path": f"file_{i}.py",
+                            "content": f"code {i}",
+                            "embedding_model": "voyage-code-3",
+                        },
+                    }
+                ],
+            )
 
         for i, vector in enumerate(ollama_vectors):
-            store.upsert_points(ollama_collection, [{
-                'id': f'ollama_{i}',
-                'vector': vector,
-                'payload': {
-                    'path': f'file_{i}.py',
-                    'content': f'code {i}',
-                    'embedding_model': 'nomic-embed-text'
-                }
-            }])
+            store.upsert_points(
+                ollama_collection,
+                [
+                    {
+                        "id": f"ollama_{i}",
+                        "vector": vector,
+                        "payload": {
+                            "path": f"file_{i}.py",
+                            "content": f"code {i}",
+                            "embedding_model": "nomic-embed-text",
+                        },
+                    }
+                ],
+            )
 
         # Verify: Both collections have correct counts
         assert store.count_points(voyageai_collection) == 5
@@ -595,16 +682,24 @@ class TestEndToEndMultiProvider:
         query_voyageai = np.random.randn(1024).tolist()
         query_ollama = np.random.randn(768).tolist()
 
+        voyageai_mock_embedding_provider = Mock()
+        voyageai_mock_embedding_provider.get_embedding.return_value = query_voyageai
+
         voyageai_results = store.search(
-            query_vector=query_voyageai,
+            query="test query",
+            embedding_provider=voyageai_mock_embedding_provider,
             collection_name=voyageai_collection,
-            limit=3
+            limit=3,
         )
 
+        ollama_mock_embedding_provider = Mock()
+        ollama_mock_embedding_provider.get_embedding.return_value = query_ollama
+
         ollama_results = store.search(
-            query_vector=query_ollama,
+            query="test query",
+            embedding_provider=ollama_mock_embedding_provider,
             collection_name=ollama_collection,
-            limit=3
+            limit=3,
         )
 
         # Verify search results
@@ -612,11 +707,16 @@ class TestEndToEndMultiProvider:
         assert len(ollama_results) == 3, "Should return 3 Ollama results"
 
         # Verify results contain correct metadata
-        assert all('embedding_model' in r['payload'] for r in voyageai_results)
-        assert all(r['payload']['embedding_model'] == 'voyage-code-3' for r in voyageai_results)
+        assert all("embedding_model" in r["payload"] for r in voyageai_results)
+        assert all(
+            r["payload"]["embedding_model"] == "voyage-code-3" for r in voyageai_results
+        )
 
-        assert all('embedding_model' in r['payload'] for r in ollama_results)
-        assert all(r['payload']['embedding_model'] == 'nomic-embed-text' for r in ollama_results)
+        assert all("embedding_model" in r["payload"] for r in ollama_results)
+        assert all(
+            r["payload"]["embedding_model"] == "nomic-embed-text"
+            for r in ollama_results
+        )
 
         # Cleanup: Delete one collection
         deleted = store.delete_collection(voyageai_collection)
@@ -626,5 +726,6 @@ class TestEndToEndMultiProvider:
         collections = store.list_collections()
         assert voyageai_collection not in collections
         assert ollama_collection in collections
-        assert store.count_points(ollama_collection) == 5, \
-            "Deleting one collection should not affect others"
+        assert (
+            store.count_points(ollama_collection) == 5
+        ), "Deleting one collection should not affect others"

@@ -26,7 +26,7 @@ class TestErrorFormatterHintDisplay:
                 "grep -r 'term' repo",
                 "rg 'term' repo",
             ],
-            explanation="Service unavailable"
+            explanation="Service unavailable",
         )
 
         error = ErrorMessage(
@@ -34,7 +34,7 @@ class TestErrorFormatterHintDisplay:
             command="query",
             error_text="Cannot connect to Qdrant",
             exit_code=1,
-            hint=hint
+            hint=hint,
         )
 
         formatted = self.formatter.format_error(error)
@@ -54,7 +54,7 @@ class TestErrorFormatterHintDisplay:
         hint = ActionableHint(
             message="Test hint message",
             suggested_commands=["cmd1", "cmd2"],
-            explanation="Test explanation"
+            explanation="Test explanation",
         )
 
         error = ErrorMessage(
@@ -62,7 +62,7 @@ class TestErrorFormatterHintDisplay:
             command="query",
             error_text="Test error",
             exit_code=1,
-            hint=hint
+            hint=hint,
         )
 
         formatted = self.formatter.format_error(error)
@@ -82,9 +82,7 @@ class TestErrorFormatterHintDisplay:
     def test_format_error_with_hint_without_explanation(self):
         """Test formatting hint without explanation."""
         hint = ActionableHint(
-            message="Test hint",
-            suggested_commands=["cmd1"],
-            explanation=None
+            message="Test hint", suggested_commands=["cmd1"], explanation=None
         )
 
         error = ErrorMessage(
@@ -92,7 +90,7 @@ class TestErrorFormatterHintDisplay:
             command="query",
             error_text="Test error",
             exit_code=1,
-            hint=hint
+            hint=hint,
         )
 
         formatted = self.formatter.format_error(error)
@@ -112,7 +110,7 @@ class TestErrorFormatterHintDisplay:
             command="query",
             error_text="Test error",
             exit_code=1,
-            hint=None
+            hint=None,
         )
 
         formatted = self.formatter.format_error(error)
@@ -132,7 +130,7 @@ class TestErrorFormatterHintDisplay:
             command="query",
             error_text="Test error",
             exit_code=1,
-            hint="Simple string hint"
+            hint="Simple string hint",
         )
 
         formatted = self.formatter.format_error(error)
@@ -154,7 +152,7 @@ class TestErrorFormatterHintVisualStructure:
         hint = ActionableHint(
             message="Test message",
             suggested_commands=["cmd1"],
-            explanation="Test explanation"
+            explanation="Test explanation",
         )
 
         error = ErrorMessage(
@@ -162,14 +160,14 @@ class TestErrorFormatterHintVisualStructure:
             command="query",
             error_text="Error text",
             exit_code=1,
-            hint=hint
+            hint=hint,
         )
 
         formatted = self.formatter.format_error(error)
 
         # Should have blank line before hint
-        lines = formatted.split('\n')
-        hint_index = next(i for i, line in enumerate(lines) if 'Hint:' in line)
+        lines = formatted.split("\n")
+        hint_index = next(i for i, line in enumerate(lines) if "Hint:" in line)
         assert lines[hint_index - 1].strip() == ""  # Blank line before hint
 
     def test_commands_are_indented(self):
@@ -184,14 +182,22 @@ class TestErrorFormatterHintVisualStructure:
             command="query",
             error_text="Error",
             exit_code=1,
-            hint=hint
+            hint=hint,
         )
 
         formatted = self.formatter.format_error(error)
 
         # Commands should be indented with bullet points
-        assert "  • cmd1" in formatted or "  - cmd1" in formatted or "  * cmd1" in formatted
-        assert "  • cmd2" in formatted or "  - cmd2" in formatted or "  * cmd2" in formatted
+        assert (
+            "  • cmd1" in formatted
+            or "  - cmd1" in formatted
+            or "  * cmd1" in formatted
+        )
+        assert (
+            "  • cmd2" in formatted
+            or "  - cmd2" in formatted
+            or "  * cmd2" in formatted
+        )
 
     def test_complete_hint_format_matches_expected_structure(self):
         """Test complete hint format matches expected structure."""
@@ -201,7 +207,7 @@ class TestErrorFormatterHintVisualStructure:
                 "grep -r 'term' backend/auth",
                 "rg 'term' backend/auth",
             ],
-            explanation="Qdrant service not available"
+            explanation="Qdrant service not available",
         )
 
         error = ErrorMessage(
@@ -209,7 +215,7 @@ class TestErrorFormatterHintVisualStructure:
             command="query",
             error_text="Cannot connect to Qdrant",
             exit_code=1,
-            hint=hint
+            hint=hint,
         )
 
         formatted = self.formatter.format_error(error)
@@ -231,7 +237,7 @@ class TestErrorFormatterHintVisualStructure:
         # Explanation: Qdrant service not available
         # ============================================================
 
-        lines = formatted.split('\n')
+        lines = formatted.split("\n")
 
         # Verify key sections exist
         assert any("FAILED: backend/auth" in line for line in lines)
@@ -241,4 +247,6 @@ class TestErrorFormatterHintVisualStructure:
         assert any("Hint: Use grep to search manually" in line for line in lines)
         assert any("Try these commands:" in line for line in lines)
         assert any("grep -r 'term' backend/auth" in line for line in lines)
-        assert any("Explanation: Qdrant service not available" in line for line in lines)
+        assert any(
+            "Explanation: Qdrant service not available" in line for line in lines
+        )

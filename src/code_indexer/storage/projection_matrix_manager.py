@@ -24,10 +24,7 @@ class ProjectionMatrixManager:
     _matrix_cache: dict[str, np.ndarray] = {}
 
     def create_projection_matrix(
-        self,
-        input_dim: int,
-        output_dim: int,
-        seed: Optional[int] = None
+        self, input_dim: int, output_dim: int, seed: Optional[int] = None
     ) -> np.ndarray:
         """Create deterministic projection matrix.
 
@@ -102,9 +99,7 @@ class ProjectionMatrixManager:
         matrix_path = collection_path / "projection_matrix.npy"
 
         if not matrix_path.exists():
-            raise FileNotFoundError(
-                f"Projection matrix not found at {matrix_path}"
-            )
+            raise FileNotFoundError(f"Projection matrix not found at {matrix_path}")
 
         # Load and cache
         matrix = np.load(matrix_path)

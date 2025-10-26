@@ -75,6 +75,51 @@
 
 - **🚨 VOYAGEAI BATCH PROCESSING TOKEN LIMITS**: VoyageAI API enforces 120,000 token limit per batch request. The VoyageAI client now implements token-aware batching that automatically splits large file batches to respect this limit while maintaining performance optimization. Files with >100K estimated tokens will be processed in multiple batches transparently. Error "max allowed tokens per submitted batch is 120000" indicates this protection is working correctly.
 
+## Embedding Provider Strategy
+
+**PRODUCTION PROVIDER**: VoyageAI is the ONLY production embedding provider. It provides high-quality embeddings via API with acceptable performance and reliability.
+
+**OLLAMA STATUS**: Ollama is EXPERIMENTAL ONLY and NOT for production use. It was tested as a local embedding option but is WAY too slow for practical usage. Ollama remains in the codebase for testing/development purposes only.
+
+**CRITICAL**: When discussing optimizations, architecture, or production deployments, focus exclusively on VoyageAI. Ollama performance and optimization are not priorities since it's not production-viable.
+
+## VoyageAI Token Counting Optimization
+
+**CRITICAL ARCHITECTURE**: We use an embedded tokenizer (`embedded_voyage_tokenizer.py`) instead of the voyageai library for token counting. This was a carefully researched optimization.
+
+**WHY EMBEDDED TOKENIZER**:
+- The `voyageai` library was ONLY used for `count_tokens()` (440-630ms import overhead for one function!)
+- Token counting is critical for respecting VoyageAI's 120,000 token/batch API limit
+- We tried "myriad other ways" to count tokens - all failed
+- VoyageAI's official tokenizer was the only accurate method
+
+**IMPLEMENTATION**:
+- Extracted minimal tokenization logic from voyageai library
+- Uses `tokenizers` library directly (loads official VoyageAI models from HuggingFace)
+- Lazy imports - only loads when actually counting tokens
+- Caches tokenizers per model for blazing fast performance (0.03ms)
+- Provides 100% identical token counts to `voyageai.Client.count_tokens()`
+
+**ACCURACY GUARANTEE**: All 9 test cases (Unicode, emojis, code, SQL, edge cases) match voyageai library exactly. This is production-ready and maintains critical accuracy for API token limits.
+
+**PERFORMANCE**: Eliminated 440-630ms import overhead. See `OPTIMIZATION_SUMMARY.md` for detailed analysis.
+
+**DO NOT**: Remove or replace the embedded tokenizer without extensive testing. Token counting accuracy is non-negotiable for VoyageAI API compliance.
+
+## Import Time Optimization Status
+
+**COMPLETED OPTIMIZATION**: voyageai library eliminated (440-630ms → 0ms)
+
+**REMAINING BOTTLENECKS IDENTIFIED** (see `plans/IMPORT_OPTIMIZATION_OPPORTUNITIES.md`):
+- **cli.py**: 342ms (BIGGEST opportunity - lazy load command-specific imports)
+- **fastapi**: 221ms (acceptable - only for server commands)
+- **docker**: 106ms (could lazy load per command)
+- **jsonschema**: 96ms (could lazy load config validation)
+
+**QUICK WINS AVAILABLE**: ~430ms potential savings for simple operations via lazy imports in cli.py
+
+**Next Steps**: Phase 1 optimization would move heavy imports from cli.py module level into individual Click command functions, saving ~240ms for operations like `cidx --help`.
+
 ## CIDX Repository Lifecycle Architecture
 
 **CRITICAL UNDERSTANDING**: The CIDX system operates on a **Golden Repository → Activated Repository → Container Lifecycle** architecture.
@@ -100,7 +145,7 @@
 
 ### Container Architecture
 
-**Naming Convention**: `cidx-{project_hash}-{service}` (qdrant, ollama, data-cleaner)
+**Naming Convention**: `cidx-{project_hash}-{service}` (qdrant, data-cleaner) - Note: ollama containers exist but are experimental only
 **Port Allocation**: Dynamic calculation per activated repo, stored in `.code-indexer/config.json`
 **State Management**: Startup on first query, health monitoring, auto-recovery, manual shutdown via `cidx stop`
 

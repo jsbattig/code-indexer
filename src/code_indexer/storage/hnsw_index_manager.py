@@ -7,7 +7,7 @@ algorithm for approximate nearest neighbor search with better query performance.
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 

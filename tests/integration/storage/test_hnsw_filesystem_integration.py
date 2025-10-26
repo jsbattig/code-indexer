@@ -1,11 +1,9 @@
 """Integration tests for HNSW index manager with filesystem storage."""
 
 import json
-import tempfile
 from pathlib import Path
 
 import numpy as np
-import pytest
 
 from code_indexer.storage.hnsw_index_manager import HNSWIndexManager
 
@@ -28,7 +26,7 @@ class TestHNSWIndexPersistence:
         # Verify index was created
         assert manager1.index_exists(tmp_path)
         stats = manager1.get_index_stats(tmp_path)
-        assert stats['vector_count'] == num_vectors
+        assert stats["vector_count"] == num_vectors
 
         # Query with first manager
         index1 = manager1.load_index(tmp_path, max_elements=1000)
@@ -62,15 +60,12 @@ class TestHNSWIndexPersistence:
             vectors.append(vector)
 
             vector_file = vectors_dir / f"vector_{i}.json"
-            with open(vector_file, 'w') as f:
-                json.dump({
-                    "id": f"vec_{i}",
-                    "vector": vector.tolist()
-                }, f)
+            with open(vector_file, "w") as f:
+                json.dump({"id": f"vec_{i}", "vector": vector.tolist()}, f)
 
         # Create metadata
-        meta_file = tmp_path / 'collection_meta.json'
-        with open(meta_file, 'w') as f:
+        meta_file = tmp_path / "collection_meta.json"
+        with open(meta_file, "w") as f:
             json.dump({"vector_dim": 128}, f)
 
         # Rebuild index
@@ -140,8 +135,8 @@ class TestHNSWQueryAccuracy:
         )
 
         # Both should find the exact match as first result
-        assert results_low_ef[0] == f"vec_50"
-        assert results_high_ef[0] == f"vec_50"
+        assert results_low_ef[0] == "vec_50"
+        assert results_high_ef[0] == "vec_50"
 
         # Higher ef should give same or similar top distance
         # For exact matches, distances should be near zero
@@ -154,7 +149,7 @@ class TestHNSWDifferentMetrics:
 
     def test_hnsw_with_l2_metric(self, tmp_path: Path):
         """Test HNSW index with L2 (Euclidean) distance."""
-        manager = HNSWIndexManager(vector_dim=64, space='l2')
+        manager = HNSWIndexManager(vector_dim=64, space="l2")
 
         vectors = np.random.randn(100, 64).astype(np.float32)
         ids = [f"vec_{i}" for i in range(100)]
@@ -173,7 +168,7 @@ class TestHNSWDifferentMetrics:
 
     def test_hnsw_with_ip_metric(self, tmp_path: Path):
         """Test HNSW index with inner product metric."""
-        manager = HNSWIndexManager(vector_dim=64, space='ip')
+        manager = HNSWIndexManager(vector_dim=64, space="ip")
 
         vectors = np.random.randn(100, 64).astype(np.float32)
         ids = [f"vec_{i}" for i in range(100)]
@@ -206,7 +201,7 @@ class TestHNSWLargeScale:
 
         # Verify index
         stats = manager.get_index_stats(tmp_path)
-        assert stats['vector_count'] == num_vectors
+        assert stats["vector_count"] == num_vectors
 
         # Query
         index = manager.load_index(tmp_path, max_elements=2000)
@@ -261,7 +256,7 @@ class TestHNSWLargeScale:
         manager.build_index(tmp_path, vectors, ids, M=16, ef_construction=200)
 
         stats = manager.get_index_stats(tmp_path)
-        file_size_mb = stats['file_size_bytes'] / (1024 * 1024)
+        file_size_mb = stats["file_size_bytes"] / (1024 * 1024)
 
         # Index should be compact (typically < 50MB for 1000 256-dim vectors)
         # This is highly dependent on M parameter

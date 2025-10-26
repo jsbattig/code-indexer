@@ -282,7 +282,7 @@ class VectorStoreConfig(BaseModel):
 
     provider: Literal["filesystem", "qdrant"] = Field(
         default="filesystem",
-        description="Vector storage provider: 'filesystem' for container-free, 'qdrant' for containers"
+        description="Vector storage provider: 'filesystem' for container-free, 'qdrant' for containers",
     )
 
 
@@ -292,11 +292,11 @@ class Config(BaseModel):
     # Proxy mode configuration
     proxy_mode: bool = Field(
         default=False,
-        description="Enable proxy mode for managing multiple repositories"
+        description="Enable proxy mode for managing multiple repositories",
     )
     discovered_repos: List[str] = Field(
         default_factory=list,
-        description="List of relative paths to discovered repositories in proxy mode"
+        description="List of relative paths to discovered repositories in proxy mode",
     )
 
     codebase_dir: Path = Field(default=Path("."), description="Directory to index")

@@ -12,7 +12,9 @@ from pathlib import Path
 class TestCidxInitVectorStoreIntegration:
     """E2E tests for cidx init command with --vector-store flag."""
 
-    def test_cidx_init_defaults_to_filesystem_with_explicit_config(self, tmp_path: Path):
+    def test_cidx_init_defaults_to_filesystem_with_explicit_config(
+        self, tmp_path: Path
+    ):
         """cidx init (no flag) should create filesystem backend config by default."""
         test_dir = tmp_path / "test_project"
         test_dir.mkdir()
@@ -70,9 +72,15 @@ class TestCidxInitVectorStoreIntegration:
         # Verify no port allocations for filesystem backend
         # project_ports should exist but have None values
         assert "project_ports" in config_data, "project_ports should exist in config"
-        assert config_data["project_ports"]["qdrant_port"] is None, "Qdrant port should be None for filesystem"
-        assert config_data["project_ports"]["ollama_port"] is None, "Ollama port should be None for filesystem"
-        assert config_data["project_ports"]["data_cleaner_port"] is None, "Data cleaner port should be None for filesystem"
+        assert (
+            config_data["project_ports"]["qdrant_port"] is None
+        ), "Qdrant port should be None for filesystem"
+        assert (
+            config_data["project_ports"]["ollama_port"] is None
+        ), "Ollama port should be None for filesystem"
+        assert (
+            config_data["project_ports"]["data_cleaner_port"] is None
+        ), "Data cleaner port should be None for filesystem"
 
         index_dir = test_dir / ".code-indexer" / "index"
         assert index_dir.exists(), "Backend should be initialized"

@@ -180,12 +180,12 @@ class TestParallelProcessingPerformance:
         # Make sure the mock VCM has the embedding_provider set correctly
         mock_vcm_instance.embedding_provider = embedding_provider
 
-        # Also patch voyageai.Client to avoid actual API calls
-        with patch("voyageai.Client") as mock_voyage_client:
-            mock_voyage_instance = Mock()
-            mock_voyage_client.return_value = mock_voyage_instance
+        # Patch embedded tokenizer to avoid actual tokenizer loading
+        with patch(
+            "code_indexer.services.file_chunking_manager.VoyageTokenizer"
+        ) as mock_tokenizer:
             # Mock count_tokens to return a reasonable token count
-            mock_voyage_instance.count_tokens.return_value = 10  # tokens per text
+            mock_tokenizer.count_tokens.return_value = 10  # tokens per text
 
             with patch(
                 "src.code_indexer.services.high_throughput_processor.VectorCalculationManager",

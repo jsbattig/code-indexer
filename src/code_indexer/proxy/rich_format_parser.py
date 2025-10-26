@@ -114,7 +114,9 @@ class RichFormatParser:
                     # Skip to content section
                     content_start = self._find_content_start(lines, i + 2)
                     if content_start == -1:
-                        logger.warning("Failed to find content section, skipping result")
+                        logger.warning(
+                            "Failed to find content section, skipping result"
+                        )
                         i += 1
                         continue
 

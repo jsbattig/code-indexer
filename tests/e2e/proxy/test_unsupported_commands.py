@@ -28,7 +28,7 @@ class TestUnsupportedCommandsE2E:
             config_data = {
                 "codebase_dir": str(root),
                 "proxy_mode": True,
-                "discovered_repos": []
+                "discovered_repos": [],
             }
             with open(config_file, "w") as f:
                 json.dump(config_data, f)
@@ -38,10 +38,7 @@ class TestUnsupportedCommandsE2E:
     def test_init_command_unsupported_in_proxy_mode(self, proxy_setup):
         """Test that 'init' command fails with proper error in proxy mode."""
         result = subprocess.run(
-            ["cidx", "init"],
-            cwd=str(proxy_setup),
-            capture_output=True,
-            text=True
+            ["cidx", "init"], cwd=str(proxy_setup), capture_output=True, text=True
         )
 
         # Should exit with code 3 (invalid command)
@@ -49,16 +46,15 @@ class TestUnsupportedCommandsE2E:
 
         # Error message should mention command not supported
         assert "init" in result.stderr.lower()
-        assert "not supported" in result.stderr.lower() or "error" in result.stderr.lower()
+        assert (
+            "not supported" in result.stderr.lower() or "error" in result.stderr.lower()
+        )
         assert "proxy mode" in result.stderr.lower()
 
     def test_index_command_unsupported_in_proxy_mode(self, proxy_setup):
         """Test that 'index' command fails with proper error in proxy mode."""
         result = subprocess.run(
-            ["cidx", "index"],
-            cwd=str(proxy_setup),
-            capture_output=True,
-            text=True
+            ["cidx", "index"], cwd=str(proxy_setup), capture_output=True, text=True
         )
 
         # Should exit with code 3 (invalid command)
@@ -66,37 +62,35 @@ class TestUnsupportedCommandsE2E:
 
         # Error message should mention command not supported
         assert "index" in result.stderr.lower()
-        assert "not supported" in result.stderr.lower() or "error" in result.stderr.lower()
+        assert (
+            "not supported" in result.stderr.lower() or "error" in result.stderr.lower()
+        )
         assert "proxy mode" in result.stderr.lower()
 
     def test_error_message_includes_supported_commands(self, proxy_setup):
         """Test that error message lists supported commands."""
         result = subprocess.run(
-            ["cidx", "init"],
-            cwd=str(proxy_setup),
-            capture_output=True,
-            text=True
+            ["cidx", "init"], cwd=str(proxy_setup), capture_output=True, text=True
         )
 
         # Should mention some supported commands
         error_output = result.stderr.lower()
         # At least some of the supported commands should be mentioned
-        supported_mentions = sum([
-            "query" in error_output,
-            "status" in error_output,
-            "start" in error_output,
-            "stop" in error_output,
-            "uninstall" in error_output
-        ])
+        supported_mentions = sum(
+            [
+                "query" in error_output,
+                "status" in error_output,
+                "start" in error_output,
+                "stop" in error_output,
+                "uninstall" in error_output,
+            ]
+        )
         assert supported_mentions >= 3, "Error should list supported commands"
 
     def test_error_message_suggests_navigation(self, proxy_setup):
         """Test that error message suggests navigating to specific repository."""
         result = subprocess.run(
-            ["cidx", "init"],
-            cwd=str(proxy_setup),
-            capture_output=True,
-            text=True
+            ["cidx", "init"], cwd=str(proxy_setup), capture_output=True, text=True
         )
 
         # Should suggest using cd or navigating to repository
@@ -105,10 +99,7 @@ class TestUnsupportedCommandsE2E:
     def test_error_message_shows_how_to_run_command(self, proxy_setup):
         """Test that error message shows how to run the unsupported command."""
         result = subprocess.run(
-            ["cidx", "init"],
-            cwd=str(proxy_setup),
-            capture_output=True,
-            text=True
+            ["cidx", "init"], cwd=str(proxy_setup), capture_output=True, text=True
         )
 
         # Should show how to run 'cidx init' in specific repository
@@ -125,7 +116,7 @@ class TestUnsupportedCommandsE2E:
             cwd=str(proxy_setup),
             capture_output=True,
             text=True,
-            timeout=2  # Should fail very quickly
+            timeout=2,  # Should fail very quickly
         )
 
         # Should fail with exit code 3
@@ -142,19 +133,20 @@ class TestUnsupportedCommandsE2E:
 
         for command in unsupported:
             result = subprocess.run(
-                ["cidx", command],
-                cwd=str(proxy_setup),
-                capture_output=True,
-                text=True
+                ["cidx", command], cwd=str(proxy_setup), capture_output=True, text=True
             )
 
             # All should exit with code 3
-            assert result.returncode == 3, f"Command '{command}' should exit with code 3"
+            assert (
+                result.returncode == 3
+            ), f"Command '{command}' should exit with code 3"
 
             # All should mention the command and error
             assert command in result.stderr.lower()
-            assert ("not supported" in result.stderr.lower() or
-                    "error" in result.stderr.lower())
+            assert (
+                "not supported" in result.stderr.lower()
+                or "error" in result.stderr.lower()
+            )
 
     def test_supported_commands_dont_trigger_error(self, proxy_setup):
         """Test that supported commands don't trigger unsupported command error."""
@@ -166,7 +158,7 @@ class TestUnsupportedCommandsE2E:
             ["cidx", "query", "test"],
             cwd=str(proxy_setup),
             capture_output=True,
-            text=True
+            text=True,
         )
 
         # Should NOT be exit code 3 (unsupported command)
@@ -178,10 +170,7 @@ class TestUnsupportedCommandsE2E:
         # 'INIT' (uppercase) should be treated as unknown command
         # This may fail with different error than lowercase 'init'
         result = subprocess.run(
-            ["cidx", "INIT"],
-            cwd=str(proxy_setup),
-            capture_output=True,
-            text=True
+            ["cidx", "INIT"], cwd=str(proxy_setup), capture_output=True, text=True
         )
 
         # Should fail (either as unknown command or unsupported)

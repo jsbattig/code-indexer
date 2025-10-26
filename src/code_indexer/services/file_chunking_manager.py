@@ -28,12 +28,8 @@ from ..indexing.fixed_size_chunker import FixedSizeChunker
 from .clean_slot_tracker import CleanSlotTracker, FileData, FileStatus
 import threading
 
-# Token counting for large file handling - conditionally imported based on provider
-try:
-    import voyageai
-    VOYAGEAI_AVAILABLE = True
-except ImportError:
-    VOYAGEAI_AVAILABLE = False
+# Token counting for large file handling - using embedded tokenizer
+# No imports needed here - lazy import in _count_tokens_accurately()
 
 logger = logging.getLogger(__name__)
 
@@ -108,14 +104,9 @@ class FileChunkingManager:
         self.executor: Optional[ThreadPoolExecutor] = None
         self._pending_futures: List[Future] = []  # Track futures for clean cancellation
 
-        # Initialize VoyageAI client for accurate token counting (only for VoyageAI provider)
-        self.voyage_client = None
+        # Check if we're using VoyageAI provider for token counting
         provider_name = vector_manager.embedding_provider.__class__.__name__
-        if VOYAGEAI_AVAILABLE and "VoyageAI" in provider_name:
-            try:
-                self.voyage_client = voyageai.Client()
-            except Exception as e:
-                logger.warning(f"Failed to initialize VoyageAI client: {e}")
+        self.is_voyageai_provider = "VoyageAI" in provider_name
 
         logger.info(f"Initialized FileChunkingManager with {thread_count} base threads")
 
@@ -218,9 +209,12 @@ class FileChunkingManager:
         # Get the model name from the embedding provider
         model = self.vector_manager.embedding_provider.get_current_model()
 
-        # Use VoyageAI's accurate token counting if available
-        if self.voyage_client is not None:
-            return self.voyage_client.count_tokens([text], model=model)  # type: ignore[no-any-return]
+        # Use VoyageAI's accurate token counting if using VoyageAI provider
+        if self.is_voyageai_provider:
+            # Lazy import to avoid loading tokenizer at module import time
+            from .embedded_voyage_tokenizer import VoyageTokenizer
+
+            return VoyageTokenizer.count_tokens([text], model=model)
 
         # Fallback: Rough estimate (4 chars ≈ 1 token for English text)
         # This is conservative and works for batching purposes

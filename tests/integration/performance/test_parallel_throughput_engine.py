@@ -90,11 +90,14 @@ class TestClass_{i}:
         """Test that queue-based approach is significantly faster than sequential."""
 
         # Mock the VoyageAI client to avoid tokenizer loading
-        mock_voyage = Mock()
+        mock_tokenizer = Mock()
         mock_client = Mock()
         mock_client.count_tokens.return_value = 100  # Return reasonable token count
-        mock_voyage.Client.return_value = mock_client
-        with patch("code_indexer.services.file_chunking_manager.voyageai", mock_voyage):
+        mock_tokenizer.count_tokens.return_value = 100  # Return reasonable token count
+        with patch(
+            "code_indexer.services.file_chunking_manager.VoyageTokenizer",
+            mock_tokenizer,
+        ):
             # Setup providers with realistic delays
             slow_provider = MockEmbeddingProvider(delay=0.1)  # 100ms per embedding
             fast_provider = MockEmbeddingProvider(delay=0.01)  # 10ms per embedding
@@ -133,11 +136,14 @@ class TestClass_{i}:
     def test_worker_thread_utilization(self):
         """Test that worker threads are continuously utilized."""
         # Mock the VoyageAI client to avoid tokenizer loading
-        mock_voyage = Mock()
+        mock_tokenizer = Mock()
         mock_client = Mock()
         mock_client.count_tokens.return_value = 100  # Return reasonable token count
-        mock_voyage.Client.return_value = mock_client
-        with patch("code_indexer.services.file_chunking_manager.voyageai", mock_voyage):
+        mock_tokenizer.count_tokens.return_value = 100  # Return reasonable token count
+        with patch(
+            "code_indexer.services.file_chunking_manager.VoyageTokenizer",
+            mock_tokenizer,
+        ):
             provider = MockEmbeddingProvider(delay=0.05)
 
             processor = HighThroughputProcessor(
@@ -175,11 +181,14 @@ class TestClass_{i}:
     def test_high_throughput_processing_success(self):
         """Test that high-throughput processing completes successfully."""
         # Mock the VoyageAI client to avoid tokenizer loading
-        mock_voyage = Mock()
+        mock_tokenizer = Mock()
         mock_client = Mock()
         mock_client.count_tokens.return_value = 100  # Return reasonable token count
-        mock_voyage.Client.return_value = mock_client
-        with patch("code_indexer.services.file_chunking_manager.voyageai", mock_voyage):
+        mock_tokenizer.count_tokens.return_value = 100  # Return reasonable token count
+        with patch(
+            "code_indexer.services.file_chunking_manager.VoyageTokenizer",
+            mock_tokenizer,
+        ):
             provider = MockEmbeddingProvider(delay=0.02)
 
             processor = HighThroughputProcessor(

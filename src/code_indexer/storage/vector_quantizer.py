@@ -30,7 +30,9 @@ class VectorQuantizer:
 
         # Validate reduced_dimensions for 2-bit quantization
         if reduced_dimensions != 64:
-            raise ValueError("reduced_dimensions must be 64 for 32-character hex output")
+            raise ValueError(
+                "reduced_dimensions must be 64 for 32-character hex output"
+            )
 
     def quantize_vector(self, vector: np.ndarray, projection_matrix: np.ndarray) -> str:
         """Convert high-dimensional vector to hex path string.
@@ -53,7 +55,9 @@ class VectorQuantizer:
 
         return hex_string
 
-    def _project_vector(self, vector: np.ndarray, projection_matrix: np.ndarray) -> np.ndarray:
+    def _project_vector(
+        self, vector: np.ndarray, projection_matrix: np.ndarray
+    ) -> np.ndarray:
         """Apply random projection for dimensionality reduction.
 
         Args:
@@ -65,7 +69,9 @@ class VectorQuantizer:
         """
         return vector @ projection_matrix
 
-    def _quantize_to_2bit(self, vector: np.ndarray, min_val: float = -2.0, max_val: float = 2.0) -> np.ndarray:
+    def _quantize_to_2bit(
+        self, vector: np.ndarray, min_val: float = -2.0, max_val: float = 2.0
+    ) -> np.ndarray:
         """Quantize float vector to 2-bit representation using fixed-range scalar quantization.
 
         LOCALITY-PRESERVING: Uses fixed thresholds for ALL vectors, ensuring similar
@@ -118,7 +124,7 @@ class VectorQuantizer:
             nibble = (quantized[i] << 2) | quantized[i + 1]
             hex_chars.append(f"{nibble:x}")
 
-        return ''.join(hex_chars)
+        return "".join(hex_chars)
 
     def _split_hex_path(self, hex_path: str) -> List[str]:
         """Split hex path into directory segments based on depth factor.

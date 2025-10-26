@@ -4,7 +4,6 @@ Maintains a persistent binary file mapping vector IDs to their file paths
 using mmap for fast loading and minimal memory overhead.
 """
 
-import mmap
 import struct
 from pathlib import Path
 from typing import Dict
@@ -39,9 +38,9 @@ class IDIndexManager:
         index_file = collection_path / self.INDEX_FILENAME
 
         with self._lock:
-            with open(index_file, 'wb') as f:
+            with open(index_file, "wb") as f:
                 # Write number of entries (4 bytes, uint32)
-                f.write(struct.pack('<I', len(id_index)))
+                f.write(struct.pack("<I", len(id_index)))
 
                 # Write each entry
                 for point_id, file_path in id_index.items():
@@ -54,15 +53,15 @@ class IDIndexManager:
                         path_str = str(file_path)
 
                     # Encode strings to UTF-8
-                    id_bytes = point_id.encode('utf-8')
-                    path_bytes = path_str.encode('utf-8')
+                    id_bytes = point_id.encode("utf-8")
+                    path_bytes = path_str.encode("utf-8")
 
                     # Write ID length (2 bytes, uint16) and ID string
-                    f.write(struct.pack('<H', len(id_bytes)))
+                    f.write(struct.pack("<H", len(id_bytes)))
                     f.write(id_bytes)
 
                     # Write path length (2 bytes, uint16) and path string
-                    f.write(struct.pack('<H', len(path_bytes)))
+                    f.write(struct.pack("<H", len(path_bytes)))
                     f.write(path_bytes)
 
     def load_index(self, collection_path: Path) -> Dict[str, Path]:
@@ -80,7 +79,7 @@ class IDIndexManager:
             return {}
 
         try:
-            with open(index_file, 'rb') as f:
+            with open(index_file, "rb") as f:
                 # Get file size
                 file_size = f.seek(0, 2)
                 f.seek(0)
@@ -90,14 +89,18 @@ class IDIndexManager:
 
                 # Read header to get num_entries
                 if file_size < 4:
-                    raise ValueError(f"Corrupted index file: file too small ({file_size} bytes)")
+                    raise ValueError(
+                        f"Corrupted index file: file too small ({file_size} bytes)"
+                    )
 
                 num_entries_bytes = f.read(4)
-                num_entries = struct.unpack('<I', num_entries_bytes)[0]
+                num_entries = struct.unpack("<I", num_entries_bytes)[0]
 
                 # Validate num_entries is reasonable
                 if num_entries > 10000000:  # 10 million entries
-                    raise ValueError(f"Corrupted index file: unreasonable entry count ({num_entries})")
+                    raise ValueError(
+                        f"Corrupted index file: unreasonable entry count ({num_entries})"
+                    )
 
                 # Read remaining data
                 id_index = {}
@@ -105,26 +108,34 @@ class IDIndexManager:
                     # Read ID length
                     id_len_bytes = f.read(2)
                     if len(id_len_bytes) < 2:
-                        raise ValueError("Corrupted index file: unexpected EOF reading ID length")
-                    id_len = struct.unpack('<H', id_len_bytes)[0]
+                        raise ValueError(
+                            "Corrupted index file: unexpected EOF reading ID length"
+                        )
+                    id_len = struct.unpack("<H", id_len_bytes)[0]
 
                     # Read ID string
                     id_bytes = f.read(id_len)
                     if len(id_bytes) < id_len:
-                        raise ValueError("Corrupted index file: unexpected EOF reading ID string")
-                    point_id = id_bytes.decode('utf-8')
+                        raise ValueError(
+                            "Corrupted index file: unexpected EOF reading ID string"
+                        )
+                    point_id = id_bytes.decode("utf-8")
 
                     # Read path length
                     path_len_bytes = f.read(2)
                     if len(path_len_bytes) < 2:
-                        raise ValueError("Corrupted index file: unexpected EOF reading path length")
-                    path_len = struct.unpack('<H', path_len_bytes)[0]
+                        raise ValueError(
+                            "Corrupted index file: unexpected EOF reading path length"
+                        )
+                    path_len = struct.unpack("<H", path_len_bytes)[0]
 
                     # Read path string
                     path_bytes = f.read(path_len)
                     if len(path_bytes) < path_len:
-                        raise ValueError("Corrupted index file: unexpected EOF reading path string")
-                    path_str = path_bytes.decode('utf-8')
+                        raise ValueError(
+                            "Corrupted index file: unexpected EOF reading path string"
+                        )
+                    path_str = path_bytes.decode("utf-8")
 
                     # Reconstruct absolute path
                     file_path = collection_path / path_str
@@ -185,9 +196,9 @@ class IDIndexManager:
         id_index = {}
 
         # Scan all vector JSON files
-        for json_file in collection_path.rglob('*.json'):
+        for json_file in collection_path.rglob("*.json"):
             # Skip collection metadata
-            if 'collection_meta' in json_file.name:
+            if "collection_meta" in json_file.name:
                 continue
             if json_file.name == self.INDEX_FILENAME:
                 continue
@@ -196,7 +207,7 @@ class IDIndexManager:
             try:
                 with open(json_file) as f:
                     data = json.load(f)
-                point_id = data.get('id')
+                point_id = data.get("id")
                 if point_id:
                     id_index[point_id] = json_file
             except (json.JSONDecodeError, KeyError):

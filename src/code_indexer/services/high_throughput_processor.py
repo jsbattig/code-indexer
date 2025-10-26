@@ -1132,8 +1132,10 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             # Report completion even when there's nothing to hide
             if progress_callback:
                 progress_callback(
-                    0, 0, Path(""),
-                    info="🔒 Branch isolation • No files to hide (fresh index complete)"
+                    0,
+                    0,
+                    Path(""),
+                    info="🔒 Branch isolation • No files to hide (fresh index complete)",
                 )
             return
 
@@ -1283,8 +1285,10 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             # Report completion when there are no files to hide
             if progress_callback:
                 progress_callback(
-                    0, 0, Path(""),
-                    info="🔒 Branch isolation • 0 files to hide (all files current)"
+                    0,
+                    0,
+                    Path(""),
+                    info="🔒 Branch isolation • 0 files to hide (all files current)",
                 )
 
         return True

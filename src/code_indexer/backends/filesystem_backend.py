@@ -122,8 +122,7 @@ class FilesystemBackend(VectorStoreBackend):
         from ..storage.filesystem_vector_store import FilesystemVectorStore
 
         return FilesystemVectorStore(
-            base_path=self.vectors_dir,
-            project_root=self.project_root
+            base_path=self.vectors_dir, project_root=self.project_root
         )
 
     def health_check(self) -> bool:

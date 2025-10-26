@@ -1,6 +1,5 @@
 """Unit tests for binary mmap-based ID index manager."""
 
-import mmap
 import struct
 from pathlib import Path
 import pytest
@@ -36,16 +35,14 @@ class TestIDIndexManagerBinary:
         assert index_file.exists()
 
         # Verify binary format: num_entries = 0
-        with open(index_file, 'rb') as f:
-            num_entries = struct.unpack('<I', f.read(4))[0]
+        with open(index_file, "rb") as f:
+            num_entries = struct.unpack("<I", f.read(4))[0]
             assert num_entries == 0
 
     def test_single_entry_serialization(self):
         """Test serialization of single entry."""
         # Given: ID index with one entry
-        id_index = {
-            "point_id_1": self.temp_dir / "vectors" / "vector_001.json"
-        }
+        id_index = {"point_id_1": self.temp_dir / "vectors" / "vector_001.json"}
 
         # When: Save index
         self.manager.save_index(self.temp_dir, id_index)
@@ -54,7 +51,9 @@ class TestIDIndexManagerBinary:
         loaded_index = self.manager.load_index(self.temp_dir)
         assert len(loaded_index) == 1
         assert "point_id_1" in loaded_index
-        assert loaded_index["point_id_1"] == self.temp_dir / "vectors" / "vector_001.json"
+        assert (
+            loaded_index["point_id_1"] == self.temp_dir / "vectors" / "vector_001.json"
+        )
 
     def test_multiple_entries_serialization(self):
         """Test serialization of multiple entries."""
@@ -73,7 +72,10 @@ class TestIDIndexManagerBinary:
         for i in range(100):
             point_id = f"point_id_{i}"
             assert point_id in loaded_index
-            assert loaded_index[point_id] == self.temp_dir / "vectors" / f"vector_{i:03d}.json"
+            assert (
+                loaded_index[point_id]
+                == self.temp_dir / "vectors" / f"vector_{i:03d}.json"
+            )
 
     def test_unicode_handling(self):
         """Test handling of Unicode characters in IDs and paths."""
@@ -89,8 +91,13 @@ class TestIDIndexManagerBinary:
 
         # Then: Unicode should be preserved
         assert len(loaded_index) == 2
-        assert loaded_index["point_id_español"] == self.temp_dir / "vectors" / "文件.json"
-        assert loaded_index["точка_id_русский"] == self.temp_dir / "vectors" / "αρχείο.json"
+        assert (
+            loaded_index["point_id_español"] == self.temp_dir / "vectors" / "文件.json"
+        )
+        assert (
+            loaded_index["точка_id_русский"]
+            == self.temp_dir / "vectors" / "αρχείο.json"
+        )
 
     def test_large_index_performance(self):
         """Test performance with large index (1000+ entries)."""
@@ -102,6 +109,7 @@ class TestIDIndexManagerBinary:
 
         # When: Save and load
         import time
+
         t0 = time.time()
         self.manager.save_index(self.temp_dir, id_index)
         save_time = (time.time() - t0) * 1000
@@ -139,8 +147,8 @@ class TestIDIndexManagerBinary:
         """Test handling of corrupted binary files."""
         # Given: Corrupted binary file
         index_file = self.temp_dir / "id_index.bin"
-        with open(index_file, 'wb') as f:
-            f.write(b'\xFF\xFF\xFF\xFF')  # Invalid header
+        with open(index_file, "wb") as f:
+            f.write(b"\xff\xff\xff\xff")  # Invalid header
 
         # When/Then: Should handle gracefully
         with pytest.raises(Exception):  # Should raise appropriate exception
@@ -161,7 +169,7 @@ class TestIDIndexManagerBinary:
         # Given: ID index with known data
         id_index = {
             "id1": self.temp_dir / "path1.json",
-            "id2": self.temp_dir / "path2.json"
+            "id2": self.temp_dir / "path2.json",
         }
 
         # When: Save index
@@ -169,16 +177,16 @@ class TestIDIndexManagerBinary:
 
         # Then: Manually verify binary format
         index_file = self.temp_dir / "id_index.bin"
-        with open(index_file, 'rb') as f:
+        with open(index_file, "rb") as f:
             # Read header: num_entries (4 bytes)
-            num_entries = struct.unpack('<I', f.read(4))[0]
+            num_entries = struct.unpack("<I", f.read(4))[0]
             assert num_entries == 2
 
             # Read first entry
-            id_len = struct.unpack('<H', f.read(2))[0]
-            id_str = f.read(id_len).decode('utf-8')
-            path_len = struct.unpack('<H', f.read(2))[0]
-            path_str = f.read(path_len).decode('utf-8')
+            id_len = struct.unpack("<H", f.read(2))[0]
+            id_str = f.read(id_len).decode("utf-8")
+            path_len = struct.unpack("<H", f.read(2))[0]
+            path_str = f.read(path_len).decode("utf-8")
 
             # Verify first entry (order may vary due to dict)
             assert id_str in ["id1", "id2"]
@@ -189,14 +197,14 @@ class TestIDIndexManagerBinary:
         # Given: Initial index
         initial_index = {
             "id1": self.temp_dir / "path1.json",
-            "id2": self.temp_dir / "path2.json"
+            "id2": self.temp_dir / "path2.json",
         }
         self.manager.save_index(self.temp_dir, initial_index)
 
         # When: Update with new entries
         updates = {
             "id3": self.temp_dir / "path3.json",
-            "id4": self.temp_dir / "path4.json"
+            "id4": self.temp_dir / "path4.json",
         }
         self.manager.update_batch(self.temp_dir, updates)
 
@@ -208,10 +216,7 @@ class TestIDIndexManagerBinary:
     def test_remove_ids(self):
         """Test removing IDs from index."""
         # Given: Index with multiple entries
-        id_index = {
-            f"id{i}": self.temp_dir / f"path{i}.json"
-            for i in range(1, 6)
-        }
+        id_index = {f"id{i}": self.temp_dir / f"path{i}.json" for i in range(1, 6)}
         self.manager.save_index(self.temp_dir, id_index)
 
         # When: Remove some IDs
@@ -230,9 +235,7 @@ class TestIDIndexManagerBinary:
         """Test handling of very long file paths."""
         # Given: ID index with long paths
         long_path = "a" * 200 + "/b" * 50 + "/vector.json"
-        id_index = {
-            "point_id_long": self.temp_dir / long_path
-        }
+        id_index = {"point_id_long": self.temp_dir / long_path}
 
         # When: Save and load
         self.manager.save_index(self.temp_dir, id_index)
@@ -245,24 +248,22 @@ class TestIDIndexManagerBinary:
     def test_relative_path_conversion(self):
         """Test that paths are stored relative to collection path."""
         # Given: ID index with absolute paths
-        id_index = {
-            "id1": self.temp_dir / "vectors" / "sub" / "vector.json"
-        }
+        id_index = {"id1": self.temp_dir / "vectors" / "sub" / "vector.json"}
 
         # When: Save index
         self.manager.save_index(self.temp_dir, id_index)
 
         # Then: Check binary format uses relative path
         index_file = self.temp_dir / "id_index.bin"
-        with open(index_file, 'rb') as f:
-            struct.unpack('<I', f.read(4))  # Skip num_entries
-            id_len = struct.unpack('<H', f.read(2))[0]
+        with open(index_file, "rb") as f:
+            struct.unpack("<I", f.read(4))  # Skip num_entries
+            id_len = struct.unpack("<H", f.read(2))[0]
             f.read(id_len)  # Skip ID
-            path_len = struct.unpack('<H', f.read(2))[0]
-            path_str = f.read(path_len).decode('utf-8')
+            path_len = struct.unpack("<H", f.read(2))[0]
+            path_str = f.read(path_len).decode("utf-8")
 
             # Should be relative, not absolute
-            assert not path_str.startswith('/')
+            assert not path_str.startswith("/")
             assert path_str == "vectors/sub/vector.json"
 
 

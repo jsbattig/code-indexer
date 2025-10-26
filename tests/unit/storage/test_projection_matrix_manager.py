@@ -6,7 +6,6 @@ Following Story 2 requirements for deterministic projection matrix generation.
 
 import numpy as np
 import pytest
-from pathlib import Path
 
 
 class TestProjectionMatrixManager:
@@ -19,12 +18,18 @@ class TestProjectionMatrixManager:
 
         AC: Deterministic projection matrix generation
         """
-        from code_indexer.storage.projection_matrix_manager import ProjectionMatrixManager
+        from code_indexer.storage.projection_matrix_manager import (
+            ProjectionMatrixManager,
+        )
 
         manager = ProjectionMatrixManager()
 
-        matrix1 = manager.create_projection_matrix(input_dim=1536, output_dim=64, seed=42)
-        matrix2 = manager.create_projection_matrix(input_dim=1536, output_dim=64, seed=42)
+        matrix1 = manager.create_projection_matrix(
+            input_dim=1536, output_dim=64, seed=42
+        )
+        matrix2 = manager.create_projection_matrix(
+            input_dim=1536, output_dim=64, seed=42
+        )
 
         # Same seed produces identical matrix
         assert np.allclose(matrix1, matrix2), "Same seed must produce identical matrix"
@@ -44,14 +49,22 @@ class TestProjectionMatrixManager:
 
         AC: Different seeds produce different matrices
         """
-        from code_indexer.storage.projection_matrix_manager import ProjectionMatrixManager
+        from code_indexer.storage.projection_matrix_manager import (
+            ProjectionMatrixManager,
+        )
 
         manager = ProjectionMatrixManager()
 
-        matrix1 = manager.create_projection_matrix(input_dim=1536, output_dim=64, seed=42)
-        matrix2 = manager.create_projection_matrix(input_dim=1536, output_dim=64, seed=99)
+        matrix1 = manager.create_projection_matrix(
+            input_dim=1536, output_dim=64, seed=42
+        )
+        matrix2 = manager.create_projection_matrix(
+            input_dim=1536, output_dim=64, seed=99
+        )
 
-        assert not np.allclose(matrix1, matrix2), "Different seeds must produce different matrices"
+        assert not np.allclose(
+            matrix1, matrix2
+        ), "Different seeds must produce different matrices"
 
     def test_save_and_load_projection_matrix(self, tmp_path):
         """GIVEN a projection matrix
@@ -60,12 +73,16 @@ class TestProjectionMatrixManager:
 
         AC: Projection matrix persistence
         """
-        from code_indexer.storage.projection_matrix_manager import ProjectionMatrixManager
+        from code_indexer.storage.projection_matrix_manager import (
+            ProjectionMatrixManager,
+        )
 
         manager = ProjectionMatrixManager()
 
         # Create and save matrix
-        original_matrix = manager.create_projection_matrix(input_dim=1536, output_dim=64, seed=42)
+        original_matrix = manager.create_projection_matrix(
+            input_dim=1536, output_dim=64, seed=42
+        )
         collection_path = tmp_path / "test_collection"
         collection_path.mkdir()
 
@@ -78,8 +95,13 @@ class TestProjectionMatrixManager:
         # Load and compare
         loaded_matrix = manager.load_matrix(collection_path)
 
-        assert np.allclose(original_matrix, loaded_matrix), "Loaded matrix must match original"
-        assert loaded_matrix.shape == (1536, 64), "Loaded matrix should have correct shape"
+        assert np.allclose(
+            original_matrix, loaded_matrix
+        ), "Loaded matrix must match original"
+        assert loaded_matrix.shape == (
+            1536,
+            64,
+        ), "Loaded matrix should have correct shape"
 
     def test_load_nonexistent_matrix_raises_error(self, tmp_path):
         """GIVEN collection path without matrix file
@@ -88,7 +110,9 @@ class TestProjectionMatrixManager:
 
         AC: Error handling for missing matrix
         """
-        from code_indexer.storage.projection_matrix_manager import ProjectionMatrixManager
+        from code_indexer.storage.projection_matrix_manager import (
+            ProjectionMatrixManager,
+        )
 
         manager = ProjectionMatrixManager()
 
@@ -105,13 +129,19 @@ class TestProjectionMatrixManager:
 
         AC: Auto-seeding from collection context
         """
-        from code_indexer.storage.projection_matrix_manager import ProjectionMatrixManager
+        from code_indexer.storage.projection_matrix_manager import (
+            ProjectionMatrixManager,
+        )
 
         manager = ProjectionMatrixManager()
 
         # No seed provided - should use auto-seeding
-        matrix1 = manager.create_projection_matrix(input_dim=1536, output_dim=64, seed=None)
-        matrix2 = manager.create_projection_matrix(input_dim=1536, output_dim=64, seed=None)
+        matrix1 = manager.create_projection_matrix(
+            input_dim=1536, output_dim=64, seed=None
+        )
+        matrix2 = manager.create_projection_matrix(
+            input_dim=1536, output_dim=64, seed=None
+        )
 
         # Auto-seed should be consistent (based on fixed logic)
         assert np.allclose(matrix1, matrix2), "Auto-seeding should be deterministic"
@@ -123,11 +153,15 @@ class TestProjectionMatrixManager:
 
         AC: Matrix normalization for stable results
         """
-        from code_indexer.storage.projection_matrix_manager import ProjectionMatrixManager
+        from code_indexer.storage.projection_matrix_manager import (
+            ProjectionMatrixManager,
+        )
 
         manager = ProjectionMatrixManager()
 
-        matrix = manager.create_projection_matrix(input_dim=1536, output_dim=64, seed=42)
+        matrix = manager.create_projection_matrix(
+            input_dim=1536, output_dim=64, seed=42
+        )
 
         # Matrix is normalized by dividing by sqrt(output_dim)
         # This scales all values, preserving the random projection properties
@@ -146,11 +180,15 @@ class TestProjectionMatrixManager:
 
         AC: Random projection preserves distances (Johnson-Lindenstrauss lemma)
         """
-        from code_indexer.storage.projection_matrix_manager import ProjectionMatrixManager
+        from code_indexer.storage.projection_matrix_manager import (
+            ProjectionMatrixManager,
+        )
 
         manager = ProjectionMatrixManager()
 
-        matrix = manager.create_projection_matrix(input_dim=1536, output_dim=64, seed=42)
+        matrix = manager.create_projection_matrix(
+            input_dim=1536, output_dim=64, seed=42
+        )
 
         # Create test vectors
         np.random.seed(99)
@@ -174,4 +212,6 @@ class TestProjectionMatrixManager:
         # Relative ordering should be approximately preserved
         # If d(v1,v2) < d(v1,v3), then d(p1,p2) should be < d(p1,p3)
         if dist_12_orig < dist_13_orig:
-            assert dist_12_proj < dist_13_proj * 1.5, "Relative distances should be preserved"
+            assert (
+                dist_12_proj < dist_13_proj * 1.5
+            ), "Relative distances should be preserved"

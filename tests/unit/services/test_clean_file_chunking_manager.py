@@ -83,6 +83,7 @@ class TestCleanFileChunkingManagerResourceManagement:
 
         # Create temporary directory for codebase_dir
         import tempfile
+
         temp_dir = Path(tempfile.mkdtemp())
 
         manager = FileChunkingManager(

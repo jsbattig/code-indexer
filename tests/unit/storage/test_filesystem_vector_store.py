@@ -7,9 +7,9 @@ Following Story 2 requirements for QdrantClient-compatible interface.
 import json
 import numpy as np
 import pytest
+from unittest.mock import Mock
 import subprocess
 import time
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
 
@@ -21,9 +21,9 @@ class TestFilesystemVectorStoreCore:
         """Generate deterministic test vectors."""
         np.random.seed(42)
         return {
-            'small': np.random.randn(10, 1536),
-            'medium': np.random.randn(100, 1536),
-            'large': np.random.randn(1000, 1536)
+            "small": np.random.randn(10, 1536),
+            "medium": np.random.randn(100, 1536),
+            "large": np.random.randn(1000, 1536),
         }
 
     def test_create_collection_generates_projection_matrix(self, tmp_path):
@@ -38,29 +38,29 @@ class TestFilesystemVectorStoreCore:
 
         store = FilesystemVectorStore(base_path=tmp_path)
 
-        result = store.create_collection('test_coll', vector_size=1536)
+        result = store.create_collection("test_coll", vector_size=1536)
 
         assert result is True, "create_collection should return True"
 
         # Verify collection directory exists
-        coll_path = tmp_path / 'test_coll'
+        coll_path = tmp_path / "test_coll"
         assert coll_path.exists(), "Collection directory should exist"
 
         # Verify projection matrix file exists
-        matrix_file = coll_path / 'projection_matrix.npy'
+        matrix_file = coll_path / "projection_matrix.npy"
         assert matrix_file.exists(), "Projection matrix file should exist"
 
         # Verify collection metadata file exists
-        meta_file = coll_path / 'collection_meta.json'
+        meta_file = coll_path / "collection_meta.json"
         assert meta_file.exists(), "Collection metadata file should exist"
 
         # Verify metadata content
         with open(meta_file) as f:
             metadata = json.load(f)
 
-        assert metadata['name'] == 'test_coll'
-        assert metadata['vector_size'] == 1536
-        assert 'created_at' in metadata
+        assert metadata["name"] == "test_coll"
+        assert metadata["vector_size"] == 1536
+        assert "created_at" in metadata
 
     def test_upsert_points_stores_json_at_quantized_paths(self, tmp_path, test_vectors):
         """GIVEN vectors to store
@@ -74,27 +74,29 @@ class TestFilesystemVectorStoreCore:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
-        points = [{
-            'id': 'test_001',
-            'vector': test_vectors['small'][0].tolist(),
-            'payload': {
-                'path': 'src/test.py',
-                'start_line': 10,
-                'end_line': 20,
-                'language': 'python',
-                'type': 'content'
+        points = [
+            {
+                "id": "test_001",
+                "vector": test_vectors["small"][0].tolist(),
+                "payload": {
+                    "path": "src/test.py",
+                    "start_line": 10,
+                    "end_line": 20,
+                    "language": "python",
+                    "type": "content",
+                },
             }
-        }]
+        ]
 
-        result = store.upsert_points('test_coll', points)
+        result = store.upsert_points("test_coll", points)
 
-        assert result['status'] == 'ok', "upsert should succeed"
+        assert result["status"] == "ok", "upsert should succeed"
 
         # Verify JSON files exist on filesystem
-        json_files = list((tmp_path / 'test_coll').rglob('*.json'))
-        vector_files = [f for f in json_files if 'collection_meta' not in f.name]
+        json_files = list((tmp_path / "test_coll").rglob("*.json"))
+        vector_files = [f for f in json_files if "collection_meta" not in f.name]
 
         assert len(vector_files) >= 1, "At least one vector file should exist"
 
@@ -102,12 +104,12 @@ class TestFilesystemVectorStoreCore:
         with open(vector_files[0]) as f:
             data = json.load(f)
 
-        assert data['id'] == 'test_001'
-        assert data['file_path'] == 'src/test.py'
-        assert data['start_line'] == 10
-        assert data['end_line'] == 20
-        assert len(data['vector']) == 1536, "Full vector should be stored"
-        assert 'metadata' in data
+        assert data["id"] == "test_001"
+        assert data["file_path"] == "src/test.py"
+        assert data["start_line"] == 10
+        assert data["end_line"] == 20
+        assert len(data["vector"]) == 1536, "Full vector should be stored"
+        assert "metadata" in data
 
     def test_upsert_creates_directory_hierarchy(self, tmp_path, test_vectors):
         """GIVEN vector to quantize
@@ -119,21 +121,26 @@ class TestFilesystemVectorStoreCore:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
-        points = [{
-            'id': f'vec_{i}',
-            'vector': test_vectors['small'][i].tolist(),
-            'payload': {'path': f'file_{i}.py'}
-        } for i in range(5)]
+        points = [
+            {
+                "id": f"vec_{i}",
+                "vector": test_vectors["small"][i].tolist(),
+                "payload": {"path": f"file_{i}.py"},
+            }
+            for i in range(5)
+        ]
 
-        store.upsert_points('test_coll', points)
+        store.upsert_points("test_coll", points)
 
         # Check that nested directories were created (depth factor 4 = 4 levels + remainder)
-        coll_path = tmp_path / 'test_coll'
+        coll_path = tmp_path / "test_coll"
 
         # Find all vector JSON files
-        vector_files = [f for f in coll_path.rglob('*.json') if 'collection_meta' not in f.name]
+        vector_files = [
+            f for f in coll_path.rglob("*.json") if "collection_meta" not in f.name
+        ]
         assert len(vector_files) == 5, "Should have 5 vector files"
 
         # Verify directory nesting depth
@@ -156,13 +163,13 @@ class TestFilesystemVectorStoreCore:
         store = FilesystemVectorStore(base_path=tmp_path)
 
         # Non-existent collection
-        assert store.collection_exists('nonexistent') is False
+        assert store.collection_exists("nonexistent") is False
 
         # Create collection
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
         # Now it exists
-        assert store.collection_exists('test_coll') is True
+        assert store.collection_exists("test_coll") is True
 
     def test_list_collections(self, tmp_path):
         """GIVEN multiple collections
@@ -180,15 +187,15 @@ class TestFilesystemVectorStoreCore:
         assert len(collections) == 0
 
         # Create some collections
-        store.create_collection('coll1', vector_size=1536)
-        store.create_collection('coll2', vector_size=768)
-        store.create_collection('coll3', vector_size=1536)
+        store.create_collection("coll1", vector_size=1536)
+        store.create_collection("coll2", vector_size=768)
+        store.create_collection("coll3", vector_size=1536)
 
         collections = store.list_collections()
         assert len(collections) == 3
-        assert 'coll1' in collections
-        assert 'coll2' in collections
-        assert 'coll3' in collections
+        assert "coll1" in collections
+        assert "coll2" in collections
+        assert "coll3" in collections
 
     def test_count_points(self, tmp_path, test_vectors):
         """GIVEN vectors stored in collection
@@ -200,22 +207,25 @@ class TestFilesystemVectorStoreCore:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
         # Initially zero
-        assert store.count_points('test_coll') == 0
+        assert store.count_points("test_coll") == 0
 
         # Add 10 points
-        points = [{
-            'id': f'vec_{i}',
-            'vector': test_vectors['small'][i].tolist(),
-            'payload': {'path': f'file_{i}.py'}
-        } for i in range(10)]
+        points = [
+            {
+                "id": f"vec_{i}",
+                "vector": test_vectors["small"][i].tolist(),
+                "payload": {"path": f"file_{i}.py"},
+            }
+            for i in range(10)
+        ]
 
-        store.upsert_points('test_coll', points)
+        store.upsert_points("test_coll", points)
 
         # Should have 10
-        assert store.count_points('test_coll') == 10
+        assert store.count_points("test_coll") == 10
 
     def test_delete_points_removes_files(self, tmp_path, test_vectors):
         """GIVEN vectors stored in filesystem
@@ -227,27 +237,30 @@ class TestFilesystemVectorStoreCore:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
         # Store 10 vectors
-        points = [{
-            'id': f'vec_{i}',
-            'vector': test_vectors['small'][i].tolist(),
-            'payload': {'path': f'file_{i}.py'}
-        } for i in range(10)]
-        store.upsert_points('test_coll', points)
+        points = [
+            {
+                "id": f"vec_{i}",
+                "vector": test_vectors["small"][i].tolist(),
+                "payload": {"path": f"file_{i}.py"},
+            }
+            for i in range(10)
+        ]
+        store.upsert_points("test_coll", points)
 
-        initial_count = store.count_points('test_coll')
+        initial_count = store.count_points("test_coll")
         assert initial_count == 10
 
         # Delete specific points
-        result = store.delete_points('test_coll', ['vec_1', 'vec_2', 'vec_3'])
+        result = store.delete_points("test_coll", ["vec_1", "vec_2", "vec_3"])
 
-        assert result['status'] == 'ok'
-        assert result['deleted'] == 3
+        assert result["status"] == "ok"
+        assert result["deleted"] == 3
 
         # Verify count decreased
-        assert store.count_points('test_coll') == 7
+        assert store.count_points("test_coll") == 7
 
     def test_concurrent_writes_thread_safety(self, tmp_path):
         """GIVEN concurrent upsert operations
@@ -259,37 +272,37 @@ class TestFilesystemVectorStoreCore:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
         def write_batch(start_idx):
             points = [
                 {
-                    'id': f'vec_{start_idx}_{i}',
-                    'vector': np.random.randn(1536).tolist(),
-                    'payload': {'path': f'file_{i}.py'}
+                    "id": f"vec_{start_idx}_{i}",
+                    "vector": np.random.randn(1536).tolist(),
+                    "payload": {"path": f"file_{i}.py"},
                 }
                 for i in range(10)
             ]
-            return store.upsert_points('test_coll', points)
+            return store.upsert_points("test_coll", points)
 
         # Write 100 vectors across 10 threads
         with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = [executor.submit(write_batch, i*10) for i in range(10)]
+            futures = [executor.submit(write_batch, i * 10) for i in range(10)]
             results = [f.result() for f in futures]
 
         # All writes succeed
-        assert all(r['status'] == 'ok' for r in results)
-        assert store.count_points('test_coll') == 100
+        assert all(r["status"] == "ok" for r in results)
+        assert store.count_points("test_coll") == 100
 
         # No corrupted JSON files
-        coll_path = tmp_path / 'test_coll'
-        for json_file in coll_path.rglob('*.json'):
-            if 'collection_meta' in json_file.name:
+        coll_path = tmp_path / "test_coll"
+        for json_file in coll_path.rglob("*.json"):
+            if "collection_meta" in json_file.name:
                 continue
             with open(json_file) as f:
                 data = json.load(f)  # Should not raise JSONDecodeError
-            assert 'vector' in data
-            assert len(data['vector']) == 1536
+            assert "vector" in data
+            assert len(data["vector"]) == 1536
 
     def test_batch_upsert_performance(self, tmp_path, test_vectors):
         """GIVEN 1000 vectors to store
@@ -301,29 +314,30 @@ class TestFilesystemVectorStoreCore:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
         points = [
             {
-                'id': f'vec_{i}',
-                'vector': test_vectors['large'][i].tolist(),
-                'payload': {'path': f'file_{i}.py', 'start_line': i}
+                "id": f"vec_{i}",
+                "vector": test_vectors["large"][i].tolist(),
+                "payload": {"path": f"file_{i}.py", "start_line": i},
             }
             for i in range(1000)
         ]
 
         start = time.time()
-        result = store.upsert_points('test_coll', points)
+        result = store.upsert_points("test_coll", points)
         duration = time.time() - start
 
-        assert result['status'] == 'ok'
+        assert result["status"] == "ok"
         assert duration < 5.0, f"Batch upsert too slow: {duration:.2f}s"
-        assert store.count_points('test_coll') == 1000
+        assert store.count_points("test_coll") == 1000
 
         # Verify files actually exist on filesystem
-        coll_path = tmp_path / 'test_coll'
-        json_count = sum(1 for _ in coll_path.rglob('*.json')
-                        if 'collection_meta' not in _.name)
+        coll_path = tmp_path / "test_coll"
+        json_count = sum(
+            1 for _ in coll_path.rglob("*.json") if "collection_meta" not in _.name
+        )
         assert json_count == 1000
 
 
@@ -342,31 +356,34 @@ class TestChunkContentStorageAndRetrieval:
 
         # No git init - plain directory
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
-        points = [{
-            'id': 'test_001',
-            'vector': np.random.randn(1536).tolist(),
-            'payload': {
-                'path': 'test.py',
-                'start_line': 0,
-                'end_line': 2,
-                'content': 'def foo():\n    return 42\n'
+        points = [
+            {
+                "id": "test_001",
+                "vector": np.random.randn(1536).tolist(),
+                "payload": {
+                    "path": "test.py",
+                    "start_line": 0,
+                    "end_line": 2,
+                    "content": "def foo():\n    return 42\n",
+                },
             }
-        }]
+        ]
 
-        store.upsert_points('test_coll', points)
+        store.upsert_points("test_coll", points)
 
         # Verify JSON DOES contain chunk text (no git fallback)
-        coll_path = tmp_path / 'test_coll'
-        json_files = [f for f in coll_path.rglob('*.json')
-                     if 'collection_meta' not in f.name]
+        coll_path = tmp_path / "test_coll"
+        json_files = [
+            f for f in coll_path.rglob("*.json") if "collection_meta" not in f.name
+        ]
         with open(json_files[0]) as f:
             data = json.load(f)
 
-        assert 'chunk_text' in data, "Chunk text should be stored for non-git"
-        assert data['chunk_text'] == 'def foo():\n    return 42\n'
-        assert 'git_blob_hash' not in data, "No git metadata for non-git repos"
+        assert "chunk_text" in data, "Chunk text should be stored for non-git"
+        assert data["chunk_text"] == "def foo():\n    return 42\n"
+        assert "git_blob_hash" not in data, "No git metadata for non-git repos"
 
     def test_clean_git_state_stores_blob_hash_not_content(self, tmp_path):
         """GIVEN clean git repo
@@ -377,45 +394,58 @@ class TestChunkContentStorageAndRetrieval:
         AC8: Batch git operations (<500ms for 100 files)
         """
         # Initialize git repo
-        subprocess.run(['git', 'init'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.email', 'test@test.com'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=tmp_path,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True
+        )
 
-        test_file = tmp_path / 'test.py'
+        test_file = tmp_path / "test.py"
         content = "def foo(): return 42\n"
         test_file.write_text(content)
-        subprocess.run(['git', 'add', '.'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'commit', '-m', 'test'], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "test"], cwd=tmp_path, capture_output=True
+        )
 
         # No modifications - clean state
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path, project_root=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
-        points = [{
-            'id': 'test_001',
-            'vector': np.random.randn(1536).tolist(),
-            'payload': {
-                'path': 'test.py',
-                'start_line': 0,
-                'end_line': 1,
-                'content': content
+        points = [
+            {
+                "id": "test_001",
+                "vector": np.random.randn(1536).tolist(),
+                "payload": {
+                    "path": "test.py",
+                    "start_line": 0,
+                    "end_line": 1,
+                    "content": content,
+                },
             }
-        }]
+        ]
 
-        store.upsert_points('test_coll', points)
+        store.upsert_points("test_coll", points)
 
         # Verify git_blob_hash stored (no chunk_text)
-        coll_path = tmp_path / 'test_coll'
-        json_files = [f for f in coll_path.rglob('*.json')
-                     if 'collection_meta' not in f.name]
+        coll_path = tmp_path / "test_coll"
+        json_files = [
+            f for f in coll_path.rglob("*.json") if "collection_meta" not in f.name
+        ]
         with open(json_files[0]) as f:
             data = json.load(f)
 
-        assert 'git_blob_hash' in data, "Git blob hash should be stored"
-        assert 'chunk_text' not in data, "Chunk text should NOT be stored (space efficient)"
-        assert data.get('indexed_with_uncommitted_changes', False) is False
+        assert "git_blob_hash" in data, "Git blob hash should be stored"
+        assert (
+            "chunk_text" not in data
+        ), "Chunk text should NOT be stored (space efficient)"
+        assert data.get("indexed_with_uncommitted_changes", False) is False
 
     def test_dirty_git_state_stores_chunk_text(self, tmp_path):
         """GIVEN git repo with uncommitted changes
@@ -426,14 +456,22 @@ class TestChunkContentStorageAndRetrieval:
         AC8: No git state requirements (dirty allowed)
         """
         # Initialize git repo
-        subprocess.run(['git', 'init'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.email', 'test@test.com'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=tmp_path,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True
+        )
 
-        test_file = tmp_path / 'test.py'
+        test_file = tmp_path / "test.py"
         test_file.write_text("def foo(): pass\n")
-        subprocess.run(['git', 'add', '.'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'commit', '-m', 'initial'], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial"], cwd=tmp_path, capture_output=True
+        )
 
         # Modify without committing (dirty state)
         dirty_content = "def foo(): return 99\n"
@@ -442,32 +480,35 @@ class TestChunkContentStorageAndRetrieval:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path, project_root=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
-        points = [{
-            'id': 'test_001',
-            'vector': np.random.randn(1536).tolist(),
-            'payload': {
-                'path': 'test.py',
-                'start_line': 0,
-                'end_line': 1,
-                'content': dirty_content
+        points = [
+            {
+                "id": "test_001",
+                "vector": np.random.randn(1536).tolist(),
+                "payload": {
+                    "path": "test.py",
+                    "start_line": 0,
+                    "end_line": 1,
+                    "content": dirty_content,
+                },
             }
-        }]
+        ]
 
-        store.upsert_points('test_coll', points)
+        store.upsert_points("test_coll", points)
 
         # Verify chunk_text stored (not git_blob_hash)
-        coll_path = tmp_path / 'test_coll'
-        json_files = [f for f in coll_path.rglob('*.json')
-                     if 'collection_meta' not in f.name]
+        coll_path = tmp_path / "test_coll"
+        json_files = [
+            f for f in coll_path.rglob("*.json") if "collection_meta" not in f.name
+        ]
         with open(json_files[0]) as f:
             data = json.load(f)
 
-        assert 'chunk_text' in data, "Chunk text should be stored for dirty git"
-        assert data['chunk_text'] == dirty_content
-        assert 'git_blob_hash' not in data, "Git blob hash not stored for dirty state"
-        assert data.get('indexed_with_uncommitted_changes') is True
+        assert "chunk_text" in data, "Chunk text should be stored for dirty git"
+        assert data["chunk_text"] == dirty_content
+        assert "git_blob_hash" not in data, "Git blob hash not stored for dirty state"
+        assert data.get("indexed_with_uncommitted_changes") is True
 
 
 class TestSearchMethods:
@@ -489,28 +530,30 @@ class TestSearchMethods:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
         # Store a vector
-        points = [{
-            'id': 'lookup_test',
-            'vector': test_vectors[0].tolist(),
-            'payload': {
-                'path': 'src/test.py',
-                'language': 'python',
-                'type': 'content'
+        points = [
+            {
+                "id": "lookup_test",
+                "vector": test_vectors[0].tolist(),
+                "payload": {
+                    "path": "src/test.py",
+                    "language": "python",
+                    "type": "content",
+                },
             }
-        }]
-        store.upsert_points('test_coll', points)
+        ]
+        store.upsert_points("test_coll", points)
 
         # Retrieve by ID
-        result = store.get_point('lookup_test', 'test_coll')
+        result = store.get_point("lookup_test", "test_coll")
 
         assert result is not None, "get_point should return data"
-        assert result['id'] == 'lookup_test'
-        assert 'vector' in result
-        assert len(result['vector']) == 1536
-        assert result['payload']['path'] == 'src/test.py'
+        assert result["id"] == "lookup_test"
+        assert "vector" in result
+        assert len(result["vector"]) == 1536
+        assert result["payload"]["path"] == "src/test.py"
 
     def test_get_point_returns_none_for_missing_id(self, tmp_path):
         """GIVEN collection with no vectors
@@ -522,9 +565,9 @@ class TestSearchMethods:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
-        result = store.get_point('nonexistent', 'test_coll')
+        result = store.get_point("nonexistent", "test_coll")
         assert result is None
 
     def test_scroll_points_returns_all_points(self, tmp_path, test_vectors):
@@ -537,30 +580,33 @@ class TestSearchMethods:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
         # Store 10 vectors
-        points = [{
-            'id': f'vec_{i}',
-            'vector': test_vectors[i].tolist(),
-            'payload': {'path': f'file_{i}.py'}
-        } for i in range(10)]
-        store.upsert_points('test_coll', points)
+        points = [
+            {
+                "id": f"vec_{i}",
+                "vector": test_vectors[i].tolist(),
+                "payload": {"path": f"file_{i}.py"},
+            }
+            for i in range(10)
+        ]
+        store.upsert_points("test_coll", points)
 
         # Scroll all points
         results, next_offset = store.scroll_points(
-            collection_name='test_coll',
+            collection_name="test_coll",
             limit=100,
             with_payload=True,
-            with_vectors=False
+            with_vectors=False,
         )
 
         assert len(results) == 10, "Should return all 10 points"
         assert next_offset is None, "No more pages"
 
         # Verify payload structure
-        assert all('id' in p for p in results)
-        assert all('payload' in p for p in results)
+        assert all("id" in p for p in results)
+        assert all("payload" in p for p in results)
 
     def test_scroll_points_pagination(self, tmp_path, test_vectors):
         """GIVEN 20 vectors stored
@@ -572,22 +618,22 @@ class TestSearchMethods:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
         # Store 20 vectors
-        points = [{
-            'id': f'vec_{i:03d}',  # Zero-padded for consistent sorting
-            'vector': test_vectors[i].tolist(),
-            'payload': {'path': f'file_{i}.py'}
-        } for i in range(20)]
-        store.upsert_points('test_coll', points)
+        points = [
+            {
+                "id": f"vec_{i:03d}",  # Zero-padded for consistent sorting
+                "vector": test_vectors[i].tolist(),
+                "payload": {"path": f"file_{i}.py"},
+            }
+            for i in range(20)
+        ]
+        store.upsert_points("test_coll", points)
 
         # First page
         page1, offset1 = store.scroll_points(
-            collection_name='test_coll',
-            limit=10,
-            with_payload=True,
-            with_vectors=False
+            collection_name="test_coll", limit=10, with_payload=True, with_vectors=False
         )
 
         assert len(page1) == 10
@@ -595,19 +641,19 @@ class TestSearchMethods:
 
         # Second page
         page2, offset2 = store.scroll_points(
-            collection_name='test_coll',
+            collection_name="test_coll",
             limit=10,
             with_payload=True,
             with_vectors=False,
-            offset=offset1
+            offset=offset1,
         )
 
         assert len(page2) == 10
         assert offset2 is None, "No more pages"
 
         # Verify no duplicate IDs
-        ids_page1 = {p['id'] for p in page1}
-        ids_page2 = {p['id'] for p in page2}
+        ids_page1 = {p["id"] for p in page1}
+        ids_page2 = {p["id"] for p in page2}
         assert len(ids_page1.intersection(ids_page2)) == 0, "No duplicates across pages"
 
     def test_scroll_points_with_vectors(self, tmp_path, test_vectors):
@@ -620,26 +666,25 @@ class TestSearchMethods:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
-        points = [{
-            'id': 'test_001',
-            'vector': test_vectors[0].tolist(),
-            'payload': {'path': 'test.py'}
-        }]
-        store.upsert_points('test_coll', points)
+        points = [
+            {
+                "id": "test_001",
+                "vector": test_vectors[0].tolist(),
+                "payload": {"path": "test.py"},
+            }
+        ]
+        store.upsert_points("test_coll", points)
 
         # Scroll with vectors
         results, _ = store.scroll_points(
-            collection_name='test_coll',
-            limit=10,
-            with_payload=True,
-            with_vectors=True
+            collection_name="test_coll", limit=10, with_payload=True, with_vectors=True
         )
 
         assert len(results) == 1
-        assert 'vector' in results[0], "Should include vector"
-        assert len(results[0]['vector']) == 1536
+        assert "vector" in results[0], "Should include vector"
+        assert len(results[0]["vector"]) == 1536
 
     def test_search_returns_similar_vectors(self, tmp_path, test_vectors):
         """GIVEN vectors stored in collection
@@ -651,39 +696,46 @@ class TestSearchMethods:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
         # Store 10 vectors
-        points = [{
-            'id': f'vec_{i}',
-            'vector': test_vectors[i].tolist(),
-            'payload': {'path': f'file_{i}.py', 'language': 'python'}
-        } for i in range(10)]
-        store.upsert_points('test_coll', points)
+        points = [
+            {
+                "id": f"vec_{i}",
+                "vector": test_vectors[i].tolist(),
+                "payload": {"path": f"file_{i}.py", "language": "python"},
+            }
+            for i in range(10)
+        ]
+        store.upsert_points("test_coll", points)
 
         # Search with first vector (should match itself)
         query_vector = test_vectors[0].tolist()
+        mock_embedding_provider = Mock()
+        mock_embedding_provider.get_embedding.return_value = query_vector
+
         results = store.search(
-            query_vector=query_vector,
-            collection_name='test_coll',
-            limit=5
+            query="test query",
+            embedding_provider=mock_embedding_provider,
+            collection_name="test_coll",
+            limit=5,
         )
 
         assert len(results) <= 5, "Should respect limit"
         assert len(results) > 0, "Should find matches"
 
         # Results should have similarity scores
-        assert all('score' in r for r in results), "Should include scores"
-        assert all('id' in r for r in results)
-        assert all('payload' in r for r in results)
+        assert all("score" in r for r in results), "Should include scores"
+        assert all("id" in r for r in results)
+        assert all("payload" in r for r in results)
 
         # Scores should be descending
-        scores = [r['score'] for r in results]
+        scores = [r["score"] for r in results]
         assert scores == sorted(scores, reverse=True), "Scores should be descending"
 
         # Best match should be the query vector itself
-        assert results[0]['id'] == 'vec_0', "Best match should be query vector"
-        assert results[0]['score'] > 0.99, "Self-similarity should be ~1.0"
+        assert results[0]["id"] == "vec_0", "Best match should be query vector"
+        assert results[0]["score"] > 0.99, "Self-similarity should be ~1.0"
 
     def test_search_with_score_threshold(self, tmp_path, test_vectors):
         """GIVEN vectors stored
@@ -695,25 +747,32 @@ class TestSearchMethods:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
-        points = [{
-            'id': f'vec_{i}',
-            'vector': test_vectors[i].tolist(),
-            'payload': {'path': f'file_{i}.py'}
-        } for i in range(10)]
-        store.upsert_points('test_coll', points)
+        points = [
+            {
+                "id": f"vec_{i}",
+                "vector": test_vectors[i].tolist(),
+                "payload": {"path": f"file_{i}.py"},
+            }
+            for i in range(10)
+        ]
+        store.upsert_points("test_coll", points)
 
         # Search with high threshold
+        mock_embedding_provider = Mock()
+        mock_embedding_provider.get_embedding.return_value = test_vectors[0].tolist()
+
         results = store.search(
-            query_vector=test_vectors[0].tolist(),
-            collection_name='test_coll',
+            query="test query",
+            embedding_provider=mock_embedding_provider,
+            collection_name="test_coll",
             limit=10,
-            score_threshold=0.95
+            score_threshold=0.95,
         )
 
         # Should only return very similar vectors
-        assert all(r['score'] >= 0.95 for r in results), "All scores above threshold"
+        assert all(r["score"] >= 0.95 for r in results), "All scores above threshold"
 
     def test_search_with_filter_conditions(self, tmp_path, test_vectors):
         """GIVEN vectors with different metadata
@@ -725,39 +784,43 @@ class TestSearchMethods:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
         # Store vectors with different languages
         points = [
             {
-                'id': 'python_0',
-                'vector': test_vectors[0].tolist(),
-                'payload': {'path': 'test.py', 'language': 'python'}
+                "id": "python_0",
+                "vector": test_vectors[0].tolist(),
+                "payload": {"path": "test.py", "language": "python"},
             },
             {
-                'id': 'python_1',
-                'vector': test_vectors[1].tolist(),
-                'payload': {'path': 'main.py', 'language': 'python'}
+                "id": "python_1",
+                "vector": test_vectors[1].tolist(),
+                "payload": {"path": "main.py", "language": "python"},
             },
             {
-                'id': 'javascript_0',
-                'vector': test_vectors[2].tolist(),
-                'payload': {'path': 'app.js', 'language': 'javascript'}
-            }
+                "id": "javascript_0",
+                "vector": test_vectors[2].tolist(),
+                "payload": {"path": "app.js", "language": "javascript"},
+            },
         ]
-        store.upsert_points('test_coll', points)
+        store.upsert_points("test_coll", points)
 
         # Search with language filter
-        filter_conditions = {'language': 'python'}
+        filter_conditions = {"language": "python"}
+        mock_embedding_provider = Mock()
+        mock_embedding_provider.get_embedding.return_value = test_vectors[0].tolist()
+
         results = store.search(
-            query_vector=test_vectors[0].tolist(),
-            collection_name='test_coll',
+            query="test query",
+            embedding_provider=mock_embedding_provider,
+            collection_name="test_coll",
             limit=10,
-            filter_conditions=filter_conditions
+            filter_conditions=filter_conditions,
         )
 
         # Should only return Python files
-        assert all(r['payload']['language'] == 'python' for r in results)
+        assert all(r["payload"]["language"] == "python" for r in results)
         assert len(results) == 2
 
 
@@ -774,19 +837,27 @@ class TestBatchGitOperations:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         # Initialize git repo
-        subprocess.run(['git', 'init'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.email', 'test@test.com'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=tmp_path,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True
+        )
 
         # Create 100 files
         file_paths = []
         for i in range(100):
-            test_file = tmp_path / f'file_{i}.py'
-            test_file.write_text(f'# File {i}\n')
-            file_paths.append(f'file_{i}.py')
+            test_file = tmp_path / f"file_{i}.py"
+            test_file.write_text(f"# File {i}\n")
+            file_paths.append(f"file_{i}.py")
 
-        subprocess.run(['git', 'add', '.'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'commit', '-m', 'test'], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "test"], cwd=tmp_path, capture_output=True
+        )
 
         store = FilesystemVectorStore(base_path=tmp_path)
 
@@ -809,22 +880,30 @@ class TestBatchGitOperations:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         # Initialize git repo with 100 files
-        subprocess.run(['git', 'init'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.email', 'test@test.com'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=tmp_path,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True
+        )
 
         file_paths = []
         for i in range(100):
-            test_file = tmp_path / f'file_{i}.py'
-            test_file.write_text(f'# File {i}\n')
-            file_paths.append(f'file_{i}.py')
+            test_file = tmp_path / f"file_{i}.py"
+            test_file.write_text(f"# File {i}\n")
+            file_paths.append(f"file_{i}.py")
 
-        subprocess.run(['git', 'add', '.'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'commit', '-m', 'initial'], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial"], cwd=tmp_path, capture_output=True
+        )
 
         # Modify 10 files
         for i in range(10):
-            (tmp_path / f'file_{i}.py').write_text(f'# Modified {i}\n')
+            (tmp_path / f"file_{i}.py").write_text(f"# Modified {i}\n")
 
         store = FilesystemVectorStore(base_path=tmp_path)
 
@@ -850,48 +929,55 @@ class TestProgressReporting:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
         # Track callback invocations
         callbacks = []
 
         def progress_callback(current, total, file_path, info):
-            callbacks.append({
-                'current': current,
-                'total': total,
-                'file_path': str(file_path),
-                'info': info
-            })
+            callbacks.append(
+                {
+                    "current": current,
+                    "total": total,
+                    "file_path": str(file_path),
+                    "info": info,
+                }
+            )
 
         # Store 5 points with progress tracking
-        points = [{
-            'id': f'vec_{i}',
-            'vector': np.random.randn(1536).tolist(),
-            'payload': {'path': f'file_{i}.py'}
-        } for i in range(5)]
+        points = [
+            {
+                "id": f"vec_{i}",
+                "vector": np.random.randn(1536).tolist(),
+                "payload": {"path": f"file_{i}.py"},
+            }
+            for i in range(5)
+        ]
 
         store.upsert_points(
-            collection_name='test_coll',
+            collection_name="test_coll",
             points=points,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
         )
 
         # Verify callback was called 7 times: 5 for points + 2 for HNSW index building
-        assert len(callbacks) == 7, "Callback should be called for each point plus HNSW index building"
+        assert (
+            len(callbacks) == 7
+        ), "Callback should be called for each point plus HNSW index building"
 
         # Verify first 5 callbacks are for individual points
-        assert callbacks[0]['current'] == 1
-        assert callbacks[0]['total'] == 5
-        assert callbacks[4]['current'] == 5
-        assert callbacks[4]['total'] == 5
+        assert callbacks[0]["current"] == 1
+        assert callbacks[0]["total"] == 5
+        assert callbacks[4]["current"] == 5
+        assert callbacks[4]["total"] == 5
 
         # Verify last 2 callbacks are for HNSW index building
-        assert callbacks[5]['info'] == 'Building HNSW index'
-        assert callbacks[5]['current'] == 0
-        assert callbacks[5]['total'] == 5
-        assert callbacks[6]['info'] == 'HNSW index complete'
-        assert callbacks[6]['current'] == 5
-        assert callbacks[6]['total'] == 5
+        assert callbacks[5]["info"] == "Building HNSW index"
+        assert callbacks[5]["current"] == 0
+        assert callbacks[5]["total"] == 5
+        assert callbacks[6]["info"] == "HNSW index complete"
+        assert callbacks[6]["current"] == 5
+        assert callbacks[6]["total"] == 5
 
 
 class TestQdrantClientCompatibility:
@@ -973,29 +1059,32 @@ class TestQdrantClientCompatibility:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
         # Store 10 vectors
-        points = [{
-            'id': f'vec_{i}',
-            'vector': np.random.randn(1536).tolist(),
-            'payload': {'path': f'file_{i}.py'}
-        } for i in range(10)]
-        store.upsert_points('test_coll', points)
+        points = [
+            {
+                "id": f"vec_{i}",
+                "vector": np.random.randn(1536).tolist(),
+                "payload": {"path": f"file_{i}.py"},
+            }
+            for i in range(10)
+        ]
+        store.upsert_points("test_coll", points)
 
-        assert store.count_points('test_coll') == 10
+        assert store.count_points("test_coll") == 10
 
         # Clear collection
-        result = store.clear_collection('test_coll')
+        result = store.clear_collection("test_coll")
 
         assert result is True
-        assert store.count_points('test_coll') == 0
-        assert store.collection_exists('test_coll'), "Collection should still exist"
+        assert store.count_points("test_coll") == 0
+        assert store.collection_exists("test_coll"), "Collection should still exist"
 
         # Verify metadata and projection matrix still exist
-        coll_path = tmp_path / 'test_coll'
-        assert (coll_path / 'collection_meta.json').exists()
-        assert (coll_path / 'projection_matrix.npy').exists()
+        coll_path = tmp_path / "test_coll"
+        assert (coll_path / "collection_meta.json").exists()
+        assert (coll_path / "projection_matrix.npy").exists()
 
     def test_create_point_returns_point_dict(self, tmp_path):
         """GIVEN vector and payload
@@ -1009,17 +1098,13 @@ class TestQdrantClientCompatibility:
         store = FilesystemVectorStore(base_path=tmp_path)
 
         vector = np.random.randn(1536).tolist()
-        payload = {'path': 'test.py', 'language': 'python'}
+        payload = {"path": "test.py", "language": "python"}
 
-        point = store.create_point(
-            vector=vector,
-            payload=payload,
-            point_id='test_001'
-        )
+        point = store.create_point(vector=vector, payload=payload, point_id="test_001")
 
-        assert point['id'] == 'test_001'
-        assert point['vector'] == vector
-        assert point['payload'] == payload
+        assert point["id"] == "test_001"
+        assert point["vector"] == vector
+        assert point["payload"] == payload
 
     def test_delete_by_filter_removes_matching_vectors(self, tmp_path):
         """GIVEN vectors with different languages
@@ -1031,43 +1116,42 @@ class TestQdrantClientCompatibility:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
         # Store vectors with different languages
         points = [
             {
-                'id': 'py_1',
-                'vector': np.random.randn(1536).tolist(),
-                'payload': {'path': 'test1.py', 'language': 'python'}
+                "id": "py_1",
+                "vector": np.random.randn(1536).tolist(),
+                "payload": {"path": "test1.py", "language": "python"},
             },
             {
-                'id': 'py_2',
-                'vector': np.random.randn(1536).tolist(),
-                'payload': {'path': 'test2.py', 'language': 'python'}
+                "id": "py_2",
+                "vector": np.random.randn(1536).tolist(),
+                "payload": {"path": "test2.py", "language": "python"},
             },
             {
-                'id': 'js_1',
-                'vector': np.random.randn(1536).tolist(),
-                'payload': {'path': 'app.js', 'language': 'javascript'}
-            }
+                "id": "js_1",
+                "vector": np.random.randn(1536).tolist(),
+                "payload": {"path": "app.js", "language": "javascript"},
+            },
         ]
-        store.upsert_points('test_coll', points)
+        store.upsert_points("test_coll", points)
 
-        assert store.count_points('test_coll') == 3
+        assert store.count_points("test_coll") == 3
 
         # Delete Python files
         result = store.delete_by_filter(
-            collection_name='test_coll',
-            filter_conditions={'language': 'python'}
+            collection_name="test_coll", filter_conditions={"language": "python"}
         )
 
         assert result is True
-        assert store.count_points('test_coll') == 1
+        assert store.count_points("test_coll") == 1
 
         # Verify JavaScript file remains
-        remaining = store.get_point('js_1', 'test_coll')
+        remaining = store.get_point("js_1", "test_coll")
         assert remaining is not None
-        assert remaining['payload']['language'] == 'javascript'
+        assert remaining["payload"]["language"] == "javascript"
 
     def test_get_collection_info_returns_metadata(self, tmp_path):
         """GIVEN collection with metadata
@@ -1079,14 +1163,14 @@ class TestQdrantClientCompatibility:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
-        info = store.get_collection_info('test_coll')
+        info = store.get_collection_info("test_coll")
 
         assert info is not None
-        assert info['name'] == 'test_coll'
-        assert info['vector_size'] == 1536
-        assert 'created_at' in info
+        assert info["name"] == "test_coll"
+        assert info["vector_size"] == 1536
+        assert "created_at" in info
 
     def test_health_check_returns_true_for_accessible_filesystem(self, tmp_path):
         """GIVEN writable filesystem
@@ -1111,30 +1195,33 @@ class TestQdrantClientCompatibility:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
         # Store initial points
-        points = [{
-            'id': f'vec_{i}',
-            'vector': np.random.randn(1536).tolist(),
-            'payload': {'path': f'file_{i}.py', 'branch': 'main'}
-        } for i in range(5)]
-        store.upsert_points('test_coll', points)
+        points = [
+            {
+                "id": f"vec_{i}",
+                "vector": np.random.randn(1536).tolist(),
+                "payload": {"path": f"file_{i}.py", "branch": "main"},
+            }
+            for i in range(5)
+        ]
+        store.upsert_points("test_coll", points)
 
         # Update payloads
-        updates = [{
-            'id': f'vec_{i}',
-            'payload': {'path': f'file_{i}.py', 'branch': 'feature'}
-        } for i in range(5)]
+        updates = [
+            {"id": f"vec_{i}", "payload": {"path": f"file_{i}.py", "branch": "feature"}}
+            for i in range(5)
+        ]
 
-        result = store._batch_update_points(updates, 'test_coll')
+        result = store._batch_update_points(updates, "test_coll")
 
         assert result is True
 
         # Verify updates
         for i in range(5):
-            point = store.get_point(f'vec_{i}', 'test_coll')
-            assert point['payload']['branch'] == 'feature'
+            point = store.get_point(f"vec_{i}", "test_coll")
+            assert point["payload"]["branch"] == "feature"
 
     def test_resolve_collection_name_returns_model_based_name(self, tmp_path):
         """GIVEN embedding provider with model name
@@ -1159,7 +1246,7 @@ class TestQdrantClientCompatibility:
         collection_name = store.resolve_collection_name(config, provider)
 
         # Should replace slashes with underscores for filesystem safety
-        assert '/' not in collection_name
+        assert "/" not in collection_name
         assert collection_name == "voyage_code-2"
 
     def test_ensure_payload_indexes_is_noop(self, tmp_path):
@@ -1172,10 +1259,10 @@ class TestQdrantClientCompatibility:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
         # Should not raise error
-        store.ensure_payload_indexes('test_coll', context="test")
+        store.ensure_payload_indexes("test_coll", context="test")
 
     def test_rebuild_payload_indexes_is_noop(self, tmp_path):
         """GIVEN filesystem backend
@@ -1187,9 +1274,9 @@ class TestQdrantClientCompatibility:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         store = FilesystemVectorStore(base_path=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
-        result = store.rebuild_payload_indexes('test_coll')
+        result = store.rebuild_payload_indexes("test_coll")
         assert result is True
 
 
@@ -1207,35 +1294,43 @@ class TestStory3ContentRetrievalAndStaleness:
 
         # No git init - plain directory
         store = FilesystemVectorStore(base_path=tmp_path, project_root=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
         content = "def hello():\n    return 'world'\n"
-        points = [{
-            'id': 'test_001',
-            'vector': np.random.randn(1536).tolist(),
-            'payload': {
-                'path': 'test.py',
-                'start_line': 0,
-                'end_line': 2,
-                'content': content
+        points = [
+            {
+                "id": "test_001",
+                "vector": np.random.randn(1536).tolist(),
+                "payload": {
+                    "path": "test.py",
+                    "start_line": 0,
+                    "end_line": 2,
+                    "content": content,
+                },
             }
-        }]
+        ]
 
-        store.upsert_points('test_coll', points)
+        store.upsert_points("test_coll", points)
 
         # Search
+        mock_embedding_provider = Mock()
+        mock_embedding_provider.get_embedding.return_value = np.random.randn(
+            1536
+        ).tolist()
+
         results = store.search(
-            query_vector=np.random.randn(1536).tolist(),
-            collection_name='test_coll',
-            limit=1
+            query="test query",
+            embedding_provider=mock_embedding_provider,
+            collection_name="test_coll",
+            limit=1,
         )
 
         assert len(results) == 1
-        assert 'content' in results[0]['payload']
-        assert results[0]['payload']['content'] == content
-        assert 'staleness' in results[0]
-        assert results[0]['staleness']['is_stale'] is False
-        assert results[0]['staleness']['staleness_indicator'] is None
+        assert "content" in results[0]["payload"]
+        assert results[0]["payload"]["content"] == content
+        assert "staleness" in results[0]
+        assert results[0]["staleness"]["is_stale"] is False
+        assert results[0]["staleness"]["staleness_indicator"] is None
 
     def test_search_returns_content_from_current_file_if_unchanged(self, tmp_path):
         """GIVEN git repo with clean file
@@ -1247,43 +1342,59 @@ class TestStory3ContentRetrievalAndStaleness:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         # Initialize git repo
-        subprocess.run(['git', 'init'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.email', 'test@test.com'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=tmp_path,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True
+        )
 
-        test_file = tmp_path / 'test.py'
+        test_file = tmp_path / "test.py"
         content = "def foo():\n    return 42\n"
         test_file.write_text(content)
-        subprocess.run(['git', 'add', '.'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'commit', '-m', 'test'], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "test"], cwd=tmp_path, capture_output=True
+        )
 
         store = FilesystemVectorStore(base_path=tmp_path, project_root=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
-        points = [{
-            'id': 'test_001',
-            'vector': np.random.randn(1536).tolist(),
-            'payload': {
-                'path': 'test.py',
-                'start_line': 1,
-                'end_line': 2,
-                'content': content
+        points = [
+            {
+                "id": "test_001",
+                "vector": np.random.randn(1536).tolist(),
+                "payload": {
+                    "path": "test.py",
+                    "start_line": 1,
+                    "end_line": 2,
+                    "content": content,
+                },
             }
-        }]
+        ]
 
-        store.upsert_points('test_coll', points)
+        store.upsert_points("test_coll", points)
 
         # Search (file unchanged)
+        mock_embedding_provider = Mock()
+        mock_embedding_provider.get_embedding.return_value = np.random.randn(
+            1536
+        ).tolist()
+
         results = store.search(
-            query_vector=np.random.randn(1536).tolist(),
-            collection_name='test_coll',
-            limit=1
+            query="test query",
+            embedding_provider=mock_embedding_provider,
+            collection_name="test_coll",
+            limit=1,
         )
 
         assert len(results) == 1
-        assert results[0]['payload']['content'] == content
-        assert results[0]['staleness']['is_stale'] is False
-        assert results[0]['staleness']['hash_mismatch'] is False
+        assert results[0]["payload"]["content"] == content
+        assert results[0]["staleness"]["is_stale"] is False
+        assert results[0]["staleness"]["hash_mismatch"] is False
 
     def test_search_detects_modified_file_via_hash(self, tmp_path):
         """GIVEN indexed file later modified
@@ -1295,50 +1406,69 @@ class TestStory3ContentRetrievalAndStaleness:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         # Initialize git repo
-        subprocess.run(['git', 'init'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.email', 'test@test.com'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=tmp_path,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True
+        )
 
-        test_file = tmp_path / 'test.py'
+        test_file = tmp_path / "test.py"
         original_content = "def foo():\n    return 42\n"
         test_file.write_text(original_content)
-        subprocess.run(['git', 'add', '.'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'commit', '-m', 'test'], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "test"], cwd=tmp_path, capture_output=True
+        )
 
         store = FilesystemVectorStore(base_path=tmp_path, project_root=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
-        points = [{
-            'id': 'test_001',
-            'vector': np.random.randn(1536).tolist(),
-            'payload': {
-                'path': 'test.py',
-                'start_line': 1,
-                'end_line': 2,
-                'content': original_content
+        points = [
+            {
+                "id": "test_001",
+                "vector": np.random.randn(1536).tolist(),
+                "payload": {
+                    "path": "test.py",
+                    "start_line": 1,
+                    "end_line": 2,
+                    "content": original_content,
+                },
             }
-        }]
+        ]
 
-        store.upsert_points('test_coll', points)
+        store.upsert_points("test_coll", points)
 
         # Modify file AFTER indexing
         modified_content = "def foo():\n    return 99\n"
         test_file.write_text(modified_content)
 
         # Search - should detect staleness
+        mock_embedding_provider = Mock()
+        mock_embedding_provider.get_embedding.return_value = np.random.randn(
+            1536
+        ).tolist()
+
         results = store.search(
-            query_vector=np.random.randn(1536).tolist(),
-            collection_name='test_coll',
-            limit=1
+            query="test query",
+            embedding_provider=mock_embedding_provider,
+            collection_name="test_coll",
+            limit=1,
         )
 
         assert len(results) == 1
         # Content should be from git blob (original), not modified file
-        assert results[0]['payload']['content'] == original_content
-        assert results[0]['staleness']['is_stale'] is True
-        assert results[0]['staleness']['staleness_indicator'] == '⚠️ Modified'
-        assert results[0]['staleness']['staleness_reason'] == 'file_modified_after_indexing'
-        assert results[0]['staleness']['hash_mismatch'] is True
+        assert results[0]["payload"]["content"] == original_content
+        assert results[0]["staleness"]["is_stale"] is True
+        assert results[0]["staleness"]["staleness_indicator"] == "⚠️ Modified"
+        assert (
+            results[0]["staleness"]["staleness_reason"]
+            == "file_modified_after_indexing"
+        )
+        assert results[0]["staleness"]["hash_mismatch"] is True
 
     def test_search_detects_deleted_file(self, tmp_path):
         """GIVEN indexed file later deleted
@@ -1350,48 +1480,64 @@ class TestStory3ContentRetrievalAndStaleness:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         # Initialize git repo
-        subprocess.run(['git', 'init'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.email', 'test@test.com'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=tmp_path,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True
+        )
 
-        test_file = tmp_path / 'test.py'
+        test_file = tmp_path / "test.py"
         content = "def bar(): pass\n"
         test_file.write_text(content)
-        subprocess.run(['git', 'add', '.'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'commit', '-m', 'test'], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "test"], cwd=tmp_path, capture_output=True
+        )
 
         store = FilesystemVectorStore(base_path=tmp_path, project_root=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
-        points = [{
-            'id': 'test_001',
-            'vector': np.random.randn(1536).tolist(),
-            'payload': {
-                'path': 'test.py',
-                'start_line': 1,
-                'end_line': 1,
-                'content': content
+        points = [
+            {
+                "id": "test_001",
+                "vector": np.random.randn(1536).tolist(),
+                "payload": {
+                    "path": "test.py",
+                    "start_line": 1,
+                    "end_line": 1,
+                    "content": content,
+                },
             }
-        }]
+        ]
 
-        store.upsert_points('test_coll', points)
+        store.upsert_points("test_coll", points)
 
         # Delete file AFTER indexing
         test_file.unlink()
 
         # Search - should detect deletion
+        mock_embedding_provider = Mock()
+        mock_embedding_provider.get_embedding.return_value = np.random.randn(
+            1536
+        ).tolist()
+
         results = store.search(
-            query_vector=np.random.randn(1536).tolist(),
-            collection_name='test_coll',
-            limit=1
+            query="test query",
+            embedding_provider=mock_embedding_provider,
+            collection_name="test_coll",
+            limit=1,
         )
 
         assert len(results) == 1
         # Content should be from git blob
-        assert results[0]['payload']['content'] == content
-        assert results[0]['staleness']['is_stale'] is True
-        assert results[0]['staleness']['staleness_indicator'] == '🗑️ Deleted'
-        assert results[0]['staleness']['staleness_reason'] == 'file_deleted'
+        assert results[0]["payload"]["content"] == content
+        assert results[0]["staleness"]["is_stale"] is True
+        assert results[0]["staleness"]["staleness_indicator"] == "🗑️ Deleted"
+        assert results[0]["staleness"]["staleness_reason"] == "file_deleted"
 
     def test_compute_file_hash_matches_git_blob_hash(self, tmp_path):
         """GIVEN file committed to git
@@ -1403,21 +1549,29 @@ class TestStory3ContentRetrievalAndStaleness:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         # Initialize git repo
-        subprocess.run(['git', 'init'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.email', 'test@test.com'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=tmp_path,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True
+        )
 
-        test_file = tmp_path / 'test.py'
+        test_file = tmp_path / "test.py"
         test_file.write_text("test content\n")
-        subprocess.run(['git', 'add', '.'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'commit', '-m', 'test'], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "test"], cwd=tmp_path, capture_output=True
+        )
 
         # Get git's blob hash
         result = subprocess.run(
-            ['git', 'ls-tree', 'HEAD', 'test.py'],
+            ["git", "ls-tree", "HEAD", "test.py"],
             cwd=tmp_path,
             capture_output=True,
-            text=True
+            text=True,
         )
         git_hash = result.stdout.split()[2]
 
@@ -1437,22 +1591,30 @@ class TestStory3ContentRetrievalAndStaleness:
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
         # Initialize git repo with multi-line file
-        subprocess.run(['git', 'init'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.email', 'test@test.com'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=tmp_path,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True
+        )
 
-        test_file = tmp_path / 'test.py'
+        test_file = tmp_path / "test.py"
         lines = ["line 0\n", "line 1\n", "line 2\n", "line 3\n", "line 4\n"]
-        test_file.write_text(''.join(lines))
-        subprocess.run(['git', 'add', '.'], cwd=tmp_path, capture_output=True)
-        subprocess.run(['git', 'commit', '-m', 'test'], cwd=tmp_path, capture_output=True)
+        test_file.write_text("".join(lines))
+        subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "test"], cwd=tmp_path, capture_output=True
+        )
 
         # Get blob hash
         result = subprocess.run(
-            ['git', 'ls-tree', 'HEAD', 'test.py'],
+            ["git", "ls-tree", "HEAD", "test.py"],
             cwd=tmp_path,
             capture_output=True,
-            text=True
+            text=True,
         )
         blob_hash = result.stdout.split()[2]
 
@@ -1473,34 +1635,40 @@ class TestStory3ContentRetrievalAndStaleness:
 
         # Non-git for simplicity
         store = FilesystemVectorStore(base_path=tmp_path, project_root=tmp_path)
-        store.create_collection('test_coll', vector_size=1536)
+        store.create_collection("test_coll", vector_size=1536)
 
         points = [
             {
-                'id': f'test_{i}',
-                'vector': np.random.randn(1536).tolist(),
-                'payload': {
-                    'path': f'file_{i}.py',
-                    'start_line': 0,
-                    'end_line': 2,
-                    'content': f'content {i}'
-                }
+                "id": f"test_{i}",
+                "vector": np.random.randn(1536).tolist(),
+                "payload": {
+                    "path": f"file_{i}.py",
+                    "start_line": 0,
+                    "end_line": 2,
+                    "content": f"content {i}",
+                },
             }
             for i in range(5)
         ]
 
-        store.upsert_points('test_coll', points)
+        store.upsert_points("test_coll", points)
 
         # Search for all
+        mock_embedding_provider = Mock()
+        mock_embedding_provider.get_embedding.return_value = np.random.randn(
+            1536
+        ).tolist()
+
         results = store.search(
-            query_vector=np.random.randn(1536).tolist(),
-            collection_name='test_coll',
-            limit=5
+            query="test query",
+            embedding_provider=mock_embedding_provider,
+            collection_name="test_coll",
+            limit=5,
         )
 
         assert len(results) == 5
         for i, result in enumerate(results):
-            assert 'content' in result['payload']
-            assert 'staleness' in result
+            assert "content" in result["payload"]
+            assert "staleness" in result
             # All should be non-stale (non-git repo)
-            assert result['staleness']['is_stale'] is False
+            assert result["staleness"]["is_stale"] is False

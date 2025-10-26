@@ -10,7 +10,6 @@ Tests the complete workflow of switching from one backend to another including:
 """
 
 import json
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path

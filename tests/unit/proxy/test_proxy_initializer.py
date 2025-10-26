@@ -348,7 +348,9 @@ class TestRepositoryDiscovery:
         assert len(repos) >= 1
         assert "real_repo" in repos
 
-    def test_discover_repositories_prevents_circular_symlink_infinite_loop(self, tmp_path):
+    def test_discover_repositories_prevents_circular_symlink_infinite_loop(
+        self, tmp_path
+    ):
         """discover_repositories() detects and prevents circular symlink loops."""
         target_dir = tmp_path / "proxy_root"
         target_dir.mkdir()

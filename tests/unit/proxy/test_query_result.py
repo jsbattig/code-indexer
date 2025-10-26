@@ -20,7 +20,7 @@ class TestQueryResultDataclass:
             file_path="/home/user/repo/src/auth.py",
             line_range=(10, 50),
             content="def authenticate(user):\n    pass",
-            repository="/home/user/repo"
+            repository="/home/user/repo",
         )
 
         assert result.score == 0.85
@@ -36,7 +36,7 @@ class TestQueryResultDataclass:
             file_path="/path/to/file.py",
             line_range=(1, 10),
             content="code here",
-            repository="/path/to/repo"
+            repository="/path/to/repo",
         )
 
         assert result.score == 0.95
@@ -49,7 +49,7 @@ class TestQueryResultDataclass:
             file_path="/file.py",
             line_range=(1, 5),
             content="x",
-            repository="/repo"
+            repository="/repo",
         )
 
         assert result.score == pytest.approx(0.123456)
@@ -61,7 +61,7 @@ class TestQueryResultDataclass:
             file_path="/file.py",
             line_range=(100, 200),
             content="code",
-            repository="/repo"
+            repository="/repo",
         )
 
         assert isinstance(result.line_range, tuple)
@@ -79,7 +79,7 @@ class TestQueryResultDataclass:
             file_path="/code.py",
             line_range=(1, 3),
             content=content,
-            repository="/repo"
+            repository="/repo",
         )
 
         assert "\n" in result.content
@@ -92,7 +92,7 @@ class TestQueryResultDataclass:
             file_path="/file.py",
             line_range=(1, 10),
             content="code",
-            repository="/repo"
+            repository="/repo",
         )
 
         result2 = QueryResult(
@@ -100,7 +100,7 @@ class TestQueryResultDataclass:
             file_path="/file.py",
             line_range=(1, 10),
             content="code",
-            repository="/repo"
+            repository="/repo",
         )
 
         assert result1 == result2
@@ -112,7 +112,7 @@ class TestQueryResultDataclass:
             file_path="/file.py",
             line_range=(1, 10),
             content="code",
-            repository="/repo"
+            repository="/repo",
         )
 
         result2 = QueryResult(
@@ -120,7 +120,7 @@ class TestQueryResultDataclass:
             file_path="/file.py",
             line_range=(1, 10),
             content="code",
-            repository="/repo"
+            repository="/repo",
         )
 
         assert result1 != result2
@@ -132,7 +132,7 @@ class TestQueryResultDataclass:
             file_path="/file.py",
             line_range=(1, 10),
             content="code",
-            repository="/repo1"
+            repository="/repo1",
         )
 
         result2 = QueryResult(
@@ -140,7 +140,7 @@ class TestQueryResultDataclass:
             file_path="/file.py",
             line_range=(1, 10),
             content="code",
-            repository="/repo2"
+            repository="/repo2",
         )
 
         assert result1 != result2
@@ -152,16 +152,16 @@ class TestQueryResultDataclass:
             file_path="/src/test.py",
             line_range=(5, 15),
             content="test code",
-            repository="/test/repo"
+            repository="/test/repo",
         )
 
         result_dict = asdict(result)
 
-        assert result_dict['score'] == 0.75
-        assert result_dict['file_path'] == "/src/test.py"
-        assert result_dict['line_range'] == (5, 15)
-        assert result_dict['content'] == "test code"
-        assert result_dict['repository'] == "/test/repo"
+        assert result_dict["score"] == 0.75
+        assert result_dict["file_path"] == "/src/test.py"
+        assert result_dict["line_range"] == (5, 15)
+        assert result_dict["content"] == "test code"
+        assert result_dict["repository"] == "/test/repo"
 
     def test_query_result_repr(self):
         """Test QueryResult string representation."""
@@ -170,7 +170,7 @@ class TestQueryResultDataclass:
             file_path="/path/file.py",
             line_range=(10, 20),
             content="x",
-            repository="/repo"
+            repository="/repo",
         )
 
         repr_str = repr(result)

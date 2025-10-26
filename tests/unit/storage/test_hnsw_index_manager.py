@@ -1,9 +1,7 @@
 """Unit tests for HNSWIndexManager."""
 
 import json
-import tempfile
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
 from unittest.mock import Mock, patch
 
 import numpy as np
@@ -19,18 +17,18 @@ class TestHNSWIndexManagerInit:
         """Test initialization with default parameters."""
         manager = HNSWIndexManager()
         assert manager.vector_dim == 1536
-        assert manager.space == 'cosine'
+        assert manager.space == "cosine"
 
     def test_init_with_custom_dims(self):
         """Test initialization with custom vector dimensions."""
-        manager = HNSWIndexManager(vector_dim=768, space='l2')
+        manager = HNSWIndexManager(vector_dim=768, space="l2")
         assert manager.vector_dim == 768
-        assert manager.space == 'l2'
+        assert manager.space == "l2"
 
     def test_init_with_invalid_space(self):
         """Test initialization with invalid distance metric."""
         with pytest.raises(ValueError, match="Invalid space metric"):
-            HNSWIndexManager(space='invalid')
+            HNSWIndexManager(space="invalid")
 
 
 class TestHNSWIndexManagerBuildIndex:
@@ -114,21 +112,21 @@ class TestHNSWIndexManagerBuildIndex:
         manager.build_index(tmp_path, vectors, ids, M=16, ef_construction=200)
 
         # Check metadata file
-        meta_file = tmp_path / 'collection_meta.json'
+        meta_file = tmp_path / "collection_meta.json"
         assert meta_file.exists()
 
         with open(meta_file) as f:
             metadata = json.load(f)
 
-        assert 'hnsw_index' in metadata
-        hnsw_meta = metadata['hnsw_index']
-        assert hnsw_meta['vector_count'] == 100
-        assert hnsw_meta['vector_dim'] == 128
-        assert hnsw_meta['M'] == 16
-        assert hnsw_meta['ef_construction'] == 200
-        assert hnsw_meta['space'] == 'cosine'
-        assert 'last_rebuild' in hnsw_meta
-        assert 'file_size_bytes' in hnsw_meta
+        assert "hnsw_index" in metadata
+        hnsw_meta = metadata["hnsw_index"]
+        assert hnsw_meta["vector_count"] == 100
+        assert hnsw_meta["vector_dim"] == 128
+        assert hnsw_meta["M"] == 16
+        assert hnsw_meta["ef_construction"] == 200
+        assert hnsw_meta["space"] == "cosine"
+        assert "last_rebuild" in hnsw_meta
+        assert "file_size_bytes" in hnsw_meta
 
 
 class TestHNSWIndexManagerLoadIndex:
@@ -281,13 +279,13 @@ class TestHNSWIndexManagerGetIndexStats:
         stats = manager.get_index_stats(tmp_path)
 
         assert stats is not None
-        assert stats['vector_count'] == 100
-        assert stats['vector_dim'] == 128
-        assert stats['M'] == 16
-        assert stats['ef_construction'] == 200
-        assert stats['space'] == 'cosine'
-        assert 'last_rebuild' in stats
-        assert stats['file_size_bytes'] > 0
+        assert stats["vector_count"] == 100
+        assert stats["vector_dim"] == 128
+        assert stats["M"] == 16
+        assert stats["ef_construction"] == 200
+        assert stats["space"] == "cosine"
+        assert "last_rebuild" in stats
+        assert stats["file_size_bytes"] > 0
 
     def test_get_index_stats_returns_none_when_no_index(self, tmp_path: Path):
         """Test that get_index_stats returns None when index doesn't exist."""
@@ -309,19 +307,14 @@ class TestHNSWIndexManagerRebuildFromVectors:
 
         for i in range(50):
             vector_file = vectors_dir / f"vector_{i}.json"
-            vector_data = {
-                "id": f"vec_{i}",
-                "vector": np.random.randn(128).tolist()
-            }
-            with open(vector_file, 'w') as f:
+            vector_data = {"id": f"vec_{i}", "vector": np.random.randn(128).tolist()}
+            with open(vector_file, "w") as f:
                 json.dump(vector_data, f)
 
         # Create metadata file (required for rebuild)
-        meta_file = tmp_path / 'collection_meta.json'
-        metadata = {
-            "vector_dim": 128
-        }
-        with open(meta_file, 'w') as f:
+        meta_file = tmp_path / "collection_meta.json"
+        metadata = {"vector_dim": 128}
+        with open(meta_file, "w") as f:
             json.dump(metadata, f)
 
         # Rebuild
@@ -340,16 +333,13 @@ class TestHNSWIndexManagerRebuildFromVectors:
 
         for i in range(20):
             vector_file = vectors_dir / f"vector_{i}.json"
-            vector_data = {
-                "id": f"vec_{i}",
-                "vector": np.random.randn(64).tolist()
-            }
-            with open(vector_file, 'w') as f:
+            vector_data = {"id": f"vec_{i}", "vector": np.random.randn(64).tolist()}
+            with open(vector_file, "w") as f:
                 json.dump(vector_data, f)
 
         # Metadata
-        meta_file = tmp_path / 'collection_meta.json'
-        with open(meta_file, 'w') as f:
+        meta_file = tmp_path / "collection_meta.json"
+        with open(meta_file, "w") as f:
             json.dump({"vector_dim": 64}, f)
 
         # Rebuild with progress callback
@@ -375,17 +365,17 @@ class TestHNSWIndexManagerRebuildFromVectors:
         # Create valid files
         for i in range(10):
             vector_file = vectors_dir / f"vector_{i}.json"
-            with open(vector_file, 'w') as f:
+            with open(vector_file, "w") as f:
                 json.dump({"id": f"vec_{i}", "vector": np.random.randn(64).tolist()}, f)
 
         # Create malformed file
         bad_file = vectors_dir / "vector_bad.json"
-        with open(bad_file, 'w') as f:
+        with open(bad_file, "w") as f:
             f.write("{ invalid json")
 
         # Metadata
-        meta_file = tmp_path / 'collection_meta.json'
-        with open(meta_file, 'w') as f:
+        meta_file = tmp_path / "collection_meta.json"
+        with open(meta_file, "w") as f:
             json.dump({"vector_dim": 64}, f)
 
         # Should succeed, skipping bad file
@@ -396,13 +386,13 @@ class TestHNSWIndexManagerRebuildFromVectors:
 class TestHNSWIndexManagerGracefulDegradation:
     """Test graceful degradation when hnswlib is not installed."""
 
-    @patch('code_indexer.storage.hnsw_index_manager.HNSWLIB_AVAILABLE', False)
+    @patch("code_indexer.storage.hnsw_index_manager.HNSWLIB_AVAILABLE", False)
     def test_init_fails_gracefully_without_hnswlib(self):
         """Test that initialization provides clear error when hnswlib not installed."""
         with pytest.raises(ImportError, match="hnswlib.*not installed"):
             HNSWIndexManager()
 
-    @patch('code_indexer.storage.hnsw_index_manager.HNSWLIB_AVAILABLE', False)
+    @patch("code_indexer.storage.hnsw_index_manager.HNSWLIB_AVAILABLE", False)
     def test_build_index_fails_gracefully_without_hnswlib(self, tmp_path: Path):
         """Test that build_index fails gracefully without hnswlib."""
         # This test verifies the error message is clear

@@ -62,12 +62,13 @@ class TestHighThroughputProcessorCancellation:
 
     def test_as_completed_loop_checks_cancellation(self):
         """Test that as_completed loop checks cancellation flag every iteration."""
-        # Mock the VoyageAI client to avoid tokenizer loading
-        mock_voyage = MagicMock()
-        mock_client = MagicMock()
-        mock_client.count_tokens.return_value = 100  # Return reasonable token count
-        mock_voyage.Client.return_value = mock_client
-        with patch("code_indexer.services.file_chunking_manager.voyageai", mock_voyage):
+        # Mock the embedded tokenizer to avoid actual tokenizer loading
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.count_tokens.return_value = 100  # Return reasonable token count
+        with patch(
+            "code_indexer.services.file_chunking_manager.VoyageTokenizer",
+            mock_tokenizer,
+        ):
             processor = HighThroughputProcessor(
                 config=self.config,
                 embedding_provider=self.embedding_provider,
@@ -157,12 +158,13 @@ class TestHighThroughputProcessorCancellation:
 
     def test_cancellation_prevents_further_processing(self):
         """Test that cancellation prevents further chunk processing."""
-        # Mock the VoyageAI client to avoid tokenizer loading
-        mock_voyage = MagicMock()
-        mock_client = MagicMock()
-        mock_client.count_tokens.return_value = 100  # Return reasonable token count
-        mock_voyage.Client.return_value = mock_client
-        with patch("code_indexer.services.file_chunking_manager.voyageai", mock_voyage):
+        # Mock the embedded tokenizer to avoid actual tokenizer loading
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.count_tokens.return_value = 100  # Return reasonable token count
+        with patch(
+            "code_indexer.services.file_chunking_manager.VoyageTokenizer",
+            mock_tokenizer,
+        ):
             processor = HighThroughputProcessor(
                 config=self.config,
                 embedding_provider=self.embedding_provider,
@@ -265,12 +267,13 @@ class TestHighThroughputProcessorCancellation:
 
     def test_cancellation_preserves_completed_work(self):
         """Test that cancellation preserves completed work and doesn't lose data."""
-        # Mock the VoyageAI client to avoid tokenizer loading
-        mock_voyage = MagicMock()
-        mock_client = MagicMock()
-        mock_client.count_tokens.return_value = 100  # Return reasonable token count
-        mock_voyage.Client.return_value = mock_client
-        with patch("code_indexer.services.file_chunking_manager.voyageai", mock_voyage):
+        # Mock the embedded tokenizer to avoid actual tokenizer loading
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.count_tokens.return_value = 100  # Return reasonable token count
+        with patch(
+            "code_indexer.services.file_chunking_manager.VoyageTokenizer",
+            mock_tokenizer,
+        ):
             processor = HighThroughputProcessor(
                 config=self.config,
                 embedding_provider=self.embedding_provider,

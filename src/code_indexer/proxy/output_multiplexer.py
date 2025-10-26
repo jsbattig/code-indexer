@@ -39,25 +39,18 @@ class OutputMultiplexer:
         # Start reader thread for each process
         for repo, process in self.processes.items():
             thread = threading.Thread(
-                target=self._read_process_output,
-                args=(repo, process),
-                daemon=True
+                target=self._read_process_output, args=(repo, process), daemon=True
             )
             thread.start()
             self.reader_threads.append(thread)
 
         # Start writer thread to display multiplexed output
         writer_thread = threading.Thread(
-            target=self._write_multiplexed_output,
-            daemon=True
+            target=self._write_multiplexed_output, daemon=True
         )
         writer_thread.start()
 
-    def _read_process_output(
-        self,
-        repo: str,
-        process: subprocess.Popen[str]
-    ) -> None:
+    def _read_process_output(self, repo: str, process: subprocess.Popen[str]) -> None:
         """Read output from single process and queue it.
 
         Runs in dedicated thread per repository.
@@ -72,7 +65,7 @@ class OutputMultiplexer:
                     if line and self.running:
                         # Queue line with repository identifier
                         # Strip trailing newline for consistent formatting
-                        self.output_queue.put((repo, line.rstrip('\n')))
+                        self.output_queue.put((repo, line.rstrip("\n")))
         except Exception as e:
             # Log error but don't crash thread
             self.output_queue.put((repo, f"ERROR reading output: {e}"))
@@ -108,6 +101,7 @@ class OutputMultiplexer:
 
         # Drain remaining output queue with timeout to prevent hanging
         import time
+
         drain_timeout = time.time() + 2.0  # 2 second timeout for draining
 
         while time.time() < drain_timeout:

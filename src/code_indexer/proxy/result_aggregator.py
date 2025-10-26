@@ -25,9 +25,7 @@ class ParallelResultAggregator:
         self.hint_generator = HintGenerator()
 
     def aggregate(
-        self,
-        results: Dict[str, Tuple[str, str, int]],
-        command: str = "query"
+        self, results: Dict[str, Tuple[str, str, int]], command: str = "query"
     ) -> Tuple[str, int]:
         """Aggregate parallel results into final output with formatted errors.
 
@@ -62,7 +60,7 @@ class ParallelResultAggregator:
                 hint = self.hint_generator.generate_hint(
                     command=command,
                     error_text=stderr if stderr else "",
-                    repository=repo
+                    repository=repo,
                 )
 
                 error = ErrorMessage(
@@ -90,7 +88,7 @@ class ParallelResultAggregator:
             overall_code = 1  # Complete failure
 
         # Combine all outputs with newlines
-        combined_output = '\n'.join(all_outputs) if all_outputs else ""
+        combined_output = "\n".join(all_outputs) if all_outputs else ""
 
         return combined_output, overall_code
 
@@ -119,4 +117,4 @@ class ParallelResultAggregator:
             lines.append(f"Error {i} of {len(errors)}:")
             lines.append(self.formatter.format_error(error))
 
-        return '\n'.join(lines)
+        return "\n".join(lines)
