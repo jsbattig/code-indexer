@@ -562,6 +562,12 @@ class SmartIndexer(HighThroughputProcessor):
                 info=f"🗑️  Cleared collection '{collection_name}' (collection was empty)",
             )
 
+        # Recreate collection with fresh metadata after clearing
+        # This ensures new quantization_range and other metadata are properly initialized
+        self.qdrant_client.ensure_provider_aware_collection(
+            self.config, self.embedding_provider, quiet, skip_migration=True
+        )
+
         # NOTE: progressive_metadata.clear() is now called earlier in smart_index() when force_full=True
 
         # Start indexing

@@ -3,15 +3,11 @@
 Implements deterministic random projection for reducing vector dimensions
 while preserving relative distances (Johnson-Lindenstrauss lemma).
 Following Story 2 requirements for reusable projection matrices.
-
-Story 9: Updated to support YAML format for git-friendly storage.
 """
 
 import numpy as np
 from pathlib import Path
 from typing import Optional
-
-from .yaml_matrix_format import save_matrix_yaml, load_matrix_yaml, convert_npy_to_yaml
 
 
 class ProjectionMatrixManager:
@@ -19,7 +15,13 @@ class ProjectionMatrixManager:
 
     Projection matrices enable dimensionality reduction via random projection,
     reducing 1536-dim vectors to 64-dim while preserving relative distances.
+
+    Singleton cache: Matrix loaded once per collection and kept in memory
+    for the lifetime of the process (no TTL, no expiry).
     """
+
+    # Class-level cache: {collection_path: matrix}
+    _matrix_cache: dict[str, np.ndarray] = {}
 
     def create_projection_matrix(
         self,
@@ -58,7 +60,7 @@ class ProjectionMatrixManager:
         return matrix
 
     def save_matrix(self, matrix: np.ndarray, collection_path: Path) -> None:
-        """Save projection matrix to collection directory in YAML format.
+        """Save projection matrix to collection directory in binary format.
 
         Args:
             matrix: Projection matrix to save
@@ -67,45 +69,45 @@ class ProjectionMatrixManager:
         collection_path = Path(collection_path)
         collection_path.mkdir(parents=True, exist_ok=True)
 
-        # Save in YAML format (git-friendly)
-        matrix_path = collection_path / "projection_matrix.yaml"
-        save_matrix_yaml(matrix, matrix_path)
-
-        # Also convert old .npy files if they exist
-        old_npy_path = collection_path / "projection_matrix.npy"
-        if old_npy_path.exists() and not matrix_path.exists():
-            convert_npy_to_yaml(old_npy_path)
+        # Save in binary NPY format
+        matrix_path = collection_path / "projection_matrix.npy"
+        np.save(matrix_path, matrix)
 
     def load_matrix(self, collection_path: Path) -> np.ndarray:
-        """Load existing projection matrix from collection.
+        """Load projection matrix with singleton caching.
 
-        Supports both YAML (preferred) and legacy NPY formats.
-        Automatically converts NPY to YAML when found.
+        Matrix is loaded once per collection and kept in memory for the
+        lifetime of the process. No TTL, no expiry - simple singleton pattern.
+
+        For cidx index: Matrix stays cached across all files
+        For cidx query: Matrix loads on first query, stays until process ends
 
         Args:
             collection_path: Path to collection directory
 
         Returns:
-            Loaded projection matrix
+            Loaded projection matrix (from cache or disk)
 
         Raises:
             FileNotFoundError: If matrix file does not exist
         """
         collection_path = Path(collection_path)
-        yaml_path = collection_path / "projection_matrix.yaml"
-        npy_path = collection_path / "projection_matrix.npy"
+        cache_key = str(collection_path.absolute())
 
-        # Try YAML first (preferred format)
-        if yaml_path.exists():
-            return load_matrix_yaml(yaml_path)
+        # Check singleton cache first
+        if cache_key in self._matrix_cache:
+            return self._matrix_cache[cache_key]
 
-        # Fall back to NPY and convert to YAML
-        if npy_path.exists():
-            matrix = np.load(npy_path)
-            # Convert to YAML for future use
-            save_matrix_yaml(matrix, yaml_path)
-            return matrix
+        # Load from disk (binary NPY format)
+        matrix_path = collection_path / "projection_matrix.npy"
 
-        raise FileNotFoundError(
-            f"Projection matrix not found at {collection_path}"
-        )
+        if not matrix_path.exists():
+            raise FileNotFoundError(
+                f"Projection matrix not found at {matrix_path}"
+            )
+
+        # Load and cache
+        matrix = np.load(matrix_path)
+        self._matrix_cache[cache_key] = matrix
+
+        return matrix

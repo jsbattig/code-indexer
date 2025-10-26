@@ -610,6 +610,120 @@ class GracefulInterruptHandler:
 console = Console()
 
 
+def _display_query_timing(console: Console, timing_info: Dict[str, Any]) -> None:
+    """Display query execution timing telemetry.
+
+    Args:
+        console: Rich console for output
+        timing_info: Dictionary with timing data in milliseconds and metadata
+    """
+    if not timing_info:
+        return
+
+    console.print("\n⏱️  Query Timing:")
+    console.print("-" * 60)
+
+    # Calculate total time from high-level steps only (not breakdown components)
+    high_level_steps = {
+        "embedding_ms": "Embedding generation",
+        "vector_search_ms": "Vector search (total)",
+        "git_filter_ms": "Git-aware filtering",
+    }
+
+    total_ms = sum(timing_info.get(key, 0) for key in high_level_steps.keys())
+
+    # Prepare breakdown keys and labels
+    search_breakdown_keys = [
+        "matrix_load_ms",
+        "index_load_ms",
+        "hnsw_search_ms",
+        "id_index_load_ms",
+        "hamming_search_ms",
+        "candidate_load_ms",
+        "quantized_lookup_ms",
+        "full_scan_ms",
+        "staleness_detection_ms",
+    ]
+
+    search_path = timing_info.get("search_path", "binary_index")
+    index_type_label = (
+        "HNSW index load" if search_path == "hnsw_index" else "Binary index load"
+    )
+
+    search_breakdown_labels = {
+        "matrix_load_ms": "    ├─ Matrix load",
+        "index_load_ms": f"    ├─ {index_type_label}",
+        "hnsw_search_ms": "    ├─ HNSW search",
+        "id_index_load_ms": "    ├─ ID index load",
+        "hamming_search_ms": "    ├─ Hamming distance search",
+        "candidate_load_ms": "    ├─ Candidate vector loading",
+        "quantized_lookup_ms": "    ├─ Quantized directory lookup",
+        "full_scan_ms": "    ├─ Full collection scan",
+        "staleness_detection_ms": "    └─ Content & staleness detection",
+    }
+
+    has_breakdown = any(key in timing_info for key in search_breakdown_keys)
+
+    # Display each high-level step, with breakdown inserted after vector search
+    for key, label in high_level_steps.items():
+        if key in timing_info:
+            ms = timing_info[key]
+            percentage = (ms / total_ms * 100) if total_ms > 0 else 0
+
+            # Format time
+            if ms < 1:
+                time_str = f"{ms:.2f}ms"
+            elif ms < 1000:
+                time_str = f"{ms:.0f}ms"
+            else:
+                time_str = f"{ms/1000:.2f}s"
+
+            console.print(f"  • {label:<30} {time_str:>10} ({percentage:>5.1f}%)")
+
+            # Insert breakdown immediately after vector search
+            if key == "vector_search_ms" and has_breakdown:
+                console.print("")
+                for breakdown_key in search_breakdown_keys:
+                    if breakdown_key in timing_info and timing_info[breakdown_key] > 0:
+                        breakdown_ms = timing_info[breakdown_key]
+                        breakdown_percentage = (breakdown_ms / total_ms * 100) if total_ms > 0 else 0
+
+                        # Format time
+                        if breakdown_ms < 1:
+                            breakdown_time_str = f"{breakdown_ms:.2f}ms"
+                        elif breakdown_ms < 1000:
+                            breakdown_time_str = f"{breakdown_ms:.0f}ms"
+                        else:
+                            breakdown_time_str = f"{breakdown_ms/1000:.2f}s"
+
+                        breakdown_label = search_breakdown_labels.get(breakdown_key, breakdown_key)
+                        console.print(f"  {breakdown_label:<30} {breakdown_time_str:>10} ({breakdown_percentage:>5.1f}%)")
+                console.print("")
+
+    # Display search path indicator
+    if "search_path" in timing_info:
+        search_path = timing_info["search_path"]
+        path_emoji = {
+            "hnsw_index": "⚡",  # Lightning bolt for fast HNSW
+            "binary_index": "🚀",
+            "quantized_lookup": "📂",
+            "full_scan": "🐌",
+            "none": "❌",
+        }
+        emoji = path_emoji.get(search_path, "❓")
+        console.print(f"\n  Search path: {emoji} {search_path}")
+
+    console.print("-" * 60)
+
+    # Total
+    if total_ms < 1000:
+        total_str = f"{total_ms:.0f}ms"
+    else:
+        total_str = f"{total_ms/1000:.2f}s"
+    console.print(f"  {'Total query time':<30} {total_str:>10} (100.0%)")
+    console.print()
+
+
 def _check_authentication_state(ctx) -> bool:
     """Check if user is authenticated and session is valid.
 
@@ -1970,6 +2084,17 @@ def start(
     is_flag=True,
     help="Rebuild payload indexes for optimal performance",
 )
+@click.option(
+    "--rebuild-index",
+    is_flag=True,
+    help="Rebuild vector index from existing vector files (filesystem backend only)",
+)
+@click.option(
+    "--index-type",
+    type=click.Choice(["binary", "hnsw"], case_sensitive=False),
+    default="hnsw",
+    help="Type of vector index: binary (fast build, 8s queries) or hnsw (slow build, 50ms queries)",
+)
 @click.pass_context
 @require_mode("local")
 def index(
@@ -1980,6 +2105,8 @@ def index(
     files_count_to_process: Optional[int],
     detect_deletions: bool,
     rebuild_indexes: bool,
+    rebuild_index: bool,
+    index_type: str,
 ):
     """Index the codebase for semantic search.
 
@@ -2044,9 +2171,17 @@ def index(
       • Configure thread count in config.json: voyage_ai.parallel_requests
 
     \b
+    INDEX TYPES:
+      • binary: Fast build (~1s), slower queries (~8s) - good for frequent reindexing
+      • hnsw: Slower build (~25s), fast queries (~50ms) - good for frequent querying
+
+    \b
     EXAMPLES:
-      code-indexer index                 # Smart incremental indexing (default)
+      code-indexer index                 # Smart incremental indexing (binary index, default)
       code-indexer index --clear         # Force full reindex (clears existing data)
+      code-indexer index --index-type hnsw  # Use HNSW index for fast queries
+      code-indexer index --index-type hnsw --clear  # Switch to HNSW and reindex
+      code-indexer index --rebuild-index    # Rebuild current index type from vectors
       code-indexer index --reconcile     # Reconcile disk vs database and index missing/modified files
       code-indexer index --detect-deletions  # Standard indexing + cleanup deleted files
       code-indexer index -b 100          # Larger batch size for speed
@@ -2317,6 +2452,92 @@ def index(
                     config, embedding_provider
                 )
 
+                # Handle rebuild index flag
+                if rebuild_index:
+                    # Check if filesystem backend is being used
+                    from code_indexer.storage.filesystem_vector_store import (
+                        FilesystemVectorStore,
+                    )
+
+                    if not isinstance(vector_store_client, FilesystemVectorStore):
+                        console.print(
+                            "❌ --rebuild-index only works with filesystem vector storage",
+                            style="red",
+                        )
+                        console.print(
+                            "💡 Current backend does not support index rebuilding",
+                            style="yellow",
+                        )
+                        sys.exit(1)
+
+                    # Get collection path
+                    collection_path = vector_store_client.base_path / collection_name
+                    if not collection_path.exists():
+                        console.print(
+                            f"❌ Collection '{collection_name}' not found",
+                            style="red",
+                        )
+                        sys.exit(1)
+
+                    # Load metadata to determine current index type
+                    import json
+
+                    metadata_file = collection_path / "collection_meta.json"
+                    if not metadata_file.exists():
+                        console.print(
+                            "❌ Collection metadata not found - collection may be corrupted",
+                            style="red",
+                        )
+                        sys.exit(1)
+
+                    with open(metadata_file) as f:
+                        metadata = json.load(f)
+
+                    current_index_type = metadata.get("index_type", "binary")
+
+                    # Rebuild appropriate index type
+                    if current_index_type == "hnsw":
+                        console.print(
+                            "🔄 Rebuilding HNSW index from existing vector files..."
+                        )
+                        from code_indexer.storage.hnsw_index_manager import (
+                            HNSWIndexManager,
+                        )
+
+                        try:
+                            hnsw_manager = HNSWIndexManager(
+                                vector_dim=metadata.get("vector_size", 1536)
+                            )
+                            vectors_rebuilt = hnsw_manager.rebuild_from_vectors(
+                                collection_path
+                            )
+                            console.print(
+                                f"\n✅ HNSW index rebuilt successfully - {vectors_rebuilt} vectors processed"
+                            )
+                        except Exception as e:
+                            console.print(
+                                f"\n❌ Failed to rebuild HNSW index: {e}", style="red"
+                            )
+                            sys.exit(1)
+                    else:
+                        console.print(
+                            "🔄 Rebuilding binary index from existing vector files..."
+                        )
+                        from code_indexer.storage.vector_index_manager import (
+                            VectorIndexManager,
+                        )
+
+                        try:
+                            index_manager = VectorIndexManager()
+                            index_manager.rebuild_from_vectors(collection_path)
+                            console.print("\n✅ Binary index rebuilt successfully")
+                        except Exception as e:
+                            console.print(
+                                f"\n❌ Failed to rebuild binary index: {e}", style="red"
+                            )
+                            sys.exit(1)
+                    return
+
                 # Handle rebuild indexes flag
                 if rebuild_indexes:
                     if vector_store_client.rebuild_payload_indexes(collection_name):
@@ -2332,6 +2553,18 @@ def index(
                     vector_store_client.ensure_payload_indexes(
                         collection_name, context="index"
                     )
+
+                # Set index type if specified (filesystem backend only)
+                if index_type:
+                    from code_indexer.storage.filesystem_vector_store import (
+                        FilesystemVectorStore,
+                    )
+
+                    if isinstance(vector_store_client, FilesystemVectorStore):
+                        vector_store_client.set_index_type(
+                            collection_name, index_type.lower()
+                        )
+                        console.print(f"📊 Using {index_type} index type")
 
                 stats = smart_indexer.smart_index(
                     force_full=clear,
@@ -2939,12 +3172,17 @@ def query(
         # Ensure payload indexes exist (read-only check for query operations)
         vector_store_client.ensure_payload_indexes(collection_name, context="query")
 
+        # Initialize timing dictionary for telemetry
+        timing_info = {}
+
         # Get query embedding
+        embedding_start = time.time()
         if not quiet:
             with console.status("Generating query embedding..."):
                 query_embedding = embedding_provider.get_embedding(query)
         else:
             query_embedding = embedding_provider.get_embedding(query)
+        timing_info["embedding_ms"] = (time.time() - embedding_start) * 1000
 
         # Build filter conditions for non-git path only
         filter_conditions: Dict[str, Any] = {}
@@ -3083,15 +3321,28 @@ def query(
             )
 
             # Query vector store (get more results to allow for git filtering)
-            raw_results: List[Dict[str, Any]] = vector_store_client.search(
+            raw_results, search_timing = vector_store_client.search(
                 query_vector=query_embedding,
                 filter_conditions=query_filter_conditions,
                 limit=limit * 2,  # Get more to account for post-filtering
                 collection_name=collection_name,
+                return_timing=True,
             )
+            # Merge detailed search timing into main timing info
+            timing_info.update(search_timing)
+
+            # Calculate vector_search_ms as sum of breakdown components for accurate reporting
+            breakdown_keys = [
+                "matrix_load_ms", "index_load_ms", "hnsw_search_ms", "id_index_load_ms",
+                "hamming_search_ms", "candidate_load_ms", "quantized_lookup_ms",
+                "full_scan_ms", "staleness_detection_ms"
+            ]
+            timing_info["vector_search_ms"] = sum(search_timing.get(k, 0) for k in breakdown_keys)
 
             # Apply git-aware post-filtering (checks file existence in current branch)
+            git_filter_start = time.time()
             git_results = query_service.filter_results_by_current_branch(raw_results)
+            timing_info["git_filter_ms"] = (time.time() - git_filter_start) * 1000
 
             # Apply minimum score filtering (language and path already handled by Qdrant filters)
             if min_score:
@@ -3103,6 +3354,7 @@ def query(
                 git_results = filtered_results
         else:
             # Use model-specific search for non-git projects
+            search_start = time.time()
             raw_results = vector_store_client.search_with_model_filter(
                 query_vector=query_embedding,
                 embedding_model=current_model,
@@ -3111,11 +3363,14 @@ def query(
                 additional_filters=filter_conditions,
                 accuracy=accuracy,
             )
+            timing_info["vector_search_ms"] = (time.time() - search_start) * 1000
 
             # Apply git-aware filtering
             if not quiet:
                 console.print("🔍 Applying git-aware filtering...")
+            git_filter_start = time.time()
             git_results = query_service.filter_results_by_current_branch(raw_results)
+            timing_info["git_filter_ms"] = (time.time() - git_filter_start) * 1000
 
         # Limit to requested number after filtering
         results = git_results[:limit]
@@ -3123,6 +3378,7 @@ def query(
         # Apply staleness detection to local query results
         if results:
             try:
+                staleness_start = time.time()
                 # Convert local results to QueryResultItem format for staleness detection
                 from .api_clients.remote_query_client import QueryResultItem
                 from .remote.staleness_detector import StalenessDetector
@@ -3162,6 +3418,9 @@ def query(
                 enhanced_results = staleness_detector.apply_staleness_detection(
                     query_result_items, project_root, mode="local"
                 )
+                timing_info["staleness_detection_ms"] = (
+                    time.time() - staleness_start
+                ) * 1000
 
                 # Convert enhanced results back to local format but preserve staleness info
                 enhanced_local_results = []
@@ -3195,11 +3454,15 @@ def query(
         if not results:
             if not quiet:
                 console.print("❌ No results found", style="yellow")
+                # Display timing summary even when no results
+                _display_query_timing(console, timing_info)
             return
 
         if not quiet:
             console.print(f"\n✅ Found {len(results)} results:")
             console.print("=" * 80)
+            # Display timing summary
+            _display_query_timing(console, timing_info)
 
         for i, result in enumerate(results, 1):
             payload = result["payload"]
@@ -4315,128 +4578,129 @@ def _status_impl(ctx, force_docker: bool):
                     "Qdrant Storage", "⚠️  Error", f"Inspection failed: {str(e)[:30]}"
                 )
 
-        # Check Data Cleaner
-        #
-        # CRITICAL IMPLEMENTATION NOTE: This status check was debugged and fixed to handle
-        # the data-cleaner's netcat-based HTTP implementation which has specific limitations:
-        #
-        # PROBLEM DISCOVERED: The data-cleaner container runs a simple bash script that uses
-        # `nc -l -p 8091` (netcat) to simulate an HTTP server. This implementation:
-        # 1. Only handles ONE connection at a time
-        # 2. Resets the connection immediately after responding
-        # 3. Cycles every 10 seconds (sleep 10 in the loop)
-        # 4. Causes ConnectionResetError with Python requests library
-        # 5. Works fine with curl (which handles connection resets gracefully)
-        #
-        # SYMPTOMS OF BREAKAGE:
-        # - curl http://localhost:8091/ returns "Cleanup service ready" ✅
-        # - Python requests.get() throws ConnectionResetError ❌
-        # - Status shows "❌ Not Available" despite container running
-        # - docker ps shows container as healthy
-        #
-        # DEBUGGING NOTES:
-        # - The netcat server responds once per cycle and immediately closes
-        # - HTTP/1.1 keep-alive connections fail due to immediate connection termination
-        # - Connection: close header helps but doesn't fully solve timing issues
-        # - Port availability check works when netcat is between cycles
-        #
-        # SOLUTION IMPLEMENTED:
-        # Multi-layered approach to handle netcat server limitations robustly
-        # DO NOT simplify this logic without understanding the netcat behavior!
-        #
-        data_cleaner_available = False
-        data_cleaner_details = "Service down"
+        # Check Data Cleaner (Qdrant-only service)
+        # Only show Data Cleaner status for Qdrant backends, not filesystem
+        if backend_provider != "filesystem":
+            # CRITICAL IMPLEMENTATION NOTE: This status check was debugged and fixed to handle
+            # the data-cleaner's netcat-based HTTP implementation which has specific limitations:
+            #
+            # PROBLEM DISCOVERED: The data-cleaner container runs a simple bash script that uses
+            # `nc -l -p 8091` (netcat) to simulate an HTTP server. This implementation:
+            # 1. Only handles ONE connection at a time
+            # 2. Resets the connection immediately after responding
+            # 3. Cycles every 10 seconds (sleep 10 in the loop)
+            # 4. Causes ConnectionResetError with Python requests library
+            # 5. Works fine with curl (which handles connection resets gracefully)
+            #
+            # SYMPTOMS OF BREAKAGE:
+            # - curl http://localhost:8091/ returns "Cleanup service ready" ✅
+            # - Python requests.get() throws ConnectionResetError ❌
+            # - Status shows "❌ Not Available" despite container running
+            # - docker ps shows container as healthy
+            #
+            # DEBUGGING NOTES:
+            # - The netcat server responds once per cycle and immediately closes
+            # - HTTP/1.1 keep-alive connections fail due to immediate connection termination
+            # - Connection: close header helps but doesn't fully solve timing issues
+            # - Port availability check works when netcat is between cycles
+            #
+            # SOLUTION IMPLEMENTED:
+            # Multi-layered approach to handle netcat server limitations robustly
+            # DO NOT simplify this logic without understanding the netcat behavior!
+            #
+            data_cleaner_available = False
+            data_cleaner_details = "Service down"
 
-        try:
-            import requests
-            import subprocess
-            import socket
-
-            # APPROACH 1: HTTP request with Connection: close header
-            # This works when netcat is actively listening and handles the request immediately
-            # The Connection: close header prevents HTTP/1.1 keep-alive issues with netcat
             try:
-                # Use project-specific calculated data cleaner port
-                data_cleaner_port = getattr(
-                    config.project_ports, "data_cleaner_port", 8091
-                )
-                data_cleaner_url = f"http://localhost:{data_cleaner_port}/"
-                response = requests.get(
-                    data_cleaner_url,
-                    timeout=3,
-                    headers={
-                        "Connection": "close"
-                    },  # Critical: prevents keep-alive issues
-                )
-                if response.status_code == 200:
-                    data_cleaner_available = True
-                    data_cleaner_details = "Cleanup service active"
-            except (requests.exceptions.ConnectionError, ConnectionResetError):
-                # Expected behavior: netcat closes connection immediately after responding
-                # This exception is NORMAL and indicates we need to try other approaches
+                import requests
+                import subprocess
+                import socket
 
-                # APPROACH 2: Raw socket connection test
-                # This works when netcat is between cycles (during the sleep 10 period)
-                # We just check if something is listening on the data cleaner port
+                # APPROACH 1: HTTP request with Connection: close header
+                # This works when netcat is actively listening and handles the request immediately
+                # The Connection: close header prevents HTTP/1.1 keep-alive issues with netcat
                 try:
-                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                        sock.settimeout(1)  # Quick check to avoid delays
-                        connect_result = sock.connect_ex(
-                            ("localhost", data_cleaner_port)
-                        )
-                        if connect_result == 0:  # Port is listening
-                            data_cleaner_available = True
-                            data_cleaner_details = "Cleanup service active (netcat)"
-                except Exception:
-                    # Socket connection failed - port not listening or refused
-                    pass
-
-            # APPROACH 3: Container status fallback
-            # If both HTTP and socket checks fail, verify the container is at least running
-            # This catches cases where the service is starting up or having issues
-            if not data_cleaner_available:
-                try:
-                    result = subprocess.run(
-                        [
-                            "docker",
-                            "ps",
-                            "--filter",
-                            "name=data-cleaner",
-                            "--format",
-                            "{{.Names}}",
-                        ],
-                        capture_output=True,
-                        text=True,
-                        timeout=5,
+                    # Use project-specific calculated data cleaner port
+                    data_cleaner_port = getattr(
+                        config.project_ports, "data_cleaner_port", 8091
                     )
-                    if "data-cleaner" in result.stdout:
+                    data_cleaner_url = f"http://localhost:{data_cleaner_port}/"
+                    response = requests.get(
+                        data_cleaner_url,
+                        timeout=3,
+                        headers={
+                            "Connection": "close"
+                        },  # Critical: prevents keep-alive issues
+                    )
+                    if response.status_code == 200:
                         data_cleaner_available = True
-                        data_cleaner_details = (
-                            "Container running (service may be cycling)"
+                        data_cleaner_details = "Cleanup service active"
+                except (requests.exceptions.ConnectionError, ConnectionResetError):
+                    # Expected behavior: netcat closes connection immediately after responding
+                    # This exception is NORMAL and indicates we need to try other approaches
+
+                    # APPROACH 2: Raw socket connection test
+                    # This works when netcat is between cycles (during the sleep 10 period)
+                    # We just check if something is listening on the data cleaner port
+                    try:
+                        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                            sock.settimeout(1)  # Quick check to avoid delays
+                            connect_result = sock.connect_ex(
+                                ("localhost", data_cleaner_port)
+                            )
+                            if connect_result == 0:  # Port is listening
+                                data_cleaner_available = True
+                                data_cleaner_details = "Cleanup service active (netcat)"
+                    except Exception:
+                        # Socket connection failed - port not listening or refused
+                        pass
+
+                # APPROACH 3: Container status fallback
+                # If both HTTP and socket checks fail, verify the container is at least running
+                # This catches cases where the service is starting up or having issues
+                if not data_cleaner_available:
+                    try:
+                        result = subprocess.run(
+                            [
+                                "docker",
+                                "ps",
+                                "--filter",
+                                "name=data-cleaner",
+                                "--format",
+                                "{{.Names}}",
+                            ],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
                         )
-                        # Note: This indicates container is up but netcat might be restarting
-                except Exception:
-                    # Docker command failed - container likely not running
-                    pass
+                        if "data-cleaner" in result.stdout:
+                            data_cleaner_available = True
+                            data_cleaner_details = (
+                                "Container running (service may be cycling)"
+                            )
+                            # Note: This indicates container is up but netcat might be restarting
+                    except Exception:
+                        # Docker command failed - container likely not running
+                        pass
 
-        except Exception as e:
-            data_cleaner_details = f"Check failed: {str(e)[:50]}"
+            except Exception as e:
+                data_cleaner_details = f"Check failed: {str(e)[:50]}"
 
-        # FINAL STATUS DETERMINATION
-        # If ANY of the three approaches succeeded, consider the service available
-        # This robust approach handles the netcat server's unpredictable timing
-        data_cleaner_status = (
-            "✅ Ready" if data_cleaner_available else "❌ Not Available"
-        )
+            # FINAL STATUS DETERMINATION
+            # If ANY of the three approaches succeeded, consider the service available
+            # This robust approach handles the netcat server's unpredictable timing
+            data_cleaner_status = (
+                "✅ Ready" if data_cleaner_available else "❌ Not Available"
+            )
 
-        # WARNING FOR FUTURE DEVELOPERS:
-        # - Do NOT simplify this to just requests.get() - it will break randomly
-        # - Do NOT remove the multi-approach logic - netcat is unpredictable
-        # - If changing data-cleaner implementation, update these comments
-        # - Test thoroughly with `cidx status` command multiple times in succession
-        # - Consider replacing netcat with proper HTTP server if reliability issues persist
+            # WARNING FOR FUTURE DEVELOPERS:
+            # - Do NOT simplify this to just requests.get() - it will break randomly
+            # - Do NOT remove the multi-approach logic - netcat is unpredictable
+            # - If changing data-cleaner implementation, update these comments
+            # - Test thoroughly with `cidx status` command multiple times in succession
+            # - Consider replacing netcat with proper HTTP server if reliability issues persist
 
-        table.add_row("Data Cleaner", data_cleaner_status, data_cleaner_details)
+            table.add_row("Data Cleaner", data_cleaner_status, data_cleaner_details)
 
         # Check index with git-aware information
         metadata_path = config_manager.config_path.parent / "metadata.json"

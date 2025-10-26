@@ -65,32 +65,36 @@ class VectorQuantizer:
         """
         return vector @ projection_matrix
 
-    def _quantize_to_2bit(self, vector: np.ndarray) -> np.ndarray:
-        """Quantize float vector to 2-bit representation using quartiles.
+    def _quantize_to_2bit(self, vector: np.ndarray, min_val: float = -2.0, max_val: float = 2.0) -> np.ndarray:
+        """Quantize float vector to 2-bit representation using fixed-range scalar quantization.
 
-        Each value is mapped to {0, 1, 2, 3} based on quartile thresholds:
-        - 00 (0): < Q1
-        - 01 (1): Q1 <= x < Q2
-        - 10 (2): Q2 <= x < Q3
-        - 11 (3): >= Q3
+        LOCALITY-PRESERVING: Uses fixed thresholds for ALL vectors, ensuring similar
+        vectors quantize to similar paths. This is critical for O(1) lookup performance.
+
+        Each value is mapped to {0, 1, 2, 3} based on fixed range thresholds:
+        - 00 (0): < min_val + 0.25 * range
+        - 01 (1): >= min_val + 0.25 * range and < min_val + 0.5 * range
+        - 10 (2): >= min_val + 0.5 * range and < min_val + 0.75 * range
+        - 11 (3): >= min_val + 0.75 * range
 
         Args:
             vector: Float vector to quantize
+            min_val: Minimum value for quantization range (default: -2.0)
+            max_val: Maximum value for quantization range (default: 2.0)
 
         Returns:
             Array of uint8 values in {0, 1, 2, 3}
         """
-        # Compute quartile thresholds
-        q1, q2, q3 = np.percentile(vector, [25, 50, 75])
+        # Clip values to range
+        clipped = np.clip(vector, min_val, max_val)
 
-        # Map to 2-bit values
-        quantized = np.zeros(len(vector), dtype=np.uint8)
-        quantized[vector >= q3] = 3
-        quantized[(vector >= q2) & (vector < q3)] = 2
-        quantized[(vector >= q1) & (vector < q2)] = 1
-        quantized[vector < q1] = 0
+        # Map [min_val, max_val] → [0, 3.999] → int [0, 3]
+        range_size = max_val - min_val
+        normalized = (clipped - min_val) / range_size  # [0, 1]
+        quantized = (normalized * 3.999).astype(np.uint8)  # [0, 3]
 
-        return quantized
+        # Ensure values are in valid range
+        return np.clip(quantized, 0, 3)
 
     def _bits_to_hex(self, quantized: np.ndarray) -> str:
         """Convert 2-bit quantized values to hex string.

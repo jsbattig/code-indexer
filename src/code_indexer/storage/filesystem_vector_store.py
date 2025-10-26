@@ -10,18 +10,17 @@ import json
 import os
 import random
 import subprocess
+import sys
 from pathlib import Path
-from typing import List, Dict, Any, Optional, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, Tuple, Union
 from datetime import datetime
 import threading
 import numpy as np
+import importlib.util
+import logging
 
 from .vector_quantizer import VectorQuantizer
 from .projection_matrix_manager import ProjectionMatrixManager
-
-# Lazy import to avoid circular dependency
-if TYPE_CHECKING:
-    from ..services.matrix_service_client import MatrixServiceClient
 
 
 class FilesystemVectorStore:
@@ -35,16 +34,18 @@ class FilesystemVectorStore:
     - ID indexing for fast lookups
     """
 
-    def __init__(self, base_path: Path, project_root: Optional[Path] = None, use_matrix_service: bool = True):
+    def __init__(self, base_path: Path, project_root: Optional[Path] = None):
         """Initialize filesystem vector store.
 
         Args:
             base_path: Base directory for all collections
             project_root: Root directory of the project being indexed (for git operations)
-            use_matrix_service: Use resident matrix multiplication service (default: True)
         """
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
+
+        # Initialize logger
+        self.logger = logging.getLogger(__name__)
 
         # Store project root for git operations
         # If not provided, try to derive from base_path (go up two levels from .code-indexer/index/)
@@ -58,24 +59,12 @@ class FilesystemVectorStore:
         self.quantizer = VectorQuantizer(depth_factor=4, reduced_dimensions=64)
         self.matrix_manager = ProjectionMatrixManager()
 
-        # Matrix service client (with in-process fallback)
-        # Lazy import to avoid circular dependency
-        self.use_matrix_service = use_matrix_service
-        self.matrix_client: Optional['MatrixServiceClient'] = None
-        if use_matrix_service:
-            from ..services.matrix_service_client import MatrixServiceClient
-            self.matrix_client = MatrixServiceClient(auto_start=True)
-
         # Thread safety for file writes
         self._write_lock = threading.Lock()
 
         # ID index cache: {collection_name: {point_id: file_path}}
         self._id_index: Dict[str, Dict[str, Path]] = {}
         self._id_index_lock = threading.Lock()
-
-        # In-process matrix cache: {collection_path: matrix}
-        self._matrix_cache: Dict[str, np.ndarray] = {}
-        self._matrix_cache_lock = threading.Lock()
 
     def create_collection(self, collection_name: str, vector_size: int) -> bool:
         """Create a new collection with projection matrix.
@@ -94,19 +83,37 @@ class FilesystemVectorStore:
         self._ensure_gitignore(collection_name)
 
         # Create projection matrix for this collection
+        output_dim = 64  # Target 64-dim for 32-char hex path
         projection_matrix = self.matrix_manager.create_projection_matrix(
             input_dim=vector_size,
-            output_dim=64  # Target 64-dim for 32-char hex path
+            output_dim=output_dim
         )
 
         # Save projection matrix
         self.matrix_manager.save_matrix(projection_matrix, collection_path)
 
-        # Create collection metadata
+        # Compute quantization range dynamically from projection matrix dimensions
+        # Uses random projection theory: projected vectors have std ≈ sqrt(output_dim / input_dim)
+        # We use ±3σ to cover 99.7% of the distribution
+        std_estimate = np.sqrt(output_dim / vector_size)
+        min_val = -3 * std_estimate
+        max_val = 3 * std_estimate
+
+        # Create collection metadata with dynamically computed quantization range
+        # Range will be used for locality-preserving fixed-range scalar quantization
         metadata = {
             'name': collection_name,
             'vector_size': vector_size,
-            'created_at': datetime.utcnow().isoformat()
+            'created_at': datetime.utcnow().isoformat(),
+            'quantization_range': {
+                'min': float(min_val),  # Dynamically computed from matrix dimensions
+                'max': float(max_val)
+            },
+            # Index type tracking (binary or hnsw)
+            'index_type': 'hnsw',  # Default to hnsw for fast queries
+            'index_version': 1,
+            'index_format': 'hnsw_v1',
+            'index_record_size': 40
         }
 
         metadata_path = collection_path / 'collection_meta.json'
@@ -146,6 +153,31 @@ class FilesystemVectorStore:
                     collections.append(path.name)
         return collections
 
+    def _load_quantization_range(self, collection_name: str) -> tuple[float, float]:
+        """Load quantization range from collection metadata.
+
+        Args:
+            collection_name: Name of the collection
+
+        Returns:
+            Tuple of (min_val, max_val) for quantization range
+        """
+        collection_path = self.base_path / collection_name
+        metadata_path = collection_path / 'collection_meta.json'
+
+        if not metadata_path.exists():
+            # Return default range if metadata doesn't exist
+            return (-2.0, 2.0)
+
+        try:
+            with open(metadata_path) as f:
+                metadata = json.load(f)
+                quant_range = metadata.get('quantization_range', {'min': -2.0, 'max': 2.0})
+                return (quant_range['min'], quant_range['max'])
+        except (json.JSONDecodeError, KeyError):
+            # Return default range on error
+            return (-2.0, 2.0)
+
     def upsert_points(
         self,
         collection_name: Optional[str],
@@ -183,17 +215,11 @@ class FilesystemVectorStore:
         if not self.collection_exists(collection_name):
             raise ValueError(f"Collection '{collection_name}' does not exist")
 
-        # Load projection matrix (with caching for in-process mode)
-        if self.use_matrix_service:
-            # Service handles matrix caching, load here for validation only
-            projection_matrix = self.matrix_manager.load_matrix(collection_path)
-        else:
-            # In-process mode: cache matrix to avoid reloading for every point
-            cache_key = str(collection_path)
-            with self._matrix_cache_lock:
-                if cache_key not in self._matrix_cache:
-                    self._matrix_cache[cache_key] = self.matrix_manager.load_matrix(collection_path)
-                projection_matrix = self._matrix_cache[cache_key]
+        # Load projection matrix (singleton-cached in ProjectionMatrixManager)
+        projection_matrix = self.matrix_manager.load_matrix(collection_path)
+
+        # Load quantization range for locality-preserving quantization
+        min_val, max_val = self._load_quantization_range(collection_name)
 
         # Detect git repo root once for batch operation
         repo_root = self._get_repo_root()
@@ -211,6 +237,11 @@ class FilesystemVectorStore:
         with self._id_index_lock:
             if collection_name not in self._id_index:
                 self._id_index[collection_name] = self._load_id_index(collection_name)
+
+        # Initialize binary index manager for fast lookups
+        from .vector_index_manager import VectorIndexManager, IndexEntry
+        index_manager = VectorIndexManager()
+        index_entries = []
 
         # Process all points
         total_points = len(points)
@@ -231,16 +262,28 @@ class FilesystemVectorStore:
                 if projection_matrix is None:
                     raise RuntimeError(f"Projection matrix is None for collection {collection_name}")
 
-                # Use matrix service if enabled, otherwise cached in-process multiplication
-                if self.use_matrix_service and self.matrix_client:
-                    # Perform matrix multiplication via service (with in-process fallback)
-                    reduced = self.matrix_client.multiply(collection_path, vector)
-                else:
-                    # In-process multiplication with caching (optimized)
-                    reduced = vector @ projection_matrix  # Matrix already loaded once
+                # Matrix multiplication (matrix is singleton-cached in ProjectionMatrixManager)
+                reduced = vector @ projection_matrix
+
+                # Compute quantized hash for binary index
+                # Use identity matrix since reduced is already projected
+                quant_hash = index_manager.compute_quantized_hash(
+                    vector=reduced,
+                    projection_matrix=np.eye(64, dtype=np.float32),
+                    min_val=min_val,
+                    max_val=max_val
+                )
+
+                # Add to index entries batch
+                index_entries.append(IndexEntry(
+                    vector_id=point_id,
+                    quant_hash=quant_hash,
+                    file_offset=0
+                ))
 
                 # Continue quantization pipeline with reduced vector
-                quantized_bits = self.quantizer._quantize_to_2bit(reduced)
+                # Use fixed-range scalar quantization for locality preservation
+                quantized_bits = self.quantizer._quantize_to_2bit(reduced, min_val, max_val)
                 hex_path = self.quantizer._bits_to_hex(quantized_bits)
             except Exception as e:
                 import traceback
@@ -277,6 +320,58 @@ class FilesystemVectorStore:
             # Update ID index
             with self._id_index_lock:
                 self._id_index[collection_name][point_id] = vector_file
+
+        # Load metadata to determine index type
+        meta_file = collection_path / 'collection_meta.json'
+        with open(meta_file) as f:
+            metadata = json.load(f)
+
+        index_type = metadata.get('index_type', 'binary')  # Default to binary for backward compatibility
+
+        # Enforce mutual exclusivity and build appropriate index
+        if index_type == 'hnsw':
+            # Remove binary index if exists
+            binary_index_file = collection_path / 'vector_index.bin'
+            if binary_index_file.exists():
+                binary_index_file.unlink()
+
+            # Rebuild HNSW index from ALL vectors on disk (not just current batch)
+            from .hnsw_index_manager import HNSWIndexManager
+
+            try:
+                vector_size = metadata.get('vector_size', 1536)
+                hnsw_manager = HNSWIndexManager(vector_dim=vector_size, space='cosine')
+
+                # Rebuild entire index from all vector JSON files
+                # This ensures incremental indexing doesn't lose previous vectors
+                hnsw_manager.rebuild_from_vectors(
+                    collection_path=collection_path,
+                    progress_callback=progress_callback
+                )
+
+            except ImportError:
+                # APPROVED FALLBACK: 2025-10-25 - HNSW not available during indexing
+                # Rationale: HNSW is optional optimization, gracefully degrade to binary index
+                if index_entries:
+                    index_manager.append_batch(collection_path, index_entries)
+        else:
+            # Binary index mode
+            # Remove HNSW index if exists
+            hnsw_index_file = collection_path / 'hnsw_index.bin'
+            if hnsw_index_file.exists():
+                hnsw_index_file.unlink()
+
+            # Write binary index entries in one batch
+            if index_entries:
+                index_manager.append_batch(collection_path, index_entries)
+
+        # Save ID index to disk (tandem with HNSW/binary index)
+        # This eliminates the need to scan JSON files on first query
+        from .id_index_manager import IDIndexManager
+        id_manager = IDIndexManager()
+        with self._id_index_lock:
+            if collection_name in self._id_index:
+                id_manager.save_index(collection_path, self._id_index[collection_name])
 
         return {'status': 'ok', 'count': len(points)}
 
@@ -927,8 +1022,9 @@ class FilesystemVectorStore:
         collection_name: str,
         limit: int = 10,
         score_threshold: Optional[float] = None,
-        filter_conditions: Optional[Dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
+        filter_conditions: Optional[Dict[str, Any]] = None,
+        return_timing: bool = False
+    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], Dict[str, Any]]]:
         """Search for similar vectors using cosine similarity.
 
         Returns results with chunk content and staleness information.
@@ -939,73 +1035,427 @@ class FilesystemVectorStore:
             limit: Maximum number of results
             score_threshold: Minimum similarity score (0-1)
             filter_conditions: Optional filter conditions for payload
+            return_timing: If True, return tuple of (results, timing_dict)
 
         Returns:
             List of results with id, score, payload (including content), and staleness
+            If return_timing=True: Tuple of (results, timing_dict)
         """
+        import time
+        timing: Dict[str, Any] = {}
+
         collection_path = self.base_path / collection_name
 
         if not self.collection_exists(collection_name):
-            return []
+            return ([], timing) if return_timing else []
 
         query_vec = np.array(query_vector)
         query_norm = np.linalg.norm(query_vec)
 
         if query_norm == 0:
-            return []
+            return ([], timing) if return_timing else []
 
-        # Load all vectors and calculate similarities
+        # === O(1) QUANTIZED LOOKUP WITH FALLBACK ===
+        # Using fixed-range scalar quantization for locality preservation
+        # Similar query vectors will quantize to same/nearby directories
+
+        # Load projection matrix (singleton-cached)
+        t0 = time.time()
+        projection_matrix = self.matrix_manager.load_matrix(collection_path)
+        timing['matrix_load_ms'] = (time.time() - t0) * 1000
+
+        # Load quantization range for locality-preserving quantization
+        min_val, max_val = self._load_quantization_range(collection_name)
+
+        # Project query vector to reduced dimensions
+        reduced = query_vec @ projection_matrix
+
+        # Load metadata to check index type
+        meta_file = collection_path / 'collection_meta.json'
+        with open(meta_file) as f:
+            metadata = json.load(f)
+
+        index_type = metadata.get('index_type', 'binary')  # Default to binary
+
+        # === HNSW INDEX LOOKUP (FAST PATH FOR HNSW) ===
+        # Use HNSW index if index_type is 'hnsw'
+        if index_type == 'hnsw':
+            # Check if hnswlib is available before attempting to use it
+            hnswlib_available = importlib.util.find_spec('hnswlib') is not None
+
+            if not hnswlib_available:
+                # APPROVED FALLBACK: 2025-10-25 - Graceful degradation for optional HNSW dependency
+                # Rationale: HNSW is an optional performance optimization, system continues with binary index
+                self.logger.warning(
+                    f"HNSW index requested for collection '{collection_name}' "
+                    f"but hnswlib is not installed. Falling back to binary index. "
+                    f"Install with: pip install hnswlib"
+                )
+
+            if hnswlib_available:
+                from .hnsw_index_manager import HNSWIndexManager
+
+                try:
+                    vector_size = metadata.get('vector_size', 1536)
+                    hnsw_manager = HNSWIndexManager(vector_dim=vector_size, space='cosine')
+
+                    # Load HNSW index
+                    t0 = time.time()
+                    hnsw_index = hnsw_manager.load_index(collection_path, max_elements=100000)
+                    timing['index_load_ms'] = (time.time() - t0) * 1000
+
+                    if hnsw_index is None:
+                        # APPROVED FALLBACK: 2025-10-25 - HNSW index file not found
+                        # Rationale: Index may not exist yet on first query, fall back to binary index
+                        self.logger.warning(
+                            f"HNSW index file not found for collection '{collection_name}' "
+                            f"at {collection_path / 'hnsw_index.bin'}. "
+                            f"Falling back to binary index."
+                        )
+                        # Continue to binary index path (don't return early)
+                    else:
+                        # Query HNSW index
+                        t0 = time.time()
+                        candidate_ids, distances = hnsw_manager.query(
+                            index=hnsw_index,
+                            query_vector=query_vec,
+                            collection_path=collection_path,
+                            k=limit * 2,  # Get more candidates for filtering
+                            ef=50  # HNSW query parameter
+                        )
+                        timing['hnsw_search_ms'] = (time.time() - t0) * 1000
+
+                        # Ensure ID index is loaded (fast path only - no fallback to scanning)
+                        t_id_index = time.time()
+                        with self._id_index_lock:
+                            if collection_name not in self._id_index:
+                                # Load from persistent binary ID index
+                                from .id_index_manager import IDIndexManager
+                                id_manager = IDIndexManager()
+                                self._id_index[collection_name] = id_manager.load_index(collection_path)
+                            existing_id_index = self._id_index[collection_name]
+                        timing['id_index_load_ms'] = (time.time() - t_id_index) * 1000
+
+                        # Load candidate vectors and apply filters
+                        t0 = time.time()
+                        results = []
+                        for point_id in candidate_ids:
+                            if point_id not in existing_id_index:
+                                continue
+
+                            vector_file = existing_id_index[point_id]
+                            if not vector_file.exists():
+                                continue
+
+                            try:
+                                with open(vector_file) as f:
+                                    data = json.load(f)
+
+                                # Apply filter conditions
+                                if filter_conditions:
+                                    payload = data.get('payload', {})
+                                    filter_func = self._parse_qdrant_filter(filter_conditions)
+                                    if not filter_func(payload):
+                                        continue
+
+                                # Calculate exact cosine similarity
+                                stored_vec = np.array(data['vector'])
+                                stored_norm = np.linalg.norm(stored_vec)
+
+                                if stored_norm == 0:
+                                    continue
+
+                                similarity = np.dot(query_vec, stored_vec) / (query_norm * stored_norm)
+
+                                # Apply score threshold
+                                if score_threshold is not None and similarity < score_threshold:
+                                    continue
+
+                                results.append({
+                                    'id': data['id'],
+                                    'score': float(similarity),
+                                    'payload': data.get('payload', {
+                                        'path': data.get('file_path', ''),
+                                        'start_line': data.get('start_line', 0),
+                                        'end_line': data.get('end_line', 0),
+                                        'language': data.get('metadata', {}).get('language', ''),
+                                        'type': data.get('metadata', {}).get('type', 'content')
+                                    }),
+                                    '_vector_data': data
+                                })
+
+                            except (json.JSONDecodeError, KeyError, ValueError):
+                                continue
+
+                        timing['candidate_load_ms'] = (time.time() - t0) * 1000
+
+                        # Sort by score and limit
+                        results.sort(key=lambda x: x['score'], reverse=True)
+                        limited_results = results[:limit]
+
+                        # Enhance with content and staleness
+                        t0 = time.time()
+                        enhanced_results = []
+                        for result in limited_results:
+                            vector_data = result.pop('_vector_data')
+                            content, staleness = self._get_chunk_content_with_staleness(vector_data)
+                            result['payload']['content'] = content
+                            result['staleness'] = staleness
+                            enhanced_results.append(result)
+
+                        timing['staleness_detection_ms'] = (time.time() - t0) * 1000
+                        timing['search_path'] = 'hnsw_index'
+                        timing['hamming_search_ms'] = 0.0
+                        timing['quantized_lookup_ms'] = 0.0
+                        timing['full_scan_ms'] = 0.0
+
+                        return (enhanced_results, timing) if return_timing else enhanced_results
+
+                except (FileNotFoundError, IOError, ValueError, AttributeError) as e:
+                    # APPROVED FALLBACK: 2025-10-25 - HNSW search errors
+                    # Rationale: HNSW is optional optimization, gracefully degrade to binary index on errors
+                    self.logger.error(
+                        f"Error using HNSW index for collection '{collection_name}': {e}",
+                        exc_info=True
+                    )
+                    # Continue to binary index path (don't return early)
+
+        # === BINARY INDEX LOOKUP (FAST PATH) ===
+        # Try binary index for fast candidate selection before quantized lookup
+        from .vector_index_manager import VectorIndexManager
+        index_manager = VectorIndexManager()
+
+        # Ensure ID index is loaded first (needed for fast ID mapping)
+        with self._id_index_lock:
+            if collection_name not in self._id_index:
+                self._id_index[collection_name] = self._load_id_index(collection_name)
+            existing_id_index = self._id_index[collection_name]
+
+        # Load binary index with existing ID index to avoid JSON scanning
+        t0 = time.time()
+        index, id_mapping = index_manager.load_index(collection_path, existing_id_index)
+        timing['index_load_ms'] = (time.time() - t0) * 1000
+
         results = []
+        index_used = False
+        timing['hamming_search_ms'] = 0.0
+        timing['candidate_load_ms'] = 0.0
+        timing['quantized_lookup_ms'] = 0.0
+        timing['full_scan_ms'] = 0.0
+        timing['staleness_detection_ms'] = 0.0
 
-        for vector_file in collection_path.rglob('*.json'):
-            if 'collection_meta' in vector_file.name:
-                continue
+        if index.shape[0] > 0:
+            # Binary index exists - use it for fast candidate selection
+            index_used = True
 
-            try:
-                with open(vector_file) as f:
-                    data = json.load(f)
+            # Compute query hash for Hamming distance search
+            t0 = time.time()
+            query_hash = index_manager.compute_quantized_hash(
+                vector=reduced,
+                projection_matrix=np.eye(64, dtype=np.float32),
+                min_val=min_val,
+                max_val=max_val
+            )
 
-                # Apply filter conditions using Qdrant filter parser
-                if filter_conditions:
-                    payload = data.get('payload', {})
-                    filter_func = self._parse_qdrant_filter(filter_conditions)
-                    if not filter_func(payload):
+            # Find top candidates using Hamming distance
+            total_vectors = index.shape[0]
+            candidate_ids = index_manager.find_candidates(
+                query_hash=query_hash,
+                index=index,
+                id_mapping=id_mapping,
+                limit=limit,
+                total_vectors=total_vectors
+            )
+            timing['hamming_search_ms'] = (time.time() - t0) * 1000
+
+            # Load only candidate vectors and compute exact similarities (ID index already loaded above)
+            t0 = time.time()
+            for point_id in candidate_ids:
+                # Look up file path from ID index
+                if point_id not in existing_id_index:
+                    continue
+
+                vector_file = existing_id_index[point_id]
+
+                if not vector_file.exists():
+                    continue
+
+                try:
+                    with open(vector_file) as f:
+                        data = json.load(f)
+
+                    # Apply filter conditions
+                    if filter_conditions:
+                        payload = data.get('payload', {})
+                        filter_func = self._parse_qdrant_filter(filter_conditions)
+                        if not filter_func(payload):
+                            continue
+
+                    # Calculate cosine similarity
+                    stored_vec = np.array(data['vector'])
+                    stored_norm = np.linalg.norm(stored_vec)
+
+                    if stored_norm == 0:
                         continue
 
-                # Calculate cosine similarity
-                stored_vec = np.array(data['vector'])
-                stored_norm = np.linalg.norm(stored_vec)
+                    similarity = np.dot(query_vec, stored_vec) / (query_norm * stored_norm)
 
-                if stored_norm == 0:
+                    # Apply score threshold
+                    if score_threshold is not None and similarity < score_threshold:
+                        continue
+
+                    results.append({
+                        'id': data['id'],
+                        'score': float(similarity),
+                        'payload': data.get('payload', {
+                            'path': data.get('file_path', ''),
+                            'start_line': data.get('start_line', 0),
+                            'end_line': data.get('end_line', 0),
+                            'language': data.get('metadata', {}).get('language', ''),
+                            'type': data.get('metadata', {}).get('type', 'content')
+                        }),
+                        '_vector_data': data  # Store for content retrieval
+                    })
+
+                except (json.JSONDecodeError, KeyError, ValueError):
                     continue
 
-                similarity = np.dot(query_vec, stored_vec) / (query_norm * stored_norm)
+            timing['candidate_load_ms'] = (time.time() - t0) * 1000
 
-                # Apply score threshold
-                if score_threshold is not None and similarity < score_threshold:
+        # === FALLBACK: QUANTIZED LOOKUP ===
+        # If index didn't return enough results, fall back to quantized directory lookup
+        quantized_lookup_used = False
+        target_dir: Optional[Path] = None
+        if not index_used or len(results) < limit:
+            # Quantize to get target directory path using fixed-range scalar quantization
+            quantized_bits = self.quantizer._quantize_to_2bit(reduced, min_val, max_val)
+            hex_path = self.quantizer._bits_to_hex(quantized_bits)
+            segments = self.quantizer._split_hex_path(hex_path)
+
+            # Navigate to quantized directory
+            temp_target_dir = collection_path
+            for segment in segments[:-1]:
+                temp_target_dir = temp_target_dir / segment
+
+            # Set target_dir only if it exists
+            if temp_target_dir.exists():
+                target_dir = temp_target_dir
+
+        if target_dir is not None and target_dir.exists():
+            t0 = time.time()
+            for vector_file in target_dir.glob('vector_*.json'):
+                quantized_lookup_used = True
+                try:
+                    with open(vector_file) as f:
+                        data = json.load(f)
+
+                    # Apply filter conditions using Qdrant filter parser
+                    if filter_conditions:
+                        payload = data.get('payload', {})
+                        filter_func = self._parse_qdrant_filter(filter_conditions)
+                        if not filter_func(payload):
+                            continue
+
+                    # Calculate cosine similarity
+                    stored_vec = np.array(data['vector'])
+                    stored_norm = np.linalg.norm(stored_vec)
+
+                    if stored_norm == 0:
+                        continue
+
+                    similarity = np.dot(query_vec, stored_vec) / (query_norm * stored_norm)
+
+                    # Apply score threshold
+                    if score_threshold is not None and similarity < score_threshold:
+                        continue
+
+                    results.append({
+                        'id': data['id'],
+                        'score': float(similarity),
+                        'payload': data.get('payload', {
+                            'path': data.get('file_path', ''),
+                            'start_line': data.get('start_line', 0),
+                            'end_line': data.get('end_line', 0),
+                            'language': data.get('metadata', {}).get('language', ''),
+                            'type': data.get('metadata', {}).get('type', 'content')
+                        }),
+                        '_vector_data': data  # Store for content retrieval
+                    })
+
+                except (json.JSONDecodeError, KeyError, ValueError):
                     continue
 
-                results.append({
-                    'id': data['id'],
-                    'score': float(similarity),
-                    'payload': data.get('payload', {
-                        'path': data.get('file_path', ''),
-                        'start_line': data.get('start_line', 0),
-                        'end_line': data.get('end_line', 0),
-                        'language': data.get('metadata', {}).get('language', ''),
-                        'type': data.get('metadata', {}).get('type', 'content')
-                    }),
-                    '_vector_data': data  # Store for content retrieval
-                })
+            if quantized_lookup_used:
+                timing['quantized_lookup_ms'] = (time.time() - t0) * 1000
 
-            except (json.JSONDecodeError, KeyError, ValueError):
-                continue
+        # FALLBACK: If binary index and quantized lookup found insufficient results, do full scan
+        # This should rarely be needed with binary index optimization
+        if len(results) < limit:
+            # Track already processed IDs to avoid duplicates
+            processed_ids = {r['id'] for r in results}
+
+            # Full scan as fallback
+            t0 = time.time()
+            for vector_file in collection_path.rglob('*.json'):
+                if 'collection_meta' in vector_file.name:
+                    continue
+
+                # Skip files already processed in quantized lookup
+                if quantized_lookup_used and target_dir is not None and vector_file.parent == target_dir:
+                    continue
+
+                try:
+                    with open(vector_file) as f:
+                        data = json.load(f)
+
+                    # Skip if already processed by binary index
+                    if data['id'] in processed_ids:
+                        continue
+
+                    # Apply filter conditions
+                    if filter_conditions:
+                        payload = data.get('payload', {})
+                        filter_func = self._parse_qdrant_filter(filter_conditions)
+                        if not filter_func(payload):
+                            continue
+
+                    # Calculate cosine similarity
+                    stored_vec = np.array(data['vector'])
+                    stored_norm = np.linalg.norm(stored_vec)
+
+                    if stored_norm == 0:
+                        continue
+
+                    similarity = np.dot(query_vec, stored_vec) / (query_norm * stored_norm)
+
+                    # Apply score threshold
+                    if score_threshold is not None and similarity < score_threshold:
+                        continue
+
+                    results.append({
+                        'id': data['id'],
+                        'score': float(similarity),
+                        'payload': data.get('payload', {
+                            'path': data.get('file_path', ''),
+                            'start_line': data.get('start_line', 0),
+                            'end_line': data.get('end_line', 0),
+                            'language': data.get('metadata', {}).get('language', ''),
+                            'type': data.get('metadata', {}).get('type', 'content')
+                        }),
+                        '_vector_data': data  # Store for content retrieval
+                    })
+
+                except (json.JSONDecodeError, KeyError, ValueError):
+                    continue
+
+            timing['full_scan_ms'] = (time.time() - t0) * 1000
 
         # Sort by score descending and limit
         results.sort(key=lambda x: x['score'], reverse=True)
         limited_results = results[:limit]
 
         # Enhance results with content and staleness detection
+        t0 = time.time()
         enhanced_results = []
         for result in limited_results:
             vector_data = result.pop('_vector_data')  # Remove temporary data
@@ -1019,7 +1469,19 @@ class FilesystemVectorStore:
 
             enhanced_results.append(result)
 
-        return enhanced_results
+        timing['staleness_detection_ms'] = (time.time() - t0) * 1000
+
+        # Add search path indicator to timing
+        if index_used:
+            timing['search_path'] = 'binary_index'
+        elif quantized_lookup_used:
+            timing['search_path'] = 'quantized_lookup'
+        elif len(results) > 0:
+            timing['search_path'] = 'full_scan'
+        else:
+            timing['search_path'] = 'none'
+
+        return (enhanced_results, timing) if return_timing else enhanced_results
 
     def _get_chunk_content_with_staleness(
         self,
@@ -1275,40 +1737,23 @@ class FilesystemVectorStore:
         return collection_name
 
     def clear_collection(self, collection_name: str, remove_projection_matrix: bool = False) -> bool:
-        """Delete all vectors from collection, keep structure.
+        """Delete entire collection and prepare for fresh recreation.
+
+        Like Qdrant's clear operation, this completely removes the collection
+        so it can be recreated with fresh metadata (including quantization_range).
+        The collection will be recreated automatically during the next index operation.
 
         Args:
             collection_name: Name of the collection to clear
-            remove_projection_matrix: Whether to also remove the projection matrix (default: False)
+            remove_projection_matrix: Unused parameter (kept for API compatibility, always deleted)
 
         Returns:
             True if cleared successfully
         """
-        collection_path = self.base_path / collection_name
-
-        if not self.collection_exists(collection_name):
-            return False
-
-        try:
-            # Delete all vector JSON files except metadata and projection matrix
-            for json_file in collection_path.rglob('*.json'):
-                if 'collection_meta' not in json_file.name:
-                    json_file.unlink()
-
-            # Optionally delete projection matrix
-            if remove_projection_matrix:
-                projection_matrix_file = collection_path / 'projection_matrix.npy'
-                if projection_matrix_file.exists():
-                    projection_matrix_file.unlink()
-
-            # Clear ID index for this collection
-            with self._id_index_lock:
-                self._id_index[collection_name] = {}
-
-            return True
-
-        except Exception:
-            return False
+        # For filesystem backend, clear means delete the entire collection directory
+        # This ensures fresh metadata (including quantization_range) when recreated
+        # Matches Qdrant behavior: clear = delete + recreate on next use
+        return self.delete_collection(collection_name)
 
     def delete_collection(self, collection_name: str) -> bool:
         """Delete entire collection including structure and metadata.
@@ -1698,3 +2143,50 @@ class FilesystemVectorStore:
                     pass
 
         return total_size
+
+    def set_index_type(self, collection_name: str, index_type: str) -> None:
+        """Set the index type for a collection and enforce mutual exclusivity.
+
+        Args:
+            collection_name: Name of the collection
+            index_type: Index type - must be 'binary' or 'hnsw'
+
+        Raises:
+            ValueError: If collection doesn't exist or index_type is invalid
+        """
+        # Validate index type
+        if index_type not in ('binary', 'hnsw'):
+            raise ValueError(
+                f"Invalid index_type: '{index_type}'. Must be 'binary' or 'hnsw'."
+            )
+
+        # Check collection exists
+        if not self.collection_exists(collection_name):
+            raise ValueError(f"Collection '{collection_name}' does not exist")
+
+        collection_path = self.base_path / collection_name
+        meta_file = collection_path / 'collection_meta.json'
+
+        # Load existing metadata
+        with open(meta_file) as f:
+            metadata = json.load(f)
+
+        # Update index type and format
+        metadata['index_type'] = index_type
+        metadata['index_format'] = f'{index_type}_v1'
+
+        # Save updated metadata
+        with open(meta_file, 'w') as f:
+            json.dump(metadata, f, indent=2)
+
+        # Enforce mutual exclusivity: remove opposite index file
+        if index_type == 'binary':
+            # Remove HNSW index if exists
+            hnsw_index_file = collection_path / 'hnsw_index.bin'
+            if hnsw_index_file.exists():
+                hnsw_index_file.unlink()
+        else:  # index_type == 'hnsw'
+            # Remove binary index if exists
+            binary_index_file = collection_path / 'vector_index.bin'
+            if binary_index_file.exists():
+                binary_index_file.unlink()

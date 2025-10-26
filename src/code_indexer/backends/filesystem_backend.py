@@ -121,19 +121,9 @@ class FilesystemBackend(VectorStoreBackend):
         """
         from ..storage.filesystem_vector_store import FilesystemVectorStore
 
-        # Get use_matrix_service setting from config
-        from ..config import ConfigManager
-        try:
-            config_manager = ConfigManager.create_with_backtrack(self.project_root)
-            config = config_manager.get_config()
-            use_matrix_service = config.vector_store.use_matrix_service if config.vector_store else False
-        except Exception:
-            use_matrix_service = False  # Default to in-process for safety
-
         return FilesystemVectorStore(
             base_path=self.vectors_dir,
-            project_root=self.project_root,
-            use_matrix_service=use_matrix_service
+            project_root=self.project_root
         )
 
     def health_check(self) -> bool:
