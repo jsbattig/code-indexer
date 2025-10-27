@@ -5,6 +5,7 @@ import getpass
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import signal
@@ -3708,480 +3709,254 @@ def query(
         sys.exit(1)
 
 
-@cli.command()
-@click.argument("question")
+@cli.command(name="teach-ai")
 @click.option(
-    "--limit",
-    "-l",
-    default=10,
-    help="[RAG-first only] Number of semantic search results to include in initial prompt (default: 10)",
-)
-@click.option(
-    "--context-lines",
-    "-c",
-    default=500,
-    help="[RAG-first only] Lines of context around each match in initial prompt (default: 500)",
-)
-@click.option(
-    "--language",
-    help=f"[RAG-first only] Filter initial search by programming language. {_generate_language_help_text()}",
-)
-@click.option(
-    "--path",
-    help="[RAG-first only] Filter initial search by file path pattern (e.g., */tests/*)",
-)
-@click.option(
-    "--min-score",
-    type=float,
-    help="[RAG-first only] Minimum similarity score for initial search (0.0-1.0)",
-)
-@click.option(
-    "--max-turns",
-    default=5,
-    help="Maximum Claude conversation turns for multi-turn analysis (default: 5)",
-)
-@click.option(
-    "--no-explore",
+    "--claude",
+    "platform_claude",
     is_flag=True,
-    help="Disable file exploration hints in Claude prompt (limits Claude's search capabilities)",
+    help="Generate instructions for Claude Code platform",
 )
 @click.option(
-    "--no-stream",
+    "--codex",
+    "platform_codex",
     is_flag=True,
-    help="Disable streaming output - show complete results at once",
+    help="Generate instructions for OpenAI Codex platform",
 )
 @click.option(
-    "--quiet",
-    "-q",
+    "--gemini",
+    "platform_gemini",
     is_flag=True,
-    help="Quiet mode - minimal output, only show Claude's analysis results",
+    help="Generate instructions for Google Gemini platform",
 )
 @click.option(
-    "--dry-run-show-claude-prompt",
+    "--opencode",
+    "platform_opencode",
     is_flag=True,
-    help="Debug mode: show the full prompt sent to Claude without executing analysis",
+    help="Generate instructions for OpenCode platform",
 )
 @click.option(
-    "--show-claude-plan",
-    is_flag=True,
-    help="Show real-time tool usage tracking and generate summary of Claude's analysis strategy",
+    "--q", "platform_q", is_flag=True, help="Generate instructions for Q platform"
 )
 @click.option(
-    "--rag-first",
+    "--junie",
+    "platform_junie",
     is_flag=True,
-    help="Use legacy RAG-first approach: run semantic search upfront, then send all results to Claude. Default is claude-first: Claude uses search on-demand.",
+    help="Generate instructions for Junie platform",
 )
 @click.option(
-    "--include-file-list",
+    "--project",
+    "scope_project",
     is_flag=True,
-    help="Include full project directory listing in Claude prompt for better project understanding (increases prompt size)",
+    help="Install instructions in project root (./CLAUDE.md)",
 )
-@click.pass_context
-def claude(
-    ctx,
-    question: str,
-    limit: int,
-    context_lines: int,
-    language: Optional[str],
-    path: Optional[str],
-    min_score: Optional[float],
-    max_turns: int,
-    no_explore: bool,
-    no_stream: bool,
-    quiet: bool,
-    dry_run_show_claude_prompt: bool,
-    show_claude_plan: bool,
-    rag_first: bool,
-    include_file_list: bool,
+@click.option(
+    "--global",
+    "scope_global",
+    is_flag=True,
+    help="Install instructions globally (~/.claude/CLAUDE.md)",
+)
+@click.option(
+    "--show-only",
+    is_flag=True,
+    help="Preview instruction content without writing files",
+)
+def teach_ai(
+    platform_claude: bool,
+    platform_codex: bool,
+    platform_gemini: bool,
+    platform_opencode: bool,
+    platform_q: bool,
+    platform_junie: bool,
+    scope_project: bool,
+    scope_global: bool,
+    show_only: bool,
 ):
-    """AI-powered code analysis using Claude with semantic search.
+    """Generate AI platform instructions for semantic code search.
+
+    Creates instruction files (like CLAUDE.md) that teach AI assistants how to use
+    cidx for semantic code search. Instructions are loaded from template files in
+    prompts/ai_instructions/, allowing non-developers to update content without
+    code changes.
 
     \b
-    Two analysis approaches available:
+    USAGE EXAMPLES:
+      # Install Claude instructions in project
+      cidx teach-ai --claude --project
 
-    DEFAULT (Claude-First):
-    1. Send question directly to Claude with project context
-    2. Claude uses semantic search on-demand via cidx query tool
-    3. More interactive, adaptive analysis
+      # Install Claude instructions globally
+      cidx teach-ai --claude --global
 
-    LEGACY (--rag-first):
-    1. Run semantic search to find relevant code upfront
-    2. Extract context around matches
-    3. Send all context + question to Claude for analysis
+      # Preview instruction content
+      cidx teach-ai --claude --show-only
 
     \b
-    CAPABILITIES:
-      • Natural language code questions and explanations
-      • Architecture analysis and recommendations
-      • Code pattern identification and best practices
-      • Debugging assistance and error analysis
-      • Implementation guidance and examples
-      • Cross-file relationship analysis
+    PLATFORMS:
+      --claude      Claude Code platform
+      --codex       OpenAI Codex platform
+      --gemini      Google Gemini platform
+      --opencode    OpenCode platform
+      --q           Q platform
+      --junie       Junie platform
 
     \b
-    SEARCH INTEGRATION:
-      Uses your existing semantic search index to find relevant code context.
-      Claude can also perform additional searches during analysis to explore
-      related concepts and provide comprehensive answers.
-
-    \b
-    FILTERING OPTIONS:
-      Same as regular search - filter by language, path, and similarity score
-      to focus Claude's analysis on specific parts of your codebase.
-
-    \b
-    EXAMPLES:
-      code-indexer claude "How does authentication work in this app?"
-      code-indexer claude "Show me the database schema design" --language sql
-      code-indexer claude "Find security vulnerabilities" --min-score 0.8
-      code-indexer claude "Explain the API routing logic" --path */api/*
-      code-indexer claude "How to add a new feature?" --context-lines 300
-      code-indexer claude "Debug this error pattern" --no-stream
-      code-indexer claude "Quick analysis" --quiet  # Just the response, no headers
-      code-indexer claude "Test prompt" --dry-run-show-claude-prompt  # Show prompt without executing
-      code-indexer claude "Analyze the codebase" --show-claude-plan  # Real-time tool usage tracking
-
-    \b
-    STREAMING:
-      Use --stream to see Claude's analysis as it's generated, helpful for
-      longer analyses or when you want immediate feedback.
-
-    \b
-    PROMPT DEBUGGING:
-      Use --dry-run-show-claude-prompt to see the exact prompt that would be
-      sent to Claude without actually executing the query. This is helpful for:
-      • Iterating on prompt improvements
-      • Understanding what context is being provided
-      • Debugging issues with prompt generation
-      • Optimizing context size and relevance
-
-    \b
-    TOOL USAGE TRACKING:
-      Use --show-claude-plan to see real-time feedback on Claude's tool usage
-      and get a comprehensive summary of the problem-solving approach:
-      • 🔍✨ Visual cues for semantic search (cidx) usage (preferred)
-      • 😞 Visual cues for text-based search (grep) usage (discouraged)
-      • 📖 File reading and exploration activities
-      • Real-time status line showing current tool activity
-      • Final summary narrative of Claude's approach and statistics
-
-    \b
-    REQUIREMENTS:
-      • Claude CLI must be installed: https://docs.anthropic.com/en/docs/claude-code
-      • Services must be running: code-indexer start
-      • Codebase must be indexed: code-indexer index
-
-    Results include Claude's analysis plus metadata about contexts used.
+    SCOPE:
+      --project     Install in project root (./CLAUDE.md)
+      --global      Install globally (~/.claude/CLAUDE.md)
+      --show-only   Preview without writing files
     """
-    config_manager = ctx.obj["config_manager"]
+    console = Console()
 
-    try:
-        # Lazy imports for claude command
-        from .services.generic_query_service import GenericQueryService
-        from .services.claude_integration import (
-            ClaudeIntegrationService,
-            check_claude_sdk_availability,
+    # Validate platform flag (exactly one required)
+    platforms = [
+        platform_claude,
+        platform_codex,
+        platform_gemini,
+        platform_opencode,
+        platform_q,
+        platform_junie,
+    ]
+    platform_count = sum(platforms)
+
+    if platform_count == 0:
+        console.print(
+            "❌ Platform required: --claude, --codex, --gemini, --opencode, --q, or --junie",
+            style="red",
         )
-        from .services.language_mapper import LanguageMapper
+        sys.exit(1)
 
-        # Check Claude CLI availability
-        if (
-            not check_claude_sdk_availability()
-        ):  # This function now checks CLI availability
-            console.print(
-                "❌ Claude CLI not available. Install it following:", style="red"
-            )
-            console.print("   https://docs.anthropic.com/en/docs/claude-code")
+    if platform_count > 1:
+        console.print("❌ Only one platform flag allowed at a time", style="red")
+        sys.exit(1)
+
+    # Validate scope flag (required unless --show-only)
+    if not show_only:
+        scopes = [scope_project, scope_global]
+        scope_count = sum(scopes)
+
+        if scope_count == 0:
+            console.print("❌ Scope required: --project or --global", style="red")
             sys.exit(1)
 
-        config = config_manager.load()
+        if scope_count > 1:
+            console.print("❌ Only one scope flag allowed at a time", style="red")
+            sys.exit(1)
 
-        # If in dry-run mode, skip service health checks
-        if not dry_run_show_claude_prompt:
-            # Quick health checks with shorter timeout for better UX in Claude command
-            # Create temporary clients with 3-second timeout for health checks
-            import httpx
+    # Determine platform name for template lookup
+    if platform_claude:
+        platform_name = "claude"
+    elif platform_codex:
+        platform_name = "codex"
+    elif platform_gemini:
+        platform_name = "gemini"
+    elif platform_opencode:
+        platform_name = "opencode"
+    elif platform_q:
+        platform_name = "q"
+    elif platform_junie:
+        platform_name = "junie"
+    else:
+        console.print("❌ Internal error: No platform selected", style="red")
+        sys.exit(1)
 
-            try:
-                # Quick embedding service check
-                if config.embedding_provider == "ollama":
-                    quick_client = httpx.Client(
-                        base_url=config.ollama.host, timeout=3.0
-                    )
-                    response = quick_client.get("/api/tags")
-                    quick_client.close()
-                    if response.status_code != 200:
-                        raise Exception("Ollama not responding")
+    # Load template content
+    try:
+        # Find template file relative to this CLI module
+        cli_dir = Path(__file__).parent
+        project_root = cli_dir.parent.parent
+        template_path = (
+            project_root / "prompts" / "ai_instructions" / f"{platform_name}.md"
+        )
 
-                # Quick Qdrant check
-                quick_qdrant = httpx.Client(base_url=config.qdrant.host, timeout=3.0)
-                response = quick_qdrant.get("/healthz")
-                quick_qdrant.close()
-                if response.status_code != 200:
-                    raise Exception("Qdrant not responding")
-
-            except Exception:
-                console.print(
-                    "❌ Services not available. Run 'code-indexer start' first.",
-                    style="red",
-                )
-                sys.exit(1)
-
-        # For dry-run mode, we only need minimal initialization
-        if dry_run_show_claude_prompt:
-            # Initialize only what's needed for prompt generation
-            # Initialize query service for git-aware filtering (doesn't need services)
-            query_service = GenericQueryService(config.codebase_dir, config)
-
-            # Get project context
-            branch_context = query_service.get_current_branch_context()
-            if not quiet:
-                if branch_context["git_available"]:
-                    console.print(f"📂 Git repository: {branch_context['project_id']}")
-                    console.print(
-                        f"🌿 Current branch: {branch_context['current_branch']}"
-                    )
-                else:
-                    console.print(f"📁 Non-git project: {branch_context['project_id']}")
-
-            # Initialize Claude integration service (needed for prompt generation)
-            claude_service = ClaudeIntegrationService(
-                codebase_dir=config.codebase_dir,
-                project_name=branch_context["project_id"],
+        if not template_path.exists():
+            console.print(
+                f"❌ Template not found: {template_path}",
+                style="red",
             )
-
-            # Skip to dry-run handling without initializing other services
-            embedding_provider = None
-            qdrant_client = None
-        else:
-            # Initialize services (after health checks pass)
-            embedding_provider = EmbeddingProviderFactory.create(config, console)
-            qdrant_client = QdrantClient(
-                config.qdrant, console, Path(config.codebase_dir)
+            console.print(
+                f"   Expected template at: prompts/ai_instructions/{platform_name}.md"
             )
+            sys.exit(1)
 
-            # Ensure provider-aware collection is set for search
-            collection_name = qdrant_client.resolve_collection_name(
-                config, embedding_provider
-            )
-            qdrant_client._current_collection_name = collection_name
-
-            # Ensure payload indexes exist (read-only check for query operations)
-            qdrant_client.ensure_payload_indexes(collection_name, context="query")
-
-            # Initialize query service for git-aware filtering
-            query_service = GenericQueryService(config.codebase_dir, config)
-
-            # Get project context
-            branch_context = query_service.get_current_branch_context()
-            if not quiet:
-                if branch_context["git_available"]:
-                    console.print(f"📂 Git repository: {branch_context['project_id']}")
-                    console.print(
-                        f"🌿 Current branch: {branch_context['current_branch']}"
-                    )
-                else:
-                    console.print(f"📁 Non-git project: {branch_context['project_id']}")
-
-            # Initialize Claude integration service (needed for both approaches)
-            claude_service = ClaudeIntegrationService(
-                codebase_dir=config.codebase_dir,
-                project_name=branch_context["project_id"],
-            )
-
-        # Branch based on approach: claude-first (default) or RAG-first (legacy)
-        if rag_first and not dry_run_show_claude_prompt:
-            # LEGACY RAG-FIRST APPROACH
-            if not quiet:
-                console.print("🔄 Using legacy RAG-first approach")
-                console.print(f"🔍 Performing semantic search: '{question}'")
-                console.print(
-                    f"📊 Limit: {limit}  < /dev/null |  Context: {context_lines} lines"
-                )
-
-            # Ensure we have required services for RAG-first approach
-            if embedding_provider is None or qdrant_client is None:
-                console.print(
-                    "❌ Services not initialized for RAG-first approach", style="red"
-                )
-                sys.exit(1)
-
-            if not quiet:
-                with console.status("Generating query embedding..."):
-                    embedding_provider.get_embedding(question)
-            else:
-                embedding_provider.get_embedding(question)
-
-            # Get query embedding
-            query_embedding = embedding_provider.get_embedding(question)
-
-            # Build filter conditions
-            filter_conditions = {}
-            if language:
-                # Apply language mapping for friendly names
-                language_mapper = LanguageMapper()
-                language_filter = language_mapper.build_language_filter(language)
-                filter_conditions["must"] = [language_filter]
-            if path:
-                filter_conditions.setdefault("must", []).append(
-                    {"key": "path", "match": {"text": path}}
-                )
-
-            # Get current embedding model for filtering
-            current_model = embedding_provider.get_current_model()
-
-            # Perform semantic search using model-specific filter
-            raw_results = qdrant_client.search_with_model_filter(
-                query_vector=query_embedding,
-                embedding_model=current_model,
-                limit=limit * 2,  # Get more results to allow for git filtering
-                score_threshold=min_score,
-                additional_filters=filter_conditions,
-            )
-
-            # Apply git-aware filtering
-            search_results = query_service.filter_results_by_current_branch(raw_results)
-
-            # Limit to requested number after filtering
-            search_results = search_results[:limit]
-
-            # Handle dry-run mode for RAG-first: show the prompt that would be sent to Claude
-            if dry_run_show_claude_prompt:
-                if not quiet:
-                    console.print("🔍 Generating RAG-first Claude prompt...")
-
-                # Extract contexts from search results for prompt generation
-                contexts = (
-                    claude_service.context_extractor.extract_context_from_results(
-                        search_results, context_lines
-                    )
-                )
-
-                # Generate the prompt that would be sent to Claude
-                prompt = claude_service.create_analysis_prompt(
-                    user_query=question,
-                    contexts=contexts,
-                    project_info=branch_context,
-                    enable_exploration=not no_explore,
-                )
-
-                if not quiet:
-                    console.print("\n📄 Generated Claude Prompt (RAG-first):")
-                    console.print("-" * 80)
-
-                # Display the prompt without Rich formatting to preserve exact line breaks
-                print(prompt, end="")
-
-                if not quiet:
-                    console.print("\n" + "-" * 80)
-                    console.print(
-                        "💡 This is the RAG-first prompt that would be sent to Claude."
-                    )
-                    console.print(f"   Based on {len(search_results)} search results.")
-                    console.print(
-                        "   Use without --dry-run-show-claude-prompt to execute the analysis."
-                    )
-
-                return  # Exit early without running Claude
-
-            # Run RAG-based analysis
-            analysis_result = claude_service.run_analysis(
-                user_query=question,
-                search_results=search_results,
-                context_lines=context_lines,
-                project_info=branch_context,
-                enable_exploration=not no_explore,
-                stream=not no_stream,
-                quiet=quiet,
-                show_claude_plan=show_claude_plan,
-            )
-
-            # Handle results
-            if not analysis_result.success:
-                if not quiet:
-                    console.print(
-                        f"❌ Claude analysis failed: {analysis_result.error}",
-                        style="red",
-                    )
-                sys.exit(1)
-
-        else:
-            # NEW CLAUDE-FIRST APPROACH
-            if not quiet:
-                console.print("✨ Using new claude-first approach")
-                console.print("🧠 Claude will use semantic search on-demand")
-
-            # Handle dry-run mode: just show the prompt without executing
-            if dry_run_show_claude_prompt:
-                if not quiet:
-                    console.print("🔍 Generating Claude prompt...")
-
-                # Generate the prompt that would be sent to Claude
-                prompt = claude_service.create_claude_first_prompt(
-                    user_query=question,
-                    project_info=branch_context,
-                    include_project_structure=include_file_list,
-                )
-
-                if not quiet:
-                    console.print("\n📄 Generated Claude Prompt:")
-                    console.print("-" * 80)
-
-                # Display the prompt without Rich formatting to preserve exact line breaks
-                print(prompt, end="")
-
-                if not quiet:
-                    console.print("\n" + "-" * 80)
-                    console.print("💡 This is the prompt that would be sent to Claude.")
-                    console.print(
-                        "   Use without --dry-run-show-claude-prompt to execute the analysis."
-                    )
-
-                return  # Exit early without running Claude
-
-            # Run claude-first analysis directly
-            use_streaming = not no_stream
-
-            analysis_result = claude_service.run_claude_first_analysis(
-                user_query=question,
-                project_info=branch_context,
-                max_turns=max_turns,
-                stream=use_streaming,
-                quiet=quiet,
-                show_claude_plan=show_claude_plan,
-                include_project_structure=include_file_list,
-            )
-
-            # Handle results
-            if not analysis_result.success:
-                if not quiet:
-                    console.print(
-                        f"❌ Claude analysis failed: {analysis_result.error}",
-                        style="red",
-                    )
-                sys.exit(1)
-
-            # Show results (simplified for claude-first)
-            if not use_streaming and not quiet:
-                console.print("\n🤖 Claude Analysis Results")
-                console.print("─" * 80)
-
-            # Show metadata
-            if not quiet and not (show_claude_plan and use_streaming):
-                console.print("\n📊 Analysis Summary:")
-                console.print("   • Claude-first approach used (no upfront RAG)")
-                console.print("   • Semantic search performed on-demand by Claude")
-
-        # Clear cache to free memory
-        claude_service.clear_cache()
+        template_content = template_path.read_text()
 
     except Exception as e:
-        console.print(f"❌ Claude analysis failed: {e}", style="red")
-        if ctx.obj["verbose"]:
-            import traceback
-
-            console.print(traceback.format_exc())
+        console.print(f"❌ Failed to load template: {e}", style="red")
         sys.exit(1)
+
+    # Handle --show-only mode
+    if show_only:
+        console.print(f"📄 {platform_name.title()} Platform Instructions:\n")
+        console.print(template_content)
+        return
+
+    # Determine target file path
+    if scope_project:
+        target_path = Path.cwd() / "CLAUDE.md"
+        scope_desc = "project root"
+    else:  # scope_global
+        home_dir = Path.home()
+        claude_dir = home_dir / ".claude"
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        target_path = claude_dir / "CLAUDE.md"
+        scope_desc = "~/.claude/"
+
+    # Backup existing file if it exists
+    if target_path.exists():
+        backup_path = target_path.with_suffix(".md.backup")
+        try:
+            shutil.copy2(target_path, backup_path)
+            console.print(f"💾 Backed up existing file to: {backup_path}")
+        except Exception as e:
+            console.print(f"⚠️  Warning: Failed to create backup: {e}", style="yellow")
+
+    # Write instruction file
+    try:
+        target_path.write_text(template_content)
+        console.print(
+            f"✅ {platform_name.title()} instructions installed to {scope_desc}",
+            style="green",
+        )
+        console.print(f"   File: {target_path}")
+    except Exception as e:
+        console.print(f"❌ Failed to write instruction file: {e}", style="red")
+        sys.exit(1)
+
+
+@cli.command()
+def claude():
+    """
+    DEPRECATED: This command has been removed.
+
+    The 'claude' command has been removed in favor of the new 'teach-ai' command
+    for installing AI platform instructions.
+
+    \b
+    MIGRATION:
+    Old: cidx claude "question"
+    New: Use cidx teach-ai --claude --project (to teach Claude about cidx)
+
+    \b
+    If you were using 'cidx claude' for AI-powered code analysis:
+      • That feature has been removed from cidx
+      • Use 'cidx teach-ai --claude' to teach Claude Code about semantic search
+      • Claude Code will then use 'cidx query' for semantic code search
+    """
+    console = Console()
+    console.print("❌ Command 'claude' has been removed.", style="red bold")
+    console.print("")
+    console.print(
+        "The 'claude' command has been replaced with 'teach-ai'.", style="yellow"
+    )
+    console.print("")
+    console.print("📚 To teach Claude Code about cidx semantic search:", style="bold")
+    console.print("   cidx teach-ai --claude --project   (project-level)")
+    console.print("   cidx teach-ai --claude --global    (global-level)")
+    console.print("")
+    console.print("💡 After running teach-ai:", style="bold")
+    console.print("   • Claude Code will know how to use 'cidx query'")
+    console.print("   • Use 'cidx query' for semantic code search")
+    console.print("   • Claude Code will use semantic search automatically")
+    sys.exit(1)
 
 
 @cli.command()

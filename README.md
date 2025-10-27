@@ -224,8 +224,8 @@ cidx query "authentication logic"
 cidx query "user" --language python --min-score 0.7
 cidx query "save" --path "*/models/*" --limit 20
 
-# 6. AI-powered analysis (requires Claude CLI)
-cidx claude "How does auth work in this app?"
+# 6. Teach AI assistants about semantic search (optional)
+cidx teach-ai --claude --project
 ```
 
 ### Alternative: Custom Configuration
@@ -425,24 +425,36 @@ javascript: [js, jsx]           # Modify existing mappings
 
 Changes take effect on the next query execution. The file is automatically created during `cidx init` or on first use.
 
-### AI Analysis Commands
+### AI Platform Instructions
+
+The `teach-ai` command generates instruction files that teach AI assistants how to use `cidx` for semantic code search. Instructions are loaded from template files, allowing non-technical users to update content without code changes.
 
 ```bash
-# Standard analysis
-cidx claude "How does auth work?"     # AI-powered analysis
-cidx claude "Debug this" --limit 15   # Custom search limit
-cidx claude "Analyze" --context-lines 200  # More context
-cidx claude "Quick check" --quiet     # Minimal output
-cidx claude "Review code" --no-stream # No streaming output
+# Install Claude instructions in project root
+cidx teach-ai --claude --project    # Creates ./CLAUDE.md
 
-# Advanced options
-cidx claude "Test" --include-file-list  # Include project file list
-cidx claude "Legacy" --rag-first       # Use legacy RAG-first approach
+# Install Claude instructions globally
+cidx teach-ai --claude --global     # Creates ~/.claude/CLAUDE.md
 
-# Debugging
-cidx claude "Test" --dry-run-show-claude-prompt  # Show prompt without execution
-cidx claude "Analyze" --show-claude-plan        # Show tool usage tracking
+# Preview instruction content
+cidx teach-ai --claude --show-only  # Show without writing
+
+# Supported AI platforms
+cidx teach-ai --claude              # Claude Code
+cidx teach-ai --codex               # OpenAI Codex
+cidx teach-ai --gemini              # Google Gemini
+cidx teach-ai --opencode            # OpenCode
+cidx teach-ai --q                   # Q
+cidx teach-ai --junie               # Junie
+
+# Combine platform and scope flags
+cidx teach-ai --gemini --global     # Gemini global install
+cidx teach-ai --codex --project     # Codex project install
 ```
+
+**Template Location**: `prompts/ai_instructions/{platform}_instructions.md`
+
+**Safety Features**: Automatically backs up existing instruction files before overwriting.
 
 ### Data Management Commands
 
