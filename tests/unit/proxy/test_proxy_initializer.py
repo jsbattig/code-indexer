@@ -166,7 +166,9 @@ class TestNestedProxyDetection:
         parent_config = parent_dir / ".code-indexer"
         parent_config.mkdir()
         # Regular config without proxy_mode flag
-        (parent_config / "config.json").write_text('{"embedding_provider": "ollama"}')
+        (parent_config / "config.json").write_text(
+            '{"embedding_provider": "voyage-ai"}'
+        )
 
         child_dir = parent_dir / "child_proxy"
         child_dir.mkdir()

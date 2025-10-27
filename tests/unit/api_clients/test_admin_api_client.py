@@ -6,7 +6,6 @@ Tests admin user creation functionality with actual HTTP requests
 and authentication flows using real CIDX server infrastructure.
 """
 
-import asyncio
 import pytest
 import tempfile
 from pathlib import Path
@@ -25,27 +24,16 @@ class TestAdminAPIClientRealServer:
     """AdminAPIClient tests using real CIDX server - Foundation #1 compliant."""
 
     @pytest.fixture
-    def test_server(self):
+    async def test_server(self):
         """Start real CIDX server for testing."""
-
-        async def _start_server():
-            context = CIDXServerTestContext()
-            server = await context.__aenter__()
-            server.server_url = context.base_url  # Add server_url to server object
-            return server, context
-
-        async def _stop_server(context):
-            await context.__aexit__(None, None, None)
-
-        # Start server
-        loop = asyncio.get_event_loop()
-        server, context = loop.run_until_complete(_start_server())
+        context = CIDXServerTestContext()
+        server = await context.__aenter__()
+        server.server_url = context.base_url  # Add server_url to server object
 
         try:
             yield server
         finally:
-            # Stop server
-            loop.run_until_complete(_stop_server(context))
+            await context.__aexit__(None, None, None)
 
     @pytest.fixture
     def admin_credentials(self) -> Dict[str, Any]:

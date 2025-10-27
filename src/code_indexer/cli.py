@@ -20,29 +20,23 @@ from rich.table import Table
 # Rich progress imports removed - using MultiThreadedProgressManager instead
 
 from .config import ConfigManager, Config
-from .services import QdrantClient, DockerManager, EmbeddingProviderFactory
-from .services.smart_indexer import SmartIndexer
-from .services.generic_query_service import GenericQueryService
-from .services.language_mapper import LanguageMapper
-from .services.language_validator import LanguageValidator
-from .backends.backend_factory import BackendFactory
-from .services.claude_integration import (
-    ClaudeIntegrationService,
-    check_claude_sdk_availability,
-)
-from .services.config_fixer import ConfigurationRepairer, generate_fix_report
 from .disabled_commands import get_command_mode_icons
 from .utils.enhanced_messaging import (
     get_conflicting_flags_message,
     get_service_unavailable_message,
 )
-from .services.cidx_prompt_generator import create_cidx_ai_prompt
 from .mode_detection.command_mode_detector import CommandModeDetector, find_project_root
 from .disabled_commands import require_mode
-from .remote.credential_manager import ProjectCredentialManager
-from .api_clients.repos_client import ReposAPIClient
-from .api_clients.admin_client import AdminAPIClient
 from . import __version__
+
+# Module-level imports for test mocking (noqa: F401 = intentionally unused for test patching)
+from .api_clients.admin_client import AdminAPIClient  # noqa: F401
+from .api_clients.repos_client import ReposAPIClient  # noqa: F401
+from .backends.backend_factory import BackendFactory  # noqa: F401
+from .services.embedding_factory import EmbeddingProviderFactory  # noqa: F401
+from .services.docker_manager import DockerManager  # noqa: F401
+from .services.qdrant import QdrantClient  # noqa: F401
+from .remote.credential_manager import ProjectCredentialManager  # noqa: F401
 
 
 def run_async(coro):
@@ -103,6 +97,8 @@ logger = logging.getLogger(__name__)
 def _generate_language_help_text() -> str:
     """Generate dynamic help text for language option based on LanguageMapper."""
     try:
+        from .services.language_mapper import LanguageMapper
+
         language_mapper = LanguageMapper()
         supported_languages = sorted(language_mapper.get_supported_languages())
 
@@ -1041,6 +1037,9 @@ def cli(
     # Handle --use-cidx-prompt flag (early return)
     if use_cidx_prompt:
         try:
+            # Lazy import for prompt generation
+            from .services.cidx_prompt_generator import create_cidx_ai_prompt
+
             # Determine format (compact overrides format option)
             prompt_format = "compact" if compact else format
 
@@ -1116,8 +1115,8 @@ def cli(
 @click.option(
     "--embedding-provider",
     type=click.Choice(["ollama", "voyage-ai"]),
-    default="ollama",
-    help="Embedding provider to use (default: ollama)",
+    default="voyage-ai",
+    help="Embedding provider to use (default: voyage-ai)",
 )
 @click.option(
     "--voyage-model",
@@ -1198,12 +1197,12 @@ def init(
 
     \b
     NOTE: This command is optional. If you skip init and run 'start' directly,
-    a default configuration will be created automatically with Ollama provider
+    a default configuration will be created automatically with VoyageAI provider
     and standard settings. Only use init if you want to customize settings.
 
     \b
     INITIALIZATION MODES:
-      🏠 Local Mode (default): Creates local configuration with Ollama + Qdrant
+      🏠 Local Mode (default): Creates local configuration with VoyageAI embeddings
       ☁️  Remote Mode: Connects to existing CIDX server (--remote option)
 
     \b
@@ -1220,8 +1219,8 @@ def init(
 
     \b
     EMBEDDING PROVIDERS:
-      • ollama: Local AI models (default, no API key required)
-      • voyage-ai: VoyageAI API (requires VOYAGE_API_KEY environment variable)
+      • voyage-ai: VoyageAI API (default, requires VOYAGE_API_KEY environment variable)
+      • ollama: Local AI models (experimental, no API key required)
 
     \b
     QDRANT SEGMENT SIZE:
@@ -1233,9 +1232,9 @@ def init(
 
     \b
     EXAMPLES:
-      code-indexer init                                    # Basic initialization with Ollama
+      code-indexer init                                    # Basic initialization with VoyageAI
       code-indexer init --interactive                     # Interactive configuration
-      code-indexer init --embedding-provider voyage-ai    # Use VoyageAI
+      code-indexer init --embedding-provider ollama       # Use Ollama (experimental)
       code-indexer init --voyage-model voyage-large-2     # Specify VoyageAI model
       code-indexer init --max-file-size 2000000          # 2MB file limit
       code-indexer init --qdrant-segment-size 50         # Git-friendly 50MB segments
@@ -1519,9 +1518,11 @@ def init(
 
             # Prompt for provider selection
             if click.confirm(
-                "\nUse VoyageAI instead of local Ollama? (requires VOYAGE_API_KEY)",
+                "\nUse Ollama instead of VoyageAI? (experimental, slower)",
                 default=False,
             ):
+                embedding_provider = "ollama"
+            else:
                 embedding_provider = "voyage-ai"
                 if not os.getenv("VOYAGE_API_KEY"):
                     console.print(
@@ -1533,8 +1534,6 @@ def init(
 
                 # Prompt for VoyageAI model
                 voyage_model = click.prompt("VoyageAI model", default="voyage-code-3")
-            else:
-                embedding_provider = "ollama"
 
         # Create default config with target_dir for proper initialization
         # target_dir respects --codebase-dir parameter
@@ -1611,7 +1610,6 @@ def init(
         config_manager.save_with_documentation(config)
 
         # Initialize vector storage backend
-        from .backends.backend_factory import BackendFactory
 
         backend = BackendFactory.create(config=config, project_root=config.codebase_dir)
         try:
@@ -1808,6 +1806,8 @@ def start(
     config_manager = ctx.obj["config_manager"]
 
     try:
+        # Lazy imports for start command
+
         # Use quiet console if requested
         setup_console = Console(quiet=quiet) if quiet else console
 
@@ -2298,8 +2298,8 @@ def index(
     try:
         config = config_manager.load()
 
-        # Initialize services
-        from .backends.backend_factory import BackendFactory
+        # Initialize services - lazy imports for index path
+        from .services.smart_indexer import SmartIndexer
 
         embedding_provider = EmbeddingProviderFactory.create(config, console)
         backend = BackendFactory.create(
@@ -2724,6 +2724,9 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
         from .services.git_aware_watch_handler import GitAwareWatchHandler
 
         config = config_manager.load()
+
+        # Lazy imports for watch services
+        from .services.smart_indexer import SmartIndexer
 
         # Initialize services (same as index command)
         embedding_provider = EmbeddingProviderFactory.create(config, console)
@@ -3188,8 +3191,10 @@ def query(
     try:
         config = config_manager.load()
 
-        # Initialize services
-        from .backends.backend_factory import BackendFactory
+        # Initialize services - lazy imports for query path
+        from .services.generic_query_service import GenericQueryService
+        from .services.language_validator import LanguageValidator
+        from .services.language_mapper import LanguageMapper
 
         embedding_provider = EmbeddingProviderFactory.create(config, console)
         backend = BackendFactory.create(
@@ -3871,6 +3876,14 @@ def claude(
     config_manager = ctx.obj["config_manager"]
 
     try:
+        # Lazy imports for claude command
+        from .services.generic_query_service import GenericQueryService
+        from .services.claude_integration import (
+            ClaudeIntegrationService,
+            check_claude_sdk_availability,
+        )
+        from .services.language_mapper import LanguageMapper
+
         # Check Claude CLI availability
         if (
             not check_claude_sdk_availability()
@@ -4361,6 +4374,10 @@ def _status_impl(ctx, force_docker: bool):
         qdrant_ok = False  # Initialize to False
         qdrant_client = None  # Initialize to None
 
+        # Initialize variables for recovery guidance (both backends need these defined)
+        missing_components: List[str] = []
+        fs_index_files_display: Optional[str] = None
+
         if backend_provider == "filesystem":
             # Filesystem backend - no containers required
             from .storage.filesystem_vector_store import FilesystemVectorStore
@@ -4402,15 +4419,85 @@ def _status_impl(ctx, force_docker: bool):
                             dims_status = "✅" if dims_ok else "⚠️"
 
                             fs_details = f"Collection: {collection_name}\nVectors: {vector_count:,} | Files: {file_count} | Dims: {dims_status}{expected_dims}"
+
+                            # Check critical index files for filesystem backend
+                            collection_path = index_path / collection_name
+                            proj_matrix = collection_path / "projection_matrix.npy"
+                            hnsw_index = collection_path / "hnsw_index.bin"
+
+                            # Build index files status
+                            index_files_status = []
+
+                            # Projection matrix (CRITICAL - queries fail without it)
+                            if proj_matrix.exists():
+                                size_kb = proj_matrix.stat().st_size / 1024
+                                if size_kb < 1024:
+                                    index_files_status.append(
+                                        f"Projection Matrix: ✅ {size_kb:.0f} KB"
+                                    )
+                                else:
+                                    size_mb = size_kb / 1024
+                                    index_files_status.append(
+                                        f"Projection Matrix: ✅ {size_mb:.1f} MB"
+                                    )
+                            else:
+                                index_files_status.append(
+                                    "Projection Matrix: ❌ MISSING (index unrecoverable!)"
+                                )
+
+                            # HNSW index (IMPORTANT - queries slow without it)
+                            if hnsw_index.exists():
+                                size_mb = hnsw_index.stat().st_size / (1024 * 1024)
+                                index_files_status.append(
+                                    f"HNSW Index: ✅ {size_mb:.0f} MB"
+                                )
+                            else:
+                                index_files_status.append(
+                                    "HNSW Index: ⚠️ Missing (queries will be slow)"
+                                )
+
+                            # ID index check (binary file that persists to disk)
+                            id_index_file = collection_path / "id_index.bin"
+                            if id_index_file.exists():
+                                size_kb = id_index_file.stat().st_size / 1024
+                                index_files_status.append(
+                                    f"ID Index: ✅ {size_kb:.0f} KB"
+                                )
+                            else:
+                                index_files_status.append(
+                                    "ID Index: ⚠️ Missing (rebuilds automatically)"
+                                )
+
+                            # Track missing components for recovery guidance
+                            has_projection_matrix = proj_matrix.exists()
+                            has_hnsw_index = hnsw_index.exists()
+                            has_id_index = id_index_file.exists()
+
+                            if not has_projection_matrix:
+                                missing_components.append("projection_matrix")
+                            if not has_hnsw_index:
+                                missing_components.append("hnsw")
+                            if not has_id_index:
+                                missing_components.append("id_index")
+
+                            # Store for later display
+                            fs_index_files_display = "\n".join(index_files_status)
                         else:
                             fs_details = f"Collection: {collection_name}\nStatus: Not created - run 'cidx index'"
+                            fs_index_files_display = None
                     except Exception as e:
                         fs_details = f"Error checking collection: {str(e)[:50]}"
+                        fs_index_files_display = None
                 else:
                     fs_details = f"Storage path: {index_path}\nStatus: Not accessible"
+                    fs_index_files_display = None
 
                 table.add_row("Vector Storage", fs_status, fs_details)
                 table.add_row("Storage Path", "📁", str(index_path))
+
+                # Add index files status if available
+                if fs_index_files_display:
+                    table.add_row("Index Files", "📊", fs_index_files_display)
 
             except Exception as e:
                 table.add_row("Vector Storage", "❌ Error", str(e))
@@ -4896,6 +4983,62 @@ def _status_impl(ctx, force_docker: bool):
 
         console.print(table)
 
+        # Display recovery guidance if indexes are missing (filesystem backend only)
+        if (
+            backend_provider == "filesystem"
+            and fs_index_files_display
+            and missing_components
+        ):
+            console.print("\n" + "━" * 80, style="yellow")
+            console.print("⚠️  INDEX RECOVERY GUIDANCE", style="bold yellow")
+            console.print()
+
+            if "projection_matrix" in missing_components:
+                console.print(
+                    "🚨 CRITICAL: Projection Matrix Missing", style="red bold"
+                )
+                console.print(
+                    "   The projection matrix cannot be recovered and all existing vectors are invalid."
+                )
+                console.print()
+                console.print("   Recovery Required:", style="yellow")
+                console.print("   cidx index --clear")
+                console.print()
+                console.print("   This will:", style="dim")
+                console.print("   • Delete all vectors and indexes")
+                console.print("   • Re-process all code files from scratch")
+                console.print("   • Generate new embeddings via VoyageAI API")
+                console.print("   • Create a new projection matrix")
+                console.print()
+                console.print("   ⏱️  Estimated time: 10-30 minutes")
+                console.print("   💵 Cost: VoyageAI API usage charges apply")
+                console.print()
+
+            if "hnsw" in missing_components or "id_index" in missing_components:
+                console.print("🔧 Recoverable Indexes:", style="yellow bold")
+                console.print(
+                    "   These indexes can be rebuilt from existing vector files without re-embedding."
+                )
+                console.print()
+
+                if "hnsw" in missing_components:
+                    console.print(
+                        "   • HNSW Index (affects query performance):", style="cyan"
+                    )
+                    console.print("     cidx index --rebuild-index")
+                    console.print("     Takes ~2-5 minutes, restores fast queries")
+                    console.print()
+
+                if "id_index" in missing_components:
+                    console.print(
+                        "   • ID Index (affects point lookups):", style="cyan"
+                    )
+                    console.print("     Rebuilds automatically on next query")
+                    console.print("     No manual action required")
+                    console.print()
+
+            console.print("━" * 80, style="yellow")
+
     except Exception as e:
         console.print(f"❌ Failed to get status: {e}", style="red")
         sys.exit(1)
@@ -4908,6 +5051,8 @@ def optimize(ctx):
     config_manager = ctx.obj["config_manager"]
 
     try:
+        # Lazy imports for optimize command
+
         config = config_manager.load()
 
         # Initialize Qdrant client
@@ -5012,6 +5157,8 @@ def force_flush(ctx, collection: Optional[str]):
     console.print()
 
     try:
+        # Lazy imports for force_flush command
+
         config = config_manager.load()
 
         # Initialize Qdrant client
@@ -5179,6 +5326,8 @@ def stop(ctx, force_docker: bool):
         sys.exit(exit_code)
 
     try:
+        # Lazy imports for stop command
+
         # Use configuration from CLI context
         config_manager = ctx.obj["config_manager"]
         config_path = config_manager.config_path
@@ -5339,6 +5488,8 @@ def clean_data(
       Perfect for test cleanup and project switching.
     """
     try:
+        # Lazy imports for clean_data command
+
         # Validate mutually exclusive options
         if all_containers and container_type:
             console.print(
@@ -5851,7 +6002,6 @@ def clean(
         config = config_manager.get_config()
 
         # Create backend
-        from .backends.backend_factory import BackendFactory
 
         backend = BackendFactory.create(config, project_root)
 
@@ -5983,7 +6133,6 @@ def list_collections_cmd(ctx):
         config = config_manager.get_config()
 
         # Create backend
-        from .backends.backend_factory import BackendFactory
 
         backend = BackendFactory.create(config, project_root)
 
@@ -6205,6 +6354,9 @@ def fix_config(ctx, dry_run: bool, verbose: bool, force: bool):
         sys.exit(exit_code)
 
     try:
+        # Lazy imports for fix_config command
+        from .services.config_fixer import ConfigurationRepairer, generate_fix_report
+
         # Use configuration from CLI context
         config_manager = ctx.obj["config_manager"]
         if not config_manager or not config_manager.config_path.exists():
@@ -8480,6 +8632,7 @@ def list(ctx, filter: Optional[str]):
             sys.exit(1)
 
         # Create client and fetch repositories with proper cleanup
+
         async def fetch_repositories():
             client = ReposAPIClient(
                 server_url=server_url,
@@ -8866,6 +9019,7 @@ def repos_status(ctx):
             sys.exit(1)
 
         # Create client and fetch status
+
         async def fetch_status():
             client = ReposAPIClient(
                 server_url=server_url,
@@ -9581,7 +9735,6 @@ def execute_repository_activation(
     """Execute repository activation with progress monitoring."""
     import asyncio
     from pathlib import Path
-    from .api_clients.repos_client import ReposAPIClient
     from .mode_detection.command_mode_detector import find_project_root
 
     # Get project root and credentials
@@ -9601,6 +9754,7 @@ def execute_repository_activation(
     progress_display.show_activation_progress(golden_alias, user_alias)
 
     # Create client and execute activation
+
     async def do_activation():
         client = ReposAPIClient(
             server_url=credentials["server_url"],
@@ -9634,7 +9788,6 @@ def execute_repository_deactivation(
     """Execute repository deactivation with cleanup."""
     import asyncio
     from pathlib import Path
-    from .api_clients.repos_client import ReposAPIClient
     from .mode_detection.command_mode_detector import find_project_root
 
     # Get project root and credentials
@@ -9702,7 +9855,6 @@ async def _execute_repository_info(
     activity: bool = False,
 ):
     """Execute repository information retrieval with rich formatting."""
-    from .api_clients.repos_client import ReposAPIClient
 
     # Create client and fetch repository information
     client = ReposAPIClient(
@@ -9733,7 +9885,6 @@ async def _execute_branch_switch(
     create: bool = False,
 ):
     """Execute repository branch switching."""
-    from .api_clients.repos_client import ReposAPIClient
 
     # Create client and switch branch
     client = ReposAPIClient(
@@ -10266,6 +10417,8 @@ def list_jobs(ctx, status: Optional[str], limit: int):
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
             decrypted_creds = credential_manager.decrypt_credentials(
                 encrypted_data=encrypted_data,
@@ -10363,6 +10516,8 @@ def cancel_job(ctx, job_id: str, force: bool):
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
             decrypted_creds = credential_manager.decrypt_credentials(
                 encrypted_data=encrypted_data,
@@ -10471,6 +10626,8 @@ def job_status(ctx, job_id: str):
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
             decrypted_creds = credential_manager.decrypt_credentials(
                 encrypted_data=encrypted_data,
@@ -10768,6 +10925,8 @@ def admin_users_create(
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
 
             # We need username from remote config for decryption
@@ -10830,6 +10989,8 @@ def admin_users_create(
             sys.exit(1)
 
         # Create admin client and create user
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url, credentials=credentials, project_root=project_root
         )
@@ -10932,6 +11093,8 @@ def admin_users_list(ctx, limit: int, offset: int):
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
 
             # We need username from remote config for decryption
@@ -10962,6 +11125,8 @@ def admin_users_list(ctx, limit: int, offset: int):
             sys.exit(1)
 
         # Create admin client and list users
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url, credentials=credentials, project_root=project_root
         )
@@ -11101,6 +11266,8 @@ def admin_users_show(ctx, username: str):
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
             username_for_creds = remote_config.get("username")
             if not username_for_creds:
@@ -11128,6 +11295,8 @@ def admin_users_show(ctx, username: str):
             sys.exit(1)
 
         # Create admin client and get user
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url, credentials=credentials, project_root=project_root
         )
@@ -11235,6 +11404,8 @@ def admin_users_update(ctx, username: str, role: str):
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
             username_for_creds = remote_config.get("username")
             if not username_for_creds:
@@ -11262,6 +11433,8 @@ def admin_users_update(ctx, username: str, role: str):
             sys.exit(1)
 
         # Create admin client
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url, credentials=credentials, project_root=project_root
         )
@@ -11386,6 +11559,8 @@ def admin_users_delete(ctx, username: str, force: bool):
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
             username_for_creds = remote_config.get("username")
             if not username_for_creds:
@@ -11429,9 +11604,12 @@ def admin_users_delete(ctx, username: str, force: bool):
             )
             console.print("This action cannot be undone!")
 
+            # Lazy import for admin client (needed for confirmation display)
+            from .api_clients.admin_client import AdminAPIClient as TempAdminAPIClient
+
             # Show user details before deletion for confirmation
             try:
-                temp_client = AdminAPIClient(
+                temp_client = TempAdminAPIClient(
                     server_url=server_url,
                     credentials=credentials,
                     project_root=project_root,
@@ -11455,6 +11633,8 @@ def admin_users_delete(ctx, username: str, force: bool):
                 sys.exit(0)
 
         # Create admin client and delete user
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url, credentials=credentials, project_root=project_root
         )
@@ -11604,6 +11784,8 @@ def admin_users_change_password(ctx, username: str, password: str, force: bool):
             sys.exit(1)
 
         # Create admin client
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=remote_config["server_url"],
             credentials=credentials,
@@ -11783,6 +11965,8 @@ def admin_repos_add(
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
 
             # We need username from remote config for decryption
@@ -11813,6 +11997,8 @@ def admin_repos_add(
             sys.exit(1)
 
         # Create admin client
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url,
             credentials=credentials,
@@ -11955,6 +12141,8 @@ def admin_repos_list(ctx):
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
 
             # We need username from remote config for decryption
@@ -11986,6 +12174,8 @@ def admin_repos_list(ctx):
             sys.exit(1)
 
         # Create admin client and list repositories with proper cleanup
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url,
             credentials=credentials,
@@ -12168,6 +12358,8 @@ def admin_repos_show(ctx, alias: str):
             sys.exit(1)
 
         # Create admin client and find repository
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url,
             credentials=credentials,
@@ -12390,6 +12582,8 @@ def admin_repos_refresh(ctx, alias: str):
             sys.exit(1)
 
         # Create admin client and refresh repository
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url,
             credentials=credentials,
@@ -12564,6 +12758,8 @@ def admin_repos_delete(ctx, alias: str, force: bool):
             sys.exit(1)
 
         # Create admin client
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url,
             credentials=credentials,

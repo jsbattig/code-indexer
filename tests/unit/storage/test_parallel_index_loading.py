@@ -40,7 +40,9 @@ class TestParallelExecutionMechanism:
             }
             for i in range(10)
         ]
+        store.begin_indexing("test_collection")
         store.upsert_points("test_collection", points)
+        store.end_indexing("test_collection")
 
         # Mock embedding provider to track when it's called
         mock_embedding_provider = Mock()
@@ -86,7 +88,9 @@ class TestParallelExecutionMechanism:
             }
             for i in range(5)
         ]
+        store.begin_indexing("test_collection")
         store.upsert_points("test_collection", points)
+        store.end_indexing("test_collection")
 
         mock_embedding_provider = Mock()
         mock_embedding_provider.get_embedding.return_value = np.random.randn(
@@ -148,7 +152,9 @@ class TestQueryResultCorrectness:
             }
             for i in range(20)
         ]
+        store.begin_indexing("test_collection")
         store.upsert_points("test_collection", points)
+        store.end_indexing("test_collection")
 
         # Create fixed query vector
         np.random.seed(123)
@@ -207,7 +213,9 @@ class TestErrorHandling:
             }
             for i in range(5)
         ]
+        store.begin_indexing("test_collection")
         store.upsert_points("test_collection", points)
+        store.end_indexing("test_collection")
 
         # Mock embedding provider that raises error
         mock_embedding_provider = Mock()
@@ -275,7 +283,9 @@ class TestPerformanceRequirements:
             }
             for i in range(1000)
         ]
+        store.begin_indexing("test_collection")
         store.upsert_points("test_collection", points)
+        store.end_indexing("test_collection")
 
         # Mock embedding provider with realistic delay
         mock_embedding_provider = Mock()
@@ -364,7 +374,9 @@ class TestPerformanceRequirements:
             }
             for i in range(10)
         ]
+        store.begin_indexing("test_collection")
         store.upsert_points("test_collection", points)
+        store.end_indexing("test_collection")
 
         mock_embedding_provider = Mock()
         mock_embedding_provider.get_embedding.return_value = np.random.randn(
@@ -409,7 +421,9 @@ class TestResourceManagement:
             }
             for i in range(5)
         ]
+        store.begin_indexing("test_collection")
         store.upsert_points("test_collection", points)
+        store.end_indexing("test_collection")
 
         mock_embedding_provider = Mock()
         mock_embedding_provider.get_embedding.return_value = np.random.randn(
@@ -481,7 +495,9 @@ class TestResourceManagement:
             }
             for i in range(10)
         ]
+        store.begin_indexing("test_collection")
         store.upsert_points("test_collection", points)
+        store.end_indexing("test_collection")
 
         mock_embedding_provider = Mock()
         mock_embedding_provider.get_embedding.return_value = np.random.randn(

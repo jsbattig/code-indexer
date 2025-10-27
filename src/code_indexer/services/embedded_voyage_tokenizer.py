@@ -27,7 +27,7 @@ class VoyageTokenizer:
     """
 
     # Cache for loaded tokenizers (model_name -> tokenizer instance)
-    _tokenizer_cache = {}
+    _tokenizer_cache: dict[str, object] = {}
 
     @staticmethod
     def _get_tokenizer(model: str):

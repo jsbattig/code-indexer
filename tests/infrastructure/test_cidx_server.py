@@ -119,6 +119,12 @@ class UpdateUserRequest(BaseModel):
     role: str = Field(..., min_length=1)
 
 
+class ChangePasswordRequest(BaseModel):
+    """Change password request model."""
+
+    new_password: str = Field(..., min_length=1)
+
+
 class TestCIDXServer:
     """Real CIDX server for testing with authentic JWT and HTTP operations.
 
@@ -205,8 +211,10 @@ class TestCIDXServer:
         # Admin endpoints - Foundation #1 compliant (no mocking, real implementation)
         app.post("/api/admin/users", status_code=201)(self._create_user)
         app.get("/api/admin/users")(self._list_users)
+        app.get("/api/admin/users/{username}")(self._get_user)
         app.put("/api/admin/users/{username}")(self._update_user)
         app.delete("/api/admin/users/{username}")(self._delete_user)
+        app.post("/api/admin/users/{username}/password")(self._change_user_password)
 
         # Health endpoint
         app.get("/health")(self._health_check)
@@ -519,11 +527,11 @@ class TestCIDXServer:
         username = login_request.username
         password = login_request.password
 
-        # Check test users
-        if username not in TEST_USERS or TEST_USERS[username]["password"] != password:
+        # Check users (including dynamically created ones)
+        if username not in self.users or self.users[username]["password"] != password:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        user_data = TEST_USERS[username]
+        user_data = self.users[username]
 
         # Generate real tokens
         access_token = self._generate_jwt_token(user_data)
@@ -898,16 +906,17 @@ class TestCIDXServer:
     async def _create_user(
         self,
         user_request: CreateUserRequest,
-        user=Depends(lambda: None),
+        credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
     ):
         """Create new user (admin only).
 
         Args:
             user_request: User creation data
+            credentials: JWT token credentials
         """
-        # For this test server, we'll use a simple approach
-        # In a real implementation, you'd get current user from JWT token
-        current_user = {"role": "admin"}  # Simplified for testing
+        # Verify JWT token and get current user
+        self._verify_jwt_token(credentials.credentials)
+        current_user = self.active_tokens[credentials.credentials]["user_data"]
         self._require_admin_user(current_user)
 
         username = user_request.username
@@ -948,16 +957,18 @@ class TestCIDXServer:
         self,
         limit: int = 10,
         offset: int = 0,
-        user=Depends(lambda: None),
+        credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
     ):
         """List all users (admin only).
 
         Args:
             limit: Maximum number of users to return
             offset: Number of users to skip for pagination
+            credentials: JWT token credentials
         """
-        # For this test server, we'll use a simple approach
-        current_user = {"role": "admin"}  # Simplified for testing
+        # Verify JWT token and get current user
+        self._verify_jwt_token(credentials.credentials)
+        current_user = self.active_tokens[credentials.credentials]["user_data"]
         self._require_admin_user(current_user)
 
         # Get all users without passwords
@@ -980,20 +991,51 @@ class TestCIDXServer:
             "total": total,
         }
 
+    async def _get_user(
+        self,
+        username: str,
+        credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    ):
+        """Get user by username (admin only).
+
+        Args:
+            username: Username to retrieve
+            credentials: JWT token credentials
+        """
+        # Verify JWT token and get current user
+        self._verify_jwt_token(credentials.credentials)
+        current_user = self.active_tokens[credentials.credentials]["user_data"]
+        self._require_admin_user(current_user)
+
+        if username not in self.users:
+            raise HTTPException(status_code=404, detail=f"User '{username}' not found")
+
+        user_data = self.users[username]
+        user_response = {
+            "username": user_data["username"],
+            "user_id": user_data["user_id"],
+            "role": user_data["role"],
+            "created_at": user_data["created_at"],
+        }
+
+        return {"user": user_response}
+
     async def _update_user(
         self,
         username: str,
         update_request: UpdateUserRequest,
-        user=Depends(lambda: None),
+        credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
     ):
         """Update user role (admin only).
 
         Args:
             username: Username to update
             update_request: Update data
+            credentials: JWT token credentials
         """
-        # For this test server, we'll use a simple approach
-        current_user = {"role": "admin"}  # Simplified for testing
+        # Verify JWT token and get current user
+        self._verify_jwt_token(credentials.credentials)
+        current_user = self.active_tokens[credentials.credentials]["user_data"]
         self._require_admin_user(current_user)
 
         if username not in self.users:
@@ -1014,15 +1056,17 @@ class TestCIDXServer:
     async def _delete_user(
         self,
         username: str,
-        user=Depends(lambda: None),
+        credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
     ):
         """Delete user (admin only).
 
         Args:
             username: Username to delete
+            credentials: JWT token credentials
         """
-        # For this test server, we'll use a simple approach
-        current_user = {"role": "admin"}  # Simplified for testing
+        # Verify JWT token and get current user
+        self._verify_jwt_token(credentials.credentials)
+        current_user = self.active_tokens[credentials.credentials]["user_data"]
         self._require_admin_user(current_user)
 
         if username not in self.users:
@@ -1042,6 +1086,36 @@ class TestCIDXServer:
         del self.users[username]
 
         return {"message": f"User '{username}' deleted successfully"}
+
+    async def _change_user_password(
+        self,
+        username: str,
+        password_request: ChangePasswordRequest,
+        credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+    ):
+        """Change user password (admin only).
+
+        Args:
+            username: Username whose password to change
+            password_request: New password data
+            credentials: JWT token credentials
+        """
+        # Verify JWT token and get current user
+        self._verify_jwt_token(credentials.credentials)
+        current_user = self.active_tokens[credentials.credentials]["user_data"]
+        self._require_admin_user(current_user)
+
+        if username not in self.users:
+            raise HTTPException(status_code=404, detail=f"User '{username}' not found")
+
+        # Validate password (basic validation - non-empty)
+        if not password_request.new_password:
+            raise HTTPException(status_code=400, detail="Password cannot be empty")
+
+        # Change password
+        self.users[username]["password"] = password_request.new_password
+
+        return {"message": f"Password changed successfully for user '{username}'"}
 
     async def _health_check(self):
         """Health check endpoint.

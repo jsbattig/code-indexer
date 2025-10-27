@@ -37,7 +37,7 @@ def proxy_test_env(tmp_path):
 
         # Create minimal config
         config_file = indexer_dir / "config.json"
-        config_file.write_text('{"embedding_provider": "ollama"}')
+        config_file.write_text('{"embedding_provider": "voyage-ai"}')
 
     # Create proxy config
     proxy_config_dir = proxy_root / ".cidx-proxy"

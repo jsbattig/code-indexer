@@ -108,17 +108,29 @@
 
 ## Import Time Optimization Status
 
-**COMPLETED OPTIMIZATION**: voyageai library eliminated (440-630ms → 0ms)
+**COMPLETED OPTIMIZATIONS**:
+1. ✅ **voyageai library eliminated**: 440-630ms → 0ms (100% removal)
+2. ✅ **CLI lazy loading implemented**: 736ms → 329ms (55% faster, 407ms saved)
 
-**REMAINING BOTTLENECKS IDENTIFIED** (see `plans/IMPORT_OPTIMIZATION_OPPORTUNITIES.md`):
-- **cli.py**: 342ms (BIGGEST opportunity - lazy load command-specific imports)
-- **fastapi**: 221ms (acceptable - only for server commands)
-- **docker**: 106ms (could lazy load per command)
-- **jsonschema**: 96ms (could lazy load config validation)
+**RESULTS** (see `LAZY_IMPORT_RESULTS.md`):
+- `cidx --help`: ~800ms → ~350ms (56% faster)
+- `cidx query`: ~1656ms → ~1249ms (25% faster)
+- Total combined savings: 847-1037ms (voyageai + lazy loading)
 
-**QUICK WINS AVAILABLE**: ~430ms potential savings for simple operations via lazy imports in cli.py
+**REMAINING TIME BREAKDOWN** (329ms):
+- pydantic (config validation): ~150ms - unavoidable without removing type safety
+- rich (console output): ~80ms - unavoidable without removing formatting
+- httpx (HTTP client): ~40ms - core dependency
+- Standard library: ~40ms - unavoidable
+- cli.py self time: ~9.4ms - minimal
 
-**Next Steps**: Phase 1 optimization would move heavy imports from cli.py module level into individual Click command functions, saving ~240ms for operations like `cidx --help`.
+**FUTURE OPPORTUNITIES** (diminishing returns):
+- Config lazy loading: ~50-100ms potential
+- Rich output optimization: ~30-50ms potential
+- HNSW index preloading: ~200-300ms potential (runtime, not startup)
+- Daemon mode: ~1000+ms potential (requires IPC architecture)
+
+**CONCLUSION**: Current 329ms startup is acceptable. Further optimization requires aggressive changes with questionable ROI.
 
 ## CIDX Repository Lifecycle Architecture
 

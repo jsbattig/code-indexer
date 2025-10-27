@@ -293,7 +293,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             with FileChunkingManager(
                 vector_manager=vector_manager,
                 chunker=self.fixed_size_chunker,
-                qdrant_client=self.qdrant_client,
+                vector_store_client=self.qdrant_client,
                 thread_count=vector_thread_count,
                 slot_tracker=local_slot_tracker,
                 codebase_dir=self.config.codebase_dir,
@@ -816,6 +816,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             f"Changed files: {len(changed_files)}, Unchanged files: {len(unchanged_files)}"
         )
 
+        # BEGIN INDEXING SESSION (O(n) optimization - defer index rebuilding)
+        self.qdrant_client.begin_indexing(collection_name)
+
         try:
             # Convert relative paths to absolute paths for processing
             absolute_changed_files = []
@@ -898,6 +901,13 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             logger.error(f"High-throughput branch processing failed: {e}")
             result.processing_time = time.time() - start_time
             raise
+        finally:
+            # CRITICAL: Always finalize indexes, even on exception
+            # This ensures FilesystemVectorStore rebuilds HNSW/ID indexes
+            if progress_callback:
+                progress_callback(0, 0, Path(""), info="Finalizing indexing session...")
+            end_result = self.qdrant_client.end_indexing(collection_name, progress_callback)
+            logger.info(f"Index finalization complete: {end_result.get('vectors_indexed', 0)} vectors indexed")
 
     # =============================================================================
     # THREAD-SAFE GIT-AWARE METHODS

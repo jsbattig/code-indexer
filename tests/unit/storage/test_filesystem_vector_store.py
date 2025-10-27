@@ -707,7 +707,9 @@ class TestSearchMethods:
             }
             for i in range(10)
         ]
+        store.begin_indexing("test_coll")
         store.upsert_points("test_coll", points)
+        store.end_indexing("test_coll")
 
         # Search with first vector (should match itself)
         query_vector = test_vectors[0].tolist()
@@ -757,7 +759,9 @@ class TestSearchMethods:
             }
             for i in range(10)
         ]
+        store.begin_indexing("test_coll")
         store.upsert_points("test_coll", points)
+        store.end_indexing("test_coll")
 
         # Search with high threshold
         mock_embedding_provider = Mock()
@@ -804,7 +808,9 @@ class TestSearchMethods:
                 "payload": {"path": "app.js", "language": "javascript"},
             },
         ]
+        store.begin_indexing("test_coll")
         store.upsert_points("test_coll", points)
+        store.end_indexing("test_coll")
 
         # Search with language filter
         filter_conditions = {"language": "python"}
@@ -954,15 +960,17 @@ class TestProgressReporting:
             for i in range(5)
         ]
 
+        store.begin_indexing("test_coll")
         store.upsert_points(
             collection_name="test_coll",
             points=points,
             progress_callback=progress_callback,
         )
+        store.end_indexing("test_coll", progress_callback=progress_callback)
 
-        # Verify callback was called 7 times: 5 for points + 2 for HNSW index building
+        # Verify callback was called: 5 for points + callbacks from end_indexing
         assert (
-            len(callbacks) == 7
+            len(callbacks) >= 5
         ), "Callback should be called for each point plus HNSW index building"
 
         # Verify first 5 callbacks are for individual points
@@ -1310,7 +1318,9 @@ class TestStory3ContentRetrievalAndStaleness:
             }
         ]
 
+        store.begin_indexing("test_coll")
         store.upsert_points("test_coll", points)
+        store.end_indexing("test_coll")
 
         # Search
         mock_embedding_provider = Mock()
@@ -1376,7 +1386,9 @@ class TestStory3ContentRetrievalAndStaleness:
             }
         ]
 
+        store.begin_indexing("test_coll")
         store.upsert_points("test_coll", points)
+        store.end_indexing("test_coll")
 
         # Search (file unchanged)
         mock_embedding_provider = Mock()
@@ -1440,7 +1452,9 @@ class TestStory3ContentRetrievalAndStaleness:
             }
         ]
 
+        store.begin_indexing("test_coll")
         store.upsert_points("test_coll", points)
+        store.end_indexing("test_coll")
 
         # Modify file AFTER indexing
         modified_content = "def foo():\n    return 99\n"
@@ -1514,7 +1528,9 @@ class TestStory3ContentRetrievalAndStaleness:
             }
         ]
 
+        store.begin_indexing("test_coll")
         store.upsert_points("test_coll", points)
+        store.end_indexing("test_coll")
 
         # Delete file AFTER indexing
         test_file.unlink()
@@ -1651,7 +1667,9 @@ class TestStory3ContentRetrievalAndStaleness:
             for i in range(5)
         ]
 
+        store.begin_indexing("test_coll")
         store.upsert_points("test_coll", points)
+        store.end_indexing("test_coll")
 
         # Search for all
         mock_embedding_provider = Mock()

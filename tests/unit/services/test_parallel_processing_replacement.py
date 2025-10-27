@@ -155,7 +155,7 @@ class TestParallelProcessingReplacement:
         call_args = mock_file_chunking_manager.call_args
         assert call_args[1]["vector_manager"] == mock_vector_manager_instance
         assert call_args[1]["chunker"] == processor.fixed_size_chunker
-        assert call_args[1]["qdrant_client"] == qdrant_client
+        assert call_args[1]["vector_store_client"] == qdrant_client
         assert call_args[1]["thread_count"] == 4
         assert "slot_tracker" in call_args[1]  # Verify slot_tracker is included
 

@@ -104,9 +104,7 @@ class TestCLIStalenessDisplayIntegration:
                 "code_indexer.disabled_commands.detect_current_mode"
             ) as mock_detect_mode,
             patch("code_indexer.cli.EmbeddingProviderFactory") as mock_factory,
-            patch(
-                "code_indexer.backends.backend_factory.BackendFactory"
-            ) as mock_backend_factory,
+            patch("code_indexer.cli.BackendFactory") as mock_backend_factory,
             patch(
                 "code_indexer.services.generic_query_service.GenericQueryService"
             ) as mock_query_service,

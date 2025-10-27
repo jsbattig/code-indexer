@@ -64,6 +64,14 @@ class FilesystemVectorStore:
         self._id_index: Dict[str, Dict[str, Path]] = {}
         self._id_index_lock = threading.Lock()
 
+        # File path cache: {collection_name: set of file paths}
+        self._file_path_cache: Dict[str, set] = {}
+
+        # Cache for collection metadata (read once, reuse forever)
+        self._vector_size_cache: Dict[str, int] = {}
+        self._collection_metadata_cache: Dict[str, Dict[str, Any]] = {}
+        self._metadata_lock = threading.Lock()  # Protect cache from concurrent access
+
     def create_collection(self, collection_name: str, vector_size: int) -> bool:
         """Create a new collection with projection matrix.
 
@@ -145,8 +153,152 @@ class FilesystemVectorStore:
                     collections.append(path.name)
         return collections
 
+    def begin_indexing(self, collection_name: str) -> None:
+        """Prepare for batch indexing operations.
+
+        Called ONCE before indexing session starts. Clears file path cache to ensure
+        fresh data after indexing.
+
+        Args:
+            collection_name: Name of the collection to begin indexing
+
+        Note:
+            This is part of the storage provider lifecycle interface that enables O(n)
+            performance by deferring index rebuilding until end_indexing().
+        """
+        self.logger.info(
+            f"Beginning indexing session for collection '{collection_name}'"
+        )
+
+        # Clear file path cache for this collection
+        with self._id_index_lock:
+            if collection_name in self._file_path_cache:
+                del self._file_path_cache[collection_name]
+
+    def end_indexing(
+        self, collection_name: str, progress_callback: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Finalize indexing by rebuilding HNSW and ID indexes.
+
+        Called ONCE after all upsert_points() operations complete. This is where
+        the O(n²) → O(n) optimization happens - we rebuild indexes only once instead
+        of after every upsert.
+
+        Args:
+            collection_name: Name of the collection
+            progress_callback: Optional callback for progress reporting
+
+        Returns:
+            Status dictionary with rebuild results
+
+        Raises:
+            ValueError: If collection doesn't exist
+
+        Note:
+            Before this optimization, upsert_points() rebuilt indexes after EVERY file,
+            causing O(n²) complexity. Now we rebuild indexes ONCE at the end.
+        """
+        collection_path = self.base_path / collection_name
+
+        if not self.collection_exists(collection_name):
+            raise ValueError(f"Collection '{collection_name}' does not exist")
+
+        self.logger.info(f"Finalizing indexes for collection '{collection_name}'...")
+
+        # Get vector size from cache (avoids file I/O)
+        vector_size = self._get_vector_size(collection_name)
+
+        # Rebuild HNSW index from ALL vectors on disk (ONCE)
+        from .hnsw_index_manager import HNSWIndexManager
+
+        hnsw_manager = HNSWIndexManager(vector_dim=vector_size, space="cosine")
+        hnsw_manager.rebuild_from_vectors(
+            collection_path=collection_path, progress_callback=progress_callback
+        )
+
+        # Save ID index to disk (ONCE)
+        from .id_index_manager import IDIndexManager
+
+        id_manager = IDIndexManager()
+        with self._id_index_lock:
+            if collection_name in self._id_index:
+                id_manager.save_index(collection_path, self._id_index[collection_name])
+
+        vector_count = len(self._id_index.get(collection_name, {}))
+
+        self.logger.info(
+            f"Indexing finalized for '{collection_name}': {vector_count} vectors indexed"
+        )
+
+        return {
+            "status": "ok",
+            "vectors_indexed": vector_count,
+            "collection": collection_name,
+        }
+
+    def _get_vector_size(self, collection_name: str) -> int:
+        """Get vector size for collection (cached to avoid repeated file I/O).
+
+        This method implements caching to eliminate the O(n²) behavior of reading
+        collection_meta.json on every upsert operation. Before optimization, we were
+        reading a 163KB JSON file 1,127+ times. Now we read it once and cache the result.
+
+        Args:
+            collection_name: Name of the collection
+
+        Returns:
+            Vector size (dimensions) for the collection
+
+        Raises:
+            RuntimeError: If collection metadata is corrupted, missing, or invalid
+
+        Note:
+            Thread-safe via _metadata_lock to prevent race conditions during concurrent
+            indexing operations.
+        """
+        with self._metadata_lock:
+            if collection_name not in self._vector_size_cache:
+                # Load metadata ONCE
+                collection_path = self.base_path / collection_name
+                meta_file = collection_path / "collection_meta.json"
+
+                if not meta_file.exists():
+                    raise RuntimeError(
+                        f"Collection metadata not found: {meta_file}. "
+                        f"Collection may be corrupted or not properly initialized."
+                    )
+
+                try:
+                    with open(meta_file) as f:
+                        metadata = json.load(f)
+
+                    vector_size = metadata.get("vector_size")
+                    if vector_size is None:
+                        raise RuntimeError(
+                            f"Collection metadata missing 'vector_size' field: {meta_file}"
+                        )
+
+                    # Cache for future use
+                    self._vector_size_cache[collection_name] = vector_size
+                    self._collection_metadata_cache[collection_name] = metadata
+
+                except json.JSONDecodeError as e:
+                    raise RuntimeError(
+                        f"Collection metadata file corrupted (invalid JSON): {meta_file}. "
+                        f"Error: {e}. You may need to recreate the collection."
+                    )
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Failed to read collection metadata: {meta_file}. Error: {e}"
+                    )
+
+            return self._vector_size_cache[collection_name]
+
     def _load_quantization_range(self, collection_name: str) -> tuple[float, float]:
-        """Load quantization range from collection metadata.
+        """Load quantization range from collection metadata (cached).
+
+        This method now uses the cached metadata from _get_vector_size() to avoid
+        repeated file I/O during upsert operations.
 
         Args:
             collection_name: Name of the collection
@@ -154,11 +306,20 @@ class FilesystemVectorStore:
         Returns:
             Tuple of (min_val, max_val) for quantization range
         """
+        # Use cached metadata via _metadata_lock
+        with self._metadata_lock:
+            if collection_name in self._collection_metadata_cache:
+                metadata = self._collection_metadata_cache[collection_name]
+                quant_range = metadata.get(
+                    "quantization_range", {"min": -2.0, "max": 2.0}
+                )
+                return (quant_range["min"], quant_range["max"])
+
+        # Fallback: read from disk if not cached (shouldn't happen if using lifecycle properly)
         collection_path = self.base_path / collection_name
         metadata_path = collection_path / "collection_meta.json"
 
         if not metadata_path.exists():
-            # Return default range if metadata doesn't exist
             return (-2.0, 2.0)
 
         try:
@@ -169,7 +330,6 @@ class FilesystemVectorStore:
                 )
                 return (quant_range["min"], quant_range["max"])
         except (json.JSONDecodeError, KeyError):
-            # Return default range on error
             return (-2.0, 2.0)
 
     def upsert_points(
@@ -231,10 +391,13 @@ class FilesystemVectorStore:
             blob_hashes = self._get_blob_hashes_batch(file_paths, repo_root)
             uncommitted_files = self._check_uncommitted_batch(file_paths, repo_root)
 
-        # Ensure ID index exists for this collection
+        # Ensure ID index exists for this collection (also loads file path cache)
         with self._id_index_lock:
             if collection_name not in self._id_index:
                 self._id_index[collection_name] = self._load_id_index(collection_name)
+            # Ensure file path cache exists (in case ID index was manually populated)
+            if collection_name not in self._file_path_cache:
+                self._file_path_cache[collection_name] = set()
 
         # Process all points
         total_points = len(points)
@@ -300,36 +463,16 @@ class FilesystemVectorStore:
             # Atomic write to filesystem
             self._atomic_write_json(vector_file, vector_data)
 
-            # Update ID index
+            # Update ID index and file path cache
             with self._id_index_lock:
                 self._id_index[collection_name][point_id] = vector_file
+                # Update file path cache
+                if file_path:
+                    self._file_path_cache[collection_name].add(file_path)
 
-        # Rebuild HNSW index from ALL vectors on disk (not just current batch)
-        from .hnsw_index_manager import HNSWIndexManager
-
-        # Load metadata to get vector size
-        meta_file = collection_path / "collection_meta.json"
-        with open(meta_file) as f:
-            metadata = json.load(f)
-
-        vector_size = metadata.get("vector_size", 1536)
-        hnsw_manager = HNSWIndexManager(vector_dim=vector_size, space="cosine")
-
-        # Rebuild entire index from all vector JSON files
-        # This ensures incremental indexing doesn't lose previous vectors
-        hnsw_manager.rebuild_from_vectors(
-            collection_path=collection_path, progress_callback=progress_callback
-        )
-
-        # Save ID index to disk (tandem with HNSW index)
-        # This eliminates the need to scan JSON files on first query
-        from .id_index_manager import IDIndexManager
-
-        id_manager = IDIndexManager()
-        with self._id_index_lock:
-            if collection_name in self._id_index:
-                id_manager.save_index(collection_path, self._id_index[collection_name])
-
+        # Return success - index rebuilding now happens in end_indexing() (O(n) not O(n²))
+        # This fixes the performance disaster where we rebuilt indexes after EVERY file.
+        # Now indexes are rebuilt ONCE at the end of the indexing session.
         return {"status": "ok", "count": len(points)}
 
     def count_points(self, collection_name: str) -> int:
@@ -377,6 +520,10 @@ class FilesystemVectorStore:
 
                     # Remove from index
                     del index[point_id]
+
+            # Clear file path cache since file structure changed
+            if deleted > 0 and collection_name in self._file_path_cache:
+                del self._file_path_cache[collection_name]
 
         return {"status": "ok", "deleted": deleted}
 
@@ -537,7 +684,10 @@ class FilesystemVectorStore:
             tmp_file.replace(file_path)
 
     def _load_id_index(self, collection_name: str) -> Dict[str, Path]:
-        """Load ID index from filesystem by scanning all vector files.
+        """Load ID index from filenames only - no file I/O required.
+
+        Point IDs are encoded in filenames as: vector_POINTID.json
+        This allows instant index loading without parsing JSON files.
 
         Args:
             collection_name: Name of the collection
@@ -548,24 +698,50 @@ class FilesystemVectorStore:
         collection_path = self.base_path / collection_name
         index = {}
 
-        # Scan all vector JSON files
-        for json_file in collection_path.rglob("*.json"):
-            # Skip collection metadata
-            if "collection_meta" in json_file.name:
-                continue
+        # Scan vector files by filename pattern only
+        for json_file in collection_path.rglob("vector_*.json"):
+            # Extract point ID from filename: vector_POINTID.json
+            filename = json_file.name
+            if filename.startswith("vector_") and filename.endswith(".json"):
+                # Remove "vector_" prefix (7 chars) and ".json" suffix (5 chars)
+                point_id = filename[7:-5]
+                index[point_id] = json_file
 
-            # Parse vector file to get ID
+        return index
+
+    def _load_file_paths(self, collection_name: str, id_index: Dict[str, Path]) -> set:
+        """Load file paths from JSON files using ID index.
+
+        This is a separate operation from loading the ID index, allowing operations
+        that only need vector counts to avoid parsing JSON files.
+
+        Args:
+            collection_name: Name of the collection
+            id_index: ID index mapping point IDs to file paths
+
+        Returns:
+            Set of unique file paths
+        """
+        file_paths = set()
+
+        # Parse JSON files to extract file paths
+        for json_file in id_index.values():
             try:
                 with open(json_file) as f:
                     data = json.load(f)
-                point_id = data.get("id")
-                if point_id:
-                    index[point_id] = json_file
-            except (json.JSONDecodeError, KeyError):
-                # Skip corrupted files
+
+                # Extract file path from payload
+                file_path = data.get("payload", {}).get("path") or data.get(
+                    "file_path", ""
+                )
+                if file_path:
+                    file_paths.add(file_path)
+
+            except (json.JSONDecodeError, KeyError, FileNotFoundError):
+                # Skip corrupted or missing files
                 continue
 
-        return index
+        return file_paths
 
     def _ensure_gitignore(self, collection_name: str) -> None:
         """Ensure collection directory is in .gitignore if in a git repo.
@@ -844,23 +1020,72 @@ class FilesystemVectorStore:
             def evaluate_condition(
                 condition: Dict[str, Any], payload: Dict[str, Any]
             ) -> bool:
-                """Evaluate a single Qdrant-style condition against payload."""
-                key = condition.get("key")
-                if not key or not isinstance(key, str):
-                    return False
+                """Evaluate a single Qdrant-style condition against payload.
 
-                match_spec = condition.get("match", {})
-                expected_value = match_spec.get("value")
+                Supports both simple conditions and nested filters:
+                - Simple: {"key": "language", "match": {"value": "python"}}
+                - Nested: {"should": [{"key": "language", "match": {"value": "py"}}, ...]}
+                """
+                # Check if this is a nested filter (has must/should/must_not)
+                is_nested = any(
+                    key in condition for key in ["must", "should", "must_not"]
+                )
 
-                # Handle nested payload keys (e.g., "metadata.language")
-                current: Any = payload
-                for key_part in key.split("."):
-                    if isinstance(current, dict):
-                        current = current.get(key_part)
-                    else:
+                if is_nested:
+                    # Recursively evaluate nested filter
+                    # Handle "must" conditions (AND)
+                    if "must" in condition:
+                        for nested_condition in condition["must"]:
+                            if not evaluate_condition(nested_condition, payload):
+                                return False
+
+                    # Handle "should" conditions (OR) - at least one must match
+                    if "should" in condition:
+                        if not any(
+                            evaluate_condition(nested_condition, payload)
+                            for nested_condition in condition["should"]
+                        ):
+                            return False
+
+                    # Handle "must_not" conditions (NOT)
+                    if "must_not" in condition:
+                        for nested_condition in condition["must_not"]:
+                            if evaluate_condition(nested_condition, payload):
+                                return False
+
+                    return True
+                else:
+                    # Simple key-match condition
+                    key = condition.get("key")
+                    if not key or not isinstance(key, str):
                         return False
 
-                return bool(current == expected_value)
+                    match_spec = condition.get("match", {})
+
+                    # Handle nested payload keys (e.g., "metadata.language")
+                    current: Any = payload
+                    for key_part in key.split("."):
+                        if isinstance(current, dict):
+                            current = current.get(key_part)
+                        else:
+                            return False
+
+                    # Support both "value" (exact match) and "text" (pattern match)
+                    if "value" in match_spec:
+                        # Exact match
+                        expected_value = match_spec["value"]
+                        return bool(current == expected_value)
+                    elif "text" in match_spec:
+                        # Pattern match (glob-style wildcards)
+                        import fnmatch
+
+                        pattern = match_spec["text"]
+                        if not isinstance(current, str):
+                            return False
+                        return bool(fnmatch.fnmatch(current, pattern))
+                    else:
+                        # No match specification found
+                        return False
 
             def evaluate_filter(payload: Dict[str, Any]) -> bool:
                 """Evaluate full Qdrant-style filter against payload."""
@@ -1556,10 +1781,12 @@ class FilesystemVectorStore:
 
             shutil.rmtree(collection_path)
 
-            # Clear ID index for this collection
+            # Clear ID index and file path cache for this collection
             with self._id_index_lock:
                 if collection_name in self._id_index:
                     del self._id_index[collection_name]
+                if collection_name in self._file_path_cache:
+                    del self._file_path_cache[collection_name]
 
             return True
 
@@ -1723,42 +1950,30 @@ class FilesystemVectorStore:
     def get_all_indexed_files(self, collection_name: str) -> List[str]:
         """Get all unique file paths from indexed vectors.
 
+        Uses lazy loading: ID index is loaded from filenames (fast), file paths
+        are only loaded by parsing JSON files when actually needed.
+
         Args:
             collection_name: Name of the collection
 
         Returns:
             List of unique file paths
         """
-        collection_path = self.base_path / collection_name
+        with self._id_index_lock:
+            # Ensure ID index is loaded (fast - from filenames only)
+            if collection_name not in self._id_index:
+                self._id_index[collection_name] = self._load_id_index(collection_name)
 
-        if not self.collection_exists(collection_name):
-            return []
-
-        unique_files = set()
-
-        # Scan all vector JSON files
-        for json_file in collection_path.rglob("*.json"):
-            # Skip collection metadata
-            if "collection_meta" in json_file.name:
-                continue
-
-            try:
-                with open(json_file) as f:
-                    data = json.load(f)
-
-                # Extract file path from payload or file_path field
-                file_path = data.get("payload", {}).get("path") or data.get(
-                    "file_path", ""
+            # Lazily load file paths if not cached
+            if collection_name not in self._file_path_cache:
+                id_index = self._id_index[collection_name]
+                self._file_path_cache[collection_name] = self._load_file_paths(
+                    collection_name, id_index
                 )
 
-                if file_path:
-                    unique_files.add(file_path)
+            file_paths = self._file_path_cache[collection_name]
 
-            except (json.JSONDecodeError, KeyError):
-                # Skip corrupted files
-                continue
-
-        return sorted(list(unique_files))
+        return sorted(list(file_paths))
 
     def get_file_index_timestamps(self, collection_name: str) -> Dict[str, datetime]:
         """Get indexed_at timestamps for all files.
@@ -1869,6 +2084,9 @@ class FilesystemVectorStore:
     ) -> bool:
         """Verify all vectors have expected dimensions.
 
+        Optimized to sample from cached ID index instead of scanning entire directory tree.
+        Performance: O(1) index lookup + O(20) JSON reads (sampled files only).
+
         Checks a sample of vectors for performance. Empty collections return True.
 
         Args:
@@ -1878,25 +2096,21 @@ class FilesystemVectorStore:
         Returns:
             True if all sampled vectors have expected dimensions, False otherwise
         """
-        collection_path = self.base_path / collection_name
+        with self._id_index_lock:
+            # Ensure ID index is loaded (cached after first call)
+            if collection_name not in self._id_index:
+                self._id_index[collection_name] = self._load_id_index(collection_name)
 
-        if not self.collection_exists(collection_name):
-            return True  # Vacuously valid
+            index = self._id_index[collection_name]
 
-        # Collect all vector files
-        all_vector_files = [
-            f
-            for f in collection_path.rglob("*.json")
-            if "collection_meta" not in f.name
-        ]
+            if not index:
+                return True  # Empty collection is vacuously valid
 
-        if not all_vector_files:
-            return True  # Empty collection is valid
+            # Sample from cached index - no directory scan needed
+            sample_count = min(20, len(index))
+            sampled_files = random.sample(list(index.values()), sample_count)
 
-        # Sample up to 20 vectors for validation
-        sample_count = min(20, len(all_vector_files))
-        sampled_files = random.sample(all_vector_files, sample_count)
-
+        # Validate sampled files
         for vector_file in sampled_files:
             try:
                 with open(vector_file) as f:
@@ -1906,8 +2120,8 @@ class FilesystemVectorStore:
                 if len(vector) != expected_dims:
                     return False
 
-            except (json.JSONDecodeError, KeyError):
-                # Skip corrupted files
+            except (json.JSONDecodeError, KeyError, FileNotFoundError):
+                # Skip corrupted or missing files, continue validation
                 continue
 
         return True

@@ -88,10 +88,8 @@ class TestQueryBackendIntegration:
             runner = CliRunner()
 
             # Mock the services to verify BackendFactory is used
-            # Note: BackendFactory is imported inside the function, so we patch it at its source
-            with patch(
-                "code_indexer.backends.backend_factory.BackendFactory"
-            ) as mock_backend_factory:
+            # Note: BackendFactory is now imported at module level, so we patch it at point of use
+            with patch("code_indexer.cli.BackendFactory") as mock_backend_factory:
                 mock_backend = MagicMock()
                 mock_vector_store = MagicMock()
 
@@ -208,10 +206,8 @@ class TestQueryBackendIntegration:
 
             runner = CliRunner()
 
-            # Patch BackendFactory at its source module
-            with patch(
-                "code_indexer.backends.backend_factory.BackendFactory"
-            ) as mock_backend_factory:
+            # Patch BackendFactory at point of use (module-level import in cli.py)
+            with patch("code_indexer.cli.BackendFactory") as mock_backend_factory:
                 mock_backend = MagicMock()
                 mock_vector_store = MagicMock()
 

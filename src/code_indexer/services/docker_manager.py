@@ -207,10 +207,10 @@ class DockerManager:
                 }
             except Exception:
                 # If config loading fails, use default
-                config_to_use = {"embedding_provider": "ollama"}
+                config_to_use = {"embedding_provider": "voyage-ai"}
 
         # Check embedding provider
-        embedding_provider = config_to_use.get("embedding_provider", "ollama")
+        embedding_provider = config_to_use.get("embedding_provider", "voyage-ai")
 
         if embedding_provider == "ollama":
             required_services.append("ollama")

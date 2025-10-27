@@ -309,7 +309,7 @@ class TestProxyModeIntegrationScenarios:
             (project_dir / ".code-indexer").mkdir()
             # Add some dummy config
             config = project_dir / ".code-indexer" / "config.json"
-            config.write_text('{"embedding_provider": "ollama"}')
+            config.write_text('{"embedding_provider": "voyage-ai"}')
 
         # Step 2: Initialize proxy mode
         result = subprocess.run(
@@ -335,7 +335,7 @@ class TestProxyModeIntegrationScenarios:
             assert project_config.exists()
             with open(project_config) as f:
                 proj_data = json.load(f)
-            assert proj_data.get("embedding_provider") == "ollama"
+            assert proj_data.get("embedding_provider") == "voyage-ai"
 
     def test_proxy_mode_ignores_non_indexed_directories(self, tmp_path):
         """Proxy mode only discovers directories with .code-indexer/."""

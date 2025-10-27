@@ -73,7 +73,9 @@ class TestHNSWIndexCreation:
             for i in range(10)
         ]
 
+        store.begin_indexing("test_collection")
         store.upsert_points("test_collection", points)
+        store.end_indexing("test_collection")
 
         # HNSW index should exist
         hnsw_index_file = tmp_path / "test_collection" / "hnsw_index.bin"
@@ -94,7 +96,9 @@ class TestHNSWIndexCreation:
             for i in range(5)
         ]
 
+        store.begin_indexing("test_collection")
         store.upsert_points("test_collection", points)
+        store.end_indexing("test_collection")
 
         # Only HNSW index should exist
         hnsw_exists = (tmp_path / "test_collection" / "hnsw_index.bin").exists()
@@ -120,7 +124,9 @@ class TestHNSWSearchPath:
             for i in range(50)
         ]
 
+        store.begin_indexing("test_collection")
         store.upsert_points("test_collection", points)
+        store.end_indexing("test_collection")
 
         # Perform search with parallel API
         query_vector = np.random.randn(128).tolist()
@@ -188,7 +194,9 @@ class TestHNSWSearchPath:
             for i in range(100)
         ]
 
+        store.begin_indexing("test_collection")
         store.upsert_points("test_collection", points)
+        store.end_indexing("test_collection")
 
         # Verify HNSW index file exists
         hnsw_index_file = tmp_path / "test_collection" / "hnsw_index.bin"
@@ -250,7 +258,9 @@ class TestHNSWIndexBuildParameters:
             for i in range(50)
         ]
 
+        store.begin_indexing("test_collection")
         store.upsert_points("test_collection", points)
+        store.end_indexing("test_collection")
 
         # Check HNSW metadata
         meta_file = tmp_path / "test_collection" / "collection_meta.json"
@@ -307,7 +317,9 @@ class TestBackwardCompatibility:
             for i in range(10)
         ]
 
+        store.begin_indexing("old_collection")
         result = store.upsert_points("old_collection", points)
+        store.end_indexing("old_collection")
         assert result["status"] == "ok"
 
         # Should create HNSW index

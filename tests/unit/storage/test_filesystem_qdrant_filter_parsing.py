@@ -68,7 +68,9 @@ def populated_store(temp_store):
         },
     ]
 
+    temp_store.begin_indexing(collection_name)
     temp_store.upsert_points(collection_name, points)
+    temp_store.end_indexing(collection_name)
     return temp_store, collection_name
 
 
@@ -392,3 +394,103 @@ def test_flat_dict_filter_multiple_conditions(populated_store):
     for result in results:
         assert result["payload"]["language"] == "python"
         assert result["payload"]["git_available"] is True
+
+
+def test_nested_should_in_must_condition(populated_store):
+    """Test nested should condition inside must (language mapper pattern).
+
+    This reproduces the bug where --language python fails to return results
+    because the language mapper creates a should filter for multiple extensions
+    (py, pyw, pyi) which gets wrapped in a must array.
+    """
+    store, collection_name = populated_store
+
+    # Language mapper pattern: must contain a should condition
+    # This is what build_language_filter("python") produces:
+    # {"should": [{"key": "language", "match": {"value": "py"}}, ...]}
+    # Which gets wrapped in a must array by the CLI
+    filter_conditions = {
+        "must": [
+            {
+                "should": [
+                    {"key": "language", "match": {"value": "python"}},
+                    {
+                        "key": "language",
+                        "match": {"value": "py"},
+                    },  # Alternative extension
+                ]
+            }
+        ]
+    }
+
+    query_vector = [1.0, 0.0, 0.0, 0.0]
+    mock_embedding_provider = Mock()
+    mock_embedding_provider.get_embedding.return_value = query_vector
+
+    results = store.search(
+        query="test query",
+        embedding_provider=mock_embedding_provider,
+        collection_name=collection_name,
+        limit=10,
+        filter_conditions=filter_conditions,
+    )
+
+    # Should return 3 python files (language matches either "python" or "py")
+    assert len(results) == 3
+    for result in results:
+        assert result["payload"]["language"] == "python"
+
+
+def test_path_pattern_matching_with_wildcards(populated_store):
+    """Test path filter with glob-style wildcards (tests/*)."""
+    store, collection_name = populated_store
+
+    # Path pattern filter: matches files in tests/ directory
+    filter_conditions = {"must": [{"key": "path", "match": {"text": "tests/*"}}]}
+
+    query_vector = [1.0, 0.0, 0.0, 0.0]
+    mock_embedding_provider = Mock()
+    mock_embedding_provider.get_embedding.return_value = query_vector
+
+    results = store.search(
+        query="test query",
+        embedding_provider=mock_embedding_provider,
+        collection_name=collection_name,
+        limit=10,
+        filter_conditions=filter_conditions,
+    )
+
+    # Should return 1 file matching the pattern (tests/test_foo.py)
+    assert len(results) == 1
+    assert results[0]["payload"]["path"] == "tests/test_foo.py"
+
+
+def test_combined_language_and_path_filters(populated_store):
+    """Test combining language and path filters."""
+    store, collection_name = populated_store
+
+    # Combined filter: python files in src/ directory
+    filter_conditions = {
+        "must": [
+            {"key": "language", "match": {"value": "python"}},
+            {"key": "path", "match": {"text": "src/*"}},
+        ]
+    }
+
+    query_vector = [1.0, 0.0, 0.0, 0.0]
+    mock_embedding_provider = Mock()
+    mock_embedding_provider.get_embedding.return_value = query_vector
+
+    results = store.search(
+        query="test query",
+        embedding_provider=mock_embedding_provider,
+        collection_name=collection_name,
+        limit=10,
+        filter_conditions=filter_conditions,
+    )
+
+    # Should return 2 python files in src/ directory
+    assert len(results) == 2
+    for result in results:
+        assert result["payload"]["language"] == "python"
+        assert result["payload"]["path"].startswith("src/")

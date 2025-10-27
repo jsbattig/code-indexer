@@ -60,7 +60,9 @@ class TestVoyageAISupport:
             }
         ]
 
+        store.begin_indexing(collection_name)
         result = store.upsert_points(collection_name, points)
+        store.end_indexing(collection_name)
         assert result["status"] == "ok"
         assert result["count"] == 1
 
@@ -122,7 +124,9 @@ class TestOllamaSupport:
             }
         ]
 
+        store.begin_indexing(collection_name)
         result = store.upsert_points(collection_name, points)
+        store.end_indexing(collection_name)
         assert result["status"] == "ok"
         assert result["count"] == 1
 
@@ -642,6 +646,7 @@ class TestEndToEndMultiProvider:
         voyageai_vectors = [np.random.randn(1024).tolist() for _ in range(5)]
         ollama_vectors = [np.random.randn(768).tolist() for _ in range(5)]
 
+        store.begin_indexing(voyageai_collection)
         for i, vector in enumerate(voyageai_vectors):
             store.upsert_points(
                 voyageai_collection,
@@ -657,7 +662,9 @@ class TestEndToEndMultiProvider:
                     }
                 ],
             )
+        store.end_indexing(voyageai_collection)
 
+        store.begin_indexing(ollama_collection)
         for i, vector in enumerate(ollama_vectors):
             store.upsert_points(
                 ollama_collection,
@@ -673,6 +680,7 @@ class TestEndToEndMultiProvider:
                     }
                 ],
             )
+        store.end_indexing(ollama_collection)
 
         # Verify: Both collections have correct counts
         assert store.count_points(voyageai_collection) == 5
