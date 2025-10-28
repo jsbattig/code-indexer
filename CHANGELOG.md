@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.1] - 2025-10-28
+
+### Fixed
+
+#### Critical: fix-config Filesystem Backend Compatibility
+
+**Problem**: The `fix-config` command was not respecting the filesystem backend setting when fixing CoW (Copy-on-Write) clones. It would:
+- Lose the `vector_store.provider = "filesystem"` configuration
+- Force regeneration of Qdrant-specific ports and container names
+- Attempt to initialize Qdrant client and create CoW symlinks
+- Result: Filesystem backend projects would fail with "Permission denied: podman-compose" errors
+
+**Root Cause**:
+- Line 836 in `config_fixer.py` only preserved `embedding_provider`, not `vector_store`
+- Steps 4-7 always executed Qdrant operations regardless of backend type
+- No conditional logic to skip Qdrant operations for filesystem backend
+
+**Solution (Option A: Conditional Container Configuration)**:
+1. **Preserve vector_store** in config dict (lines 837-840)
+2. **Detect backend type** before Qdrant operations (lines 453-456)
+3. **Skip Qdrant client initialization** if filesystem backend (line 459-460)
+4. **Skip CoW symlink creation** if filesystem backend (lines 474-477)
+5. **Skip collection checks** if filesystem backend (lines 486-489)
+6. **Skip port/container regeneration** if filesystem backend (lines 951-954)
+
+**Impact**:
+- ✅ Fixes claude-server CoW clone issue where `vector_store` configuration was lost
+- ✅ Eliminates unnecessary Qdrant configuration for filesystem backend
+- ✅ Reduces `fix-config` execution time and resource usage
+- ✅ Maintains backward compatibility with Qdrant backend
+
+**Testing Results**:
+- Before: `fix-config` applied 8 fixes (included Qdrant port/container regeneration)
+- After: `fix-config` applies 3 fixes (path, project name, git commit only)
+- Verification: `vector_store.provider` preserved as `"filesystem"`
+- Verification: `project_ports` and `project_containers` remain `null` (not regenerated)
+- Verification: `cidx start` and `cidx query` work correctly after `fix-config`
+
+**Files Modified**:
+- `src/code_indexer/services/config_fixer.py` (35 insertions, 14 deletions)
+
+---
+
 ## [7.0.0] - 2025-10-28
 
 ### 🎉 Major Release: Filesystem-Based Architecture with HNSW Indexing
