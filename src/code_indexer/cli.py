@@ -4017,7 +4017,7 @@ OUTPUT THE COMPLETE MERGED FILE (raw content only, no markdown wrappers):"""
                 ],
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=180,  # 3 minutes for large files
             )
 
             if result.returncode != 0:
