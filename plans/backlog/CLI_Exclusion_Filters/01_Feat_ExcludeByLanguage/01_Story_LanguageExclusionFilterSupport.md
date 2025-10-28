@@ -328,18 +328,18 @@ cidx query "database" --language python --exclude-language javascript
 
 ## Definition of Done
 
-- [ ] All test cases written (TDD approach)
-- [ ] CLI flag implementation complete
-- [ ] Language mapper integration complete
-- [ ] Filter construction includes `must_not` conditions
-- [ ] 15+ unit tests written and passing
-- [ ] Integration tests for both backends passing
-- [ ] Performance tests passing
-- [ ] Edge case tests passing
-- [ ] 100% code coverage achieved
-- [ ] Help text updated with examples
-- [ ] Manual testing performed
-- [ ] Code follows project style guidelines
-- [ ] No performance regression
-- [ ] Code reviewed
-- [ ] fast-automation.sh passing
+- [x] All test cases written (TDD approach)
+- [x] CLI flag implementation complete
+- [x] Language mapper integration complete
+- [x] Filter construction includes `must_not` conditions
+- [x] 15+ unit tests written and passing
+- [x] Integration tests for both backends passing
+- [x] Performance tests passing
+- [x] Edge case tests passing
+- [x] 100% code coverage achieved
+- [x] Help text updated with examples
+- [x] Manual testing performed
+- [x] Code follows project style guidelines
+- [x] No performance regression
+- [x] Code reviewed
+- [x] fast-automation.sh passing

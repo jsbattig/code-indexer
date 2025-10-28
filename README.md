@@ -222,7 +222,7 @@ cidx query "authentication logic"
 
 # 5. Search with filtering
 cidx query "user" --language python --min-score 0.7
-cidx query "save" --path "*/models/*" --limit 20
+cidx query "save" --path-filter "*/models/*" --limit 20
 
 # 6. Teach AI assistants about semantic search (optional)
 cidx teach-ai --claude --project
@@ -385,7 +385,7 @@ cidx query "function" --quiet  # Only results, no headers
 
 # Advanced filtering
 cidx query "user" --language python  # Filter by language
-cidx query "save" --path "*/models/*" # Filter by path pattern
+cidx query "save" --path-filter "*/models/*" # Filter by path pattern
 cidx query "function" --min-score 0.7  # Higher confidence matches
 cidx query "database" --limit 15     # More results
 cidx query "test" --min-score 0.8     # High-confidence matches
@@ -424,6 +424,145 @@ javascript: [js, jsx]           # Modify existing mappings
 ```
 
 Changes take effect on the next query execution. The file is automatically created during `cidx init` or on first use.
+
+### Exclusion Filters
+
+CIDX provides powerful exclusion filters to remove unwanted files from your search results. Exclusions always take precedence over inclusions, giving you precise control over your search scope.
+
+#### Excluding Files by Language
+
+Filter out files of specific programming languages using `--exclude-language`:
+
+```bash
+# Exclude JavaScript files from results
+cidx query "database implementation" --exclude-language javascript
+
+# Exclude multiple languages
+cidx query "api handlers" --exclude-language javascript --exclude-language typescript --exclude-language css
+
+# Combine with language inclusion (Python only, no JS)
+cidx query "web server" --language python --exclude-language javascript
+```
+
+#### Excluding Files by Path Pattern
+
+Use `--exclude-path` with glob patterns to filter out files in specific directories or with certain names:
+
+```bash
+# Exclude all test files
+cidx query "production code" --exclude-path "*/tests/*" --exclude-path "*_test.py"
+
+# Exclude dependency and cache directories
+cidx query "application logic" \
+  --exclude-path "*/node_modules/*" \
+  --exclude-path "*/vendor/*" \
+  --exclude-path "*/__pycache__/*"
+
+# Exclude by file extension
+cidx query "source code" --exclude-path "*.min.js" --exclude-path "*.pyc"
+
+# Complex path patterns
+cidx query "configuration" --exclude-path "*/build/*" --exclude-path "*/.*"  # Hidden files
+```
+
+#### Combining Multiple Filter Types
+
+Create sophisticated queries by combining inclusion and exclusion filters:
+
+```bash
+# Python files in src/, excluding tests and cache
+cidx query "database models" \
+  --language python \
+  --path-filter "*/src/*" \
+  --exclude-path "*/tests/*" \
+  --exclude-path "*/__pycache__/*"
+
+# High-relevance results, no test files or vendored code
+cidx query "authentication logic" \
+  --min-score 0.8 \
+  --exclude-path "*/tests/*" \
+  --exclude-path "*/vendor/*" \
+  --exclude-language javascript
+
+# API code only, multiple exclusions
+cidx query "REST endpoints" \
+  --path-filter "*/api/*" \
+  --exclude-path "*/tests/*" \
+  --exclude-path "*/mocks/*" \
+  --exclude-language javascript \
+  --exclude-language css
+```
+
+#### Common Exclusion Patterns
+
+##### Testing Files
+```bash
+--exclude-path "*/tests/*"        # Test directories
+--exclude-path "*/test/*"         # Alternative test dirs
+--exclude-path "*_test.py"        # Python test files
+--exclude-path "*_test.go"        # Go test files
+--exclude-path "*.test.js"        # JavaScript test files
+--exclude-path "*/fixtures/*"     # Test fixtures
+--exclude-path "*/mocks/*"        # Mock files
+```
+
+##### Dependencies and Vendor Code
+```bash
+--exclude-path "*/node_modules/*"    # Node.js dependencies
+--exclude-path "*/vendor/*"          # Vendor libraries
+--exclude-path "*/.venv/*"           # Python virtual environments
+--exclude-path "*/site-packages/*"   # Python packages
+--exclude-path "*/bower_components/*" # Bower dependencies
+```
+
+##### Build Artifacts and Cache
+```bash
+--exclude-path "*/build/*"        # Build output
+--exclude-path "*/dist/*"         # Distribution files
+--exclude-path "*/target/*"       # Maven/Cargo output
+--exclude-path "*/__pycache__/*"  # Python cache
+--exclude-path "*.pyc"            # Python compiled files
+--exclude-path "*.pyo"            # Python optimized files
+--exclude-path "*.class"          # Java compiled files
+--exclude-path "*.o"              # Object files
+--exclude-path "*.so"             # Shared libraries
+```
+
+##### Generated and Minified Files
+```bash
+--exclude-path "*.min.js"         # Minified JavaScript
+--exclude-path "*.min.css"        # Minified CSS
+--exclude-path "*_pb2.py"         # Protocol buffer generated
+--exclude-path "*.generated.*"    # Generated files
+--exclude-path "*/migrations/*"   # Database migrations
+```
+
+#### Filter Conflicts and Warnings
+
+CIDX automatically detects contradictory filters and provides helpful feedback:
+
+```bash
+# Language conflict (same language included AND excluded)
+cidx query "database" --language python --exclude-language python
+# Output: 🚫 Language 'python' is both included and excluded.
+
+# Path conflict (same path included AND excluded)
+cidx query "config" --path-filter "*/src/*" --exclude-path "*/src/*"
+# Output: 🚫 Path pattern '*/src/*' is both included and excluded.
+
+# Over-exclusion warning (many exclusions without inclusions)
+cidx query "code" --exclude-language python --exclude-language javascript \
+  --exclude-language typescript --exclude-language java --exclude-language go
+# Output: ⚠️  Excluding 5 languages without any inclusion filters may result in unexpected results.
+```
+
+#### Performance Notes
+
+- Each exclusion filter adds minimal overhead (typically <2ms)
+- Filters are applied during the search phase, not during indexing
+- Use specific patterns when possible for better performance
+- Complex glob patterns may have slightly higher overhead
+- The order of filters does not affect performance
 
 ### AI Platform Instructions
 

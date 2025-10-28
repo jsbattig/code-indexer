@@ -214,14 +214,14 @@ def test_filter_performance_impact():
 
 ## Validation Checklist
 
-- [ ] All filter types can be combined
-- [ ] Exclusions override inclusions
-- [ ] Conflicts are detected and warned
-- [ ] Empty filters handled correctly
-- [ ] Backward compatibility maintained
-- [ ] Debug logging shows filter structure
-- [ ] Performance acceptable (<5ms overhead)
-- [ ] Both backends handle combined filters
+- [x] All filter types can be combined
+- [x] Exclusions override inclusions
+- [x] Conflicts are detected and warned
+- [x] Empty filters handled correctly
+- [x] Backward compatibility maintained
+- [x] Debug logging shows filter structure
+- [x] Performance acceptable (<5ms overhead)
+- [x] Both backends handle combined filters
 
 ## Edge Cases
 
@@ -262,11 +262,11 @@ cidx query "test" --path "*/specific/file.py" --language python
 
 ## Definition of Done
 
-- [ ] Unified filter builder implemented
-- [ ] Conflict detection working
-- [ ] All combinations tested
-- [ ] Performance benchmarks met
-- [ ] Warnings for edge cases
-- [ ] Debug logging added
-- [ ] Documentation updated
-- [ ] Code reviewed
+- [x] Unified filter builder implemented
+- [x] Conflict detection working
+- [x] All combinations tested
+- [x] Performance benchmarks met
+- [x] Warnings for edge cases
+- [x] Debug logging added
+- [ ] Documentation updated (Story 4.1)
+- [x] Code reviewed

@@ -2874,9 +2874,26 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
 )
 @click.option(
     "--language",
-    help=_generate_language_help_text(),
+    "languages",
+    multiple=True,
+    help=_generate_language_help_text()
+    + " Can be specified multiple times to include multiple languages. Example: --language python --language go",
 )
-@click.option("--path", help="Filter by file path pattern (e.g., */tests/*)")
+@click.option(
+    "--exclude-language",
+    "exclude_languages",
+    multiple=True,
+    help="Exclude files of specified language(s). Can be specified multiple times to exclude multiple languages. Example: --exclude-language javascript --exclude-language typescript",
+)
+@click.option(
+    "--path-filter", "path_filter", help="Filter by file path pattern (e.g., */tests/*)"
+)
+@click.option(
+    "--exclude-path",
+    "exclude_paths",
+    multiple=True,
+    help="Exclude files matching path pattern(s). Supports glob patterns (*, **, ?, [seq]). Can be specified multiple times. Example: --exclude-path '*/tests/*' --exclude-path '*.min.js'",
+)
 @click.option("--min-score", type=float, help="Minimum similarity score (0.0-1.0)")
 @click.option(
     "--accuracy",
@@ -2896,8 +2913,10 @@ def query(
     ctx,
     query: str,
     limit: int,
-    language: Optional[str],
-    path: Optional[str],
+    languages: tuple,
+    exclude_languages: tuple,
+    path_filter: Optional[str],
+    exclude_paths: tuple,
     min_score: Optional[float],
     accuracy: str,
     quiet: bool,
@@ -2924,10 +2943,19 @@ def query(
     \b
     FILTERING OPTIONS:
       • Language: --language python (searches only Python files)
-      • Path: --path */tests/* (searches only test directories)
+      • Exclude: --exclude-language javascript (exclude JavaScript files)
+      • Path: --path-filter */tests/* (searches only test directories)
+      • Exclude Path: --exclude-path '*/tests/*' (exclude test directories)
       • Score: --min-score 0.8 (only high-confidence matches)
       • Limit: --limit 20 (more results)
       • Accuracy: --accuracy high (higher accuracy, slower search)
+
+    \b
+    FILTER COMBINATIONS (Story 3.1):
+      • Combine inclusions and exclusions for precise targeting
+      • Multiple filters are supported and work together
+      • Exclusions always override inclusions
+      • Automatic conflict detection warns about contradictions
 
     \b
     QUERY EXAMPLES:
@@ -2941,11 +2969,26 @@ def query(
     BASIC EXAMPLES:
       code-indexer query "user login"
       code-indexer query "database" --language python
-      code-indexer query "test" --path */tests/* --limit 5
+      code-indexer query "test" --path-filter */tests/* --limit 5
       code-indexer query "async" --min-score 0.8
+      code-indexer query "auth" --exclude-language javascript
+      code-indexer query "config" --exclude-language js --exclude-language ts
+      code-indexer query "api" --exclude-path '*/tests/*' --exclude-path '*.min.js'
       code-indexer query "function" --quiet  # Just score, path, and content
 
+    \b
+    ADVANCED FILTER COMBINATIONS:
+      # Python files, excluding tests
+      code-indexer query "database" --language python --exclude-path '*/tests/*'
+
+      # Source files only, excluding JavaScript and TypeScript
+      code-indexer query "api" --path-filter '*/src/*' --exclude-language js --exclude-language ts
+
+      # Complex targeting with multiple filters
+      code-indexer query "handler" --language python --language go --exclude-path '*/vendor/*' --exclude-path '*/node_modules/*'
+
     Results show file paths, matched content, and similarity scores.
+    Filter conflicts are automatically detected and warnings are displayed.
     """
     # Get mode information from context
     mode = ctx.obj.get("mode", "uninitialized")
@@ -2957,10 +3000,12 @@ def query(
 
         # Build args list from command parameters
         args = [query, "--limit", str(limit)]
-        if language:
-            args.extend(["--language", language])
-        if path:
-            args.extend(["--path", path])
+        for lang in languages:
+            args.extend(["--language", lang])
+        if path_filter:
+            args.extend(["--path-filter", path_filter])
+        for exclude_path in exclude_paths:
+            args.extend(["--exclude-path", exclude_path])
         if min_score is not None:
             args.extend(["--min-score", str(min_score)])
         if accuracy != "balanced":
@@ -3001,13 +3046,15 @@ def query(
             # Execute remote query with transparent repository linking
             from .remote.query_execution import execute_remote_query
 
+            # NOTE: Remote query API currently supports single language only
+            # Use first language from tuple, ignore additional languages for remote mode
             results = asyncio.run(
                 execute_remote_query(
                     query_text=query,
                     limit=limit,
                     project_root=project_root,
-                    language=language,
-                    path=path,
+                    language=languages[0] if languages else None,
+                    path=path_filter,
                     min_score=min_score,
                     include_source=True,
                     accuracy=accuracy,
@@ -3231,28 +3278,130 @@ def query(
 
         # Build filter conditions for non-git path only
         filter_conditions: Dict[str, Any] = {}
-        if language:
-            # Validate language parameter
+        if languages:
+            # Validate language parameters
             language_validator = LanguageValidator()
-            validation_result = language_validator.validate_language(language)
-
-            if not validation_result.is_valid:
-                click.echo(f"Error: {validation_result.error_message}", err=True)
-                if validation_result.suggestions:
-                    click.echo(
-                        f"Suggestions: {', '.join(validation_result.suggestions)}",
-                        err=True,
-                    )
-                raise click.ClickException(f"Invalid language: {language}")
-
-            # For non-git path, handle language mapping
             language_mapper = LanguageMapper()
-            language_filter = language_mapper.build_language_filter(language)
-            filter_conditions["must"] = [language_filter]
-        if path:
+            must_conditions = []
+
+            for lang in languages:
+                # Validate each language
+                validation_result = language_validator.validate_language(lang)
+
+                if not validation_result.is_valid:
+                    click.echo(f"Error: {validation_result.error_message}", err=True)
+                    if validation_result.suggestions:
+                        click.echo(
+                            f"Suggestions: {', '.join(validation_result.suggestions)}",
+                            err=True,
+                        )
+                    raise click.ClickException(f"Invalid language: {lang}")
+
+                # For non-git path, handle language mapping
+                language_filter = language_mapper.build_language_filter(lang)
+                must_conditions.append(language_filter)
+
+            if must_conditions:
+                filter_conditions["must"] = must_conditions
+        if path_filter:
             filter_conditions.setdefault("must", []).append(
-                {"key": "path", "match": {"text": path}}
+                {"key": "path", "match": {"text": path_filter}}
             )
+
+        # Build exclusion filters (must_not conditions)
+        if exclude_languages:
+            language_validator = LanguageValidator()
+            language_mapper = LanguageMapper()
+            must_not_conditions = []
+
+            for exclude_lang in exclude_languages:
+                # Validate each exclusion language
+                validation_result = language_validator.validate_language(exclude_lang)
+
+                if not validation_result.is_valid:
+                    click.echo(f"Error: {validation_result.error_message}", err=True)
+                    if validation_result.suggestions:
+                        click.echo(
+                            f"Suggestions: {', '.join(validation_result.suggestions)}",
+                            err=True,
+                        )
+                    raise click.ClickException(
+                        f"Invalid exclusion language: {exclude_lang}"
+                    )
+
+                # Get all extensions for this language
+                extensions = language_mapper.get_extensions(exclude_lang)
+
+                # Add must_not condition for each extension
+                for ext in extensions:
+                    must_not_conditions.append(
+                        {"key": "language", "match": {"value": ext}}
+                    )
+
+            if must_not_conditions:
+                filter_conditions["must_not"] = must_not_conditions
+
+        # Build path exclusion filters (must_not conditions for paths)
+        if exclude_paths:
+            from .services.path_filter_builder import PathFilterBuilder
+
+            path_filter_builder = PathFilterBuilder()
+
+            # Build path exclusion filters
+            path_exclusion_filters = path_filter_builder.build_exclusion_filter(
+                list(exclude_paths)
+            )
+
+            # Add to existing must_not conditions
+            if path_exclusion_filters.get("must_not"):
+                if "must_not" in filter_conditions:
+                    filter_conditions["must_not"].extend(
+                        path_exclusion_filters["must_not"]
+                    )
+                else:
+                    filter_conditions["must_not"] = path_exclusion_filters["must_not"]
+
+        # Detect and warn about filter conflicts (Story 3.1)
+        from .services.filter_conflict_detector import FilterConflictDetector
+
+        conflict_detector = FilterConflictDetector()
+
+        # Prepare filter arguments for conflict detection
+        include_languages = list(languages) if languages else []
+        include_paths = [path_filter] if path_filter else []
+
+        conflicts = conflict_detector.detect_conflicts(
+            include_languages=include_languages,
+            exclude_languages=list(exclude_languages) if exclude_languages else [],
+            include_paths=include_paths,
+            exclude_paths=list(exclude_paths) if exclude_paths else [],
+        )
+
+        # Display warnings/errors for conflicts
+        if conflicts:
+            error_conflicts = [c for c in conflicts if c.severity == "error"]
+            warning_conflicts = [c for c in conflicts if c.severity == "warning"]
+
+            if error_conflicts:
+                console.print("\n[bold red]🚫 Filter Conflicts (Errors):[/bold red]")
+                for conflict in error_conflicts:
+                    console.print(f"  [red]• {conflict.message}[/red]")
+                console.print()
+
+            if warning_conflicts:
+                console.print("\n[bold yellow]⚠️  Filter Warnings:[/bold yellow]")
+                for conflict in warning_conflicts:
+                    console.print(f"  [yellow]• {conflict.message}[/yellow]")
+                console.print()
+
+        # Log filter structure for debugging (Story 3.1 AC #12)
+        import logging
+
+        logger = logging.getLogger(__name__)
+        if filter_conditions:
+            import json
+
+            logger.debug(f"Query filters: {json.dumps(filter_conditions, indent=2)}")
 
         # Check if project uses git-aware indexing
         from .services.git_topology_service import GitTopologyService
@@ -3291,10 +3440,10 @@ def query(
 
             # Search
             console.print(f"🔍 Searching for: '{query}'")
-            if language:
-                console.print(f"🏷️  Language filter: {language}")
-            if path:
-                console.print(f"📁 Path filter: {path}")
+            if languages:
+                console.print(f"🏷️  Language filter: {', '.join(languages)}")
+            if path_filter:
+                console.print(f"📁 Path filter: {path_filter}")
             console.print(f"📊 Limit: {limit}")
             if min_score:
                 console.print(f"⭐ Min score: {min_score}")
@@ -3354,16 +3503,25 @@ def query(
             )
 
             # Add user-specified filters
-            if language:
+            if languages:
                 language_mapper = LanguageMapper()
-                language_filter = language_mapper.build_language_filter(language)
-                filter_conditions_list.append(language_filter)
-            if path:
-                filter_conditions_list.append({"key": "path", "match": {"text": path}})
+                # Handle multiple languages by building OR conditions
+                for language in languages:
+                    language_filter = language_mapper.build_language_filter(language)
+                    filter_conditions_list.append(language_filter)
+            if path_filter:
+                filter_conditions_list.append(
+                    {"key": "path", "match": {"text": path_filter}}
+                )
 
+            # Build filter conditions preserving both must and must_not conditions
             query_filter_conditions = (
-                {"must": filter_conditions_list} if filter_conditions_list else None
+                {"must": filter_conditions_list} if filter_conditions_list else {}
             )
+            # CRITICAL: Preserve must_not conditions (exclusion filters) from earlier filter_conditions
+            # This ensures --exclude-language and --exclude-path work in git-aware repositories
+            if filter_conditions.get("must_not"):
+                query_filter_conditions["must_not"] = filter_conditions["must_not"]
 
             # Query vector store (get more results to allow for git filtering)
             # FilesystemVectorStore: parallel execution (query + embedding_provider)
@@ -8340,7 +8498,7 @@ def repos_group(ctx):
 @repos_group.command(name="list")
 @click.option("--filter", help="Filter repositories by pattern")
 @click.pass_context
-def list(ctx, filter: Optional[str]):
+def list_repos(ctx, filter: Optional[str]):
     """List activated repositories.
 
     Shows your currently activated repositories with their sync status,

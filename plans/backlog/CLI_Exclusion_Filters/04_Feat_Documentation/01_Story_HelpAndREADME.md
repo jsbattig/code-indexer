@@ -16,19 +16,19 @@ This story focuses on updating all user-facing documentation to explain the new 
 ## Acceptance Criteria
 
 ### Help Text Requirements
-1. ✅ `cidx query --help` shows exclusion options
-2. ✅ Each option has clear description
-3. ✅ Examples provided in help text
-4. ✅ Common patterns documented
-5. ✅ Formatting is consistent
+1. ✅ `cidx query --help` shows exclusion options - COMPLETE
+2. ✅ Each option has clear description - COMPLETE
+3. ✅ Examples provided in help text - COMPLETE
+4. ✅ Common patterns documented - COMPLETE
+5. ✅ Formatting is consistent - COMPLETE
 
 ### README Requirements
-1. ✅ New "Exclusion Filters" section added
-2. ✅ Language exclusion examples
-3. ✅ Path exclusion examples
-4. ✅ Combined filter examples
-5. ✅ Common patterns reference
-6. ✅ Performance notes included
+1. ✅ New "Exclusion Filters" section added - COMPLETE (140 lines)
+2. ✅ Language exclusion examples - COMPLETE
+3. ✅ Path exclusion examples - COMPLETE
+4. ✅ Combined filter examples - COMPLETE
+5. ✅ Common patterns reference - COMPLETE (4 categories)
+6. ✅ Performance notes included - COMPLETE
 
 ## Implementation Details
 
@@ -306,22 +306,22 @@ def test_all_readme_examples():
 
 ## Validation Checklist
 
-- [ ] Help text is clear and accurate
-- [ ] Examples in help text work
-- [ ] README section is comprehensive
-- [ ] All examples are tested
-- [ ] Common patterns documented
-- [ ] Error messages are helpful
-- [ ] Performance notes included
-- [ ] Formatting is consistent
+- [x] Help text is clear and accurate
+- [x] Examples in help text work
+- [x] README section is comprehensive
+- [x] All examples are tested
+- [x] Common patterns documented
+- [x] Error messages are helpful
+- [x] Performance notes included
+- [x] Formatting is consistent
 
 ## Definition of Done
 
-- [ ] CLI help text updated with examples
-- [ ] README.md updated with new section
-- [ ] All examples manually tested
-- [ ] Error messages implemented
-- [ ] Documentation reviewed for clarity
-- [ ] Spell check and grammar check done
-- [ ] Code comments added where needed
-- [ ] PR description references this story
+- [x] CLI help text updated with examples
+- [x] README.md updated with new section (140 lines)
+- [x] All examples manually tested
+- [x] Error messages implemented (FilterConflictDetector)
+- [x] Documentation reviewed for clarity
+- [x] Spell check and grammar check done
+- [x] Code comments added where needed
+- [ ] PR description references this story (will be created in epic completion)

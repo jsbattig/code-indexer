@@ -1089,12 +1089,15 @@ class FilesystemVectorStore:
                         return bool(current == expected_value)
                     elif "text" in match_spec:
                         # Pattern match (glob-style wildcards)
-                        import fnmatch
+                        # Use PathPatternMatcher for cross-platform consistency
+                        from code_indexer.services.path_pattern_matcher import PathPatternMatcher
 
                         pattern = match_spec["text"]
                         if not isinstance(current, str):
                             return False
-                        return bool(fnmatch.fnmatch(current, pattern))
+
+                        matcher = PathPatternMatcher()
+                        return bool(matcher.matches_pattern(current, pattern))
                     else:
                         # No match specification found
                         return False
