@@ -57,14 +57,14 @@ class TestActivateRepositoryRequestContract:
             ActivateRepositoryRequest(user_alias="test")
 
         errors = exc_info.value.errors()
-        assert any("must specify either" in str(error["msg"]).lower() for error in errors)
+        assert any(
+            "must specify either" in str(error["msg"]).lower() for error in errors
+        )
 
     def test_composite_minimum_two_repos_enforced_at_api_layer(self):
         """Test that API layer enforces minimum 2 repos for composite."""
         with pytest.raises(ValidationError) as exc_info:
-            ActivateRepositoryRequest(
-                golden_repo_aliases=["repo1"], user_alias="test"
-            )
+            ActivateRepositoryRequest(golden_repo_aliases=["repo1"], user_alias="test")
 
         errors = exc_info.value.errors()
         assert any(

@@ -1,7 +1,7 @@
 """
-FileChunkingManager for parallel file processing with vector integration and Qdrant writing.
+FileChunkingManager for parallel file processing with vector integration and vector storage writing.
 
-Handles complete file lifecycle: chunk → vector → wait → write to Qdrant
+Handles complete file lifecycle: chunk → vector → wait → write to vector storage
 with file atomicity and immediate progress feedback.
 
 This implementation addresses the specific user problems:
@@ -28,8 +28,8 @@ from ..indexing.fixed_size_chunker import FixedSizeChunker
 from .clean_slot_tracker import CleanSlotTracker, FileData, FileStatus
 import threading
 
-# Token counting for large file handling - MANDATORY dependency
-import voyageai
+# Token counting for large file handling - using embedded tokenizer
+# No imports needed here - lazy import in _count_tokens_accurately()
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class FileChunkingManager:
         self,
         vector_manager: VectorCalculationManager,
         chunker: FixedSizeChunker,
-        qdrant_client,  # Pass from HighThroughputProcessor
+        vector_store_client,  # Vector storage client (QdrantClient or FilesystemVectorStore)
         thread_count: int,
         slot_tracker: CleanSlotTracker,
         codebase_dir: Path,  # CRITICAL FOR COW CLONING: Needed for path normalization
@@ -68,7 +68,7 @@ class FileChunkingManager:
         Args:
             vector_manager: Existing VectorCalculationManager (unchanged)
             chunker: Existing FixedSizeChunker (unchanged)
-            qdrant_client: Qdrant client for atomic writes
+            vector_store_client: Vector storage client for atomic writes (QdrantClient or FilesystemVectorStore)
             thread_count: Number of worker threads (thread_count + 2 per specs)
             slot_tracker: CleanSlotTracker for progress tracking and slot management
             codebase_dir: Repository root directory for path normalization
@@ -82,8 +82,8 @@ class FileChunkingManager:
             raise ValueError("vector_manager cannot be None")
         if not chunker:
             raise ValueError("chunker cannot be None")
-        if not qdrant_client:
-            raise ValueError("qdrant_client cannot be None")
+        if not vector_store_client:
+            raise ValueError("vector_store_client cannot be None")
         if not slot_tracker:
             raise ValueError("slot_tracker cannot be None")
         if not codebase_dir:
@@ -91,7 +91,7 @@ class FileChunkingManager:
 
         self.vector_manager = vector_manager
         self.chunker = chunker
-        self.qdrant_client = qdrant_client
+        self.vector_store_client = vector_store_client
         self.thread_count = thread_count
         self.slot_tracker = slot_tracker
         self.codebase_dir = codebase_dir
@@ -104,8 +104,9 @@ class FileChunkingManager:
         self.executor: Optional[ThreadPoolExecutor] = None
         self._pending_futures: List[Future] = []  # Track futures for clean cancellation
 
-        # Initialize VoyageAI client for accurate token counting
-        self.voyage_client = voyageai.Client()
+        # Check if we're using VoyageAI provider for token counting
+        provider_name = vector_manager.embedding_provider.__class__.__name__
+        self.is_voyageai_provider = "VoyageAI" in provider_name
 
         logger.info(f"Initialized FileChunkingManager with {thread_count} base threads")
 
@@ -200,10 +201,24 @@ class FileChunkingManager:
         logger.info("FileChunkingManager cancellation requested")
 
     def _count_tokens(self, text: str) -> int:
-        """Count tokens using VoyageAI's official count_tokens function."""
+        """Count tokens using provider-specific token counting.
+
+        For VoyageAI: Use official count_tokens API
+        For Ollama: Estimate based on character count (rough approximation)
+        """
         # Get the model name from the embedding provider
         model = self.vector_manager.embedding_provider.get_current_model()
-        return self.voyage_client.count_tokens([text], model=model)  # type: ignore[no-any-return]
+
+        # Use VoyageAI's accurate token counting if using VoyageAI provider
+        if self.is_voyageai_provider:
+            # Lazy import to avoid loading tokenizer at module import time
+            from .embedded_voyage_tokenizer import VoyageTokenizer
+
+            return VoyageTokenizer.count_tokens([text], model=model)
+
+        # Fallback: Rough estimate (4 chars ≈ 1 token for English text)
+        # This is conservative and works for batching purposes
+        return len(text) // 4
 
     def submit_file_for_processing(
         self,
@@ -603,7 +618,7 @@ class FileChunkingManager:
                     error=f"Batch processing failed: {e}",
                 )
 
-            # Phase 4: Atomic write to Qdrant if we have valid vectors
+            # Phase 4: Atomic write to vector storage if we have valid vectors
             if file_points:
                 try:
                     points_data = []
@@ -624,14 +639,14 @@ class FileChunkingManager:
                         )
                         points_data.append(qdrant_point)
 
-                    # Atomic write to Qdrant
-                    success = self.qdrant_client.upsert_points(
+                    # Atomic write to vector storage
+                    success = self.vector_store_client.upsert_points(
                         points=points_data,
                         collection_name=metadata.get("collection_name"),
                     )
                     if not success:
                         raise RuntimeError(
-                            f"Failed to write {len(points_data)} points to Qdrant"
+                            f"Failed to write {len(points_data)} points to vector storage"
                         )
 
                     logger.debug(
@@ -639,13 +654,13 @@ class FileChunkingManager:
                     )
 
                 except Exception as e:
-                    logger.error(f"Qdrant write failed for {file_path}: {e}")
+                    logger.error(f"Vector storage write failed for {file_path}: {e}")
                     return FileProcessingResult(
                         success=False,
                         file_path=file_path,
                         chunks_processed=0,
                         processing_time=time.time() - start_time,
-                        error=f"Qdrant write failed: {e}",
+                        error=f"Vector storage write failed: {e}",
                     )
 
             processing_time = time.time() - start_time

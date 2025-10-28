@@ -544,8 +544,10 @@ class TestRemoteQueryCLIIntegration:
         expected_params = [
             "query",  # Required query text
             "limit",  # --limit
-            "language",  # --language
-            "path",  # --path
+            "languages",  # --language (now supports multiple)
+            "exclude_languages",  # --exclude-language
+            "path_filter",  # --path-filter
+            "exclude_paths",  # --exclude-path
             "min_score",  # --min-score
             "accuracy",  # --accuracy
             "quiet",  # --quiet

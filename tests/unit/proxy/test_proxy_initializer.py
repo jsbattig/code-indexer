@@ -166,7 +166,9 @@ class TestNestedProxyDetection:
         parent_config = parent_dir / ".code-indexer"
         parent_config.mkdir()
         # Regular config without proxy_mode flag
-        (parent_config / "config.json").write_text('{"embedding_provider": "ollama"}')
+        (parent_config / "config.json").write_text(
+            '{"embedding_provider": "voyage-ai"}'
+        )
 
         child_dir = parent_dir / "child_proxy"
         child_dir.mkdir()
@@ -348,7 +350,9 @@ class TestRepositoryDiscovery:
         assert len(repos) >= 1
         assert "real_repo" in repos
 
-    def test_discover_repositories_prevents_circular_symlink_infinite_loop(self, tmp_path):
+    def test_discover_repositories_prevents_circular_symlink_infinite_loop(
+        self, tmp_path
+    ):
         """discover_repositories() detects and prevents circular symlink loops."""
         target_dir = tmp_path / "proxy_root"
         target_dir.mkdir()

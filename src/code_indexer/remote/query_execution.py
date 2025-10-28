@@ -48,7 +48,7 @@ async def execute_remote_query(
     limit: int,
     project_root: Path,
     language: Optional[str] = None,
-    path: Optional[str] = None,
+    path: Optional[str] = None,  # Kept for backward compatibility with CLI calls
     min_score: Optional[float] = None,
     include_source: bool = True,
     accuracy: str = "balanced",

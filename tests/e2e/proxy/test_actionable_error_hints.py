@@ -28,7 +28,9 @@ class TestActionableErrorHints:
             config_dir.mkdir()
 
             config_file = config_dir / "config.json"
-            config_file.write_text('{"proxy_mode": true, "discovered_repos": ["repo1", "repo2"]}')
+            config_file.write_text(
+                '{"proxy_mode": true, "discovered_repos": ["repo1", "repo2"]}'
+            )
 
             # Create two sub-repositories
             for repo_name in ["repo1", "repo2"]:
@@ -61,7 +63,7 @@ class TestActionableErrorHints:
             cwd=str(proxy_workspace),
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
         )
 
         # Query should fail (services not running)
@@ -74,7 +76,10 @@ class TestActionableErrorHints:
         assert "grep" in output.lower()
 
         # Should mention using alternative search tools
-        assert any(word in output.lower() for word in ["grep", "search", "alternative", "manually"])
+        assert any(
+            word in output.lower()
+            for word in ["grep", "search", "alternative", "manually"]
+        )
 
     def test_query_failure_includes_repository_name(self, proxy_workspace):
         """Test that hints include repository name for context."""
@@ -83,7 +88,7 @@ class TestActionableErrorHints:
             cwd=str(proxy_workspace),
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
         )
 
         assert result.returncode != 0
@@ -100,7 +105,7 @@ class TestActionableErrorHints:
             cwd=str(proxy_workspace),
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
         )
 
         assert result.returncode != 0
@@ -118,7 +123,7 @@ class TestActionableErrorHints:
             cwd=str(proxy_workspace),
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
         )
 
         assert result.returncode != 0
@@ -138,7 +143,7 @@ class TestActionableErrorHints:
             cwd=str(proxy_workspace),
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
         )
 
         assert result.returncode != 0
@@ -157,7 +162,7 @@ class TestActionableErrorHints:
             cwd=str(proxy_workspace),
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
         )
 
         assert result.returncode != 0
@@ -196,7 +201,7 @@ class TestActionableErrorHints:
             cwd=str(proxy_workspace),
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
         )
 
         assert result.returncode != 0
@@ -223,7 +228,9 @@ class TestHintEdgeCases:
             config_dir = proxy_root / ".code-indexer"
             config_dir.mkdir()
             config_file = config_dir / "config.json"
-            config_file.write_text('{"proxy_mode": true, "discovered_repos": ["myrepo"]}')
+            config_file.write_text(
+                '{"proxy_mode": true, "discovered_repos": ["myrepo"]}'
+            )
 
             # Single repository
             repo_path = proxy_root / "myrepo"
@@ -235,7 +242,7 @@ class TestHintEdgeCases:
 
             # Test code
             test_file = repo_path / "app.py"
-            test_file.write_text('def main():\n    pass\n')
+            test_file.write_text("def main():\n    pass\n")
 
             yield proxy_root
 
@@ -246,7 +253,7 @@ class TestHintEdgeCases:
             cwd=str(single_repo_proxy),
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
         )
 
         assert result.returncode != 0
@@ -275,7 +282,9 @@ class TestConversationRequirementValidation:
             config_dir = proxy_root / ".code-indexer"
             config_dir.mkdir()
             config_file = config_dir / "config.json"
-            config_file.write_text('{"proxy_mode": true, "discovered_repos": ["backend"]}')
+            config_file.write_text(
+                '{"proxy_mode": true, "discovered_repos": ["backend"]}'
+            )
 
             repo_path = proxy_root / "backend"
             repo_path.mkdir()
@@ -285,7 +294,7 @@ class TestConversationRequirementValidation:
             repo_config.write_text('{"embedding_provider": "voyage-ai"}')
 
             code_file = repo_path / "auth.py"
-            code_file.write_text('def authenticate():\n    pass\n')
+            code_file.write_text("def authenticate():\n    pass\n")
 
             yield proxy_root
 
@@ -299,7 +308,7 @@ class TestConversationRequirementValidation:
             cwd=str(failing_proxy),
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
         )
 
         output = result.stdout + result.stderr
@@ -317,7 +326,7 @@ class TestConversationRequirementValidation:
             cwd=str(failing_proxy),
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
         )
 
         output = result.stdout + result.stderr
@@ -340,7 +349,7 @@ class TestConversationRequirementValidation:
             cwd=str(failing_proxy),
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
         )
 
         output = result.stdout + result.stderr
@@ -358,7 +367,7 @@ class TestConversationRequirementValidation:
             cwd=str(failing_proxy),
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
         )
 
         output = result.stdout + result.stderr

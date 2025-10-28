@@ -4,10 +4,9 @@ Tests unified output streaming from multiple watch processes.
 """
 
 import pytest
-import queue
 import threading
 import time
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 from io import StringIO
 from code_indexer.proxy.output_multiplexer import OutputMultiplexer
 
@@ -88,7 +87,7 @@ class TestOutputMultiplexer:
 
         # Newline should be stripped
         assert line == "Line with newline"
-        assert not line.endswith('\n')
+        assert not line.endswith("\n")
 
     def test_output_queue_thread_safe(self):
         """Test output queue is thread-safe for concurrent access."""
@@ -131,14 +130,18 @@ class TestOutputMultiplexer:
         # Give threads time to start
         time.sleep(0.1)
 
-        initial_thread_count = len([t for t in multiplexer.reader_threads if t.is_alive()])
+        initial_thread_count = len(
+            [t for t in multiplexer.reader_threads if t.is_alive()]
+        )
 
         multiplexer.stop_multiplexing()
 
         # Threads should be stopped or joined
         # Note: daemon threads may still exist but won't block
         time.sleep(0.2)
-        final_thread_count = len([t for t in multiplexer.reader_threads if t.is_alive()])
+        final_thread_count = len(
+            [t for t in multiplexer.reader_threads if t.is_alive()]
+        )
 
         # Final count should be <= initial count (threads terminating)
         assert final_thread_count <= initial_thread_count
@@ -154,6 +157,7 @@ class TestOutputMultiplexer:
         # Capture output during drain
         import sys
         from io import StringIO
+
         captured_output = StringIO()
         old_stdout = sys.stdout
         sys.stdout = captured_output
@@ -267,7 +271,7 @@ class TestOutputMultiplexer:
         # Generate large amount of output
         num_lines = 100
         proc = Mock()
-        lines = '\n'.join([f"Line {i}" for i in range(num_lines)]) + '\n'
+        lines = "\n".join([f"Line {i}" for i in range(num_lines)]) + "\n"
         proc.stdout = StringIO(lines)
         processes = {"repo": proc}
 

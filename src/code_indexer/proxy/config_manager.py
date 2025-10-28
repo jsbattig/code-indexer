@@ -142,9 +142,7 @@ class ProxyConfigManager:
         full_path = self.proxy_root / repo_path
 
         if not full_path.exists():
-            raise InvalidRepositoryError(
-                f"Repository path does not exist: {repo_path}"
-            )
+            raise InvalidRepositoryError(f"Repository path does not exist: {repo_path}")
 
         code_indexer_dir = full_path / ".code-indexer"
         if not code_indexer_dir.exists():

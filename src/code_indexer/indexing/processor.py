@@ -6,7 +6,6 @@ from typing import List, Dict, Any, Optional, Callable
 from dataclasses import dataclass
 
 from ..config import Config
-from ..services import QdrantClient
 from ..services.embedding_provider import EmbeddingProvider
 from ..services.vector_calculation_manager import VectorCalculationManager
 from .file_finder import FileFinder
@@ -45,11 +44,13 @@ class DocumentProcessor:
         self,
         config: Config,
         embedding_provider: EmbeddingProvider,
-        qdrant_client: QdrantClient,
+        vector_store_client: Any,  # QdrantClient or FilesystemVectorStore
     ):
         self.config = config
         self.embedding_provider = embedding_provider
-        self.qdrant_client = qdrant_client
+        self.vector_store_client = vector_store_client
+        # Backward compatibility: also set qdrant_client for legacy code
+        self.qdrant_client = vector_store_client
         self.file_finder = FileFinder(config)
         # Use model-aware fixed-size chunker for all processing
         self.fixed_size_chunker = FixedSizeChunker(config)

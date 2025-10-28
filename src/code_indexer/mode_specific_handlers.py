@@ -257,54 +257,141 @@ def uninstall_remote_mode(project_root: Path, confirm: bool = False) -> None:
 
 
 def uninstall_local_mode(
-    project_root: Path, force_docker: bool = False, wipe_all: bool = False
+    project_root: Path,
+    force_docker: bool = False,
+    wipe_all: bool = False,
+    confirm: bool = False,
 ) -> None:
-    """Uninstall local mode configuration using proper Docker cleanup.
+    """Uninstall local mode configuration using backend abstraction.
+
+    For filesystem backend: Removes .code-indexer/index/ directory via backend.cleanup()
+    For Qdrant backend: Uses Docker cleanup with data-cleaner for root-owned files
 
     Args:
         project_root: Path to the project root directory
         force_docker: Force use of Docker even if Podman is available
         wipe_all: Perform complete system wipe
+        confirm: Skip confirmation prompt if True
     """
     from rich.console import Console
-    from .services.docker_manager import DockerManager
+    from .config import ConfigManager
+    from .backends.backend_factory import BackendFactory
     import shutil
 
     console = Console()
 
     try:
-        # Create Docker manager for this project
-        project_name = project_root.name
-        docker_manager = DockerManager(
-            console=console,
-            project_name=project_name,
-            force_docker=force_docker,
-            project_config_dir=project_root / ".code-indexer",
-        )
+        # Load configuration to determine backend type
+        config_manager = ConfigManager.create_with_backtrack(project_root)
+        config = config_manager.get_config()
+
+        # Get storage size before cleanup for reporting
+        storage_size = 0
+        try:
+            if config.vector_store and config.vector_store.provider == "filesystem":
+                index_dir = project_root / ".code-indexer" / "index"
+                if index_dir.exists():
+                    for file_path in index_dir.rglob("*"):
+                        if file_path.is_file():
+                            try:
+                                storage_size += file_path.stat().st_size
+                            except OSError:
+                                pass
+        except Exception:
+            pass  # Ignore size calculation errors
+
+        # Show confirmation prompt unless --confirm flag used
+        if not confirm:
+            console.print(
+                "⚠️  About to uninstall local mode configuration", style="yellow"
+            )
+            if wipe_all:
+                console.print(
+                    "   ⚠️  WITH --wipe-all: Complete system wipe!", style="red bold"
+                )
+            console.print(
+                f"   • .code-indexer directory: {project_root / '.code-indexer'}",
+                style="blue",
+            )
+            if storage_size > 0:
+                size_mb = storage_size / (1024 * 1024)
+                console.print(
+                    f"   • Storage to reclaim: {size_mb:.2f} MB", style="blue"
+                )
+
+            # Show backend type and switching tip
+            backend_type = (
+                config.vector_store.provider
+                if config.vector_store
+                else "qdrant"  # Default
+            )
+            console.print(f"   • Current backend: {backend_type}", style="blue")
+            console.print()
+            console.print(
+                "💡 To switch backends: Run 'cidx init --vector-store <backend>' after uninstall",
+                style="dim",
+            )
+            console.print()
+
+            from rich.prompt import Confirm
+
+            if not Confirm.ask("Proceed with uninstall?", default=False):
+                console.print("❌ Uninstall cancelled", style="yellow")
+                return
 
         console.print("🗑️  Starting local uninstall process...", style="yellow")
 
-        # Stop running containers first
-        console.print("⏹️  Stopping containers...", style="blue")
-        docker_manager.stop()
+        # Create backend
+        backend = BackendFactory.create(config, project_root)
 
-        # Use data-cleaner to remove root-owned files
-        console.print("🧹 Cleaning root-owned data files...", style="blue")
-        qdrant_path = str(project_root / ".code-indexer" / "qdrant")
-        docker_manager.clean_with_data_cleaner(paths=[qdrant_path])
+        # Use backend-specific cleanup
+        if config.vector_store and config.vector_store.provider == "filesystem":
+            # Filesystem backend: Use backend.cleanup() to remove index directory
+            console.print("📁 Removing filesystem index directory...", style="blue")
+            backend.cleanup()
 
-        # Perform comprehensive cleanup
-        console.print("🔧 Removing containers and volumes...", style="blue")
-        if wipe_all:
-            # Aggressive cleanup including volumes and images
-            cleanup_success = docker_manager.cleanup_with_final_guidance(
-                remove_data=True, force=True, verbose=True, validate=True
-            )
+            # Report storage reclaimed
+            if storage_size > 0:
+                size_mb = storage_size / (1024 * 1024)
+                console.print(f"💾 Storage reclaimed: {size_mb:.2f} MB", style="green")
         else:
-            # Standard cleanup
-            cleanup_success = docker_manager.cleanup(
-                remove_data=True, force=True, verbose=True, validate=True
+            # Qdrant backend: Use Docker cleanup (legacy behavior)
+            from .services.docker_manager import DockerManager
+
+            project_name = project_root.name
+            docker_manager = DockerManager(
+                console=console,
+                project_name=project_name,
+                force_docker=force_docker,
+                project_config_dir=project_root / ".code-indexer",
             )
+
+            # Stop running containers first
+            console.print("⏹️  Stopping containers...", style="blue")
+            docker_manager.stop()
+
+            # Use data-cleaner to remove root-owned files
+            console.print("🧹 Cleaning root-owned data files...", style="blue")
+            qdrant_path = str(project_root / ".code-indexer" / "qdrant")
+            docker_manager.clean_with_data_cleaner(paths=[qdrant_path])
+
+            # Perform comprehensive cleanup
+            console.print("🔧 Removing containers and volumes...", style="blue")
+            if wipe_all:
+                # Aggressive cleanup including volumes and images
+                cleanup_success = docker_manager.cleanup_with_final_guidance(
+                    remove_data=True, force=True, verbose=True, validate=True
+                )
+            else:
+                # Standard cleanup
+                cleanup_success = docker_manager.cleanup(
+                    remove_data=True, force=True, verbose=True, validate=True
+                )
+
+            if not cleanup_success:
+                console.print(
+                    "⚠️  Container cleanup completed with some issues", style="yellow"
+                )
 
         # Remove .code-indexer directory
         code_indexer_dir = project_root / ".code-indexer"
@@ -312,13 +399,7 @@ def uninstall_local_mode(
             console.print("📁 Removing .code-indexer directory...", style="blue")
             shutil.rmtree(code_indexer_dir)
 
-        if cleanup_success:
-            console.print("✅ Local uninstall completed successfully", style="green")
-        else:
-            console.print("⚠️  Uninstall completed with some issues", style="yellow")
-            console.print(
-                "💡 Check above messages for any manual cleanup needed", style="blue"
-            )
+        console.print("✅ Local uninstall completed successfully", style="green")
 
     except Exception as e:
         console.print(f"❌ Error during local uninstall: {e}", style="red")
@@ -326,6 +407,9 @@ def uninstall_local_mode(
             "💡 You may need to manually remove .code-indexer directory and containers",
             style="blue",
         )
+        import traceback
+
+        traceback.print_exc()
 
 
 def _get_health_details(health_info: Dict[str, Any]) -> str:

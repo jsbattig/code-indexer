@@ -7,16 +7,11 @@ proper handling of both single and composite repositories.
 
 import json
 import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-from datetime import datetime
+from unittest.mock import patch, MagicMock
 
 from code_indexer.server.query.semantic_query_manager import (
     SemanticQueryManager,
     QueryResult,
-)
-from code_indexer.server.repositories.activated_repo_manager import (
-    ActivatedRepoManager,
 )
 
 
@@ -34,10 +29,7 @@ class TestQueryEndpointRouting:
         config_dir.mkdir()
         config_file = config_dir / "config.json"
 
-        config_data = {
-            "proxy_mode": False,
-            "embedding_provider": "ollama"
-        }
+        config_data = {"proxy_mode": False, "embedding_provider": "ollama"}
         config_file.write_text(json.dumps(config_data))
 
         return repo_path
@@ -56,16 +48,13 @@ class TestQueryEndpointRouting:
         config_data = {
             "proxy_mode": True,
             "embedding_provider": "voyage-ai",
-            "discovered_repos": [
-                str(tmp_path / "repo1"),
-                str(tmp_path / "repo2")
-            ]
+            "discovered_repos": [str(tmp_path / "repo1"), str(tmp_path / "repo2")],
         }
         config_file.write_text(json.dumps(config_data))
 
         return repo_path
 
-    @patch.object(SemanticQueryManager, 'search_single')
+    @patch.object(SemanticQueryManager, "search_single")
     async def test_single_repo_query_uses_single_handler(
         self, mock_search_single, setup_single_repo
     ):
@@ -77,7 +66,7 @@ class TestQueryEndpointRouting:
                 line_number=10,
                 code_snippet="def test(): pass",
                 similarity_score=0.95,
-                repository_alias="single-repo"
+                repository_alias="single-repo",
             )
         ]
 
@@ -85,9 +74,7 @@ class TestQueryEndpointRouting:
 
         # Act: Perform search on single repo
         results = await manager.search(
-            repo_path=setup_single_repo,
-            query="test query",
-            limit=10
+            repo_path=setup_single_repo, query="test query", limit=10
         )
 
         # Assert: Should use single handler
@@ -95,7 +82,7 @@ class TestQueryEndpointRouting:
         assert len(results) == 1
         assert results[0].repository_alias == "single-repo"
 
-    @patch.object(SemanticQueryManager, 'search_composite')
+    @patch.object(SemanticQueryManager, "search_composite")
     async def test_composite_repo_query_uses_composite_handler(
         self, mock_search_composite, setup_composite_repo
     ):
@@ -107,19 +94,21 @@ class TestQueryEndpointRouting:
 
         # Act: Perform search on composite repo
         results = await manager.search(
-            repo_path=setup_composite_repo,
-            query="test query",
-            limit=10
+            repo_path=setup_composite_repo, query="test query", limit=10
         )
 
         # Assert: Should use composite handler
         mock_search_composite.assert_called_once()
         assert results == []
 
-    @patch.object(SemanticQueryManager, 'search_single')
-    @patch.object(SemanticQueryManager, 'search_composite')
+    @patch.object(SemanticQueryManager, "search_single")
+    @patch.object(SemanticQueryManager, "search_composite")
     async def test_mixed_query_handles_both_types(
-        self, mock_search_composite, mock_search_single, setup_single_repo, setup_composite_repo
+        self,
+        mock_search_composite,
+        mock_search_single,
+        setup_single_repo,
+        setup_composite_repo,
     ):
         """Test querying both single and composite repos in sequence."""
         # Arrange: Setup mocks
@@ -129,7 +118,7 @@ class TestQueryEndpointRouting:
                 line_number=5,
                 code_snippet="single repo code",
                 similarity_score=0.9,
-                repository_alias="single-repo"
+                repository_alias="single-repo",
             )
         ]
         mock_search_composite.return_value = []
@@ -138,16 +127,12 @@ class TestQueryEndpointRouting:
 
         # Act: Query single repo
         single_results = await manager.search(
-            repo_path=setup_single_repo,
-            query="test query",
-            limit=10
+            repo_path=setup_single_repo, query="test query", limit=10
         )
 
         # Query composite repo
         composite_results = await manager.search(
-            repo_path=setup_composite_repo,
-            query="test query",
-            limit=10
+            repo_path=setup_composite_repo, query="test query", limit=10
         )
 
         # Assert: Both handlers should be called
@@ -156,10 +141,14 @@ class TestQueryEndpointRouting:
         assert len(single_results) == 1
         assert len(composite_results) == 0
 
-    async def test_backward_compatibility_with_existing_queries(self, setup_single_repo):
+    async def test_backward_compatibility_with_existing_queries(
+        self, setup_single_repo
+    ):
         """Test that existing single-repo queries still work unchanged."""
         # Arrange: Create manager with mocked search service
-        with patch('code_indexer.server.services.search_service.SemanticSearchService') as mock_service_class:
+        with patch(
+            "code_indexer.server.services.search_service.SemanticSearchService"
+        ) as mock_service_class:
             # Setup mock search service
             mock_service = MagicMock()
             mock_service_class.return_value = mock_service
@@ -179,9 +168,7 @@ class TestQueryEndpointRouting:
 
             # Act: Call search (should route through to search_single)
             results = await manager.search(
-                repo_path=setup_single_repo,
-                query="existing query",
-                limit=10
+                repo_path=setup_single_repo, query="existing query", limit=10
             )
 
             # Assert: Should maintain backward compatibility
@@ -194,8 +181,10 @@ class TestQueryEndpointRouting:
     ):
         """Test that API interface is identical for single and composite repos."""
         # Arrange: Create manager with mocked handlers
-        with patch.object(SemanticQueryManager, 'search_single') as mock_single:
-            with patch.object(SemanticQueryManager, 'search_composite') as mock_composite:
+        with patch.object(SemanticQueryManager, "search_single") as mock_single:
+            with patch.object(
+                SemanticQueryManager, "search_composite"
+            ) as mock_composite:
                 mock_single.return_value = []
                 mock_composite.return_value = []
 
@@ -206,7 +195,7 @@ class TestQueryEndpointRouting:
                     "query": "test query",
                     "limit": 20,
                     "min_score": 0.7,
-                    "file_extensions": ['.py']
+                    "file_extensions": [".py"],
                 }
 
                 await manager.search(repo_path=setup_single_repo, **kwargs)
@@ -231,15 +220,13 @@ class TestQueryRoutingErrorHandling:
         repo_path = tmp_path / "no-config"
         repo_path.mkdir()
 
-        with patch.object(SemanticQueryManager, 'search_single') as mock_single:
+        with patch.object(SemanticQueryManager, "search_single") as mock_single:
             mock_single.return_value = []
             manager = SemanticQueryManager()
 
             # Act: Query repo without config
             results = await manager.search(
-                repo_path=repo_path,
-                query="test query",
-                limit=10
+                repo_path=repo_path, query="test query", limit=10
             )
 
             # Assert: Should default to single handler
@@ -258,7 +245,7 @@ class TestQueryRoutingErrorHandling:
         config_file = config_dir / "config.json"
         config_file.write_text(json.dumps({"proxy_mode": False}))
 
-        with patch.object(SemanticQueryManager, 'search_single') as mock_single:
+        with patch.object(SemanticQueryManager, "search_single") as mock_single:
             # Setup mock to raise exception
             mock_single.side_effect = Exception("Search failed")
 
@@ -266,8 +253,4 @@ class TestQueryRoutingErrorHandling:
 
             # Act & Assert: Exception should propagate
             with pytest.raises(Exception, match="Search failed"):
-                await manager.search(
-                    repo_path=repo_path,
-                    query="test query",
-                    limit=10
-                )
+                await manager.search(repo_path=repo_path, query="test query", limit=10)

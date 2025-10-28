@@ -29,9 +29,7 @@ class ParallelCommandExecutor:
         self.repositories = repositories
 
     def execute_parallel(
-        self,
-        command: str,
-        args: List[str]
+        self, command: str, args: List[str]
     ) -> Dict[str, Tuple[str, str, int]]:
         """Execute command in parallel across all repositories.
 
@@ -50,7 +48,9 @@ class ParallelCommandExecutor:
         worker_count = min(len(self.repositories), self.MAX_WORKERS)
         results = {}
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=worker_count
+        ) as executor:
             # Submit all tasks
             future_to_repo = {
                 executor.submit(self._execute_single, repo, command, args): repo
@@ -65,15 +65,12 @@ class ParallelCommandExecutor:
                     results[repo] = (stdout, stderr, exit_code)
                 except Exception as exc:
                     # Capture exceptions as failed execution
-                    results[repo] = ('', str(exc), -1)
+                    results[repo] = ("", str(exc), -1)
 
         return results
 
     def _execute_single(
-        self,
-        repo_path: str,
-        command: str,
-        args: List[str]
+        self, repo_path: str, command: str, args: List[str]
     ) -> Tuple[str, str, int]:
         """Execute command in single repository.
 
@@ -88,13 +85,13 @@ class ParallelCommandExecutor:
         Raises:
             subprocess.TimeoutExpired: If command exceeds timeout
         """
-        cmd = ['cidx', command] + args
+        cmd = ["cidx", command] + args
 
         # Force wide terminal output to prevent line wrapping in captured output
         # Rich Console wraps text at COLUMNS width when output is captured.
         # By forcing COLUMNS=200, we ensure metadata lines don't wrap and break parsing.
         env = os.environ.copy()
-        env['COLUMNS'] = '200'
+        env["COLUMNS"] = "200"
 
         result = subprocess.run(
             cmd,
@@ -102,7 +99,7 @@ class ParallelCommandExecutor:
             capture_output=True,
             text=True,
             timeout=300,  # 5 minute timeout
-            env=env  # Use modified environment
+            env=env,  # Use modified environment
         )
 
         return result.stdout, result.stderr, result.returncode

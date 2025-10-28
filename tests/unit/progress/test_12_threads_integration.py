@@ -50,7 +50,7 @@ class TestTwelveThreadsIntegration:
             processor = HighThroughputProcessor(
                 config=config,
                 embedding_provider=Mock(),
-                qdrant_client=Mock(),
+                vector_store_client=Mock(),
             )
 
             assert not hasattr(

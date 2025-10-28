@@ -26,11 +26,7 @@ from .output_multiplexer import OutputMultiplexer
 console = Console()
 
 
-def execute_proxy_command(
-    project_root: Path,
-    command: str,
-    args: List[str]
-) -> int:
+def execute_proxy_command(project_root: Path, command: str, args: List[str]) -> int:
     """Execute command in proxy mode (parallel or sequential).
 
     This function handles execution of commands in proxy mode by:
@@ -67,8 +63,7 @@ def execute_proxy_command(
     # Verify we have repositories
     if not discovered_repos:
         console.print(
-            "⚠️  No repositories discovered in proxy configuration",
-            style="yellow"
+            "⚠️  No repositories discovered in proxy configuration", style="yellow"
         )
         console.print("Run 'cidx repos refresh' to rediscover repositories")
         return 1
@@ -77,21 +72,21 @@ def execute_proxy_command(
     repo_paths = [str(project_root / repo) for repo in discovered_repos]
 
     # Special handling for watch command (Stories 5.1, 5.2, 5.4)
-    if command == 'watch':
+    if command == "watch":
         return _execute_watch(args, repo_paths, project_root)
 
     # Determine if command should execute in parallel
     if is_parallel_command(command):
         console.print(
             f"🔄 Executing '{command}' in parallel across {len(repo_paths)} repositories...",
-            style="blue"
+            style="blue",
         )
         return _execute_parallel(command, args, repo_paths)
     else:
         # Sequential execution for non-parallel commands (Story 2.3)
         console.print(
             f"⏭️  Executing '{command}' sequentially across {len(repo_paths)} repositories...",
-            style="blue"
+            style="blue",
         )
         return _execute_sequential(command, args, repo_paths)
 
@@ -108,7 +103,7 @@ def _execute_parallel(command: str, args: List[str], repo_paths: List[str]) -> i
         Exit code: 0 (all success), 1 (all failed), 2 (partial success)
     """
     # Special handling for query command (Stories 3.1-3.4)
-    if command == 'query':
+    if command == "query":
         return _execute_query(args, repo_paths)
 
     # Execute in parallel
@@ -130,17 +125,17 @@ def _execute_parallel(command: str, args: List[str], repo_paths: List[str]) -> i
     if exit_code == 0:
         console.print(
             f"\n✅ Command completed successfully across all {len(repo_paths)} repositories",
-            style="green"
+            style="green",
         )
     elif exit_code == 2:
         console.print(
             f"\n⚠️  Command completed with mixed results: {success_count} succeeded, {fail_count} failed",
-            style="yellow"
+            style="yellow",
         )
     else:
         console.print(
             f"\n❌ Command failed across all {len(repo_paths)} repositories",
-            style="red"
+            style="red",
         )
 
     return exit_code
@@ -167,12 +162,12 @@ def _execute_query(args: List[str], repo_paths: List[str]) -> int:
     limit = _extract_limit_from_args(args)
 
     # Check if user explicitly requested quiet mode
-    use_quiet_mode = '--quiet' in args or '-q' in args
+    use_quiet_mode = "--quiet" in args or "-q" in args
 
     # Execute query in parallel across all repositories (use args as-is)
     query_args = args.copy()
     executor = ParallelCommandExecutor(repo_paths)
-    results = executor.execute_parallel('query', query_args)
+    results = executor.execute_parallel("query", query_args)
 
     # Convert results dict to format expected by aggregators
     # Results format: Dict[repo_path, (stdout, stderr, exit_code)]
@@ -195,15 +190,19 @@ def _execute_query(args: List[str], repo_paths: List[str]) -> int:
     if use_quiet_mode:
         # Use quiet aggregator (simple format, no metadata)
         quiet_aggregator = QueryResultAggregator()
-        aggregated_output = quiet_aggregator.aggregate_results(repository_outputs, limit=limit, repo_name_map=repo_name_map)
+        aggregated_output = quiet_aggregator.aggregate_results(
+            repository_outputs, limit=limit, repo_name_map=repo_name_map
+        )
     else:
         # Use rich format aggregator (full metadata preservation)
         rich_aggregator = RichFormatAggregator()
-        aggregated_output = rich_aggregator.aggregate_results(repository_outputs, limit=limit, repo_name_map=repo_name_map)
+        aggregated_output = rich_aggregator.aggregate_results(
+            repository_outputs, limit=limit, repo_name_map=repo_name_map
+        )
 
     # Display aggregated output
     if aggregated_output:
-        console.print(aggregated_output, end='')
+        console.print(aggregated_output, end="")
     else:
         console.print("No results found across all repositories", style="yellow")
 
@@ -227,12 +226,12 @@ def _extract_limit_from_args(args: List[str]) -> Optional[int]:
         Limit value if found, otherwise 10 (default)
     """
     try:
-        if '--limit' in args:
-            limit_index = args.index('--limit')
+        if "--limit" in args:
+            limit_index = args.index("--limit")
             if limit_index + 1 < len(args):
                 return int(args[limit_index + 1])
-        elif '-l' in args:
-            limit_index = args.index('-l')
+        elif "-l" in args:
+            limit_index = args.index("-l")
             if limit_index + 1 < len(args):
                 return int(args[limit_index + 1])
     except (ValueError, IndexError):
@@ -271,11 +270,7 @@ def _execute_sequential(command: str, args: List[str], repo_paths: List[str]) ->
     return exit_code
 
 
-def _execute_watch(
-    args: List[str],
-    repo_paths: List[str],
-    project_root: Path
-) -> int:
+def _execute_watch(args: List[str], repo_paths: List[str], project_root: Path) -> int:
     """Execute watch command with multiplexed output (Stories 5.1, 5.2, 5.3, 5.4).
 
     This function implements parallel watch process management with:
@@ -326,13 +321,14 @@ def _execute_watch(
         # Run until interrupted
         try:
             import time
+
             while not terminating[0]:
                 # Check process health
                 dead_processes = watch_manager.check_process_health()
                 if dead_processes:
                     console.print(
                         f"\n⚠️  Watch processes terminated in {len(dead_processes)} repositories",
-                        style="yellow"
+                        style="yellow",
                     )
                     for repo in dead_processes:
                         console.print(f"  • {repo}", style="yellow")
@@ -347,7 +343,9 @@ def _execute_watch(
 
         # If we got here via Ctrl-C, perform graceful shutdown
         if terminating[0]:
-            return _perform_graceful_shutdown(watch_manager, multiplexer, len(repo_paths))
+            return _perform_graceful_shutdown(
+                watch_manager, multiplexer, len(repo_paths)
+            )
 
         return 0
 
@@ -366,7 +364,7 @@ def _execute_watch(
 def _perform_graceful_shutdown(
     watch_manager: ParallelWatchManager,
     multiplexer: OutputMultiplexer,
-    total_repos: int
+    total_repos: int,
 ) -> int:
     """Perform graceful shutdown sequence (Story 5.3).
 
@@ -402,12 +400,12 @@ def _perform_graceful_shutdown(
     elif all_stopped and forced_kill_count > 0:
         console.print(
             f"\n⚠️  All watchers stopped ({forced_kill_count} forcefully killed)",
-            style="yellow"
+            style="yellow",
         )
         return 1  # Forced kill required
     else:
         console.print(
             f"\n⚠️  Partial shutdown: {terminated_count + forced_kill_count}/{total_repos} stopped",
-            style="yellow"
+            style="yellow",
         )
         return 2  # Partial shutdown

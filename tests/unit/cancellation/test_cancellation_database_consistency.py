@@ -142,7 +142,7 @@ class TestDatabaseConsistencyDuringCancellation:
                 processor = HighThroughputProcessor(
                     config=config,
                     embedding_provider=mock_embedding,
-                    qdrant_client=mock_qdrant,
+                    vector_store_client=mock_qdrant,
                 )
 
                 # Mock file identifier
@@ -221,7 +221,7 @@ class TestDatabaseConsistencyDuringCancellation:
                 processor = HighThroughputProcessor(
                     config=config,
                     embedding_provider=mock_embedding,
-                    qdrant_client=mock_qdrant,
+                    vector_store_client=mock_qdrant,
                 )
 
                 # Mock file identifier
@@ -295,7 +295,7 @@ class TestDatabaseConsistencyDuringCancellation:
                 processor = HighThroughputProcessor(
                     config=config,
                     embedding_provider=mock_embedding,
-                    qdrant_client=mock_qdrant,
+                    vector_store_client=mock_qdrant,
                 )
 
                 # Mock file identifier

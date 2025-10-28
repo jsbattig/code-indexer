@@ -30,7 +30,8 @@ class TestQueryAggregation(unittest.TestCase):
         # Repo 1: Authentication code
         repo1 = cls.test_dir / "auth-service"
         repo1.mkdir(parents=True)
-        (repo1 / "auth.py").write_text("""
+        (repo1 / "auth.py").write_text(
+            """
 def authenticate(username, password):
     \"\"\"Authenticate user with credentials.\"\"\"
     if not username or not password:
@@ -40,19 +41,23 @@ def authenticate(username, password):
 def validate_credentials(username, password):
     \"\"\"Validate user credentials against database.\"\"\"
     return True
-""")
-        (repo1 / "login.py").write_text("""
+"""
+        )
+        (repo1 / "login.py").write_text(
+            """
 def login(user):
     \"\"\"Login user to system.\"\"\"
     return authenticate(user.name, user.password)
-""")
+"""
+        )
         cls._init_git_repo(repo1)
         cls.repos.append(str(repo1))
 
         # Repo 2: User management code
         repo2 = cls.test_dir / "user-service"
         repo2.mkdir(parents=True)
-        (repo2 / "user.py").write_text("""
+        (repo2 / "user.py").write_text(
+            """
 class User:
     \"\"\"User model with authentication support.\"\"\"
     def __init__(self, username):
@@ -62,14 +67,16 @@ class User:
     def authenticate(self):
         \"\"\"Mark user as authenticated.\"\"\"
         self.authenticated = True
-""")
+"""
+        )
         cls._init_git_repo(repo2)
         cls.repos.append(str(repo2))
 
         # Repo 3: API layer code
         repo3 = cls.test_dir / "api-service"
         repo3.mkdir(parents=True)
-        (repo3 / "api.py").write_text("""
+        (repo3 / "api.py").write_text(
+            """
 def auth_endpoint(request):
     \"\"\"Authentication API endpoint.\"\"\"
     username = request.get('username')
@@ -79,21 +86,36 @@ def auth_endpoint(request):
 def authenticate_request(username, password):
     \"\"\"Process authentication request.\"\"\"
     return {'authenticated': True}
-""")
+"""
+        )
         cls._init_git_repo(repo3)
         cls.repos.append(str(repo3))
 
     @classmethod
     def _init_git_repo(cls, repo_path: Path):
         """Initialize git repository."""
-        subprocess.run(['git', 'init'], cwd=repo_path, check=True, capture_output=True)
-        subprocess.run(['git', 'config', 'user.email', 'test@test.com'],
-                      cwd=repo_path, check=True, capture_output=True)
-        subprocess.run(['git', 'config', 'user.name', 'Test User'],
-                      cwd=repo_path, check=True, capture_output=True)
-        subprocess.run(['git', 'add', '.'], cwd=repo_path, check=True, capture_output=True)
-        subprocess.run(['git', 'commit', '-m', 'Initial commit'],
-                      cwd=repo_path, check=True, capture_output=True)
+        subprocess.run(["git", "init"], cwd=repo_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"],
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "add", "."], cwd=repo_path, check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "Initial commit"],
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
+        )
 
     @classmethod
     def tearDownClass(cls):
@@ -109,7 +131,9 @@ def authenticate_request(username, password):
         """
         # Mock query outputs from 3 repositories
         repo_outputs = {
-            self.repos[0]: """0.95 {}/auth.py:2-7
+            self.repos[
+                0
+            ]: """0.95 {}/auth.py:2-7
   2: def authenticate(username, password):
   3:     \"\"\"Authenticate user with credentials.\"\"\"
   4:     if not username or not password:
@@ -120,15 +144,21 @@ def authenticate_request(username, password):
 0.85 {}/login.py:2-4
   2: def login(user):
   3:     \"\"\"Login user to system.\"\"\"
-  4:     return authenticate(user.name, user.password)""".format(self.repos[0], self.repos[0]),
-
-            self.repos[1]: """0.92 {}/user.py:8-11
+  4:     return authenticate(user.name, user.password)""".format(
+                self.repos[0], self.repos[0]
+            ),
+            self.repos[
+                1
+            ]: """0.92 {}/user.py:8-11
   8:     def authenticate(self):
   9:         \"\"\"Mark user as authenticated.\"\"\"
   10:         self.authenticated = True
-  11:""".format(self.repos[1]),
-
-            self.repos[2]: """0.88 {}/api.py:2-6
+  11:""".format(
+                self.repos[1]
+            ),
+            self.repos[
+                2
+            ]: """0.88 {}/api.py:2-6
   2: def auth_endpoint(request):
   3:     \"\"\"Authentication API endpoint.\"\"\"
   4:     username = request.get('username')
@@ -139,7 +169,9 @@ def authenticate_request(username, password):
   8: def authenticate_request(username, password):
   9:     \"\"\"Process authentication request.\"\"\"
   10:     return {{'authenticated': True}}
-  11:""".format(self.repos[2], self.repos[2])
+  11:""".format(
+                self.repos[2], self.repos[2]
+            ),
         }
 
         # Story 3.1-3.4: Aggregate results
@@ -154,7 +186,7 @@ def authenticate_request(username, password):
         self.assertIn("0.82", output, "Fifth highest result missing")
 
         # Story 3.2: Verify sorted by score (descending)
-        lines = output.strip().split('\n')
+        lines = output.strip().split("\n")
         score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
 
         # Extract scores from result lines
@@ -164,8 +196,11 @@ def authenticate_request(username, password):
             scores.append(score)
 
         # Verify descending order
-        self.assertEqual(scores, sorted(scores, reverse=True),
-                        "Results not sorted by score descending")
+        self.assertEqual(
+            scores,
+            sorted(scores, reverse=True),
+            "Results not sorted by score descending",
+        )
 
         # Story 3.4: Verify repository context preserved
         self.assertIn(self.repos[0], output, "Repo 1 path missing from output")
@@ -181,23 +216,33 @@ def authenticate_request(username, password):
         """Test that --limit applies to total results, not per repository (Story 3.3)."""
         # Create mock outputs with 2 results per repo (6 total)
         repo_outputs = {
-            self.repos[0]: """0.95 {}/auth.py:2-5
+            self.repos[
+                0
+            ]: """0.95 {}/auth.py:2-5
   2: code1
 
 0.90 {}/auth.py:8-10
-  8: code2""".format(self.repos[0], self.repos[0]),
-
-            self.repos[1]: """0.92 {}/user.py:2-5
+  8: code2""".format(
+                self.repos[0], self.repos[0]
+            ),
+            self.repos[
+                1
+            ]: """0.92 {}/user.py:2-5
   2: code3
 
 0.88 {}/user.py:8-10
-  8: code4""".format(self.repos[1], self.repos[1]),
-
-            self.repos[2]: """0.85 {}/api.py:2-5
+  8: code4""".format(
+                self.repos[1], self.repos[1]
+            ),
+            self.repos[
+                2
+            ]: """0.85 {}/api.py:2-5
   2: code5
 
 0.80 {}/api.py:8-10
-  8: code6""".format(self.repos[2], self.repos[2])
+  8: code6""".format(
+                self.repos[2], self.repos[2]
+            ),
         }
 
         # Apply limit of 3
@@ -205,58 +250,80 @@ def authenticate_request(username, password):
         output = aggregator.aggregate_results(repo_outputs, limit=3)
 
         # Count results in output
-        lines = output.strip().split('\n')
+        lines = output.strip().split("\n")
         score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
 
         # Should have exactly 3 results (global limit)
-        self.assertEqual(len(score_lines), 3,
-                        f"Expected 3 results with limit=3, got {len(score_lines)}")
+        self.assertEqual(
+            len(score_lines),
+            3,
+            f"Expected 3 results with limit=3, got {len(score_lines)}",
+        )
 
         # Should be top 3 by score: 0.95, 0.92, 0.90
         scores = [float(l.split()[0]) for l in score_lines]
-        self.assertEqual(scores, [0.95, 0.92, 0.90],
-                        "Limit did not return top 3 results by score")
+        self.assertEqual(
+            scores, [0.95, 0.92, 0.90], "Limit did not return top 3 results by score"
+        )
 
     def test_interleaved_results_not_grouped_by_repo(self):
         """Test that results are interleaved by score, not grouped by repository (Story 3.2)."""
         repo_outputs = {
-            self.repos[0]: """0.95 {}/file1.py:1-5
+            self.repos[
+                0
+            ]: """0.95 {}/file1.py:1-5
   1: high score repo1
 
 0.75 {}/file2.py:1-5
-  1: low score repo1""".format(self.repos[0], self.repos[0]),
-
-            self.repos[1]: """0.85 {}/file3.py:1-5
-  1: medium score repo2""".format(self.repos[1])
+  1: low score repo1""".format(
+                self.repos[0], self.repos[0]
+            ),
+            self.repos[
+                1
+            ]: """0.85 {}/file3.py:1-5
+  1: medium score repo2""".format(
+                self.repos[1]
+            ),
         }
 
         aggregator = QueryResultAggregator()
         output = aggregator.aggregate_results(repo_outputs, limit=10)
 
         # Extract repo paths in order of appearance
-        lines = output.strip().split('\n')
+        lines = output.strip().split("\n")
         score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
 
         repo_order = []
         for line in score_lines:
             if self.repos[0] in line:
-                repo_order.append('repo1')
+                repo_order.append("repo1")
             elif self.repos[1] in line:
-                repo_order.append('repo2')
+                repo_order.append("repo2")
 
         # Should be interleaved: repo1 (0.95), repo2 (0.85), repo1 (0.75)
         # NOT grouped: repo1, repo1, repo2
-        self.assertEqual(repo_order, ['repo1', 'repo2', 'repo1'],
-                        f"Results grouped by repo instead of interleaved by score: {repo_order}")
+        self.assertEqual(
+            repo_order,
+            ["repo1", "repo2", "repo1"],
+            f"Results grouped by repo instead of interleaved by score: {repo_order}",
+        )
 
     def test_handle_empty_repository_results(self):
         """Test handling repositories with no query results (Story 3.1)."""
         repo_outputs = {
-            self.repos[0]: """0.9 {}/file.py:1-5
-  1: code""".format(self.repos[0]),
+            self.repos[
+                0
+            ]: """0.9 {}/file.py:1-5
+  1: code""".format(
+                self.repos[0]
+            ),
             self.repos[1]: "",  # Empty output
-            self.repos[2]: """0.8 {}/file.py:1-5
-  1: code""".format(self.repos[2])
+            self.repos[
+                2
+            ]: """0.8 {}/file.py:1-5
+  1: code""".format(
+                self.repos[2]
+            ),
         }
 
         aggregator = QueryResultAggregator()
@@ -266,18 +333,26 @@ def authenticate_request(username, password):
         self.assertIn("0.9", output)
         self.assertIn("0.8", output)
 
-        lines = output.strip().split('\n')
+        lines = output.strip().split("\n")
         score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
         self.assertEqual(len(score_lines), 2)
 
     def test_handle_error_outputs(self):
         """Test skipping repositories with error outputs (Story 3.1)."""
         repo_outputs = {
-            self.repos[0]: """0.9 {}/file.py:1-5
-  1: code""".format(self.repos[0]),
+            self.repos[
+                0
+            ]: """0.9 {}/file.py:1-5
+  1: code""".format(
+                self.repos[0]
+            ),
             self.repos[1]: "Error: Failed to connect to service",
-            self.repos[2]: """0.8 {}/file.py:1-5
-  1: code""".format(self.repos[2])
+            self.repos[
+                2
+            ]: """0.8 {}/file.py:1-5
+  1: code""".format(
+                self.repos[2]
+            ),
         }
 
         aggregator = QueryResultAggregator()
@@ -291,19 +366,27 @@ def authenticate_request(username, password):
     def test_no_limit_returns_all_results(self):
         """Test that limit=None returns all results (Story 3.3)."""
         repo_outputs = {
-            self.repos[0]: """0.9 {}/a.py:1-5
+            self.repos[
+                0
+            ]: """0.9 {}/a.py:1-5
   1: a
 
 0.8 {}/b.py:1-5
-  1: b""".format(self.repos[0], self.repos[0]),
-            self.repos[1]: """0.85 {}/c.py:1-5
-  1: c""".format(self.repos[1])
+  1: b""".format(
+                self.repos[0], self.repos[0]
+            ),
+            self.repos[
+                1
+            ]: """0.85 {}/c.py:1-5
+  1: c""".format(
+                self.repos[1]
+            ),
         }
 
         aggregator = QueryResultAggregator()
         output = aggregator.aggregate_results(repo_outputs, limit=None)
 
-        lines = output.strip().split('\n')
+        lines = output.strip().split("\n")
         score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
 
         # Should return all 3 results
@@ -312,12 +395,16 @@ def authenticate_request(username, password):
     def test_preserve_code_content_and_formatting(self):
         """Test that code content and formatting are preserved (Story 3.4)."""
         repo_outputs = {
-            self.repos[0]: """0.9 {}/auth.py:1-5
+            self.repos[
+                0
+            ]: """0.9 {}/auth.py:1-5
   1: class Authentication:
   2:     def __init__(self):
   3:         self.users = {{}}
   4:     def login(self, user):
-  5:         return user in self.users""".format(self.repos[0])
+  5:         return user in self.users""".format(
+                self.repos[0]
+            )
         }
 
         aggregator = QueryResultAggregator()
@@ -336,5 +423,5 @@ def authenticate_request(username, password):
         self.assertIn("  3:", output)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

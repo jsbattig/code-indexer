@@ -9,10 +9,10 @@ to prevent resource contention.
 from typing import List
 
 # Commands that execute in parallel (read-only, no resource contention)
-PARALLEL_COMMANDS: List[str] = ['query', 'status', 'watch', 'fix-config']
+PARALLEL_COMMANDS: List[str] = ["query", "status", "watch", "fix-config"]
 
 # Commands that execute sequentially (container lifecycle, prevent contention)
-SEQUENTIAL_COMMANDS: List[str] = ['start', 'stop', 'uninstall']
+SEQUENTIAL_COMMANDS: List[str] = ["start", "stop", "uninstall"]
 
 
 def is_parallel_command(command: str) -> bool:

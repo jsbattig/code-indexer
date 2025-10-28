@@ -83,12 +83,13 @@ class TestCleanFileChunkingManagerResourceManagement:
 
         # Create temporary directory for codebase_dir
         import tempfile
+
         temp_dir = Path(tempfile.mkdtemp())
 
         manager = FileChunkingManager(
             chunker=self.chunker,
             vector_manager=self.vector_manager,
-            qdrant_client=self.qdrant_client,
+            vector_store_client=self.qdrant_client,
             thread_count=2,
             slot_tracker=CleanSlotTracker(max_slots=4),
             codebase_dir=temp_dir,

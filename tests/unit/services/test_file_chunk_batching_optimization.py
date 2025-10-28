@@ -103,7 +103,7 @@ def file_chunking_manager(
     manager = FileChunkingManager(
         vector_manager=mock_vector_manager,
         chunker=mock_chunker,
-        qdrant_client=mock_qdrant_client,
+        vector_store_client=mock_qdrant_client,
         thread_count=4,
         slot_tracker=mock_slot_tracker,
         codebase_dir=tmp_path,

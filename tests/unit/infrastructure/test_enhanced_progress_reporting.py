@@ -96,7 +96,7 @@ class TestClass_{i}:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            qdrant_client=self.mock_qdrant,
+            vector_store_client=self.mock_qdrant,
         )
 
         # Track progress calls to analyze format
@@ -216,7 +216,7 @@ class TestClass_{i}:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            qdrant_client=self.mock_qdrant,
+            vector_store_client=self.mock_qdrant,
         )
 
         # Track progress to find completion indicators
@@ -281,7 +281,7 @@ class TestClass_{i}:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            qdrant_client=self.mock_qdrant,
+            vector_store_client=self.mock_qdrant,
         )
 
         # Track files per second values
@@ -347,7 +347,7 @@ class TestClass_{i}:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            qdrant_client=self.mock_qdrant,
+            vector_store_client=self.mock_qdrant,
         )
 
         # Track thread utilization over time

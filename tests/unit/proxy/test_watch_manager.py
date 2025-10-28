@@ -5,9 +5,7 @@ Tests parallel watch process management across multiple repositories.
 
 import pytest
 import subprocess
-import time
-from unittest.mock import Mock, MagicMock, patch, call
-from pathlib import Path
+from unittest.mock import Mock, patch
 from code_indexer.proxy.watch_manager import ParallelWatchManager
 
 
@@ -39,7 +37,7 @@ class TestParallelWatchManager:
 
     def test_start_all_watchers_spawns_processes(self, manager, repositories):
         """Test starting watchers spawns process for each repository."""
-        with patch.object(manager, '_start_watch_process') as mock_start:
+        with patch.object(manager, "_start_watch_process") as mock_start:
             # Mock process creation
             mock_processes = [Mock(spec=subprocess.Popen) for _ in repositories]
             mock_start.side_effect = mock_processes
@@ -56,7 +54,7 @@ class TestParallelWatchManager:
         """Test _start_watch_process creates subprocess correctly."""
         repo_path = str(tmp_path / "test-repo")
 
-        with patch('code_indexer.proxy.watch_manager.subprocess.Popen') as mock_popen:
+        with patch("code_indexer.proxy.watch_manager.subprocess.Popen") as mock_popen:
             mock_process = Mock()
             mock_popen.return_value = mock_process
 
@@ -67,25 +65,25 @@ class TestParallelWatchManager:
             call_args = mock_popen.call_args
 
             # Check command
-            assert call_args[0][0] == ['cidx', 'watch']
+            assert call_args[0][0] == ["cidx", "watch"]
 
             # Check working directory
-            assert call_args[1]['cwd'] == repo_path
+            assert call_args[1]["cwd"] == repo_path
 
             # Check stdout/stderr configuration
-            assert call_args[1]['stdout'] == subprocess.PIPE
-            assert call_args[1]['stderr'] == subprocess.STDOUT
+            assert call_args[1]["stdout"] == subprocess.PIPE
+            assert call_args[1]["stderr"] == subprocess.STDOUT
 
             # Check text mode and buffering
-            assert call_args[1]['text'] is True
-            assert call_args[1]['bufsize'] == 1  # Line buffered
+            assert call_args[1]["text"] is True
+            assert call_args[1]["bufsize"] == 1  # Line buffered
 
             # Should return process
             assert process == mock_process
 
     def test_start_all_watchers_handles_failures(self, manager, repositories):
         """Test starting watchers handles individual process failures."""
-        with patch.object(manager, '_start_watch_process') as mock_start:
+        with patch.object(manager, "_start_watch_process") as mock_start:
             # First process succeeds, second fails, third succeeds
             mock_proc1 = Mock(spec=subprocess.Popen)
             mock_proc3 = Mock(spec=subprocess.Popen)
@@ -93,7 +91,7 @@ class TestParallelWatchManager:
             mock_start.side_effect = [
                 mock_proc1,
                 Exception("Failed to start"),
-                mock_proc3
+                mock_proc3,
             ]
 
             # Should not raise exception
@@ -104,12 +102,14 @@ class TestParallelWatchManager:
 
     def test_start_all_watchers_raises_if_all_fail(self, manager):
         """Test starting watchers raises error if all processes fail."""
-        with patch.object(manager, '_start_watch_process') as mock_start:
+        with patch.object(manager, "_start_watch_process") as mock_start:
             # All processes fail
             mock_start.side_effect = Exception("Failed to start")
 
             # Should raise RuntimeError
-            with pytest.raises(RuntimeError, match="Failed to start any watch processes"):
+            with pytest.raises(
+                RuntimeError, match="Failed to start any watch processes"
+            ):
                 manager.start_all_watchers()
 
     def test_stop_all_watchers_terminates_processes(self, manager):
@@ -139,7 +139,7 @@ class TestParallelWatchManager:
         # Create mock process that times out on wait
         proc = Mock(spec=subprocess.Popen)
         proc.terminate = Mock()
-        proc.wait = Mock(side_effect=subprocess.TimeoutExpired('cidx', 5))
+        proc.wait = Mock(side_effect=subprocess.TimeoutExpired("cidx", 5))
         proc.kill = Mock()
 
         manager.processes = {manager.repositories[0]: proc}
@@ -214,7 +214,7 @@ class TestParallelWatchManager:
 
     def test_parallel_process_isolation(self, manager):
         """Test processes run in isolation (one failure doesn't affect others)."""
-        with patch.object(manager, '_start_watch_process') as mock_start:
+        with patch.object(manager, "_start_watch_process") as mock_start:
             # Create mock processes - one will "fail"
             proc1 = Mock()
             proc1.poll = Mock(return_value=None)  # Running
@@ -256,7 +256,7 @@ class TestParallelWatchManager:
 
     def test_process_lifecycle_complete_flow(self, manager):
         """Test complete lifecycle: start, run, stop."""
-        with patch.object(manager, '_start_watch_process') as mock_start:
+        with patch.object(manager, "_start_watch_process") as mock_start:
             # Create mock processes
             mock_processes = []
             for repo in manager.repositories:
@@ -282,7 +282,7 @@ class TestParallelWatchManager:
 
     def test_multiple_repositories_concurrent_startup(self, manager):
         """Test starting watches for multiple repositories concurrently."""
-        with patch('code_indexer.proxy.watch_manager.subprocess.Popen') as mock_popen:
+        with patch("code_indexer.proxy.watch_manager.subprocess.Popen") as mock_popen:
             # Create mock processes
             mock_processes = [Mock() for _ in manager.repositories]
             mock_popen.side_effect = mock_processes
@@ -299,7 +299,7 @@ class TestParallelWatchManager:
         """Test watch process uses correct command arguments."""
         repo_path = str(tmp_path / "repo")
 
-        with patch('code_indexer.proxy.watch_manager.subprocess.Popen') as mock_popen:
+        with patch("code_indexer.proxy.watch_manager.subprocess.Popen") as mock_popen:
             mock_popen.return_value = Mock()
 
             manager._start_watch_process(repo_path)
@@ -308,13 +308,13 @@ class TestParallelWatchManager:
             call_args = mock_popen.call_args
             command = call_args[0][0]
 
-            assert command == ['cidx', 'watch']
+            assert command == ["cidx", "watch"]
 
     def test_process_buffering_configuration(self, manager, tmp_path):
         """Test processes configured with line buffering."""
         repo_path = str(tmp_path / "repo")
 
-        with patch('code_indexer.proxy.watch_manager.subprocess.Popen') as mock_popen:
+        with patch("code_indexer.proxy.watch_manager.subprocess.Popen") as mock_popen:
             mock_popen.return_value = Mock()
 
             manager._start_watch_process(repo_path)
@@ -323,16 +323,16 @@ class TestParallelWatchManager:
             call_kwargs = mock_popen.call_args[1]
 
             # Should use line buffering
-            assert call_kwargs['bufsize'] == 1
+            assert call_kwargs["bufsize"] == 1
 
             # Should use text mode
-            assert call_kwargs['text'] is True
+            assert call_kwargs["text"] is True
 
     def test_process_stdout_stderr_configuration(self, manager, tmp_path):
         """Test processes configured with stdout/stderr piping."""
         repo_path = str(tmp_path / "repo")
 
-        with patch('code_indexer.proxy.watch_manager.subprocess.Popen') as mock_popen:
+        with patch("code_indexer.proxy.watch_manager.subprocess.Popen") as mock_popen:
             mock_popen.return_value = Mock()
 
             manager._start_watch_process(repo_path)
@@ -340,7 +340,7 @@ class TestParallelWatchManager:
             call_kwargs = mock_popen.call_args[1]
 
             # stdout should be piped
-            assert call_kwargs['stdout'] == subprocess.PIPE
+            assert call_kwargs["stdout"] == subprocess.PIPE
 
             # stderr should be merged with stdout
-            assert call_kwargs['stderr'] == subprocess.STDOUT
+            assert call_kwargs["stderr"] == subprocess.STDOUT

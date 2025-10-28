@@ -5,7 +5,7 @@ from parallel command executions and calculates overall exit codes.
 """
 
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from code_indexer.proxy.result_aggregator import ParallelResultAggregator
 
@@ -198,7 +198,7 @@ class TestParallelResultAggregator(unittest.TestCase):
         output, exit_code = self.aggregator.aggregate(results)
 
         # Split output into lines
-        lines = output.split('\n')
+        lines = output.split("\n")
 
         # Verify results appear in output (order may vary in dict iteration)
         result_count = sum(1 for line in lines if line.startswith("Result"))
@@ -252,7 +252,7 @@ class TestFormattedErrorOutput(unittest.TestCase):
         """Set up test fixtures."""
         self.aggregator = ParallelResultAggregator()
 
-    @patch('code_indexer.proxy.result_aggregator.print')
+    @patch("code_indexer.proxy.result_aggregator.print")
     def test_formatted_errors_use_error_formatter(self, mock_print):
         """Verify formatted errors use ErrorMessageFormatter."""
         results = {
@@ -400,7 +400,11 @@ class TestFormattedErrorIntegration(unittest.TestCase):
     def test_aggregate_formats_single_error(self):
         """Verify single error is formatted correctly."""
         results = {
-            "backend/auth-service": ("", "Cannot connect to Qdrant service at port 6333", 1),
+            "backend/auth-service": (
+                "",
+                "Cannot connect to Qdrant service at port 6333",
+                1,
+            ),
         }
 
         output, exit_code = self.aggregator.aggregate(results)
@@ -445,5 +449,5 @@ class TestFormattedErrorIntegration(unittest.TestCase):
         assert "Exit code: 1" in output
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -17,7 +17,6 @@ from code_indexer.config import Config, ConfigManager
 from code_indexer.services.high_throughput_processor import HighThroughputProcessor
 from code_indexer.services.file_chunking_manager import FileChunkingManager
 from code_indexer.services.git_aware_processor import GitAwareDocumentProcessor
-from code_indexer.services.smart_indexer import SmartIndexer
 from code_indexer.services.qdrant import QdrantClient
 
 
@@ -46,7 +45,9 @@ class TestRelativePathStorage:
     def mock_vector_manager(self):
         """Create mock vector manager for FileChunkingManager."""
         manager = MagicMock()
-        manager.create_embeddings.return_value = [[0.1] * 1024]  # Match voyage-ai dimensions
+        manager.create_embeddings.return_value = [
+            [0.1] * 1024
+        ]  # Match voyage-ai dimensions
         return manager
 
     @pytest.fixture
@@ -63,7 +64,9 @@ class TestRelativePathStorage:
         return tracker
 
     @pytest.fixture
-    def mock_smart_indexer(self, config_manager, mock_embedding_provider, mock_qdrant_client, tmp_path):
+    def mock_smart_indexer(
+        self, config_manager, mock_embedding_provider, mock_qdrant_client, tmp_path
+    ):
         """Create mock SmartIndexer."""
         metadata_path = tmp_path / "metadata"
         metadata_path.mkdir(exist_ok=True)
@@ -86,7 +89,9 @@ class TestRelativePathStorage:
         # Create sample files
         (repo_dir / "src" / "main.py").write_text("def main():\n    print('Hello')\n")
         (repo_dir / "src" / "utils.py").write_text("def helper():\n    return 42\n")
-        (repo_dir / "tests" / "test_main.py").write_text("def test_main():\n    assert True\n")
+        (repo_dir / "tests" / "test_main.py").write_text(
+            "def test_main():\n    assert True\n"
+        )
         (repo_dir / "docs" / "README.md").write_text("# Documentation\n")
         (repo_dir / ".gitignore").write_text("*.pyc\n__pycache__\n")
 
@@ -121,7 +126,9 @@ class TestRelativePathStorage:
         Returns:
             List of path strings as stored in Qdrant metadata
         """
-        qdrant_client = QdrantClient(config=config.qdrant, project_root=config.codebase_dir)
+        qdrant_client = QdrantClient(
+            config=config.qdrant, project_root=config.codebase_dir
+        )
 
         # Scroll all points in collection
         all_paths = []
@@ -140,8 +147,8 @@ class TestRelativePathStorage:
                 break
 
             for record in records:
-                if hasattr(record, 'payload') and 'path' in record.payload:
-                    all_paths.append(record.payload['path'])
+                if hasattr(record, "payload") and "path" in record.payload:
+                    all_paths.append(record.payload["path"])
 
             if offset is None:
                 break
@@ -165,16 +172,21 @@ class TestRelativePathStorage:
         )
 
         # Additional validation: paths should not start with /
-        paths_with_leading_slash = [p for p in paths if p.startswith('/')]
+        paths_with_leading_slash = [p for p in paths if p.startswith("/")]
         assert len(paths_with_leading_slash) == 0, (
             f"{context}: Found {len(paths_with_leading_slash)} paths with leading slash. "
             f"Examples: {paths_with_leading_slash[:5]}"
         )
 
-    @pytest.mark.skip(reason="TDD test - documents bug to be fixed: absolute paths stored instead of relative")
+    @pytest.mark.skip(
+        reason="TDD test - documents bug to be fixed: absolute paths stored instead of relative"
+    )
     def test_high_throughput_processor_stores_relative_paths(
-        self, test_repo: Path, config_manager: ConfigManager,
-        mock_embedding_provider, mock_qdrant_client
+        self,
+        test_repo: Path,
+        config_manager: ConfigManager,
+        mock_embedding_provider,
+        mock_qdrant_client,
     ):
         """
         Test that HighThroughputProcessor stores relative paths only.
@@ -208,10 +220,7 @@ class TestRelativePathStorage:
         stored_paths = self._get_all_stored_paths(config)
 
         # Verify: ALL paths must be relative
-        self._assert_all_paths_relative(
-            stored_paths,
-            context="HighThroughputProcessor"
-        )
+        self._assert_all_paths_relative(stored_paths, context="HighThroughputProcessor")
 
         # Verify expected relative paths are present
         expected_relative_paths = {"src/main.py", "src/utils.py"}
@@ -221,10 +230,17 @@ class TestRelativePathStorage:
             f"Found: {actual_relative_paths}"
         )
 
-    @pytest.mark.skip(reason="TDD test - documents bug to be fixed: absolute paths in FileChunkingManager")
+    @pytest.mark.skip(
+        reason="TDD test - documents bug to be fixed: absolute paths in FileChunkingManager"
+    )
     def test_file_chunking_manager_stores_relative_paths(
-        self, test_repo: Path, config_manager: ConfigManager,
-        mock_vector_manager, mock_chunker, mock_qdrant_client, mock_slot_tracker
+        self,
+        test_repo: Path,
+        config_manager: ConfigManager,
+        mock_vector_manager,
+        mock_chunker,
+        mock_qdrant_client,
+        mock_slot_tracker,
     ):
         """
         Test that FileChunkingManager stores relative paths only.
@@ -252,15 +268,17 @@ class TestRelativePathStorage:
         stored_paths = self._get_all_stored_paths(config)
 
         # Verify: ALL paths must be relative
-        self._assert_all_paths_relative(
-            stored_paths,
-            context="FileChunkingManager"
-        )
+        self._assert_all_paths_relative(stored_paths, context="FileChunkingManager")
 
-    @pytest.mark.skip(reason="TDD test - documents bug to be fixed: absolute paths in GitAwareProcessor")
+    @pytest.mark.skip(
+        reason="TDD test - documents bug to be fixed: absolute paths in GitAwareProcessor"
+    )
     def test_git_aware_processor_stores_relative_paths(
-        self, test_repo: Path, config_manager: ConfigManager,
-        mock_embedding_provider, mock_qdrant_client
+        self,
+        test_repo: Path,
+        config_manager: ConfigManager,
+        mock_embedding_provider,
+        mock_qdrant_client,
     ):
         """
         Test that GitAwareProcessor stores relative paths only.
@@ -275,19 +293,28 @@ class TestRelativePathStorage:
 
         # Initialize git repository
         import subprocess
+
         subprocess.run(["git", "init"], cwd=test_repo, check=True, capture_output=True)
         subprocess.run(
             ["git", "config", "user.email", "test@example.com"],
-            cwd=test_repo, check=True, capture_output=True
+            cwd=test_repo,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
             ["git", "config", "user.name", "Test User"],
-            cwd=test_repo, check=True, capture_output=True
+            cwd=test_repo,
+            check=True,
+            capture_output=True,
         )
-        subprocess.run(["git", "add", "."], cwd=test_repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "add", "."], cwd=test_repo, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "commit", "-m", "Initial commit"],
-            cwd=test_repo, check=True, capture_output=True
+            cwd=test_repo,
+            check=True,
+            capture_output=True,
         )
 
         # Index via GitAwareDocumentProcessor
@@ -305,15 +332,19 @@ class TestRelativePathStorage:
         stored_paths = self._get_all_stored_paths(config)
 
         # Verify: ALL paths must be relative
-        self._assert_all_paths_relative(
-            stored_paths,
-            context="GitAwareProcessor"
-        )
+        self._assert_all_paths_relative(stored_paths, context="GitAwareProcessor")
 
-    @pytest.mark.skip(reason="TDD test - documents bug to be fixed: absolute paths after full index")
+    @pytest.mark.skip(
+        reason="TDD test - documents bug to be fixed: absolute paths after full index"
+    )
     def test_no_absolute_paths_after_full_index(
-        self, test_repo: Path, config_manager: ConfigManager,
-        mock_vector_manager, mock_chunker, mock_qdrant_client, mock_slot_tracker
+        self,
+        test_repo: Path,
+        config_manager: ConfigManager,
+        mock_vector_manager,
+        mock_chunker,
+        mock_qdrant_client,
+        mock_slot_tracker,
     ):
         """
         Test that full repository indexing produces NO absolute paths.
@@ -342,22 +373,27 @@ class TestRelativePathStorage:
         assert len(stored_paths) > 0, "Expected some paths to be indexed"
 
         # Critical assertion: ZERO absolute paths allowed
-        self._assert_all_paths_relative(
-            stored_paths,
-            context="Full Repository Index"
-        )
+        self._assert_all_paths_relative(stored_paths, context="Full Repository Index")
 
         # Verify all paths are valid relative paths
         for path_str in stored_paths:
             path = Path(path_str)
             assert not path.is_absolute(), f"Path {path_str} is absolute!"
             # Path should be relative and not start with /
-            assert not str(path).startswith('/'), f"Path {path_str} starts with /"
+            assert not str(path).startswith("/"), f"Path {path_str} starts with /"
 
-    @pytest.mark.skip(reason="TDD test - documents bug to be fixed: CoW clone portability with absolute paths")
+    @pytest.mark.skip(
+        reason="TDD test - documents bug to be fixed: CoW clone portability with absolute paths"
+    )
     def test_cow_clone_portability(
-        self, test_repo: Path, config_manager: ConfigManager, tmp_path: Path,
-        mock_vector_manager, mock_chunker, mock_qdrant_client, mock_slot_tracker
+        self,
+        test_repo: Path,
+        config_manager: ConfigManager,
+        tmp_path: Path,
+        mock_vector_manager,
+        mock_chunker,
+        mock_qdrant_client,
+        mock_slot_tracker,
     ):
         """
         Test that database is portable after CoW clone to new location.
@@ -394,10 +430,11 @@ class TestRelativePathStorage:
 
         # Copy files to simulate CoW clone target
         import shutil
+
         for item in test_repo.iterdir():
             if item.is_file():
                 shutil.copy2(item, cloned_repo / item.name)
-            elif item.is_dir() and item.name != '.code-indexer':
+            elif item.is_dir() and item.name != ".code-indexer":
                 shutil.copytree(item, cloned_repo / item.name)
 
         # Step 3: Update config to point to new location (simulating CoW clone)
@@ -418,9 +455,9 @@ class TestRelativePathStorage:
         try:
             context = rag_extractor.extract_context(test_file_relative, max_chunks=2)
             # Should succeed if paths are relative
-            assert context is not None or context == [], (
-                "RAG extraction should work with relative paths after location change"
-            )
+            assert (
+                context is not None or context == []
+            ), "RAG extraction should work with relative paths after location change"
         except Exception as e:
             pytest.fail(
                 f"RAG extraction failed after location change: {e}. "
@@ -432,10 +469,18 @@ class TestRelativePathStorage:
         # Using mock since reconcile requires complex setup
         # The real test is that RAG extraction worked above with relative paths
 
-    @pytest.mark.skip(reason="TDD test - documents bug to be fixed: reconcile after repository move with absolute paths")
+    @pytest.mark.skip(
+        reason="TDD test - documents bug to be fixed: reconcile after repository move with absolute paths"
+    )
     def test_reconcile_after_repository_move(
-        self, test_repo: Path, config_manager: ConfigManager, tmp_path: Path,
-        mock_vector_manager, mock_chunker, mock_qdrant_client, mock_slot_tracker
+        self,
+        test_repo: Path,
+        config_manager: ConfigManager,
+        tmp_path: Path,
+        mock_vector_manager,
+        mock_chunker,
+        mock_qdrant_client,
+        mock_slot_tracker,
     ):
         """
         Test that reconcile works correctly after moving repository.
@@ -470,6 +515,7 @@ class TestRelativePathStorage:
         # Simulate repository move
         moved_repo = tmp_path / "moved_repo"
         import shutil
+
         shutil.copytree(test_repo, moved_repo)
 
         # Update config to new location
@@ -510,9 +556,9 @@ class TestPathNormalizationHelper:
         else:
             result = str(absolute_path)
 
-        assert result == expected_relative, (
-            f"Expected '{expected_relative}', got '{result}'"
-        )
+        assert (
+            result == expected_relative
+        ), f"Expected '{expected_relative}', got '{result}'"
 
     def test_normalize_already_relative_path(self):
         """Test that already relative path remains unchanged."""

@@ -16,7 +16,6 @@ from typing import List, Dict, Any, Optional, Callable
 from dataclasses import dataclass
 
 from ..config import Config
-from ..services import QdrantClient
 from ..services.embedding_provider import EmbeddingProvider
 from ..indexing.processor import ProcessingStats
 from .progressive_metadata import ProgressiveMetadata
@@ -91,10 +90,10 @@ class SmartIndexer(HighThroughputProcessor):
         self,
         config: Config,
         embedding_provider: EmbeddingProvider,
-        qdrant_client: QdrantClient,
+        vector_store_client: Any,  # QdrantClient or FilesystemVectorStore
         metadata_path: Path,
     ):
-        super().__init__(config, embedding_provider, qdrant_client)
+        super().__init__(config, embedding_provider, vector_store_client)
         self.progressive_metadata = ProgressiveMetadata(metadata_path)
 
         # Initialize branch topology services
@@ -563,6 +562,12 @@ class SmartIndexer(HighThroughputProcessor):
                 info=f"🗑️  Cleared collection '{collection_name}' (collection was empty)",
             )
 
+        # Recreate collection with fresh metadata after clearing
+        # This ensures new quantization_range and other metadata are properly initialized
+        self.qdrant_client.ensure_provider_aware_collection(
+            self.config, self.embedding_provider, quiet, skip_migration=True
+        )
+
         # NOTE: progressive_metadata.clear() is now called earlier in smart_index() when force_full=True
 
         # Start indexing
@@ -616,6 +621,9 @@ class SmartIndexer(HighThroughputProcessor):
                 0, 0, Path(""), info="🌿 Analyzing git repository structure..."
             )
         current_branch = self.git_topology_service.get_current_branch() or "master"
+
+        # BEGIN INDEXING SESSION (O(n) optimization - defer index rebuilding)
+        self.qdrant_client.begin_indexing(collection_name)
 
         # Use BranchAwareIndexer for git-aware processing with parallel embeddings
         try:
@@ -702,6 +710,13 @@ class SmartIndexer(HighThroughputProcessor):
                 f"Git-aware indexing failed and fallbacks are disabled. "
                 f"Original error: {e}"
             ) from e
+        finally:
+            # CRITICAL: Always finalize indexes, even on exception
+            # This ensures FilesystemVectorStore rebuilds HNSW/ID indexes
+            if progress_callback:
+                progress_callback(0, 0, Path(""), info="Finalizing indexing session...")
+            end_result = self.qdrant_client.end_indexing(collection_name, progress_callback)
+            logger.info(f"Index finalization complete: {end_result.get('vectors_indexed', 0)} vectors indexed")
 
         # Update metadata with actual processing results
         if progress_callback:
@@ -951,6 +966,9 @@ class SmartIndexer(HighThroughputProcessor):
                 self.config, self.embedding_provider
             )
 
+            # BEGIN INDEXING SESSION (O(n) optimization - defer index rebuilding)
+            self.qdrant_client.begin_indexing(collection_name)
+
             # Use direct high-throughput parallel processing for incremental indexing (4-8x faster)
             # STORY 3: Use process_files_high_throughput() directly instead of branch wrapper
 
@@ -1000,6 +1018,13 @@ class SmartIndexer(HighThroughputProcessor):
                 f"Git-aware incremental indexing failed and fallbacks are disabled. "
                 f"Original error: {e}"
             ) from e
+        finally:
+            # CRITICAL: Always finalize indexes, even on exception
+            # This ensures FilesystemVectorStore rebuilds HNSW/ID indexes
+            if progress_callback:
+                progress_callback(0, 0, Path(""), info="Finalizing indexing session...")
+            end_result = self.qdrant_client.end_indexing(collection_name, progress_callback)
+            logger.info(f"Incremental index finalization complete: {end_result.get('vectors_indexed', 0)} vectors indexed")
 
         # Update metadata with actual processing results
         if progress_callback:
@@ -1359,6 +1384,9 @@ class SmartIndexer(HighThroughputProcessor):
                         info=f"🗑️  Cleaned up old content for {deleted_count} modified files",
                     )
 
+        # BEGIN INDEXING SESSION (O(n) optimization - defer index rebuilding)
+        self.qdrant_client.begin_indexing(collection_name)
+
         # Use BranchAwareIndexer for git-aware processing with parallel embeddings (SINGLE PROCESSING PATH)
         try:
             # Convert absolute paths to relative paths for BranchAwareIndexer
@@ -1427,6 +1455,13 @@ class SmartIndexer(HighThroughputProcessor):
                 f"Git-aware reconcile failed and fallbacks are disabled. "
                 f"Original error: {e}"
             ) from e
+        finally:
+            # CRITICAL: Always finalize indexes, even on exception
+            # This ensures FilesystemVectorStore rebuilds HNSW/ID indexes
+            if progress_callback:
+                progress_callback(0, 0, Path(""), info="Finalizing indexing session...")
+            end_result = self.qdrant_client.end_indexing(collection_name, progress_callback)
+            logger.info(f"Index finalization complete: {end_result.get('vectors_indexed', 0)} vectors indexed")
 
         # Update metadata with actual processing results
         if progress_callback:
@@ -1512,6 +1547,14 @@ class SmartIndexer(HighThroughputProcessor):
                 info=f"🔄 Resuming interrupted operation: {completed}/{total} files completed ({chunks_so_far} chunks), {len(existing_files)} files remaining",
             )
 
+        # Get collection name before begin_indexing
+        collection_name = self.qdrant_client.resolve_collection_name(
+            self.config, self.embedding_provider
+        )
+
+        # BEGIN INDEXING SESSION (O(n) optimization - defer index rebuilding)
+        self.qdrant_client.begin_indexing(collection_name)
+
         # Use HighThroughputProcessor directly for git-aware processing (STORY 3 MIGRATION)
         try:
             # Use direct high-throughput parallel processing for resume (4-8x faster)
@@ -1542,6 +1585,13 @@ class SmartIndexer(HighThroughputProcessor):
                 f"Git-aware resume failed and fallbacks are disabled. "
                 f"Original error: {e}"
             ) from e
+        finally:
+            # CRITICAL: Always finalize indexes, even on exception
+            # This ensures FilesystemVectorStore rebuilds HNSW/ID indexes
+            if progress_callback:
+                progress_callback(0, 0, Path(""), info="Finalizing indexing session...")
+            end_result = self.qdrant_client.end_indexing(collection_name, progress_callback)
+            logger.info(f"Index finalization complete: {end_result.get('vectors_indexed', 0)} vectors indexed")
 
         # Update metadata with actual processing results
         if progress_callback:
@@ -1856,6 +1906,7 @@ class SmartIndexer(HighThroughputProcessor):
                         collection_name=collection_name,
                         progress_callback=None,  # No progress callback for incremental processing
                         vector_thread_count=vector_thread_count,
+                        watch_mode=watch_mode,  # Pass through watch_mode
                     )
 
                     # For incremental file processing, also ensure branch isolation

@@ -20,28 +20,23 @@ from rich.table import Table
 # Rich progress imports removed - using MultiThreadedProgressManager instead
 
 from .config import ConfigManager, Config
-from .services import QdrantClient, DockerManager, EmbeddingProviderFactory
-from .services.smart_indexer import SmartIndexer
-from .services.generic_query_service import GenericQueryService
-from .services.language_mapper import LanguageMapper
-from .services.language_validator import LanguageValidator
-from .services.claude_integration import (
-    ClaudeIntegrationService,
-    check_claude_sdk_availability,
-)
-from .services.config_fixer import ConfigurationRepairer, generate_fix_report
 from .disabled_commands import get_command_mode_icons
 from .utils.enhanced_messaging import (
     get_conflicting_flags_message,
     get_service_unavailable_message,
 )
-from .services.cidx_prompt_generator import create_cidx_ai_prompt
 from .mode_detection.command_mode_detector import CommandModeDetector, find_project_root
 from .disabled_commands import require_mode
-from .remote.credential_manager import ProjectCredentialManager
-from .api_clients.repos_client import ReposAPIClient
-from .api_clients.admin_client import AdminAPIClient
 from . import __version__
+
+# Module-level imports for test mocking (noqa: F401 = intentionally unused for test patching)
+from .api_clients.admin_client import AdminAPIClient  # noqa: F401
+from .api_clients.repos_client import ReposAPIClient  # noqa: F401
+from .backends.backend_factory import BackendFactory  # noqa: F401
+from .services.embedding_factory import EmbeddingProviderFactory  # noqa: F401
+from .services.docker_manager import DockerManager  # noqa: F401
+from .services.qdrant import QdrantClient  # noqa: F401
+from .remote.credential_manager import ProjectCredentialManager  # noqa: F401
 
 
 def run_async(coro):
@@ -102,6 +97,8 @@ logger = logging.getLogger(__name__)
 def _generate_language_help_text() -> str:
     """Generate dynamic help text for language option based on LanguageMapper."""
     try:
+        from .services.language_mapper import LanguageMapper
+
         language_mapper = LanguageMapper()
         supported_languages = sorted(language_mapper.get_supported_languages())
 
@@ -609,6 +606,176 @@ class GracefulInterruptHandler:
 console = Console()
 
 
+def _display_query_timing(console: Console, timing_info: Dict[str, Any]) -> None:
+    """Display query execution timing telemetry.
+
+    Args:
+        console: Rich console for output
+        timing_info: Dictionary with timing data in milliseconds and metadata
+    """
+    if not timing_info:
+        return
+
+    console.print("\n⏱️  Query Timing:")
+    console.print("-" * 60)
+
+    # Calculate total time from high-level steps only (not breakdown components)
+    # For parallel execution, use parallel_load_ms instead of embedding_ms + index_load_ms
+    if "parallel_load_ms" in timing_info:
+        # Parallel execution path (FilesystemVectorStore)
+        high_level_steps = {
+            "parallel_load_ms": "Parallel load (embedding + index)",
+            "hnsw_search_ms": "Vector search",
+            "git_filter_ms": "Git-aware filtering",
+        }
+    else:
+        # Sequential execution path (QdrantClient or legacy)
+        high_level_steps = {
+            "embedding_ms": "Embedding generation",
+            "vector_search_ms": "Vector search (total)",
+            "git_filter_ms": "Git-aware filtering",
+        }
+
+    total_ms = sum(timing_info.get(key, 0) for key in high_level_steps.keys())
+
+    # Prepare breakdown keys and labels (shown under parallel_load_ms or vector_search_ms)
+    parallel_breakdown_keys = [
+        "embedding_ms",  # Concurrent with index loading
+        "index_load_ms",  # Concurrent with embedding
+        "id_index_load_ms",  # Part of index loading
+        "parallel_overhead_ms",  # Threading coordination overhead
+    ]
+
+    parallel_breakdown_labels = {
+        "embedding_ms": "    ├─ Embedding generation (concurrent)",
+        "index_load_ms": "    ├─ HNSW index load (concurrent)",
+        "id_index_load_ms": "    ├─ ID index load (concurrent)",
+        "parallel_overhead_ms": "    └─ Threading overhead",
+    }
+
+    search_breakdown_keys = [
+        "matrix_load_ms",
+        "index_load_ms",
+        "hnsw_search_ms",
+        "id_index_load_ms",
+        "staleness_detection_ms",
+    ]
+
+    search_breakdown_labels = {
+        "matrix_load_ms": "    ├─ Matrix load",
+        "index_load_ms": "    ├─ HNSW index load",
+        "hnsw_search_ms": "    ├─ HNSW search",
+        "id_index_load_ms": "    ├─ ID index load",
+        "staleness_detection_ms": "    └─ Content & staleness detection",
+    }
+
+    has_parallel_breakdown = "parallel_load_ms" in timing_info
+    has_search_breakdown = any(key in timing_info for key in search_breakdown_keys)
+
+    # Display each high-level step, with breakdown inserted appropriately
+    for key, label in high_level_steps.items():
+        if key in timing_info:
+            ms = timing_info[key]
+            percentage = (ms / total_ms * 100) if total_ms > 0 else 0
+
+            # Format time
+            if ms < 1:
+                time_str = f"{ms:.2f}ms"
+            elif ms < 1000:
+                time_str = f"{ms:.0f}ms"
+            else:
+                time_str = f"{ms/1000:.2f}s"
+
+            console.print(f"  • {label:<30} {time_str:>10} ({percentage:>5.1f}%)")
+
+            # Insert parallel breakdown immediately after parallel_load_ms
+            if key == "parallel_load_ms" and has_parallel_breakdown:
+                console.print("")
+                for breakdown_key in parallel_breakdown_keys:
+                    if breakdown_key in timing_info and timing_info[breakdown_key] > 0:
+                        breakdown_ms = timing_info[breakdown_key]
+                        # Note: Don't calculate percentage from total_ms - these are concurrent!
+                        # Exception: For overhead, show percentage of parallel load time
+
+                        # Format time
+                        if breakdown_ms < 1:
+                            breakdown_time_str = f"{breakdown_ms:.2f}ms"
+                        elif breakdown_ms < 1000:
+                            breakdown_time_str = f"{breakdown_ms:.0f}ms"
+                        else:
+                            breakdown_time_str = f"{breakdown_ms/1000:.2f}s"
+
+                        breakdown_label = parallel_breakdown_labels.get(
+                            breakdown_key, breakdown_key
+                        )
+
+                        # For overhead, show percentage of parallel load time
+                        if (
+                            breakdown_key == "parallel_overhead_ms"
+                            and "parallel_load_ms" in timing_info
+                        ):
+                            parallel_load_ms = timing_info["parallel_load_ms"]
+                            overhead_pct = (
+                                (breakdown_ms / parallel_load_ms * 100)
+                                if parallel_load_ms > 0
+                                else 0
+                            )
+                            console.print(
+                                f"  {breakdown_label:<30} {breakdown_time_str:>10} ({overhead_pct:>4.1f}% overhead)"
+                            )
+                        else:
+                            console.print(
+                                f"  {breakdown_label:<30} {breakdown_time_str:>10}"
+                            )
+                console.print("")
+
+            # Insert search breakdown immediately after vector_search_ms (for non-parallel path)
+            elif key == "vector_search_ms" and has_search_breakdown:
+                console.print("")
+                for breakdown_key in search_breakdown_keys:
+                    if breakdown_key in timing_info and timing_info[breakdown_key] > 0:
+                        breakdown_ms = timing_info[breakdown_key]
+                        breakdown_percentage = (
+                            (breakdown_ms / total_ms * 100) if total_ms > 0 else 0
+                        )
+
+                        # Format time
+                        if breakdown_ms < 1:
+                            breakdown_time_str = f"{breakdown_ms:.2f}ms"
+                        elif breakdown_ms < 1000:
+                            breakdown_time_str = f"{breakdown_ms:.0f}ms"
+                        else:
+                            breakdown_time_str = f"{breakdown_ms/1000:.2f}s"
+
+                        breakdown_label = search_breakdown_labels.get(
+                            breakdown_key, breakdown_key
+                        )
+                        console.print(
+                            f"  {breakdown_label:<30} {breakdown_time_str:>10} ({breakdown_percentage:>5.1f}%)"
+                        )
+                console.print("")
+
+    # Display search path indicator
+    if "search_path" in timing_info:
+        search_path = timing_info["search_path"]
+        path_emoji = {
+            "hnsw_index": "⚡",  # Lightning bolt for fast HNSW
+            "none": "❌",
+        }
+        emoji = path_emoji.get(search_path, "❓")
+        console.print(f"\n  Search path: {emoji} {search_path}")
+
+    console.print("-" * 60)
+
+    # Total
+    if total_ms < 1000:
+        total_str = f"{total_ms:.0f}ms"
+    else:
+        total_str = f"{total_ms/1000:.2f}s"
+    console.print(f"  {'Total query time':<30} {total_str:>10} (100.0%)")
+    console.print()
+
+
 def _check_authentication_state(ctx) -> bool:
     """Check if user is authenticated and session is valid.
 
@@ -870,6 +1037,9 @@ def cli(
     # Handle --use-cidx-prompt flag (early return)
     if use_cidx_prompt:
         try:
+            # Lazy import for prompt generation
+            from .services.cidx_prompt_generator import create_cidx_ai_prompt
+
             # Determine format (compact overrides format option)
             prompt_format = "compact" if compact else format
 
@@ -945,8 +1115,8 @@ def cli(
 @click.option(
     "--embedding-provider",
     type=click.Choice(["ollama", "voyage-ai"]),
-    default="ollama",
-    help="Embedding provider to use (default: ollama)",
+    default="voyage-ai",
+    help="Embedding provider to use (default: voyage-ai)",
 )
 @click.option(
     "--voyage-model",
@@ -996,6 +1166,12 @@ def cli(
     is_flag=True,
     help="Initialize as proxy directory for managing multiple indexed repositories",
 )
+@click.option(
+    "--vector-store",
+    type=click.Choice(["filesystem", "qdrant"], case_sensitive=False),
+    default="filesystem",
+    help="Vector storage backend: 'filesystem' (container-free) or 'qdrant' (containers required)",
+)
 @click.pass_context
 def init(
     ctx,
@@ -1012,6 +1188,7 @@ def init(
     username: Optional[str],
     password: Optional[str],
     proxy_mode: bool,
+    vector_store: str,
 ):
     """Initialize code indexing in current directory (OPTIONAL).
 
@@ -1020,12 +1197,12 @@ def init(
 
     \b
     NOTE: This command is optional. If you skip init and run 'start' directly,
-    a default configuration will be created automatically with Ollama provider
+    a default configuration will be created automatically with VoyageAI provider
     and standard settings. Only use init if you want to customize settings.
 
     \b
     INITIALIZATION MODES:
-      🏠 Local Mode (default): Creates local configuration with Ollama + Qdrant
+      🏠 Local Mode (default): Creates local configuration with VoyageAI embeddings
       ☁️  Remote Mode: Connects to existing CIDX server (--remote option)
 
     \b
@@ -1042,8 +1219,8 @@ def init(
 
     \b
     EMBEDDING PROVIDERS:
-      • ollama: Local AI models (default, no API key required)
-      • voyage-ai: VoyageAI API (requires VOYAGE_API_KEY environment variable)
+      • voyage-ai: VoyageAI API (default, requires VOYAGE_API_KEY environment variable)
+      • ollama: Local AI models (experimental, no API key required)
 
     \b
     QDRANT SEGMENT SIZE:
@@ -1055,9 +1232,9 @@ def init(
 
     \b
     EXAMPLES:
-      code-indexer init                                    # Basic initialization with Ollama
+      code-indexer init                                    # Basic initialization with VoyageAI
       code-indexer init --interactive                     # Interactive configuration
-      code-indexer init --embedding-provider voyage-ai    # Use VoyageAI
+      code-indexer init --embedding-provider ollama       # Use Ollama (experimental)
       code-indexer init --voyage-model voyage-large-2     # Specify VoyageAI model
       code-indexer init --max-file-size 2000000          # 2MB file limit
       code-indexer init --qdrant-segment-size 50         # Git-friendly 50MB segments
@@ -1256,11 +1433,53 @@ def init(
             raise
 
     # Check if config already exists
-    if config_manager.config_path.exists() and not force:
+    if config_manager.config_path.exists():
+        # Load existing config to check for backend changes
+        existing_config = config_manager.load()
+        existing_backend = (
+            existing_config.vector_store.provider
+            if existing_config.vector_store
+            else "qdrant"  # Default if not set
+        )
+
+        # Check if switching backends with --force
+        if force and existing_backend != vector_store:
+            console.print(
+                "⚠️  Backend switch detected: {} → {}".format(
+                    existing_backend, vector_store
+                ),
+                style="yellow bold",
+            )
+            console.print()
+            console.print(
+                "🔄 Switching vector storage backends requires:", style="yellow"
+            )
+            console.print("   • Removing existing vector index data", style="blue")
+            console.print("   • Re-indexing your entire codebase", style="blue")
+            console.print("   • Your source code files are preserved", style="green")
+            console.print()
+            console.print(
+                "💡 Recommended workflow for backend switching:", style="cyan"
+            )
+            console.print("   1. cidx stop", style="dim")
+            console.print("   2. cidx uninstall --confirm", style="dim")
+            console.print(f"   3. cidx init --vector-store {vector_store}", style="dim")
+            console.print("   4. cidx start", style="dim")
+            console.print("   5. cidx index", style="dim")
+            console.print()
+
+            from rich.prompt import Confirm
+
+            if not Confirm.ask(
+                "Proceed with backend switch (will overwrite config)?", default=False
+            ):
+                console.print("❌ Backend switch cancelled", style="yellow")
+                sys.exit(0)
+
         # Special case: if only --create-override-file is requested, allow it
-        if create_override_file:
+        if not force and create_override_file:
             # Load existing config and create override file
-            config = config_manager.load()
+            config = existing_config
             project_root = config.codebase_dir
             if _create_default_override_file(project_root, force=False):
                 console.print(
@@ -1271,7 +1490,7 @@ def init(
                 console.print("📝 Override file already exists, not overwriting")
                 console.print("Use --force to overwrite existing override file")
             return
-        else:
+        elif not force:
             console.print(
                 f"❌ Configuration already exists at {config_manager.config_path}"
             )
@@ -1299,9 +1518,11 @@ def init(
 
             # Prompt for provider selection
             if click.confirm(
-                "\nUse VoyageAI instead of local Ollama? (requires VOYAGE_API_KEY)",
+                "\nUse Ollama instead of VoyageAI? (experimental, slower)",
                 default=False,
             ):
+                embedding_provider = "ollama"
+            else:
                 embedding_provider = "voyage-ai"
                 if not os.getenv("VOYAGE_API_KEY"):
                     console.print(
@@ -1313,19 +1534,22 @@ def init(
 
                 # Prompt for VoyageAI model
                 voyage_model = click.prompt("VoyageAI model", default="voyage-code-3")
-            else:
-                embedding_provider = "ollama"
 
-        # Create default config with relative path for CoW clone compatibility
-        # Use "." for current directory to ensure CoW clones work without intervention
-        config = Config(codebase_dir=Path("."))
+        # Create default config with target_dir for proper initialization
+        # target_dir respects --codebase-dir parameter
+        config = Config(codebase_dir=target_dir)
         config_manager._config = config
 
         # Update config with provided options
-        updates = {}
+        updates: Dict[str, Any] = {}
 
         # Set embedding provider
         updates["embedding_provider"] = embedding_provider
+
+        # Set vector store backend
+        from .config import VectorStoreConfig
+
+        updates["vector_store"] = VectorStoreConfig(provider=vector_store).model_dump()
 
         # Provider-specific configuration
         if embedding_provider == "voyage-ai":
@@ -1367,6 +1591,17 @@ def init(
         if isinstance(qdrant_config, dict):
             qdrant_config["max_segment_size_kb"] = segment_size_kb
 
+        # Conditionally allocate ports based on vector store backend
+        # Filesystem backend doesn't need containers, so no port allocation
+        if vector_store == "filesystem":
+            # Create ProjectPortsConfig with all None values for filesystem backend
+            # Don't set to None directly as that causes Pydantic validation errors
+            from .config import ProjectPortsConfig
+
+            updates["project_ports"] = ProjectPortsConfig(
+                qdrant_port=None, ollama_port=None, data_cleaner_port=None
+            )
+
         # Apply updates if any
         if updates:
             config = config_manager.update_config(**updates)
@@ -1374,9 +1609,24 @@ def init(
         # Save with documentation
         config_manager.save_with_documentation(config)
 
+        # Initialize vector storage backend
+
+        backend = BackendFactory.create(config=config, project_root=config.codebase_dir)
+        try:
+            backend.initialize()
+            console.print(
+                f"✅ Initialized {config.vector_store.provider} vector storage backend"  # type: ignore
+            )
+        except Exception as e:
+            console.print(
+                f"⚠️  Warning: Failed to initialize backend: {e}", style="yellow"
+            )
+
         # Create qdrant storage directory proactively during init to prevent race condition
-        project_qdrant_dir = config.codebase_dir / ".code-indexer" / "qdrant"
-        project_qdrant_dir.mkdir(parents=True, exist_ok=True)
+        # Only needed for qdrant backend
+        if config.vector_store and config.vector_store.provider == "qdrant":  # type: ignore
+            project_qdrant_dir = config.codebase_dir / ".code-indexer" / "qdrant"
+            project_qdrant_dir.mkdir(parents=True, exist_ok=True)
 
         # Create override file (by default or if explicitly requested)
         project_root = config.codebase_dir
@@ -1556,6 +1806,8 @@ def start(
     config_manager = ctx.obj["config_manager"]
 
     try:
+        # Lazy imports for start command
+
         # Use quiet console if requested
         setup_console = Console(quiet=quiet) if quiet else console
 
@@ -1635,39 +1887,69 @@ def start(
         # Save updated configuration
         config_manager.save(config)
 
-        # Check Docker availability (auto-detect project name)
-        project_config_dir = config_manager.config_path.parent
-        docker_manager = DockerManager(
-            setup_console,
-            force_docker=force_docker,
-            project_config_dir=project_config_dir,
-        )
+        # Create backend based on configuration
+        backend = BackendFactory.create(config, Path(config.codebase_dir))
+        backend_info = backend.get_service_info()
 
-        # Ensure project has container names and ports configured
-        project_root = config.codebase_dir
-        project_config = docker_manager.ensure_project_configuration(
-            config_manager, project_root
-        )
+        # Check if backend requires containers
+        requires_containers = backend_info.get("requires_containers", False)
 
-        setup_console.print(
-            f"📋 Project containers: {project_config['qdrant_name'][:12]}...",
-            style="dim",
-        )
-        # Display assigned ports for active services only
-        port_display = []
-        if "qdrant_port" in project_config:
-            port_display.append(f"Qdrant={project_config['qdrant_port']}")
-        if "ollama_port" in project_config:
-            port_display.append(f"Ollama={project_config['ollama_port']}")
-        if "data_cleaner_port" in project_config:
-            port_display.append(f"DataCleaner={project_config['data_cleaner_port']}")
+        if requires_containers:
+            # Qdrant backend - use existing Docker flow
+            setup_console.print("🔧 Using Qdrant vector store (containers required)")
 
-        if port_display:
-            setup_console.print(
-                f"🔌 Assigned ports: {', '.join(port_display)}",
-                style="dim",
+            # Check Docker availability (auto-detect project name)
+            project_config_dir = config_manager.config_path.parent
+            docker_manager = DockerManager(
+                setup_console,
+                force_docker=force_docker,
+                project_config_dir=project_config_dir,
             )
 
+            # Ensure project has container names and ports configured
+            project_root = config.codebase_dir
+            project_config = docker_manager.ensure_project_configuration(
+                config_manager, project_root
+            )
+
+            setup_console.print(
+                f"📋 Project containers: {project_config['qdrant_name'][:12]}...",
+                style="dim",
+            )
+            # Display assigned ports for active services only
+            port_display = []
+            if "qdrant_port" in project_config:
+                port_display.append(f"Qdrant={project_config['qdrant_port']}")
+            if "ollama_port" in project_config:
+                port_display.append(f"Ollama={project_config['ollama_port']}")
+            if "data_cleaner_port" in project_config:
+                port_display.append(
+                    f"DataCleaner={project_config['data_cleaner_port']}"
+                )
+
+            if port_display:
+                setup_console.print(
+                    f"🔌 Assigned ports: {', '.join(port_display)}",
+                    style="dim",
+                )
+        else:
+            # Filesystem backend - no containers needed
+            setup_console.print("📁 Using filesystem vector store (container-free)")
+            setup_console.print(
+                f"💾 Index directory: {backend_info.get('vectors_dir', 'N/A')}"
+            )
+
+            # Call backend start (no-op for filesystem)
+            if backend.start():
+                setup_console.print("✅ Filesystem backend ready")
+                return
+            else:
+                setup_console.print(
+                    "❌ Failed to start filesystem backend", style="red"
+                )
+                sys.exit(1)
+
+        # Continue with Docker checks only for Qdrant backend
         if not docker_manager.is_docker_available():
             if force_docker:
                 setup_console.print(
@@ -1828,6 +2110,40 @@ def start(
         sys.exit(1)
 
 
+def validate_index_flags(ctx, param, value):
+    """Validate flag combinations for the index command before execution."""
+    if not value:
+        return value
+
+    # Access all params - they're stored in ctx.params as options are processed
+    params = ctx.params
+
+    # Check for --detect-deletions + --reconcile conflict
+    if param.name == "detect_deletions" and value:
+        if params.get("reconcile"):
+            console.print(
+                "❌ Cannot use --detect-deletions with --reconcile", style="red"
+            )
+            console.print(
+                "💡 --reconcile mode includes deletion detection automatically",
+                style="yellow",
+            )
+            ctx.exit(1)
+
+    if param.name == "reconcile" and value:
+        if params.get("detect_deletions"):
+            console.print(
+                "❌ Cannot use --detect-deletions with --reconcile", style="red"
+            )
+            console.print(
+                "💡 --reconcile mode includes deletion detection automatically",
+                style="yellow",
+            )
+            ctx.exit(1)
+
+    return value
+
+
 @cli.command()
 @click.option(
     "--clear", "-c", is_flag=True, help="Clear existing index and perform full reindex"
@@ -1836,6 +2152,7 @@ def start(
     "--reconcile",
     "-r",
     is_flag=True,
+    callback=validate_index_flags,
     help="Reconcile disk files with database and index missing files + timestamp-based changes",
 )
 @click.option(
@@ -1851,12 +2168,18 @@ def start(
 @click.option(
     "--detect-deletions",
     is_flag=True,
+    callback=validate_index_flags,
     help="Detect and handle files deleted from filesystem but still in database (for standard indexing only; --reconcile includes this automatically)",
 )
 @click.option(
     "--rebuild-indexes",
     is_flag=True,
     help="Rebuild payload indexes for optimal performance",
+)
+@click.option(
+    "--rebuild-index",
+    is_flag=True,
+    help="Rebuild HNSW index from existing vector files (filesystem backend only)",
 )
 @click.pass_context
 @require_mode("local")
@@ -1868,6 +2191,7 @@ def index(
     files_count_to_process: Optional[int],
     detect_deletions: bool,
     rebuild_indexes: bool,
+    rebuild_index: bool,
 ):
     """Index the codebase for semantic search.
 
@@ -1933,8 +2257,9 @@ def index(
 
     \b
     EXAMPLES:
-      code-indexer index                 # Smart incremental indexing (default)
+      code-indexer index                 # Smart incremental indexing
       code-indexer index --clear         # Force full reindex (clears existing data)
+      code-indexer index --rebuild-index    # Rebuild HNSW index from vectors
       code-indexer index --reconcile     # Reconcile disk vs database and index missing/modified files
       code-indexer index --detect-deletions  # Standard indexing + cleanup deleted files
       code-indexer index -b 100          # Larger batch size for speed
@@ -1973,9 +2298,14 @@ def index(
     try:
         config = config_manager.load()
 
-        # Initialize services
+        # Initialize services - lazy imports for index path
+        from .services.smart_indexer import SmartIndexer
+
         embedding_provider = EmbeddingProviderFactory.create(config, console)
-        qdrant_client = QdrantClient(config.qdrant, console, Path(config.codebase_dir))
+        backend = BackendFactory.create(
+            config=config, project_root=Path(config.codebase_dir)
+        )
+        vector_store_client = backend.get_vector_store_client()
 
         # Health checks
         if not embedding_provider.health_check():
@@ -1984,15 +2314,18 @@ def index(
             console.print(error_message, style="red")
             sys.exit(1)
 
-        if not qdrant_client.health_check():
-            error_message = get_service_unavailable_message("Qdrant", "cidx start")
+        if not backend.health_check():
+            provider = config.vector_store.provider if config.vector_store else "Qdrant"
+            error_message = get_service_unavailable_message(
+                provider.title(), "cidx start"
+            )
             console.print(error_message, style="red")
             sys.exit(1)
 
         # Initialize smart indexer with progressive metadata
         metadata_path = config_manager.config_path.parent / "metadata.json"
         smart_indexer = SmartIndexer(
-            config, embedding_provider, qdrant_client, metadata_path
+            config, embedding_provider, vector_store_client, metadata_path
         )
 
         # Get git status and display
@@ -2193,13 +2526,79 @@ def index(
                 interrupt_handler = handler
 
                 # Get collection name for operations
-                collection_name = qdrant_client.resolve_collection_name(
+                collection_name = vector_store_client.resolve_collection_name(
                     config, embedding_provider
                 )
 
+                # Handle rebuild index flag
+                if rebuild_index:
+                    # Check if filesystem backend is being used
+                    from code_indexer.storage.filesystem_vector_store import (
+                        FilesystemVectorStore,
+                    )
+
+                    if not isinstance(vector_store_client, FilesystemVectorStore):
+                        console.print(
+                            "❌ --rebuild-index only works with filesystem vector storage",
+                            style="red",
+                        )
+                        console.print(
+                            "💡 Current backend does not support index rebuilding",
+                            style="yellow",
+                        )
+                        sys.exit(1)
+
+                    # Get collection path
+                    collection_path = vector_store_client.base_path / collection_name
+                    if not collection_path.exists():
+                        console.print(
+                            f"❌ Collection '{collection_name}' not found",
+                            style="red",
+                        )
+                        sys.exit(1)
+
+                    # Load metadata to determine current index type
+                    import json
+
+                    metadata_file = collection_path / "collection_meta.json"
+                    if not metadata_file.exists():
+                        console.print(
+                            "❌ Collection metadata not found - collection may be corrupted",
+                            style="red",
+                        )
+                        sys.exit(1)
+
+                    with open(metadata_file) as f:
+                        metadata = json.load(f)
+
+                    # Rebuild HNSW index
+                    console.print(
+                        "🔄 Rebuilding HNSW index from existing vector files..."
+                    )
+                    from code_indexer.storage.hnsw_index_manager import (
+                        HNSWIndexManager,
+                    )
+
+                    try:
+                        hnsw_manager = HNSWIndexManager(
+                            vector_dim=metadata.get("vector_size", 1536)
+                        )
+                        vectors_rebuilt = hnsw_manager.rebuild_from_vectors(
+                            collection_path
+                        )
+                        console.print(
+                            f"\n✅ HNSW index rebuilt successfully - {vectors_rebuilt} vectors processed"
+                        )
+                    except Exception as e:
+                        console.print(
+                            f"\n❌ Failed to rebuild HNSW index: {e}", style="red"
+                        )
+                        sys.exit(1)
+                    return
+
                 # Handle rebuild indexes flag
                 if rebuild_indexes:
-                    if qdrant_client.rebuild_payload_indexes(collection_name):
+                    if vector_store_client.rebuild_payload_indexes(collection_name):
                         console.print("Index rebuild completed successfully")
                     else:
                         console.print("Index rebuild failed - check logs for details")
@@ -2209,7 +2608,7 @@ def index(
                 # For non-clear operations, ensure payload indexes exist before indexing
                 # For --clear operations, skip this since collection will be recreated fresh
                 if not clear:
-                    qdrant_client.ensure_payload_indexes(
+                    vector_store_client.ensure_payload_indexes(
                         collection_name, context="index"
                     )
 
@@ -2325,6 +2724,9 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
         from .services.git_aware_watch_handler import GitAwareWatchHandler
 
         config = config_manager.load()
+
+        # Lazy imports for watch services
+        from .services.smart_indexer import SmartIndexer
 
         # Initialize services (same as index command)
         embedding_provider = EmbeddingProviderFactory.create(config, console)
@@ -2472,9 +2874,26 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
 )
 @click.option(
     "--language",
-    help=_generate_language_help_text(),
+    "languages",
+    multiple=True,
+    help=_generate_language_help_text()
+    + " Can be specified multiple times to include multiple languages. Example: --language python --language go",
 )
-@click.option("--path", help="Filter by file path pattern (e.g., */tests/*)")
+@click.option(
+    "--exclude-language",
+    "exclude_languages",
+    multiple=True,
+    help="Exclude files of specified language(s). Can be specified multiple times to exclude multiple languages. Example: --exclude-language javascript --exclude-language typescript",
+)
+@click.option(
+    "--path-filter", "path_filter", help="Filter by file path pattern (e.g., */tests/*)"
+)
+@click.option(
+    "--exclude-path",
+    "exclude_paths",
+    multiple=True,
+    help="Exclude files matching path pattern(s). Supports glob patterns (*, **, ?, [seq]). Can be specified multiple times. Example: --exclude-path '*/tests/*' --exclude-path '*.min.js'",
+)
 @click.option("--min-score", type=float, help="Minimum similarity score (0.0-1.0)")
 @click.option(
     "--accuracy",
@@ -2494,8 +2913,10 @@ def query(
     ctx,
     query: str,
     limit: int,
-    language: Optional[str],
-    path: Optional[str],
+    languages: tuple,
+    exclude_languages: tuple,
+    path_filter: Optional[str],
+    exclude_paths: tuple,
     min_score: Optional[float],
     accuracy: str,
     quiet: bool,
@@ -2522,10 +2943,19 @@ def query(
     \b
     FILTERING OPTIONS:
       • Language: --language python (searches only Python files)
-      • Path: --path */tests/* (searches only test directories)
+      • Exclude: --exclude-language javascript (exclude JavaScript files)
+      • Path: --path-filter */tests/* (searches only test directories)
+      • Exclude Path: --exclude-path '*/tests/*' (exclude test directories)
       • Score: --min-score 0.8 (only high-confidence matches)
       • Limit: --limit 20 (more results)
       • Accuracy: --accuracy high (higher accuracy, slower search)
+
+    \b
+    FILTER COMBINATIONS (Story 3.1):
+      • Combine inclusions and exclusions for precise targeting
+      • Multiple filters are supported and work together
+      • Exclusions always override inclusions
+      • Automatic conflict detection warns about contradictions
 
     \b
     QUERY EXAMPLES:
@@ -2539,11 +2969,26 @@ def query(
     BASIC EXAMPLES:
       code-indexer query "user login"
       code-indexer query "database" --language python
-      code-indexer query "test" --path */tests/* --limit 5
+      code-indexer query "test" --path-filter */tests/* --limit 5
       code-indexer query "async" --min-score 0.8
+      code-indexer query "auth" --exclude-language javascript
+      code-indexer query "config" --exclude-language js --exclude-language ts
+      code-indexer query "api" --exclude-path '*/tests/*' --exclude-path '*.min.js'
       code-indexer query "function" --quiet  # Just score, path, and content
 
+    \b
+    ADVANCED FILTER COMBINATIONS:
+      # Python files, excluding tests
+      code-indexer query "database" --language python --exclude-path '*/tests/*'
+
+      # Source files only, excluding JavaScript and TypeScript
+      code-indexer query "api" --path-filter '*/src/*' --exclude-language js --exclude-language ts
+
+      # Complex targeting with multiple filters
+      code-indexer query "handler" --language python --language go --exclude-path '*/vendor/*' --exclude-path '*/node_modules/*'
+
     Results show file paths, matched content, and similarity scores.
+    Filter conflicts are automatically detected and warnings are displayed.
     """
     # Get mode information from context
     mode = ctx.obj.get("mode", "uninitialized")
@@ -2555,10 +3000,12 @@ def query(
 
         # Build args list from command parameters
         args = [query, "--limit", str(limit)]
-        if language:
-            args.extend(["--language", language])
-        if path:
-            args.extend(["--path", path])
+        for lang in languages:
+            args.extend(["--language", lang])
+        if path_filter:
+            args.extend(["--path-filter", path_filter])
+        for exclude_path in exclude_paths:
+            args.extend(["--exclude-path", exclude_path])
         if min_score is not None:
             args.extend(["--min-score", str(min_score)])
         if accuracy != "balanced":
@@ -2599,13 +3046,15 @@ def query(
             # Execute remote query with transparent repository linking
             from .remote.query_execution import execute_remote_query
 
+            # NOTE: Remote query API currently supports single language only
+            # Use first language from tuple, ignore additional languages for remote mode
             results = asyncio.run(
                 execute_remote_query(
                     query_text=query,
                     limit=limit,
                     project_root=project_root,
-                    language=language,
-                    path=path,
+                    language=languages[0] if languages else None,
+                    path=path_filter,
                     min_score=min_score,
                     include_source=True,
                     accuracy=accuracy,
@@ -2789,9 +3238,16 @@ def query(
     try:
         config = config_manager.load()
 
-        # Initialize services
+        # Initialize services - lazy imports for query path
+        from .services.generic_query_service import GenericQueryService
+        from .services.language_validator import LanguageValidator
+        from .services.language_mapper import LanguageMapper
+
         embedding_provider = EmbeddingProviderFactory.create(config, console)
-        qdrant_client = QdrantClient(config.qdrant, console, Path(config.codebase_dir))
+        backend = BackendFactory.create(
+            config=config, project_root=Path(config.codebase_dir)
+        )
+        vector_store_client = backend.get_vector_store_client()
 
         # Health checks
         if not embedding_provider.health_check():
@@ -2801,50 +3257,151 @@ def query(
             )
             sys.exit(1)
 
-        if not qdrant_client.health_check():
-            console.print("❌ Qdrant service not available", style="red")
+        if not vector_store_client.health_check():
+            console.print("❌ Vector store service not available", style="red")
             sys.exit(1)
 
         # Ensure provider-aware collection is set for search
-        collection_name = qdrant_client.resolve_collection_name(
+        collection_name = vector_store_client.resolve_collection_name(
             config, embedding_provider
         )
-        qdrant_client._current_collection_name = collection_name
+        vector_store_client._current_collection_name = collection_name
 
         # Ensure payload indexes exist (read-only check for query operations)
-        qdrant_client.ensure_payload_indexes(collection_name, context="query")
+        vector_store_client.ensure_payload_indexes(collection_name, context="query")
 
-        # Get query embedding
-        if not quiet:
-            with console.status("Generating query embedding..."):
-                query_embedding = embedding_provider.get_embedding(query)
-        else:
-            query_embedding = embedding_provider.get_embedding(query)
+        # Initialize timing dictionary for telemetry
+        timing_info = {}
+
+        # NOTE: Embedding generation now happens in parallel with index loading
+        # inside vector_store_client.search() - do NOT pre-compute embedding here
 
         # Build filter conditions for non-git path only
         filter_conditions: Dict[str, Any] = {}
-        if language:
-            # Validate language parameter
+        if languages:
+            # Validate language parameters
             language_validator = LanguageValidator()
-            validation_result = language_validator.validate_language(language)
-
-            if not validation_result.is_valid:
-                click.echo(f"Error: {validation_result.error_message}", err=True)
-                if validation_result.suggestions:
-                    click.echo(
-                        f"Suggestions: {', '.join(validation_result.suggestions)}",
-                        err=True,
-                    )
-                raise click.ClickException(f"Invalid language: {language}")
-
-            # For non-git path, handle language mapping
             language_mapper = LanguageMapper()
-            language_filter = language_mapper.build_language_filter(language)
-            filter_conditions["must"] = [language_filter]
-        if path:
+            must_conditions = []
+
+            for lang in languages:
+                # Validate each language
+                validation_result = language_validator.validate_language(lang)
+
+                if not validation_result.is_valid:
+                    click.echo(f"Error: {validation_result.error_message}", err=True)
+                    if validation_result.suggestions:
+                        click.echo(
+                            f"Suggestions: {', '.join(validation_result.suggestions)}",
+                            err=True,
+                        )
+                    raise click.ClickException(f"Invalid language: {lang}")
+
+                # For non-git path, handle language mapping
+                language_filter = language_mapper.build_language_filter(lang)
+                must_conditions.append(language_filter)
+
+            if must_conditions:
+                filter_conditions["must"] = must_conditions
+        if path_filter:
             filter_conditions.setdefault("must", []).append(
-                {"key": "path", "match": {"text": path}}
+                {"key": "path", "match": {"text": path_filter}}
             )
+
+        # Build exclusion filters (must_not conditions)
+        if exclude_languages:
+            language_validator = LanguageValidator()
+            language_mapper = LanguageMapper()
+            must_not_conditions = []
+
+            for exclude_lang in exclude_languages:
+                # Validate each exclusion language
+                validation_result = language_validator.validate_language(exclude_lang)
+
+                if not validation_result.is_valid:
+                    click.echo(f"Error: {validation_result.error_message}", err=True)
+                    if validation_result.suggestions:
+                        click.echo(
+                            f"Suggestions: {', '.join(validation_result.suggestions)}",
+                            err=True,
+                        )
+                    raise click.ClickException(
+                        f"Invalid exclusion language: {exclude_lang}"
+                    )
+
+                # Get all extensions for this language
+                extensions = language_mapper.get_extensions(exclude_lang)
+
+                # Add must_not condition for each extension
+                for ext in extensions:
+                    must_not_conditions.append(
+                        {"key": "language", "match": {"value": ext}}
+                    )
+
+            if must_not_conditions:
+                filter_conditions["must_not"] = must_not_conditions
+
+        # Build path exclusion filters (must_not conditions for paths)
+        if exclude_paths:
+            from .services.path_filter_builder import PathFilterBuilder
+
+            path_filter_builder = PathFilterBuilder()
+
+            # Build path exclusion filters
+            path_exclusion_filters = path_filter_builder.build_exclusion_filter(
+                list(exclude_paths)
+            )
+
+            # Add to existing must_not conditions
+            if path_exclusion_filters.get("must_not"):
+                if "must_not" in filter_conditions:
+                    filter_conditions["must_not"].extend(
+                        path_exclusion_filters["must_not"]
+                    )
+                else:
+                    filter_conditions["must_not"] = path_exclusion_filters["must_not"]
+
+        # Detect and warn about filter conflicts (Story 3.1)
+        from .services.filter_conflict_detector import FilterConflictDetector
+
+        conflict_detector = FilterConflictDetector()
+
+        # Prepare filter arguments for conflict detection
+        include_languages = list(languages) if languages else []
+        include_paths = [path_filter] if path_filter else []
+
+        conflicts = conflict_detector.detect_conflicts(
+            include_languages=include_languages,
+            exclude_languages=list(exclude_languages) if exclude_languages else [],
+            include_paths=include_paths,
+            exclude_paths=list(exclude_paths) if exclude_paths else [],
+        )
+
+        # Display warnings/errors for conflicts
+        if conflicts:
+            error_conflicts = [c for c in conflicts if c.severity == "error"]
+            warning_conflicts = [c for c in conflicts if c.severity == "warning"]
+
+            if error_conflicts:
+                console.print("\n[bold red]🚫 Filter Conflicts (Errors):[/bold red]")
+                for conflict in error_conflicts:
+                    console.print(f"  [red]• {conflict.message}[/red]")
+                console.print()
+
+            if warning_conflicts:
+                console.print("\n[bold yellow]⚠️  Filter Warnings:[/bold yellow]")
+                for conflict in warning_conflicts:
+                    console.print(f"  [yellow]• {conflict.message}[/yellow]")
+                console.print()
+
+        # Log filter structure for debugging (Story 3.1 AC #12)
+        import logging
+
+        logger = logging.getLogger(__name__)
+        if filter_conditions:
+            import json
+
+            logger.debug(f"Query filters: {json.dumps(filter_conditions, indent=2)}")
 
         # Check if project uses git-aware indexing
         from .services.git_topology_service import GitTopologyService
@@ -2854,14 +3411,16 @@ def query(
         git_topology_service = GitTopologyService(config.codebase_dir)
         is_git_aware = git_topology_service.is_git_available()
 
-        # Initialize query service based on project type
+        # Initialize query service for git-aware filtering
+        query_service = GenericQueryService(config.codebase_dir, config)
+
+        # Determine if we should use branch-aware querying
         if is_git_aware:
             # Use git-aware filtering for git projects
             current_branch = git_topology_service.get_current_branch() or "master"
             use_branch_aware_query = True
         else:
             # Use generic query service for non-git projects
-            query_service = GenericQueryService(config.codebase_dir, config)
             use_branch_aware_query = False
 
         # Apply embedding provider's model filtering when searching
@@ -2881,10 +3440,10 @@ def query(
 
             # Search
             console.print(f"🔍 Searching for: '{query}'")
-            if language:
-                console.print(f"🏷️  Language filter: {language}")
-            if path:
-                console.print(f"📁 Path filter: {path}")
+            if languages:
+                console.print(f"🏷️  Language filter: {', '.join(languages)}")
+            if path_filter:
+                console.print(f"📁 Path filter: {path_filter}")
             console.print(f"📊 Limit: {limit}")
             if min_score:
                 console.print(f"⭐ Min score: {min_score}")
@@ -2935,33 +3494,83 @@ def query(
             if not quiet:
                 console.print("🔍 Applying git-aware filtering...")
 
-            # Use branch-aware search with git filtering
-            # Content is visible if it was indexed from current branch
-            git_filter_conditions = {
-                "must": [
-                    # Match content from the current branch
-                    {"key": "git_branch", "match": {"value": current_branch}},
-                    # Ensure git is available (exclude non-git content)
-                    {"key": "git_available", "match": {"value": True}},
-                ],
-            }
+            # Build filter conditions (NO git_branch filter - let post-filtering handle it)
+            filter_conditions_list = []
 
-            # Add additional filters
-            if language:
+            # Only filter by git_available to exclude non-git content
+            filter_conditions_list.append(
+                {"key": "git_available", "match": {"value": True}}
+            )
+
+            # Add user-specified filters
+            if languages:
                 language_mapper = LanguageMapper()
-                language_filter = language_mapper.build_language_filter(language)
-                git_filter_conditions["must"].append(language_filter)
-            if path:
-                git_filter_conditions["must"].append(
-                    {"key": "path", "match": {"text": path}}
+                # Handle multiple languages by building OR conditions
+                for language in languages:
+                    language_filter = language_mapper.build_language_filter(language)
+                    filter_conditions_list.append(language_filter)
+            if path_filter:
+                filter_conditions_list.append(
+                    {"key": "path", "match": {"text": path_filter}}
                 )
 
-            git_results: List[Dict[str, Any]] = qdrant_client.search(
-                query_vector=query_embedding,
-                filter_conditions=git_filter_conditions,
-                limit=limit,
-                collection_name=collection_name,
+            # Build filter conditions preserving both must and must_not conditions
+            query_filter_conditions = (
+                {"must": filter_conditions_list} if filter_conditions_list else {}
             )
+            # CRITICAL: Preserve must_not conditions (exclusion filters) from earlier filter_conditions
+            # This ensures --exclude-language and --exclude-path work in git-aware repositories
+            if filter_conditions.get("must_not"):
+                query_filter_conditions["must_not"] = filter_conditions["must_not"]
+
+            # Query vector store (get more results to allow for git filtering)
+            # FilesystemVectorStore: parallel execution (query + embedding_provider)
+            # QdrantClient: requires pre-computed query_vector
+            from code_indexer.storage.filesystem_vector_store import (
+                FilesystemVectorStore,
+            )
+
+            if isinstance(vector_store_client, FilesystemVectorStore):
+                # Parallel execution: embedding generation + index loading happen concurrently
+                raw_results, search_timing = vector_store_client.search(
+                    query=query,  # Pass query text for parallel embedding
+                    embedding_provider=embedding_provider,  # Provider for parallel execution
+                    filter_conditions=query_filter_conditions,
+                    limit=limit * 2,  # Get more to account for post-filtering
+                    collection_name=collection_name,
+                    return_timing=True,
+                )
+            else:
+                # QdrantClient: pre-compute embedding (no parallel support yet)
+                query_embedding = embedding_provider.get_embedding(query)
+                raw_results_list = vector_store_client.search(
+                    query_vector=query_embedding,
+                    filter_conditions=query_filter_conditions,
+                    limit=limit * 2,
+                    collection_name=collection_name,
+                )
+                raw_results = raw_results_list  # Type compatibility
+                search_timing = {}  # Qdrant doesn't return timing yet
+            # Merge detailed search timing into main timing info
+            timing_info.update(search_timing)
+
+            # Calculate vector_search_ms as sum of breakdown components for accurate reporting
+            breakdown_keys = [
+                "matrix_load_ms",
+                "index_load_ms",
+                "hnsw_search_ms",
+                "id_index_load_ms",
+                "staleness_detection_ms",
+            ]
+            timing_info["vector_search_ms"] = sum(
+                search_timing.get(k, 0) for k in breakdown_keys
+            )
+
+            # Apply git-aware post-filtering (checks file existence in current branch)
+            git_filter_start = time.time()
+            # Type hint: raw_results is always List[Dict[str, Any]] here
+            git_results = query_service.filter_results_by_current_branch(raw_results)  # type: ignore[arg-type]
+            timing_info["git_filter_ms"] = (time.time() - git_filter_start) * 1000
 
             # Apply minimum score filtering (language and path already handled by Qdrant filters)
             if min_score:
@@ -2973,19 +3582,46 @@ def query(
                 git_results = filtered_results
         else:
             # Use model-specific search for non-git projects
-            raw_results = qdrant_client.search_with_model_filter(
-                query_vector=query_embedding,
-                embedding_model=current_model,
-                limit=limit * 2,  # Get more results to allow for git filtering
-                score_threshold=min_score,
-                additional_filters=filter_conditions,
-                accuracy=accuracy,
+            # FilesystemVectorStore: Use regular search (no model filter needed - single provider)
+            # QdrantClient: Use search_with_model_filter for multi-provider support
+            from code_indexer.storage.filesystem_vector_store import (
+                FilesystemVectorStore,
             )
+
+            if isinstance(vector_store_client, FilesystemVectorStore):
+                # Filesystem backend: parallel execution
+                raw_results, search_timing = vector_store_client.search(
+                    query=query,
+                    embedding_provider=embedding_provider,
+                    filter_conditions=filter_conditions if filter_conditions else None,
+                    limit=limit * 2,
+                    score_threshold=min_score,
+                    collection_name=collection_name,
+                    return_timing=True,
+                )
+                timing_info.update(search_timing)
+            else:
+                # Qdrant backend: pre-compute embedding
+                search_start = time.time()
+                query_embedding = embedding_provider.get_embedding(query)
+                raw_results_list = vector_store_client.search_with_model_filter(
+                    query_vector=query_embedding,
+                    embedding_model=current_model,
+                    limit=limit * 2,
+                    score_threshold=min_score,
+                    additional_filters=filter_conditions,
+                    accuracy=accuracy,
+                )
+                raw_results = raw_results_list  # Type compatibility
+                timing_info["vector_search_ms"] = (time.time() - search_start) * 1000
 
             # Apply git-aware filtering
             if not quiet:
                 console.print("🔍 Applying git-aware filtering...")
-            git_results = query_service.filter_results_by_current_branch(raw_results)
+            git_filter_start = time.time()
+            # Type hint: raw_results is always List[Dict[str, Any]] here
+            git_results = query_service.filter_results_by_current_branch(raw_results)  # type: ignore[arg-type]
+            timing_info["git_filter_ms"] = (time.time() - git_filter_start) * 1000
 
         # Limit to requested number after filtering
         results = git_results[:limit]
@@ -2993,6 +3629,7 @@ def query(
         # Apply staleness detection to local query results
         if results:
             try:
+                staleness_start = time.time()
                 # Convert local results to QueryResultItem format for staleness detection
                 from .api_clients.remote_query_client import QueryResultItem
                 from .remote.staleness_detector import StalenessDetector
@@ -3005,15 +3642,25 @@ def query(
                     file_last_modified = payload.get("file_last_modified")
                     indexed_at = payload.get("indexed_at")
 
+                    # Convert indexed_at ISO timestamp to Unix timestamp float
+                    indexed_timestamp = None
+                    if indexed_at:
+                        try:
+                            from datetime import datetime
+
+                            dt = datetime.fromisoformat(indexed_at.rstrip("Z"))
+                            indexed_timestamp = dt.timestamp()
+                        except (ValueError, AttributeError):
+                            indexed_timestamp = None
+
                     query_item = QueryResultItem(
-                        score=result["score"],
+                        similarity_score=result["score"],
                         file_path=payload.get("path", "unknown"),
-                        line_start=payload.get("line_start", 1),
-                        line_end=payload.get("line_end", 1),
-                        content=payload.get("content", ""),
-                        language=payload.get("language"),
+                        line_number=payload.get("line_start", 1),
+                        code_snippet=payload.get("content", ""),
+                        repository_alias=project_root.name,
                         file_last_modified=file_last_modified,
-                        indexed_timestamp=indexed_at,
+                        indexed_timestamp=indexed_timestamp,
                     )
                     query_result_items.append(query_item)
 
@@ -3022,6 +3669,9 @@ def query(
                 enhanced_results = staleness_detector.apply_staleness_detection(
                     query_result_items, project_root, mode="local"
                 )
+                timing_info["staleness_detection_ms"] = (
+                    time.time() - staleness_start
+                ) * 1000
 
                 # Convert enhanced results back to local format but preserve staleness info
                 enhanced_local_results = []
@@ -3055,11 +3705,15 @@ def query(
         if not results:
             if not quiet:
                 console.print("❌ No results found", style="yellow")
+                # Display timing summary even when no results
+                _display_query_timing(console, timing_info)
             return
 
         if not quiet:
             console.print(f"\n✅ Found {len(results)} results:")
             console.print("=" * 80)
+            # Display timing summary
+            _display_query_timing(console, timing_info)
 
         for i, result in enumerate(results, 1):
             payload = result["payload"]
@@ -3212,472 +3866,365 @@ def query(
         sys.exit(1)
 
 
-@cli.command()
-@click.argument("question")
+@cli.command(name="teach-ai")
 @click.option(
-    "--limit",
-    "-l",
-    default=10,
-    help="[RAG-first only] Number of semantic search results to include in initial prompt (default: 10)",
-)
-@click.option(
-    "--context-lines",
-    "-c",
-    default=500,
-    help="[RAG-first only] Lines of context around each match in initial prompt (default: 500)",
-)
-@click.option(
-    "--language",
-    help=f"[RAG-first only] Filter initial search by programming language. {_generate_language_help_text()}",
-)
-@click.option(
-    "--path",
-    help="[RAG-first only] Filter initial search by file path pattern (e.g., */tests/*)",
-)
-@click.option(
-    "--min-score",
-    type=float,
-    help="[RAG-first only] Minimum similarity score for initial search (0.0-1.0)",
-)
-@click.option(
-    "--max-turns",
-    default=5,
-    help="Maximum Claude conversation turns for multi-turn analysis (default: 5)",
-)
-@click.option(
-    "--no-explore",
+    "--claude",
+    "platform_claude",
     is_flag=True,
-    help="Disable file exploration hints in Claude prompt (limits Claude's search capabilities)",
+    help="Generate instructions for Claude Code platform",
 )
 @click.option(
-    "--no-stream",
+    "--codex",
+    "platform_codex",
     is_flag=True,
-    help="Disable streaming output - show complete results at once",
+    help="Generate instructions for OpenAI Codex platform",
 )
 @click.option(
-    "--quiet",
-    "-q",
+    "--gemini",
+    "platform_gemini",
     is_flag=True,
-    help="Quiet mode - minimal output, only show Claude's analysis results",
+    help="Generate instructions for Google Gemini platform",
 )
 @click.option(
-    "--dry-run-show-claude-prompt",
+    "--opencode",
+    "platform_opencode",
     is_flag=True,
-    help="Debug mode: show the full prompt sent to Claude without executing analysis",
+    help="Generate instructions for OpenCode platform",
 )
 @click.option(
-    "--show-claude-plan",
-    is_flag=True,
-    help="Show real-time tool usage tracking and generate summary of Claude's analysis strategy",
+    "--q", "platform_q", is_flag=True, help="Generate instructions for Q platform"
 )
 @click.option(
-    "--rag-first",
+    "--junie",
+    "platform_junie",
     is_flag=True,
-    help="Use legacy RAG-first approach: run semantic search upfront, then send all results to Claude. Default is claude-first: Claude uses search on-demand.",
+    help="Generate instructions for Junie platform",
 )
 @click.option(
-    "--include-file-list",
+    "--project",
+    "scope_project",
     is_flag=True,
-    help="Include full project directory listing in Claude prompt for better project understanding (increases prompt size)",
+    help="Install instructions in project root (./CLAUDE.md)",
 )
-@click.pass_context
-def claude(
-    ctx,
-    question: str,
-    limit: int,
-    context_lines: int,
-    language: Optional[str],
-    path: Optional[str],
-    min_score: Optional[float],
-    max_turns: int,
-    no_explore: bool,
-    no_stream: bool,
-    quiet: bool,
-    dry_run_show_claude_prompt: bool,
-    show_claude_plan: bool,
-    rag_first: bool,
-    include_file_list: bool,
+@click.option(
+    "--global",
+    "scope_global",
+    is_flag=True,
+    help="Install instructions globally (~/.claude/CLAUDE.md)",
+)
+@click.option(
+    "--show-only",
+    is_flag=True,
+    help="Preview instruction content without writing files",
+)
+def teach_ai(
+    platform_claude: bool,
+    platform_codex: bool,
+    platform_gemini: bool,
+    platform_opencode: bool,
+    platform_q: bool,
+    platform_junie: bool,
+    scope_project: bool,
+    scope_global: bool,
+    show_only: bool,
 ):
-    """AI-powered code analysis using Claude with semantic search.
+    """Generate AI platform instructions for semantic code search.
+
+    Creates instruction files (like CLAUDE.md) that teach AI assistants how to use
+    cidx for semantic code search. Instructions are loaded from template files in
+    prompts/ai_instructions/, allowing non-developers to update content without
+    code changes.
 
     \b
-    Two analysis approaches available:
+    USAGE EXAMPLES:
+      # Install Claude instructions in project
+      cidx teach-ai --claude --project
 
-    DEFAULT (Claude-First):
-    1. Send question directly to Claude with project context
-    2. Claude uses semantic search on-demand via cidx query tool
-    3. More interactive, adaptive analysis
+      # Install Claude instructions globally
+      cidx teach-ai --claude --global
 
-    LEGACY (--rag-first):
-    1. Run semantic search to find relevant code upfront
-    2. Extract context around matches
-    3. Send all context + question to Claude for analysis
+      # Preview instruction content
+      cidx teach-ai --claude --show-only
 
     \b
-    CAPABILITIES:
-      • Natural language code questions and explanations
-      • Architecture analysis and recommendations
-      • Code pattern identification and best practices
-      • Debugging assistance and error analysis
-      • Implementation guidance and examples
-      • Cross-file relationship analysis
+    PLATFORMS:
+      --claude      Claude Code platform
+      --codex       OpenAI Codex platform
+      --gemini      Google Gemini platform
+      --opencode    OpenCode platform
+      --q           Q platform
+      --junie       Junie platform
 
     \b
-    SEARCH INTEGRATION:
-      Uses your existing semantic search index to find relevant code context.
-      Claude can also perform additional searches during analysis to explore
-      related concepts and provide comprehensive answers.
-
-    \b
-    FILTERING OPTIONS:
-      Same as regular search - filter by language, path, and similarity score
-      to focus Claude's analysis on specific parts of your codebase.
-
-    \b
-    EXAMPLES:
-      code-indexer claude "How does authentication work in this app?"
-      code-indexer claude "Show me the database schema design" --language sql
-      code-indexer claude "Find security vulnerabilities" --min-score 0.8
-      code-indexer claude "Explain the API routing logic" --path */api/*
-      code-indexer claude "How to add a new feature?" --context-lines 300
-      code-indexer claude "Debug this error pattern" --no-stream
-      code-indexer claude "Quick analysis" --quiet  # Just the response, no headers
-      code-indexer claude "Test prompt" --dry-run-show-claude-prompt  # Show prompt without executing
-      code-indexer claude "Analyze the codebase" --show-claude-plan  # Real-time tool usage tracking
-
-    \b
-    STREAMING:
-      Use --stream to see Claude's analysis as it's generated, helpful for
-      longer analyses or when you want immediate feedback.
-
-    \b
-    PROMPT DEBUGGING:
-      Use --dry-run-show-claude-prompt to see the exact prompt that would be
-      sent to Claude without actually executing the query. This is helpful for:
-      • Iterating on prompt improvements
-      • Understanding what context is being provided
-      • Debugging issues with prompt generation
-      • Optimizing context size and relevance
-
-    \b
-    TOOL USAGE TRACKING:
-      Use --show-claude-plan to see real-time feedback on Claude's tool usage
-      and get a comprehensive summary of the problem-solving approach:
-      • 🔍✨ Visual cues for semantic search (cidx) usage (preferred)
-      • 😞 Visual cues for text-based search (grep) usage (discouraged)
-      • 📖 File reading and exploration activities
-      • Real-time status line showing current tool activity
-      • Final summary narrative of Claude's approach and statistics
-
-    \b
-    REQUIREMENTS:
-      • Claude CLI must be installed: https://docs.anthropic.com/en/docs/claude-code
-      • Services must be running: code-indexer start
-      • Codebase must be indexed: code-indexer index
-
-    Results include Claude's analysis plus metadata about contexts used.
+    SCOPE:
+      --project     Install in project root (./CLAUDE.md)
+      --global      Install globally (~/.claude/CLAUDE.md)
+      --show-only   Preview without writing files
     """
-    config_manager = ctx.obj["config_manager"]
+    console = Console()
 
-    try:
-        # Check Claude CLI availability
-        if (
-            not check_claude_sdk_availability()
-        ):  # This function now checks CLI availability
-            console.print(
-                "❌ Claude CLI not available. Install it following:", style="red"
-            )
-            console.print("   https://docs.anthropic.com/en/docs/claude-code")
+    # Validate platform flag (exactly one required)
+    platforms = [
+        platform_claude,
+        platform_codex,
+        platform_gemini,
+        platform_opencode,
+        platform_q,
+        platform_junie,
+    ]
+    platform_count = sum(platforms)
+
+    if platform_count == 0:
+        console.print(
+            "❌ Platform required: --claude, --codex, --gemini, --opencode, --q, or --junie",
+            style="red",
+        )
+        sys.exit(1)
+
+    if platform_count > 1:
+        console.print("❌ Only one platform flag allowed at a time", style="red")
+        sys.exit(1)
+
+    # Validate scope flag (required unless --show-only)
+    if not show_only:
+        scopes = [scope_project, scope_global]
+        scope_count = sum(scopes)
+
+        if scope_count == 0:
+            console.print("❌ Scope required: --project or --global", style="red")
             sys.exit(1)
 
-        config = config_manager.load()
+        if scope_count > 1:
+            console.print("❌ Only one scope flag allowed at a time", style="red")
+            sys.exit(1)
 
-        # If in dry-run mode, skip service health checks
-        if not dry_run_show_claude_prompt:
-            # Quick health checks with shorter timeout for better UX in Claude command
-            # Create temporary clients with 3-second timeout for health checks
-            import httpx
+    # Determine platform name for template lookup
+    if platform_claude:
+        platform_name = "claude"
+    elif platform_codex:
+        platform_name = "codex"
+    elif platform_gemini:
+        platform_name = "gemini"
+    elif platform_opencode:
+        platform_name = "opencode"
+    elif platform_q:
+        platform_name = "q"
+    elif platform_junie:
+        platform_name = "junie"
+    else:
+        console.print("❌ Internal error: No platform selected", style="red")
+        sys.exit(1)
 
-            try:
-                # Quick embedding service check
-                if config.embedding_provider == "ollama":
-                    quick_client = httpx.Client(
-                        base_url=config.ollama.host, timeout=3.0
-                    )
-                    response = quick_client.get("/api/tags")
-                    quick_client.close()
-                    if response.status_code != 200:
-                        raise Exception("Ollama not responding")
+    # Load template content
+    try:
+        # Find template file relative to this CLI module
+        cli_dir = Path(__file__).parent
+        project_root = cli_dir.parent.parent
+        template_path = (
+            project_root / "prompts" / "ai_instructions" / f"{platform_name}.md"
+        )
 
-                # Quick Qdrant check
-                quick_qdrant = httpx.Client(base_url=config.qdrant.host, timeout=3.0)
-                response = quick_qdrant.get("/healthz")
-                quick_qdrant.close()
-                if response.status_code != 200:
-                    raise Exception("Qdrant not responding")
+        if not template_path.exists():
+            console.print(
+                f"❌ Template not found: {template_path}",
+                style="red",
+            )
+            console.print(
+                f"   Expected template at: prompts/ai_instructions/{platform_name}.md"
+            )
+            sys.exit(1)
 
-            except Exception:
+        template_content = template_path.read_text()
+
+    except Exception as e:
+        console.print(f"❌ Failed to load template: {e}", style="red")
+        sys.exit(1)
+
+    # Handle --show-only mode
+    if show_only:
+        console.print(f"📄 {platform_name.title()} Platform Instructions:\n")
+        console.print(template_content)
+        return
+
+    # Platform-specific validation: Gemini and Junie only support project-level
+    if platform_name == "gemini" and scope_global:
+        console.print(
+            "❌ Gemini platform only supports project-level instructions (--project)",
+            style="red",
+        )
+        console.print(
+            "   Gemini does not have a global configuration directory per research."
+        )
+        sys.exit(1)
+
+    if platform_name == "junie" and scope_global:
+        console.print(
+            "❌ Junie platform only supports project-level instructions (--project)",
+            style="red",
+        )
+        console.print(
+            "   Junie does not have a global configuration directory per research."
+        )
+        sys.exit(1)
+
+    # Determine target file path based on platform conventions
+    if scope_project:
+        if platform_name == "claude":
+            # Claude: CLAUDE.md in project root
+            target_path = Path.cwd() / "CLAUDE.md"
+            scope_desc = "project root"
+        elif platform_name == "codex":
+            # Codex: CODEX.md in project root (project-specific instructions)
+            target_path = Path.cwd() / "CODEX.md"
+            scope_desc = "project root"
+        elif platform_name == "gemini":
+            # Gemini: styleguide.md in .gemini subdirectory
+            gemini_dir = Path.cwd() / ".gemini"
+            gemini_dir.mkdir(parents=True, exist_ok=True)
+            target_path = gemini_dir / "styleguide.md"
+            scope_desc = ".gemini/"
+        elif platform_name == "opencode":
+            # OpenCode: AGENTS.md in project root (AGENTS.md open standard)
+            target_path = Path.cwd() / "AGENTS.md"
+            scope_desc = "project root"
+        elif platform_name == "q":
+            # Amazon Q: cidx.md in .amazonq/rules/ subdirectory
+            q_dir = Path.cwd() / ".amazonq" / "rules"
+            q_dir.mkdir(parents=True, exist_ok=True)
+            target_path = q_dir / "cidx.md"
+            scope_desc = ".amazonq/rules/"
+        elif platform_name == "junie":
+            # JetBrains Junie: guidelines.md in .junie subdirectory
+            junie_dir = Path.cwd() / ".junie"
+            junie_dir.mkdir(parents=True, exist_ok=True)
+            target_path = junie_dir / "guidelines.md"
+            scope_desc = ".junie/"
+        else:
+            # Default for other platforms
+            target_path = Path.cwd() / f"{platform_name.upper()}.md"
+            scope_desc = "project root"
+    else:  # scope_global
+        home_dir = Path.home()
+        if platform_name == "claude":
+            # Claude: ~/.claude/CLAUDE.md
+            platform_dir = home_dir / ".claude"
+            platform_dir.mkdir(parents=True, exist_ok=True)
+            target_path = platform_dir / "CLAUDE.md"
+            scope_desc = "~/.claude/"
+        elif platform_name == "codex":
+            # Codex: ~/.codex/instructions.md (global behavioral instructions)
+            platform_dir = home_dir / ".codex"
+            platform_dir.mkdir(parents=True, exist_ok=True)
+            target_path = platform_dir / "instructions.md"
+            scope_desc = "~/.codex/"
+        elif platform_name == "opencode":
+            # OpenCode: ~/.config/opencode/AGENTS.md (AGENTS.md open standard)
+            platform_dir = home_dir / ".config" / "opencode"
+            platform_dir.mkdir(parents=True, exist_ok=True)
+            target_path = platform_dir / "AGENTS.md"
+            scope_desc = "~/.config/opencode/"
+        elif platform_name == "q":
+            # Amazon Q: ~/.aws/amazonq/Q.md
+            platform_dir = home_dir / ".aws" / "amazonq"
+            platform_dir.mkdir(parents=True, exist_ok=True)
+            target_path = platform_dir / "Q.md"
+            scope_desc = "~/.aws/amazonq/"
+        else:
+            # Default for other platforms
+            platform_dir = home_dir / f".{platform_name}"
+            platform_dir.mkdir(parents=True, exist_ok=True)
+            target_path = platform_dir / f"{platform_name.upper()}.md"
+            scope_desc = f"~/.{platform_name}/"
+
+    # Smart update: preserve existing content and update only CIDX section
+    if target_path.exists():
+        # File exists - use Claude CLI to intelligently merge content
+        console.print("📝 Updating existing file with Claude CLI...", style="dim")
+
+        try:
+            existing_content = target_path.read_text()
+
+            # Create prompt for Claude to intelligently merge
+            merge_prompt = f"""You are updating an AI instruction file. Your task is to intelligently merge new CIDX semantic search instructions into an existing file while preserving ALL existing content.
+
+EXISTING FILE CONTENT:
+{existing_content}
+
+NEW CIDX SECTION TO ADD/UPDATE:
+{template_content}
+
+INSTRUCTIONS:
+1. If the file already has a CIDX/semantic search section (look for headers like "SEMANTIC SEARCH", "CIDX SEMANTIC SEARCH", etc.), UPDATE that section with the new content
+2. If the file does NOT have a CIDX section, ADD the new section at the end
+3. Preserve ALL other existing content exactly as-is
+4. Maintain the file's existing formatting style
+5. Output ONLY the raw merged file content with NO markdown code fences, NO explanations, NO commentary
+6. Start output immediately with the first line of the merged file
+
+OUTPUT THE COMPLETE MERGED FILE (raw content only, no markdown wrappers):"""
+
+            # Call Claude CLI with explicit text output format
+            result = subprocess.run(
+                [
+                    "claude",
+                    "-p",
+                    "--output-format",
+                    "text",
+                    "--dangerously-skip-permissions",
+                    merge_prompt,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=180,  # 3 minutes for large files
+            )
+
+            if result.returncode != 0:
                 console.print(
-                    "❌ Services not available. Run 'code-indexer start' first.",
+                    f"❌ Claude CLI failed: {result.stderr or 'Unknown error'}",
                     style="red",
                 )
                 sys.exit(1)
 
-        # For dry-run mode, we only need minimal initialization
-        if dry_run_show_claude_prompt:
-            # Initialize only what's needed for prompt generation
-            # Initialize query service for git-aware filtering (doesn't need services)
-            query_service = GenericQueryService(config.codebase_dir, config)
+            merged_content = result.stdout.strip()
 
-            # Get project context
-            branch_context = query_service.get_current_branch_context()
-            if not quiet:
-                if branch_context["git_available"]:
-                    console.print(f"📂 Git repository: {branch_context['project_id']}")
-                    console.print(
-                        f"🌿 Current branch: {branch_context['current_branch']}"
-                    )
-                else:
-                    console.print(f"📁 Non-git project: {branch_context['project_id']}")
+            # Strip markdown code fences if Claude added them despite instructions
+            if merged_content.startswith("```"):
+                lines = merged_content.split("\n")
+                # Remove first line (```markdown or similar) and last line (```)
+                if lines[-1].strip() == "```":
+                    merged_content = "\n".join(lines[1:-1])
 
-            # Initialize Claude integration service (needed for prompt generation)
-            claude_service = ClaudeIntegrationService(
-                codebase_dir=config.codebase_dir,
-                project_name=branch_context["project_id"],
+            # Write merged content
+            target_path.write_text(merged_content)
+
+            console.print(
+                f"✅ {platform_name.title()} instructions updated in {scope_desc}",
+                style="green",
+            )
+            console.print(f"   File: {target_path}", style="dim")
+            console.print(
+                "   ℹ️  Existing content preserved, CIDX section updated",
+                style="blue dim",
             )
 
-            # Skip to dry-run handling without initializing other services
-            embedding_provider = None
-            qdrant_client = None
-        else:
-            # Initialize services (after health checks pass)
-            embedding_provider = EmbeddingProviderFactory.create(config, console)
-            qdrant_client = QdrantClient(
-                config.qdrant, console, Path(config.codebase_dir)
+        except subprocess.TimeoutExpired:
+            console.print("❌ Claude CLI timed out", style="red")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"❌ Failed to update instruction file: {e}", style="red")
+            sys.exit(1)
+    else:
+        # New file - create with template content
+        try:
+            target_path.write_text(template_content)
+            console.print(
+                f"✅ {platform_name.title()} instructions installed to {scope_desc}",
+                style="green",
             )
-
-            # Ensure provider-aware collection is set for search
-            collection_name = qdrant_client.resolve_collection_name(
-                config, embedding_provider
-            )
-            qdrant_client._current_collection_name = collection_name
-
-            # Ensure payload indexes exist (read-only check for query operations)
-            qdrant_client.ensure_payload_indexes(collection_name, context="query")
-
-            # Initialize query service for git-aware filtering
-            query_service = GenericQueryService(config.codebase_dir, config)
-
-            # Get project context
-            branch_context = query_service.get_current_branch_context()
-            if not quiet:
-                if branch_context["git_available"]:
-                    console.print(f"📂 Git repository: {branch_context['project_id']}")
-                    console.print(
-                        f"🌿 Current branch: {branch_context['current_branch']}"
-                    )
-                else:
-                    console.print(f"📁 Non-git project: {branch_context['project_id']}")
-
-            # Initialize Claude integration service (needed for both approaches)
-            claude_service = ClaudeIntegrationService(
-                codebase_dir=config.codebase_dir,
-                project_name=branch_context["project_id"],
-            )
-
-        # Branch based on approach: claude-first (default) or RAG-first (legacy)
-        if rag_first and not dry_run_show_claude_prompt:
-            # LEGACY RAG-FIRST APPROACH
-            if not quiet:
-                console.print("🔄 Using legacy RAG-first approach")
-                console.print(f"🔍 Performing semantic search: '{question}'")
-                console.print(
-                    f"📊 Limit: {limit}  < /dev/null |  Context: {context_lines} lines"
-                )
-
-            # Ensure we have required services for RAG-first approach
-            if embedding_provider is None or qdrant_client is None:
-                console.print(
-                    "❌ Services not initialized for RAG-first approach", style="red"
-                )
-                sys.exit(1)
-
-            if not quiet:
-                with console.status("Generating query embedding..."):
-                    embedding_provider.get_embedding(question)
-            else:
-                embedding_provider.get_embedding(question)
-
-            # Get query embedding
-            query_embedding = embedding_provider.get_embedding(question)
-
-            # Build filter conditions
-            filter_conditions = {}
-            if language:
-                # Apply language mapping for friendly names
-                language_mapper = LanguageMapper()
-                language_filter = language_mapper.build_language_filter(language)
-                filter_conditions["must"] = [language_filter]
-            if path:
-                filter_conditions.setdefault("must", []).append(
-                    {"key": "path", "match": {"text": path}}
-                )
-
-            # Get current embedding model for filtering
-            current_model = embedding_provider.get_current_model()
-
-            # Perform semantic search using model-specific filter
-            raw_results = qdrant_client.search_with_model_filter(
-                query_vector=query_embedding,
-                embedding_model=current_model,
-                limit=limit * 2,  # Get more results to allow for git filtering
-                score_threshold=min_score,
-                additional_filters=filter_conditions,
-            )
-
-            # Apply git-aware filtering
-            search_results = query_service.filter_results_by_current_branch(raw_results)
-
-            # Limit to requested number after filtering
-            search_results = search_results[:limit]
-
-            # Handle dry-run mode for RAG-first: show the prompt that would be sent to Claude
-            if dry_run_show_claude_prompt:
-                if not quiet:
-                    console.print("🔍 Generating RAG-first Claude prompt...")
-
-                # Extract contexts from search results for prompt generation
-                contexts = (
-                    claude_service.context_extractor.extract_context_from_results(
-                        search_results, context_lines
-                    )
-                )
-
-                # Generate the prompt that would be sent to Claude
-                prompt = claude_service.create_analysis_prompt(
-                    user_query=question,
-                    contexts=contexts,
-                    project_info=branch_context,
-                    enable_exploration=not no_explore,
-                )
-
-                if not quiet:
-                    console.print("\n📄 Generated Claude Prompt (RAG-first):")
-                    console.print("-" * 80)
-
-                # Display the prompt without Rich formatting to preserve exact line breaks
-                print(prompt, end="")
-
-                if not quiet:
-                    console.print("\n" + "-" * 80)
-                    console.print(
-                        "💡 This is the RAG-first prompt that would be sent to Claude."
-                    )
-                    console.print(f"   Based on {len(search_results)} search results.")
-                    console.print(
-                        "   Use without --dry-run-show-claude-prompt to execute the analysis."
-                    )
-
-                return  # Exit early without running Claude
-
-            # Run RAG-based analysis
-            analysis_result = claude_service.run_analysis(
-                user_query=question,
-                search_results=search_results,
-                context_lines=context_lines,
-                project_info=branch_context,
-                enable_exploration=not no_explore,
-                stream=not no_stream,
-                quiet=quiet,
-                show_claude_plan=show_claude_plan,
-            )
-
-            # Handle results
-            if not analysis_result.success:
-                if not quiet:
-                    console.print(
-                        f"❌ Claude analysis failed: {analysis_result.error}",
-                        style="red",
-                    )
-                sys.exit(1)
-
-        else:
-            # NEW CLAUDE-FIRST APPROACH
-            if not quiet:
-                console.print("✨ Using new claude-first approach")
-                console.print("🧠 Claude will use semantic search on-demand")
-
-            # Handle dry-run mode: just show the prompt without executing
-            if dry_run_show_claude_prompt:
-                if not quiet:
-                    console.print("🔍 Generating Claude prompt...")
-
-                # Generate the prompt that would be sent to Claude
-                prompt = claude_service.create_claude_first_prompt(
-                    user_query=question,
-                    project_info=branch_context,
-                    include_project_structure=include_file_list,
-                )
-
-                if not quiet:
-                    console.print("\n📄 Generated Claude Prompt:")
-                    console.print("-" * 80)
-
-                # Display the prompt without Rich formatting to preserve exact line breaks
-                print(prompt, end="")
-
-                if not quiet:
-                    console.print("\n" + "-" * 80)
-                    console.print("💡 This is the prompt that would be sent to Claude.")
-                    console.print(
-                        "   Use without --dry-run-show-claude-prompt to execute the analysis."
-                    )
-
-                return  # Exit early without running Claude
-
-            # Run claude-first analysis directly
-            use_streaming = not no_stream
-
-            analysis_result = claude_service.run_claude_first_analysis(
-                user_query=question,
-                project_info=branch_context,
-                max_turns=max_turns,
-                stream=use_streaming,
-                quiet=quiet,
-                show_claude_plan=show_claude_plan,
-                include_project_structure=include_file_list,
-            )
-
-            # Handle results
-            if not analysis_result.success:
-                if not quiet:
-                    console.print(
-                        f"❌ Claude analysis failed: {analysis_result.error}",
-                        style="red",
-                    )
-                sys.exit(1)
-
-            # Show results (simplified for claude-first)
-            if not use_streaming and not quiet:
-                console.print("\n🤖 Claude Analysis Results")
-                console.print("─" * 80)
-
-            # Show metadata
-            if not quiet and not (show_claude_plan and use_streaming):
-                console.print("\n📊 Analysis Summary:")
-                console.print("   • Claude-first approach used (no upfront RAG)")
-                console.print("   • Semantic search performed on-demand by Claude")
-
-        # Clear cache to free memory
-        claude_service.clear_cache()
-
-    except Exception as e:
-        console.print(f"❌ Claude analysis failed: {e}", style="red")
-        if ctx.obj["verbose"]:
-            import traceback
-
-            console.print(traceback.format_exc())
-        sys.exit(1)
+            console.print(f"   File: {target_path}", style="dim")
+        except Exception as e:
+            console.print(f"❌ Failed to write instruction file: {e}", style="red")
+            sys.exit(1)
 
 
 @cli.command()
@@ -3788,31 +4335,40 @@ def _status_impl(ctx, force_docker: bool):
         table.add_column("Status", style="magenta")
         table.add_column("Details", style="green")
 
-        # Check Docker services (auto-detect project name)
-        project_config_dir = config_manager.config_path.parent
-        docker_manager = DockerManager(
-            force_docker=force_docker, project_config_dir=project_config_dir
-        )
-        try:
-            service_status = docker_manager.get_service_status()
-            docker_status = (
-                "✅ Running"
-                if service_status["status"] == "running"
-                else "❌ Not Running"
+        # Check backend provider first to determine if containers are needed
+        backend_provider = getattr(config, "vector_store", None)
+        backend_provider = (
+            backend_provider.provider if backend_provider else "qdrant"
+        )  # Default to qdrant for backward compatibility
+
+        # Only check Docker services if using Qdrant backend (containers required)
+        service_status: Dict[str, Any] = {"status": "not_configured", "services": {}}
+        if backend_provider != "filesystem":
+            # Check Docker services (auto-detect project name)
+            project_config_dir = config_manager.config_path.parent
+            docker_manager = DockerManager(
+                force_docker=force_docker, project_config_dir=project_config_dir
             )
-            table.add_row(
-                "Docker Services",
-                docker_status,
-                f"{len(service_status['services'])} services",
-            )
-        except Exception:
-            # Handle case where containers haven't been created yet
-            table.add_row(
-                "Docker Services",
-                "❌ Not Configured",
-                "Run 'code-indexer start' to create containers",
-            )
-            service_status = {"status": "not_configured", "services": {}}
+            try:
+                service_status = docker_manager.get_service_status()
+                docker_status = (
+                    "✅ Running"
+                    if service_status["status"] == "running"
+                    else "❌ Not Running"
+                )
+                table.add_row(
+                    "Docker Services",
+                    docker_status,
+                    f"{len(service_status['services'])} services",
+                )
+            except Exception:
+                # Handle case where containers haven't been created yet
+                table.add_row(
+                    "Docker Services",
+                    "❌ Not Configured",
+                    "Run 'code-indexer start' to create containers",
+                )
+                service_status = {"status": "not_configured", "services": {}}
 
         # Check embedding provider - ALWAYS attempt health check via HTTP
         try:
@@ -3856,141 +4412,280 @@ def _status_impl(ctx, force_docker: bool):
                 "Ollama", "✅ Not needed", f"Using {config.embedding_provider}"
             )
 
-        # Check Qdrant - ALWAYS attempt health check via HTTP
+        # Check Vector Storage Backend (Qdrant or Filesystem)
+        # backend_provider already determined above
         qdrant_ok = False  # Initialize to False
         qdrant_client = None  # Initialize to None
-        try:
-            qdrant_client = QdrantClient(config.qdrant)
-            qdrant_ok = qdrant_client.health_check()
-            qdrant_status = "✅ Ready" if qdrant_ok else "❌ Not Available"
-            qdrant_details = ""
 
-            if qdrant_ok:
-                try:
-                    # Get the correct collection name using the current embedding provider
-                    embedding_provider = EmbeddingProviderFactory.create(
-                        config, console
-                    )
-                    collection_name = qdrant_client.resolve_collection_name(
-                        config, embedding_provider
-                    )
+        # Initialize variables for recovery guidance (both backends need these defined)
+        missing_components: List[str] = []
+        fs_index_files_display: Optional[str] = None
 
-                    # Check collection health before counting points
+        if backend_provider == "filesystem":
+            # Filesystem backend - no containers required
+            from .storage.filesystem_vector_store import FilesystemVectorStore
+
+            try:
+                # Get filesystem storage path
+                index_path = Path(config.codebase_dir) / ".code-indexer" / "index"
+                fs_store = FilesystemVectorStore(
+                    base_path=index_path, project_root=Path(config.codebase_dir)
+                )
+
+                # Health check - verify filesystem accessibility
+                fs_ok = fs_store.health_check()
+                fs_status = "✅ Ready" if fs_ok else "❌ Not Accessible"
+
+                if fs_ok:
+                    # Get collection info
                     try:
-                        collection_info = qdrant_client.get_collection_info(
-                            collection_name
+                        embedding_provider = EmbeddingProviderFactory.create(
+                            config, console
                         )
-                        collection_status = collection_info.get("status", "unknown")
+                        collection_name = fs_store.resolve_collection_name(
+                            config, embedding_provider
+                        )
 
-                        if collection_status == "red":
-                            # Collection has errors - show error details
-                            optimizer_status = collection_info.get(
-                                "optimizer_status", {}
+                        if fs_store.collection_exists(collection_name):
+                            vector_count = fs_store.count_points(collection_name)
+                            file_count = len(
+                                fs_store.get_all_indexed_files(collection_name)
                             )
-                            error_msg = optimizer_status.get("error", "Unknown error")
 
-                            # Translate common errors to user-friendly messages
-                            if "No such file or directory" in error_msg:
-                                friendly_error = "Storage corruption detected - collection data is damaged"
-                            elif "Permission denied" in error_msg:
-                                friendly_error = (
-                                    "Storage permission error - check file permissions"
+                            # Validate dimensions
+                            expected_dims = embedding_provider.get_model_info()[
+                                "dimensions"
+                            ]
+                            dims_ok = fs_store.validate_embedding_dimensions(
+                                collection_name, expected_dims
+                            )
+                            dims_status = "✅" if dims_ok else "⚠️"
+
+                            fs_details = f"Collection: {collection_name}\nVectors: {vector_count:,} | Files: {file_count} | Dims: {dims_status}{expected_dims}"
+
+                            # Check critical index files for filesystem backend
+                            collection_path = index_path / collection_name
+                            proj_matrix = collection_path / "projection_matrix.npy"
+                            hnsw_index = collection_path / "hnsw_index.bin"
+
+                            # Build index files status
+                            index_files_status = []
+
+                            # Projection matrix (CRITICAL - queries fail without it)
+                            if proj_matrix.exists():
+                                size_kb = proj_matrix.stat().st_size / 1024
+                                if size_kb < 1024:
+                                    index_files_status.append(
+                                        f"Projection Matrix: ✅ {size_kb:.0f} KB"
+                                    )
+                                else:
+                                    size_mb = size_kb / 1024
+                                    index_files_status.append(
+                                        f"Projection Matrix: ✅ {size_mb:.1f} MB"
+                                    )
+                            else:
+                                index_files_status.append(
+                                    "Projection Matrix: ❌ MISSING (index unrecoverable!)"
                                 )
-                            elif "disk space" in error_msg.lower():
-                                friendly_error = (
-                                    "Insufficient disk space for collection operations"
+
+                            # HNSW index (IMPORTANT - queries slow without it)
+                            if hnsw_index.exists():
+                                size_mb = hnsw_index.stat().st_size / (1024 * 1024)
+                                index_files_status.append(
+                                    f"HNSW Index: ✅ {size_mb:.0f} MB"
                                 )
                             else:
-                                friendly_error = f"Collection error: {error_msg}"
+                                index_files_status.append(
+                                    "HNSW Index: ⚠️ Missing (queries will be slow)"
+                                )
 
-                            qdrant_status = "❌ Collection Error"
-                            qdrant_details = f"🚨 {friendly_error}"
-                        elif collection_status == "yellow":
-                            qdrant_status = "⚠️ Collection Warning"
-                            qdrant_details = "Collection has warnings but is functional"
+                            # ID index check (binary file that persists to disk)
+                            id_index_file = collection_path / "id_index.bin"
+                            if id_index_file.exists():
+                                size_kb = id_index_file.stat().st_size / 1024
+                                index_files_status.append(
+                                    f"ID Index: ✅ {size_kb:.0f} KB"
+                                )
+                            else:
+                                index_files_status.append(
+                                    "ID Index: ⚠️ Missing (rebuilds automatically)"
+                                )
+
+                            # Track missing components for recovery guidance
+                            has_projection_matrix = proj_matrix.exists()
+                            has_hnsw_index = hnsw_index.exists()
+                            has_id_index = id_index_file.exists()
+
+                            if not has_projection_matrix:
+                                missing_components.append("projection_matrix")
+                            if not has_hnsw_index:
+                                missing_components.append("hnsw")
+                            if not has_id_index:
+                                missing_components.append("id_index")
+
+                            # Store for later display
+                            fs_index_files_display = "\n".join(index_files_status)
                         else:
-                            # Collection is healthy, proceed with normal status
-                            project_count = qdrant_client.count_points(collection_name)
+                            fs_details = f"Collection: {collection_name}\nStatus: Not created - run 'cidx index'"
+                            fs_index_files_display = None
+                    except Exception as e:
+                        fs_details = f"Error checking collection: {str(e)[:50]}"
+                        fs_index_files_display = None
+                else:
+                    fs_details = f"Storage path: {index_path}\nStatus: Not accessible"
+                    fs_index_files_display = None
 
-                            # Get total documents across all collections for context
-                            try:
-                                import requests  # type: ignore[import-untyped]
+                table.add_row("Vector Storage", fs_status, fs_details)
+                table.add_row("Storage Path", "📁", str(index_path))
 
-                                response = requests.get(
-                                    f"{config.qdrant.host}/collections", timeout=5
+                # Add index files status if available
+                if fs_index_files_display:
+                    table.add_row("Index Files", "📊", fs_index_files_display)
+
+            except Exception as e:
+                table.add_row("Vector Storage", "❌ Error", str(e))
+
+        else:
+            # Qdrant backend - original container-based logic
+            try:
+                qdrant_client = QdrantClient(config.qdrant)
+                qdrant_ok = qdrant_client.health_check()
+                qdrant_status = "✅ Ready" if qdrant_ok else "❌ Not Available"
+                qdrant_details = ""
+
+                if qdrant_ok:
+                    try:
+                        # Get the correct collection name using the current embedding provider
+                        embedding_provider = EmbeddingProviderFactory.create(
+                            config, console
+                        )
+                        collection_name = qdrant_client.resolve_collection_name(
+                            config, embedding_provider
+                        )
+
+                        # Check collection health before counting points
+                        try:
+                            collection_info = qdrant_client.get_collection_info(
+                                collection_name
+                            )
+                            collection_status = collection_info.get("status", "unknown")
+
+                            if collection_status == "red":
+                                # Collection has errors - show error details
+                                optimizer_status = collection_info.get(
+                                    "optimizer_status", {}
                                 )
-                                if response.status_code == 200:
-                                    collections_data = response.json()
-                                    total_count = 0
-                                    for collection_info in collections_data.get(
-                                        "result", {}
-                                    ).get("collections", []):
-                                        coll_name = collection_info["name"]
-                                        coll_count = qdrant_client.count_points(
-                                            coll_name
-                                        )
-                                        total_count += coll_count
-                                    qdrant_details = f"Project: {project_count} docs | Total: {total_count} docs"
+                                error_msg = optimizer_status.get(
+                                    "error", "Unknown error"
+                                )
+
+                                # Translate common errors to user-friendly messages
+                                if "No such file or directory" in error_msg:
+                                    friendly_error = "Storage corruption detected - collection data is damaged"
+                                elif "Permission denied" in error_msg:
+                                    friendly_error = "Storage permission error - check file permissions"
+                                elif "disk space" in error_msg.lower():
+                                    friendly_error = "Insufficient disk space for collection operations"
                                 else:
-                                    qdrant_details = f"Documents: {project_count}"
-                            except Exception:
-                                qdrant_details = f"Documents: {project_count}"
+                                    friendly_error = f"Collection error: {error_msg}"
 
-                            # Add progressive metadata info if available and different from Qdrant count
-                            try:
-                                metadata_path = (
-                                    config_manager.config_path.parent / "metadata.json"
+                                qdrant_status = "❌ Collection Error"
+                                qdrant_details = f"🚨 {friendly_error}"
+                            elif collection_status == "yellow":
+                                qdrant_status = "⚠️ Collection Warning"
+                                qdrant_details = (
+                                    "Collection has warnings but is functional"
                                 )
-                                if metadata_path.exists():
-                                    import json
+                            else:
+                                # Collection is healthy, proceed with normal status
+                                project_count = qdrant_client.count_points(
+                                    collection_name
+                                )
 
-                                    with open(metadata_path) as f:
-                                        metadata = json.load(f)
-                                    files_processed = metadata.get("files_processed", 0)
-                                    chunks_indexed = metadata.get("chunks_indexed", 0)
-                                    status = metadata.get("status", "unknown")
+                                # Get total documents across all collections for context
+                                try:
+                                    import requests  # type: ignore[import-untyped]
 
-                                    # Show progressive info if recent activity or if counts differ
-                                    if files_processed > 0 and (
-                                        status == "in_progress"
-                                        or chunks_indexed != project_count
-                                    ):
-                                        qdrant_details += f" | Progress: {files_processed} files, {chunks_indexed} chunks"
-                                        if status == "in_progress":
-                                            qdrant_details += " (🔄 not complete)"
-                            except Exception:
-                                pass  # Don't fail status display if metadata reading fails
+                                    response = requests.get(
+                                        f"{config.qdrant.host}/collections", timeout=5
+                                    )
+                                    if response.status_code == 200:
+                                        collections_data = response.json()
+                                        total_count = 0
+                                        for collection_info in collections_data.get(
+                                            "result", {}
+                                        ).get("collections", []):
+                                            coll_name = collection_info["name"]
+                                            coll_count = qdrant_client.count_points(
+                                                coll_name
+                                            )
+                                            total_count += coll_count
+                                        qdrant_details = f"Project: {project_count} docs | Total: {total_count} docs"
+                                    else:
+                                        qdrant_details = f"Documents: {project_count}"
+                                except Exception:
+                                    qdrant_details = f"Documents: {project_count}"
+
+                                # Add progressive metadata info if available and different from Qdrant count
+                                try:
+                                    metadata_path = (
+                                        config_manager.config_path.parent
+                                        / "metadata.json"
+                                    )
+                                    if metadata_path.exists():
+                                        import json
+
+                                        with open(metadata_path) as f:
+                                            metadata = json.load(f)
+                                        files_processed = metadata.get(
+                                            "files_processed", 0
+                                        )
+                                        chunks_indexed = metadata.get(
+                                            "chunks_indexed", 0
+                                        )
+                                        status = metadata.get("status", "unknown")
+
+                                        # Show progressive info if recent activity or if counts differ
+                                        if files_processed > 0 and (
+                                            status == "in_progress"
+                                            or chunks_indexed != project_count
+                                        ):
+                                            qdrant_details += f" | Progress: {files_processed} files, {chunks_indexed} chunks"
+                                            if status == "in_progress":
+                                                qdrant_details += " (🔄 not complete)"
+                                except Exception:
+                                    pass  # Don't fail status display if metadata reading fails
+                        except Exception as e:
+                            if "doesn't exist" in str(e):
+                                qdrant_details = (
+                                    "Collection not found - run 'cidx index' to create"
+                                )
+                            else:
+                                qdrant_details = (
+                                    f"Error checking collection: {str(e)[:50]}..."
+                                )
                     except Exception as e:
                         if "doesn't exist" in str(e):
                             qdrant_details = (
                                 "Collection not found - run 'cidx index' to create"
                             )
                         else:
-                            qdrant_details = (
-                                f"Error checking collection: {str(e)[:50]}..."
-                            )
-                except Exception as e:
-                    if "doesn't exist" in str(e):
-                        qdrant_details = (
-                            "Collection not found - run 'cidx index' to create"
-                        )
-                    else:
-                        qdrant_details = f"Error: {str(e)[:50]}..."
-            else:
-                # Check if container exists for debugging info
-                qdrant_container_found = any(
-                    "qdrant" in name and info["state"] == "running"
-                    for name, info in service_status.get("services", {}).items()
-                )
-                qdrant_details = (
-                    f"Service unreachable at {config.qdrant.host}"
-                    if qdrant_container_found
-                    else "Service down (container stopped)"
-                )
+                            qdrant_details = f"Error: {str(e)[:50]}..."
+                else:
+                    # Check if container exists for debugging info
+                    qdrant_container_found = any(
+                        "qdrant" in name and info["state"] == "running"
+                        for name, info in service_status.get("services", {}).items()
+                    )
+                    qdrant_details = (
+                        f"Service unreachable at {config.qdrant.host}"
+                        if qdrant_container_found
+                        else "Service down (container stopped)"
+                    )
 
-            table.add_row("Qdrant", qdrant_status, qdrant_details)
-        except Exception as e:
-            table.add_row("Qdrant", "❌ Error", str(e))
+                table.add_row("Qdrant", qdrant_status, qdrant_details)
+            except Exception as e:
+                table.add_row("Qdrant", "❌ Error", str(e))
 
         # Add payload index status - only if Qdrant is running and healthy
         if qdrant_ok and qdrant_client:
@@ -4031,191 +4726,199 @@ def _status_impl(ctx, force_docker: bool):
                     "Payload Indexes", "❌ Error", f"Check failed: {str(e)[:40]}..."
                 )
 
-        # Add Qdrant storage and collection information
-        try:
-            # Get storage path from configuration instead of container inspection
-            # Use the actual project-specific storage path from config
-            project_qdrant_dir = (
-                Path(config.codebase_dir).resolve() / ".code-indexer" / "qdrant"
-            )
-            table.add_row("Qdrant Storage", "📁", f"Host:\n{project_qdrant_dir}")
-
-            # Add current project collection information
-            if qdrant_ok and qdrant_client:
-                try:
-                    embedding_provider = EmbeddingProviderFactory.create(
-                        config, console
-                    )
-                    collection_name = qdrant_client.resolve_collection_name(
-                        config, embedding_provider
-                    )
-
-                    # Check if collection exists and get basic info
-                    collection_exists = qdrant_client.collection_exists(collection_name)
-                    if collection_exists:
-                        collection_count = qdrant_client.count_points(collection_name)
-                        collection_status = "✅ Active"
-
-                        # Get local collection path - should be in project's .code-indexer/qdrant_collection/
-                        project_root = config.codebase_dir
-                        local_collection_path = (
-                            project_root
-                            / ".code-indexer"
-                            / "qdrant_collection"
-                            / collection_name
-                        )
-
-                        symlink_status = (
-                            "Local symlinked"
-                            if local_collection_path.exists()
-                            else "Global storage"
-                        )
-                        # Show full collection name and details
-                        collection_details = f"Name:\n{collection_name}\nPoints: {collection_count:,} | Storage: {symlink_status}"
-                    else:
-                        collection_status = "❌ Missing"
-                        # Show full collection name for missing collections too
-                        collection_details = f"Name:\n{collection_name}\nStatus: Not created yet - run 'index' command"
-
-                    table.add_row(
-                        "Project Collection", collection_status, collection_details
-                    )
-                except Exception as e:
-                    table.add_row(
-                        "Project Collection", "⚠️  Error", f"Check failed: {str(e)[:50]}"
-                    )
-            else:
-                table.add_row(
-                    "Project Collection", "❌ Unavailable", "Qdrant service down"
-                )
-
-        except Exception as e:
-            table.add_row(
-                "Qdrant Storage", "⚠️  Error", f"Inspection failed: {str(e)[:30]}"
-            )
-
-        # Check Data Cleaner
-        #
-        # CRITICAL IMPLEMENTATION NOTE: This status check was debugged and fixed to handle
-        # the data-cleaner's netcat-based HTTP implementation which has specific limitations:
-        #
-        # PROBLEM DISCOVERED: The data-cleaner container runs a simple bash script that uses
-        # `nc -l -p 8091` (netcat) to simulate an HTTP server. This implementation:
-        # 1. Only handles ONE connection at a time
-        # 2. Resets the connection immediately after responding
-        # 3. Cycles every 10 seconds (sleep 10 in the loop)
-        # 4. Causes ConnectionResetError with Python requests library
-        # 5. Works fine with curl (which handles connection resets gracefully)
-        #
-        # SYMPTOMS OF BREAKAGE:
-        # - curl http://localhost:8091/ returns "Cleanup service ready" ✅
-        # - Python requests.get() throws ConnectionResetError ❌
-        # - Status shows "❌ Not Available" despite container running
-        # - docker ps shows container as healthy
-        #
-        # DEBUGGING NOTES:
-        # - The netcat server responds once per cycle and immediately closes
-        # - HTTP/1.1 keep-alive connections fail due to immediate connection termination
-        # - Connection: close header helps but doesn't fully solve timing issues
-        # - Port availability check works when netcat is between cycles
-        #
-        # SOLUTION IMPLEMENTED:
-        # Multi-layered approach to handle netcat server limitations robustly
-        # DO NOT simplify this logic without understanding the netcat behavior!
-        #
-        data_cleaner_available = False
-        data_cleaner_details = "Service down"
-
-        try:
-            import requests
-            import subprocess
-            import socket
-
-            # APPROACH 1: HTTP request with Connection: close header
-            # This works when netcat is actively listening and handles the request immediately
-            # The Connection: close header prevents HTTP/1.1 keep-alive issues with netcat
+        # Add Qdrant storage and collection information - only for Qdrant backend
+        if backend_provider != "filesystem":
             try:
-                # Use project-specific calculated data cleaner port
-                data_cleaner_port = getattr(
-                    config.project_ports, "data_cleaner_port", 8091
+                # Get storage path from configuration instead of container inspection
+                # Use the actual project-specific storage path from config
+                project_qdrant_dir = (
+                    Path(config.codebase_dir).resolve() / ".code-indexer" / "qdrant"
                 )
-                data_cleaner_url = f"http://localhost:{data_cleaner_port}/"
-                response = requests.get(
-                    data_cleaner_url,
-                    timeout=3,
-                    headers={
-                        "Connection": "close"
-                    },  # Critical: prevents keep-alive issues
-                )
-                if response.status_code == 200:
-                    data_cleaner_available = True
-                    data_cleaner_details = "Cleanup service active"
-            except (requests.exceptions.ConnectionError, ConnectionResetError):
-                # Expected behavior: netcat closes connection immediately after responding
-                # This exception is NORMAL and indicates we need to try other approaches
+                table.add_row("Qdrant Storage", "📁", f"Host:\n{project_qdrant_dir}")
 
-                # APPROACH 2: Raw socket connection test
-                # This works when netcat is between cycles (during the sleep 10 period)
-                # We just check if something is listening on the data cleaner port
-                try:
-                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                        sock.settimeout(1)  # Quick check to avoid delays
-                        connect_result = sock.connect_ex(
-                            ("localhost", data_cleaner_port)
+                # Add current project collection information
+                if qdrant_ok and qdrant_client:
+                    try:
+                        embedding_provider = EmbeddingProviderFactory.create(
+                            config, console
                         )
-                        if connect_result == 0:  # Port is listening
-                            data_cleaner_available = True
-                            data_cleaner_details = "Cleanup service active (netcat)"
-                except Exception:
-                    # Socket connection failed - port not listening or refused
-                    pass
+                        collection_name = qdrant_client.resolve_collection_name(
+                            config, embedding_provider
+                        )
 
-            # APPROACH 3: Container status fallback
-            # If both HTTP and socket checks fail, verify the container is at least running
-            # This catches cases where the service is starting up or having issues
-            if not data_cleaner_available:
-                try:
-                    result = subprocess.run(
-                        [
-                            "docker",
-                            "ps",
-                            "--filter",
-                            "name=data-cleaner",
-                            "--format",
-                            "{{.Names}}",
-                        ],
-                        capture_output=True,
-                        text=True,
-                        timeout=5,
+                        # Check if collection exists and get basic info
+                        collection_exists = qdrant_client.collection_exists(
+                            collection_name
+                        )
+                        if collection_exists:
+                            collection_count = qdrant_client.count_points(
+                                collection_name
+                            )
+                            collection_status = "✅ Active"
+
+                            # Get local collection path - should be in project's .code-indexer/qdrant_collection/
+                            project_root = config.codebase_dir
+                            local_collection_path = (
+                                project_root
+                                / ".code-indexer"
+                                / "qdrant_collection"
+                                / collection_name
+                            )
+
+                            symlink_status = (
+                                "Local symlinked"
+                                if local_collection_path.exists()
+                                else "Global storage"
+                            )
+                            # Show full collection name and details
+                            collection_details = f"Name:\n{collection_name}\nPoints: {collection_count:,} | Storage: {symlink_status}"
+                        else:
+                            collection_status = "❌ Missing"
+                            # Show full collection name for missing collections too
+                            collection_details = f"Name:\n{collection_name}\nStatus: Not created yet - run 'index' command"
+
+                        table.add_row(
+                            "Project Collection", collection_status, collection_details
+                        )
+                    except Exception as e:
+                        table.add_row(
+                            "Project Collection",
+                            "⚠️  Error",
+                            f"Check failed: {str(e)[:50]}",
+                        )
+                else:
+                    table.add_row(
+                        "Project Collection", "❌ Unavailable", "Qdrant service down"
                     )
-                    if "data-cleaner" in result.stdout:
+
+            except Exception as e:
+                table.add_row(
+                    "Qdrant Storage", "⚠️  Error", f"Inspection failed: {str(e)[:30]}"
+                )
+
+        # Check Data Cleaner (Qdrant-only service)
+        # Only show Data Cleaner status for Qdrant backends, not filesystem
+        if backend_provider != "filesystem":
+            # CRITICAL IMPLEMENTATION NOTE: This status check was debugged and fixed to handle
+            # the data-cleaner's netcat-based HTTP implementation which has specific limitations:
+            #
+            # PROBLEM DISCOVERED: The data-cleaner container runs a simple bash script that uses
+            # `nc -l -p 8091` (netcat) to simulate an HTTP server. This implementation:
+            # 1. Only handles ONE connection at a time
+            # 2. Resets the connection immediately after responding
+            # 3. Cycles every 10 seconds (sleep 10 in the loop)
+            # 4. Causes ConnectionResetError with Python requests library
+            # 5. Works fine with curl (which handles connection resets gracefully)
+            #
+            # SYMPTOMS OF BREAKAGE:
+            # - curl http://localhost:8091/ returns "Cleanup service ready" ✅
+            # - Python requests.get() throws ConnectionResetError ❌
+            # - Status shows "❌ Not Available" despite container running
+            # - docker ps shows container as healthy
+            #
+            # DEBUGGING NOTES:
+            # - The netcat server responds once per cycle and immediately closes
+            # - HTTP/1.1 keep-alive connections fail due to immediate connection termination
+            # - Connection: close header helps but doesn't fully solve timing issues
+            # - Port availability check works when netcat is between cycles
+            #
+            # SOLUTION IMPLEMENTED:
+            # Multi-layered approach to handle netcat server limitations robustly
+            # DO NOT simplify this logic without understanding the netcat behavior!
+            #
+            data_cleaner_available = False
+            data_cleaner_details = "Service down"
+
+            try:
+                import requests
+                import subprocess
+                import socket
+
+                # APPROACH 1: HTTP request with Connection: close header
+                # This works when netcat is actively listening and handles the request immediately
+                # The Connection: close header prevents HTTP/1.1 keep-alive issues with netcat
+                try:
+                    # Use project-specific calculated data cleaner port
+                    data_cleaner_port = getattr(
+                        config.project_ports, "data_cleaner_port", 8091
+                    )
+                    data_cleaner_url = f"http://localhost:{data_cleaner_port}/"
+                    response = requests.get(
+                        data_cleaner_url,
+                        timeout=3,
+                        headers={
+                            "Connection": "close"
+                        },  # Critical: prevents keep-alive issues
+                    )
+                    if response.status_code == 200:
                         data_cleaner_available = True
-                        data_cleaner_details = (
-                            "Container running (service may be cycling)"
+                        data_cleaner_details = "Cleanup service active"
+                except (requests.exceptions.ConnectionError, ConnectionResetError):
+                    # Expected behavior: netcat closes connection immediately after responding
+                    # This exception is NORMAL and indicates we need to try other approaches
+
+                    # APPROACH 2: Raw socket connection test
+                    # This works when netcat is between cycles (during the sleep 10 period)
+                    # We just check if something is listening on the data cleaner port
+                    try:
+                        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                            sock.settimeout(1)  # Quick check to avoid delays
+                            connect_result = sock.connect_ex(
+                                ("localhost", data_cleaner_port)
+                            )
+                            if connect_result == 0:  # Port is listening
+                                data_cleaner_available = True
+                                data_cleaner_details = "Cleanup service active (netcat)"
+                    except Exception:
+                        # Socket connection failed - port not listening or refused
+                        pass
+
+                # APPROACH 3: Container status fallback
+                # If both HTTP and socket checks fail, verify the container is at least running
+                # This catches cases where the service is starting up or having issues
+                if not data_cleaner_available:
+                    try:
+                        result = subprocess.run(
+                            [
+                                "docker",
+                                "ps",
+                                "--filter",
+                                "name=data-cleaner",
+                                "--format",
+                                "{{.Names}}",
+                            ],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
                         )
-                        # Note: This indicates container is up but netcat might be restarting
-                except Exception:
-                    # Docker command failed - container likely not running
-                    pass
+                        if "data-cleaner" in result.stdout:
+                            data_cleaner_available = True
+                            data_cleaner_details = (
+                                "Container running (service may be cycling)"
+                            )
+                            # Note: This indicates container is up but netcat might be restarting
+                    except Exception:
+                        # Docker command failed - container likely not running
+                        pass
 
-        except Exception as e:
-            data_cleaner_details = f"Check failed: {str(e)[:50]}"
+            except Exception as e:
+                data_cleaner_details = f"Check failed: {str(e)[:50]}"
 
-        # FINAL STATUS DETERMINATION
-        # If ANY of the three approaches succeeded, consider the service available
-        # This robust approach handles the netcat server's unpredictable timing
-        data_cleaner_status = (
-            "✅ Ready" if data_cleaner_available else "❌ Not Available"
-        )
+            # FINAL STATUS DETERMINATION
+            # If ANY of the three approaches succeeded, consider the service available
+            # This robust approach handles the netcat server's unpredictable timing
+            data_cleaner_status = (
+                "✅ Ready" if data_cleaner_available else "❌ Not Available"
+            )
 
-        # WARNING FOR FUTURE DEVELOPERS:
-        # - Do NOT simplify this to just requests.get() - it will break randomly
-        # - Do NOT remove the multi-approach logic - netcat is unpredictable
-        # - If changing data-cleaner implementation, update these comments
-        # - Test thoroughly with `cidx status` command multiple times in succession
-        # - Consider replacing netcat with proper HTTP server if reliability issues persist
+            # WARNING FOR FUTURE DEVELOPERS:
+            # - Do NOT simplify this to just requests.get() - it will break randomly
+            # - Do NOT remove the multi-approach logic - netcat is unpredictable
+            # - If changing data-cleaner implementation, update these comments
+            # - Test thoroughly with `cidx status` command multiple times in succession
+            # - Consider replacing netcat with proper HTTP server if reliability issues persist
 
-        table.add_row("Data Cleaner", data_cleaner_status, data_cleaner_details)
+            table.add_row("Data Cleaner", data_cleaner_status, data_cleaner_details)
 
         # Check index with git-aware information
         metadata_path = config_manager.config_path.parent / "metadata.json"
@@ -4323,6 +5026,62 @@ def _status_impl(ctx, force_docker: bool):
 
         console.print(table)
 
+        # Display recovery guidance if indexes are missing (filesystem backend only)
+        if (
+            backend_provider == "filesystem"
+            and fs_index_files_display
+            and missing_components
+        ):
+            console.print("\n" + "━" * 80, style="yellow")
+            console.print("⚠️  INDEX RECOVERY GUIDANCE", style="bold yellow")
+            console.print()
+
+            if "projection_matrix" in missing_components:
+                console.print(
+                    "🚨 CRITICAL: Projection Matrix Missing", style="red bold"
+                )
+                console.print(
+                    "   The projection matrix cannot be recovered and all existing vectors are invalid."
+                )
+                console.print()
+                console.print("   Recovery Required:", style="yellow")
+                console.print("   cidx index --clear")
+                console.print()
+                console.print("   This will:", style="dim")
+                console.print("   • Delete all vectors and indexes")
+                console.print("   • Re-process all code files from scratch")
+                console.print("   • Generate new embeddings via VoyageAI API")
+                console.print("   • Create a new projection matrix")
+                console.print()
+                console.print("   ⏱️  Estimated time: 10-30 minutes")
+                console.print("   💵 Cost: VoyageAI API usage charges apply")
+                console.print()
+
+            if "hnsw" in missing_components or "id_index" in missing_components:
+                console.print("🔧 Recoverable Indexes:", style="yellow bold")
+                console.print(
+                    "   These indexes can be rebuilt from existing vector files without re-embedding."
+                )
+                console.print()
+
+                if "hnsw" in missing_components:
+                    console.print(
+                        "   • HNSW Index (affects query performance):", style="cyan"
+                    )
+                    console.print("     cidx index --rebuild-index")
+                    console.print("     Takes ~2-5 minutes, restores fast queries")
+                    console.print()
+
+                if "id_index" in missing_components:
+                    console.print(
+                        "   • ID Index (affects point lookups):", style="cyan"
+                    )
+                    console.print("     Rebuilds automatically on next query")
+                    console.print("     No manual action required")
+                    console.print()
+
+            console.print("━" * 80, style="yellow")
+
     except Exception as e:
         console.print(f"❌ Failed to get status: {e}", style="red")
         sys.exit(1)
@@ -4335,6 +5094,8 @@ def optimize(ctx):
     config_manager = ctx.obj["config_manager"]
 
     try:
+        # Lazy imports for optimize command
+
         config = config_manager.load()
 
         # Initialize Qdrant client
@@ -4439,6 +5200,8 @@ def force_flush(ctx, collection: Optional[str]):
     console.print()
 
     try:
+        # Lazy imports for force_flush command
+
         config = config_manager.load()
 
         # Initialize Qdrant client
@@ -4606,6 +5369,8 @@ def stop(ctx, force_docker: bool):
         sys.exit(exit_code)
 
     try:
+        # Lazy imports for stop command
+
         # Use configuration from CLI context
         config_manager = ctx.obj["config_manager"]
         config_path = config_manager.config_path
@@ -4625,38 +5390,68 @@ def stop(ctx, force_docker: bool):
         console.print(f"📁 Found configuration: {config_path}")
         console.print(f"🏗️  Project directory: {config.codebase_dir}")
 
-        # Initialize Docker manager
-        project_config_dir = config_path.parent
-        docker_manager = DockerManager(
-            console, force_docker=force_docker, project_config_dir=project_config_dir
-        )
+        # Create backend based on configuration
+        backend = BackendFactory.create(config, Path(config.codebase_dir))
+        backend_info = backend.get_service_info()
 
-        # Check current status
-        status = docker_manager.get_service_status()
-        if status["status"] == "not_configured":
-            console.print("ℹ️  Services not configured - nothing to stop", style="blue")
-            return
+        # Check if backend requires containers
+        requires_containers = backend_info.get("requires_containers", False)
 
-        running_services = [
-            svc
-            for svc in status["services"].values()
-            if svc.get("state", "").lower() == "running"
-        ]
+        if requires_containers:
+            # Qdrant backend - use existing Docker flow
+            console.print("🔧 Stopping Qdrant vector store containers...")
 
-        if not running_services:
-            console.print("ℹ️  No services currently running", style="blue")
-            return
+            # Initialize Docker manager
+            project_config_dir = config_path.parent
+            docker_manager = DockerManager(
+                console,
+                force_docker=force_docker,
+                project_config_dir=project_config_dir,
+            )
 
-        # Stop services
-        console.print("🛑 Stopping code indexing services...")
-        console.print("💾 All data will be preserved for restart")
+            # Check current status
+            status = docker_manager.get_service_status()
+            if status["status"] == "not_configured":
+                console.print(
+                    "ℹ️  Services not configured - nothing to stop", style="blue"
+                )
+                return
 
-        if docker_manager.stop_services():
-            console.print("✅ Services stopped successfully!", style="green")
-            console.print("💡 Use 'code-indexer start' to resume with all data intact")
+            running_services = [
+                svc
+                for svc in status["services"].values()
+                if svc.get("state", "").lower() == "running"
+            ]
+
+            if not running_services:
+                console.print("ℹ️  No services currently running", style="blue")
+                return
+
+            # Stop services
+            console.print("🛑 Stopping code indexing services...")
+            console.print("💾 All data will be preserved for restart")
+
+            if docker_manager.stop_services():
+                console.print("✅ Services stopped successfully!", style="green")
+                console.print(
+                    "💡 Use 'code-indexer start' to resume with all data intact"
+                )
+            else:
+                console.print("❌ Failed to stop some services", style="red")
+                sys.exit(1)
         else:
-            console.print("❌ Failed to stop some services", style="red")
-            sys.exit(1)
+            # Filesystem backend - no containers to stop
+            console.print("📁 Using filesystem vector store (container-free)")
+            console.print(
+                "💾 No containers to stop - filesystem backend is always available"
+            )
+
+            # Call backend stop (no-op for filesystem)
+            if backend.stop():
+                console.print("✅ Filesystem backend stop complete (no-op)")
+            else:
+                console.print("❌ Failed to stop filesystem backend", style="red")
+                sys.exit(1)
 
     except Exception as e:
         console.print(f"❌ Stop failed: {e}", style="red")
@@ -4736,6 +5531,8 @@ def clean_data(
       Perfect for test cleanup and project switching.
     """
     try:
+        # Lazy imports for clean_data command
+
         # Validate mutually exclusive options
         if all_containers and container_type:
             console.print(
@@ -5189,6 +5986,265 @@ def _check_remaining_root_files(console: Console):
         console.print("✅ No root-owned files found")
 
 
+@cli.command("clean")
+@click.option(
+    "--collection",
+    help="Specific collection to clean (if not specified, cleans default collection)",
+)
+@click.option(
+    "--remove-projection-matrix",
+    is_flag=True,
+    help="Also remove projection matrix (requires re-indexing to restore)",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Skip confirmation prompt",
+)
+@click.option(
+    "--show-recommendations",
+    is_flag=True,
+    help="Show git-aware cleanup recommendations",
+)
+@click.pass_context
+@require_mode("local", "remote")
+def clean(
+    ctx,
+    collection: Optional[str],
+    remove_projection_matrix: bool,
+    force: bool,
+    show_recommendations: bool,
+):
+    """Clear vectors from collection without removing structure.
+
+    \b
+    Removes all indexed vectors from a collection while preserving:
+      • Collection metadata
+      • Projection matrix (unless --remove-projection-matrix is specified)
+      • Collection directory structure
+
+    \b
+    This is faster than full uninstall and allows quick re-indexing
+    without recreating the collection structure.
+
+    \b
+    OPTIONS:
+      --collection NAME              Clean specific collection
+      --remove-projection-matrix     Also remove projection matrix
+      --force                        Skip confirmation prompt
+      --show-recommendations         Show git-aware cleanup recommendations
+    """
+    try:
+        config_manager = ctx.obj.get("config_manager")
+        project_root = ctx.obj.get("project_root")
+
+        if not config_manager or not project_root:
+            console.print("❌ Configuration not found", style="red")
+            sys.exit(1)
+
+        config = config_manager.get_config()
+
+        # Create backend
+
+        backend = BackendFactory.create(config, project_root)
+
+        # Get vector store client
+        vector_store = backend.get_vector_store_client()
+
+        # Determine collection to clean
+        if collection is None:
+            collections = vector_store.list_collections()
+            if len(collections) == 0:
+                console.print("ℹ️  No collections found to clean", style="blue")
+                return
+            elif len(collections) == 1:
+                collection = collections[0]
+            else:
+                console.print(
+                    "❌ Multiple collections exist. Please specify --collection",
+                    style="red",
+                )
+                console.print(f"\nAvailable collections: {', '.join(collections)}")
+                sys.exit(1)
+
+        # Check if collection exists
+        if not vector_store.collection_exists(collection):
+            console.print(f"❌ Collection '{collection}' does not exist", style="red")
+            sys.exit(1)
+
+        # Get impact information
+        vector_count = vector_store.count_points(collection)
+        collection_size = 0
+        if hasattr(vector_store, "get_collection_size"):
+            collection_size = vector_store.get_collection_size(collection)
+
+        # Show git-aware recommendations if requested
+        if show_recommendations:
+            console.print("\n📋 [bold]Git-Aware Cleanup Recommendations:[/bold]")
+            try:
+                import subprocess
+
+                result = subprocess.run(
+                    ["git", "status", "--porcelain"],
+                    cwd=project_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+
+                if result.returncode == 0 and result.stdout.strip():
+                    console.print("⚠️  You have uncommitted changes:")
+                    console.print(
+                        "💡 Consider committing changes before cleanup to avoid losing indexed data for modified files"
+                    )
+                else:
+                    console.print("✅ No uncommitted changes detected")
+            except Exception:
+                pass  # Silently ignore git errors
+
+        # Show impact and confirmation
+        if not force:
+            console.print(
+                f"\n⚠️  [bold yellow]About to clean collection '{collection}'[/bold yellow]"
+            )
+            console.print(f"   • Vectors to remove: {vector_count}")
+            if collection_size > 0:
+                size_mb = collection_size / (1024 * 1024)
+                console.print(f"   • Storage to reclaim: {size_mb:.2f} MB")
+            if remove_projection_matrix:
+                console.print(
+                    "   • Projection matrix will be REMOVED (requires full re-indexing)"
+                )
+            else:
+                console.print("   • Projection matrix will be PRESERVED")
+
+            if not click.confirm("\nProceed with cleanup?"):
+                console.print("❌ Cleanup cancelled", style="yellow")
+                return
+
+        # Record size before cleanup
+        size_before = collection_size if collection_size > 0 else 0
+
+        # Perform cleanup
+        success = vector_store.clear_collection(
+            collection, remove_projection_matrix=remove_projection_matrix
+        )
+
+        if success:
+            console.print(
+                f"✅ Collection '{collection}' cleaned successfully", style="green"
+            )
+
+            # Report space reclaimed
+            if size_before > 0:
+                size_mb = size_before / (1024 * 1024)
+                console.print(f"💾 Storage reclaimed: {size_mb:.2f} MB")
+        else:
+            console.print(f"❌ Failed to clean collection '{collection}'", style="red")
+            sys.exit(1)
+
+    except Exception as e:
+        console.print(f"❌ Clean failed: {e}", style="red")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command("list-collections")
+@click.pass_context
+@require_mode("local", "remote")
+def list_collections_cmd(ctx):
+    """List all collections with metadata and statistics.
+
+    \b
+    Shows collection information including:
+      • Collection name
+      • Vector count
+      • Vector dimensions
+      • Storage size
+      • Creation date
+    """
+    try:
+        config_manager = ctx.obj.get("config_manager")
+        project_root = ctx.obj.get("project_root")
+
+        if not config_manager or not project_root:
+            console.print("❌ Configuration not found", style="red")
+            sys.exit(1)
+
+        config = config_manager.get_config()
+
+        # Create backend
+
+        backend = BackendFactory.create(config, project_root)
+
+        # Get vector store client
+        vector_store = backend.get_vector_store_client()
+
+        # Get all collections
+        collections = vector_store.list_collections()
+
+        if not collections:
+            console.print("ℹ️  No collections found", style="blue")
+            return
+
+        # Create table
+        table = Table(title="Collections")
+        table.add_column("Name", style="cyan")
+        table.add_column("Vectors", justify="right", style="green")
+        table.add_column("Dimensions", justify="right", style="yellow")
+        table.add_column("Size", justify="right", style="magenta")
+        table.add_column("Created", style="blue")
+
+        # Populate table
+        for coll_name in collections:
+            # Get vector count
+            vector_count = vector_store.count_points(coll_name)
+
+            # Get metadata
+            try:
+                metadata = vector_store.get_collection_info(coll_name)
+                vector_size = metadata.get("vector_size", "N/A")
+                created_at = metadata.get("created_at", "N/A")
+                if created_at != "N/A":
+                    # Format datetime
+                    from datetime import datetime
+
+                    dt = datetime.fromisoformat(created_at)
+                    created_at = dt.strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                vector_size = "N/A"
+                created_at = "N/A"
+
+            # Get collection size
+            collection_size = 0
+            if hasattr(vector_store, "get_collection_size"):
+                collection_size = vector_store.get_collection_size(coll_name)
+
+            size_str = "N/A"
+            if collection_size > 0:
+                size_mb = collection_size / (1024 * 1024)
+                if size_mb >= 1.0:
+                    size_str = f"{size_mb:.2f} MB"
+                else:
+                    size_kb = collection_size / 1024
+                    size_str = f"{size_kb:.2f} KB"
+
+            table.add_row(
+                coll_name, str(vector_count), str(vector_size), size_str, created_at
+            )
+
+        console.print(table)
+
+    except Exception as e:
+        console.print(f"❌ Failed to list collections: {e}", style="red")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
 @cli.command("uninstall")
 @click.option(
     "--force-docker", is_flag=True, help="Force use Docker even if Podman is available"
@@ -5261,7 +6317,7 @@ def uninstall(ctx, force_docker: bool, wipe_all: bool, confirm: bool):
     elif mode == "local":
         from .mode_specific_handlers import uninstall_local_mode
 
-        uninstall_local_mode(project_root, force_docker, wipe_all)
+        uninstall_local_mode(project_root, force_docker, wipe_all, confirm)
     elif mode == "remote":
         from .mode_specific_handlers import uninstall_remote_mode
 
@@ -5341,6 +6397,9 @@ def fix_config(ctx, dry_run: bool, verbose: bool, force: bool):
         sys.exit(exit_code)
 
     try:
+        # Lazy imports for fix_config command
+        from .services.config_fixer import ConfigurationRepairer, generate_fix_report
+
         # Use configuration from CLI context
         config_manager = ctx.obj["config_manager"]
         if not config_manager or not config_manager.config_path.exists():
@@ -5406,143 +6465,6 @@ def fix_config(ctx, dry_run: bool, verbose: bool, force: bool):
             import traceback
 
             console.print(traceback.format_exc())
-        sys.exit(1)
-
-
-@cli.command("set-claude-prompt")
-@click.option(
-    "--user-prompt",
-    is_flag=True,
-    help="Set prompt in user's global ~/.claude/CLAUDE.md file instead of project file",
-)
-@click.option(
-    "--show-only",
-    is_flag=True,
-    help="Display the generated prompt content without modifying any files",
-)
-@click.pass_context
-def set_claude_prompt(ctx, user_prompt: bool, show_only: bool):
-    """Set CIDX semantic search instructions in CLAUDE.md files.
-
-    This command injects comprehensive CIDX semantic search instructions into
-    CLAUDE.md files to improve Claude Code integration with code-indexer.
-
-    \b
-    BEHAVIOR:
-    • --user-prompt: Sets prompt in ~/.claude/CLAUDE.md (global for all projects)
-    • --show-only: Displays prompt content without modifying files
-    • Default: Sets prompt in project CLAUDE.md (walks up directory tree to find it)
-
-    \b
-    FEATURES:
-    • Detects existing CIDX sections and replaces them (no duplicates)
-    • Preserves existing file content and formatting
-    • Normalizes line endings to LF (Unix style)
-    • Uses current project context to generate relevant instructions
-
-    \b
-    EXAMPLES:
-      cidx set-claude-prompt                 # Set in project CLAUDE.md
-      cidx set-claude-prompt --user-prompt  # Set in user's global CLAUDE.md
-      cidx set-claude-prompt --show-only    # Display content without writing files
-
-    \b
-    REQUIREMENTS:
-    • For project mode: CLAUDE.md must exist in current directory or parent directories
-    • For user mode: ~/.claude/ directory will be created if needed
-    • For show-only mode: No file requirements
-    """
-    from .services.claude_prompt_setter import ClaudePromptSetter
-
-    try:
-        # Check for conflicting flags
-        if show_only and user_prompt:
-            console.print("❌ Cannot use --show-only with --user-prompt", style="red")
-            console.print(
-                "   --show-only displays content without specifying target file",
-                style="dim",
-            )
-            sys.exit(1)
-
-        # Get current directory for codebase context
-        current_dir = Path.cwd()
-        setter = ClaudePromptSetter(current_dir)
-
-        # Handle --show-only mode
-        if show_only:
-            console.print("📖 Generated CIDX prompt content:\n", style="blue")
-            prompt_content = setter._generate_cidx_prompt()
-
-            # Add section header as it would appear in CLAUDE.md
-            section_header = "- CIDX SEMANTIC CODE SEARCH INTEGRATION\n\n"
-            full_content = section_header + prompt_content
-
-            # Display with syntax highlighting for better readability
-            from rich.syntax import Syntax
-
-            syntax = Syntax(
-                full_content, "markdown", theme="github-dark", line_numbers=False
-            )
-            console.print(syntax)
-            return
-
-        if user_prompt:
-            # Set in user's global CLAUDE.md
-            console.print("🔧 Setting CIDX prompt in user's global CLAUDE.md...")
-            success = setter.set_user_prompt()
-
-            if success:
-                user_file = Path.home() / ".claude" / "CLAUDE.md"
-                console.print(f"✅ CIDX prompt set in: {user_file}", style="green")
-                console.print(
-                    "   This will apply to all your Claude Code sessions globally.",
-                    style="dim",
-                )
-            else:
-                console.print("❌ Failed to set user prompt", style="red")
-                sys.exit(1)
-        else:
-            # Set in project CLAUDE.md
-            console.print("🔧 Searching for project CLAUDE.md file...")
-            success = setter.set_project_prompt(current_dir)
-
-            if success:
-                # Find which file was updated for user feedback
-                project_file = setter._find_project_claude_file(current_dir)
-                console.print(f"✅ CIDX prompt set in: {project_file}", style="green")
-                console.print(
-                    "   This will apply to Claude Code sessions in this project.",
-                    style="dim",
-                )
-            else:
-                console.print("❌ No project CLAUDE.md file found", style="red")
-                console.print(
-                    "   Searched up directory tree from current location.", style="dim"
-                )
-                console.print(
-                    "   Create a CLAUDE.md file first, or use --user-prompt for global setting.",
-                    style="dim",
-                )
-                sys.exit(1)
-
-        # Show next steps
-        console.print("\n💡 Next steps:", style="blue")
-        console.print(
-            "   • The CIDX semantic search instructions are now available to Claude"
-        )
-        console.print(
-            "   • Claude will use 'cidx query' for intelligent code discovery"
-        )
-        console.print(
-            "   • Test with: claude 'How does authentication work in this codebase?'"
-        )
-
-    except Exception as e:
-        console.print(f"❌ Error setting Claude prompt: {e}", style="red")
-        if ctx.obj.get("verbose"):
-            import traceback
-
-            console.print(traceback.format_exc(), style="dim red")
         sys.exit(1)
 
 
@@ -7576,7 +8498,7 @@ def repos_group(ctx):
 @repos_group.command(name="list")
 @click.option("--filter", help="Filter repositories by pattern")
 @click.pass_context
-def list(ctx, filter: Optional[str]):
+def list_repos(ctx, filter: Optional[str]):
     """List activated repositories.
 
     Shows your currently activated repositories with their sync status,
@@ -7616,6 +8538,7 @@ def list(ctx, filter: Optional[str]):
             sys.exit(1)
 
         # Create client and fetch repositories with proper cleanup
+
         async def fetch_repositories():
             client = ReposAPIClient(
                 server_url=server_url,
@@ -8002,6 +8925,7 @@ def repos_status(ctx):
             sys.exit(1)
 
         # Create client and fetch status
+
         async def fetch_status():
             client = ReposAPIClient(
                 server_url=server_url,
@@ -8717,7 +9641,6 @@ def execute_repository_activation(
     """Execute repository activation with progress monitoring."""
     import asyncio
     from pathlib import Path
-    from .api_clients.repos_client import ReposAPIClient
     from .mode_detection.command_mode_detector import find_project_root
 
     # Get project root and credentials
@@ -8737,6 +9660,7 @@ def execute_repository_activation(
     progress_display.show_activation_progress(golden_alias, user_alias)
 
     # Create client and execute activation
+
     async def do_activation():
         client = ReposAPIClient(
             server_url=credentials["server_url"],
@@ -8770,7 +9694,6 @@ def execute_repository_deactivation(
     """Execute repository deactivation with cleanup."""
     import asyncio
     from pathlib import Path
-    from .api_clients.repos_client import ReposAPIClient
     from .mode_detection.command_mode_detector import find_project_root
 
     # Get project root and credentials
@@ -8838,7 +9761,6 @@ async def _execute_repository_info(
     activity: bool = False,
 ):
     """Execute repository information retrieval with rich formatting."""
-    from .api_clients.repos_client import ReposAPIClient
 
     # Create client and fetch repository information
     client = ReposAPIClient(
@@ -8869,7 +9791,6 @@ async def _execute_branch_switch(
     create: bool = False,
 ):
     """Execute repository branch switching."""
-    from .api_clients.repos_client import ReposAPIClient
 
     # Create client and switch branch
     client = ReposAPIClient(
@@ -9402,6 +10323,8 @@ def list_jobs(ctx, status: Optional[str], limit: int):
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
             decrypted_creds = credential_manager.decrypt_credentials(
                 encrypted_data=encrypted_data,
@@ -9499,6 +10422,8 @@ def cancel_job(ctx, job_id: str, force: bool):
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
             decrypted_creds = credential_manager.decrypt_credentials(
                 encrypted_data=encrypted_data,
@@ -9607,6 +10532,8 @@ def job_status(ctx, job_id: str):
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
             decrypted_creds = credential_manager.decrypt_credentials(
                 encrypted_data=encrypted_data,
@@ -9904,6 +10831,8 @@ def admin_users_create(
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
 
             # We need username from remote config for decryption
@@ -9966,6 +10895,8 @@ def admin_users_create(
             sys.exit(1)
 
         # Create admin client and create user
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url, credentials=credentials, project_root=project_root
         )
@@ -10068,6 +10999,8 @@ def admin_users_list(ctx, limit: int, offset: int):
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
 
             # We need username from remote config for decryption
@@ -10098,6 +11031,8 @@ def admin_users_list(ctx, limit: int, offset: int):
             sys.exit(1)
 
         # Create admin client and list users
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url, credentials=credentials, project_root=project_root
         )
@@ -10237,6 +11172,8 @@ def admin_users_show(ctx, username: str):
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
             username_for_creds = remote_config.get("username")
             if not username_for_creds:
@@ -10264,6 +11201,8 @@ def admin_users_show(ctx, username: str):
             sys.exit(1)
 
         # Create admin client and get user
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url, credentials=credentials, project_root=project_root
         )
@@ -10371,6 +11310,8 @@ def admin_users_update(ctx, username: str, role: str):
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
             username_for_creds = remote_config.get("username")
             if not username_for_creds:
@@ -10398,6 +11339,8 @@ def admin_users_update(ctx, username: str, role: str):
             sys.exit(1)
 
         # Create admin client
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url, credentials=credentials, project_root=project_root
         )
@@ -10522,6 +11465,8 @@ def admin_users_delete(ctx, username: str, force: bool):
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
             username_for_creds = remote_config.get("username")
             if not username_for_creds:
@@ -10565,9 +11510,12 @@ def admin_users_delete(ctx, username: str, force: bool):
             )
             console.print("This action cannot be undone!")
 
+            # Lazy import for admin client (needed for confirmation display)
+            from .api_clients.admin_client import AdminAPIClient as TempAdminAPIClient
+
             # Show user details before deletion for confirmation
             try:
-                temp_client = AdminAPIClient(
+                temp_client = TempAdminAPIClient(
                     server_url=server_url,
                     credentials=credentials,
                     project_root=project_root,
@@ -10591,6 +11539,8 @@ def admin_users_delete(ctx, username: str, force: bool):
                 sys.exit(0)
 
         # Create admin client and delete user
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url, credentials=credentials, project_root=project_root
         )
@@ -10740,6 +11690,8 @@ def admin_users_change_password(ctx, username: str, password: str, force: bool):
             sys.exit(1)
 
         # Create admin client
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=remote_config["server_url"],
             credentials=credentials,
@@ -10919,6 +11871,8 @@ def admin_repos_add(
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
 
             # We need username from remote config for decryption
@@ -10949,6 +11903,8 @@ def admin_repos_add(
             sys.exit(1)
 
         # Create admin client
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url,
             credentials=credentials,
@@ -11091,6 +12047,8 @@ def admin_repos_list(ctx):
         # Load and decrypt credentials
         try:
             encrypted_data = load_encrypted_credentials(project_root)
+            from .remote.credential_manager import ProjectCredentialManager
+
             credential_manager = ProjectCredentialManager()
 
             # We need username from remote config for decryption
@@ -11122,6 +12080,8 @@ def admin_repos_list(ctx):
             sys.exit(1)
 
         # Create admin client and list repositories with proper cleanup
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url,
             credentials=credentials,
@@ -11304,6 +12264,8 @@ def admin_repos_show(ctx, alias: str):
             sys.exit(1)
 
         # Create admin client and find repository
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url,
             credentials=credentials,
@@ -11526,6 +12488,8 @@ def admin_repos_refresh(ctx, alias: str):
             sys.exit(1)
 
         # Create admin client and refresh repository
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url,
             credentials=credentials,
@@ -11700,6 +12664,8 @@ def admin_repos_delete(ctx, alias: str, force: bool):
             sys.exit(1)
 
         # Create admin client
+        from .api_clients.admin_client import AdminAPIClient
+
         admin_client = AdminAPIClient(
             server_url=server_url,
             credentials=credentials,

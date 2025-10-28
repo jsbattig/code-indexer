@@ -4,8 +4,6 @@ Tests the ErrorMessageFormatter class that provides clear, visually distinct
 error reporting for failed repositories.
 """
 
-import pytest
-
 from code_indexer.proxy.error_formatter import (
     ErrorMessage,
     ErrorMessageFormatter,
@@ -152,7 +150,7 @@ class TestFormatError:
         )
 
         formatted = formatter.format_error(error)
-        lines = formatted.split('\n')
+        lines = formatted.split("\n")
 
         # Second line should be the repository header (after separator)
         assert "✗ FAILED: frontend/web-app" in lines[1]
@@ -170,8 +168,8 @@ class TestFormatError:
         formatted = formatter.format_error(error)
 
         # Verify output is multiline
-        assert '\n' in formatted
-        lines = formatted.split('\n')
+        assert "\n" in formatted
+        lines = formatted.split("\n")
         assert len(lines) >= 6  # At least 6 lines for basic error
 
     def test_format_error_with_different_exit_codes(self):
@@ -197,8 +195,7 @@ class TestFormatInlineError:
         """Verify inline error formatting."""
         formatter = ErrorMessageFormatter()
         formatted = formatter.format_inline_error(
-            "backend/auth-service",
-            "Cannot connect to Qdrant"
+            "backend/auth-service", "Cannot connect to Qdrant"
         )
 
         assert formatted == "✗ backend/auth-service: Cannot connect to Qdrant"
@@ -207,20 +204,16 @@ class TestFormatInlineError:
         """Verify inline error is single line."""
         formatter = ErrorMessageFormatter()
         formatted = formatter.format_inline_error(
-            "backend/auth-service",
-            "Error occurred"
+            "backend/auth-service", "Error occurred"
         )
 
         # Should be single line (no newlines)
-        assert '\n' not in formatted
+        assert "\n" not in formatted
 
     def test_format_inline_error_includes_prefix(self):
         """Verify inline error includes error prefix."""
         formatter = ErrorMessageFormatter()
-        formatted = formatter.format_inline_error(
-            "backend/auth-service",
-            "Error"
-        )
+        formatted = formatter.format_inline_error("backend/auth-service", "Error")
 
         assert formatted.startswith("✗")
 
@@ -253,8 +246,7 @@ class TestFormatSuccess:
         """Verify success formatting with message."""
         formatter = ErrorMessageFormatter()
         formatted = formatter.format_success(
-            "backend/auth-service",
-            "Services started successfully"
+            "backend/auth-service", "Services started successfully"
         )
 
         assert formatted == "✓ backend/auth-service: Services started successfully"
@@ -269,13 +261,10 @@ class TestFormatSuccess:
     def test_format_success_single_line(self):
         """Verify success message is single line."""
         formatter = ErrorMessageFormatter()
-        formatted = formatter.format_success(
-            "backend/auth-service",
-            "Complete"
-        )
+        formatted = formatter.format_success("backend/auth-service", "Complete")
 
         # Should be single line (no newlines)
-        assert '\n' not in formatted
+        assert "\n" not in formatted
 
     def test_format_success_empty_message(self):
         """Verify success formatting handles empty message."""
@@ -318,7 +307,7 @@ class TestVisualDistinction:
         # Should have error prefix
         assert "✗" in formatted
         # Should be multiline
-        assert '\n' in formatted
+        assert "\n" in formatted
 
 
 class TestEdgeCases:

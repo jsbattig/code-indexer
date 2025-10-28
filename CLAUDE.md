@@ -75,6 +75,63 @@
 
 - **🚨 VOYAGEAI BATCH PROCESSING TOKEN LIMITS**: VoyageAI API enforces 120,000 token limit per batch request. The VoyageAI client now implements token-aware batching that automatically splits large file batches to respect this limit while maintaining performance optimization. Files with >100K estimated tokens will be processed in multiple batches transparently. Error "max allowed tokens per submitted batch is 120000" indicates this protection is working correctly.
 
+## Embedding Provider Strategy
+
+**PRODUCTION PROVIDER**: VoyageAI is the ONLY production embedding provider. It provides high-quality embeddings via API with acceptable performance and reliability.
+
+**OLLAMA STATUS**: Ollama is EXPERIMENTAL ONLY and NOT for production use. It was tested as a local embedding option but is WAY too slow for practical usage. Ollama remains in the codebase for testing/development purposes only.
+
+**CRITICAL**: When discussing optimizations, architecture, or production deployments, focus exclusively on VoyageAI. Ollama performance and optimization are not priorities since it's not production-viable.
+
+## VoyageAI Token Counting Optimization
+
+**CRITICAL ARCHITECTURE**: We use an embedded tokenizer (`embedded_voyage_tokenizer.py`) instead of the voyageai library for token counting. This was a carefully researched optimization.
+
+**WHY EMBEDDED TOKENIZER**:
+- The `voyageai` library was ONLY used for `count_tokens()` (440-630ms import overhead for one function!)
+- Token counting is critical for respecting VoyageAI's 120,000 token/batch API limit
+- We tried "myriad other ways" to count tokens - all failed
+- VoyageAI's official tokenizer was the only accurate method
+
+**IMPLEMENTATION**:
+- Extracted minimal tokenization logic from voyageai library
+- Uses `tokenizers` library directly (loads official VoyageAI models from HuggingFace)
+- Lazy imports - only loads when actually counting tokens
+- Caches tokenizers per model for blazing fast performance (0.03ms)
+- Provides 100% identical token counts to `voyageai.Client.count_tokens()`
+
+**ACCURACY GUARANTEE**: All 9 test cases (Unicode, emojis, code, SQL, edge cases) match voyageai library exactly. This is production-ready and maintains critical accuracy for API token limits.
+
+**PERFORMANCE**: Eliminated 440-630ms import overhead. See `OPTIMIZATION_SUMMARY.md` for detailed analysis.
+
+**DO NOT**: Remove or replace the embedded tokenizer without extensive testing. Token counting accuracy is non-negotiable for VoyageAI API compliance.
+
+## Import Time Optimization Status
+
+**COMPLETED OPTIMIZATIONS**:
+1. ✅ **voyageai library eliminated**: 440-630ms → 0ms (100% removal)
+2. ✅ **CLI lazy loading implemented**: 736ms → 329ms (55% faster, 407ms saved)
+
+**RESULTS** (see `LAZY_IMPORT_RESULTS.md`):
+- `cidx --help`: ~800ms → ~350ms (56% faster)
+- `cidx query`: ~1656ms → ~1249ms (25% faster)
+- Total combined savings: 847-1037ms (voyageai + lazy loading)
+
+**REMAINING TIME BREAKDOWN** (329ms):
+- pydantic (config validation): ~150ms - unavoidable without removing type safety
+- rich (console output): ~80ms - unavoidable without removing formatting
+- httpx (HTTP client): ~40ms - core dependency
+- Standard library: ~40ms - unavoidable
+- cli.py self time: ~9.4ms - minimal
+
+**FUTURE OPPORTUNITIES** (diminishing returns):
+- Config lazy loading: ~50-100ms potential
+- Rich output optimization: ~30-50ms potential
+- HNSW index preloading: ~200-300ms potential (runtime, not startup)
+- Daemon mode: ~1000+ms potential (requires IPC architecture)
+
+**CONCLUSION**: Current 329ms startup is acceptable. Further optimization requires aggressive changes with questionable ROI.
+
 ## CIDX Repository Lifecycle Architecture
 
 **CRITICAL UNDERSTANDING**: The CIDX system operates on a **Golden Repository → Activated Repository → Container Lifecycle** architecture.
@@ -100,7 +157,7 @@
 
 ### Container Architecture
 
-**Naming Convention**: `cidx-{project_hash}-{service}` (qdrant, ollama, data-cleaner)
+**Naming Convention**: `cidx-{project_hash}-{service}` (qdrant, data-cleaner) - Note: ollama containers exist but are experimental only
 **Port Allocation**: Dynamic calculation per activated repo, stored in `.code-indexer/config.json`
 **State Management**: Startup on first query, health monitoring, auto-recovery, manual shutdown via `cidx stop`
 
@@ -143,11 +200,19 @@ embedding_service = EmbeddingProviderFactory.create(config=config)
 
 This architecture provides scalable, multi-user semantic code search with efficient resource utilization and proper isolation between users while sharing expensive index computation through CoW cloning.
 
-## CIDX Semantic Search Integration
+## SEMANTIC SEARCH - MANDATORY FIRST ACTION
 
-**PRIMARY DISCOVERY TOOL**: Use `cidx query` before grep/find for semantic searches.
+**CIDX FIRST**: Always use `cidx query` before grep/find/rg for semantic searches.
 
-**Key Flags**: `--limit N` (results) | `--language python` | `--path */tests/*` | `--min-score 0.8` | `--accuracy high` | `--quiet` (always use)
+**Decision Rule**:
+- "What code does", "Do we support", "Where is X implemented" → CIDX
+- Exact text (variable names, config values, log messages) → grep/find
+
+**Key Parameters**: `--limit N` (results, default 10) | `--language python` (filter by language) | `--path-filter */tests/*` (filter by path pattern) | `--min-score 0.8` (similarity threshold) | `--accuracy high` (higher precision) | `--quiet` (minimal output)
+
+**Examples**: `cidx query "authentication login" --quiet` | `cidx query "error handling" --language python --limit 20` | `cidx query "database connection" --path-filter */services/* --min-score 0.8`
+
+**Fallback**: Use grep/find only when cidx unavailable or for exact string matches.
 
 **When to Use**:
 ✅ "Where is X implemented?" → `cidx query "X implementation" --quiet`
@@ -179,7 +244,7 @@ This architecture provides scalable, multi-user semantic code search with effici
 **Practical Examples** (ALWAYS USE --quiet):
 - Concept: `cidx query "authentication mechanisms" --quiet`
 - Implementation: `cidx query "API endpoint handlers" --language python --quiet`
-- Testing: `cidx query "unit test examples" --path "*/tests/*" --quiet`
+- Testing: `cidx query "unit test examples" --path-filter "*/tests/*" --quiet`
 - Multi-step: Broad `cidx query "user management" --quiet` → Narrow `cidx query "user authentication" --min-score 0.8 --quiet`
 
 **Semantic vs Text Search Comparison**:

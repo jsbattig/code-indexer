@@ -148,3 +148,6 @@ test_output_*/
 /.test-e2e-large-files
 .aider*
 .ssh-mcp-server.port
+
+# FilesystemVectorStore collection
+voyage-code-3/

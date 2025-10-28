@@ -73,6 +73,53 @@ class QdrantClient:
         except Exception:
             return []
 
+    def begin_indexing(self, collection_name: str) -> None:
+        """Prepare for batch indexing operations.
+
+        For Qdrant: No-op since Qdrant handles indexes automatically and incrementally.
+        This method exists for storage provider interface consistency with FilesystemVectorStore.
+
+        Args:
+            collection_name: Name of the collection to begin indexing
+
+        Note:
+            This is part of the storage provider lifecycle interface. Qdrant maintains
+            HNSW indexes automatically, so no preparation is needed.
+        """
+        # No-op for Qdrant - it handles indexing automatically
+        pass
+
+    def end_indexing(
+        self,
+        collection_name: str,
+        progress_callback: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Finalize indexing session.
+
+        For Qdrant: Returns vector count since Qdrant maintains indexes automatically.
+        Could optionally trigger optimization/compaction here if needed.
+
+        Args:
+            collection_name: Name of the collection
+            progress_callback: Optional callback (unused for Qdrant)
+
+        Returns:
+            Status dictionary with vector count
+
+        Note:
+            This is part of the storage provider lifecycle interface. For Qdrant,
+            this is primarily a no-op since indexes are maintained automatically,
+            but we return the vector count for consistency with FilesystemVectorStore.
+        """
+        collection = collection_name or self.config.collection_base_name
+        vector_count = self.count_points(collection)
+
+        return {
+            "status": "ok",
+            "vectors_indexed": vector_count,
+            "collection": collection
+        }
+
     def create_collection(
         self, collection_name: Optional[str] = None, vector_size: Optional[int] = None
     ) -> bool:

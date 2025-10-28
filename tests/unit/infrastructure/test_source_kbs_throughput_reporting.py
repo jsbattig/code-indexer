@@ -110,7 +110,7 @@ def function_{i}():
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            qdrant_client=self.mock_qdrant,
+            vector_store_client=self.mock_qdrant,
         )
 
         # Track progress calls to verify KB/s inclusion
@@ -197,7 +197,7 @@ def function_{i}():
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            qdrant_client=self.mock_qdrant,
+            vector_store_client=self.mock_qdrant,
         )
 
         # Track progress calls to verify format structure
@@ -281,7 +281,7 @@ def function_{i}():
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            qdrant_client=self.mock_qdrant,
+            vector_store_client=self.mock_qdrant,
         )
 
         # Track KB/s values over time to verify cumulative calculation
@@ -362,7 +362,7 @@ def function_{i}():
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            qdrant_client=self.mock_qdrant,
+            vector_store_client=self.mock_qdrant,
         )
 
         # Track all KB/s calculations

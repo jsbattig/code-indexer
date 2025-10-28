@@ -2,7 +2,7 @@
 
 AI-powered semantic code search for your codebase. Find code by meaning, not just keywords.
 
-## Version 6.5.0
+## Version 7.0.0
 
 ## Two Operating Modes
 
@@ -30,11 +30,148 @@ FastAPI web service for team environments:
 - **Advanced filtering** - Language, file paths, extensions, similarity scores
 - **Multi-language** - Python, JavaScript, TypeScript, Java, C#, Go, Kotlin, and more
 
-### Parallel Processing Architecture  
+### Parallel Processing Architecture
 - **Slot-based file processing** - Real-time state visibility with natural slot reuse
 - **Dual thread pools** - Frontend file processing (threadcount+2) feeds backend vectorization (threadcount)
 - **Real-time progress** - Individual file status progression (starting → chunking → vectorizing → finalizing → complete)
 - **Clean cancellation** - Post-write cancellation preserves file atomicity
+
+## Vector Search Architecture (v7.0)
+
+### HNSW Graph-Based Indexing
+
+Code Indexer v7.0 introduces **HNSW (Hierarchical Navigable Small World)** graph-based indexing for blazing-fast semantic search with **O(log N)** complexity.
+
+**Performance:**
+- **300x speedup**: ~20ms queries (vs 6+ seconds with binary index)
+- **Scalability**: Tested with 37K vectors, sub-30ms response times
+- **Memory efficient**: 154 MB index for 37K vectors (4.2 KB per vector)
+
+**Algorithm Complexity:**
+```
+Query Time Complexity: O(log N + K)
+  - HNSW graph search: O(log N) average case
+  - Candidate loading: O(K) where K = limit * 2, K << N
+  - Practical: ~20ms for 37K vectors
+```
+
+**HNSW Configuration:**
+- **M=16**: Connections per node (graph connectivity)
+- **ef_construction=200**: Build-time accuracy parameter
+- **ef_query=50**: Query-time accuracy parameter
+- **Space=cosine**: Cosine similarity distance metric
+
+### Filesystem Vector Store
+
+Container-free vector storage using filesystem + HNSW indexing:
+
+**Storage Structure:**
+```
+.code-indexer/index/<collection>/
+├── hnsw_index.bin              # HNSW graph (O(log N) search)
+├── id_index.bin                # Binary mmap ID→path mapping
+├── collection_meta.json        # Metadata + staleness tracking
+└── vectors/                    # Quantized path structure
+    └── <level1>/<level2>/<level3>/<level4>/
+        └── vector_<uuid>.json  # Individual vector + payload
+```
+
+**Key Features:**
+- **Path-as-Vector Quantization**: 64-dim projection → 4-level directory depth
+- **Git-Aware Storage**:
+  - Clean files: Store only git blob hash (space efficient)
+  - Dirty/non-git: Store full chunk_text
+- **Hash-Based Staleness**: SHA256 for precise change detection
+- **3-Tier Content Retrieval**: Current file → git blob → error
+
+**Binary ID Index:**
+- **Format**: Packed binary `[num_entries:uint32][id_len:uint16, id:utf8, path_len:uint16, path:utf8]...`
+- **Performance**: <20ms cached loads via memory mapping (mmap)
+- **Thread-safe**: RLock for concurrent access
+
+### Parallel Query Execution
+
+**2-Thread Architecture for 15-30% Latency Reduction:**
+
+```
+Query Pipeline:
+┌─────────────────────────────────────────┐
+│  Thread 1: Index Loading (I/O bound)   │
+│  - Load HNSW graph (~5-15ms)           │
+│  - Load ID index via mmap (<20ms)      │
+└─────────────────────────────────────────┘
+           ⬇ Parallel Execution ⬇
+┌─────────────────────────────────────────┐
+│ Thread 2: Embedding (CPU/Network bound)│
+│  - Generate query embedding (5s API)   │
+└─────────────────────────────────────────┘
+           ⬇ Join ⬇
+┌─────────────────────────────────────────┐
+│  HNSW Graph Search + Filtering         │
+│  - Navigate graph: O(log N)            │
+│  - Load K candidates: O(K)             │
+│  - Apply filters and score             │
+│  - Return top-K results                │
+└─────────────────────────────────────────┘
+```
+
+**Typical Savings:** 175-265ms per query
+**Threading Overhead:** 7-16% (transparently reported)
+
+### Search Strategy Evolution
+
+**Version 6.x: Binary Index (O(N) Linear Scan)**
+```python
+# Load ALL vectors
+for vector_id in all_vectors:  # O(N)
+    vector = load_vector(vector_id)
+    similarity = cosine(query, vector)
+    results.append((vector_id, similarity))
+
+results.sort()  # O(N log N)
+return results[:limit]
+
+# Performance: 6+ seconds for 7K vectors
+```
+
+**Version 7.0: HNSW Index (O(log N) Graph Search)**
+```python
+# Load HNSW graph index
+hnsw = load_hnsw_index()  # O(1)
+
+# Navigate graph to find approximate nearest neighbors
+candidates = hnsw.search(query, k=limit*2)  # O(log N)
+
+# Load ONLY candidate vectors
+for candidate_id in candidates:  # O(K) where K << N
+    vector = load_vector(candidate_id)
+    similarity = exact_cosine(query, vector)
+    if filter_match(vector.payload):
+        results.append((candidate_id, similarity))
+
+results.sort()  # O(K log K)
+return results[:limit]
+
+# Performance: ~20ms for 37K vectors (300x faster)
+```
+
+### Performance Decision Analysis
+
+**Why HNSW?**
+1. **vs FAISS**: Simpler integration, no external C++ dependencies, optimal for small-medium datasets (<100K vectors)
+2. **vs Annoy**: Better accuracy-speed tradeoff, superior graph connectivity
+3. **vs Product Quantization**: Maintains full precision, no accuracy loss
+4. **vs Brute Force**: 300x speedup justifies ~150MB index overhead
+
+**Quantization Strategy:**
+- **64-dim projection**: Optimal balance (tested 32, 64, 128, 256 dimensions)
+- **4-level depth**: Enables 64^4 = 16.8M unique paths (sufficient for large codebases)
+- **2-bit quantization**: Further reduces from 64 to 4 levels per dimension
+
+**Storage Trade-offs:**
+- **JSON vs Binary**: JSON chosen for git-trackability and debuggability (3-5x size acceptable)
+- **Individual files**: Enable incremental updates and git change tracking
+- **Binary exceptions**: ID index and HNSW use binary for performance-critical components
 
 ## How the Indexing Algorithm Works
 
@@ -52,7 +189,7 @@ The code-indexer uses a sophisticated dual-phase parallel processing architectur
 ### pipx (Recommended)
 ```bash
 # Install the package
-pipx install git+https://github.com/jsbattig/code-indexer.git@v6.5.0
+pipx install git+https://github.com/jsbattig/code-indexer.git@v7.0.0
 
 # Setup global registry (standalone command - requires sudo)
 cidx setup-global-registry
@@ -65,7 +202,7 @@ cidx setup-global-registry
 ```bash
 python3 -m venv code-indexer-env
 source code-indexer-env/bin/activate
-pip install git+https://github.com/jsbattig/code-indexer.git@v6.5.0
+pip install git+https://github.com/jsbattig/code-indexer.git@v7.0.0
 
 # Setup global registry (standalone command - requires sudo)
 cidx setup-global-registry
@@ -89,6 +226,121 @@ Code Indexer supports both Docker and Podman container engines:
 
 **Global Port Registry**: The `setup-global-registry` command configures system-wide port coordination at `/var/lib/code-indexer/port-registry`, preventing conflicts when running multiple code-indexer projects simultaneously. This is required for proper multi-project support.
 
+### Vector Storage Backends
+
+Code Indexer supports two vector storage backends for different deployment scenarios:
+
+#### Filesystem Backend (Default)
+Container-free vector storage using the local filesystem - ideal for environments where containers are restricted or unavailable.
+
+**Features:**
+- **No containers required** - Stores vector data directly in `.code-indexer/index/` directory
+- **Zero setup overhead** - Works immediately without Docker/Podman
+- **Lightweight** - Minimal resource footprint, no container orchestration
+- **Portable** - Vector data travels with your repository
+
+**Usage:**
+```bash
+# Default behavior (no flag needed)
+cidx init
+
+# Or explicitly specify filesystem backend
+cidx init --vector-store filesystem
+```
+
+**Directory Structure:**
+```
+your-project/
+└── .code-indexer/
+    ├── config.json
+    └── index/           # Vector data stored here
+        └── (vector storage files)
+```
+
+#### Qdrant Backend
+Container-based vector storage using Docker/Podman + Qdrant vector database - provides advanced vector database features and scalability.
+
+**Features:**
+- **High performance** - Optimized vector similarity search with HNSW indexing
+- **Advanced filtering** - Complex queries and metadata filtering
+- **Horizontal scaling** - Suitable for large codebases and production deployments
+- **Container isolation** - Clean separation of concerns with containerized services
+
+**Usage:**
+```bash
+# Initialize with Qdrant backend
+cidx init --vector-store qdrant
+
+# Requires: Docker or Podman installed
+# Automatically allocates unique ports per project
+# Requires global port registry: cidx setup-global-registry
+```
+
+**When to use each backend:**
+- **Filesystem**: Development environments, CI/CD pipelines, container-restricted systems, quick prototyping
+- **Qdrant**: Production deployments, large teams, advanced vector search requirements, high-performance needs
+
+### Switching Between Backends
+
+You can switch between filesystem and Qdrant backends at any time. **Warning:** Switching backends requires destroying existing vector data and re-indexing your codebase. Your source code is never affected - only the vector index data is removed.
+
+**Complete Switching Workflow:**
+
+```bash
+# Method 1: Manual step-by-step (recommended for first-time users)
+cidx stop                                  # Stop any running services
+cidx uninstall --confirm                   # Remove current backend data
+cidx init --vector-store <new-backend>     # Initialize new backend (filesystem or qdrant)
+cidx start                                 # Start services for new backend
+cidx index                                 # Re-index codebase with new backend
+
+# Method 2: Force reinitialize (quick switch, skips uninstall)
+cidx init --vector-store <new-backend> --force
+cidx start
+cidx index
+```
+
+**Examples:**
+
+```bash
+# Switch from Qdrant to filesystem (container-free)
+cidx stop
+cidx uninstall --confirm
+cidx init --vector-store filesystem
+cidx start
+cidx index
+
+# Switch from filesystem to Qdrant (containerized)
+cidx stop  # No-op for filesystem, safe to run
+cidx uninstall --confirm
+cidx init --vector-store qdrant
+cidx start
+cidx index
+
+# Quick switch using --force flag
+cidx init --vector-store qdrant --force
+cidx start
+cidx index
+```
+
+**What gets preserved:**
+- ✅ All source code files
+- ✅ Git repository and history
+- ✅ Project structure and dependencies
+- ✅ Configuration settings (file exclusions, size limits, etc.)
+
+**What gets removed:**
+- ❌ Vector embeddings and index data
+- ❌ Cached search results
+- ❌ Backend-specific containers (when switching from Qdrant)
+- ❌ Backend-specific storage directories
+
+**Safety considerations:**
+- The `--confirm` flag skips the confirmation prompt for `uninstall`
+- The `--force` flag overwrites existing configuration when using `init`
+- Always ensure you have a backup if you've customized your `.code-indexer/config.json`
+- Re-indexing time depends on codebase size (typically seconds to minutes)
+
 ## Quick Start
 
 ```bash
@@ -107,10 +359,10 @@ cidx query "authentication logic"
 
 # 5. Search with filtering
 cidx query "user" --language python --min-score 0.7
-cidx query "save" --path "*/models/*" --limit 20
+cidx query "save" --path-filter "*/models/*" --limit 20
 
-# 6. AI-powered analysis (requires Claude CLI)
-cidx claude "How does auth work in this app?"
+# 6. Teach AI assistants about semantic search (optional)
+cidx teach-ai --claude --project
 ```
 
 ### Alternative: Custom Configuration
@@ -130,7 +382,7 @@ The CIDX server provides a FastAPI-based multi-user semantic code search service
 
 ```bash
 # 1. Install and setup (same as CLI)
-pipx install git+https://github.com/jsbattig/code-indexer.git@v6.5.0
+pipx install git+https://github.com/jsbattig/code-indexer.git@v7.0.0
 cidx setup-global-registry
 
 # 2. Install and configure the server
@@ -270,7 +522,7 @@ cidx query "function" --quiet  # Only results, no headers
 
 # Advanced filtering
 cidx query "user" --language python  # Filter by language
-cidx query "save" --path "*/models/*" # Filter by path pattern
+cidx query "save" --path-filter "*/models/*" # Filter by path pattern
 cidx query "function" --min-score 0.7  # Higher confidence matches
 cidx query "database" --limit 15     # More results
 cidx query "test" --min-score 0.8     # High-confidence matches
@@ -310,24 +562,185 @@ javascript: [js, jsx]           # Modify existing mappings
 
 Changes take effect on the next query execution. The file is automatically created during `cidx init` or on first use.
 
-### AI Analysis Commands
+### Exclusion Filters
+
+CIDX provides powerful exclusion filters to remove unwanted files from your search results. Exclusions always take precedence over inclusions, giving you precise control over your search scope.
+
+#### Excluding Files by Language
+
+Filter out files of specific programming languages using `--exclude-language`:
 
 ```bash
-# Standard analysis
-cidx claude "How does auth work?"     # AI-powered analysis
-cidx claude "Debug this" --limit 15   # Custom search limit
-cidx claude "Analyze" --context-lines 200  # More context
-cidx claude "Quick check" --quiet     # Minimal output
-cidx claude "Review code" --no-stream # No streaming output
+# Exclude JavaScript files from results
+cidx query "database implementation" --exclude-language javascript
 
-# Advanced options
-cidx claude "Test" --include-file-list  # Include project file list
-cidx claude "Legacy" --rag-first       # Use legacy RAG-first approach
+# Exclude multiple languages
+cidx query "api handlers" --exclude-language javascript --exclude-language typescript --exclude-language css
 
-# Debugging
-cidx claude "Test" --dry-run-show-claude-prompt  # Show prompt without execution
-cidx claude "Analyze" --show-claude-plan        # Show tool usage tracking
+# Combine with language inclusion (Python only, no JS)
+cidx query "web server" --language python --exclude-language javascript
 ```
+
+#### Excluding Files by Path Pattern
+
+Use `--exclude-path` with glob patterns to filter out files in specific directories or with certain names:
+
+```bash
+# Exclude all test files
+cidx query "production code" --exclude-path "*/tests/*" --exclude-path "*_test.py"
+
+# Exclude dependency and cache directories
+cidx query "application logic" \
+  --exclude-path "*/node_modules/*" \
+  --exclude-path "*/vendor/*" \
+  --exclude-path "*/__pycache__/*"
+
+# Exclude by file extension
+cidx query "source code" --exclude-path "*.min.js" --exclude-path "*.pyc"
+
+# Complex path patterns
+cidx query "configuration" --exclude-path "*/build/*" --exclude-path "*/.*"  # Hidden files
+```
+
+#### Combining Multiple Filter Types
+
+Create sophisticated queries by combining inclusion and exclusion filters:
+
+```bash
+# Python files in src/, excluding tests and cache
+cidx query "database models" \
+  --language python \
+  --path-filter "*/src/*" \
+  --exclude-path "*/tests/*" \
+  --exclude-path "*/__pycache__/*"
+
+# High-relevance results, no test files or vendored code
+cidx query "authentication logic" \
+  --min-score 0.8 \
+  --exclude-path "*/tests/*" \
+  --exclude-path "*/vendor/*" \
+  --exclude-language javascript
+
+# API code only, multiple exclusions
+cidx query "REST endpoints" \
+  --path-filter "*/api/*" \
+  --exclude-path "*/tests/*" \
+  --exclude-path "*/mocks/*" \
+  --exclude-language javascript \
+  --exclude-language css
+```
+
+#### Common Exclusion Patterns
+
+##### Testing Files
+```bash
+--exclude-path "*/tests/*"        # Test directories
+--exclude-path "*/test/*"         # Alternative test dirs
+--exclude-path "*_test.py"        # Python test files
+--exclude-path "*_test.go"        # Go test files
+--exclude-path "*.test.js"        # JavaScript test files
+--exclude-path "*/fixtures/*"     # Test fixtures
+--exclude-path "*/mocks/*"        # Mock files
+```
+
+##### Dependencies and Vendor Code
+```bash
+--exclude-path "*/node_modules/*"    # Node.js dependencies
+--exclude-path "*/vendor/*"          # Vendor libraries
+--exclude-path "*/.venv/*"           # Python virtual environments
+--exclude-path "*/site-packages/*"   # Python packages
+--exclude-path "*/bower_components/*" # Bower dependencies
+```
+
+##### Build Artifacts and Cache
+```bash
+--exclude-path "*/build/*"        # Build output
+--exclude-path "*/dist/*"         # Distribution files
+--exclude-path "*/target/*"       # Maven/Cargo output
+--exclude-path "*/__pycache__/*"  # Python cache
+--exclude-path "*.pyc"            # Python compiled files
+--exclude-path "*.pyo"            # Python optimized files
+--exclude-path "*.class"          # Java compiled files
+--exclude-path "*.o"              # Object files
+--exclude-path "*.so"             # Shared libraries
+```
+
+##### Generated and Minified Files
+```bash
+--exclude-path "*.min.js"         # Minified JavaScript
+--exclude-path "*.min.css"        # Minified CSS
+--exclude-path "*_pb2.py"         # Protocol buffer generated
+--exclude-path "*.generated.*"    # Generated files
+--exclude-path "*/migrations/*"   # Database migrations
+```
+
+#### Filter Conflicts and Warnings
+
+CIDX automatically detects contradictory filters and provides helpful feedback:
+
+```bash
+# Language conflict (same language included AND excluded)
+cidx query "database" --language python --exclude-language python
+# Output: 🚫 Language 'python' is both included and excluded.
+
+# Path conflict (same path included AND excluded)
+cidx query "config" --path-filter "*/src/*" --exclude-path "*/src/*"
+# Output: 🚫 Path pattern '*/src/*' is both included and excluded.
+
+# Over-exclusion warning (many exclusions without inclusions)
+cidx query "code" --exclude-language python --exclude-language javascript \
+  --exclude-language typescript --exclude-language java --exclude-language go
+# Output: ⚠️  Excluding 5 languages without any inclusion filters may result in unexpected results.
+```
+
+#### Performance Notes
+
+- Each exclusion filter adds minimal overhead (typically <2ms)
+- Filters are applied during the search phase, not during indexing
+- Use specific patterns when possible for better performance
+- Complex glob patterns may have slightly higher overhead
+- The order of filters does not affect performance
+
+### AI Platform Instructions
+
+The `teach-ai` command generates instruction files that teach AI assistants how to use `cidx` for semantic code search. Instructions are loaded from template files, allowing non-technical users to update content without code changes.
+
+```bash
+# Install Claude instructions in project root
+cidx teach-ai --claude --project    # Creates ./CLAUDE.md
+
+# Install Claude instructions globally
+cidx teach-ai --claude --global     # Creates ~/.claude/CLAUDE.md
+
+# Preview instruction content
+cidx teach-ai --claude --show-only  # Show without writing
+
+# Supported AI platforms
+cidx teach-ai --claude              # Claude Code
+cidx teach-ai --codex               # OpenAI Codex
+cidx teach-ai --gemini              # Google Gemini
+cidx teach-ai --opencode            # OpenCode
+cidx teach-ai --q                   # Q
+cidx teach-ai --junie               # Junie
+
+# Combine platform and scope flags
+cidx teach-ai --gemini --global     # Gemini global install
+cidx teach-ai --codex --project     # Codex project install
+```
+
+**Template Location**: `prompts/ai_instructions/{platform}.md`
+
+**Platform File Locations**:
+| Platform | Project File | Global File |
+|----------|-------------|-------------|
+| Claude | `CLAUDE.md` | `~/.claude/CLAUDE.md` |
+| Codex | `CODEX.md` | `~/.codex/instructions.md` |
+| Gemini | `.gemini/styleguide.md` | N/A (project-only) |
+| OpenCode | `AGENTS.md` | `~/.config/opencode/AGENTS.md` |
+| Q | `.amazonq/rules/cidx.md` | `~/.aws/amazonq/Q.md` |
+| Junie | `.junie/guidelines.md` | N/A (project-only) |
+
+**Safety Features**: Smart update preserves existing content and updates only CIDX sections.
 
 ### Data Management Commands
 

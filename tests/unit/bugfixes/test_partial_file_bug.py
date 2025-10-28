@@ -127,7 +127,7 @@ def test_partial_file_bug_reproduction():
             processor = HighThroughputProcessor(
                 config=config,
                 embedding_provider=embedding_provider,
-                qdrant_client=tracked_qdrant,
+                vector_store_client=tracked_qdrant,
             )
 
             # Mock file identifier

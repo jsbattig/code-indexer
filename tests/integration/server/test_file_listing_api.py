@@ -6,7 +6,6 @@ and composite repositories (Story 3.3).
 """
 
 import pytest
-from pathlib import Path
 from datetime import datetime
 from fastapi.testclient import TestClient
 

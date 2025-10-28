@@ -48,7 +48,7 @@ class TestCancellationMinimal:
         processor = HighThroughputProcessor(
             config=config,
             embedding_provider=embedding_provider,
-            qdrant_client=qdrant_client,
+            vector_store_client=qdrant_client,
         )
 
         # Check that the instance has the cancelled attribute

@@ -34,16 +34,30 @@ class TestParallelCommandExecution(unittest.TestCase):
             (repo_path / "README.md").write_text(f"# Repository {i}")
 
             # Initialize git (required for cidx)
-            subprocess.run(['git', 'init'], cwd=repo_path, check=True,
-                         capture_output=True)
-            subprocess.run(['git', 'config', 'user.email', 'test@test.com'],
-                         cwd=repo_path, check=True, capture_output=True)
-            subprocess.run(['git', 'config', 'user.name', 'Test User'],
-                         cwd=repo_path, check=True, capture_output=True)
-            subprocess.run(['git', 'add', '.'], cwd=repo_path, check=True,
-                         capture_output=True)
-            subprocess.run(['git', 'commit', '-m', 'Initial commit'],
-                         cwd=repo_path, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "init"], cwd=repo_path, check=True, capture_output=True
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "test@test.com"],
+                cwd=repo_path,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Test User"],
+                cwd=repo_path,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "add", "."], cwd=repo_path, check=True, capture_output=True
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "Initial commit"],
+                cwd=repo_path,
+                check=True,
+                capture_output=True,
+            )
 
             cls.repos.append(str(repo_path))
 
@@ -104,8 +118,9 @@ class TestParallelCommandExecution(unittest.TestCase):
         print(f"Sequential time: {time_sequential:.2f}s")
 
         # Just verify parallel didn't fail catastrophically
-        self.assertLess(time_parallel, time_sequential * 2,
-                       "Parallel execution unexpectedly slow")
+        self.assertLess(
+            time_parallel, time_sequential * 2, "Parallel execution unexpectedly slow"
+        )
 
     def test_result_aggregation_all_success(self):
         """Test result aggregation when all commands succeed."""
@@ -237,5 +252,5 @@ class TestParallelCommandExecution(unittest.TestCase):
             self.assertIn(repo, results)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

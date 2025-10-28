@@ -64,7 +64,7 @@ class ParallelWatchManager:
         Returns:
             Popen object for process management
         """
-        cmd = ['cidx', 'watch']
+        cmd = ["cidx", "watch"]
 
         process = subprocess.Popen(
             cmd,
@@ -72,7 +72,7 @@ class ParallelWatchManager:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            bufsize=1  # Line buffered
+            bufsize=1,  # Line buffered
         )
 
         return process

@@ -54,7 +54,7 @@ class TestWatchMultiplexing(unittest.TestCase):
         """Test watch manager spawns processes for all repositories (Story 5.1)."""
         manager = ParallelWatchManager(self.repos)
 
-        with patch.object(manager, '_start_watch_process') as mock_start:
+        with patch.object(manager, "_start_watch_process") as mock_start:
             # Mock process creation
             mock_processes = [Mock() for _ in self.repos]
             mock_start.side_effect = mock_processes
@@ -69,7 +69,7 @@ class TestWatchMultiplexing(unittest.TestCase):
         """Test failed process doesn't affect others (Story 5.1)."""
         manager = ParallelWatchManager(self.repos)
 
-        with patch.object(manager, '_start_watch_process') as mock_start:
+        with patch.object(manager, "_start_watch_process") as mock_start:
             # First succeeds, second fails, third succeeds
             proc1 = Mock()
             proc3 = Mock()
@@ -188,7 +188,7 @@ class TestWatchMultiplexing(unittest.TestCase):
 
         # Newline should be stripped
         self.assertEqual(line, "Line with newline")
-        self.assertFalse(line.endswith('\n'))
+        self.assertFalse(line.endswith("\n"))
 
     def test_output_multiplexer_interleaved_output(self):
         """Test output from multiple repos is interleaved (Story 5.2)."""
@@ -286,7 +286,7 @@ class TestWatchMultiplexing(unittest.TestCase):
         # Create watch manager (Story 5.1)
         manager = ParallelWatchManager(self.repos)
 
-        with patch.object(manager, '_start_watch_process') as mock_start:
+        with patch.object(manager, "_start_watch_process") as mock_start:
             # Create mock processes with output
             mock_processes = []
             for i, repo in enumerate(self.repos):
@@ -345,8 +345,7 @@ class TestWatchMultiplexing(unittest.TestCase):
         threads = []
         for repo, proc in processes.items():
             thread = threading.Thread(
-                target=multiplexer._read_process_output,
-                args=(repo, proc)
+                target=multiplexer._read_process_output, args=(repo, proc)
             )
             thread.start()
             threads.append(thread)
@@ -359,5 +358,5 @@ class TestWatchMultiplexing(unittest.TestCase):
         self.assertEqual(multiplexer.output_queue.qsize(), 9)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

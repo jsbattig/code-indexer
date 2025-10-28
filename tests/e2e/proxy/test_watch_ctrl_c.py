@@ -24,8 +24,12 @@ def proxy_test_env(tmp_path):
     # Initialize as git repos with .code-indexer config
     for repo in [repo1, repo2]:
         subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
-        subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"], cwd=repo, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"], cwd=repo, check=True
+        )
 
         # Create .code-indexer directory
         indexer_dir = repo / ".code-indexer"
@@ -33,20 +37,22 @@ def proxy_test_env(tmp_path):
 
         # Create minimal config
         config_file = indexer_dir / "config.json"
-        config_file.write_text('{"embedding_provider": "ollama"}')
+        config_file.write_text('{"embedding_provider": "voyage-ai"}')
 
     # Create proxy config
     proxy_config_dir = proxy_root / ".cidx-proxy"
     proxy_config_dir.mkdir()
 
     proxy_config = proxy_config_dir / "config.json"
-    proxy_config.write_text('''{
+    proxy_config.write_text(
+        """{
         "is_proxy": true,
         "discovered_repos": [
             "../repos/repo1",
             "../repos/repo2"
         ]
-    }''')
+    }"""
+    )
 
     return {
         "proxy_root": proxy_root,
@@ -58,7 +64,9 @@ def proxy_test_env(tmp_path):
 class TestWatchCtrlCHandling:
     """Test Ctrl-C signal handling for watch command."""
 
-    @pytest.mark.skip(reason="Requires actual cidx watch implementation - manual test only")
+    @pytest.mark.skip(
+        reason="Requires actual cidx watch implementation - manual test only"
+    )
     def test_ctrl_c_terminates_all_processes(self, proxy_test_env):
         """Test that Ctrl-C terminates all watch processes cleanly.
 
@@ -77,7 +85,7 @@ class TestWatchCtrlCHandling:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            preexec_fn=os.setsid  # Create new process group
+            preexec_fn=os.setsid,  # Create new process group
         )
 
         # Wait for watch to start
@@ -98,14 +106,13 @@ class TestWatchCtrlCHandling:
         assert exit_code == 0, f"Expected exit code 0, got {exit_code}"
 
         # Verify no orphaned cidx processes
-        result = subprocess.run(
-            ["pgrep", "-f", "cidx watch"],
-            capture_output=True
-        )
+        result = subprocess.run(["pgrep", "-f", "cidx watch"], capture_output=True)
         orphaned_pids = result.stdout.decode().strip()
         assert not orphaned_pids, f"Orphaned processes found: {orphaned_pids}"
 
-    @pytest.mark.skip(reason="Requires actual cidx watch implementation - manual test only")
+    @pytest.mark.skip(
+        reason="Requires actual cidx watch implementation - manual test only"
+    )
     def test_double_ctrl_c_forces_exit(self, proxy_test_env):
         """Test that double Ctrl-C forces immediate exit.
 
@@ -123,7 +130,7 @@ class TestWatchCtrlCHandling:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            preexec_fn=os.setsid
+            preexec_fn=os.setsid,
         )
 
         # Wait for watch to start
@@ -159,7 +166,9 @@ class TestWatchCtrlCHandling:
         total_repos = 2
 
         # Verify clean shutdown detection
-        all_stopped = (terminated_count + forced_kill_count + error_count) == total_repos
+        all_stopped = (
+            terminated_count + forced_kill_count + error_count
+        ) == total_repos
         assert all_stopped is True
 
         # Verify exit code calculation (clean shutdown)
@@ -180,7 +189,9 @@ class TestWatchCtrlCHandling:
         error_count = 0
         total_repos = 2
 
-        all_stopped = (terminated_count + forced_kill_count + error_count) == total_repos
+        all_stopped = (
+            terminated_count + forced_kill_count + error_count
+        ) == total_repos
         assert all_stopped is True
 
         # Verify exit code calculation (forced kills)
@@ -201,7 +212,9 @@ class TestWatchCtrlCHandling:
         error_count = 0
         total_repos = 3
 
-        all_stopped = (terminated_count + forced_kill_count + error_count) == total_repos
+        all_stopped = (
+            terminated_count + forced_kill_count + error_count
+        ) == total_repos
         assert all_stopped is False
 
         # Verify exit code calculation (partial shutdown)

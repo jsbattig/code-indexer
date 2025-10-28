@@ -265,7 +265,9 @@ class TestSmartIndexer:
             stats = indexer.smart_index(force_full=True)
 
             # Verify full index was performed
-            mock_qdrant_client.ensure_provider_aware_collection.assert_called_once()
+            # Note: ensure_provider_aware_collection may be called multiple times
+            # (once during setup, once during begin_indexing)
+            assert mock_qdrant_client.ensure_provider_aware_collection.call_count >= 1
             mock_qdrant_client.clear_collection.assert_called_once()
 
             # Verify high-throughput processor was called directly
@@ -309,7 +311,9 @@ class TestSmartIndexer:
             stats = indexer.smart_index(force_full=False)
 
             # Should fall back to full index since no previous data
-            mock_qdrant_client.ensure_provider_aware_collection.assert_called_once()
+            # Note: ensure_provider_aware_collection may be called multiple times
+            # (once during setup, once during begin_indexing)
+            assert mock_qdrant_client.ensure_provider_aware_collection.call_count >= 1
             mock_qdrant_client.clear_collection.assert_called_once()
 
             # Verify high-throughput processor was called directly
@@ -599,3 +603,526 @@ class TestProgressiveMetadataIntegration:
         metadata._save_metadata()
         resume_timestamp = metadata.get_resume_timestamp(60)
         assert resume_timestamp == current_time - 60
+
+
+class TestIndexingExceptionHandling:
+    """Test that indexing session is properly finalized even when exceptions occur."""
+
+    def test_end_indexing_called_on_full_index_exception(
+        self,
+        mock_config,
+        mock_embedding_provider,
+        mock_qdrant_client,
+        temp_metadata_path,
+    ):
+        """
+        CRITICAL TEST: Verify that end_indexing() is called even when exception occurs during full indexing.
+
+        This prevents FilesystemVectorStore from being left in unsearchable state.
+        """
+        indexer = SmartIndexer(
+            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+        )
+
+        with (
+            patch.object(indexer, "get_git_status") as mock_git_status,
+            patch.object(indexer, "file_finder") as mock_file_finder,
+            patch.object(
+                indexer, "process_files_high_throughput"
+            ) as mock_high_throughput,
+            patch.object(indexer, "hide_files_not_in_branch_thread_safe"),
+        ):
+            # Setup mocks
+            mock_git_status.return_value = {"git_available": False}
+            mock_file_finder.find_files.return_value = [Path("test.py")]
+
+            # Mock high-throughput processor to raise exception
+            mock_high_throughput.side_effect = RuntimeError(
+                "Simulated indexing failure"
+            )
+
+            mock_qdrant_client.collection_exists.return_value = False
+            mock_qdrant_client.begin_indexing.return_value = None
+            mock_qdrant_client.end_indexing.return_value = {"vectors_indexed": 0}
+
+            # Execute and expect exception
+            with pytest.raises(RuntimeError, match="Git-aware indexing failed"):
+                indexer.smart_index(force_full=True)
+
+            # CRITICAL ASSERTION: end_indexing() MUST be called even when exception occurs
+            mock_qdrant_client.begin_indexing.assert_called_once()
+            mock_qdrant_client.end_indexing.assert_called_once()
+
+    def test_end_indexing_called_on_incremental_index_exception(
+        self,
+        mock_config,
+        mock_embedding_provider,
+        mock_qdrant_client,
+        temp_metadata_path,
+    ):
+        """
+        CRITICAL TEST: Verify that end_indexing() is called even when exception occurs during incremental indexing.
+
+        This prevents FilesystemVectorStore from being left in unsearchable state.
+        """
+        # Pre-populate metadata to enable incremental indexing
+        metadata = ProgressiveMetadata(temp_metadata_path)
+        git_status = {"git_available": False, "project_id": "test"}
+        metadata.start_indexing("test-provider", "test-model", git_status)
+        metadata.update_progress(files_processed=1, chunks_added=5)
+        metadata.complete_indexing()
+
+        indexer = SmartIndexer(
+            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+        )
+
+        # Create a temporary file
+        temp_file_path = mock_config.codebase_dir / "test_modified.py"
+        temp_file_path.write_text("# Test content\n")
+
+        try:
+            with (
+                patch.object(indexer, "get_git_status") as mock_git_status,
+                patch.object(indexer, "file_finder") as mock_file_finder,
+                patch.object(
+                    indexer, "process_files_high_throughput"
+                ) as mock_high_throughput,
+                patch.object(indexer, "hide_files_not_in_branch_thread_safe"),
+            ):
+                # Setup mocks
+                mock_git_status.return_value = git_status
+                mock_file_finder.find_modified_files.return_value = [temp_file_path]
+
+                # Mock high-throughput processor to raise exception
+                mock_high_throughput.side_effect = RuntimeError(
+                    "Simulated processing failure"
+                )
+
+                mock_qdrant_client.resolve_collection_name.return_value = (
+                    "test_collection"
+                )
+                mock_qdrant_client.begin_indexing.return_value = None
+                mock_qdrant_client.end_indexing.return_value = {"vectors_indexed": 0}
+                indexer.git_topology_service.get_current_branch = Mock(
+                    return_value="master"
+                )
+
+                # Execute and expect exception
+                with pytest.raises(
+                    RuntimeError, match="Git-aware incremental indexing failed"
+                ):
+                    indexer.smart_index(force_full=False)
+
+                # CRITICAL ASSERTION: end_indexing() MUST be called even when exception occurs
+                mock_qdrant_client.begin_indexing.assert_called_once()
+                mock_qdrant_client.end_indexing.assert_called_once()
+        finally:
+            if temp_file_path.exists():
+                temp_file_path.unlink()
+
+    def test_end_indexing_called_on_reconcile_exception(
+        self,
+        mock_config,
+        mock_embedding_provider,
+        mock_qdrant_client,
+        temp_metadata_path,
+    ):
+        """
+        CRITICAL TEST: Verify that end_indexing() is called even when exception occurs during reconcile.
+
+        This prevents FilesystemVectorStore from being left in unsearchable state.
+        """
+        indexer = SmartIndexer(
+            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+        )
+
+        # Create a test file in the codebase directory
+        test_file = mock_config.codebase_dir / "test.py"
+        test_file.write_text("# Test content\n")
+
+        try:
+            with (
+                patch.object(indexer, "get_git_status") as mock_git_status,
+                patch.object(indexer, "file_finder") as mock_file_finder,
+                patch.object(indexer, "_get_indexed_files_snapshot") as mock_snapshot,
+                patch.object(
+                    indexer, "process_branch_changes_high_throughput"
+                ) as mock_branch_changes,
+            ):
+                # Setup mocks for reconcile path
+                mock_git_status.return_value = {"git_available": True}
+                mock_file_finder.find_files.return_value = [test_file]
+                mock_snapshot.return_value = (
+                    {}
+                )  # Empty snapshot = all files need indexing
+
+                # Mock branch changes to raise exception
+                mock_branch_changes.side_effect = RuntimeError(
+                    "Simulated reconcile failure"
+                )
+
+                mock_qdrant_client.ensure_provider_aware_collection.return_value = (
+                    "test_collection"
+                )
+                mock_qdrant_client.begin_indexing.return_value = None
+                mock_qdrant_client.end_indexing.return_value = {"vectors_indexed": 0}
+                mock_qdrant_client.resolve_collection_name.return_value = (
+                    "test_collection"
+                )
+                indexer.git_topology_service.is_git_available = Mock(return_value=True)
+                indexer.git_topology_service.get_current_branch = Mock(
+                    return_value="master"
+                )
+
+                # Execute and expect exception
+                with pytest.raises(RuntimeError, match="Git-aware reconcile failed"):
+                    indexer._do_reconcile_with_database(
+                        batch_size=50,
+                        progress_callback=None,
+                        git_status={"git_available": True},
+                        provider_name="test-provider",
+                        model_name="test-model",
+                        quiet=False,
+                        vector_thread_count=8,
+                    )
+
+                # CRITICAL ASSERTION: end_indexing() MUST be called even when exception occurs
+                mock_qdrant_client.begin_indexing.assert_called_once()
+                mock_qdrant_client.end_indexing.assert_called_once()
+        finally:
+            if test_file.exists():
+                test_file.unlink()
+
+    def test_end_indexing_called_on_reconcile_success(
+        self,
+        mock_config,
+        mock_embedding_provider,
+        mock_qdrant_client,
+        temp_metadata_path,
+    ):
+        """
+        CRITICAL TEST: Verify that end_indexing() is called on successful reconcile.
+
+        This ensures FilesystemVectorStore indexes are properly rebuilt.
+        """
+        indexer = SmartIndexer(
+            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+        )
+
+        # Create a test file in the codebase directory
+        test_file = mock_config.codebase_dir / "test.py"
+        test_file.write_text("# Test content\n")
+
+        try:
+            with (
+                patch.object(indexer, "get_git_status") as mock_git_status,
+                patch.object(indexer, "file_finder") as mock_file_finder,
+                patch.object(indexer, "_get_indexed_files_snapshot") as mock_snapshot,
+                patch.object(
+                    indexer, "process_branch_changes_high_throughput"
+                ) as mock_branch_changes,
+                patch.object(indexer, "_cleanup_multiple_visible_content_points"),
+            ):
+                # Setup mocks for reconcile path
+                mock_git_status.return_value = {"git_available": True}
+                mock_file_finder.find_files.return_value = [test_file]
+                mock_snapshot.return_value = (
+                    {}
+                )  # Empty snapshot = all files need indexing
+
+                # Mock successful branch changes
+                from code_indexer.services.high_throughput_processor import (
+                    BranchIndexingResult,
+                )
+
+                mock_branch_changes.return_value = BranchIndexingResult(
+                    files_processed=1,
+                    content_points_created=5,
+                    cancelled=False,
+                    processing_time=1.0,
+                )
+
+                mock_qdrant_client.ensure_provider_aware_collection.return_value = (
+                    "test_collection"
+                )
+                mock_qdrant_client.begin_indexing.return_value = None
+                mock_qdrant_client.end_indexing.return_value = {"vectors_indexed": 5}
+                mock_qdrant_client.resolve_collection_name.return_value = (
+                    "test_collection"
+                )
+                indexer.git_topology_service.is_git_available = Mock(return_value=True)
+                indexer.git_topology_service.get_current_branch = Mock(
+                    return_value="master"
+                )
+
+                # Execute
+                indexer._do_reconcile_with_database(
+                    batch_size=50,
+                    progress_callback=None,
+                    git_status={"git_available": True},
+                    provider_name="test-provider",
+                    model_name="test-model",
+                    quiet=False,
+                    vector_thread_count=8,
+                )
+
+                # CRITICAL ASSERTION: end_indexing() MUST be called on success
+                mock_qdrant_client.begin_indexing.assert_called_once()
+                mock_qdrant_client.end_indexing.assert_called_once()
+        finally:
+            if test_file.exists():
+                test_file.unlink()
+
+    def test_end_indexing_called_on_resume_exception(
+        self,
+        mock_config,
+        mock_embedding_provider,
+        mock_qdrant_client,
+        temp_metadata_path,
+    ):
+        """
+        CRITICAL TEST: Verify that end_indexing() is called even when exception occurs during resume.
+
+        This prevents FilesystemVectorStore from being left in unsearchable state.
+        """
+        # Create temporary files for resume FIRST
+        temp_file1 = mock_config.codebase_dir / "test1.py"
+        temp_file2 = mock_config.codebase_dir / "test2.py"
+        temp_file1.write_text("# Test 1\n")
+        temp_file2.write_text("# Test 2\n")
+
+        # Setup interrupted metadata with absolute paths
+        metadata = ProgressiveMetadata(temp_metadata_path)
+        git_status = {"git_available": True, "project_id": "test"}
+        metadata.start_indexing("test-provider", "test-model", git_status)
+        metadata.set_files_to_index([temp_file1, temp_file2])
+        # Don't complete - leave it interrupted
+
+        indexer = SmartIndexer(
+            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+        )
+
+        try:
+            with (
+                patch.object(indexer, "get_git_status") as mock_git_status,
+                patch.object(
+                    indexer, "process_files_high_throughput"
+                ) as mock_high_throughput,
+            ):
+                # Setup mocks for resume path
+                mock_git_status.return_value = git_status
+
+                # Mock high-throughput processor to raise exception
+                mock_high_throughput.side_effect = RuntimeError(
+                    "Simulated resume failure"
+                )
+
+                mock_qdrant_client.ensure_provider_aware_collection.return_value = (
+                    "test_collection"
+                )
+                mock_qdrant_client.begin_indexing.return_value = None
+                mock_qdrant_client.end_indexing.return_value = {"vectors_indexed": 0}
+
+                # Execute and expect exception
+                with pytest.raises(RuntimeError, match="Git-aware resume failed"):
+                    indexer._do_resume_interrupted(
+                        batch_size=50,
+                        progress_callback=None,
+                        git_status=git_status,
+                        provider_name="test-provider",
+                        model_name="test-model",
+                        quiet=False,
+                        vector_thread_count=8,
+                    )
+
+                # CRITICAL ASSERTION: end_indexing() MUST be called even when exception occurs
+                mock_qdrant_client.begin_indexing.assert_called_once()
+                mock_qdrant_client.end_indexing.assert_called_once()
+        finally:
+            if temp_file1.exists():
+                temp_file1.unlink()
+            if temp_file2.exists():
+                temp_file2.unlink()
+
+    def test_end_indexing_called_on_resume_success(
+        self,
+        mock_config,
+        mock_embedding_provider,
+        mock_qdrant_client,
+        temp_metadata_path,
+    ):
+        """
+        CRITICAL TEST: Verify that end_indexing() is called on successful resume.
+
+        This ensures FilesystemVectorStore indexes are properly rebuilt.
+        """
+        # Create temporary files for resume FIRST
+        temp_file1 = mock_config.codebase_dir / "test1.py"
+        temp_file2 = mock_config.codebase_dir / "test2.py"
+        temp_file1.write_text("# Test 1\n")
+        temp_file2.write_text("# Test 2\n")
+
+        # Setup interrupted metadata with absolute paths
+        metadata = ProgressiveMetadata(temp_metadata_path)
+        git_status = {"git_available": True, "project_id": "test"}
+        metadata.start_indexing("test-provider", "test-model", git_status)
+        metadata.set_files_to_index([temp_file1, temp_file2])
+        # Don't complete - leave it interrupted
+
+        indexer = SmartIndexer(
+            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+        )
+
+        try:
+            with (
+                patch.object(indexer, "get_git_status") as mock_git_status,
+                patch.object(
+                    indexer, "process_files_high_throughput"
+                ) as mock_high_throughput,
+            ):
+                # Setup mocks for resume path
+                mock_git_status.return_value = git_status
+
+                # Mock successful high-throughput processing
+                from code_indexer.services.smart_indexer import ProcessingStats
+
+                mock_stats = ProcessingStats()
+                mock_stats.files_processed = 2
+                mock_stats.chunks_created = 10
+                mock_stats.cancelled = False
+                mock_high_throughput.return_value = mock_stats
+
+                mock_qdrant_client.ensure_provider_aware_collection.return_value = (
+                    "test_collection"
+                )
+                mock_qdrant_client.begin_indexing.return_value = None
+                mock_qdrant_client.end_indexing.return_value = {"vectors_indexed": 10}
+
+                # Execute
+                indexer._do_resume_interrupted(
+                    batch_size=50,
+                    progress_callback=None,
+                    git_status=git_status,
+                    provider_name="test-provider",
+                    model_name="test-model",
+                    quiet=False,
+                    vector_thread_count=8,
+                )
+
+                # CRITICAL ASSERTION: end_indexing() MUST be called on success
+                mock_qdrant_client.begin_indexing.assert_called_once()
+                mock_qdrant_client.end_indexing.assert_called_once()
+        finally:
+            if temp_file1.exists():
+                temp_file1.unlink()
+            if temp_file2.exists():
+                temp_file2.unlink()
+
+    def test_end_indexing_called_on_branch_changes_exception(
+        self,
+        mock_config,
+        mock_embedding_provider,
+        mock_qdrant_client,
+        temp_metadata_path,
+    ):
+        """
+        CRITICAL TEST: Verify that end_indexing() is called even when exception occurs during branch changes.
+
+        This prevents FilesystemVectorStore from being left in unsearchable state.
+        """
+        indexer = SmartIndexer(
+            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+        )
+
+        # Create test file for branch changes
+        test_file = mock_config.codebase_dir / "test.py"
+        test_file.write_text("# Test content\n")
+
+        try:
+            with (
+                patch.object(
+                    indexer, "process_files_high_throughput"
+                ) as mock_high_throughput,
+                patch.object(indexer, "hide_files_not_in_branch_thread_safe"),
+            ):
+                # Mock high-throughput processor to raise exception
+                mock_high_throughput.side_effect = RuntimeError(
+                    "Simulated branch change failure"
+                )
+
+                mock_qdrant_client.begin_indexing.return_value = None
+                mock_qdrant_client.end_indexing.return_value = {"vectors_indexed": 0}
+                mock_qdrant_client.resolve_collection_name.return_value = (
+                    "test_collection"
+                )
+
+                # Execute and expect exception
+                with pytest.raises(
+                    RuntimeError, match="Simulated branch change failure"
+                ):
+                    indexer.process_branch_changes_high_throughput(
+                        old_branch="main",
+                        new_branch="feature",
+                        changed_files=["test.py"],
+                        unchanged_files=[],
+                        collection_name="test_collection",
+                        progress_callback=None,
+                        vector_thread_count=8,
+                    )
+
+                # CRITICAL ASSERTION: end_indexing() MUST be called even when exception occurs
+                mock_qdrant_client.begin_indexing.assert_called_once()
+                mock_qdrant_client.end_indexing.assert_called_once()
+        finally:
+            if test_file.exists():
+                test_file.unlink()
+
+    def test_end_indexing_called_on_branch_changes_success(
+        self,
+        mock_config,
+        mock_embedding_provider,
+        mock_qdrant_client,
+        temp_metadata_path,
+    ):
+        """
+        CRITICAL TEST: Verify that end_indexing() is called on successful branch changes.
+
+        This ensures FilesystemVectorStore indexes are properly rebuilt.
+        """
+        indexer = SmartIndexer(
+            mock_config, mock_embedding_provider, mock_qdrant_client, temp_metadata_path
+        )
+
+        with (
+            patch.object(
+                indexer, "process_files_high_throughput"
+            ) as mock_high_throughput,
+            patch.object(indexer, "hide_files_not_in_branch_thread_safe"),
+        ):
+            # Mock successful high-throughput processing
+            from code_indexer.services.smart_indexer import ProcessingStats
+
+            mock_stats = ProcessingStats()
+            mock_stats.files_processed = 1
+            mock_stats.chunks_created = 5
+            mock_stats.cancelled = False
+            mock_high_throughput.return_value = mock_stats
+
+            mock_qdrant_client.begin_indexing.return_value = None
+            mock_qdrant_client.end_indexing.return_value = {"vectors_indexed": 5}
+            mock_qdrant_client.resolve_collection_name.return_value = "test_collection"
+
+            # Execute
+            indexer.process_branch_changes_high_throughput(
+                old_branch="main",
+                new_branch="feature",
+                changed_files=["test.py"],
+                unchanged_files=[],
+                collection_name="test_collection",
+                progress_callback=None,
+                vector_thread_count=8,
+            )
+
+            # CRITICAL ASSERTION: end_indexing() MUST be called on success
+            mock_qdrant_client.begin_indexing.assert_called_once()
+            mock_qdrant_client.end_indexing.assert_called_once()

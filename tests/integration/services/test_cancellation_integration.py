@@ -37,7 +37,7 @@ class TestCancellationIntegration:
         processor = HighThroughputProcessor(
             config=config,
             embedding_provider=embedding_provider,
-            qdrant_client=qdrant_client,
+            vector_store_client=qdrant_client,
         )
 
         # Should have cancelled attribute set to False initially
@@ -68,7 +68,7 @@ class TestCancellationIntegration:
         processor = HighThroughputProcessor(
             config=config,
             embedding_provider=embedding_provider,
-            qdrant_client=qdrant_client,
+            vector_store_client=qdrant_client,
         )
 
         # Initially not cancelled

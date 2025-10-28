@@ -154,7 +154,7 @@ class GenericQueryService:
                 return True
 
             # Check if file exists in current branch
-            file_path = metadata.get("file_path", "")
+            file_path = metadata.get("path", "")
             if file_path in branch_context["files"]:
                 return True
 

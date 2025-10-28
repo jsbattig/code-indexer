@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 from code_indexer.config import Config
-from code_indexer.services import QdrantClient
 from code_indexer.services.embedding_provider import EmbeddingProvider
 from code_indexer.indexing.processor import DocumentProcessor
 from code_indexer.services.file_identifier import FileIdentifier
@@ -28,9 +27,9 @@ class GitAwareDocumentProcessor(DocumentProcessor):
         self,
         config: Config,
         embedding_provider: EmbeddingProvider,
-        qdrant_client: QdrantClient,
+        vector_store_client: Any,  # QdrantClient or FilesystemVectorStore
     ):
-        super().__init__(config, embedding_provider, qdrant_client)
+        super().__init__(config, embedding_provider, vector_store_client)
         self.file_identifier = FileIdentifier(config.codebase_dir, config)
         self.git_detection = GitDetectionService(config.codebase_dir, config)
 

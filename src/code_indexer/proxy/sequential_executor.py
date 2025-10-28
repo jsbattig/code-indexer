@@ -34,11 +34,7 @@ class SequentialExecutionResult:
         self.total_repos: int = 0
 
     def add_result(
-        self,
-        repo_path: str,
-        stdout: str,
-        stderr: str,
-        exit_code: int
+        self, repo_path: str, stdout: str, stderr: str, exit_code: int
     ) -> None:
         """Add result for a repository.
 
@@ -49,9 +45,9 @@ class SequentialExecutionResult:
             exit_code: Process exit code (0 = success)
         """
         self.results[repo_path] = {
-            'stdout': stdout,
-            'stderr': stderr,
-            'exit_code': exit_code
+            "stdout": stdout,
+            "stderr": stderr,
+            "exit_code": exit_code,
         }
 
         if exit_code == 0:
@@ -76,8 +72,7 @@ class SequentialExecutionResult:
             List of repository paths that failed
         """
         return [
-            repo for repo, result in self.results.items()
-            if result['exit_code'] != 0
+            repo for repo, result in self.results.items() if result["exit_code"] != 0
         ]
 
     def get_successful_repositories(self) -> List[str]:
@@ -87,8 +82,7 @@ class SequentialExecutionResult:
             List of repository paths that succeeded
         """
         return [
-            repo for repo, result in self.results.items()
-            if result['exit_code'] == 0
+            repo for repo, result in self.results.items() if result["exit_code"] == 0
         ]
 
 
@@ -100,11 +94,7 @@ class SequentialCommandExecutor:
     and race conditions. Uses ErrorMessageFormatter for clear error reporting.
     """
 
-    def __init__(
-        self,
-        repositories: List[str],
-        proxy_root: Optional[Path] = None
-    ):
+    def __init__(self, repositories: List[str], proxy_root: Optional[Path] = None):
         """Initialize sequential executor.
 
         Args:
@@ -117,9 +107,7 @@ class SequentialCommandExecutor:
         self.hint_generator = HintGenerator()
 
     def execute_sequential(
-        self,
-        command: str,
-        args: List[str]
+        self, command: str, args: List[str]
     ) -> SequentialExecutionResult:
         """Execute command sequentially across all repositories.
 
@@ -158,12 +146,7 @@ class SequentialCommandExecutor:
 
         return result
 
-    def _execute_single(
-        self,
-        repo_path: str,
-        command: str,
-        args: List[str]
-    ) -> tuple:
+    def _execute_single(self, repo_path: str, command: str, args: List[str]) -> tuple:
         """Execute command in single repository.
 
         Args:
@@ -175,7 +158,7 @@ class SequentialCommandExecutor:
             Tuple of (stdout, stderr, exit_code)
         """
         # Construct command
-        cmd = ['cidx', command] + args
+        cmd = ["cidx", command] + args
 
         try:
             # Execute with 10-minute timeout for container operations
@@ -184,7 +167,7 @@ class SequentialCommandExecutor:
                 cwd=repo_path,
                 capture_output=True,
                 text=True,
-                timeout=600  # 10 minutes
+                timeout=600,  # 10 minutes
             )
 
             return result.stdout, result.stderr, result.returncode
@@ -192,18 +175,14 @@ class SequentialCommandExecutor:
         except subprocess.TimeoutExpired as e:
             # Timeout is a failure condition
             stderr = f"Command timed out after 600 seconds: {e}"
-            return '', stderr, 1
+            return "", stderr, 1
 
         except Exception as e:
             # Any other exception is a failure
             stderr = f"Exception during execution: {type(e).__name__}: {e}"
-            return '', stderr, 1
+            return "", stderr, 1
 
-    def _print_summary(
-        self,
-        result: SequentialExecutionResult,
-        command: str
-    ) -> None:
+    def _print_summary(self, result: SequentialExecutionResult, command: str) -> None:
         """Print execution summary with detailed error reporting.
 
         Args:
@@ -211,7 +190,9 @@ class SequentialCommandExecutor:
             command: Command that was executed
         """
         print(f"\n{'='*50}")
-        print(f"Summary: {result.success_count} succeeded, {result.failure_count} failed")
+        print(
+            f"Summary: {result.success_count} succeeded, {result.failure_count} failed"
+        )
         print(f"{'='*50}")
 
         # If there were failures, show detailed error section
@@ -219,9 +200,7 @@ class SequentialCommandExecutor:
             self._print_detailed_errors(result, command)
 
     def _print_detailed_errors(
-        self,
-        result: SequentialExecutionResult,
-        command: str
+        self, result: SequentialExecutionResult, command: str
     ) -> None:
         """Print detailed error section for failed repositories.
 
@@ -244,15 +223,19 @@ class SequentialCommandExecutor:
             # Generate actionable hint for this error
             hint = self.hint_generator.generate_hint(
                 command=command,
-                error_text=repo_result['stderr'] if repo_result['stderr'] else "Unknown error",
-                repository=repo
+                error_text=(
+                    repo_result["stderr"] if repo_result["stderr"] else "Unknown error"
+                ),
+                repository=repo,
             )
 
             error = ErrorMessage(
                 repository=repo,
                 command=command,
-                error_text=repo_result['stderr'] if repo_result['stderr'] else "Unknown error",
-                exit_code=repo_result['exit_code'],
+                error_text=(
+                    repo_result["stderr"] if repo_result["stderr"] else "Unknown error"
+                ),
+                exit_code=repo_result["exit_code"],
                 hint=hint,
             )
 

@@ -49,10 +49,7 @@ class TestProxyConfigLoading:
         config_dir = tmp_path / ".code-indexer"
         config_dir.mkdir()
 
-        config_data = {
-            "proxy_mode": True,
-            "discovered_repos": ["repo1", "repo2"]
-        }
+        config_data = {"proxy_mode": True, "discovered_repos": ["repo1", "repo2"]}
 
         config_file = config_dir / "config.json"
         with open(config_file, "w") as f:
@@ -69,10 +66,7 @@ class TestProxyConfigLoading:
         config_dir = tmp_path / ".code-indexer"
         config_dir.mkdir()
 
-        config_data = {
-            "proxy_mode": False,
-            "discovered_repos": []
-        }
+        config_data = {"proxy_mode": False, "discovered_repos": []}
 
         config_file = config_dir / "config.json"
         with open(config_file, "w") as f:
@@ -108,10 +102,7 @@ class TestRepositoryValidation:
         repo1.mkdir()
         (repo1 / ".code-indexer").mkdir()
 
-        config_data = {
-            "proxy_mode": True,
-            "discovered_repos": ["repo1"]
-        }
+        config_data = {"proxy_mode": True, "discovered_repos": ["repo1"]}
 
         config_file = config_dir / "config.json"
         with open(config_file, "w") as f:
@@ -128,10 +119,7 @@ class TestRepositoryValidation:
         config_dir = tmp_path / ".code-indexer"
         config_dir.mkdir()
 
-        config_data = {
-            "proxy_mode": True,
-            "discovered_repos": ["nonexistent_repo"]
-        }
+        config_data = {"proxy_mode": True, "discovered_repos": ["nonexistent_repo"]}
 
         config_file = config_dir / "config.json"
         with open(config_file, "w") as f:
@@ -154,10 +142,7 @@ class TestRepositoryValidation:
         repo1 = tmp_path / "repo1"
         repo1.mkdir()
 
-        config_data = {
-            "proxy_mode": True,
-            "discovered_repos": ["repo1"]
-        }
+        config_data = {"proxy_mode": True, "discovered_repos": ["repo1"]}
 
         config_file = config_dir / "config.json"
         with open(config_file, "w") as f:
@@ -176,10 +161,7 @@ class TestRepositoryValidation:
         config_dir = tmp_path / ".code-indexer"
         config_dir.mkdir()
 
-        config_data = {
-            "proxy_mode": True,
-            "discovered_repos": ["../outside_proxy"]
-        }
+        config_data = {"proxy_mode": True, "discovered_repos": ["../outside_proxy"]}
 
         config_file = config_dir / "config.json"
         with open(config_file, "w") as f:
@@ -202,10 +184,7 @@ class TestAddRepository:
         config_dir = tmp_path / ".code-indexer"
         config_dir.mkdir()
 
-        config_data = {
-            "proxy_mode": True,
-            "discovered_repos": ["repo1"]
-        }
+        config_data = {"proxy_mode": True, "discovered_repos": ["repo1"]}
 
         config_file = config_dir / "config.json"
         with open(config_file, "w") as f:
@@ -235,10 +214,7 @@ class TestAddRepository:
         repo1.mkdir()
         (repo1 / ".code-indexer").mkdir()
 
-        config_data = {
-            "proxy_mode": True,
-            "discovered_repos": ["repo1"]
-        }
+        config_data = {"proxy_mode": True, "discovered_repos": ["repo1"]}
 
         config_file = config_dir / "config.json"
         with open(config_file, "w") as f:
@@ -257,10 +233,7 @@ class TestAddRepository:
         config_dir = tmp_path / ".code-indexer"
         config_dir.mkdir()
 
-        config_data = {
-            "proxy_mode": True,
-            "discovered_repos": []
-        }
+        config_data = {"proxy_mode": True, "discovered_repos": []}
 
         config_file = config_dir / "config.json"
         with open(config_file, "w") as f:
@@ -278,10 +251,7 @@ class TestAddRepository:
         config_dir = tmp_path / ".code-indexer"
         config_dir.mkdir()
 
-        config_data = {
-            "proxy_mode": True,
-            "discovered_repos": []
-        }
+        config_data = {"proxy_mode": True, "discovered_repos": []}
 
         config_file = config_dir / "config.json"
         with open(config_file, "w") as f:
@@ -309,7 +279,7 @@ class TestRemoveRepository:
 
         config_data = {
             "proxy_mode": True,
-            "discovered_repos": ["repo1", "repo2", "repo3"]
+            "discovered_repos": ["repo1", "repo2", "repo3"],
         }
 
         config_file = config_dir / "config.json"
@@ -331,10 +301,7 @@ class TestRemoveRepository:
         config_dir = tmp_path / ".code-indexer"
         config_dir.mkdir()
 
-        config_data = {
-            "proxy_mode": True,
-            "discovered_repos": ["repo1"]
-        }
+        config_data = {"proxy_mode": True, "discovered_repos": ["repo1"]}
 
         config_file = config_dir / "config.json"
         with open(config_file, "w") as f:
@@ -357,10 +324,7 @@ class TestRefreshRepositories:
         config_dir.mkdir()
 
         # Initial config with one repo
-        config_data = {
-            "proxy_mode": True,
-            "discovered_repos": ["repo1"]
-        }
+        config_data = {"proxy_mode": True, "discovered_repos": ["repo1"]}
 
         config_file = config_dir / "config.json"
         with open(config_file, "w") as f:
@@ -387,10 +351,7 @@ class TestRefreshRepositories:
         config_dir.mkdir()
 
         # Config lists repo1 and repo2
-        config_data = {
-            "proxy_mode": True,
-            "discovered_repos": ["repo1", "repo2"]
-        }
+        config_data = {"proxy_mode": True, "discovered_repos": ["repo1", "repo2"]}
 
         config_file = config_dir / "config.json"
         with open(config_file, "w") as f:
@@ -415,10 +376,7 @@ class TestRefreshRepositories:
         config_dir = tmp_path / ".code-indexer"
         config_dir.mkdir()
 
-        config_data = {
-            "proxy_mode": True,
-            "discovered_repos": []
-        }
+        config_data = {"proxy_mode": True, "discovered_repos": []}
 
         config_file = config_dir / "config.json"
         with open(config_file, "w") as f:
@@ -448,10 +406,7 @@ class TestGetRepositories:
         config_dir.mkdir()
 
         repos = ["repo1", "repo2", "repo3"]
-        config_data = {
-            "proxy_mode": True,
-            "discovered_repos": repos
-        }
+        config_data = {"proxy_mode": True, "discovered_repos": repos}
 
         config_file = config_dir / "config.json"
         with open(config_file, "w") as f:
@@ -467,10 +422,7 @@ class TestGetRepositories:
         config_dir = tmp_path / ".code-indexer"
         config_dir.mkdir()
 
-        config_data = {
-            "proxy_mode": True,
-            "discovered_repos": ["repo1"]
-        }
+        config_data = {"proxy_mode": True, "discovered_repos": ["repo1"]}
 
         config_file = config_dir / "config.json"
         with open(config_file, "w") as f:

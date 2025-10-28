@@ -19,15 +19,9 @@ from typing import FrozenSet
 
 # Hardcoded supported proxy commands (as per conversation)
 # Using frozenset for immutability and O(1) lookup
-PROXIED_COMMANDS: FrozenSet[str] = frozenset({
-    'query',
-    'status',
-    'start',
-    'stop',
-    'uninstall',
-    'fix-config',
-    'watch'
-})
+PROXIED_COMMANDS: FrozenSet[str] = frozenset(
+    {"query", "status", "start", "stop", "uninstall", "fix-config", "watch"}
+)
 
 
 class UnsupportedProxyCommandError(Exception):
@@ -93,13 +87,13 @@ def format_unsupported_command_error(command: str) -> str:
     """
     # Command descriptions for supported commands
     command_descriptions = {
-        'query': 'Search across all repositories',
-        'status': 'Check status of all repositories',
-        'start': 'Start services in all repositories',
-        'stop': 'Stop services in all repositories',
-        'uninstall': 'Uninstall services from all repositories',
-        'fix-config': 'Fix configuration in all repositories',
-        'watch': 'Watch for changes in all repositories'
+        "query": "Search across all repositories",
+        "status": "Check status of all repositories",
+        "start": "Start services in all repositories",
+        "stop": "Stop services in all repositories",
+        "uninstall": "Uninstall services from all repositories",
+        "fix-config": "Fix configuration in all repositories",
+        "watch": "Watch for changes in all repositories",
     }
 
     lines = [
@@ -110,14 +104,16 @@ def format_unsupported_command_error(command: str) -> str:
 
     # List supported commands alphabetically with descriptions
     for cmd in sorted(PROXIED_COMMANDS):
-        desc = command_descriptions.get(cmd, '')
+        desc = command_descriptions.get(cmd, "")
         lines.append(f"  • {cmd:12} - {desc}")
 
-    lines.extend([
-        "",
-        f"To run '{command}', navigate to a specific repository:",
-        "  cd <repository-path>",
-        f"  cidx {command}"
-    ])
+    lines.extend(
+        [
+            "",
+            f"To run '{command}', navigate to a specific repository:",
+            "  cd <repository-path>",
+            f"  cidx {command}",
+        ]
+    )
 
-    return '\n'.join(lines)
+    return "\n".join(lines)

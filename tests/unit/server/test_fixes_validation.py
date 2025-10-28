@@ -95,6 +95,9 @@ class TestDeleteFixesValidation:
             mock_instance.cleanup.side_effect = RuntimeError(
                 "Docker daemon not responding"
             )
+            # Properly mock context manager protocol
+            mock_instance.__enter__ = Mock(return_value=mock_instance)
+            mock_instance.__exit__ = Mock(return_value=None)
             mock_docker_manager.return_value = mock_instance
 
             # Act: Remove repository should succeed despite Docker cleanup failure

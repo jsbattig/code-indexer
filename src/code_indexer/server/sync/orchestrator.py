@@ -536,7 +536,7 @@ class SyncExecutionOrchestrator:
             smart_indexer = SmartIndexer(
                 config=config,
                 embedding_provider=embedding_provider,
-                qdrant_client=qdrant_client,
+                vector_store_client=qdrant_client,
                 metadata_path=metadata_path,
             )
 

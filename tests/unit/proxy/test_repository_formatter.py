@@ -4,7 +4,6 @@ Tests repository identification and prefix formatting for multiplexed output.
 """
 
 import pytest
-from pathlib import Path
 from code_indexer.proxy.repository_formatter import RepositoryPrefixFormatter
 
 
@@ -74,7 +73,9 @@ class TestRepositoryPrefixFormatter:
         output_line = formatter.format_output_line(str(repo_path), content)
 
         # Verify format: [repo] content
-        assert output_line == "[backend/auth-service] Change detected: src/auth/login.py"
+        assert (
+            output_line == "[backend/auth-service] Change detected: src/auth/login.py"
+        )
 
     def test_format_output_line_with_multiline_content(self, formatter, proxy_root):
         """Test formatting output line with multiline content."""
@@ -144,7 +145,10 @@ class TestRepositoryPrefixFormatter:
         output_line = formatter.format_output_line(str(repo_path), content)
 
         # Should preserve special characters in content
-        assert output_line == "[backend] Error: [CRITICAL] Failed to parse file: test.py (line 42)"
+        assert (
+            output_line
+            == "[backend] Error: [CRITICAL] Failed to parse file: test.py (line 42)"
+        )
 
     def test_multiple_repositories_unique_prefixes(self, proxy_root):
         """Test that different repositories get unique prefixes."""
@@ -154,7 +158,7 @@ class TestRepositoryPrefixFormatter:
         repos = [
             proxy_root / "backend" / "auth",
             proxy_root / "backend" / "user",
-            proxy_root / "frontend" / "web"
+            proxy_root / "frontend" / "web",
         ]
 
         for repo in repos:

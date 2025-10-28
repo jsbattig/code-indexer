@@ -107,7 +107,7 @@ class TestClass_{i}:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            qdrant_client=self.mock_qdrant,
+            vector_store_client=self.mock_qdrant,
         )
 
         # Track progress calls to verify current files/s usage
@@ -209,7 +209,7 @@ class TestClass_{i}:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            qdrant_client=self.mock_qdrant,
+            vector_store_client=self.mock_qdrant,
         )
 
         # Track progress calls to verify files/s usage
@@ -334,7 +334,7 @@ class TestClass_{i}:
         processor = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            qdrant_client=self.mock_qdrant,
+            vector_store_client=self.mock_qdrant,
         )
 
         # Track files/s values with different thread counts
@@ -398,7 +398,7 @@ class TestClass_{i}:
         processor_8_threads = HighThroughputProcessor(
             config=self.config,
             embedding_provider=self.mock_embedding_provider,
-            qdrant_client=self.mock_qdrant,
+            vector_store_client=self.mock_qdrant,
         )
         processor_8_threads.process_files_high_throughput(
             files=self.test_files,

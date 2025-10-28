@@ -28,7 +28,7 @@ class ErrorMessage:
     command: str
     error_text: str
     exit_code: int
-    hint: Optional[Union[str, 'ActionableHint']] = None
+    hint: Optional[Union[str, "ActionableHint"]] = None
 
 
 class ErrorMessageFormatter:
@@ -93,9 +93,9 @@ class ErrorMessageFormatter:
         # Add bottom separator
         lines.append(self.ERROR_SEPARATOR)
 
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
-    def _format_actionable_hint(self, hint: 'ActionableHint') -> list:
+    def _format_actionable_hint(self, hint: "ActionableHint") -> list:
         """Format ActionableHint with commands and explanation.
 
         Args:

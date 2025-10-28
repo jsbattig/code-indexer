@@ -93,7 +93,7 @@ class TestBranchIsolationPerformance:
 
         processor = HighThroughputProcessor(
             config=mock_config,
-            qdrant_client=mock_qdrant_client,
+            vector_store_client=mock_qdrant_client,
             embedding_provider=mock_embedding_provider,
         )
         return processor

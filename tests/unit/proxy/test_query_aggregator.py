@@ -4,9 +4,7 @@ Tests the aggregation, merging, sorting, and limiting of query results
 from multiple repositories (Stories 3.2, 3.3, 3.4).
 """
 
-import pytest
 from code_indexer.proxy.query_aggregator import QueryResultAggregator
-from code_indexer.proxy.query_result import QueryResult
 
 
 class TestQueryResultAggregator:
@@ -44,7 +42,7 @@ class TestQueryResultAggregator:
   21:     return True""",
             "/home/user/repo3": """0.88 /home/user/repo3/tests/test_auth.py:5-15
   5: def test_auth():
-  6:     assert True"""
+  6:     assert True""",
         }
 
         aggregator = QueryResultAggregator()
@@ -63,20 +61,20 @@ class TestQueryResultAggregator:
             "/home/user/repo2": """0.95 /home/user/repo2/file2.py:1-10
   1: code2""",
             "/home/user/repo3": """0.85 /home/user/repo3/file3.py:1-10
-  1: code3"""
+  1: code3""",
         }
 
         aggregator = QueryResultAggregator()
         output = aggregator.aggregate_results(repo_outputs, limit=10)
 
         # Extract scores in order of appearance
-        lines = output.strip().split('\n')
+        lines = output.strip().split("\n")
         score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
 
         # Verify descending order: 0.95, 0.85, 0.75
-        assert score_lines[0].startswith('0.95')
-        assert score_lines[1].startswith('0.85')
-        assert score_lines[2].startswith('0.75')
+        assert score_lines[0].startswith("0.95")
+        assert score_lines[1].startswith("0.85")
+        assert score_lines[2].startswith("0.75")
 
     def test_interleave_by_score_not_repository(self):
         """Test that results are interleaved by score, not grouped by repo."""
@@ -87,22 +85,22 @@ class TestQueryResultAggregator:
 0.75 /repo1/b.py:1-5
   1: b""",
             "/repo2": """0.85 /repo2/c.py:1-5
-  1: c"""
+  1: c""",
         }
 
         aggregator = QueryResultAggregator()
         output = aggregator.aggregate_results(repo_outputs, limit=10)
 
-        lines = output.strip().split('\n')
+        lines = output.strip().split("\n")
         score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
 
         # Verify interleaved order: 0.95(repo1), 0.85(repo2), 0.75(repo1)
-        assert score_lines[0].startswith('0.95')
-        assert 'repo1' in score_lines[0]
-        assert score_lines[1].startswith('0.85')
-        assert 'repo2' in score_lines[1]
-        assert score_lines[2].startswith('0.75')
-        assert 'repo1' in score_lines[2]
+        assert score_lines[0].startswith("0.95")
+        assert "repo1" in score_lines[0]
+        assert score_lines[1].startswith("0.85")
+        assert "repo2" in score_lines[1]
+        assert score_lines[2].startswith("0.75")
+        assert "repo1" in score_lines[2]
 
     def test_apply_global_limit(self):
         """Test that --limit applies to total results, not per repository."""
@@ -122,22 +120,22 @@ class TestQueryResultAggregator:
   1: e
 
 0.82 /repo2/f.py:1-5
-  1: f"""
+  1: f""",
         }
 
         aggregator = QueryResultAggregator()
         output = aggregator.aggregate_results(repo_outputs, limit=3)
 
-        lines = output.strip().split('\n')
+        lines = output.strip().split("\n")
         score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
 
         # Should have exactly 3 results total (not 3 per repo)
         assert len(score_lines) == 3
 
         # Should be top 3 by score: 0.95, 0.92, 0.9 (note: Python drops trailing zeros)
-        assert score_lines[0].startswith('0.95')
-        assert score_lines[1].startswith('0.92')
-        assert score_lines[2].startswith('0.9')
+        assert score_lines[0].startswith("0.95")
+        assert score_lines[1].startswith("0.92")
+        assert score_lines[2].startswith("0.9")
 
     def test_limit_exceeds_available_results(self):
         """Test behavior when limit exceeds available results."""
@@ -145,13 +143,13 @@ class TestQueryResultAggregator:
             "/repo1": """0.9 /repo1/a.py:1-5
   1: a""",
             "/repo2": """0.8 /repo2/b.py:1-5
-  1: b"""
+  1: b""",
         }
 
         aggregator = QueryResultAggregator()
         output = aggregator.aggregate_results(repo_outputs, limit=10)
 
-        lines = output.strip().split('\n')
+        lines = output.strip().split("\n")
         score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
 
         # Should return all available results (2)
@@ -166,19 +164,23 @@ class TestQueryResultAggregator:
 0.8 /repo1/b.py:1-5
   1: b""",
             "/repo2": """0.85 /repo2/c.py:1-5
-  1: c"""
+  1: c""",
         }
 
         aggregator = QueryResultAggregator()
 
         # Test with None
         output_none = aggregator.aggregate_results(repo_outputs, limit=None)
-        lines_none = [l for l in output_none.strip().split('\n') if l.strip() and l[0].isdigit()]
+        lines_none = [
+            l for l in output_none.strip().split("\n") if l.strip() and l[0].isdigit()
+        ]
         assert len(lines_none) == 3
 
         # Test with 0
         output_zero = aggregator.aggregate_results(repo_outputs, limit=0)
-        lines_zero = [l for l in output_zero.strip().split('\n') if l.strip() and l[0].isdigit()]
+        lines_zero = [
+            l for l in output_zero.strip().split("\n") if l.strip() and l[0].isdigit()
+        ]
         assert len(lines_zero) == 3
 
     def test_preserve_repository_context(self):
@@ -187,7 +189,7 @@ class TestQueryResultAggregator:
             "/home/dev/backend": """0.9 /home/dev/backend/src/auth.py:10-20
   10: code""",
             "/home/dev/frontend": """0.8 /home/dev/frontend/api/auth.js:5-15
-  5: code"""
+  5: code""",
         }
 
         aggregator = QueryResultAggregator()
@@ -204,7 +206,7 @@ class TestQueryResultAggregator:
   1: a""",
             "/repo2": "",  # Empty output
             "/repo3": """0.8 /repo3/c.py:1-5
-  1: c"""
+  1: c""",
         }
 
         aggregator = QueryResultAggregator()
@@ -214,17 +216,13 @@ class TestQueryResultAggregator:
         assert "0.9" in output
         assert "0.8" in output
 
-        lines = output.strip().split('\n')
+        lines = output.strip().split("\n")
         score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
         assert len(score_lines) == 2
 
     def test_handle_all_empty_outputs(self):
         """Test behavior when all repositories return empty results."""
-        repo_outputs = {
-            "/repo1": "",
-            "/repo2": "",
-            "/repo3": ""
-        }
+        repo_outputs = {"/repo1": "", "/repo2": "", "/repo3": ""}
 
         aggregator = QueryResultAggregator()
         output = aggregator.aggregate_results(repo_outputs, limit=10)
@@ -239,7 +237,7 @@ class TestQueryResultAggregator:
   1: a""",
             "/repo2": "Error: Failed to connect to service",
             "/repo3": """0.8 /repo3/c.py:1-5
-  1: c"""
+  1: c""",
         }
 
         aggregator = QueryResultAggregator()
@@ -259,22 +257,22 @@ class TestQueryResultAggregator:
 0.9 /repo1/b.py:1-5
   1: b""",
             "/repo2": """0.9 /repo2/c.py:1-5
-  1: c"""
+  1: c""",
         }
 
         aggregator = QueryResultAggregator()
         output = aggregator.aggregate_results(repo_outputs, limit=10)
 
-        lines = output.strip().split('\n')
+        lines = output.strip().split("\n")
         score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
 
         # All should have same score
-        assert all(l.startswith('0.9') for l in score_lines)
+        assert all(l.startswith("0.9") for l in score_lines)
 
         # Should maintain original parse order
-        assert 'repo1/a.py' in score_lines[0]
-        assert 'repo1/b.py' in score_lines[1]
-        assert 'repo2/c.py' in score_lines[2]
+        assert "repo1/a.py" in score_lines[0]
+        assert "repo1/b.py" in score_lines[1]
+        assert "repo2/c.py" in score_lines[2]
 
     def test_format_output_matches_single_repo_format(self):
         """Test that aggregated output format matches single-repo query format."""
@@ -321,14 +319,16 @@ class TestQueryResultAggregator:
             results = []
             for i in range(20):
                 score = 0.95 - (repo_num * 0.01) - (i * 0.001)
-                results.append(f"{score:.3f} /repo{repo_num}/file{i}.py:1-10\n  1: code{i}")
+                results.append(
+                    f"{score:.3f} /repo{repo_num}/file{i}.py:1-10\n  1: code{i}"
+                )
 
             repo_outputs[f"/repo{repo_num}"] = "\n\n".join(results)
 
         aggregator = QueryResultAggregator()
         output = aggregator.aggregate_results(repo_outputs, limit=50)
 
-        lines = output.strip().split('\n')
+        lines = output.strip().split("\n")
         score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
 
         # Should have exactly 50 results (global limit)
@@ -379,5 +379,5 @@ class TestQueryResultAggregator:
         output = aggregator.aggregate_results(repo_outputs, limit=10)
 
         # Blank line should be preserved in output
-        lines = output.split('\n')
-        assert '  3:' in output  # Line 3 exists (even if empty after colon)
+        lines = output.split("\n")
+        assert "  3:" in output  # Line 3 exists (even if empty after colon)

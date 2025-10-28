@@ -56,6 +56,18 @@ COMMAND_COMPATIBILITY: Dict[str, Dict[str, bool]] = {
         "proxy": False,
         "uninitialized": False,
     },  # Local DB operations
+    "clean": {
+        "local": True,
+        "remote": True,
+        "proxy": False,
+        "uninitialized": False,
+    },  # Clear vectors from collection
+    "teach-ai": {
+        "local": True,
+        "remote": True,
+        "proxy": True,
+        "uninitialized": True,
+    },  # Generate AI platform instruction files
     "clean-data": {
         "local": True,
         "remote": False,
@@ -68,12 +80,6 @@ COMMAND_COMPATIBILITY: Dict[str, Dict[str, bool]] = {
         "proxy": True,
         "uninitialized": True,
     },  # Config fixes always available
-    "set-claude-prompt": {
-        "local": True,
-        "remote": True,
-        "proxy": False,
-        "uninitialized": True,
-    },  # Prompt setup
     "setup-global-registry": {
         "local": True,
         "remote": False,
@@ -90,8 +96,6 @@ COMMAND_COMPATIBILITY: Dict[str, Dict[str, bool]] = {
     "server": {"local": True, "remote": False, "proxy": False, "uninitialized": True},
     # Authentication commands - remote only since they manage remote server credentials
     "auth": {"local": False, "remote": True, "proxy": False, "uninitialized": False},
-    # Claude AI integration - available in both modes
-    "claude": {"local": True, "remote": True, "proxy": False, "uninitialized": False},
     # Repository synchronization - remote only since it syncs with remote server
     "sync": {"local": False, "remote": True, "proxy": False, "uninitialized": False},
     # Job management commands - remote only since they manage server-side background jobs
