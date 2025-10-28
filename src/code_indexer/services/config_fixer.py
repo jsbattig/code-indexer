@@ -450,8 +450,14 @@ class ConfigurationRepairer:
 
                 all_fixes.extend(config_fixes)
 
-            # Step 4: Initialize Qdrant client for metadata analysis
-            self._initialize_qdrant_client(config)
+            # Determine if we're using filesystem backend (skip Qdrant-specific operations)
+            is_filesystem_backend = (
+                config.vector_store and config.vector_store.provider == "filesystem"
+            )
+
+            # Step 4: Initialize Qdrant client for metadata analysis (Qdrant backend only)
+            if not is_filesystem_backend:
+                self._initialize_qdrant_client(config)
 
             # Step 5: Validate and fix metadata.json
             if self.metadata_file.exists():
@@ -464,20 +470,23 @@ class ConfigurationRepairer:
                     backup_path.write_text(self.metadata_file.read_text())
                     backup_files.append(str(backup_path))
 
-            # Step 6: Check and fix CoW symlink issues
-            print("🔍 Checking CoW symlinks...")
-            cow_fixes = self._fix_cow_symlinks()
-            all_fixes.extend(cow_fixes)
+            # Step 6: Check and fix CoW symlink issues (Qdrant backend only)
+            if not is_filesystem_backend:
+                print("🔍 Checking CoW symlinks...")
+                cow_fixes = self._fix_cow_symlinks()
+                all_fixes.extend(cow_fixes)
 
-            # Step 6.5: Check and fix project configuration (project hash, ports, container names)
+            # Step 6.5: Check and fix project configuration (Qdrant backend only)
+            # This is handled by conditional logic inside _fix_project_configuration
             print("🔍 Checking project configuration...")
             project_fixes = self._fix_project_configuration()
             all_fixes.extend(project_fixes)
 
-            # Step 7: Check for wrong collections
-            print("🔍 Checking Qdrant collections...")
-            collection_warnings = self._check_collections()
-            all_warnings.extend(collection_warnings)
+            # Step 7: Check for wrong collections (Qdrant backend only)
+            if not is_filesystem_backend:
+                print("🔍 Checking Qdrant collections...")
+                collection_warnings = self._check_collections()
+                all_warnings.extend(collection_warnings)
 
             print("✅ Configuration analysis complete")
             print(f"   Applied {len(all_fixes)} fixes")
@@ -828,12 +837,16 @@ class ConfigurationRepairer:
             # Get the correct project root (parent of .code-indexer)
             project_root = self.config_dir.parent.absolute()
 
-            # Load current config to get embedding provider information
+            # Load current config to get embedding provider and vector store information
             config_manager = ConfigManager(self.config_file)
             current_config = config_manager.load()
 
             # Prepare config dict for DockerManager
-            config_dict = {"embedding_provider": current_config.embedding_provider}
+            # CRITICAL: Preserve vector_store configuration to avoid losing filesystem backend setting
+            config_dict = {
+                "embedding_provider": current_config.embedding_provider,
+                "vector_store": current_config.vector_store,
+            }
 
             # Initialize DockerManager to get project-specific values
             docker_manager = DockerManager(
@@ -933,13 +946,21 @@ class ConfigurationRepairer:
         return fixes
 
     def _fix_project_configuration(self) -> List[ConfigFix]:
-        """Fix project configuration for CoW clones (project hash, ports, container names)."""
+        """Fix project configuration for CoW clones (project hash, ports, container names).
+
+        Only applies to Qdrant backend. Filesystem backend doesn't need container/port configuration.
+        """
         fixes: List[ConfigFix] = []
 
         try:
             # Load current configuration
             config_manager = ConfigManager(self.config_file)
             config = config_manager.load()
+
+            # Skip Qdrant-specific configuration if using filesystem backend
+            if config.vector_store and config.vector_store.provider == "filesystem":
+                print("  ℹ️  Skipping Qdrant container/port configuration (filesystem backend)")
+                return fixes
 
             # Regenerate project configuration based on current filesystem location
             project_info = self._regenerate_project_configuration()
