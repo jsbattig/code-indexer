@@ -82,8 +82,8 @@ class TestFilesystemVectorStoreCore:
                 "vector": test_vectors["small"][0].tolist(),
                 "payload": {
                     "path": "src/test.py",
-                    "start_line": 10,
-                    "end_line": 20,
+                    "line_start": 10,
+                    "line_end": 20,
                     "language": "python",
                     "type": "content",
                 },
@@ -100,14 +100,14 @@ class TestFilesystemVectorStoreCore:
 
         assert len(vector_files) >= 1, "At least one vector file should exist"
 
-        # Verify JSON structure
+        # Verify JSON structure (payload nested as of batch implementation)
         with open(vector_files[0]) as f:
             data = json.load(f)
 
         assert data["id"] == "test_001"
-        assert data["file_path"] == "src/test.py"
-        assert data["start_line"] == 10
-        assert data["end_line"] == 20
+        assert data["payload"]["path"] == "src/test.py"
+        assert data["payload"]["line_start"] == 10
+        assert data["payload"]["line_end"] == 20
         assert len(data["vector"]) == 1536, "Full vector should be stored"
         assert "metadata" in data
 
@@ -320,7 +320,7 @@ class TestFilesystemVectorStoreCore:
             {
                 "id": f"vec_{i}",
                 "vector": test_vectors["large"][i].tolist(),
-                "payload": {"path": f"file_{i}.py", "start_line": i},
+                "payload": {"path": f"file_{i}.py", "line_start": i},
             }
             for i in range(1000)
         ]
@@ -364,8 +364,8 @@ class TestChunkContentStorageAndRetrieval:
                 "vector": np.random.randn(1536).tolist(),
                 "payload": {
                     "path": "test.py",
-                    "start_line": 0,
-                    "end_line": 2,
+                    "line_start": 0,
+                    "line_end": 2,
                     "content": "def foo():\n    return 42\n",
                 },
             }
@@ -424,8 +424,8 @@ class TestChunkContentStorageAndRetrieval:
                 "vector": np.random.randn(1536).tolist(),
                 "payload": {
                     "path": "test.py",
-                    "start_line": 0,
-                    "end_line": 1,
+                    "line_start": 0,
+                    "line_end": 1,
                     "content": content,
                 },
             }
@@ -488,8 +488,8 @@ class TestChunkContentStorageAndRetrieval:
                 "vector": np.random.randn(1536).tolist(),
                 "payload": {
                     "path": "test.py",
-                    "start_line": 0,
-                    "end_line": 1,
+                    "line_start": 0,
+                    "line_end": 1,
                     "content": dirty_content,
                 },
             }
@@ -1435,8 +1435,8 @@ class TestStory3ContentRetrievalAndStaleness:
                 "vector": np.random.randn(1536).tolist(),
                 "payload": {
                     "path": "test.py",
-                    "start_line": 0,
-                    "end_line": 2,
+                    "line_start": 0,
+                    "line_end": 2,
                     "content": content,
                 },
             }
@@ -1503,8 +1503,8 @@ class TestStory3ContentRetrievalAndStaleness:
                 "vector": np.random.randn(1536).tolist(),
                 "payload": {
                     "path": "test.py",
-                    "start_line": 1,
-                    "end_line": 2,
+                    "line_start": 1,
+                    "line_end": 2,
                     "content": content,
                 },
             }
@@ -1569,8 +1569,8 @@ class TestStory3ContentRetrievalAndStaleness:
                 "vector": np.random.randn(1536).tolist(),
                 "payload": {
                     "path": "test.py",
-                    "start_line": 1,
-                    "end_line": 2,
+                    "line_start": 1,
+                    "line_end": 2,
                     "content": original_content,
                 },
             }
@@ -1645,8 +1645,8 @@ class TestStory3ContentRetrievalAndStaleness:
                 "vector": np.random.randn(1536).tolist(),
                 "payload": {
                     "path": "test.py",
-                    "start_line": 1,
-                    "end_line": 1,
+                    "line_start": 1,
+                    "line_end": 1,
                     "content": content,
                 },
             }
@@ -1783,8 +1783,8 @@ class TestStory3ContentRetrievalAndStaleness:
                 "vector": np.random.randn(1536).tolist(),
                 "payload": {
                     "path": f"file_{i}.py",
-                    "start_line": 0,
-                    "end_line": 2,
+                    "line_start": 0,
+                    "line_end": 2,
                     "content": f"content {i}",
                 },
             }
