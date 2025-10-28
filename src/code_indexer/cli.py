@@ -3981,7 +3981,7 @@ def teach_ai(
     # Smart update: preserve existing content and update only CIDX section
     if target_path.exists():
         # File exists - use Claude CLI to intelligently merge content
-        console.print(f"📝 Updating existing file with Claude CLI...", style="dim")
+        console.print("📝 Updating existing file with Claude CLI...", style="dim")
 
         try:
             existing_content = target_path.read_text()
