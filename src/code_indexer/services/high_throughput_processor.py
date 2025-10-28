@@ -785,6 +785,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         progress_callback: Optional[Callable] = None,
         vector_thread_count: Optional[int] = None,
         slot_tracker: Optional[CleanSlotTracker] = None,
+        watch_mode: bool = False,
     ):
         """
         Process branch changes using high-throughput parallel processing.
@@ -800,6 +801,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             collection_name: Qdrant collection name
             progress_callback: Optional callback for progress reporting
             vector_thread_count: Number of threads for parallel processing
+            watch_mode: If True, skip HNSW rebuild (for watch mode performance)
 
         Returns:
             BranchIndexingResult with processing statistics
@@ -906,8 +908,15 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             # This ensures FilesystemVectorStore rebuilds HNSW/ID indexes
             if progress_callback:
                 progress_callback(0, 0, Path(""), info="Finalizing indexing session...")
-            end_result = self.qdrant_client.end_indexing(collection_name, progress_callback)
-            logger.info(f"Index finalization complete: {end_result.get('vectors_indexed', 0)} vectors indexed")
+            end_result = self.qdrant_client.end_indexing(
+                collection_name, progress_callback, skip_hnsw_rebuild=watch_mode
+            )
+            if watch_mode:
+                logger.info("Watch mode: HNSW marked stale")
+            else:
+                logger.info(
+                    f"Index finalization complete: {end_result.get('vectors_indexed', 0)} vectors indexed"
+                )
 
     # =============================================================================
     # THREAD-SAFE GIT-AWARE METHODS

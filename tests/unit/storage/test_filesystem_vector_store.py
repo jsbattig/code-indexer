@@ -1288,6 +1288,130 @@ class TestQdrantClientCompatibility:
         assert result is True
 
 
+class TestHNSWStalenessCoordination:
+    """Test HNSW staleness coordination between watch mode and query."""
+
+    def test_search_rebuilds_stale_hnsw_index(self, tmp_path):
+        """GIVEN stale HNSW index (marked by watch mode)
+        WHEN search() is called
+        THEN HNSW index is automatically rebuilt before searching
+
+        AC: search() detects staleness and triggers rebuild
+        """
+        from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
+        from code_indexer.storage.hnsw_index_manager import HNSWIndexManager
+
+        store = FilesystemVectorStore(base_path=tmp_path)
+        store.create_collection("test_coll", vector_size=1536)
+
+        # Initial indexing with normal HNSW build
+        points = [
+            {
+                "id": f"vec_{i}",
+                "vector": np.random.randn(1536).tolist(),
+                "payload": {"path": f"file_{i}.py"},
+            }
+            for i in range(10)
+        ]
+        store.begin_indexing("test_coll")
+        store.upsert_points("test_coll", points)
+        store.end_indexing("test_coll", skip_hnsw_rebuild=False)
+
+        # Verify HNSW is fresh
+        collection_path = tmp_path / "test_coll"
+        hnsw_manager = HNSWIndexManager(vector_dim=1536, space="cosine")
+        assert not hnsw_manager.is_stale(collection_path), "HNSW should be fresh after build"
+
+        # Simulate watch mode: add more vectors and skip rebuild
+        new_points = [
+            {
+                "id": f"vec_new_{i}",
+                "vector": np.random.randn(1536).tolist(),
+                "payload": {"path": f"new_file_{i}.py"},
+            }
+            for i in range(5)
+        ]
+        store.begin_indexing("test_coll")
+        store.upsert_points("test_coll", new_points)
+        store.end_indexing("test_coll", skip_hnsw_rebuild=True)  # Watch mode
+
+        # Verify HNSW is now stale
+        assert hnsw_manager.is_stale(collection_path), "HNSW should be stale after watch mode"
+
+        # Perform search - should auto-rebuild
+        mock_embedding_provider = Mock()
+        mock_embedding_provider.get_embedding.return_value = np.random.randn(1536).tolist()
+
+        results = store.search(
+            query="test query",
+            embedding_provider=mock_embedding_provider,
+            collection_name="test_coll",
+            limit=5,
+        )
+
+        # Verify search succeeded
+        assert len(results) > 0, "Search should return results"
+
+        # Verify HNSW is now fresh (rebuilt during search)
+        assert not hnsw_manager.is_stale(collection_path), "HNSW should be fresh after search rebuild"
+
+    def test_search_uses_fresh_hnsw_without_rebuild(self, tmp_path):
+        """GIVEN fresh HNSW index
+        WHEN search() is called
+        THEN uses existing HNSW without rebuild
+
+        AC: search() skips rebuild when HNSW is fresh
+        """
+        from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
+        from code_indexer.storage.hnsw_index_manager import HNSWIndexManager
+
+        store = FilesystemVectorStore(base_path=tmp_path)
+        store.create_collection("test_coll", vector_size=1536)
+
+        # Index with normal HNSW build
+        points = [
+            {
+                "id": f"vec_{i}",
+                "vector": np.random.randn(1536).tolist(),
+                "payload": {"path": f"file_{i}.py"},
+            }
+            for i in range(10)
+        ]
+        store.begin_indexing("test_coll")
+        store.upsert_points("test_coll", points)
+        store.end_indexing("test_coll", skip_hnsw_rebuild=False)
+
+        # Verify HNSW is fresh
+        collection_path = tmp_path / "test_coll"
+        hnsw_manager = HNSWIndexManager(vector_dim=1536, space="cosine")
+        assert not hnsw_manager.is_stale(collection_path), "HNSW should be fresh"
+
+        # Get HNSW file modification time
+        hnsw_file = collection_path / "hnsw_index.bin"
+        mtime_before = hnsw_file.stat().st_mtime
+
+        # Perform search (should use existing HNSW)
+        mock_embedding_provider = Mock()
+        mock_embedding_provider.get_embedding.return_value = np.random.randn(1536).tolist()
+
+        results = store.search(
+            query="test query",
+            embedding_provider=mock_embedding_provider,
+            collection_name="test_coll",
+            limit=5,
+        )
+
+        # Verify search succeeded
+        assert len(results) > 0, "Search should return results"
+
+        # Verify HNSW was NOT rebuilt (file not modified)
+        mtime_after = hnsw_file.stat().st_mtime
+        assert mtime_before == mtime_after, "HNSW should not be rebuilt when fresh"
+
+        # Verify still fresh
+        assert not hnsw_manager.is_stale(collection_path), "HNSW should still be fresh"
+
+
 class TestStory3ContentRetrievalAndStaleness:
     """Test Story 3: Chunk content retrieval and staleness detection."""
 

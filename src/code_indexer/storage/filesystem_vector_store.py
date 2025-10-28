@@ -176,7 +176,10 @@ class FilesystemVectorStore:
                 del self._file_path_cache[collection_name]
 
     def end_indexing(
-        self, collection_name: str, progress_callback: Optional[Any] = None
+        self,
+        collection_name: str,
+        progress_callback: Optional[Any] = None,
+        skip_hnsw_rebuild: bool = False,
     ) -> Dict[str, Any]:
         """Finalize indexing by rebuilding HNSW and ID indexes.
 
@@ -187,9 +190,11 @@ class FilesystemVectorStore:
         Args:
             collection_name: Name of the collection
             progress_callback: Optional callback for progress reporting
+            skip_hnsw_rebuild: If True, skip HNSW rebuild and mark index as stale
+                             (watch mode optimization - defer rebuild to query time)
 
         Returns:
-            Status dictionary with rebuild results
+            Status dictionary with rebuild results and hnsw_skipped flag
 
         Raises:
             ValueError: If collection doesn't exist
@@ -197,6 +202,10 @@ class FilesystemVectorStore:
         Note:
             Before this optimization, upsert_points() rebuilt indexes after EVERY file,
             causing O(n²) complexity. Now we rebuild indexes ONCE at the end.
+
+            Watch Mode Optimization: When skip_hnsw_rebuild=True, HNSW rebuild is
+            deferred to query time via staleness marking. This prevents watch mode
+            from spending 5-10 seconds rebuilding HNSW after every batch of file changes.
         """
         collection_path = self.base_path / collection_name
 
@@ -208,15 +217,28 @@ class FilesystemVectorStore:
         # Get vector size from cache (avoids file I/O)
         vector_size = self._get_vector_size(collection_name)
 
-        # Rebuild HNSW index from ALL vectors on disk (ONCE)
+        # Conditional HNSW rebuild based on watch mode
         from .hnsw_index_manager import HNSWIndexManager
 
         hnsw_manager = HNSWIndexManager(vector_dim=vector_size, space="cosine")
-        hnsw_manager.rebuild_from_vectors(
-            collection_path=collection_path, progress_callback=progress_callback
-        )
+        hnsw_skipped = False
 
-        # Save ID index to disk (ONCE)
+        if skip_hnsw_rebuild:
+            # Watch mode: Mark index as stale, defer rebuild to query time
+            hnsw_manager.mark_stale(collection_path)
+            hnsw_skipped = True
+            self.logger.info(
+                f"HNSW rebuild skipped for '{collection_name}' (watch mode), "
+                f"marked as stale for query-time rebuild"
+            )
+        else:
+            # Normal mode: Rebuild HNSW index from ALL vectors on disk (ONCE)
+            hnsw_manager.rebuild_from_vectors(
+                collection_path=collection_path, progress_callback=progress_callback
+            )
+            self.logger.info(f"HNSW index rebuilt for '{collection_name}'")
+
+        # Save ID index to disk (ALWAYS - needed for queries)
         from .id_index_manager import IDIndexManager
 
         id_manager = IDIndexManager()
@@ -234,6 +256,7 @@ class FilesystemVectorStore:
             "status": "ok",
             "vectors_indexed": vector_count,
             "collection": collection_name,
+            "hnsw_skipped": hnsw_skipped,
         }
 
     def _get_vector_size(self, collection_name: str) -> int:
@@ -730,10 +753,8 @@ class FilesystemVectorStore:
                 with open(json_file) as f:
                     data = json.load(f)
 
-                # Extract file path from payload
-                file_path = data.get("payload", {}).get("path") or data.get(
-                    "file_path", ""
-                )
+                # Extract file path from payload only
+                file_path = data.get("payload", {}).get("path", "")
                 if file_path:
                     file_paths.add(file_path)
 
@@ -817,9 +838,7 @@ class FilesystemVectorStore:
         data = {
             "id": point_id,
             "vector": vector.tolist(),
-            "file_path": payload.get("path", ""),
-            "start_line": payload.get("start_line", 0),
-            "end_line": payload.get("end_line", 0),
+            # file_path, start_line, end_line removed - already in payload as path, line_start, line_end
             "metadata": {
                 "language": payload.get("language", ""),
                 "type": payload.get("type", "content"),
@@ -971,19 +990,12 @@ class FilesystemVectorStore:
                 with open(vector_file) as f:
                     data = json.load(f)
 
+                # Payload should always exist in new format, but provide empty fallback
+                payload = data.get("payload", {})
                 return {
                     "id": data["id"],
                     "vector": data["vector"],
-                    "payload": data.get(
-                        "payload",
-                        {
-                            "path": data.get("file_path", ""),
-                            "start_line": data.get("start_line", 0),
-                            "end_line": data.get("end_line", 0),
-                            "language": data.get("metadata", {}).get("language", ""),
-                            "type": data.get("metadata", {}).get("type", "content"),
-                        },
-                    ),
+                    "payload": payload,
                 }
             except (json.JSONDecodeError, KeyError):
                 return None
@@ -1193,16 +1205,8 @@ class FilesystemVectorStore:
                 point: Dict[str, Any] = {"id": data["id"]}
 
                 if with_payload:
-                    point["payload"] = data.get(
-                        "payload",
-                        {
-                            "path": data.get("file_path", ""),
-                            "start_line": data.get("start_line", 0),
-                            "end_line": data.get("end_line", 0),
-                            "language": data.get("metadata", {}).get("language", ""),
-                            "type": data.get("metadata", {}).get("type", "content"),
-                        },
-                    )
+                    # Payload should always exist in new format
+                    point["payload"] = data.get("payload", {})
 
                 if with_vectors:
                     point["vector"] = data["vector"]
@@ -1278,11 +1282,34 @@ class FilesystemVectorStore:
         with open(meta_file) as f:
             metadata = json.load(f)
 
-        # === PARALLEL EXECUTION (always) ===
+        # === CHECK HNSW STALENESS AND REBUILD IF NEEDED ===
         from .hnsw_index_manager import HNSWIndexManager
 
         vector_size = metadata.get("vector_size", 1536)
         hnsw_manager = HNSWIndexManager(vector_dim=vector_size, space="cosine")
+
+        # Check if HNSW needs rebuild (watch mode coordination)
+        if hnsw_manager.is_stale(collection_path):
+            self.logger.info(
+                f"HNSW index is stale for '{collection_name}', rebuilding..."
+            )
+
+            # Rebuild HNSW with locking
+            rebuild_start = time.time()
+            hnsw_manager.rebuild_from_vectors(
+                collection_path=collection_path, progress_callback=None
+            )
+            rebuild_ms = (time.time() - rebuild_start) * 1000
+
+            if return_timing:
+                timing["hnsw_rebuild_triggered"] = True
+                timing["hnsw_rebuild_ms"] = rebuild_ms
+
+            self.logger.info(
+                f"HNSW rebuild complete for '{collection_name}' ({rebuild_ms:.0f}ms)"
+            )
+
+        # === PARALLEL EXECUTION (always) ===
 
         def load_index():
             """Load HNSW and ID indexes in parallel thread."""
@@ -1410,22 +1437,12 @@ class FilesystemVectorStore:
                 if score_threshold is not None and similarity < score_threshold:
                     continue
 
+                # Payload should always exist in new format
                 results.append(
                     {
                         "id": data["id"],
                         "score": float(similarity),
-                        "payload": data.get(
-                            "payload",
-                            {
-                                "path": data.get("file_path", ""),
-                                "start_line": data.get("start_line", 0),
-                                "end_line": data.get("end_line", 0),
-                                "language": data.get("metadata", {}).get(
-                                    "language", ""
-                                ),
-                                "type": data.get("metadata", {}).get("type", "content"),
-                            },
-                        ),
+                        "payload": data.get("payload", {}),
                         "_vector_data": data,
                     }
                 )
@@ -1499,24 +1516,13 @@ class FilesystemVectorStore:
                 "staleness_reason": None,
             }
 
-        # Git repos: 3-tier fallback with staleness detection (old format + new format)
+        # Git repos: 3-tier fallback with staleness detection
         if "git_blob_hash" in vector_data:
-            # Try old format first, fall back to payload format
-            # Use payload format if vector_data has zero values (new format uses payload)
-            file_path = vector_data.get("file_path") or payload.get("path", "")
-            start_line = (
-                payload.get("line_start", 0)
-                if vector_data.get("start_line", 1) == 0
-                else vector_data.get("start_line", 0)
-            )
-            end_line = (
-                payload.get("line_end", 0)
-                if vector_data.get("end_line", 1) == 0
-                else vector_data.get("end_line", 0)
-            )
-            stored_hash = vector_data.get("git_blob_hash") or payload.get(
-                "git_blob_hash", ""
-            )
+            # Get file info from payload (always use payload for consistency)
+            file_path = payload.get("path", "")
+            start_line = payload.get("line_start", 0)
+            end_line = payload.get("line_end", 0)
+            stored_hash = vector_data.get("git_blob_hash", "")
 
             # Tier 1: Try reading from current file
             full_path = self.project_root / file_path
@@ -2003,10 +2009,8 @@ class FilesystemVectorStore:
                 with open(json_file) as f:
                     data = json.load(f)
 
-                # Extract file path
-                file_path = data.get("payload", {}).get("path") or data.get(
-                    "file_path", ""
-                )
+                # Extract file path from payload only
+                file_path = data.get("payload", {}).get("path", "")
 
                 if not file_path:
                     continue
@@ -2064,11 +2068,13 @@ class FilesystemVectorStore:
                 with open(vector_file) as f:
                     data = json.load(f)
 
+                # Get file_path from payload for consistency
+                payload = data.get("payload", {})
                 sampled_vectors.append(
                     {
                         "id": data["id"],
                         "vector": data["vector"],
-                        "file_path": data.get("file_path", ""),
+                        "file_path": payload.get("path", ""),
                         "metadata": data.get("metadata", {}),
                     }
                 )

@@ -320,6 +320,105 @@ class HNSWIndexManager:
 
         return len(vectors)
 
+    def mark_stale(self, collection_path: Path) -> None:
+        """Mark HNSW index as stale (needs rebuilding).
+
+        Uses file locking for cross-process coordination. Sets is_stale=true
+        in collection metadata to indicate index needs rebuilding.
+
+        Args:
+            collection_path: Path to collection directory
+
+        Note:
+            This method is called by watch mode to defer HNSW rebuild until query time.
+        """
+        import fcntl
+
+        meta_file = collection_path / "collection_meta.json"
+        lock_file = collection_path / ".metadata.lock"
+        lock_file.touch(exist_ok=True)
+
+        with open(lock_file, "r") as lock_f:
+            # Acquire exclusive lock (blocks if query is rebuilding)
+            fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
+            try:
+                # Load existing metadata
+                if not meta_file.exists():
+                    return  # No metadata to mark stale
+
+                with open(meta_file) as f:
+                    metadata = json.load(f)
+
+                if "hnsw_index" not in metadata:
+                    return  # No HNSW index to mark stale
+
+                # Mark as stale
+                metadata["hnsw_index"]["is_stale"] = True
+                metadata["hnsw_index"]["last_marked_stale"] = datetime.now(
+                    timezone.utc
+                ).isoformat()
+
+                # Save metadata
+                with open(meta_file, "w") as f:
+                    json.dump(metadata, f, indent=2)
+            finally:
+                # Release lock
+                fcntl.flock(lock_f.fileno(), fcntl.LOCK_UN)
+
+    def is_stale(self, collection_path: Path) -> bool:
+        """Check if HNSW index needs rebuilding.
+
+        Returns True if any of the following conditions are met:
+        - is_stale flag is set to True in metadata
+        - Vector count mismatch (fallback detection for incremental indexing)
+        - No metadata exists (no index built yet)
+
+        Args:
+            collection_path: Path to collection directory
+
+        Returns:
+            True if HNSW index needs rebuilding, False if fresh
+
+        Note:
+            No locking needed - atomic boolean read. Defaults to True if
+            is_stale flag missing (backward compatibility with old metadata).
+        """
+        meta_file = collection_path / "collection_meta.json"
+
+        if not meta_file.exists():
+            return True  # No metadata = needs build
+
+        try:
+            with open(meta_file) as f:
+                metadata = json.load(f)
+
+            if "hnsw_index" not in metadata:
+                return True  # No HNSW index = needs build
+
+            hnsw_info = metadata["hnsw_index"]
+
+            # Check is_stale flag (default to True if missing for backward compatibility)
+            is_stale_flag = hnsw_info.get("is_stale", True)
+            if is_stale_flag:
+                return True
+
+            # Fallback detection: Check for vector count mismatch
+            # This catches incremental indexing that bypassed mark_stale()
+            # Only perform this check if there are actual vector files (not just HNSW index)
+            stored_count = hnsw_info.get("vector_count", 0)
+            vector_files = list(collection_path.rglob("vector_*.json"))
+            actual_count = len(vector_files)
+
+            # Only check count mismatch if vector files exist
+            # (avoids false positives when only HNSW index exists)
+            if actual_count > 0 and stored_count != actual_count:
+                return True  # Count mismatch = needs rebuild
+
+            return False  # Fresh index
+
+        except (json.JSONDecodeError, KeyError):
+            return True  # Corrupted metadata = needs rebuild
+
     def _update_metadata(
         self,
         collection_path: Path,
@@ -361,7 +460,7 @@ class HNSWIndexManager:
                 # Create ID mapping (label -> ID)
                 id_mapping = {str(i): ids[i] for i in range(len(ids))}
 
-                # Update HNSW index metadata
+                # Update HNSW index metadata with staleness tracking
                 metadata["hnsw_index"] = {
                     "version": 1,
                     "vector_count": vector_count,
@@ -372,6 +471,9 @@ class HNSWIndexManager:
                     "last_rebuild": datetime.now(timezone.utc).isoformat(),
                     "file_size_bytes": index_file_size,
                     "id_mapping": id_mapping,
+                    # Staleness tracking fields
+                    "is_stale": False,  # Fresh after rebuild
+                    "last_marked_stale": None,  # No staleness marking yet
                 }
 
                 # Save metadata

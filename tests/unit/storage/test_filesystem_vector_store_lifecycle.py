@@ -449,3 +449,196 @@ class TestVectorSizeCaching:
         # Should raise RuntimeError
         with pytest.raises(RuntimeError, match="missing.*vector_size"):
             store._get_vector_size("test_coll")
+
+
+class TestFilesystemVectorStoreWatchModeOptimization:
+    """Test skip_hnsw_rebuild parameter for watch mode optimization."""
+
+    @pytest.fixture
+    def test_vectors(self):
+        """Generate deterministic test vectors."""
+        np.random.seed(42)
+        return [np.random.randn(1536) for _ in range(10)]
+
+    @pytest.fixture
+    def store(self, tmp_path):
+        """Create FilesystemVectorStore with test collection."""
+        from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
+
+        store = FilesystemVectorStore(base_path=tmp_path, project_root=tmp_path)
+        store.create_collection("test_coll", vector_size=1536)
+        return store
+
+    def test_end_indexing_skip_hnsw_marks_stale(self, store, test_vectors, tmp_path):
+        """Test that end_indexing with skip_hnsw_rebuild=True marks index stale.
+
+        GIVEN FilesystemVectorStore in watch mode
+        WHEN end_indexing(skip_hnsw_rebuild=True) is called
+        THEN HNSW index is NOT rebuilt AND marked as stale
+        """
+        from unittest.mock import patch
+
+        # Index some vectors
+        points = [
+            {
+                "id": f"point_{i}",
+                "vector": test_vectors[i].tolist(),
+                "payload": {
+                    "path": f"file_{i}.py",
+                    "start_line": 1,
+                    "end_line": 10,
+                    "language": "python",
+                    "type": "content",
+                    "content": f"test content {i}",
+                },
+            }
+            for i in range(5)
+        ]
+
+        store.begin_indexing("test_coll")
+        for point in points:
+            store.upsert_points("test_coll", [point])
+
+        # Track HNSW operations
+        rebuild_called = False
+        mark_stale_called = False
+
+        with patch(
+            "code_indexer.storage.hnsw_index_manager.HNSWIndexManager"
+        ) as mock_hnsw_class:
+            mock_hnsw_instance = Mock()
+            mock_hnsw_class.return_value = mock_hnsw_instance
+
+            def track_rebuild(*args, **kwargs):
+                nonlocal rebuild_called
+                rebuild_called = True
+
+            def track_mark_stale(*args, **kwargs):
+                nonlocal mark_stale_called
+                mark_stale_called = True
+
+            mock_hnsw_instance.rebuild_from_vectors.side_effect = track_rebuild
+            mock_hnsw_instance.mark_stale.side_effect = track_mark_stale
+
+            # Call end_indexing with skip_hnsw_rebuild=True
+            result = store.end_indexing("test_coll", skip_hnsw_rebuild=True)
+
+        # Verify behavior
+        assert not rebuild_called, "HNSW rebuild should NOT be called in watch mode"
+        assert mark_stale_called, "mark_stale() should be called to defer rebuild"
+        assert "hnsw_skipped" in result, "Result should indicate HNSW was skipped"
+        assert result["hnsw_skipped"] is True
+
+    def test_end_indexing_normal_rebuilds_hnsw(self, store, test_vectors):
+        """Test that end_indexing without skip_hnsw_rebuild rebuilds HNSW normally.
+
+        GIVEN FilesystemVectorStore in normal mode
+        WHEN end_indexing(skip_hnsw_rebuild=False) or default is called
+        THEN HNSW index IS rebuilt normally
+        """
+        from unittest.mock import patch
+
+        # Index some vectors
+        points = [
+            {
+                "id": f"point_{i}",
+                "vector": test_vectors[i].tolist(),
+                "payload": {
+                    "path": f"file_{i}.py",
+                    "start_line": 1,
+                    "end_line": 10,
+                    "language": "python",
+                    "type": "content",
+                    "content": f"test content {i}",
+                },
+            }
+            for i in range(5)
+        ]
+
+        store.begin_indexing("test_coll")
+        for point in points:
+            store.upsert_points("test_coll", [point])
+
+        # Track HNSW operations
+        rebuild_called = False
+        mark_stale_called = False
+
+        with patch(
+            "code_indexer.storage.hnsw_index_manager.HNSWIndexManager"
+        ) as mock_hnsw_class:
+            mock_hnsw_instance = Mock()
+            mock_hnsw_class.return_value = mock_hnsw_instance
+
+            def track_rebuild(*args, **kwargs):
+                nonlocal rebuild_called
+                rebuild_called = True
+
+            def track_mark_stale(*args, **kwargs):
+                nonlocal mark_stale_called
+                mark_stale_called = True
+
+            mock_hnsw_instance.rebuild_from_vectors.side_effect = track_rebuild
+            mock_hnsw_instance.mark_stale.side_effect = track_mark_stale
+
+            # Call end_indexing with skip_hnsw_rebuild=False (default)
+            result = store.end_indexing("test_coll", skip_hnsw_rebuild=False)
+
+        # Verify behavior
+        assert rebuild_called, "HNSW rebuild SHOULD be called in normal mode"
+        assert (
+            not mark_stale_called
+        ), "mark_stale() should NOT be called in normal mode"
+        assert result.get("hnsw_skipped", False) is False
+
+    def test_end_indexing_default_parameter_rebuilds_hnsw(self, store, test_vectors):
+        """Test that end_indexing default behavior rebuilds HNSW (backward compatibility).
+
+        GIVEN FilesystemVectorStore
+        WHEN end_indexing() is called without skip_hnsw_rebuild parameter
+        THEN HNSW index IS rebuilt (default behavior for backward compatibility)
+        """
+        from unittest.mock import patch
+
+        # Index some vectors
+        points = [
+            {
+                "id": f"point_{i}",
+                "vector": test_vectors[i].tolist(),
+                "payload": {
+                    "path": f"file_{i}.py",
+                    "start_line": 1,
+                    "end_line": 10,
+                    "language": "python",
+                    "type": "content",
+                    "content": f"test content {i}",
+                },
+            }
+            for i in range(3)
+        ]
+
+        store.begin_indexing("test_coll")
+        for point in points:
+            store.upsert_points("test_coll", [point])
+
+        # Track HNSW operations
+        rebuild_called = False
+
+        with patch(
+            "code_indexer.storage.hnsw_index_manager.HNSWIndexManager"
+        ) as mock_hnsw_class:
+            mock_hnsw_instance = Mock()
+            mock_hnsw_class.return_value = mock_hnsw_instance
+
+            def track_rebuild(*args, **kwargs):
+                nonlocal rebuild_called
+                rebuild_called = True
+
+            mock_hnsw_instance.rebuild_from_vectors.side_effect = track_rebuild
+
+            # Call end_indexing WITHOUT skip_hnsw_rebuild parameter
+            result = store.end_indexing("test_coll")
+
+        # Verify default behavior
+        assert (
+            rebuild_called
+        ), "HNSW rebuild SHOULD be called by default (backward compatibility)"

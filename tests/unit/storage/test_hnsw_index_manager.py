@@ -383,6 +383,176 @@ class TestHNSWIndexManagerRebuildFromVectors:
         assert vector_count == 10
 
 
+class TestHNSWIndexManagerStalenessFunctionality:
+    """Test HNSW index staleness tracking and detection."""
+
+    def test_mark_stale_sets_flag(self, tmp_path: Path):
+        """Test that mark_stale sets is_stale flag to true in metadata."""
+        manager = HNSWIndexManager(vector_dim=128)
+
+        # Build initial index
+        vectors = np.random.randn(100, 128).astype(np.float32)
+        ids = [f"vec_{i}" for i in range(100)]
+        manager.build_index(tmp_path, vectors, ids)
+
+        # Mark as stale
+        manager.mark_stale(tmp_path)
+
+        # Verify flag is set
+        meta_file = tmp_path / "collection_meta.json"
+        with open(meta_file) as f:
+            metadata = json.load(f)
+
+        assert metadata["hnsw_index"]["is_stale"] is True
+        assert "last_marked_stale" in metadata["hnsw_index"]
+
+    def test_mark_stale_uses_file_locking(self, tmp_path: Path):
+        """Test that mark_stale uses file locking for cross-process coordination."""
+        manager = HNSWIndexManager(vector_dim=64)
+
+        # Build initial index
+        vectors = np.random.randn(50, 64).astype(np.float32)
+        ids = [f"vec_{i}" for i in range(50)]
+        manager.build_index(tmp_path, vectors, ids)
+
+        # Mark as stale and verify lock file exists
+        manager.mark_stale(tmp_path)
+
+        lock_file = tmp_path / ".metadata.lock"
+        assert lock_file.exists()
+
+    def test_mark_stale_preserves_existing_metadata(self, tmp_path: Path):
+        """Test that mark_stale preserves other metadata fields."""
+        manager = HNSWIndexManager(vector_dim=128)
+
+        # Build initial index
+        vectors = np.random.randn(100, 128).astype(np.float32)
+        ids = [f"vec_{i}" for i in range(100)]
+        manager.build_index(tmp_path, vectors, ids, M=16, ef_construction=200)
+
+        # Get original metadata
+        meta_file = tmp_path / "collection_meta.json"
+        with open(meta_file) as f:
+            original_metadata = json.load(f)
+
+        original_vector_count = original_metadata["hnsw_index"]["vector_count"]
+        original_M = original_metadata["hnsw_index"]["M"]
+
+        # Mark as stale
+        manager.mark_stale(tmp_path)
+
+        # Verify other fields preserved
+        with open(meta_file) as f:
+            updated_metadata = json.load(f)
+
+        assert updated_metadata["hnsw_index"]["vector_count"] == original_vector_count
+        assert updated_metadata["hnsw_index"]["M"] == original_M
+        assert updated_metadata["hnsw_index"]["is_stale"] is True
+
+    def test_is_stale_detects_flag(self, tmp_path: Path):
+        """Test that is_stale detects is_stale flag in metadata."""
+        manager = HNSWIndexManager(vector_dim=128)
+
+        # Build and mark stale
+        vectors = np.random.randn(100, 128).astype(np.float32)
+        ids = [f"vec_{i}" for i in range(100)]
+        manager.build_index(tmp_path, vectors, ids)
+        manager.mark_stale(tmp_path)
+
+        # Should detect staleness
+        assert manager.is_stale(tmp_path) is True
+
+    def test_is_stale_detects_count_mismatch(self, tmp_path: Path):
+        """Test that is_stale detects vector count mismatch (fallback detection)."""
+        manager = HNSWIndexManager(vector_dim=128)
+
+        # Build initial index
+        vectors = np.random.randn(100, 128).astype(np.float32)
+        ids = [f"vec_{i}" for i in range(100)]
+        manager.build_index(tmp_path, vectors, ids)
+
+        # Manually modify metadata to create count mismatch (simulates incremental additions)
+        meta_file = tmp_path / "collection_meta.json"
+        with open(meta_file) as f:
+            metadata = json.load(f)
+
+        metadata["hnsw_index"]["vector_count"] = 50  # Mismatch with actual vectors
+        metadata["hnsw_index"]["is_stale"] = False  # Mark as fresh
+
+        with open(meta_file, "w") as f:
+            json.dump(metadata, f)
+
+        # Add more vector files to simulate incremental indexing
+        vectors_dir = tmp_path / "new_vectors"
+        vectors_dir.mkdir()
+        for i in range(10):
+            vector_file = vectors_dir / f"vector_new_{i}.json"
+            with open(vector_file, "w") as f:
+                json.dump({"id": f"vec_new_{i}", "vector": np.random.randn(128).tolist()}, f)
+
+        # Should detect staleness via count mismatch
+        assert manager.is_stale(tmp_path) is True
+
+    def test_is_stale_returns_true_for_missing_index(self, tmp_path: Path):
+        """Test that is_stale returns True when metadata doesn't exist."""
+        manager = HNSWIndexManager(vector_dim=128)
+
+        # No index built yet
+        assert manager.is_stale(tmp_path) is True
+
+    def test_is_stale_returns_false_for_fresh_index(self, tmp_path: Path):
+        """Test that is_stale returns False for freshly built index."""
+        manager = HNSWIndexManager(vector_dim=128)
+
+        # Build index
+        vectors = np.random.randn(100, 128).astype(np.float32)
+        ids = [f"vec_{i}" for i in range(100)]
+        manager.build_index(tmp_path, vectors, ids)
+
+        # Should be fresh (not stale)
+        assert manager.is_stale(tmp_path) is False
+
+    def test_build_index_initializes_staleness_fields(self, tmp_path: Path):
+        """Test that build_index initializes is_stale=false and timestamps."""
+        manager = HNSWIndexManager(vector_dim=128)
+
+        vectors = np.random.randn(100, 128).astype(np.float32)
+        ids = [f"vec_{i}" for i in range(100)]
+        manager.build_index(tmp_path, vectors, ids)
+
+        # Check metadata
+        meta_file = tmp_path / "collection_meta.json"
+        with open(meta_file) as f:
+            metadata = json.load(f)
+
+        hnsw_meta = metadata["hnsw_index"]
+        assert hnsw_meta["is_stale"] is False
+        assert hnsw_meta["last_marked_stale"] is None
+        assert "last_rebuild" in hnsw_meta
+
+    def test_is_stale_backward_compatible_with_old_metadata(self, tmp_path: Path):
+        """Test that is_stale handles old metadata without is_stale flag (backward compatibility)."""
+        manager = HNSWIndexManager(vector_dim=128)
+
+        # Build index
+        vectors = np.random.randn(100, 128).astype(np.float32)
+        ids = [f"vec_{i}" for i in range(100)]
+        manager.build_index(tmp_path, vectors, ids)
+
+        # Remove is_stale flag to simulate old metadata format
+        meta_file = tmp_path / "collection_meta.json"
+        with open(meta_file) as f:
+            metadata = json.load(f)
+
+        del metadata["hnsw_index"]["is_stale"]
+
+        with open(meta_file, "w") as f:
+            json.dump(metadata, f)
+
+        # Should default to True (needs rebuild on first query)
+        assert manager.is_stale(tmp_path) is True
+
+
 class TestHNSWIndexManagerGracefulDegradation:
     """Test graceful degradation when hnswlib is not installed."""
 
