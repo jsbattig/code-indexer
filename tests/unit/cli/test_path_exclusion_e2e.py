@@ -76,7 +76,9 @@ class TestCLIPathExclusionIntegration:
 
         # Verify CLI accepts combined filters
         assert any(p.name == "exclude_paths" for p in query.params)
-        assert any(p.name == "languages" for p in query.params)  # Changed from "language" to "languages"
+        assert any(
+            p.name == "languages" for p in query.params
+        )  # Changed from "language" to "languages"
         assert any(p.name == "path_filter" for p in query.params)
 
 
@@ -100,7 +102,9 @@ class TestFilterConstructionIntegration:
         # Verify each filter has correct structure
         for condition in filter_conditions["must_not"]:
             assert "key" in condition
-            assert condition["key"] == "path"  # Changed from "file_path" to "path" (Bug Fix #5)
+            assert (
+                condition["key"] == "path"
+            )  # Changed from "file_path" to "path" (Bug Fix #5)
             assert "match" in condition
             # Should use 'text' for glob pattern matching
             assert "text" in condition["match"]
@@ -138,7 +142,9 @@ class TestFilterConstructionIntegration:
         # Now test that these filters actually work with FilesystemVectorStore's logic
         # We'll simulate the filter evaluation logic directly
         test_payloads = [
-            {"path": "src/module.py"},  # Changed from "file_path" to "path" (Bug Fix #5)
+            {
+                "path": "src/module.py"
+            },  # Changed from "file_path" to "path" (Bug Fix #5)
             {"path": "src/tests/test_module.py"},  # Should be excluded
             {"path": "lib/vendor/package.js"},  # Should be excluded
             {"path": "dist/app.min.js"},  # Should be excluded
@@ -180,7 +186,9 @@ class TestFilterConstructionIntegration:
         ), f"Expected 2 results, got {len(filtered_results)}"
 
         # Verify the correct files are included
-        result_paths = [r["path"] for r in filtered_results]  # Changed from "file_path" to "path" (Bug Fix #5)
+        result_paths = [
+            r["path"] for r in filtered_results
+        ]  # Changed from "file_path" to "path" (Bug Fix #5)
         assert "src/module.py" in result_paths
         assert "src/utils.py" in result_paths
 

@@ -119,7 +119,9 @@ class TestFilterCombination:
         # Verify both conditions exist
         must_not_keys = [f["key"] for f in combined_filters["must_not"]]
         assert "language" in must_not_keys
-        assert "path" in must_not_keys  # Changed from "file_path" to "path" (Bug Fix #5)
+        assert (
+            "path" in must_not_keys
+        )  # Changed from "file_path" to "path" (Bug Fix #5)
 
     def test_combine_with_complex_existing_filters(self):
         """Test combining path exclusions with complex existing filters."""
