@@ -452,9 +452,19 @@ cidx teach-ai --gemini --global     # Gemini global install
 cidx teach-ai --codex --project     # Codex project install
 ```
 
-**Template Location**: `prompts/ai_instructions/{platform}_instructions.md`
+**Template Location**: `prompts/ai_instructions/{platform}.md`
 
-**Safety Features**: Automatically backs up existing instruction files before overwriting.
+**Platform File Locations**:
+| Platform | Project File | Global File |
+|----------|-------------|-------------|
+| Claude | `CLAUDE.md` | `~/.claude/CLAUDE.md` |
+| Codex | `CODEX.md` | `~/.codex/instructions.md` |
+| Gemini | `.gemini/styleguide.md` | N/A (project-only) |
+| OpenCode | `AGENTS.md` | `~/.config/opencode/AGENTS.md` |
+| Q | `.amazonq/rules/cidx.md` | `~/.aws/amazonq/Q.md` |
+| Junie | `.junie/guidelines.md` | N/A (project-only) |
+
+**Safety Features**: Smart update preserves existing content and updates only CIDX sections.
 
 ### Data Management Commands
 

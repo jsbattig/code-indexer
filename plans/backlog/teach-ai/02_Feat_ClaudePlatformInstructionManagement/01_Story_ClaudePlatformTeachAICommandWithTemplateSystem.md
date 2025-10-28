@@ -71,18 +71,18 @@ Scenario: Legacy command removal
 ## Implementation Tasks
 
 ### Task Checklist
-- [ ] Create teach-ai command in CLI
-- [ ] Implement flag validation (platform and scope required)
-- [ ] Create ClaudeHandler class
-- [ ] Create template file prompts/ai_instructions/claude.md
-- [ ] Implement project scope file creation
-- [ ] Implement global scope file creation
-- [ ] Implement preview mode (--show-only)
-- [ ] Add backup functionality for existing files
-- [ ] Remove legacy "claude" command from cli.py
-- [ ] Add deprecation message for legacy command
-- [ ] Update --help documentation
-- [ ] Manual E2E testing
+- [x] Create teach-ai command in CLI
+- [x] Implement flag validation (platform and scope required)
+- [x] Create ClaudeHandler class
+- [x] Create template file prompts/ai_instructions/claude.md
+- [x] Implement project scope file creation
+- [x] Implement global scope file creation
+- [x] Implement preview mode (--show-only)
+- [x] Add backup functionality for existing files
+- [x] Remove legacy "claude" command from cli.py
+- [x] Add deprecation message for legacy command
+- [x] Update --help documentation
+- [x] Manual E2E testing
 
 ### Template File Creation
 

@@ -22,8 +22,8 @@ Extend the teach-ai command to support 5 additional AI coding platforms (Codex, 
 ## Stories
 
 ### Story Tracking
-- [ ] 01_Story_CodexAndGeminiPlatformSupport
-- [ ] 02_Story_OpenCodeQAndJuniePlatformSupport
+- [x] 01_Story_CodexAndGeminiPlatformSupport
+- [x] 02_Story_OpenCodeQAndJuniePlatformSupport
 
 ## Technical Architecture
 

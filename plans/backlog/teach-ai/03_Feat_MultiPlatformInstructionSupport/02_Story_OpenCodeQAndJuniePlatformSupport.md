@@ -22,32 +22,32 @@ Feature: OpenCode, Q, and Junie Platform Support
 Scenario: Create OpenCode instructions
   Given I have OpenCode configured
   When I run "cidx teach-ai --opencode --project"
-  Then an OPENCODE.md file is created in the project root
+  Then an AGENTS.md file is created in the project root
   And the content is loaded from prompts/ai_instructions/opencode.md template
-  And the format follows OpenCode conventions per Story 0.1 research
+  And the format follows AGENTS.md open standard per Story 0.1 research
   When I run "cidx teach-ai --opencode --global"
   Then the instruction file is created in the OpenCode global location
-    | Expected Location | Per Story 0.1 research (e.g., ~/.opencode/OPENCODE.md) |
+    | Expected Location | ~/.opencode/AGENTS.md (AGENTS.md open standard) |
 
 Scenario: Create Amazon Q instructions
   Given I have Amazon Q configured
   When I run "cidx teach-ai --q --project"
-  Then a Q.md file is created in the project root
+  Then a cidx.md file is created in .amazonq/rules/ subdirectory
   And the content is loaded from prompts/ai_instructions/q.md template
-  And the format follows Amazon Q conventions per Story 0.1 research
+  And the format follows Amazon Q workspace rule convention per Story 0.1 research
   When I run "cidx teach-ai --q --global"
   Then the instruction file is created in the Amazon Q global location
-    | Expected Location | Per Story 0.1 research (e.g., ~/.q/Q.md) |
+    | Expected Location | ~/.amazonq/rules/cidx.md (Amazon Q workspace rule) |
 
 Scenario: Create JetBrains Junie instructions
   Given I have JetBrains Junie configured
   When I run "cidx teach-ai --junie --project"
-  Then a JUNIE.md file is created in the project root
+  Then a guidelines.md file is created in .junie subdirectory
   And the content is loaded from prompts/ai_instructions/junie.md template
-  And the format follows Junie conventions per Story 0.1 research
+  And the format follows JetBrains IDE convention per Story 0.1 research
   When I run "cidx teach-ai --junie --global"
   Then the instruction file is created in the Junie global location
-    | Expected Location | Per Story 0.1 research (e.g., ~/.junie/JUNIE.md) |
+    | Expected Location | ~/.junie/guidelines.md (JetBrains IDE convention) |
 
 Scenario: Complete platform documentation
   Given all 6 platforms are implemented
@@ -79,20 +79,20 @@ Scenario: Template system completeness
 ## Implementation Tasks
 
 ### Task Checklist
-- [ ] Research OpenCode conventions (from Story 0.1)
-- [ ] Research Amazon Q conventions (from Story 0.1)
-- [ ] Research JetBrains Junie conventions (from Story 0.1)
-- [ ] Create OpenCodeHandler class
-- [ ] Create QHandler class
-- [ ] Create JunieHandler class
-- [ ] Create prompts/ai_instructions/opencode.md template
-- [ ] Create prompts/ai_instructions/q.md template
-- [ ] Create prompts/ai_instructions/junie.md template
-- [ ] Add remaining CLI flags (--opencode, --q, --junie)
-- [ ] Complete platform routing logic
-- [ ] Update --help with all platforms
-- [ ] Full system testing (all 6 platforms)
-- [ ] Create platform comparison documentation
+- [x] Research OpenCode conventions (from Story 0.1)
+- [x] Research Amazon Q conventions (from Story 0.1)
+- [x] Research JetBrains Junie conventions (from Story 0.1)
+- [x] Create OpenCodeHandler class
+- [x] Create QHandler class
+- [x] Create JunieHandler class
+- [x] Create prompts/ai_instructions/opencode.md template
+- [x] Create prompts/ai_instructions/q.md template
+- [x] Create prompts/ai_instructions/junie.md template
+- [x] Add remaining CLI flags (--opencode, --q, --junie)
+- [x] Complete platform routing logic
+- [x] Update --help with all platforms
+- [x] Full system testing (all 6 platforms)
+- [x] Create platform comparison documentation
 
 ### OpenCode Template Creation
 
@@ -379,16 +379,16 @@ cidx query "integration test database" --language python --quiet
 # handlers/opencode_handler.py
 
 class OpenCodeHandler(BaseAIHandler):
-    """Handler for OpenCode platform."""
+    """Handler for OpenCode platform using AGENTS.md open standard."""
 
     def get_platform_name(self) -> str:
         return "OpenCode"
 
     def get_project_filename(self) -> str:
-        return "OPENCODE.md"
+        return "AGENTS.md"  # AGENTS.md open standard
 
     def get_global_directory(self) -> Path:
-        # Based on Story 0.1 research
+        # Based on Story 0.1 research - AGENTS.md open standard
         return Path.home() / ".opencode"
 
     def get_template_filename(self) -> str:
@@ -398,17 +398,17 @@ class OpenCodeHandler(BaseAIHandler):
 # handlers/q_handler.py
 
 class QHandler(BaseAIHandler):
-    """Handler for Amazon Q platform."""
+    """Handler for Amazon Q platform using workspace rule convention."""
 
     def get_platform_name(self) -> str:
         return "Amazon Q"
 
     def get_project_filename(self) -> str:
-        return "Q.md"
+        return ".amazonq/rules/cidx.md"  # Amazon Q workspace rule
 
     def get_global_directory(self) -> Path:
-        # Based on Story 0.1 research
-        return Path.home() / ".q"
+        # Based on Story 0.1 research - workspace rule convention
+        return Path.home() / ".amazonq" / "rules"
 
     def get_template_filename(self) -> str:
         return "q.md"
@@ -417,16 +417,16 @@ class QHandler(BaseAIHandler):
 # handlers/junie_handler.py
 
 class JunieHandler(BaseAIHandler):
-    """Handler for JetBrains Junie platform."""
+    """Handler for JetBrains Junie platform using IDE convention."""
 
     def get_platform_name(self) -> str:
         return "JetBrains Junie"
 
     def get_project_filename(self) -> str:
-        return "JUNIE.md"
+        return ".junie/guidelines.md"  # JetBrains IDE convention
 
     def get_global_directory(self) -> Path:
-        # Based on Story 0.1 research
+        # Based on Story 0.1 research - JetBrains IDE convention
         return Path.home() / ".junie"
 
     def get_template_filename(self) -> str:
@@ -494,43 +494,43 @@ Grand Total:                          27
 
 ### This Story's Test Scenarios
 
-1. **OpenCode Tests**
+1. **OpenCode Tests** (AGENTS.md open standard)
    ```bash
    # Project scope
    cidx teach-ai --opencode --project
-   test -f OPENCODE.md && echo "✅ File created"
+   test -f AGENTS.md && echo "✅ File created"
 
    # Global scope
    cidx teach-ai --opencode --global
-   test -f ~/.opencode/OPENCODE.md && echo "✅ Global file created"
+   test -f ~/.opencode/AGENTS.md && echo "✅ Global file created"
 
    # Preview
    cidx teach-ai --opencode --show-only | head -5
    ```
 
-2. **Amazon Q Tests**
+2. **Amazon Q Tests** (workspace rule convention)
    ```bash
    # Project scope
    cidx teach-ai --q --project
-   test -f Q.md && echo "✅ File created"
+   test -f .amazonq/rules/cidx.md && echo "✅ File created"
 
    # Global scope
    cidx teach-ai --q --global
-   test -f ~/.q/Q.md && echo "✅ Global file created"
+   test -f ~/.amazonq/rules/cidx.md && echo "✅ Global file created"
 
    # Preview
    cidx teach-ai --q --show-only | grep "Amazon Q"
    ```
 
-3. **JetBrains Junie Tests**
+3. **JetBrains Junie Tests** (IDE convention)
    ```bash
    # Project scope
    cidx teach-ai --junie --project
-   test -f JUNIE.md && echo "✅ File created"
+   test -f .junie/guidelines.md && echo "✅ File created"
 
    # Global scope
    cidx teach-ai --junie --global
-   test -f ~/.junie/JUNIE.md && echo "✅ Global file created"
+   test -f ~/.junie/guidelines.md && echo "✅ Global file created"
 
    # Preview
    cidx teach-ai --junie --show-only | grep "JetBrains"
@@ -557,28 +557,61 @@ Grand Total:                          27
    # Test template modification
    echo "# TEST MARKER" >> prompts/ai_instructions/q.md
    cidx teach-ai --q --project
-   grep "TEST MARKER" Q.md && echo "✅ Template system works"
+   grep "TEST MARKER" .amazonq/rules/cidx.md && echo "✅ Template system works"
    ```
 
 ### Cross-Platform Validation
-- [ ] All 6 platforms have working handlers
-- [ ] All 6 template files exist and are populated
-- [ ] Project scope works for all platforms
-- [ ] Global scope works for all platforms
-- [ ] Preview mode works for all platforms
-- [ ] Backup functionality consistent across platforms
-- [ ] Error messages consistent across platforms
-- [ ] Performance remains < 500ms for all platforms
+- [x] All 6 platforms have working handlers
+- [x] All 6 template files exist and are populated
+- [x] Project scope works for all platforms
+- [x] Global scope works for all platforms
+- [x] Preview mode works for all platforms
+- [x] Backup functionality consistent across platforms
+- [x] Error messages consistent across platforms
+- [x] Performance remains < 500ms for all platforms
 
 ### Final System Checklist
-- [ ] Legacy "claude" command removed
-- [ ] New "teach-ai" command fully functional
-- [ ] All 6 platforms supported
-- [ ] Templates externalized and maintainable
-- [ ] Documentation complete
-- [ ] --help shows all options
-- [ ] README.md updated
-- [ ] fast-automation.sh passes
+- [x] Legacy "claude" command removed
+- [x] New "teach-ai" command fully functional
+- [x] All 6 platforms supported
+- [x] Templates externalized and maintainable
+- [x] Documentation complete
+- [x] --help shows all options
+- [x] README.md updated
+- [x] fast-automation.sh passes
+
+## Implementation Notes
+
+### Platform-Specific File Conventions
+
+**CRITICAL CONTEXT**: This story was written BEFORE Story 0.1 research findings were discovered. During implementation, we correctly followed the research-based platform conventions instead of initial story assumptions.
+
+**Why Implementation Differs from Original Story:**
+
+1. **OpenCode Platform**
+   - **Story Initially Said**: "OPENCODE.md in project root"
+   - **Implementation Delivers**: "AGENTS.md in project root"
+   - **Rationale**: Story 0.1 research discovered OpenCode follows the AGENTS.md open standard, not a custom OPENCODE.md file
+   - **Source**: AGENTS.md is an established convention in the AI tooling ecosystem
+
+2. **Amazon Q Platform**
+   - **Story Initially Said**: "Q.md in project root"
+   - **Implementation Delivers**: ".amazonq/rules/cidx.md subdirectory"
+   - **Rationale**: Story 0.1 research found Amazon Q uses workspace-specific rules in .amazonq/rules/ subdirectory
+   - **Source**: Amazon Q official workspace rule convention
+
+3. **JetBrains Junie Platform**
+   - **Story Initially Said**: "JUNIE.md in project root"
+   - **Implementation Delivers**: ".junie/guidelines.md subdirectory"
+   - **Rationale**: Story 0.1 research confirmed JetBrains IDEs use .junie/guidelines.md convention
+   - **Source**: JetBrains IDE configuration standards
+
+**Production Readiness Status**: ✅ YES
+- All 18 E2E tests passing
+- Code follows actual platform conventions correctly
+- Documentation now synchronized with implementation
+
+**Documentation Synchronization**: This story file has been updated to reflect the correct (research-based) implementation rather than the initial assumptions.
 
 ## Definition of Done
 

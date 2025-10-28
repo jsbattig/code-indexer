@@ -71,18 +71,18 @@ Scenario: Template modification without code changes
 ## Implementation Tasks
 
 ### Task Checklist
-- [ ] Research Codex file conventions (from Story 0.1)
-- [ ] Research Gemini file conventions (from Story 0.1)
-- [ ] Create CodexHandler class
-- [ ] Create GeminiHandler class
-- [ ] Create prompts/ai_instructions/codex.md template
-- [ ] Create prompts/ai_instructions/gemini.md template
-- [ ] Add --codex flag to CLI command
-- [ ] Add --gemini flag to CLI command
-- [ ] Update platform routing logic
-- [ ] Test all combinations (2 platforms × 2 scopes)
-- [ ] Update --help documentation
-- [ ] Manual E2E testing
+- [x] Research Codex file conventions (from Story 0.1)
+- [x] Research Gemini file conventions (from Story 0.1)
+- [x] Create CodexHandler class
+- [x] Create GeminiHandler class
+- [x] Create prompts/ai_instructions/codex.md template
+- [x] Create prompts/ai_instructions/gemini.md template
+- [x] Add --codex flag to CLI command
+- [x] Add --gemini flag to CLI command
+- [x] Update platform routing logic
+- [x] Test all combinations (2 platforms × 2 scopes)
+- [x] Update --help documentation
+- [x] Manual E2E testing
 
 ### Codex Template Creation
 

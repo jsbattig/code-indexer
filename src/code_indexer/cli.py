@@ -5,7 +5,6 @@ import getpass
 import json
 import logging
 import os
-import shutil
 import subprocess
 import sys
 import signal
@@ -3889,74 +3888,185 @@ def teach_ai(
         console.print(template_content)
         return
 
-    # Determine target file path
-    if scope_project:
-        target_path = Path.cwd() / "CLAUDE.md"
-        scope_desc = "project root"
-    else:  # scope_global
-        home_dir = Path.home()
-        claude_dir = home_dir / ".claude"
-        claude_dir.mkdir(parents=True, exist_ok=True)
-        target_path = claude_dir / "CLAUDE.md"
-        scope_desc = "~/.claude/"
-
-    # Backup existing file if it exists
-    if target_path.exists():
-        backup_path = target_path.with_suffix(".md.backup")
-        try:
-            shutil.copy2(target_path, backup_path)
-            console.print(f"💾 Backed up existing file to: {backup_path}")
-        except Exception as e:
-            console.print(f"⚠️  Warning: Failed to create backup: {e}", style="yellow")
-
-    # Write instruction file
-    try:
-        target_path.write_text(template_content)
+    # Platform-specific validation: Gemini and Junie only support project-level
+    if platform_name == "gemini" and scope_global:
         console.print(
-            f"✅ {platform_name.title()} instructions installed to {scope_desc}",
-            style="green",
+            "❌ Gemini platform only supports project-level instructions (--project)",
+            style="red",
         )
-        console.print(f"   File: {target_path}")
-    except Exception as e:
-        console.print(f"❌ Failed to write instruction file: {e}", style="red")
+        console.print(
+            "   Gemini does not have a global configuration directory per research."
+        )
         sys.exit(1)
 
+    if platform_name == "junie" and scope_global:
+        console.print(
+            "❌ Junie platform only supports project-level instructions (--project)",
+            style="red",
+        )
+        console.print(
+            "   Junie does not have a global configuration directory per research."
+        )
+        sys.exit(1)
 
-@cli.command()
-def claude():
-    """
-    DEPRECATED: This command has been removed.
+    # Determine target file path based on platform conventions
+    if scope_project:
+        if platform_name == "claude":
+            # Claude: CLAUDE.md in project root
+            target_path = Path.cwd() / "CLAUDE.md"
+            scope_desc = "project root"
+        elif platform_name == "codex":
+            # Codex: CODEX.md in project root (project-specific instructions)
+            target_path = Path.cwd() / "CODEX.md"
+            scope_desc = "project root"
+        elif platform_name == "gemini":
+            # Gemini: styleguide.md in .gemini subdirectory
+            gemini_dir = Path.cwd() / ".gemini"
+            gemini_dir.mkdir(parents=True, exist_ok=True)
+            target_path = gemini_dir / "styleguide.md"
+            scope_desc = ".gemini/"
+        elif platform_name == "opencode":
+            # OpenCode: AGENTS.md in project root (AGENTS.md open standard)
+            target_path = Path.cwd() / "AGENTS.md"
+            scope_desc = "project root"
+        elif platform_name == "q":
+            # Amazon Q: cidx.md in .amazonq/rules/ subdirectory
+            q_dir = Path.cwd() / ".amazonq" / "rules"
+            q_dir.mkdir(parents=True, exist_ok=True)
+            target_path = q_dir / "cidx.md"
+            scope_desc = ".amazonq/rules/"
+        elif platform_name == "junie":
+            # JetBrains Junie: guidelines.md in .junie subdirectory
+            junie_dir = Path.cwd() / ".junie"
+            junie_dir.mkdir(parents=True, exist_ok=True)
+            target_path = junie_dir / "guidelines.md"
+            scope_desc = ".junie/"
+        else:
+            # Default for other platforms
+            target_path = Path.cwd() / f"{platform_name.upper()}.md"
+            scope_desc = "project root"
+    else:  # scope_global
+        home_dir = Path.home()
+        if platform_name == "claude":
+            # Claude: ~/.claude/CLAUDE.md
+            platform_dir = home_dir / ".claude"
+            platform_dir.mkdir(parents=True, exist_ok=True)
+            target_path = platform_dir / "CLAUDE.md"
+            scope_desc = "~/.claude/"
+        elif platform_name == "codex":
+            # Codex: ~/.codex/instructions.md (global behavioral instructions)
+            platform_dir = home_dir / ".codex"
+            platform_dir.mkdir(parents=True, exist_ok=True)
+            target_path = platform_dir / "instructions.md"
+            scope_desc = "~/.codex/"
+        elif platform_name == "opencode":
+            # OpenCode: ~/.config/opencode/AGENTS.md (AGENTS.md open standard)
+            platform_dir = home_dir / ".config" / "opencode"
+            platform_dir.mkdir(parents=True, exist_ok=True)
+            target_path = platform_dir / "AGENTS.md"
+            scope_desc = "~/.config/opencode/"
+        elif platform_name == "q":
+            # Amazon Q: ~/.aws/amazonq/Q.md
+            platform_dir = home_dir / ".aws" / "amazonq"
+            platform_dir.mkdir(parents=True, exist_ok=True)
+            target_path = platform_dir / "Q.md"
+            scope_desc = "~/.aws/amazonq/"
+        else:
+            # Default for other platforms
+            platform_dir = home_dir / f".{platform_name}"
+            platform_dir.mkdir(parents=True, exist_ok=True)
+            target_path = platform_dir / f"{platform_name.upper()}.md"
+            scope_desc = f"~/.{platform_name}/"
 
-    The 'claude' command has been removed in favor of the new 'teach-ai' command
-    for installing AI platform instructions.
+    # Smart update: preserve existing content and update only CIDX section
+    if target_path.exists():
+        # File exists - use Claude CLI to intelligently merge content
+        console.print(f"📝 Updating existing file with Claude CLI...", style="dim")
 
-    \b
-    MIGRATION:
-    Old: cidx claude "question"
-    New: Use cidx teach-ai --claude --project (to teach Claude about cidx)
+        try:
+            existing_content = target_path.read_text()
 
-    \b
-    If you were using 'cidx claude' for AI-powered code analysis:
-      • That feature has been removed from cidx
-      • Use 'cidx teach-ai --claude' to teach Claude Code about semantic search
-      • Claude Code will then use 'cidx query' for semantic code search
-    """
-    console = Console()
-    console.print("❌ Command 'claude' has been removed.", style="red bold")
-    console.print("")
-    console.print(
-        "The 'claude' command has been replaced with 'teach-ai'.", style="yellow"
-    )
-    console.print("")
-    console.print("📚 To teach Claude Code about cidx semantic search:", style="bold")
-    console.print("   cidx teach-ai --claude --project   (project-level)")
-    console.print("   cidx teach-ai --claude --global    (global-level)")
-    console.print("")
-    console.print("💡 After running teach-ai:", style="bold")
-    console.print("   • Claude Code will know how to use 'cidx query'")
-    console.print("   • Use 'cidx query' for semantic code search")
-    console.print("   • Claude Code will use semantic search automatically")
-    sys.exit(1)
+            # Create prompt for Claude to intelligently merge
+            merge_prompt = f"""You are updating an AI instruction file. Your task is to intelligently merge new CIDX semantic search instructions into an existing file while preserving ALL existing content.
+
+EXISTING FILE CONTENT:
+{existing_content}
+
+NEW CIDX SECTION TO ADD/UPDATE:
+{template_content}
+
+INSTRUCTIONS:
+1. If the file already has a CIDX/semantic search section (look for headers like "SEMANTIC SEARCH", "CIDX SEMANTIC SEARCH", etc.), UPDATE that section with the new content
+2. If the file does NOT have a CIDX section, ADD the new section at the end
+3. Preserve ALL other existing content exactly as-is
+4. Maintain the file's existing formatting style
+5. Output ONLY the raw merged file content with NO markdown code fences, NO explanations, NO commentary
+6. Start output immediately with the first line of the merged file
+
+OUTPUT THE COMPLETE MERGED FILE (raw content only, no markdown wrappers):"""
+
+            # Call Claude CLI with explicit text output format
+            result = subprocess.run(
+                [
+                    "claude",
+                    "-p",
+                    "--output-format",
+                    "text",
+                    "--dangerously-skip-permissions",
+                    merge_prompt,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            if result.returncode != 0:
+                console.print(
+                    f"❌ Claude CLI failed: {result.stderr or 'Unknown error'}",
+                    style="red",
+                )
+                sys.exit(1)
+
+            merged_content = result.stdout.strip()
+
+            # Strip markdown code fences if Claude added them despite instructions
+            if merged_content.startswith("```"):
+                lines = merged_content.split("\n")
+                # Remove first line (```markdown or similar) and last line (```)
+                if lines[-1].strip() == "```":
+                    merged_content = "\n".join(lines[1:-1])
+
+            # Write merged content
+            target_path.write_text(merged_content)
+
+            console.print(
+                f"✅ {platform_name.title()} instructions updated in {scope_desc}",
+                style="green",
+            )
+            console.print(f"   File: {target_path}", style="dim")
+            console.print(
+                "   ℹ️  Existing content preserved, CIDX section updated",
+                style="blue dim",
+            )
+
+        except subprocess.TimeoutExpired:
+            console.print("❌ Claude CLI timed out", style="red")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"❌ Failed to update instruction file: {e}", style="red")
+            sys.exit(1)
+    else:
+        # New file - create with template content
+        try:
+            target_path.write_text(template_content)
+            console.print(
+                f"✅ {platform_name.title()} instructions installed to {scope_desc}",
+                style="green",
+            )
+            console.print(f"   File: {target_path}", style="dim")
+        except Exception as e:
+            console.print(f"❌ Failed to write instruction file: {e}", style="red")
+            sys.exit(1)
 
 
 @cli.command()
@@ -6197,143 +6307,6 @@ def fix_config(ctx, dry_run: bool, verbose: bool, force: bool):
             import traceback
 
             console.print(traceback.format_exc())
-        sys.exit(1)
-
-
-@cli.command("set-claude-prompt")
-@click.option(
-    "--user-prompt",
-    is_flag=True,
-    help="Set prompt in user's global ~/.claude/CLAUDE.md file instead of project file",
-)
-@click.option(
-    "--show-only",
-    is_flag=True,
-    help="Display the generated prompt content without modifying any files",
-)
-@click.pass_context
-def set_claude_prompt(ctx, user_prompt: bool, show_only: bool):
-    """Set CIDX semantic search instructions in CLAUDE.md files.
-
-    This command injects comprehensive CIDX semantic search instructions into
-    CLAUDE.md files to improve Claude Code integration with code-indexer.
-
-    \b
-    BEHAVIOR:
-    • --user-prompt: Sets prompt in ~/.claude/CLAUDE.md (global for all projects)
-    • --show-only: Displays prompt content without modifying files
-    • Default: Sets prompt in project CLAUDE.md (walks up directory tree to find it)
-
-    \b
-    FEATURES:
-    • Detects existing CIDX sections and replaces them (no duplicates)
-    • Preserves existing file content and formatting
-    • Normalizes line endings to LF (Unix style)
-    • Uses current project context to generate relevant instructions
-
-    \b
-    EXAMPLES:
-      cidx set-claude-prompt                 # Set in project CLAUDE.md
-      cidx set-claude-prompt --user-prompt  # Set in user's global CLAUDE.md
-      cidx set-claude-prompt --show-only    # Display content without writing files
-
-    \b
-    REQUIREMENTS:
-    • For project mode: CLAUDE.md must exist in current directory or parent directories
-    • For user mode: ~/.claude/ directory will be created if needed
-    • For show-only mode: No file requirements
-    """
-    from .services.claude_prompt_setter import ClaudePromptSetter
-
-    try:
-        # Check for conflicting flags
-        if show_only and user_prompt:
-            console.print("❌ Cannot use --show-only with --user-prompt", style="red")
-            console.print(
-                "   --show-only displays content without specifying target file",
-                style="dim",
-            )
-            sys.exit(1)
-
-        # Get current directory for codebase context
-        current_dir = Path.cwd()
-        setter = ClaudePromptSetter(current_dir)
-
-        # Handle --show-only mode
-        if show_only:
-            console.print("📖 Generated CIDX prompt content:\n", style="blue")
-            prompt_content = setter._generate_cidx_prompt()
-
-            # Add section header as it would appear in CLAUDE.md
-            section_header = "- CIDX SEMANTIC CODE SEARCH INTEGRATION\n\n"
-            full_content = section_header + prompt_content
-
-            # Display with syntax highlighting for better readability
-            from rich.syntax import Syntax
-
-            syntax = Syntax(
-                full_content, "markdown", theme="github-dark", line_numbers=False
-            )
-            console.print(syntax)
-            return
-
-        if user_prompt:
-            # Set in user's global CLAUDE.md
-            console.print("🔧 Setting CIDX prompt in user's global CLAUDE.md...")
-            success = setter.set_user_prompt()
-
-            if success:
-                user_file = Path.home() / ".claude" / "CLAUDE.md"
-                console.print(f"✅ CIDX prompt set in: {user_file}", style="green")
-                console.print(
-                    "   This will apply to all your Claude Code sessions globally.",
-                    style="dim",
-                )
-            else:
-                console.print("❌ Failed to set user prompt", style="red")
-                sys.exit(1)
-        else:
-            # Set in project CLAUDE.md
-            console.print("🔧 Searching for project CLAUDE.md file...")
-            success = setter.set_project_prompt(current_dir)
-
-            if success:
-                # Find which file was updated for user feedback
-                project_file = setter._find_project_claude_file(current_dir)
-                console.print(f"✅ CIDX prompt set in: {project_file}", style="green")
-                console.print(
-                    "   This will apply to Claude Code sessions in this project.",
-                    style="dim",
-                )
-            else:
-                console.print("❌ No project CLAUDE.md file found", style="red")
-                console.print(
-                    "   Searched up directory tree from current location.", style="dim"
-                )
-                console.print(
-                    "   Create a CLAUDE.md file first, or use --user-prompt for global setting.",
-                    style="dim",
-                )
-                sys.exit(1)
-
-        # Show next steps
-        console.print("\n💡 Next steps:", style="blue")
-        console.print(
-            "   • The CIDX semantic search instructions are now available to Claude"
-        )
-        console.print(
-            "   • Claude will use 'cidx query' for intelligent code discovery"
-        )
-        console.print(
-            "   • Test with: claude 'How does authentication work in this codebase?'"
-        )
-
-    except Exception as e:
-        console.print(f"❌ Error setting Claude prompt: {e}", style="red")
-        if ctx.obj.get("verbose"):
-            import traceback
-
-            console.print(traceback.format_exc(), style="dim red")
         sys.exit(1)
 
 

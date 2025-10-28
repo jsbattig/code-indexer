@@ -50,15 +50,15 @@ Scenario: Enable accurate implementation
 ## Research Tasks
 
 ### Task Checklist
-- [ ] Research Claude Code instruction conventions
-- [ ] Research GitHub Codex instruction conventions
-- [ ] Research Google Gemini instruction conventions
-- [ ] Research OpenCode instruction conventions
-- [ ] Research Amazon Q instruction conventions
-- [ ] Research JetBrains Junie instruction conventions
-- [ ] Create comparison matrix
-- [ ] Document implementation recommendations
-- [ ] Validate findings with practical testing
+- [x] Research Claude Code instruction conventions
+- [x] Research GitHub Codex instruction conventions
+- [x] Research Google Gemini instruction conventions
+- [x] Research OpenCode instruction conventions
+- [x] Research Amazon Q instruction conventions
+- [x] Research JetBrains Junie instruction conventions
+- [x] Create comparison matrix
+- [x] Document implementation recommendations
+- [x] Validate findings with practical testing
 
 ### Platform Research Template
 
@@ -228,15 +228,15 @@ Common locations to check:
    - Document any content limitations
 
 ### Validation Checklist
-- [ ] Claude Code file location confirmed
-- [ ] GitHub Codex file location confirmed
-- [ ] Google Gemini file location confirmed
-- [ ] OpenCode file location confirmed
-- [ ] Amazon Q file location confirmed
-- [ ] JetBrains Junie file location confirmed
-- [ ] All format requirements documented
-- [ ] Example files created and tested
-- [ ] Cross-platform paths verified
+- [x] Claude Code file location confirmed
+- [x] GitHub Codex file location confirmed
+- [x] Google Gemini file location confirmed
+- [x] OpenCode file location confirmed
+- [x] Amazon Q file location confirmed
+- [x] JetBrains Junie file location confirmed
+- [x] All format requirements documented
+- [x] Example files created and tested
+- [x] Cross-platform paths verified
 
 ## Definition of Done
 

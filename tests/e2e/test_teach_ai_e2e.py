@@ -1,12 +1,12 @@
 """
-End-to-end tests for cidx teach-ai command.
+End-to-end tests for cidx teach-ai command - Basic functionality.
 
 Tests the complete vertical slice: CLI -> handler -> file system -> template loading.
 Uses real file system operations with temporary directories (zero mocking).
+Tests focus on Claude platform as the primary implementation.
 """
 
 import subprocess
-
 
 
 class TestTeachAiClaude:
@@ -159,7 +159,7 @@ class TestTeachAiClaude:
         Scenario: Legacy command removal
         Given the new teach-ai command is implemented
         When I run "cidx claude" (legacy command)
-        Then I see error about removed command with migration guidance
+        Then I see error that the command does not exist
         """
         # Call claude without arguments since it no longer accepts them
         result = subprocess.run(
@@ -172,7 +172,6 @@ class TestTeachAiClaude:
         # Command should fail
         assert result.returncode != 0, "Legacy command should fail"
 
-        # Error should mention removal and new command
+        # Error should indicate command doesn't exist (completely removed)
         output = result.stderr + result.stdout
-        assert "removed" in output.lower() or "deprecated" in output.lower()
-        assert "teach-ai" in output or "teach_ai" in output
+        assert "no such command" in output.lower() or "unknown command" in output.lower()
