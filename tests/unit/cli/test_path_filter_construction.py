@@ -26,7 +26,7 @@ class TestFilterStructureConstruction:
         assert "must_not" in filter_conditions
         assert len(filter_conditions["must_not"]) == 1
         assert filter_conditions["must_not"][0] == {
-            "key": "file_path",
+            "key": "path",  # Changed from "file_path" to "path" (Bug Fix #5)
             "match": {"text": "*/tests/*"},
         }
 
@@ -119,7 +119,7 @@ class TestFilterCombination:
         # Verify both conditions exist
         must_not_keys = [f["key"] for f in combined_filters["must_not"]]
         assert "language" in must_not_keys
-        assert "file_path" in must_not_keys
+        assert "path" in must_not_keys  # Changed from "file_path" to "path" (Bug Fix #5)
 
     def test_combine_with_complex_existing_filters(self):
         """Test combining path exclusions with complex existing filters."""
