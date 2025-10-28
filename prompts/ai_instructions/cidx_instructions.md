@@ -10,13 +10,9 @@
 
 **Examples**: `cidx query "authentication login" --quiet` | `cidx query "error handling" --language python --limit 20` | `cidx query "database connection" --path */services/* --min-score 0.8`
 
-**Exclusion Filters**: `--exclude-language LANG` (filter out languages) | `--exclude-path PATTERN` (filter out path patterns)
+**Exclusion Filters**: `--exclude-language LANG` | `--exclude-path PATTERN`
 
-**Common Exclusions**:
-- Tests: `--exclude-path "*/tests/*" --exclude-path "*_test.py"`
-- Dependencies: `--exclude-path "*/node_modules/*" --exclude-path "*/vendor/*"`
-- Build artifacts: `--exclude-path "*/build/*" --exclude-path "*/__pycache__/*"`
-- Generated: `--exclude-path "*.min.js" --exclude-path "*_pb2.py"`
+**Common**: Tests `--exclude-path "*/tests/*"` | Deps `--exclude-path "*/node_modules/*"` | Build `--exclude-path "*/build/*"` | Generated `--exclude-path "*.min.js"`
 
 **Examples**: `cidx query "production code" --exclude-path "*/tests/*" --exclude-language javascript` | `cidx query "api logic" --path */src/* --exclude-path "*/mocks/*" --exclude-language css`
 

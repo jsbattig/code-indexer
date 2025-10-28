@@ -18,7 +18,7 @@ class TestTeachAiClaude:
         Given I have cidx installed in my project
         When I run "cidx teach-ai --claude --project"
         Then a CLAUDE.md file is created in the project root
-        And the content is loaded from prompts/ai_instructions/claude.md template
+        And the content is loaded from prompts/ai_instructions/cidx_instructions.md template
         And the file contains cidx usage instructions
         """
         # Run command in temp directory (simulating project root)
@@ -54,7 +54,7 @@ class TestTeachAiClaude:
     def test_template_system_functionality(self, tmp_path):
         """
         Scenario: Template system functionality
-        Given the template file prompts/ai_instructions/claude.md exists
+        Given the template file prompts/ai_instructions/cidx_instructions.md exists
         When I modify the template content without touching Python code
         And I run "cidx teach-ai --claude --project"
         Then the generated CLAUDE.md reflects the updated template content

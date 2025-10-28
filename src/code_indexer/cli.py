@@ -4021,7 +4021,7 @@ def teach_ai(
         cli_dir = Path(__file__).parent
         project_root = cli_dir.parent.parent
         template_path = (
-            project_root / "prompts" / "ai_instructions" / f"{platform_name}.md"
+            project_root / "prompts" / "ai_instructions" / "cidx_instructions.md"
         )
 
         if not template_path.exists():
@@ -4030,7 +4030,7 @@ def teach_ai(
                 style="red",
             )
             console.print(
-                f"   Expected template at: prompts/ai_instructions/{platform_name}.md"
+                "   Expected template at: prompts/ai_instructions/cidx_instructions.md"
             )
             sys.exit(1)
 

@@ -18,7 +18,7 @@ class TestTeachAiCodex:
         Given I have cidx installed in my project
         When I run "cidx teach-ai --codex --project"
         Then a CODEX.md file is created in the project root
-        And the content is loaded from prompts/ai_instructions/codex.md template
+        And the content is loaded from prompts/ai_instructions/cidx_instructions.md template
         And the file contains cidx usage instructions
         """
         # Run command in temp directory (simulating project root)
@@ -86,7 +86,7 @@ class TestTeachAiGemini:
         Given I have cidx installed in my project
         When I run "cidx teach-ai --gemini --project"
         Then a styleguide.md file is created in .gemini subdirectory
-        And the content is loaded from prompts/ai_instructions/gemini.md template
+        And the content is loaded from prompts/ai_instructions/cidx_instructions.md template
         And the file contains cidx usage instructions
         """
         # Run command in temp directory (simulating project root)
@@ -176,7 +176,7 @@ class TestTeachAiOpenCode:
         Given I have cidx installed in my project
         When I run "cidx teach-ai --opencode --project"
         Then an AGENTS.md file is created in the project root
-        And the content is loaded from prompts/ai_instructions/opencode.md template
+        And the content is loaded from prompts/ai_instructions/cidx_instructions.md template
         And the file contains cidx usage instructions
         """
         # Run command in temp directory (simulating project root)
@@ -239,7 +239,7 @@ class TestTeachAiQ:
         Given I have cidx installed in my project
         When I run "cidx teach-ai --q --project"
         Then a cidx.md file is created in .amazonq/rules/ subdirectory
-        And the content is loaded from prompts/ai_instructions/q.md template
+        And the content is loaded from prompts/ai_instructions/cidx_instructions.md template
         And the file contains cidx usage instructions
         """
         # Run command in temp directory (simulating project root)
@@ -305,7 +305,7 @@ class TestTeachAiJunie:
         Given I have cidx installed in my project
         When I run "cidx teach-ai --junie --project"
         Then a guidelines.md file is created in .junie subdirectory
-        And the content is loaded from prompts/ai_instructions/junie.md template
+        And the content is loaded from prompts/ai_instructions/cidx_instructions.md template
         And the file contains cidx usage instructions
         """
         # Run command in temp directory (simulating project root)
