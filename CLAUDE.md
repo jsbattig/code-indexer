@@ -251,6 +251,49 @@ This architecture provides scalable, multi-user semantic code search with effici
 ✅ `cidx query "user authentication" --quiet` → Finds login, auth, security, credentials, sessions
 ❌ `grep "auth"` → Only finds literal "auth" text, misses related concepts
 
+## Semantic Search Vector Store Architecture
+
+**CURRENT IMPLEMENTATION**: CIDX uses **FilesystemVectorStore** with quantization-based storage (file-based, NO containers required).
+
+**FilesystemVectorStore Architecture**:
+- **Storage**: Vectors stored as JSON files in `.code-indexer/index/` directory structure
+- **Quantization Pipeline**: 1536-dim → Random Projection → 64-dim → 2-bit Quantization → 32-char Hex Path
+- **Directory Structure**: Quantized vectors organized in filesystem paths for O(1) locality-preserving lookups
+- **Git-Aware**: Stores blob hashes for clean files, text content for dirty files
+- **NO Containers**: Pure filesystem-based, no Docker/Podman containers for vector storage
+- **Thread-Safe**: Atomic writes with file-level locking
+
+**Index Structure**:
+```
+.code-indexer/
+  ├── config.json                    # Project-specific configuration
+  └── index/                         # Vector storage (FilesystemVectorStore)
+      └── {collection_name}/
+          ├── collection_meta.json   # Collection metadata
+          ├── projection_matrix.npy  # Deterministic projection matrix
+          └── {hex_path}/            # Quantized directory structure
+              └── {point_id}.json    # Vector + metadata
+```
+
+**Search Algorithm**:
+1. Quantize query vector → filesystem path
+2. Find neighbor paths (configurable Hamming distance for accuracy mode)
+3. Load candidate JSON files into RAM
+4. Compute exact cosine similarity
+5. Apply filters and return top-k results
+
+**Key Components**:
+- `FilesystemVectorStore`: QdrantClient-compatible interface for filesystem storage
+- `VectorQuantizer`: Quantization pipeline for path-as-vector mapping
+- `ProjectionMatrixManager`: Deterministic projection matrix generation/loading
+- `HNSWIndexManager`: Optional HNSW index for accelerated search (experimental)
+
+**Embedding Provider**: VoyageAI only (Ollama experimental, not production-ready)
+
+**Performance**: <1s query time for 40K vectors (fetch-all-and-sort-in-RAM approach)
+
+---
+
 ## CIDX Server Architecture - Internal Operations Only
 
 **CRITICAL ARCHITECTURAL PRINCIPLE**: The CIDX server contains ALL indexing functionality internally and should NEVER call external `cidx` commands via subprocess.
