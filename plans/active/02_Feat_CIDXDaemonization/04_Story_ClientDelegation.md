@@ -2,14 +2,14 @@
 
 ## Story Overview
 
-**Story Points:** 5 (2 days)
+**Story Points:** 7 (3 days)
 **Priority:** HIGH
 **Dependencies:** Stories 2.1, 2.2 (Daemon and config must exist)
 **Risk:** Medium
 
 **As a** CIDX user with daemon mode enabled
-**I want** the CLI to automatically delegate to the daemon with minimal overhead
-**So that** my queries start in 50ms instead of 1.86s without any manual intervention
+**I want** the CLI to automatically delegate to the daemon with lifecycle commands and storage operations
+**So that** my queries start in 50ms instead of 1.86s, I can control daemon state, and storage operations maintain cache coherence
 
 ## Technical Design
 
@@ -361,6 +361,345 @@ class LightweightCLI:
                     raise
 ```
 
+### New Daemon Lifecycle Commands
+
+```python
+# cli_daemon_commands.py
+import typer
+from pathlib import Path
+import time
+import rpyc
+
+app = typer.Typer()
+
+@app.command()
+def start():
+    """
+    Start CIDX daemon manually.
+
+    Only available when daemon.enabled: true in config.
+    Normally daemon auto-starts on first query, but this allows
+    explicit control for debugging or pre-loading.
+    """
+    config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+    daemon_config = config_manager.get_daemon_config()
+
+    if not daemon_config.get("enabled"):
+        console.print("[red]Daemon mode not enabled[/red]")
+        console.print("Enable with: cidx config --daemon")
+        return 1
+
+    socket_path = config_manager.get_socket_path()
+
+    # Check if already running
+    try:
+        conn = rpyc.unix_connect(str(socket_path))
+        conn.close()
+        console.print("[yellow]Daemon already running[/yellow]")
+        console.print(f"  Socket: {socket_path}")
+        return 0
+    except:
+        pass
+
+    # Start daemon
+    console.print("Starting daemon...")
+    _start_daemon(config_manager.config_path)
+
+    # Wait and verify
+    time.sleep(1)
+    try:
+        conn = rpyc.unix_connect(str(socket_path))
+        status = conn.root.get_status()
+        conn.close()
+
+        console.print("[green]✓ Daemon started[/green]")
+        console.print(f"  Socket: {socket_path}")
+        return 0
+    except:
+        console.print("[red]Failed to start daemon[/red]")
+        return 1
+
+@app.command()
+def stop():
+    """
+    Stop CIDX daemon manually.
+
+    Gracefully shuts down daemon:
+    - Stops any active watch
+    - Clears cache
+    - Closes connections
+    - Exits daemon process
+    """
+    config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+    daemon_config = config_manager.get_daemon_config()
+
+    if not daemon_config.get("enabled"):
+        console.print("[yellow]Daemon mode not enabled[/yellow]")
+        return 1
+
+    socket_path = config_manager.get_socket_path()
+
+    # Try to connect
+    try:
+        conn = rpyc.unix_connect(str(socket_path))
+    except:
+        console.print("[yellow]Daemon not running[/yellow]")
+        return 0
+
+    # Stop watch if running
+    try:
+        watch_status = conn.root.watch_status()
+        if watch_status.get("watching"):
+            console.print("Stopping watch...")
+            conn.root.watch_stop(str(Path.cwd()))
+    except:
+        pass
+
+    # Graceful shutdown
+    console.print("Stopping daemon...")
+    try:
+        conn.root.shutdown()
+    except:
+        pass  # Connection closed is expected
+
+    # Wait for shutdown
+    time.sleep(0.5)
+
+    # Verify stopped
+    try:
+        rpyc.unix_connect(str(socket_path))
+        console.print("[red]Failed to stop daemon[/red]")
+        return 1
+    except:
+        console.print("[green]✓ Daemon stopped[/green]")
+        return 0
+
+@app.command()
+def watch(
+    reconcile: bool = Option(False, "--reconcile"),
+    # ... other existing options
+):
+    """
+    Watch for file changes and update indexes in real-time.
+
+    In daemon mode: Runs watch INSIDE daemon process.
+    In standalone mode: Runs watch locally (existing behavior).
+
+    Daemon mode benefits:
+    - Updates indexes directly in memory (no disk I/O)
+    - Cache always synchronized
+    - Better performance
+    - Can stop watch without stopping queries
+    """
+    config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+    daemon_config = config_manager.get_daemon_config()
+
+    if daemon_config.get("enabled"):
+        # DAEMON MODE: Route to daemon
+        return _watch_via_daemon(reconcile=reconcile)
+    else:
+        # STANDALONE MODE: Run locally (existing behavior)
+        return _watch_standalone(reconcile=reconcile)
+
+def _watch_via_daemon(reconcile: bool = False):
+    """Execute watch via daemon."""
+    config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+    socket_path = config_manager.get_socket_path()
+
+    # Connect to daemon (auto-start if needed)
+    conn = connect_to_daemon_with_retries(socket_path)
+
+    # Create progress handler
+    progress_handler = ClientProgressHandler()
+    callback = progress_handler.create_progress_callback()
+
+    try:
+        console.print("[cyan]Starting watch mode via daemon...[/cyan]")
+
+        # Start watch in daemon
+        result = conn.root.watch_start(
+            project_path=str(Path.cwd()),
+            callback=callback,
+            reconcile=reconcile
+        )
+
+        if result["status"] == "already_running":
+            console.print("[yellow]Watch already running[/yellow]")
+            conn.close()
+            return 1
+
+        console.print("[green]✓ Watch started[/green]")
+        console.print("[dim]Press Ctrl+C to stop, or use 'cidx watch-stop'[/dim]")
+
+        # Keep connection alive and display updates
+        try:
+            while True:
+                time.sleep(1)
+                # Progress updates come via callback
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Stopping watch...[/yellow]")
+            stats = conn.root.watch_stop(str(Path.cwd()))
+            console.print(f"[green]✓ Watch stopped[/green]")
+            console.print(f"  Files processed: {stats['files_processed']}")
+            console.print(f"  Updates applied: {stats['updates_applied']}")
+
+    finally:
+        conn.close()
+
+    return 0
+
+@app.command("watch-stop")
+def watch_stop():
+    """
+    Stop watch mode running in daemon.
+
+    Only available in daemon mode. Use this to stop watch
+    without stopping the entire daemon. Queries continue to work.
+    """
+    config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+    daemon_config = config_manager.get_daemon_config()
+
+    if not daemon_config.get("enabled"):
+        console.print("[red]Only available in daemon mode[/red]")
+        console.print("Enable with: cidx config --daemon")
+        return 1
+
+    socket_path = config_manager.get_socket_path()
+
+    try:
+        conn = rpyc.unix_connect(str(socket_path))
+        stats = conn.root.watch_stop(str(Path.cwd()))
+        conn.close()
+
+        if stats["status"] == "not_running":
+            console.print("[yellow]Watch not running[/yellow]")
+            return 1
+
+        console.print("[green]✓ Watch stopped[/green]")
+        console.print(f"  Files processed: {stats['files_processed']}")
+        console.print(f"  Updates applied: {stats['updates_applied']}")
+        return 0
+
+    except:
+        console.print("[red]Daemon not running[/red]")
+        return 1
+
+@app.command()
+def clean(**kwargs):
+    """
+    Clear vectors from collection.
+
+    In daemon mode: Routes to daemon to invalidate cache before clearing.
+    In standalone mode: Runs locally.
+    """
+    config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+    daemon_config = config_manager.get_daemon_config()
+
+    if daemon_config.get("enabled"):
+        return _clean_via_daemon(**kwargs)
+    else:
+        return _clean_standalone(**kwargs)
+
+@app.command()
+def clean_data(**kwargs):
+    """
+    Clear project data without stopping containers.
+
+    In daemon mode: Routes to daemon to invalidate cache before clearing.
+    In standalone mode: Runs locally.
+    """
+    config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+    daemon_config = config_manager.get_daemon_config()
+
+    if daemon_config.get("enabled"):
+        return _clean_data_via_daemon(**kwargs)
+    else:
+        return _clean_data_standalone(**kwargs)
+
+@app.command()
+def status(**kwargs):
+    """
+    Show status of services and index.
+
+    In daemon mode: Shows daemon cache status + storage status.
+    In standalone mode: Shows storage status only.
+    """
+    config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+    daemon_config = config_manager.get_daemon_config()
+
+    if daemon_config.get("enabled"):
+        return _status_via_daemon(**kwargs)
+    else:
+        return _status_standalone(**kwargs)
+
+def _clean_via_daemon(**kwargs):
+    """Execute clean via daemon."""
+    config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+    socket_path = config_manager.get_socket_path()
+
+    conn = connect_to_daemon_with_retries(socket_path)
+
+    try:
+        console.print("[yellow]Clearing vectors (via daemon)...[/yellow]")
+        result = conn.root.clean(
+            project_path=str(Path.cwd()),
+            **kwargs
+        )
+
+        console.print("[green]✓ Vectors cleared[/green]")
+        console.print(f"  Cache invalidated: {result['cache_invalidated']}")
+        return 0
+    finally:
+        conn.close()
+
+def _clean_data_via_daemon(**kwargs):
+    """Execute clean-data via daemon."""
+    config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+    socket_path = config_manager.get_socket_path()
+
+    conn = connect_to_daemon_with_retries(socket_path)
+
+    try:
+        console.print("[yellow]Clearing project data (via daemon)...[/yellow]")
+        result = conn.root.clean_data(
+            project_path=str(Path.cwd()),
+            **kwargs
+        )
+
+        console.print("[green]✓ Project data cleared[/green]")
+        console.print(f"  Cache invalidated: {result['cache_invalidated']}")
+        return 0
+    finally:
+        conn.close()
+
+def _status_via_daemon(**kwargs):
+    """Execute status via daemon."""
+    config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+    socket_path = config_manager.get_socket_path()
+
+    try:
+        conn = connect_to_daemon_with_retries(socket_path)
+        result = conn.root.status(project_path=str(Path.cwd()))
+        conn.close()
+
+        # Display daemon status
+        console.print("[bold]Daemon Status:[/bold]")
+        console.print(f"  Running: {result['daemon']['running']}")
+        console.print(f"  Cached: {result['daemon']['semantic_cached']}")
+        console.print(f"  FTS Available: {result['daemon']['fts_available']}")
+        console.print(f"  Watching: {result['daemon'].get('watching', False)}")
+
+        # Display storage status
+        console.print("\n[bold]Storage Status:[/bold]")
+        console.print(f"  Index Size: {result['storage']['index_size']}")
+        # ... rest of storage status
+
+        return 0
+    except:
+        # Daemon not running, show local status only
+        return _status_standalone(**kwargs)
+```
+
 ### Graceful Fallback Mechanism
 
 ```python
@@ -430,6 +769,19 @@ class FallbackHandler:
 - [ ] Console messages explain fallback reason
 - [ ] Results displayed identically in both modes
 - [ ] Socket path calculated from config location
+- [ ] `cidx start` starts daemon manually (when enabled)
+- [ ] `cidx stop` stops daemon gracefully (when enabled)
+- [ ] `cidx watch` routes to daemon when enabled
+- [ ] `cidx watch` runs locally when disabled (existing behavior)
+- [ ] `cidx watch-stop` stops daemon watch without stopping daemon
+- [ ] All lifecycle commands check `daemon.enabled` config
+- [ ] Clear error messages when commands unavailable
+- [ ] Watch progress callbacks stream to client terminal
+- [ ] `cidx clean` routes to daemon when enabled
+- [ ] `cidx clean-data` routes to daemon when enabled
+- [ ] `cidx status` routes to daemon when enabled
+- [ ] Storage commands fallback to local when daemon unavailable
+- [ ] Status command shows daemon info when enabled
 
 ### Performance Requirements
 - [ ] Daemon mode startup: <50ms to first RPC call
@@ -512,6 +864,69 @@ def test_crash_recovery():
         assert cli.restart_attempts == 2
         assert result is not None
 
+def test_start_stop_commands():
+    """Test cidx start/stop commands."""
+    # Enable daemon in config
+    config_manager.enable_daemon()
+
+    # Start daemon
+    result = runner.invoke(app, ["start"])
+    assert result.exit_code == 0
+    assert "Daemon started" in result.stdout
+
+    # Verify running
+    assert daemon_is_running()
+
+    # Stop daemon
+    result = runner.invoke(app, ["stop"])
+    assert result.exit_code == 0
+    assert "Daemon stopped" in result.stdout
+
+def test_watch_routes_to_daemon():
+    """Test cidx watch routes to daemon when enabled."""
+    config_manager.enable_daemon()
+    start_daemon()
+
+    # Run watch command
+    result = runner.invoke(app, ["watch"])
+
+    # Should route to daemon (not run locally)
+    assert "via daemon" in result.stdout
+
+def test_watch_stop_command():
+    """Test cidx watch-stop command."""
+    config_manager.enable_daemon()
+    start_daemon()
+
+    # Start watch first
+    conn = rpyc.unix_connect(socket_path)
+    conn.root.watch_start(str(Path.cwd()))
+    conn.close()
+
+    # Stop watch
+    result = runner.invoke(app, ["watch-stop"])
+    assert result.exit_code == 0
+    assert "Watch stopped" in result.stdout
+
+def test_commands_require_daemon_enabled():
+    """Test that lifecycle commands require daemon mode."""
+    # Disable daemon in config
+    config_manager.disable_daemon()
+
+    # Start should fail
+    result = runner.invoke(app, ["start"])
+    assert result.exit_code == 1
+    assert "Daemon mode not enabled" in result.stdout
+
+    # Stop should fail
+    result = runner.invoke(app, ["stop"])
+    assert result.exit_code == 1
+
+    # Watch-stop should fail
+    result = runner.invoke(app, ["watch-stop"])
+    assert result.exit_code == 1
+    assert "Only available in daemon mode" in result.stdout
+
 def test_exponential_backoff():
     """Test retry with exponential backoff."""
     cli = LightweightCLI()
@@ -535,6 +950,36 @@ def test_exponential_backoff():
             assert mock_sleep.call_args_list[0][0][0] == 0.1
             assert mock_sleep.call_args_list[1][0][0] == 0.5
             assert mock_sleep.call_args_list[2][0][0] == 1.0
+
+def test_clean_routes_to_daemon():
+    """Test clean command routes when enabled."""
+    config_manager.enable_daemon()
+    start_daemon()
+
+    result = runner.invoke(app, ["clean"])
+    assert result.exit_code == 0
+    assert "via daemon" in result.stdout
+    assert "Cache invalidated" in result.stdout
+
+def test_clean_data_routes_to_daemon():
+    """Test clean-data command routes when enabled."""
+    config_manager.enable_daemon()
+    start_daemon()
+
+    result = runner.invoke(app, ["clean-data"])
+    assert result.exit_code == 0
+    assert "via daemon" in result.stdout
+    assert "Cache invalidated" in result.stdout
+
+def test_status_shows_daemon_info():
+    """Test status shows daemon cache info when enabled."""
+    config_manager.enable_daemon()
+    start_daemon()
+
+    result = runner.invoke(app, ["status"])
+    assert result.exit_code == 0
+    assert "Daemon Status" in result.stdout
+    assert "Storage Status" in result.stdout
 ```
 
 ### Integration Tests

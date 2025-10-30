@@ -9,8 +9,10 @@
 - Eliminate repeated index loading (376ms saved per query via caching)
 - Enable concurrent read queries with proper synchronization
 - Maintain full backward compatibility with automatic fallback
+- Ensure cache coherence for storage management operations
 
 **Priority:** HIGH - MVP
+**Total Effort:** 12 days (5 stories)
 
 ## Problem Statement
 
@@ -64,13 +66,44 @@ Total: 3090ms per query
 │  └─────────────────────────────────────┘   │
 │                                             │
 │  ┌─────────────────────────────────────────┐   │
+│  │    Watch Mode Handler               │   │
+│  │  - Runs INSIDE daemon process       │   │
+│  │  - Updates cache directly in memory │   │
+│  │  - No disk writes during watch      │   │
+│  └─────────────────────────────────────┘   │
+│                                             │
+│  ┌─────────────────────────────────────────┐   │
 │  │    Concurrency Manager              │   │
 │  │  - RLock per project (reads)        │   │
 │  │  - Lock per project (writes)        │   │
 │  │  - Multi-client support             │   │
-│  └─────────────────────────────────────────┘   │
+│  └─────────────────────────────────────┘   │
 └─────────────────────────────────────────────┘
 ```
+
+### Watch Mode Integration
+
+**Critical Design Decision:** Watch mode MUST run inside the daemon process when daemon mode is enabled.
+
+**Problem with Local Watch:**
+1. Watch runs locally, updates index files on disk
+2. Daemon has indexes cached in memory
+3. Daemon cache becomes STALE (doesn't reflect disk changes)
+4. Queries return outdated results ❌
+
+**Solution with Daemon Watch:**
+1. Watch runs INSIDE daemon process
+2. Watch updates indexes directly in daemon's memory cache
+3. No disk I/O required for updates
+4. Cache is ALWAYS synchronized
+5. Queries return fresh results ✅
+6. Better performance (no disk writes during watch)
+
+**Implementation:**
+- `exposed_watch_start()`: Starts GitAwareWatchHandler in daemon thread
+- `exposed_watch_stop()`: Stops watch gracefully with statistics
+- `exposed_watch_status()`: Reports current watch state
+- Watch updates call cache invalidation/update methods directly
 
 ### Key Components
 
@@ -108,19 +141,107 @@ Total: 3090ms per query
 - Automatic cleanup of stale sockets
 - Unix domain sockets only (no TCP/IP support)
 
+## Complete Command Routing Matrix
+
+When daemon mode is enabled (`daemon.enabled: true` in `.code-indexer/config.json`):
+
+### Commands Routed to Daemon (13 commands)
+
+| Command | RPC Method | Purpose | Cache Impact |
+|---------|------------|---------|--------------|
+| `cidx query` | `exposed_query()` | Semantic search | Read (uses cache) |
+| `cidx query --fts` | `exposed_query_fts()` | FTS search | Read (uses cache) |
+| `cidx query --fts --semantic` | `exposed_query_hybrid()` | Hybrid search | Read (uses cache) |
+| `cidx index` | `exposed_index()` | Index codebase | Write (invalidates cache) |
+| `cidx watch` | `exposed_watch_start()` | File watching | Write (updates cache) |
+| `cidx watch-stop` | `exposed_watch_stop()` | Stop watch only | None |
+| `cidx clean` | `exposed_clean()` | Clear vectors | Write (invalidates cache) |
+| `cidx clean-data` | `exposed_clean_data()` | Clear project data | Write (invalidates cache) |
+| `cidx status` | `exposed_status()` | Show status | Read (includes daemon) |
+| `cidx daemon status` | `exposed_get_status()` | Daemon status only | Read |
+| `cidx daemon clear-cache` | `exposed_clear_cache()` | Clear cache | Write (clears cache) |
+| `cidx start` | N/A | Start daemon | Lifecycle |
+| `cidx stop` | `exposed_shutdown()` | Stop daemon | Lifecycle |
+
+### Commands NOT Routed - Always Local (16 commands)
+
+**Configuration & Setup:**
+- `cidx init` - Creates config (no daemon exists yet)
+- `cidx fix-config` - Repairs config file
+
+**Container/Service Management:**
+- `cidx force-flush` - Flush RAM to disk (container operation)
+- `cidx optimize` - Optimize storage (container operation)
+- `cidx list-collections` - List collections (container query)
+- `cidx setup-global-registry` - Global port setup (system-level)
+- `cidx install-server` - Install server (system-level)
+- `cidx server` - Server lifecycle (different architecture)
+- `cidx uninstall` - Remove everything (destructive)
+
+**Remote Mode Commands (N/A for daemon):**
+- `cidx admin` - Server admin (remote mode)
+- `cidx auth` - Authentication (remote mode)
+- `cidx jobs` - Background jobs (remote mode)
+- `cidx repos` - Repository management (remote mode)
+- `cidx sync` - Sync with remote (remote mode)
+- `cidx system` - System monitoring (remote mode)
+
+**Utility:**
+- `cidx teach-ai` - Generate AI instructions (text output)
+
+**Total:** 29 commands (13 routed to daemon, 16 always local)
+
+### Cache Coherence for Storage Operations
+
+**Problem:** Storage management commands modify disk storage while daemon has cached indexes in memory.
+
+**Example Scenario:**
+```bash
+# Daemon has indexes cached in memory
+$ cidx query "auth"  # Uses cached index ✓
+
+# User clears data (runs locally in original design)
+$ cidx clean-data    # Deletes disk storage
+
+# Daemon cache now points to deleted data
+$ cidx query "auth"  # Cache references non-existent files ❌
+```
+
+**Solution:** Route storage commands through daemon for cache invalidation.
+
+**Updated Flow:**
+```bash
+# Daemon has indexes cached
+$ cidx query "auth"  # Uses cache ✓
+
+# Clean routes to daemon
+$ cidx clean-data    # → exposed_clean_data()
+                     # 1. Daemon invalidates cache
+                     # 2. Daemon calls local cleanup
+                     # 3. Cache is empty (coherent)
+
+# Next query loads fresh
+$ cidx query "auth"  # Loads from new disk state ✓
+```
+
+**Commands Requiring Cache Invalidation:**
+- `cidx clean` - Clears vectors (cache now points to nothing)
+- `cidx clean-data` - Clears project data (cache invalid)
+- `cidx status` - Should show daemon cache status when enabled
+
 ## User Stories
 
 ### Story 2.0: RPyC Performance PoC [BLOCKING]
 Validate daemon architecture before full implementation.
 
 ### Story 2.1: RPyC Daemon Service with In-Memory Index Caching
-Build core daemon service with caching infrastructure.
+Build core daemon service with caching infrastructure, watch mode integration, and lifecycle management.
 
 ### Story 2.2: Repository Daemon Configuration
 Enable per-repository daemon configuration and management.
 
 ### Story 2.3: Client Delegation with Async Import Warming
-Implement lightweight client with intelligent delegation.
+Implement lightweight client with intelligent delegation and lifecycle commands.
 
 ### Story 2.4: Progress Callbacks via RPyC for Indexing
 Enable progress streaming from daemon to client terminal.
@@ -316,6 +437,7 @@ Enable progress streaming from daemon to client terminal.
 ### RPyC Service Interface
 ```python
 class CIDXDaemonService(rpyc.Service):
+    # Query operations
     def exposed_query(self, project_path, query, limit, **kwargs):
         """Execute semantic search query."""
 
@@ -325,8 +447,33 @@ class CIDXDaemonService(rpyc.Service):
     def exposed_query_hybrid(self, project_path, query, **kwargs):
         """Execute parallel semantic + FTS search."""
 
+    # Indexing operations
     def exposed_index(self, project_path, callback=None, **kwargs):
         """Perform indexing with optional progress callback."""
+
+    # Watch management
+    def exposed_watch_start(self, project_path, callback=None, **kwargs):
+        """Start watch mode inside daemon process."""
+
+    def exposed_watch_stop(self, project_path):
+        """Stop watch mode gracefully with statistics."""
+
+    def exposed_watch_status(self):
+        """Get current watch status."""
+
+    # Storage operations (for cache coherence)
+    def exposed_clean(self, project_path, **kwargs):
+        """Clear vectors + invalidate cache."""
+
+    def exposed_clean_data(self, project_path, **kwargs):
+        """Clear project data + invalidate cache."""
+
+    def exposed_status(self, project_path):
+        """Get combined daemon + storage status."""
+
+    # Daemon management
+    def exposed_shutdown(self):
+        """Gracefully shutdown daemon."""
 
     def exposed_get_status(self):
         """Return daemon status and cache statistics."""

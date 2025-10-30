@@ -2,14 +2,14 @@
 
 ## Story Overview
 
-**Story Points:** 8 (3 days)
+**Story Points:** 11 (4.5 days)
 **Priority:** HIGH
 **Dependencies:** Story 2.0 (PoC must pass GO criteria)
 **Risk:** Medium
 
 **As a** CIDX power user running hundreds of queries
-**I want** a persistent daemon service that caches indexes in memory
-**So that** repeated queries to the same project complete in under 1 second
+**I want** a persistent daemon service that caches indexes in memory with integrated watch mode and cache-coherent storage operations
+**So that** repeated queries complete in under 1 second, file changes are reflected instantly, and storage operations maintain cache coherence
 
 ## Technical Requirements
 
@@ -30,6 +30,10 @@ class CIDXDaemonService(rpyc.Service):
         # Single project cache (daemon is per-repository)
         self.cache_entry = None
         self.cache_lock = RLock()
+
+        # Watch management
+        self.watch_handler = None  # GitAwareWatchHandler instance
+        self.watch_thread = None   # Background thread running watch
 
     class CacheEntry:
         def __init__(self, project_path):
@@ -168,6 +172,266 @@ class CIDXDaemonService(rpyc.Service):
         with self.cache_lock:
             self.cache_entry = None
             return {"status": "cache cleared"}
+
+    def exposed_watch_start(self, project_path, callback=None, **kwargs):
+        """
+        Start file watching inside daemon process.
+
+        Why in daemon:
+        - Watch updates indexes directly in memory (no disk writes)
+        - Cache stays synchronized automatically
+        - No cache invalidation required
+        - Progress callbacks stream to client
+
+        Args:
+            project_path: Project root directory
+            callback: RPyC callback for progress updates
+            **kwargs: Watch configuration (reconcile, etc.)
+
+        Returns:
+            Status dict: {"status": "started", "project": str, "watching": True}
+        """
+        project_path = Path(project_path).resolve()
+
+        with self.cache_lock:
+            if self.watch_handler is not None:
+                return {"status": "already_running", "project": str(project_path)}
+
+            # Create watch handler
+            from code_indexer.services.git_aware_watch_handler import GitAwareWatchHandler
+
+            # Get or create indexer for watch
+            if self.cache_entry is None:
+                self.cache_entry = self.CacheEntry(project_path)
+
+            self.watch_handler = GitAwareWatchHandler(
+                project_path=project_path,
+                indexer=self._get_or_create_indexer(project_path),
+                progress_callback=callback,
+                **kwargs
+            )
+
+            # Start watch in background thread
+            self.watch_thread = threading.Thread(
+                target=self.watch_handler.start,
+                daemon=True
+            )
+            self.watch_thread.start()
+
+            logger.info(f"Watch started for {project_path}")
+            return {
+                "status": "started",
+                "project": str(project_path),
+                "watching": True
+            }
+
+    def exposed_watch_stop(self, project_path):
+        """
+        Stop file watching inside daemon process.
+
+        Args:
+            project_path: Project root directory
+
+        Returns:
+            Status dict with final statistics
+        """
+        project_path = Path(project_path).resolve()
+
+        with self.cache_lock:
+            if self.watch_handler is None:
+                return {"status": "not_running"}
+
+            # Stop watch handler
+            self.watch_handler.stop()
+
+            if self.watch_thread:
+                self.watch_thread.join(timeout=5)
+
+            stats = {
+                "status": "stopped",
+                "project": str(project_path),
+                "files_processed": getattr(self.watch_handler, 'files_processed', 0),
+                "updates_applied": getattr(self.watch_handler, 'updates_applied', 0)
+            }
+
+            # Clean up
+            self.watch_handler = None
+            self.watch_thread = None
+
+            logger.info(f"Watch stopped for {project_path}")
+            return stats
+
+    def exposed_watch_status(self):
+        """
+        Get current watch status.
+
+        Returns:
+            Status dict with watch state information
+        """
+        with self.cache_lock:
+            if self.watch_handler is None:
+                return {"watching": False}
+
+            return {
+                "watching": True,
+                "project": str(self.watch_handler.project_path),
+                "files_processed": getattr(self.watch_handler, 'files_processed', 0),
+                "last_update": getattr(self.watch_handler, 'last_update', datetime.now()).isoformat()
+            }
+
+    def exposed_clean(self, project_path, **kwargs):
+        """
+        Clear vectors from collection.
+
+        Cache Coherence: Invalidates daemon cache BEFORE clearing vectors
+        to prevent cache pointing to deleted data.
+
+        Args:
+            project_path: Project root directory
+            **kwargs: Arguments for clean operation
+
+        Returns:
+            Status dict with operation results
+
+        Implementation:
+            1. Acquire write lock (serialized operation)
+            2. Clear cache (invalidate all cached indexes)
+            3. Execute clean operation on disk storage
+            4. Return status
+        """
+        project_path = Path(project_path).resolve()
+
+        with self.cache_lock:
+            # Invalidate cache first
+            logger.info("Invalidating cache before clean operation")
+            self.cache_entry = None
+
+            # Execute clean operation
+            from code_indexer.services.cleanup_service import CleanupService
+            cleanup = CleanupService(project_path)
+            result = cleanup.clean_vectors(**kwargs)
+
+            return {
+                "status": "success",
+                "operation": "clean",
+                "cache_invalidated": True,
+                "result": result
+            }
+
+    def exposed_clean_data(self, project_path, **kwargs):
+        """
+        Clear project data without stopping containers.
+
+        Cache Coherence: Invalidates daemon cache BEFORE clearing data
+        to prevent cache pointing to deleted data.
+
+        Args:
+            project_path: Project root directory
+            **kwargs: Arguments for clean-data operation
+
+        Returns:
+            Status dict with operation results
+
+        Implementation:
+            1. Acquire write lock (serialized operation)
+            2. Clear cache (invalidate all cached indexes)
+            3. Execute clean-data operation on disk storage
+            4. Return status
+        """
+        project_path = Path(project_path).resolve()
+
+        with self.cache_lock:
+            # Invalidate cache first
+            logger.info("Invalidating cache before clean-data operation")
+            self.cache_entry = None
+
+            # Execute clean-data operation
+            from code_indexer.services.cleanup_service import CleanupService
+            cleanup = CleanupService(project_path)
+            result = cleanup.clean_data(**kwargs)
+
+            return {
+                "status": "success",
+                "operation": "clean_data",
+                "cache_invalidated": True,
+                "result": result
+            }
+
+    def exposed_status(self, project_path):
+        """
+        Get comprehensive status including daemon and storage.
+
+        Returns daemon cache status combined with storage status.
+
+        Args:
+            project_path: Project root directory
+
+        Returns:
+            Combined status dict:
+            {
+                "daemon": {
+                    "running": True,
+                    "cache_status": {...},
+                    "watch_status": {...}
+                },
+                "storage": {
+                    "index_size": ...,
+                    "collection_count": ...,
+                    ...
+                }
+            }
+
+        Implementation:
+            1. Get daemon status (from exposed_get_status)
+            2. Get storage status (from local status command)
+            3. Combine and return
+        """
+        project_path = Path(project_path).resolve()
+
+        # Get daemon status
+        daemon_status = self.exposed_get_status()
+
+        # Get storage status
+        from code_indexer.services.status_service import StatusService
+        status_service = StatusService(project_path)
+        storage_status = status_service.get_storage_status()
+
+        return {
+            "daemon": daemon_status,
+            "storage": storage_status,
+            "mode": "daemon"
+        }
+
+    def exposed_shutdown(self):
+        """
+        Gracefully shutdown daemon.
+
+        Called by 'cidx stop' command.
+        - Stops watch if running
+        - Clears cache
+        - Exits process after 0.5 second delay
+
+        Returns:
+            {"status": "shutting_down"}
+        """
+        logger.info("Graceful shutdown requested")
+
+        # Stop watch if running
+        if self.watch_handler:
+            self.exposed_watch_stop(self.watch_handler.project_path)
+
+        # Clear cache
+        self.exposed_clear_cache()
+
+        # Signal server to shutdown (delayed to allow response)
+        import threading
+        def delayed_shutdown():
+            time.sleep(0.5)
+            os._exit(0)
+
+        threading.Thread(target=delayed_shutdown, daemon=True).start()
+
+        return {"status": "shutting_down"}
 
     def _load_indexes(self, entry):
         """Load HNSW and ID mapping indexes."""
@@ -309,6 +573,19 @@ class HealthMonitor:
 - [ ] Status endpoint returns accurate statistics
 - [ ] Clear cache endpoint works
 - [ ] Multi-client concurrent connections supported
+- [ ] `exposed_watch_start()` starts watch in background thread
+- [ ] `exposed_watch_stop()` stops watch gracefully with statistics
+- [ ] `exposed_watch_status()` reports current watch state
+- [ ] `exposed_shutdown()` performs graceful daemon shutdown
+- [ ] Watch updates indexes directly in memory cache
+- [ ] Only one watch can run at a time per daemon
+- [ ] Watch handler cleanup on stop
+- [ ] Daemon shutdown stops watch automatically
+- [ ] `exposed_clean()` invalidates cache before clearing vectors
+- [ ] `exposed_clean_data()` invalidates cache before clearing data
+- [ ] `exposed_status()` returns combined daemon + storage status
+- [ ] Storage operations properly synchronized with write lock
+- [ ] Cache coherence maintained after storage operations
 
 ### Performance Requirements
 - [ ] Cache hit query time: <100ms (excluding embedding)
@@ -427,6 +704,97 @@ def test_socket_binding_lock():
         server2 = ThreadedServer(CIDXDaemonService, socket_path=str(socket_path))
 
     assert "Address already in use" in str(exc_info.value)
+
+def test_watch_start_stop():
+    """Test watch lifecycle in daemon."""
+    service = CIDXDaemonService()
+
+    # Start watch
+    result = service.exposed_watch_start("/project", callback=None)
+    assert result["status"] == "started"
+
+    # Verify running
+    status = service.exposed_watch_status()
+    assert status["watching"] is True
+
+    # Stop watch
+    stats = service.exposed_watch_stop("/project")
+    assert stats["status"] == "stopped"
+
+    # Verify stopped
+    status = service.exposed_watch_status()
+    assert status["watching"] is False
+
+def test_only_one_watch_allowed():
+    """Test that only one watch can run at a time."""
+    service = CIDXDaemonService()
+
+    # Start first watch
+    result1 = service.exposed_watch_start("/project1")
+    assert result1["status"] == "started"
+
+    # Try to start second watch - should fail
+    result2 = service.exposed_watch_start("/project2")
+    assert result2["status"] == "already_running"
+
+def test_shutdown_stops_watch():
+    """Test graceful shutdown stops active watch."""
+    service = CIDXDaemonService()
+
+    # Start watch
+    service.exposed_watch_start("/project")
+    assert service.watch_handler is not None
+
+    # Shutdown
+    with patch("os._exit"):
+        result = service.exposed_shutdown()
+        assert result["status"] == "shutting_down"
+
+    # Watch should be stopped
+    assert service.watch_handler is None
+
+def test_clean_invalidates_cache():
+    """Test clean operation invalidates cache."""
+    service = CIDXDaemonService()
+
+    # Load cache
+    service.exposed_query("/project", "test")
+    assert service.cache_entry is not None
+
+    # Clean operation
+    with patch("code_indexer.services.cleanup_service.CleanupService"):
+        result = service.exposed_clean("/project")
+
+    # Cache should be invalidated
+    assert service.cache_entry is None
+    assert result["cache_invalidated"] is True
+
+def test_clean_data_invalidates_cache():
+    """Test clean-data operation invalidates cache."""
+    service = CIDXDaemonService()
+
+    # Load cache
+    service.exposed_query("/project", "test")
+    assert service.cache_entry is not None
+
+    # Clean-data operation
+    with patch("code_indexer.services.cleanup_service.CleanupService"):
+        result = service.exposed_clean_data("/project")
+
+    # Cache should be invalidated
+    assert service.cache_entry is None
+    assert result["cache_invalidated"] is True
+
+def test_status_includes_daemon_info():
+    """Test status includes daemon cache information."""
+    service = CIDXDaemonService()
+
+    with patch("code_indexer.services.status_service.StatusService"):
+        status = service.exposed_status("/project")
+
+    assert "daemon" in status
+    assert "storage" in status
+    assert status["mode"] == "daemon"
 ```
 
 ### Integration Tests
