@@ -5586,23 +5586,10 @@ def status(ctx, force_docker: bool):
     mode = ctx.obj["mode"]
     project_root = ctx.obj["project_root"]
 
-    # Check daemon delegation for local mode (Story 2.3)
+    # Status command always uses full CLI for Rich table display
+    # (Daemon delegation would lose the beautiful formatted table)
     # CRITICAL: Skip daemon delegation if standalone flag is set (prevents recursive loop)
     standalone_mode = ctx.obj.get("standalone", False)
-    if mode == "local" and not standalone_mode:
-        try:
-            config_manager = ctx.obj.get("config_manager")
-            if config_manager:
-                daemon_config = config_manager.get_daemon_config()
-                if daemon_config and daemon_config.get("enabled"):
-                    # Delegate to daemon
-                    exit_code = cli_daemon_delegation._status_via_daemon(
-                        force_docker=force_docker,
-                    )
-                    sys.exit(exit_code)
-        except Exception:
-            # Daemon delegation failed, continue with standalone mode
-            pass
 
     # Handle proxy mode (Story 2.2)
     if mode == "proxy":

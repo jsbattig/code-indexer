@@ -202,11 +202,10 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
             return cli_daemon_lifecycle.stop_daemon_command()
 
         elif command == "status":
-            # Query daemon status
-            status = conn.root.exposed_status(str(Path.cwd()))
-            console.print("[green]✓[/green] Daemon running")
-            console.print(f"  Uptime: {status.get('uptime', 'unknown')}")
-            console.print(f"  Queries: {status.get('query_count', 0)}")
+            # Status command needs full CLI for Rich table display
+            # Close daemon connection and fallback to full CLI
+            conn.close()
+            raise NotImplementedError("Status requires full CLI for table formatting")
 
         else:
             # Unsupported command in fast path

@@ -80,7 +80,7 @@ def is_delegatable_command(command: str) -> bool:
         "watch",
         "clean",
         "clean-data",
-        "status",
+        # "status" removed - needs full CLI for Rich table formatting
         "start",
         "stop",
         "watch-stop",
