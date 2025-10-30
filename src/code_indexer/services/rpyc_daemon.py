@@ -660,35 +660,43 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             entry.id_mapping = {}
 
     def _load_tantivy_index(self, entry: CacheEntry) -> None:
-        """Load Tantivy FTS index into cache."""
+        """
+        Load Tantivy FTS index into daemon cache.
+
+        CRITICAL FIX: Properly open existing index without creating writer.
+        For daemon read-only queries, we only need the index and searcher.
+
+        Performance notes:
+        - Opening index: ~50-200ms (one-time cost)
+        - Creating searcher: ~1-5ms (cached across queries)
+        - Reusing searcher: <1ms (in-memory access)
+        """
         tantivy_index_dir = entry.project_path / ".code-indexer" / "tantivy_index"
 
-        # Create directory if it doesn't exist (for testing)
-        if not tantivy_index_dir.exists():
-            tantivy_index_dir.mkdir(parents=True, exist_ok=True)
+        # Check if index exists
+        if not tantivy_index_dir.exists() or not (tantivy_index_dir / "meta.json").exists():
+            logger.warning(f"Tantivy index not found at {tantivy_index_dir}")
+            entry.fts_available = False
+            return
 
         try:
             # Lazy import tantivy
             import tantivy
 
-            # Try to open existing index, create new if doesn't exist
-            try:
-                entry.tantivy_index = tantivy.Index.open(str(tantivy_index_dir))
-            except Exception:
-                # Create new index if open fails
-                from ..services.tantivy_index_manager import TantivyIndexManager
+            # Open existing index (read-only for daemon queries)
+            entry.tantivy_index = tantivy.Index.open(str(tantivy_index_dir))
+            logger.info(f"Loaded Tantivy index from {tantivy_index_dir}")
 
-                manager = TantivyIndexManager(tantivy_index_dir)
-                if not manager._index:
-                    manager.open_or_create_index()
-                entry.tantivy_index = manager._index
+            # Create searcher (this is what we reuse across queries)
+            entry.tantivy_searcher = entry.tantivy_index.searcher()
+            entry.fts_available = True
 
-            if entry.tantivy_index:
-                entry.tantivy_searcher = entry.tantivy_index.searcher()
-                entry.fts_available = True
-            else:
-                entry.fts_available = False
-        except (ImportError, Exception) as e:
+            logger.info("Tantivy index loaded and cached successfully")
+
+        except ImportError as e:
+            logger.error(f"Tantivy library not available: {e}")
+            entry.fts_available = False
+        except Exception as e:
             logger.error(f"Error loading Tantivy index: {e}")
             entry.fts_available = False
 

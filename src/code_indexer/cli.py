@@ -3829,7 +3829,10 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
 @cli.command()
 @click.argument("query")
 @click.option(
-    "--limit", "-l", default=10, help="Number of results to return (default: 10)"
+    "--limit",
+    "-l",
+    default=10,
+    help="Number of results to return (default: 10, use 0 for unlimited grep-like output)",
 )
 @click.option(
     "--language",

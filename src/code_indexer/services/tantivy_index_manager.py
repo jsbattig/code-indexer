@@ -409,7 +409,7 @@ class TantivyIndexManager:
             case_sensitive: Enable case-sensitive matching (default: False)
             edit_distance: Fuzzy matching tolerance (0-3, default: 0)
             snippet_lines: Context lines to include in snippet (0 for list only, default: 5)
-            limit: Maximum number of results (default: 10)
+            limit: Maximum number of results (default: 10, use 0 for unlimited grep-like output)
             language_filter: Filter by single programming language (deprecated, use languages)
             languages: Filter by multiple programming languages (e.g., ["py", "js"])
             path_filters: Filter by path patterns (e.g., ["*/tests/*", "*/src/*"]) - OR logic
@@ -538,15 +538,22 @@ class TantivyIndexManager:
             else:
                 tantivy_query = text_query
 
-            # Execute search with increased limit to account for filtering
-            # If language exclusions present, we need higher limit for post-processing
-            needs_increased_limit = (
-                active_path_filters
-                or exclude_paths
-                or exclude_languages
-                or (languages and exclude_languages)
-            )
-            search_limit = limit * 3 if needs_increased_limit else limit
+            # Handle limit=0 for unlimited results (grep-like output)
+            # Tantivy requires limit > 0, so use very large limit and disable snippets
+            if limit == 0:
+                search_limit = 100000  # Effectively unlimited
+                snippet_lines = 0  # Disable snippets for grep-like output
+            else:
+                # Execute search with increased limit to account for filtering
+                # If language exclusions present, we need higher limit for post-processing
+                needs_increased_limit = (
+                    active_path_filters
+                    or exclude_paths
+                    or exclude_languages
+                    or (languages and exclude_languages)
+                )
+                search_limit = limit * 3 if needs_increased_limit else limit
+
             search_results = searcher.search(tantivy_query, search_limit).hits
 
             # Build allowed and excluded extension sets once before loop
@@ -746,11 +753,12 @@ class TantivyIndexManager:
 
                 docs.append(result)
 
-                # Enforce limit after path filtering
-                if len(docs) >= limit:
+                # Enforce limit after path filtering (unless limit=0 for unlimited)
+                if limit > 0 and len(docs) >= limit:
                     break
 
-            return docs[:limit]
+            # Return results (slice only if limit > 0)
+            return docs if limit == 0 else docs[:limit]
 
         except ValueError:
             # Re-raise ValueError (includes invalid regex patterns and edit_distance validation)

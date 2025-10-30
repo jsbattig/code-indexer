@@ -72,8 +72,8 @@ Repository = "https://github.com/jsbattig/code-indexer"
 Issues = "https://github.com/jsbattig/code-indexer/issues"
 
 [project.scripts]
-code-indexer = "code_indexer.cli:main"
-cidx = "code_indexer.cli:main"
+code-indexer = "code_indexer.cli_fast_entry:main"
+cidx = "code_indexer.cli_fast_entry:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/code_indexer"]

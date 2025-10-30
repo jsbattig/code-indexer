@@ -359,6 +359,11 @@ class TestRPyCDaemon(TestCase):
 
         service = CIDXDaemonService()
 
+        # Create tantivy index directory with meta.json
+        tantivy_dir = self.project_path / ".code-indexer" / "tantivy_index"
+        tantivy_dir.mkdir(parents=True, exist_ok=True)
+        (tantivy_dir / "meta.json").write_text("{}")
+
         # Mock Tantivy index
         mock_index = MagicMock()
         mock_searcher = MagicMock()
