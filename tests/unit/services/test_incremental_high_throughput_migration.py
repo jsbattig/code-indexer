@@ -353,6 +353,7 @@ class TestIncrementalHighThroughputMigration:
                                         model_name="test-model",
                                         quiet=True,
                                         vector_thread_count=8,
+                                        fts_manager=None,
                                     )
 
         # ASSERTIONS FOR STORY 3 REQUIREMENTS

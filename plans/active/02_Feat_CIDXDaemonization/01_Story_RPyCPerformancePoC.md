@@ -1,4 +1,4 @@
-# Story 2.0: RPyC Performance PoC [CANCELLED]
+# Story 2.0: RPyC Performance PoC
 
 ## Story Overview
 
@@ -6,11 +6,7 @@
 **Priority:** CRITICAL - BLOCKING
 **Dependencies:** None
 **Risk:** High (Architecture validation)
-**Status:** ❌ CANCELLED
-**Cancellation Date:** 2025-10-26
-
-**Cancellation Reason:**
-Acceptable performance achieved with Story 1.1 parallel execution (15-30% improvement, 175-265ms saved per query). ThreadPoolExecutor overhead (7-16%) deemed acceptable for the benefit. RPyC daemon complexity, ongoing maintenance burden, and architectural risk not justified for potentially incremental additional gains beyond parallel execution.
+**Status:** ✅ ACTIVE
 
 **As a** technical architect
 **I need to** validate that the RPyC daemon architecture delivers promised performance gains
@@ -23,26 +19,32 @@ Acceptable performance achieved with Story 1.1 parallel execution (15-30% improv
 2. **Measure RPC Overhead:** Ensure <100ms communication overhead
 3. **Verify Stability:** Test 100+ consecutive queries without issues
 4. **Confirm Import Savings:** Validate 1.86s startup elimination
+5. **FTS Performance Validation:** Measure FTS query speedup with daemon caching
 
 ### Secondary Goals
 - Assess RPyC learning curve and complexity
 - Evaluate debugging/troubleshooting difficulty
 - Test fallback mechanism reliability
 - Measure memory footprint of daemon
+- Validate hybrid search parallel execution performance
 
 ## Success Criteria (GO/NO-GO Decision Points)
 
 ### GO Criteria (All must be met)
-- [ ] **Performance:** ≥30% overall query speedup achieved
+- [ ] **Performance:** ≥30% overall query speedup achieved (semantic)
+- [ ] **FTS Performance:** ≥90% FTS query speedup achieved (much faster due to no embedding)
 - [ ] **RPC Overhead:** <100ms communication overhead measured
 - [ ] **Stability:** 100 consecutive queries without failure
 - [ ] **Import Savings:** Startup time reduced from 1.86s to <100ms
+- [ ] **Hybrid Search:** Parallel execution working correctly
 
 ### NO-GO Criteria (Any triggers pivot)
-- [ ] Performance gain <30% (not worth complexity)
+- [ ] Semantic performance gain <30% (not worth complexity)
+- [ ] FTS performance gain <90% (should be near-instant with caching)
 - [ ] RPC overhead >100ms (defeats purpose)
 - [ ] Daemon crashes >1% of queries (unstable)
 - [ ] Memory growth >100MB per 100 queries (leak)
+- [ ] Hybrid search slower than sequential execution
 
 ## PoC Implementation Plan
 
@@ -85,9 +87,15 @@ class PoCDaemonService(rpyc.Service):
             }
         }
 
-# Start daemon
-server = ThreadedServer(PoCDaemonService, port=18812)
-server.start()
+# Start daemon with socket binding as lock
+socket_path = Path("/tmp/cidx-test-daemon.sock")
+try:
+    server = ThreadedServer(PoCDaemonService, socket_path=str(socket_path))
+    server.start()  # Socket bind is atomic lock
+except OSError as e:
+    if "Address already in use" in str(e):
+        print("Daemon already running")
+        sys.exit(0)
 ```
 
 ### Phase 2: Minimal Client (2 hours)
@@ -95,12 +103,26 @@ server.start()
 # poc_client.py
 import rpyc
 import time
+from pathlib import Path
 
 def query_via_daemon(query, project_path):
     start = time.perf_counter()
 
-    # Connect to daemon
-    conn = rpyc.connect("localhost", 18812)
+    # Find socket path from config location
+    config_path = find_config_upward(Path(project_path))
+    socket_path = config_path.parent / "daemon.sock"
+
+    # Connect to daemon with exponential backoff
+    retry_delays = [0.1, 0.5, 1.0, 2.0]  # 100ms, 500ms, 1s, 2s
+    for attempt, delay in enumerate(retry_delays):
+        try:
+            conn = rpyc.connect_unix(str(socket_path))
+            break
+        except Exception as e:
+            if attempt == len(retry_delays) - 1:
+                raise
+            time.sleep(delay)
+
     connection_time = time.perf_counter() - start
 
     # Execute query
@@ -264,6 +286,8 @@ def test_memory_growth():
    - CPU utilization
 
 4. **Comparison Matrix**
+
+**Semantic Queries:**
 ```
 | Metric              | Baseline | Daemon Cold | Daemon Warm | Improvement |
 |---------------------|----------|-------------|-------------|-------------|
@@ -273,6 +297,28 @@ def test_memory_growth():
 | Embedding           | 0.792s   | 0.792s      | 0.792s      | 0%          |
 | Search              | 0.062s   | 0.062s      | 0.062s      | 0%          |
 | RPC Overhead        | 0        | 0.02s       | 0.02s       | N/A         |
+```
+
+**FTS Queries:**
+```
+| Metric              | Baseline | Daemon Cold | Daemon Warm | Improvement |
+|---------------------|----------|-------------|-------------|-------------|
+| Total Time          | 2.24s    | 1.1s        | 0.1s        | 95% (warm)  |
+| Startup             | 1.86s    | 0.05s       | 0.05s       | 97%         |
+| Index Load          | 0.30s    | 0.30s       | 0.005s      | 98% (cached)|
+| Embedding           | 0ms      | 0ms         | 0ms         | N/A         |
+| FTS Search          | 0.05s    | 0.05s       | 0.05s       | 0%          |
+| RPC Overhead        | 0        | 0.02s       | 0.02s       | N/A         |
+```
+
+**Hybrid Queries:**
+```
+| Metric              | Baseline | Daemon Cold | Daemon Warm | Improvement |
+|---------------------|----------|-------------|-------------|-------------|
+| Total Time          | 3.5s     | 1.5s        | 0.95s       | 73% (warm)  |
+| Parallel Execution  | N/A      | Yes         | Yes         | N/A         |
+| Max(Semantic, FTS)  | 3.09s    | 0.9s        | 0.9s        | 71%         |
+| Result Merging      | 0.01s    | 0.01s       | 0.01s       | 0%          |
 ```
 
 ## GO/NO-GO Decision Framework

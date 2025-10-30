@@ -71,10 +71,12 @@ class PathFilterBuilder:
 
             # Create must_not condition for this pattern
             # Use "text" for glob pattern matching (not "value" for exact match)
-            must_not_conditions.append({
-                "key": "path",  # Use "path" to match actual payload key in storage
-                "match": {"text": normalized_pattern}
-            })
+            must_not_conditions.append(
+                {
+                    "key": "path",  # Use "path" to match actual payload key in storage
+                    "match": {"text": normalized_pattern},
+                }
+            )
 
         if not must_not_conditions:
             return {}

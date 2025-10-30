@@ -150,7 +150,9 @@ class PathPatternMatcher:
             if "**" in normalized_pattern:
                 # Convert ** to * for fnmatch (greedy match)
                 # ** matches any depth of directories
-                fnmatch_pattern = normalized_pattern.replace("**/", "*/").replace("/**", "/*")
+                fnmatch_pattern = normalized_pattern.replace("**/", "*/").replace(
+                    "/**", "/*"
+                )
 
                 # Also try direct match with original pattern
                 if fnmatch.fnmatch(normalized_path, fnmatch_pattern):
@@ -205,7 +207,9 @@ class PathPatternMatcher:
             if normalized_pattern.endswith("/*"):
                 # Try matching the path as if the trailing /* can match the directory itself
                 pattern_without_trailing = normalized_pattern[:-2]  # Remove "/*"
-                if fnmatch.fnmatch(normalized_path_no_trailing, pattern_without_trailing):
+                if fnmatch.fnmatch(
+                    normalized_path_no_trailing, pattern_without_trailing
+                ):
                     return True
                 # Also try the special case where */tests/* should match tests/ or src/tests/
                 # by combining both leading and trailing * removal
@@ -215,8 +219,10 @@ class PathPatternMatcher:
                     # This handles "*/tests/*" matching "src/tests/" or "tests/"
                     if "/" in normalized_path_no_trailing:
                         # Has directory separator, try matching the end part
-                        if normalized_path_no_trailing.endswith("/" + pattern_core) or \
-                           normalized_path_no_trailing == pattern_core:
+                        if (
+                            normalized_path_no_trailing.endswith("/" + pattern_core)
+                            or normalized_path_no_trailing == pattern_core
+                        ):
                             return True
 
             # Special handling for patterns like */something/* where * should match empty
@@ -227,7 +233,9 @@ class PathPatternMatcher:
                 if "/" in normalized_path_no_trailing:
                     # Try matching without the leading */
                     pattern_without_leading = normalized_pattern[2:]  # Remove "*/"
-                    if fnmatch.fnmatch(normalized_path_no_trailing, pattern_without_leading):
+                    if fnmatch.fnmatch(
+                        normalized_path_no_trailing, pattern_without_leading
+                    ):
                         return True
 
             return False

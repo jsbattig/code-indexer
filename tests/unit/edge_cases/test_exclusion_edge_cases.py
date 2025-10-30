@@ -129,10 +129,26 @@ def test_exclude_language_with_multiple_extensions(tmp_path, test_vectors):
 
     # Add Python files with different extensions + JavaScript
     points = [
-        {"id": "python_py", "vector": test_vectors[0].tolist(), "payload": {"path": "main.py", "language": "py", "type": "content"}},
-        {"id": "python_pyw", "vector": test_vectors[1].tolist(), "payload": {"path": "gui.pyw", "language": "pyw", "type": "content"}},
-        {"id": "python_pyi", "vector": test_vectors[2].tolist(), "payload": {"path": "types.pyi", "language": "pyi", "type": "content"}},
-        {"id": "javascript", "vector": test_vectors[3].tolist(), "payload": {"path": "app.js", "language": "js", "type": "content"}},
+        {
+            "id": "python_py",
+            "vector": test_vectors[0].tolist(),
+            "payload": {"path": "main.py", "language": "py", "type": "content"},
+        },
+        {
+            "id": "python_pyw",
+            "vector": test_vectors[1].tolist(),
+            "payload": {"path": "gui.pyw", "language": "pyw", "type": "content"},
+        },
+        {
+            "id": "python_pyi",
+            "vector": test_vectors[2].tolist(),
+            "payload": {"path": "types.pyi", "language": "pyi", "type": "content"},
+        },
+        {
+            "id": "javascript",
+            "vector": test_vectors[3].tolist(),
+            "payload": {"path": "app.js", "language": "js", "type": "content"},
+        },
     ]
     store.upsert_points(collection_name, points)
 
@@ -175,7 +191,9 @@ def test_exclude_language_case_insensitive_cli(tmp_path):
         # Setup minimal config
         Path(".code-indexer").mkdir(exist_ok=True)
         config_path = Path(".code-indexer/config.json")
-        config_path.write_text('{"codebase_dir": ".", "embedding_provider": {"provider": "voyageai"}}')
+        config_path.write_text(
+            '{"codebase_dir": ".", "embedding_provider": {"provider": "voyageai"}}'
+        )
 
         # Test various case variations
         test_cases = [
@@ -190,7 +208,9 @@ def test_exclude_language_case_insensitive_cli(tmp_path):
             result = runner.invoke(cli, args, catch_exceptions=False)
             # We don't check exit code here because services may not be running
             # The important thing is it doesn't crash on case variation
-            assert "Invalid language" not in result.output, f"Should handle case variation: {args}"
+            assert (
+                "Invalid language" not in result.output
+            ), f"Should handle case variation: {args}"
 
 
 def test_empty_exclusion_list_behaves_like_no_filter(tmp_path, test_vectors):
@@ -205,8 +225,16 @@ def test_empty_exclusion_list_behaves_like_no_filter(tmp_path, test_vectors):
 
     # Add files
     points = [
-        {"id": "python_0", "vector": test_vectors[0].tolist(), "payload": {"path": "test.py", "language": "py"}},
-        {"id": "javascript_0", "vector": test_vectors[1].tolist(), "payload": {"path": "app.js", "language": "js"}},
+        {
+            "id": "python_0",
+            "vector": test_vectors[0].tolist(),
+            "payload": {"path": "test.py", "language": "py"},
+        },
+        {
+            "id": "javascript_0",
+            "vector": test_vectors[1].tolist(),
+            "payload": {"path": "app.js", "language": "js"},
+        },
     ]
     store.upsert_points(collection_name, points)
 
@@ -241,8 +269,16 @@ def test_exclude_same_language_as_include_returns_empty(tmp_path, test_vectors):
 
     # Add files
     points = [
-        {"id": "python_0", "vector": test_vectors[0].tolist(), "payload": {"path": "test.py", "language": "py"}},
-        {"id": "javascript_0", "vector": test_vectors[1].tolist(), "payload": {"path": "app.js", "language": "js"}},
+        {
+            "id": "python_0",
+            "vector": test_vectors[0].tolist(),
+            "payload": {"path": "test.py", "language": "py"},
+        },
+        {
+            "id": "javascript_0",
+            "vector": test_vectors[1].tolist(),
+            "payload": {"path": "app.js", "language": "js"},
+        },
     ]
     store.upsert_points(collection_name, points)
 

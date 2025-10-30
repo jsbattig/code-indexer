@@ -17,6 +17,27 @@
   - DO NOT CHANGE without understanding cli.py progress_callback logic
   - Files with progress calls: BranchAwareIndexer, SmartIndexer, HighThroughputProcessor
 
+- ⚠️ CRITICAL LAZY IMPORT REQUIREMENT FOR FTS: NEVER import Tantivy/FTS modules at module level in files that are imported during CLI startup (cli.py, smart_indexer.py, etc.). FTS imports MUST be lazy-loaded only when --fts flag is actually used. This keeps `cidx --help` and non-FTS operations fast (~1.3s startup instead of 2-3s).
+  - **CORRECT PATTERN in smart_indexer.py**:
+    ```python
+    from __future__ import annotations  # Make all annotations deferred
+    from typing import TYPE_CHECKING
+
+    if TYPE_CHECKING:
+        from .tantivy_index_manager import TantivyIndexManager  # Type hints only
+
+    # Inside method where FTS is actually used:
+    if enable_fts:
+        from .tantivy_index_manager import TantivyIndexManager  # Lazy import
+        fts_manager = TantivyIndexManager(fts_index_dir)
+    ```
+  - **WRONG PATTERN** (NEVER DO THIS):
+    ```python
+    from .tantivy_index_manager import TantivyIndexManager  # Module-level import = BAD
+    ```
+  - Files requiring lazy FTS imports: smart_indexer.py (already fixed), any new files using FTS
+  - Verification: `python3 -c "import sys; from src.code_indexer.cli import cli; print('tantivy' in sys.modules)"` should print `False`
+
 - If you encounter JSON serialization errors: 1) Use _validate_and_debug_prompt() to analyze, 2) Check for non-ASCII chars/long lines/unescaped quotes, 3) Test with minimal Claude options first. Claude CLI integration uses subprocess calls to avoid JSON serialization issues. Always start with minimal working configuration.
 
 - When I ask you to lint, or when you decide on my own that you need to lint, always run ruff, black and mypy. We will refer to all as "linting".
@@ -213,6 +234,10 @@ This architecture provides scalable, multi-user semantic code search with effici
 **Examples**: `cidx query "authentication login" --quiet` | `cidx query "error handling" --language python --limit 20` | `cidx query "database connection" --path-filter */services/* --min-score 0.8`
 
 **Fallback**: Use grep/find only when cidx unavailable or for exact string matches.
+
+**FTS Mode**: Add `--fts` for exact text search (faster, no embeddings): `cidx query "DatabaseManager" --fts --quiet` | Supports all filters: `--language`, `--exclude-language`, `--path-filter`, `--exclude-path` | Use `--fuzzy` for typo tolerance, `--case-sensitive` for exact case matching | Filter precedence: language exclude → language include → path exclude → path include.
+
+**Regex Mode (Grep Replacement)**: Add `--fts --regex` for token-based pattern matching (10-50x faster than grep): `cidx query "def.*" --fts --regex --language python --quiet` | Token-based (✅ works: `def`, `login.*`, `test_.*` | ❌ doesn't work: `def\s+\w+` multi-token patterns) | Incompatible with `--semantic` and `--fuzzy`.
 
 **When to Use**:
 ✅ "Where is X implemented?" → `cidx query "X implementation" --quiet`

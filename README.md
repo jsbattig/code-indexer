@@ -2,7 +2,9 @@
 
 AI-powered semantic code search for your codebase. Find code by meaning, not just keywords.
 
-## Version 7.0.1
+## Version 7.1.0
+
+**New in 7.1.0**: Full-text search (FTS) support with Tantivy backend - see [Full-Text Search](#full-text-search-fts) section below.
 
 ## Two Operating Modes
 
@@ -373,6 +375,156 @@ cidx init --embedding-provider voyage-ai --max-file-size 2000000
 cidx start
 cidx index
 ```
+
+## Full-Text Search (FTS)
+
+CIDX now supports blazing-fast, index-backed full-text search alongside semantic search. FTS is perfect for finding exact text matches, specific identifiers, or debugging typos in your codebase.
+
+### Why Use FTS?
+
+- **Sub-5ms query latency** on large codebases (vs ~20ms for semantic search)
+- **Exact text matching** for finding specific function names, classes, or identifiers
+- **Fuzzy matching** with configurable edit distance for typo tolerance
+- **Case sensitivity control** for precise matching
+- **Real-time updates** in watch mode
+
+### Building the FTS Index
+
+```bash
+# Build both semantic and FTS indexes (recommended)
+cidx index --fts
+
+# Enable FTS in watch mode for real-time updates
+cidx watch --fts
+```
+
+**Note**: FTS requires Tantivy v0.25.0. Install with: `pip install tantivy==0.25.0`
+
+### Search Modes
+
+CIDX supports three search modes:
+
+#### 1. Semantic Search (Default)
+AI-powered conceptual search using vector embeddings:
+```bash
+cidx query "authentication logic"
+cidx query "database connection setup"
+cidx query "error handling patterns"
+```
+
+#### 2. Full-Text Search (--fts)
+Fast, exact text matching with optional fuzzy tolerance:
+```bash
+# Exact text search
+cidx query "authenticate_user" --fts
+
+# Case-sensitive search (find exact case)
+cidx query "ParseError" --fts --case-sensitive
+
+# Fuzzy matching (typo tolerant)
+cidx query "authenticte" --fts --fuzzy  # Finds "authenticate"
+cidx query "conection" --fts --edit-distance 2  # Finds "connection"
+```
+
+#### 3. Hybrid Search (--fts --semantic)
+Run both searches in parallel for comprehensive results:
+```bash
+cidx query "parse" --fts --semantic
+cidx query "login" --fts --semantic --limit 5
+```
+
+### FTS-Specific Options
+
+```bash
+# Case sensitivity
+--case-sensitive      # Enable case-sensitive matching
+--case-insensitive    # Force case-insensitive (default)
+
+# Fuzzy matching
+--fuzzy               # Enable fuzzy matching (edit distance 1)
+--edit-distance N     # Set fuzzy tolerance (0-3, default: 0)
+                      # 0=exact, 1=1 typo, 2=2 typos, 3=3 typos
+
+# Context control
+--snippet-lines N     # Lines of context around matches (0-50, default: 5)
+                      # 0=list files only, no content snippets
+```
+
+### FTS Examples
+
+```bash
+# Find specific function names
+cidx query "authenticate_user" --fts
+
+# Case-sensitive class search
+cidx query "UserAuthentication" --fts --case-sensitive
+
+# Fuzzy search for typos
+cidx query "respnse" --fts --fuzzy                    # Finds "response"
+cidx query "athenticate" --fts --edit-distance 2      # Finds "authenticate"
+
+# Minimal output (list files only)
+cidx query "TODO" --fts --snippet-lines 0
+
+# Extended context
+cidx query "error" --fts --snippet-lines 10
+
+# Filter by language and path
+cidx query "test" --fts --language python --path-filter "*/tests/*"
+
+# Hybrid search (both semantic and exact matching)
+cidx query "login" --fts --semantic
+```
+
+### FTS Performance
+
+FTS queries are extremely fast:
+- **Sub-5ms latency** for most searches
+- **Parallel execution** in hybrid mode (both searches run simultaneously)
+- **Real-time index updates** in watch mode
+- **Storage**: `.code-indexer/tantivy_index/`
+
+### When to Use Each Mode
+
+| Use Case | Best Mode | Example |
+|----------|-----------|---------|
+| Finding specific functions/classes | FTS with --case-sensitive | `cidx query "UserAuth" --fts --case-sensitive` |
+| Exploring concepts/patterns | Semantic (default) | `cidx query "authentication strategies"` |
+| Debugging typos in code | FTS with --fuzzy | `cidx query "respnse" --fts --fuzzy` |
+| Comprehensive search | Hybrid | `cidx query "parse" --fts --semantic` |
+| Finding TODO comments | FTS | `cidx query "TODO" --fts` |
+| Understanding architecture | Semantic | `cidx query "how does caching work"` |
+
+### Regex Pattern Matching
+
+Use `--regex` flag for token-based pattern matching (faster than grep on indexed repos):
+
+```bash
+# Find function definitions
+cidx query "def" --fts --regex
+
+# Find identifiers starting with "auth"
+cidx query "auth.*" --fts --regex --language python
+
+# Find test functions
+cidx query "test_.*" --fts --regex --exclude-path "*/vendor/*"
+
+# Find TODO comments (use lowercase for case-insensitive matching)
+cidx query "todo" --fts --regex
+
+# Case-sensitive regex (use uppercase for exact case match)
+cidx query "ERROR" --fts --regex --case-sensitive
+```
+
+**Important Limitation - Token-Based Matching**: Tantivy regex operates on individual TOKENS, not full text:
+- ✅ **Works**: `r"def"`, `r"login.*"`, `r"todo"`, `r"test_.*"`
+- ❌ **Doesn't work**: `r"def\s+\w+"` (whitespace removed during tokenization)
+
+**Case Sensitivity**: By default, regex searches are case-insensitive (patterns matched against lowercased content). Use `--case-sensitive` flag for exact case matching.
+
+For multi-word patterns spanning whitespace, use exact search instead of regex.
+
+**Performance**: Regex on indexed repos is 10-50x faster than grep for large codebases.
 
 ## Multi-User Server
 

@@ -20,20 +20,20 @@
 $ cidx init --daemon
 ℹ️ Initializing CIDX repository...
 ✓ Configuration created at .code-indexer/config.json
-✓ Daemon mode enabled (60 minute cache TTL)
+✓ Daemon mode enabled (10 minute cache TTL)
 ℹ️ Daemon will auto-start on first query
 
 # Check configuration
 $ cidx config --show
 Repository Configuration:
   Daemon Mode: Enabled
-  Cache TTL: 60 minutes
-  Socket Type: Unix
+  Cache TTL: 10 minutes
   Auto-start: Yes
+  Auto-shutdown: Yes
 
 # Modify configuration
-$ cidx config --daemon-ttl 120
-✓ Cache TTL updated to 120 minutes
+$ cidx config --daemon-ttl 20
+✓ Cache TTL updated to 20 minutes
 
 # Disable daemon mode
 $ cidx config --no-daemon
@@ -54,13 +54,11 @@ $ cidx config --no-daemon
   },
   "daemon": {
     "enabled": true,
-    "ttl_minutes": 60,
-    "socket_type": "unix",
-    "socket_path": null,
-    "tcp_port": null,
-    "auto_start": true,
-    "max_retries": 3,
-    "retry_delay_ms": 100
+    "ttl_minutes": 10,
+    "auto_shutdown_on_idle": true,
+    "max_retries": 4,
+    "retry_delays_ms": [100, 500, 1000, 2000],
+    "eviction_check_interval_seconds": 60
   },
   "embedding": {
     "provider": "voyageai",
@@ -76,16 +74,14 @@ $ cidx config --no-daemon
 class ConfigManager:
     DAEMON_DEFAULTS = {
         "enabled": False,
-        "ttl_minutes": 60,
-        "socket_type": "unix",
-        "socket_path": None,  # Auto-generated if None
-        "tcp_port": None,      # Auto-assigned if None
-        "auto_start": True,
-        "max_retries": 3,
-        "retry_delay_ms": 100
+        "ttl_minutes": 10,
+        "auto_shutdown_on_idle": True,
+        "max_retries": 4,
+        "retry_delays_ms": [100, 500, 1000, 2000],
+        "eviction_check_interval_seconds": 60
     }
 
-    def enable_daemon(self, ttl_minutes=60):
+    def enable_daemon(self, ttl_minutes=10):
         """Enable daemon mode for repository."""
         config = self.get_config()
 
@@ -95,13 +91,6 @@ class ConfigManager:
             "enabled": True,
             "ttl_minutes": ttl_minutes
         }
-
-        # Auto-generate socket path if unix
-        if config["daemon"]["socket_type"] == "unix":
-            project_hash = self._get_project_hash()
-            config["daemon"]["socket_path"] = (
-                f"/tmp/cidx-daemon-{project_hash}.sock"
-            )
 
         self.save_config(config)
         return config
@@ -132,10 +121,10 @@ class ConfigManager:
 
         return {**self.DAEMON_DEFAULTS, **config.get("daemon", {})}
 
-    def _get_project_hash(self):
-        """Generate unique project hash for socket naming."""
-        project_path = Path(self.config_path).parent.resolve()
-        return hashlib.md5(str(project_path).encode()).hexdigest()[:8]
+    def get_socket_path(self) -> Path:
+        """Calculate socket path from config location."""
+        # Socket always lives at .code-indexer/daemon.sock
+        return self.config_path.parent / "daemon.sock"
 ```
 
 ### CLI Integration
@@ -146,7 +135,7 @@ class ConfigManager:
 def init(
     path: Path = Argument(Path.cwd()),
     daemon: bool = Option(False, "--daemon", help="Enable daemon mode"),
-    daemon_ttl: int = Option(60, "--daemon-ttl", help="Cache TTL in minutes")
+    daemon_ttl: int = Option(10, "--daemon-ttl", help="Cache TTL in minutes")
 ):
     """Initialize CIDX repository."""
     config_manager = ConfigManager(path)
@@ -169,7 +158,7 @@ def config(
     show: bool = Option(False, "--show", help="Show configuration"),
     daemon: Optional[bool] = Option(None, "--daemon/--no-daemon"),
     daemon_ttl: Optional[int] = Option(None, "--daemon-ttl"),
-    socket_type: Optional[str] = Option(None, "--socket-type", help="unix or tcp")
+    auto_shutdown: Optional[bool] = Option(None, "--auto-shutdown/--no-auto-shutdown")
 ):
     """Manage repository configuration."""
     config_manager = ConfigManager.create_with_backtrack()
@@ -182,9 +171,10 @@ def config(
         console.print(f"  Daemon Mode: {'Enabled' if daemon_config.get('enabled') else 'Disabled'}")
 
         if daemon_config.get("enabled"):
-            console.print(f"  Cache TTL: {daemon_config.get('ttl_minutes', 60)} minutes")
-            console.print(f"  Socket Type: {daemon_config.get('socket_type', 'unix')}")
-            console.print(f"  Auto-start: {'Yes' if daemon_config.get('auto_start', True) else 'No'}")
+            console.print(f"  Cache TTL: {daemon_config.get('ttl_minutes', 10)} minutes")
+            console.print(f"  Auto-start: Yes")  # Always true
+            console.print(f"  Auto-shutdown: {'Yes' if daemon_config.get('auto_shutdown_on_idle', True) else 'No'}")
+            console.print(f"  Socket: .code-indexer/daemon.sock")
 
         return
 
@@ -201,9 +191,9 @@ def config(
         config_manager.update_daemon_ttl(daemon_ttl)
         console.print(f"✓ Cache TTL updated to {daemon_ttl} minutes")
 
-    if socket_type is not None:
-        config_manager.update_daemon_socket_type(socket_type)
-        console.print(f"✓ Socket type updated to {socket_type}")
+    if auto_shutdown is not None:
+        config_manager.update_daemon_auto_shutdown(auto_shutdown)
+        console.print(f"✓ Auto-shutdown {'enabled' if auto_shutdown else 'disabled'}")
 ```
 
 ### Runtime Configuration Detection
@@ -219,34 +209,23 @@ class DaemonClient:
         """Determine if daemon should be used."""
         return self.daemon_config.get("enabled", False)
 
-    def get_connection_params(self) -> Dict:
-        """Get daemon connection parameters."""
-        if self.daemon_config["socket_type"] == "unix":
-            socket_path = self.daemon_config.get("socket_path")
-            if not socket_path:
-                # Auto-generate if not specified
-                project_hash = self.config_manager._get_project_hash()
-                socket_path = f"/tmp/cidx-daemon-{project_hash}.sock"
+    def get_socket_path(self) -> Path:
+        """Get daemon socket path."""
+        # Always at .code-indexer/daemon.sock
+        return self.config_manager.get_socket_path()
 
-            return {
-                "type": "unix",
-                "path": socket_path
-            }
-        else:  # tcp
-            port = self.daemon_config.get("tcp_port")
-            if not port:
-                # Auto-assign port based on project
-                port = 9000 + (hash(str(self.config_manager.config_path)) % 1000)
+    def get_retry_delays(self) -> List[float]:
+        """Get retry delays in seconds."""
+        delays_ms = self.daemon_config.get("retry_delays_ms", [100, 500, 1000, 2000])
+        return [d / 1000.0 for d in delays_ms]
 
-            return {
-                "type": "tcp",
-                "host": "localhost",
-                "port": port
-            }
+    def get_max_retries(self) -> int:
+        """Get maximum retry attempts."""
+        return self.daemon_config.get("max_retries", 4)
 
-    def should_auto_start(self) -> bool:
-        """Check if daemon should auto-start."""
-        return self.daemon_config.get("auto_start", True)
+    def should_auto_shutdown(self) -> bool:
+        """Check if daemon should auto-shutdown on idle."""
+        return self.daemon_config.get("auto_shutdown_on_idle", True)
 ```
 
 ## Acceptance Criteria
@@ -257,46 +236,53 @@ class DaemonClient:
 - [ ] `cidx config --daemon-ttl N` updates cache TTL
 - [ ] `cidx config --no-daemon` disables daemon mode
 - [ ] Configuration persisted in .code-indexer/config.json
-- [ ] Socket path auto-generated based on project
+- [ ] Socket path always at .code-indexer/daemon.sock
 - [ ] Runtime detection of daemon configuration
+- [ ] Retry delays configurable via array
 
 ### Configuration Validation
-- [ ] TTL must be positive integer (1-10080 minutes)
-- [ ] Socket type must be "unix" or "tcp"
-- [ ] TCP port must be valid (1024-65535)
+- [ ] TTL must be positive integer (1-1440 minutes)
+- [ ] Retry delays must be positive integers
+- [ ] Max retries must be 0-10
 - [ ] Invalid config rejected with clear error
 
 ### Backward Compatibility
 - [ ] Existing configs without daemon section work
 - [ ] Default to standalone mode if not configured
 - [ ] Version migration for old configs
+- [ ] Old socket/tcp fields ignored if present
 
 ## Implementation Tasks
 
 ### Task 1: Schema Definition (2 hours)
 - [ ] Define daemon configuration schema
-- [ ] Add to config version 2.0.0
+- [ ] Remove deprecated fields (socket_type, socket_path, tcp_port)
+- [ ] Add new fields (retry_delays_ms, eviction_check_interval_seconds)
 - [ ] Document all fields
 
 ### Task 2: ConfigManager Updates (3 hours)
 - [ ] Add daemon management methods
-- [ ] Implement auto-generation logic
+- [ ] Implement socket path calculation
 - [ ] Add validation methods
+- [ ] Update defaults (10 min TTL, exponential backoff)
 
 ### Task 3: CLI Commands (2 hours)
 - [ ] Update init command with --daemon
 - [ ] Implement config command
+- [ ] Add auto-shutdown toggle
 - [ ] Add help documentation
 
 ### Task 4: Runtime Detection (1 hour)
 - [ ] Create DaemonClient class
 - [ ] Add configuration detection
-- [ ] Implement connection params
+- [ ] Implement retry delay parsing
+- [ ] Socket path resolution
 
 ### Task 5: Testing (2 hours)
 - [ ] Unit tests for configuration
 - [ ] CLI command tests
 - [ ] Integration tests
+- [ ] Migration tests
 
 ## Testing Strategy
 
@@ -306,11 +292,11 @@ class DaemonClient:
 def test_enable_daemon():
     """Test enabling daemon mode."""
     config_manager = ConfigManager(temp_dir)
-    config = config_manager.enable_daemon(ttl_minutes=120)
+    config = config_manager.enable_daemon(ttl_minutes=20)
 
     assert config["daemon"]["enabled"] is True
-    assert config["daemon"]["ttl_minutes"] == 120
-    assert config["daemon"]["socket_path"] is not None
+    assert config["daemon"]["ttl_minutes"] == 20
+    assert config["daemon"]["auto_shutdown_on_idle"] is True
 
 def test_daemon_config_defaults():
     """Test default daemon configuration."""
@@ -318,15 +304,17 @@ def test_daemon_config_defaults():
     daemon_config = config_manager.get_daemon_config()
 
     assert daemon_config["enabled"] is False
-    assert daemon_config["ttl_minutes"] == 60
-    assert daemon_config["auto_start"] is True
+    assert daemon_config["ttl_minutes"] == 10
+    assert daemon_config["auto_shutdown_on_idle"] is True
+    assert daemon_config["max_retries"] == 4
+    assert daemon_config["retry_delays_ms"] == [100, 500, 1000, 2000]
 
-def test_socket_path_generation():
-    """Test unique socket path per project."""
-    config1 = ConfigManager("/project1").enable_daemon()
-    config2 = ConfigManager("/project2").enable_daemon()
+def test_socket_path_calculation():
+    """Test socket path is always at .code-indexer/daemon.sock."""
+    config_manager = ConfigManager("/project")
+    socket_path = config_manager.get_socket_path()
 
-    assert config1["daemon"]["socket_path"] != config2["daemon"]["socket_path"]
+    assert socket_path == Path("/project/.code-indexer/daemon.sock")
 ```
 
 ### CLI Tests
@@ -334,9 +322,9 @@ def test_socket_path_generation():
 ```python
 def test_init_with_daemon():
     """Test cidx init --daemon."""
-    result = runner.invoke(app, ["init", "--daemon", "--daemon-ttl", "120"])
+    result = runner.invoke(app, ["init", "--daemon", "--daemon-ttl", "20"])
     assert "Daemon mode enabled" in result.stdout
-    assert "120 minute cache TTL" in result.stdout
+    assert "20 minute cache TTL" in result.stdout
 
 def test_config_show():
     """Test cidx config --show."""
@@ -344,7 +332,15 @@ def test_config_show():
     result = runner.invoke(app, ["config", "--show"])
 
     assert "Daemon Mode: Enabled" in result.stdout
-    assert "Cache TTL: 60 minutes" in result.stdout
+    assert "Cache TTL: 10 minutes" in result.stdout
+    assert "Socket: .code-indexer/daemon.sock" in result.stdout
+
+def test_config_update_ttl():
+    """Test updating TTL."""
+    runner.invoke(app, ["init", "--daemon"])
+    result = runner.invoke(app, ["config", "--daemon-ttl", "30"])
+
+    assert "Cache TTL updated to 30 minutes" in result.stdout
 ```
 
 ### Integration Tests
@@ -359,23 +355,35 @@ def test_daemon_detection():
     # Check detection
     client = DaemonClient(config_manager)
     assert client.should_use_daemon() is True
-    assert client.should_auto_start() is True
+    assert client.get_socket_path().name == "daemon.sock"
 
     # Disable and check again
     config_manager.disable_daemon()
     client = DaemonClient(config_manager)
     assert client.should_use_daemon() is False
+
+def test_retry_delays():
+    """Test retry delay configuration."""
+    config_manager = ConfigManager(temp_dir)
+    config_manager.enable_daemon()
+
+    client = DaemonClient(config_manager)
+    delays = client.get_retry_delays()
+
+    assert delays == [0.1, 0.5, 1.0, 2.0]  # Converted to seconds
+    assert client.get_max_retries() == 4
 ```
 
 ## Manual Testing Checklist
 
 - [ ] Run `cidx init --daemon` in new project
 - [ ] Verify config.json contains daemon section
+- [ ] Check socket path is .code-indexer/daemon.sock
 - [ ] Run `cidx config --show` and verify output
-- [ ] Update TTL with `cidx config --daemon-ttl 120`
+- [ ] Update TTL with `cidx config --daemon-ttl 20`
 - [ ] Disable with `cidx config --no-daemon`
 - [ ] Re-enable and verify persistence
-- [ ] Test with multiple projects (different configs)
+- [ ] Test auto-shutdown toggle
 
 ## Migration Strategy
 
@@ -388,16 +396,22 @@ def migrate_config_v1_to_v2(old_config: Dict) -> Dict:
         "version": "2.0.0",
         "project": old_config.get("project", {}),
         "embedding": old_config.get("embedding", {}),
-        "daemon": {
-            "enabled": False,  # Disabled by default
-            **ConfigManager.DAEMON_DEFAULTS
-        }
+        "daemon": ConfigManager.DAEMON_DEFAULTS.copy()
     }
 
-    # Preserve any custom settings
-    for key, value in old_config.items():
-        if key not in ["version", "project", "embedding"]:
-            new_config[key] = value
+    # If old config had daemon section, migrate it
+    if "daemon" in old_config:
+        old_daemon = old_config["daemon"]
+
+        # Migrate enabled flag
+        new_config["daemon"]["enabled"] = old_daemon.get("enabled", False)
+
+        # Update TTL default from 60 to 10
+        old_ttl = old_daemon.get("ttl_minutes", 60)
+        new_config["daemon"]["ttl_minutes"] = 10 if old_ttl == 60 else old_ttl
+
+        # Remove deprecated fields
+        # socket_type, socket_path, tcp_port are no longer used
 
     return new_config
 ```
@@ -421,8 +435,11 @@ cidx init --daemon
 # Or enable for existing repository
 cidx config --daemon
 
-# Customize cache TTL (default 60 minutes)
-cidx config --daemon-ttl 120
+# Customize cache TTL (default 10 minutes)
+cidx config --daemon-ttl 20
+
+# Toggle auto-shutdown
+cidx config --auto-shutdown
 ```
 
 ### Performance Impact
@@ -430,9 +447,25 @@ cidx config --daemon-ttl 120
 - Standalone mode: ~3.09s per query
 - Daemon mode (cold): ~1.5s per query
 - Daemon mode (warm): ~0.9s per query
+- FTS queries: ~100ms (95% improvement)
 
 The daemon starts automatically on the first query and runs in the background.
-Cached indexes are kept in memory for the configured TTL period.
+Each repository has its own daemon process with a socket at `.code-indexer/daemon.sock`.
+
+### Configuration
+
+```json
+{
+  "daemon": {
+    "enabled": true,
+    "ttl_minutes": 10,
+    "auto_shutdown_on_idle": true,
+    "max_retries": 4,
+    "retry_delays_ms": [100, 500, 1000, 2000],
+    "eviction_check_interval_seconds": 60
+  }
+}
+```
 ```
 
 ## Definition of Done
@@ -441,6 +474,7 @@ Cached indexes are kept in memory for the configured TTL period.
 - [ ] ConfigManager supports daemon configuration
 - [ ] CLI commands implemented (init, config)
 - [ ] Runtime detection working
+- [ ] Socket path calculation correct
 - [ ] All tests passing
 - [ ] Migration strategy implemented
 - [ ] Documentation updated
@@ -449,7 +483,10 @@ Cached indexes are kept in memory for the configured TTL period.
 ## References
 
 **Conversation Context:**
-- "`cidx init --daemon` stores config in .code-indexer/config.json"
-- "Runtime daemon detection and configuration management"
-- "Default 60-minute TTL (configurable per project)"
-- "Automatic daemon startup on first query if configured"
+- "Socket at .code-indexer/daemon.sock"
+- "10-minute TTL default"
+- "Auto-shutdown on idle"
+- "Retry with exponential backoff [100, 500, 1000, 2000]ms"
+- "60-second eviction check interval"
+- "Remove socket_type, socket_path, tcp_port fields"
+- "One daemon per repository"

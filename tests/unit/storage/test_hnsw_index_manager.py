@@ -488,7 +488,9 @@ class TestHNSWIndexManagerStalenessFunctionality:
         for i in range(10):
             vector_file = vectors_dir / f"vector_new_{i}.json"
             with open(vector_file, "w") as f:
-                json.dump({"id": f"vec_new_{i}", "vector": np.random.randn(128).tolist()}, f)
+                json.dump(
+                    {"id": f"vec_new_{i}", "vector": np.random.randn(128).tolist()}, f
+                )
 
         # Should detect staleness via count mismatch
         assert manager.is_stale(tmp_path) is True

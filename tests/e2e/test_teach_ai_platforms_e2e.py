@@ -164,7 +164,9 @@ class TestTeachAiGemini:
 
         # No .gemini directory should be created
         gemini_dir = tmp_path / ".gemini"
-        assert not gemini_dir.exists(), ".gemini directory was created in show-only mode"
+        assert (
+            not gemini_dir.exists()
+        ), ".gemini directory was created in show-only mode"
 
 
 class TestTeachAiOpenCode:

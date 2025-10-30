@@ -959,7 +959,9 @@ class ConfigurationRepairer:
 
             # Skip Qdrant-specific configuration if using filesystem backend
             if config.vector_store and config.vector_store.provider == "filesystem":
-                print("  ℹ️  Skipping Qdrant container/port configuration (filesystem backend)")
+                print(
+                    "  ℹ️  Skipping Qdrant container/port configuration (filesystem backend)"
+                )
                 return fixes
 
             # Regenerate project configuration based on current filesystem location

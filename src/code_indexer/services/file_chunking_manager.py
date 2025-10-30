@@ -61,6 +61,7 @@ class FileChunkingManager:
         thread_count: int,
         slot_tracker: CleanSlotTracker,
         codebase_dir: Path,  # CRITICAL FOR COW CLONING: Needed for path normalization
+        fts_manager=None,  # Optional FTS index manager
     ):
         """
         Initialize FileChunkingManager with complete functionality.
@@ -95,6 +96,7 @@ class FileChunkingManager:
         self.thread_count = thread_count
         self.slot_tracker = slot_tracker
         self.codebase_dir = codebase_dir
+        self.fts_manager = fts_manager
 
         # CRITICAL FIX: Single cancellation event shared with VectorCalculationManager
         self._cancellation_requested = False
@@ -652,6 +654,38 @@ class FileChunkingManager:
                     logger.debug(
                         f"Successfully wrote {len(points_data)} points for {file_path}"
                     )
+
+                    # Add FTS documents if FTS manager is available
+                    if self.fts_manager:
+                        for i, point in enumerate(file_points):
+                            try:
+                                # Extract identifiers from chunk text (simple whitespace split)
+                                chunk_text = point.get("text", "")
+                                identifiers = chunk_text.split()
+
+                                # Create FTS document
+                                fts_doc = {
+                                    "path": str(
+                                        file_path.relative_to(self.codebase_dir)
+                                    ),
+                                    "content": chunk_text,
+                                    "content_raw": chunk_text,
+                                    "identifiers": identifiers,
+                                    "line_start": point["metadata"].get(
+                                        "line_start", 0
+                                    ),
+                                    "line_end": point["metadata"].get("line_end", 0),
+                                    "language": file_path.suffix.lstrip(".") or "txt",
+                                }
+
+                                # Add to FTS index
+                                self.fts_manager.add_document(fts_doc)
+                            except Exception as e:
+                                # Log FTS errors but don't fail semantic indexing
+                                logger.warning(
+                                    f"FTS indexing failed for chunk {i} of {file_path}: {e}"
+                                )
+                                # Continue with next chunk
 
                 except Exception as e:
                     logger.error(f"Vector storage write failed for {file_path}: {e}")

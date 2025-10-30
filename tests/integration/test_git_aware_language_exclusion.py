@@ -41,27 +41,33 @@ def git_aware_test_codebase():
     )
 
     # Create Python file
-    (base_path / "test.py").write_text("""
+    (base_path / "test.py").write_text(
+        """
 def authenticate_user(username, password):
     '''Authenticate user with credentials'''
     return verify_credentials(username, password)
-""")
+"""
+    )
 
     # Create JavaScript file
-    (base_path / "test.js").write_text("""
+    (base_path / "test.js").write_text(
+        """
 function authenticateUser(username, password) {
     // Authenticate user with credentials
     return verifyCredentials(username, password);
 }
-""")
+"""
+    )
 
     # Create TypeScript file
-    (base_path / "test.ts").write_text("""
+    (base_path / "test.ts").write_text(
+        """
 function authenticateUser(username: string, password: string): boolean {
     // Authenticate user with credentials
     return verifyCredentials(username, password);
 }
-""")
+"""
+    )
 
     # Commit files to git
     subprocess.run(["git", "add", "."], cwd=base_path, check=True, capture_output=True)
@@ -92,6 +98,7 @@ def test_exclude_javascript_in_git_aware_repository(git_aware_test_codebase):
 
     # Run all commands in the git repository directory (no isolated filesystem)
     import os
+
     original_dir = os.getcwd()
 
     try:
@@ -130,9 +137,9 @@ def test_exclude_javascript_in_git_aware_repository(git_aware_test_codebase):
         )
 
         # Python files SHOULD appear
-        assert "test.py" in output, (
-            f"Python file should appear in results but doesn't. Output:\n{output}"
-        )
+        assert (
+            "test.py" in output
+        ), f"Python file should appear in results but doesn't. Output:\n{output}"
 
         # Cleanup - stop services
         runner.invoke(cli, ["stop"])
@@ -150,6 +157,7 @@ def test_exclude_multiple_languages_in_git_aware_repository(git_aware_test_codeb
     """
     runner = CliRunner()
     import os
+
     original_dir = os.getcwd()
 
     try:
@@ -166,8 +174,10 @@ def test_exclude_multiple_languages_in_git_aware_repository(git_aware_test_codeb
             [
                 "query",
                 "authenticate",
-                "--exclude-language", "javascript",
-                "--exclude-language", "typescript",
+                "--exclude-language",
+                "javascript",
+                "--exclude-language",
+                "typescript",
                 "--quiet",
             ],
         )
@@ -176,17 +186,17 @@ def test_exclude_multiple_languages_in_git_aware_repository(git_aware_test_codeb
         output = query_result.output
 
         # Verify no JS or TS files in output
-        assert "test.js" not in output, (
-            f"JavaScript file should be excluded. Output:\n{output}"
-        )
-        assert "test.ts" not in output, (
-            f"TypeScript file should be excluded. Output:\n{output}"
-        )
+        assert (
+            "test.js" not in output
+        ), f"JavaScript file should be excluded. Output:\n{output}"
+        assert (
+            "test.ts" not in output
+        ), f"TypeScript file should be excluded. Output:\n{output}"
 
         # Python file should appear
-        assert "test.py" in output, (
-            f"Python file should appear in results. Output:\n{output}"
-        )
+        assert (
+            "test.py" in output
+        ), f"Python file should appear in results. Output:\n{output}"
 
         # Cleanup
         runner.invoke(cli, ["stop"])
@@ -204,6 +214,7 @@ def test_exclude_with_language_filter_in_git_aware_repository(git_aware_test_cod
     """
     runner = CliRunner()
     import os
+
     original_dir = os.getcwd()
 
     try:
@@ -220,8 +231,10 @@ def test_exclude_with_language_filter_in_git_aware_repository(git_aware_test_cod
             [
                 "query",
                 "authenticate",
-                "--language", "python",
-                "--exclude-language", "javascript",
+                "--language",
+                "python",
+                "--exclude-language",
+                "javascript",
                 "--quiet",
             ],
         )

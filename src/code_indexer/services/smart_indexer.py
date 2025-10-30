@@ -7,12 +7,14 @@ These MUST use total=0 to show as ℹ️ messages in CLI, not progress bar.
 See HighThroughputProcessor for file progress patterns (total>0).
 """
 
+from __future__ import annotations
+
 import logging
 import time
 import datetime
 import subprocess
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Callable, TYPE_CHECKING
 from dataclasses import dataclass
 
 from ..config import Config
@@ -27,6 +29,11 @@ from .indexing_lock import IndexingLockError, create_indexing_lock
 from .high_throughput_processor import HighThroughputProcessor
 from .git_hook_manager import GitHookManager
 from ..utils.enhanced_messaging import OperationType, create_enhanced_callback
+
+# CRITICAL: Lazy import for FTS - only load when --fts flag used
+# This prevents Tantivy from loading on every cidx command (including --help)
+if TYPE_CHECKING:
+    from .tantivy_index_manager import TantivyIndexManager
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +257,7 @@ class SmartIndexer(HighThroughputProcessor):
         quiet: bool = False,
         vector_thread_count: Optional[int] = None,
         detect_deletions: bool = False,
+        enable_fts: bool = False,
     ) -> ProcessingStats:
         """
         Smart indexing that automatically chooses between full and incremental indexing.
@@ -264,6 +272,7 @@ class SmartIndexer(HighThroughputProcessor):
             quiet: Suppress progress output
             vector_thread_count: Number of threads for vector calculation
             detect_deletions: Detect and handle files deleted from filesystem but still in database
+            enable_fts: Build full-text search index alongside semantic index
 
         Returns:
             ProcessingStats with operation results
@@ -278,11 +287,58 @@ class SmartIndexer(HighThroughputProcessor):
         except IndexingLockError as e:
             raise RuntimeError(str(e))
 
+        # Initialize FTS manager variable before try block to ensure it's defined for finally block
+        fts_manager: Optional[TantivyIndexManager] = None
+
         try:
             # Get current git status
             git_status = self.get_git_status()
             provider_name = self.embedding_provider.get_provider_name()
             model_name = self.embedding_provider.get_current_model()
+
+            # Initialize FTS manager if requested
+            if enable_fts:
+                try:
+                    # CRITICAL: Lazy import - only load Tantivy when --fts flag used
+                    from .tantivy_index_manager import TantivyIndexManager
+
+                    fts_index_dir = (
+                        self.config.codebase_dir / ".code-indexer" / "tantivy_index"
+                    )
+                    fts_manager = TantivyIndexManager(fts_index_dir)
+                    fts_manager.initialize_index(create_new=True)
+                    if progress_callback:
+                        progress_callback(
+                            0,
+                            0,
+                            Path(""),
+                            info="✅ FTS indexing enabled - Tantivy index initialized",
+                        )
+                    logger.info(f"FTS indexing enabled: {fts_index_dir}")
+                except ImportError as e:
+                    logger.error(
+                        f"FTS indexing failed - Tantivy library not installed: {e}"
+                    )
+                    if progress_callback:
+                        progress_callback(
+                            0,
+                            0,
+                            Path(""),
+                            info="⚠️ FTS indexing disabled - Tantivy library not installed",
+                        )
+                    # Continue without FTS - graceful degradation
+                    fts_manager = None
+                except Exception as e:
+                    logger.error(f"FTS initialization failed: {e}")
+                    if progress_callback:
+                        progress_callback(
+                            0,
+                            0,
+                            Path(""),
+                            info=f"⚠️ FTS indexing disabled - initialization failed: {e}",
+                        )
+                    # Continue without FTS - graceful degradation
+                    fts_manager = None
 
             # Ensure git hook is installed for branch change detection
             try:
@@ -337,6 +393,7 @@ class SmartIndexer(HighThroughputProcessor):
                             collection_name=collection_name,
                             progress_callback=progress_callback,
                             vector_thread_count=vector_thread_count,
+                            fts_manager=fts_manager,
                         )
 
                         # Convert to ProcessingStats format
@@ -407,6 +464,7 @@ class SmartIndexer(HighThroughputProcessor):
                     model_name,
                     quiet,
                     vector_thread_count,
+                    fts_manager,
                 )
 
             # Check for reconcile operation
@@ -446,6 +504,7 @@ class SmartIndexer(HighThroughputProcessor):
                     model_name,
                     quiet,
                     vector_thread_count,
+                    fts_manager,
                 )
 
             # Check if we need to force full index due to configuration changes
@@ -474,6 +533,7 @@ class SmartIndexer(HighThroughputProcessor):
                     model_name,
                     quiet,
                     vector_thread_count,
+                    fts_manager,
                 )
 
             # Try incremental indexing
@@ -486,6 +546,7 @@ class SmartIndexer(HighThroughputProcessor):
                 safety_buffer_seconds,
                 quiet,
                 vector_thread_count,
+                fts_manager,
             )
 
         except KeyboardInterrupt:
@@ -496,6 +557,15 @@ class SmartIndexer(HighThroughputProcessor):
             self.progressive_metadata.fail_indexing(str(e))
             raise
         finally:
+            # Commit FTS index if it was initialized
+            if fts_manager is not None:
+                try:
+                    fts_manager.commit()
+                    logger.info("FTS index committed successfully")
+                except Exception as e:
+                    logger.error(f"Failed to commit FTS index: {e}")
+                    # Don't raise - FTS commit failure shouldn't block semantic indexing completion
+
             # Always release the lock, even on exception
             indexing_lock.release()
 
@@ -508,6 +578,7 @@ class SmartIndexer(HighThroughputProcessor):
         model_name: str,
         quiet: bool = False,
         vector_thread_count: Optional[int] = None,
+        fts_manager=None,
     ) -> ProcessingStats:
         """Perform full indexing."""
         # Debug: Log start of full index
@@ -663,6 +734,7 @@ class SmartIndexer(HighThroughputProcessor):
                 vector_thread_count=resolved_thread_count,
                 batch_size=50,
                 progress_callback=progress_callback,
+                fts_manager=fts_manager,
             )
 
             with open(debug_file, "a") as f:
@@ -715,8 +787,12 @@ class SmartIndexer(HighThroughputProcessor):
             # This ensures FilesystemVectorStore rebuilds HNSW/ID indexes
             if progress_callback:
                 progress_callback(0, 0, Path(""), info="Finalizing indexing session...")
-            end_result = self.qdrant_client.end_indexing(collection_name, progress_callback)
-            logger.info(f"Index finalization complete: {end_result.get('vectors_indexed', 0)} vectors indexed")
+            end_result = self.qdrant_client.end_indexing(
+                collection_name, progress_callback
+            )
+            logger.info(
+                f"Index finalization complete: {end_result.get('vectors_indexed', 0)} vectors indexed"
+            )
 
         # Update metadata with actual processing results
         if progress_callback:
@@ -766,6 +842,7 @@ class SmartIndexer(HighThroughputProcessor):
         safety_buffer_seconds: int,
         quiet: bool = False,
         vector_thread_count: Optional[int] = None,
+        fts_manager=None,
     ) -> ProcessingStats:
         """Perform incremental indexing."""
 
@@ -793,6 +870,7 @@ class SmartIndexer(HighThroughputProcessor):
                 model_name,
                 quiet,
                 vector_thread_count,
+                fts_manager,
             )
 
         # Get resume timestamp with safety buffer (for completed operations)
@@ -983,6 +1061,7 @@ class SmartIndexer(HighThroughputProcessor):
                 vector_thread_count=resolved_thread_count,
                 batch_size=50,
                 progress_callback=progress_callback,
+                fts_manager=fts_manager,
             )
 
             # For incremental indexing, also hide files that don't exist in current branch
@@ -1023,8 +1102,12 @@ class SmartIndexer(HighThroughputProcessor):
             # This ensures FilesystemVectorStore rebuilds HNSW/ID indexes
             if progress_callback:
                 progress_callback(0, 0, Path(""), info="Finalizing indexing session...")
-            end_result = self.qdrant_client.end_indexing(collection_name, progress_callback)
-            logger.info(f"Incremental index finalization complete: {end_result.get('vectors_indexed', 0)} vectors indexed")
+            end_result = self.qdrant_client.end_indexing(
+                collection_name, progress_callback
+            )
+            logger.info(
+                f"Incremental index finalization complete: {end_result.get('vectors_indexed', 0)} vectors indexed"
+            )
 
         # Update metadata with actual processing results
         if progress_callback:
@@ -1435,6 +1518,7 @@ class SmartIndexer(HighThroughputProcessor):
                 collection_name=collection_name,
                 progress_callback=progress_callback,
                 vector_thread_count=vector_thread_count,
+                fts_manager=fts_manager,  # type: ignore[name-defined]
             )
 
             # Convert BranchIndexingResult to ProcessingStats
@@ -1460,8 +1544,12 @@ class SmartIndexer(HighThroughputProcessor):
             # This ensures FilesystemVectorStore rebuilds HNSW/ID indexes
             if progress_callback:
                 progress_callback(0, 0, Path(""), info="Finalizing indexing session...")
-            end_result = self.qdrant_client.end_indexing(collection_name, progress_callback)
-            logger.info(f"Index finalization complete: {end_result.get('vectors_indexed', 0)} vectors indexed")
+            end_result = self.qdrant_client.end_indexing(
+                collection_name, progress_callback
+            )
+            logger.info(
+                f"Index finalization complete: {end_result.get('vectors_indexed', 0)} vectors indexed"
+            )
 
         # Update metadata with actual processing results
         if progress_callback:
@@ -1505,6 +1593,7 @@ class SmartIndexer(HighThroughputProcessor):
         model_name: str,
         quiet: bool = False,
         vector_thread_count: Optional[int] = None,
+        fts_manager: Optional[TantivyIndexManager] = None,
     ) -> ProcessingStats:
         """Resume a previously interrupted indexing operation."""
 
@@ -1571,6 +1660,7 @@ class SmartIndexer(HighThroughputProcessor):
                 vector_thread_count=resolved_thread_count,
                 batch_size=50,
                 progress_callback=progress_callback,
+                fts_manager=fts_manager,  # type: ignore[name-defined]
             )
 
             # Use ProcessingStats directly from high-throughput processor
@@ -1590,8 +1680,12 @@ class SmartIndexer(HighThroughputProcessor):
             # This ensures FilesystemVectorStore rebuilds HNSW/ID indexes
             if progress_callback:
                 progress_callback(0, 0, Path(""), info="Finalizing indexing session...")
-            end_result = self.qdrant_client.end_indexing(collection_name, progress_callback)
-            logger.info(f"Index finalization complete: {end_result.get('vectors_indexed', 0)} vectors indexed")
+            end_result = self.qdrant_client.end_indexing(
+                collection_name, progress_callback
+            )
+            logger.info(
+                f"Index finalization complete: {end_result.get('vectors_indexed', 0)} vectors indexed"
+            )
 
         # Update metadata with actual processing results
         if progress_callback:
@@ -1706,6 +1800,7 @@ class SmartIndexer(HighThroughputProcessor):
             vector_thread_count=vector_thread_count,
             batch_size=batch_size,
             progress_callback=progress_callback,
+            fts_manager=fts_manager,  # type: ignore[name-defined]
         )
 
         # Update metadata for all files based on success/failure
@@ -1907,6 +2002,7 @@ class SmartIndexer(HighThroughputProcessor):
                         progress_callback=None,  # No progress callback for incremental processing
                         vector_thread_count=vector_thread_count,
                         watch_mode=watch_mode,  # Pass through watch_mode
+                        fts_manager=fts_manager,  # type: ignore[name-defined]
                     )
 
                     # For incremental file processing, also ensure branch isolation

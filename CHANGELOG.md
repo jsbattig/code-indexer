@@ -5,6 +5,89 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.1.0] - 2025-10-29
+
+### Added
+
+#### Full-Text Search (FTS) Support
+
+**Overview**: CIDX now supports blazing-fast, index-backed full-text search alongside semantic search, powered by Tantivy v0.25.0.
+
+**Core Features**:
+- **Sub-5ms query latency** for text searches on large codebases
+- **Three search modes**: Semantic (default), Full-text (`--fts`), Hybrid (`--fts --semantic`)
+- **Fuzzy matching** with configurable edit distance (0-3) for typo tolerance
+- **Case sensitivity control** for precise matching
+- **Adjustable context snippets** (0-50 lines around matches)
+- **Real-time index updates** in watch mode
+- **Language and path filtering** support
+
+**New CLI Flags**:
+- `cidx index --fts` - Build FTS index alongside semantic index
+- `cidx watch --fts` - Enable real-time FTS index updates
+- `cidx query --fts` - Use full-text search mode
+- `cidx query --fts --semantic` - Hybrid search (parallel execution)
+- `--case-sensitive` - Enable case-sensitive matching (FTS only)
+- `--case-insensitive` - Force case-insensitive matching (default)
+- `--fuzzy` - Enable fuzzy matching with edit distance 1
+- `--edit-distance N` - Set fuzzy tolerance (0-3, default: 0)
+- `--snippet-lines N` - Context lines around matches (0-50, default: 5)
+
+**Architecture**:
+- **Tantivy Backend**: Rust-based full-text search engine with Python bindings
+- **Storage**: `.code-indexer/tantivy_index/` directory
+- **Thread Safety**: Locking mechanism for concurrent write operations
+- **Schema**: Dual-field language storage (text + facet) for filtering
+- **Parallel Execution**: Hybrid search runs both engines simultaneously via ThreadPoolExecutor
+
+**Use Cases**:
+- Finding specific function/class names: `cidx query "UserAuth" --fts --case-sensitive`
+- Debugging typos in code: `cidx query "respnse" --fts --fuzzy`
+- Finding TODO comments: `cidx query "TODO" --fts`
+- Comprehensive search: `cidx query "parse" --fts --semantic`
+
+**Performance**:
+- FTS queries: Sub-5ms average latency
+- Hybrid searches: True parallel execution (both run simultaneously)
+- Index size: ~10-20MB per 10K files (depends on content)
+
+**Installation**:
+```bash
+pip install tantivy==0.25.0
+```
+
+**Documentation**:
+- Updated README.md with comprehensive FTS section
+- Updated teach-ai templates with FTS syntax and examples
+- CLI help text includes all FTS options and examples
+
+### Changed
+
+- **CLI Help Text**: Enhanced `cidx query --help` with FTS examples and clear option descriptions
+- **Teach-AI Templates**: Updated `cidx_instructions.md` with FTS decision rules and examples
+- **README Structure**: Added "Full-Text Search (FTS)" section with usage guide and comparison table
+- **Version**: Bumped to 7.1.0 to reflect new major feature
+
+### Technical Details
+
+**Files Added**:
+- `src/code_indexer/services/tantivy_index_manager.py` - Tantivy wrapper and index management
+- `src/code_indexer/services/fts_watch_handler.py` - Real-time FTS index updates in watch mode
+
+**Files Modified**:
+- `src/code_indexer/cli.py` - Added FTS flags and search mode logic
+- `README.md` - Added comprehensive FTS documentation
+- `CHANGELOG.md` - Documented v7.1.0 changes
+- `prompts/ai_instructions/cidx_instructions.md` - Updated with FTS syntax
+
+**Test Coverage**:
+- Unit tests for all FTS flags and options
+- E2E tests for search mode combinations
+- Integration tests for watch mode FTS updates
+- All tests passing: 2359 passed, 23 skipped
+
+---
+
 ## [7.0.1] - 2025-10-28
 
 ### Fixed

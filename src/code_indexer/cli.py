@@ -776,6 +776,556 @@ def _display_query_timing(console: Console, timing_info: Dict[str, Any]) -> None
     console.print()
 
 
+def _display_fts_results(
+    results: List[Dict[str, Any]],
+    quiet: bool = False,
+    console: Optional[Console] = None,
+) -> None:
+    """Display full-text search results with Rich formatting.
+
+    Args:
+        results: List of FTS search results from TantivyIndexManager
+        quiet: If True, show minimal output (file:line:col only)
+        console: Rich console for output (creates new if None)
+    """
+    if console is None:
+        console = Console()
+
+    if not quiet:
+        console.print("[bold cyan]Full-Text Search Results[/bold cyan]\n")
+
+    if not results:
+        if not quiet:
+            console.print("[yellow]No matches found[/yellow]")
+        return
+
+    for i, result in enumerate(results, 1):
+        # Extract result fields
+        path = result.get("path", "unknown")
+        line = result.get("line", 0)
+        column = result.get("column", 0)
+
+        # Quiet mode: just print file:line:column
+        if quiet:
+            console.print(f"{path}:{line}:{column}")
+            continue
+
+        # Full mode: rich formatting with readable position
+        console.print(
+            f"[cyan]{i}.[/cyan] [green]{path}[/green] [yellow](Line {line}, Col {column})[/yellow]"
+        )
+
+        # Show language if available
+        language = result.get("language")
+        if language:
+            console.print(f"   Language: [blue]{language}[/blue]")
+
+        # Show matched text
+        match_text = result.get("match_text", "")
+        if match_text:
+            console.print(f"   Match: [red]{match_text}[/red]")
+
+        # Show snippet with syntax highlighting if available
+        snippet = result.get("snippet")
+        if snippet:
+            console.print("   Context:")
+            try:
+                from rich.syntax import Syntax
+
+                syntax = Syntax(
+                    snippet,
+                    language or "text",
+                    theme="monokai",
+                    line_numbers=True,
+                    start_line=result.get("snippet_start_line", 1),
+                )
+                console.print(syntax)
+            except Exception:
+                # Fallback: just print the snippet without highlighting
+                console.print(f"   {snippet}")
+
+        console.print()
+
+
+def _execute_semantic_search(
+    query: str,
+    limit: int,
+    languages: tuple,
+    exclude_languages: tuple,
+    path_filter: Optional[str],
+    exclude_paths: tuple,
+    min_score: Optional[float],
+    accuracy: str,
+    quiet: bool,
+    project_root: Path,
+    config_manager,
+    console: Console,
+) -> List[Dict[str, Any]]:
+    """Execute semantic search - extracted for parallel execution in hybrid mode.
+
+    This function contains the complete semantic search logic extracted from the main
+    query command to enable true parallel execution with FTS search.
+
+    Args:
+        query: Search query text
+        limit: Maximum number of results
+        languages: Tuple of language filters
+        exclude_languages: Tuple of languages to exclude
+        path_filter: Optional path filter pattern
+        exclude_paths: Tuple of path patterns to exclude
+        min_score: Minimum similarity score threshold
+        accuracy: Search accuracy mode
+        quiet: If True, minimal output
+        project_root: Project root directory
+        config_manager: Configuration manager instance
+        console: Rich console for output
+
+    Returns:
+        List of semantic search results
+    """
+    import time
+    from typing import Any, Dict
+
+    try:
+        config = config_manager.load()
+
+        # Initialize services - lazy imports for query path
+        from .services.generic_query_service import GenericQueryService
+        from .services.language_validator import LanguageValidator
+        from .services.language_mapper import LanguageMapper
+
+        embedding_provider = EmbeddingProviderFactory.create(config, console)
+        backend = BackendFactory.create(
+            config=config, project_root=Path(config.codebase_dir)
+        )
+        vector_store_client = backend.get_vector_store_client()
+
+        # Health checks
+        if not embedding_provider.health_check():
+            if not quiet:
+                console.print(
+                    f"[yellow]⚠️  {embedding_provider.get_provider_name().title()} service not available[/yellow]"
+                )
+            return []
+
+        if not vector_store_client.health_check():
+            if not quiet:
+                console.print("[yellow]⚠️  Vector store service not available[/yellow]")
+            return []
+
+        # Ensure provider-aware collection is set for search
+        collection_name = vector_store_client.resolve_collection_name(
+            config, embedding_provider
+        )
+        vector_store_client._current_collection_name = collection_name
+
+        # Ensure payload indexes exist (read-only check for query operations)
+        vector_store_client.ensure_payload_indexes(collection_name, context="query")
+
+        # Initialize timing dictionary for telemetry
+        timing_info = {}
+
+        # Build filter conditions
+        filter_conditions: Dict[str, Any] = {}
+        if languages:
+            # Validate language parameters
+            language_validator = LanguageValidator()
+            language_mapper = LanguageMapper()
+            must_conditions = []
+
+            for lang in languages:
+                # Validate each language
+                validation_result = language_validator.validate_language(lang)
+
+                if not validation_result.is_valid:
+                    if not quiet:
+                        console.print(f"[yellow]⚠️  Invalid language: {lang}[/yellow]")
+                    continue
+
+                # Build language filter
+                language_filter = language_mapper.build_language_filter(lang)
+                must_conditions.append(language_filter)
+
+            if must_conditions:
+                filter_conditions["must"] = must_conditions
+        if path_filter:
+            filter_conditions.setdefault("must", []).append(
+                {"key": "path", "match": {"text": path_filter}}
+            )
+
+        # Build exclusion filters (must_not conditions)
+        if exclude_languages:
+            language_validator = LanguageValidator()
+            language_mapper = LanguageMapper()
+            must_not_conditions = []
+
+            for exclude_lang in exclude_languages:
+                # Validate each exclusion language
+                validation_result = language_validator.validate_language(exclude_lang)
+
+                if not validation_result.is_valid:
+                    if not quiet:
+                        console.print(
+                            f"[yellow]⚠️  Invalid exclusion language: {exclude_lang}[/yellow]"
+                        )
+                    continue
+
+                # Get all extensions for this language
+                extensions = language_mapper.get_extensions(exclude_lang)
+
+                # Add must_not condition for each extension
+                for ext in extensions:
+                    must_not_conditions.append(
+                        {"key": "language", "match": {"value": ext}}
+                    )
+
+            if must_not_conditions:
+                filter_conditions["must_not"] = must_not_conditions
+
+        # Build path exclusion filters (must_not conditions for paths)
+        if exclude_paths:
+            from .services.path_filter_builder import PathFilterBuilder
+
+            path_filter_builder = PathFilterBuilder()
+
+            # Build path exclusion filters
+            path_exclusion_filters = path_filter_builder.build_exclusion_filter(
+                list(exclude_paths)
+            )
+
+            # Add to existing must_not conditions
+            if path_exclusion_filters.get("must_not"):
+                if "must_not" in filter_conditions:
+                    filter_conditions["must_not"].extend(
+                        path_exclusion_filters["must_not"]
+                    )
+                else:
+                    filter_conditions["must_not"] = path_exclusion_filters["must_not"]
+
+        # Check if project uses git-aware indexing
+        from .services.git_topology_service import GitTopologyService
+
+        git_topology_service = GitTopologyService(config.codebase_dir)
+        is_git_aware = git_topology_service.is_git_available()
+
+        # Initialize query service for git-aware filtering
+        query_service = GenericQueryService(config.codebase_dir, config)
+
+        # Determine if we should use branch-aware querying
+        if is_git_aware:
+            # Use git-aware filtering for git projects
+            use_branch_aware_query = True
+        else:
+            # Use generic query service for non-git projects
+            use_branch_aware_query = False
+
+        # Get current embedding model for filtering
+        current_model = embedding_provider.get_current_model()
+
+        # Use appropriate search method based on project type
+        if use_branch_aware_query:
+            # Build filter conditions (NO git_branch filter - let post-filtering handle it)
+            filter_conditions_list = []
+
+            # Only filter by git_available to exclude non-git content
+            filter_conditions_list.append(
+                {"key": "git_available", "match": {"value": True}}
+            )
+
+            # Add user-specified filters
+            if languages:
+                language_mapper = LanguageMapper()
+                # Handle multiple languages by building OR conditions
+                for language in languages:
+                    language_filter = language_mapper.build_language_filter(language)
+                    filter_conditions_list.append(language_filter)
+            if path_filter:
+                filter_conditions_list.append(
+                    {"key": "path", "match": {"text": path_filter}}
+                )
+
+            # Build filter conditions preserving both must and must_not conditions
+            query_filter_conditions = (
+                {"must": filter_conditions_list} if filter_conditions_list else {}
+            )
+            # Preserve must_not conditions (exclusion filters)
+            if filter_conditions.get("must_not"):
+                query_filter_conditions["must_not"] = filter_conditions["must_not"]
+
+            # Query vector store
+            from code_indexer.storage.filesystem_vector_store import (
+                FilesystemVectorStore,
+            )
+
+            if isinstance(vector_store_client, FilesystemVectorStore):
+                # Parallel execution: embedding generation + index loading happen concurrently
+                raw_results, search_timing = vector_store_client.search(
+                    query=query,
+                    embedding_provider=embedding_provider,
+                    filter_conditions=query_filter_conditions,
+                    limit=limit * 2,
+                    collection_name=collection_name,
+                    return_timing=True,
+                )
+            else:
+                # QdrantClient: pre-compute embedding
+                query_embedding = embedding_provider.get_embedding(query)
+                raw_results_list = vector_store_client.search(
+                    query_vector=query_embedding,
+                    filter_conditions=query_filter_conditions,
+                    limit=limit * 2,
+                    collection_name=collection_name,
+                )
+                raw_results = raw_results_list
+                search_timing = {}
+            timing_info.update(search_timing)
+
+            # Calculate vector_search_ms
+            breakdown_keys = [
+                "matrix_load_ms",
+                "index_load_ms",
+                "hnsw_search_ms",
+                "id_index_load_ms",
+                "staleness_detection_ms",
+            ]
+            timing_info["vector_search_ms"] = sum(
+                search_timing.get(k, 0) for k in breakdown_keys
+            )
+
+            # Apply git-aware post-filtering
+            git_filter_start = time.time()
+            # Type hint: raw_results is always List[Dict[str, Any]] here
+            git_results = query_service.filter_results_by_current_branch(
+                raw_results  # type: ignore[arg-type]
+            )
+            timing_info["git_filter_ms"] = (time.time() - git_filter_start) * 1000
+
+            # Apply minimum score filtering
+            if min_score:
+                filtered_results = []
+                for result in git_results:
+                    if result.get("score", 0) >= min_score:
+                        filtered_results.append(result)
+                git_results = filtered_results
+        else:
+            # Use model-specific search for non-git projects
+            from code_indexer.storage.filesystem_vector_store import (
+                FilesystemVectorStore,
+            )
+
+            if isinstance(vector_store_client, FilesystemVectorStore):
+                # Filesystem backend: parallel execution
+                raw_results, search_timing = vector_store_client.search(
+                    query=query,
+                    embedding_provider=embedding_provider,
+                    filter_conditions=filter_conditions if filter_conditions else None,
+                    limit=limit * 2,
+                    score_threshold=min_score,
+                    collection_name=collection_name,
+                    return_timing=True,
+                )
+                timing_info.update(search_timing)
+            else:
+                # Qdrant backend: pre-compute embedding
+                search_start = time.time()
+                query_embedding = embedding_provider.get_embedding(query)
+                raw_results_list = vector_store_client.search_with_model_filter(
+                    query_vector=query_embedding,
+                    embedding_model=current_model,
+                    limit=limit * 2,
+                    score_threshold=min_score,
+                    additional_filters=filter_conditions,
+                    accuracy=accuracy,
+                )
+                raw_results = raw_results_list
+                timing_info["vector_search_ms"] = (time.time() - search_start) * 1000
+
+            # Apply git-aware filtering
+            git_filter_start = time.time()
+            # Type hint: raw_results is always List[Dict[str, Any]] here
+            git_results = query_service.filter_results_by_current_branch(
+                raw_results  # type: ignore[arg-type]
+            )
+            timing_info["git_filter_ms"] = (time.time() - git_filter_start) * 1000
+
+        # Limit to requested number after filtering
+        results = git_results[:limit]
+
+        # Apply staleness detection to local query results
+        if results:
+            try:
+                staleness_start = time.time()
+                from .api_clients.remote_query_client import QueryResultItem
+                from .remote.staleness_detector import StalenessDetector
+
+                query_result_items = []
+                for result in results:
+                    payload = result["payload"]
+
+                    # Extract file metadata for staleness comparison
+                    file_last_modified = payload.get("file_last_modified")
+                    indexed_at = payload.get("indexed_at")
+
+                    # Convert indexed_at ISO timestamp to Unix timestamp float
+                    indexed_timestamp = None
+                    if indexed_at:
+                        try:
+                            from datetime import datetime
+
+                            dt = datetime.fromisoformat(indexed_at.rstrip("Z"))
+                            indexed_timestamp = dt.timestamp()
+                        except (ValueError, AttributeError):
+                            indexed_timestamp = None
+
+                    query_item = QueryResultItem(
+                        similarity_score=result["score"],
+                        file_path=payload.get("path", "unknown"),
+                        line_number=payload.get("line_start", 1),
+                        code_snippet=payload.get("content", ""),
+                        repository_alias=project_root.name,
+                        file_last_modified=file_last_modified,
+                        indexed_timestamp=indexed_timestamp,
+                    )
+                    query_result_items.append(query_item)
+
+                # Apply staleness detection in local mode
+                staleness_detector = StalenessDetector()
+                enhanced_results = staleness_detector.apply_staleness_detection(
+                    query_result_items, project_root, mode="local"
+                )
+                timing_info["staleness_detection_ms"] = (
+                    time.time() - staleness_start
+                ) * 1000
+
+                # Convert enhanced results back to local format
+                enhanced_local_results = []
+                for enhanced in enhanced_results:
+                    # Find corresponding original result
+                    original = next(
+                        r
+                        for r in results
+                        if r["payload"].get("path") == enhanced.file_path
+                    )
+
+                    # Add staleness metadata to the result
+                    enhanced_result = original.copy()
+                    enhanced_result["staleness"] = {
+                        "is_stale": enhanced.is_stale,
+                        "staleness_indicator": enhanced.staleness_indicator,
+                        "staleness_delta_seconds": enhanced.staleness_delta_seconds,
+                    }
+                    enhanced_local_results.append(enhanced_result)
+
+                # Replace results with staleness-enhanced results
+                results = enhanced_local_results
+
+            except Exception:
+                # Graceful fallback - continue with original results
+                pass
+
+        return results
+
+    except Exception as e:
+        if not quiet:
+            console.print(f"[yellow]⚠️  Semantic search failed: {e}[/yellow]")
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.error(f"Semantic search error: {e}", exc_info=True)
+        return []
+
+
+def _display_hybrid_results(
+    fts_results: List[Dict[str, Any]],
+    semantic_results: List[Dict[str, Any]],
+    quiet: bool = False,
+    console: Optional[Console] = None,
+) -> None:
+    """Display hybrid search results (FTS + Semantic) with clear separation.
+
+    Args:
+        fts_results: List of FTS search results from TantivyIndexManager
+        semantic_results: List of semantic search results
+        quiet: If True, show minimal output
+        console: Rich console for output (creates new if None)
+    """
+    if console is None:
+        console = Console()
+
+    # FTS Results First
+    if not quiet:
+        console.print("[bold cyan]━━━ FULL-TEXT SEARCH RESULTS ━━━[/bold cyan]\n")
+
+    if fts_results:
+        _display_fts_results(fts_results, quiet=quiet, console=console)
+    else:
+        if not quiet:
+            console.print("[yellow]No text matches found[/yellow]\n")
+
+    # Clear Separator
+    if not quiet:
+        console.print("[bold]" + "─" * 60 + "[/bold]\n")
+
+    # Semantic Results Second
+    if not quiet:
+        console.print("[bold magenta]━━━ SEMANTIC SEARCH RESULTS ━━━[/bold magenta]\n")
+
+    if semantic_results:
+        # Display semantic results (reuse logic from existing semantic display)
+        for i, result in enumerate(semantic_results, 1):
+            payload = result.get("payload", {})
+            score = result.get("score", 0.0)
+
+            # File info
+            file_path = payload.get("path", "unknown")
+            language = payload.get("language", "unknown")
+            content = payload.get("content", "")
+
+            # Line number info
+            line_start = payload.get("line_start")
+            line_end = payload.get("line_end")
+
+            # Create file path with line numbers
+            if line_start is not None and line_end is not None:
+                if line_start == line_end:
+                    file_path_with_lines = f"{file_path}:{line_start}"
+                else:
+                    file_path_with_lines = f"{file_path}:{line_start}-{line_end}"
+            else:
+                file_path_with_lines = file_path
+
+            if quiet:
+                # Quiet mode - minimal output
+                console.print(f"{score:.3f} {file_path_with_lines}")
+                if content:
+                    # Show content with line numbers
+                    content_lines = content.split("\n")
+                    if line_start is not None:
+                        numbered_lines = []
+                        for j, line in enumerate(content_lines):
+                            line_num = line_start + j
+                            numbered_lines.append(f"{line_num:3}: {line}")
+                        content_with_line_numbers = "\n".join(numbered_lines)
+                        console.print(content_with_line_numbers)
+                    else:
+                        console.print(content)
+            else:
+                # Full display mode
+                console.print(f"\n[magenta]{i}.[/magenta] Score: {score:.3f}")
+                console.print(f"File: [green]{file_path_with_lines}[/green]")
+                if language != "unknown":
+                    console.print(f"Language: [blue]{language}[/blue]")
+
+                if content:
+                    console.print("Content:")
+                    console.print("-" * 40)
+                    console.print(content)
+                    console.print("-" * 40)
+    else:
+        if not quiet:
+            console.print("[yellow]No semantic matches found[/yellow]\n")
+
+
 def _check_authentication_state(ctx) -> bool:
     """Check if user is authenticated and session is valid.
 
@@ -2181,6 +2731,16 @@ def validate_index_flags(ctx, param, value):
     is_flag=True,
     help="Rebuild HNSW index from existing vector files (filesystem backend only)",
 )
+@click.option(
+    "--fts",
+    is_flag=True,
+    help="Build full-text search index alongside semantic index (requires tantivy)",
+)
+@click.option(
+    "--rebuild-fts-index",
+    is_flag=True,
+    help="Rebuild ONLY the FTS index from already-indexed files (does not touch semantic vectors)",
+)
 @click.pass_context
 @require_mode("local")
 def index(
@@ -2192,6 +2752,8 @@ def index(
     detect_deletions: bool,
     rebuild_indexes: bool,
     rebuild_index: bool,
+    fts: bool,
+    rebuild_fts_index: bool,
 ):
     """Index the codebase for semantic search.
 
@@ -2294,6 +2856,164 @@ def index(
             "💡 --clear empties the collection completely, making deletion detection unnecessary",
             style="yellow",
         )
+
+    # Handle --rebuild-fts-index flag (early exit path)
+    if rebuild_fts_index:
+        try:
+            config = config_manager.load()
+
+            # Check if indexing progress file exists
+            progress_file = config_manager.config_path.parent / "indexing_progress.json"
+            if not progress_file.exists():
+                console.print("❌ No indexing progress found", style="red")
+                console.print(
+                    "💡 Run 'cidx index' first to create the semantic index",
+                    style="yellow",
+                )
+                sys.exit(1)
+
+            # Lazy import FTS components
+            from .services.tantivy_index_manager import TantivyIndexManager
+            import json
+
+            # Scan filesystem vector store to get all indexed files
+            # This is the source of truth - if a file has vectors, it was successfully indexed
+            index_dir = config.codebase_dir / ".code-indexer" / "index"
+
+            def _get_indexed_files_from_vector_store() -> list:
+                """Scan filesystem vector store to find all successfully indexed files.
+
+                Returns list of file paths that have vector JSON files in the index.
+                This is the source of truth - progress status can be unreliable.
+                """
+                if not index_dir.exists():
+                    return []
+
+                file_paths = set()
+
+                # Scan all vector JSON files in the index directory
+                for json_file in index_dir.rglob("vector_*.json"):
+                    try:
+                        with open(json_file) as f:
+                            data = json.load(f)
+
+                        # Extract file path from payload
+                        file_path = data.get("payload", {}).get("path", "")
+                        if file_path:
+                            file_paths.add(file_path)
+                    except Exception:
+                        # Skip corrupted/unreadable JSON files
+                        continue
+
+                return sorted(file_paths)
+
+            completed_files = _get_indexed_files_from_vector_store()
+
+            if not completed_files:
+                console.print("❌ No indexed files found in vector store", style="red")
+                console.print(
+                    "💡 Run 'cidx index' first to index files", style="yellow"
+                )
+                sys.exit(1)
+
+            console.print("🔧 Rebuilding FTS index from filesystem vector store...")
+            console.print(f"📄 Found {len(completed_files)} indexed files")
+
+            # Initialize Tantivy manager
+            fts_index_dir = config.codebase_dir / ".code-indexer" / "tantivy_index"
+            tantivy_manager = TantivyIndexManager(fts_index_dir)
+
+            # Clear and recreate FTS index
+            import shutil
+
+            if fts_index_dir.exists():
+                console.print("🧹 Clearing existing FTS index...")
+                shutil.rmtree(fts_index_dir)
+
+            tantivy_manager.initialize_index(create_new=True)
+            console.print("✅ FTS index initialized")
+
+            # Re-index all completed files to FTS
+            from rich.progress import (
+                Progress,
+                BarColumn,
+                TextColumn,
+                TimeRemainingColumn,
+            )
+
+            with Progress(
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeRemainingColumn(),
+                console=console,
+            ) as progress:
+                task = progress.add_task(
+                    "Rebuilding FTS index...", total=len(completed_files)
+                )
+
+                indexed_count = 0
+                failed_count = 0
+
+                for file_path in completed_files:
+                    try:
+                        # Read file content
+                        file_path_obj = Path(file_path)
+                        if not file_path_obj.exists():
+                            failed_count += 1
+                            progress.advance(task)
+                            continue
+
+                        with open(
+                            file_path_obj, "r", encoding="utf-8", errors="ignore"
+                        ) as f:
+                            content = f.read()
+
+                        # Detect language from file extension
+                        extension = file_path_obj.suffix.lstrip(".")
+                        language = extension if extension else "unknown"
+
+                        # Create FTS document
+                        doc = {
+                            "path": str(file_path),
+                            "content": content,
+                            "content_raw": content,
+                            "identifiers": [],  # Empty for now
+                            "line_start": 1,
+                            "line_end": len(content.splitlines()),
+                            "language": language,
+                        }
+
+                        # Add to FTS index
+                        tantivy_manager.add_document(doc)
+                        indexed_count += 1
+
+                    except Exception as e:
+                        failed_count += 1
+                        console.print(
+                            f"⚠️  Failed to index {file_path}: {e}", style="yellow"
+                        )
+
+                    progress.advance(task)
+
+                # Commit all documents
+                tantivy_manager.commit()
+
+            # Show completion summary
+            console.print("\n✅ FTS index rebuilt successfully")
+            console.print(f"📄 Files indexed: {indexed_count}")
+            if failed_count > 0:
+                console.print(f"⚠️  Failed files: {failed_count}", style="yellow")
+
+            sys.exit(0)
+
+        except Exception as e:
+            console.print(f"❌ FTS rebuild failed: {e}", style="red")
+            import traceback
+
+            if ctx.obj.get("verbose"):
+                console.print(traceback.format_exc(), style="dim")
+            sys.exit(1)
 
     try:
         config = config_manager.load()
@@ -2621,6 +3341,7 @@ def index(
                     files_count_to_process=files_count_to_process,
                     vector_thread_count=config.voyage_ai.parallel_requests,
                     detect_deletions=detect_deletions,
+                    enable_fts=fts,
                 )
 
                 # Show final completion state (if not interrupted)
@@ -2694,9 +3415,14 @@ def index(
 )
 @click.option("--batch-size", default=50, help="Batch size for processing")
 @click.option("--initial-sync", is_flag=True, help="Perform full sync before watching")
+@click.option(
+    "--fts",
+    is_flag=True,
+    help="Enable FTS index updates alongside semantic index (requires tantivy)",
+)
 @click.pass_context
 @require_mode("local", "proxy")
-def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
+def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
     """Git-aware watch for file changes with branch support."""
     # Handle proxy mode (Story 2.2)
     mode = ctx.obj.get("mode")
@@ -2709,6 +3435,8 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
         args = ["--debounce", str(debounce), "--batch-size", str(batch_size)]
         if initial_sync:
             args.append("--initial-sync")
+        if fts:
+            args.append("--fts")
 
         exit_code = execute_proxy_command(project_root, "watch", args)
         sys.exit(exit_code)
@@ -2786,7 +3514,9 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
         if initial_sync or watch_metadata.last_sync_timestamp == 0:
             console.print("🔄 Performing initial git-aware sync...")
             try:
-                stats = smart_indexer.smart_index(batch_size=batch_size, quiet=True)
+                stats = smart_indexer.smart_index(
+                    batch_size=batch_size, quiet=True, enable_fts=fts
+                )
                 console.print(
                     f"✅ Initial sync complete: {stats.files_processed} files processed"
                 )
@@ -2806,6 +3536,28 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
             debounce_seconds=debounce,
         )
 
+        # Initialize FTS watch handler if requested
+        fts_watch_handler = None
+        if fts:
+            # Lazy import FTS components
+            from .services.fts_watch_handler import FTSWatchHandler
+            from .services.tantivy_index_manager import TantivyIndexManager
+
+            fts_index_dir = config.codebase_dir / ".code-indexer" / "tantivy_index"
+            tantivy_manager = TantivyIndexManager(fts_index_dir)
+
+            # Initialize or open existing index
+            if fts_index_dir.exists():
+                tantivy_manager.initialize_index(create_new=False)
+            else:
+                tantivy_manager.initialize_index(create_new=True)
+
+            fts_watch_handler = FTSWatchHandler(
+                tantivy_index_manager=tantivy_manager,
+                config=config,
+            )
+            console.print("✅ FTS watch handler enabled")
+
         console.print(f"\n👀 Starting git-aware watch on {config.codebase_dir}")
         console.print(f"⏱️  Debounce: {debounce}s")
         if git_topology_service.is_git_available():
@@ -2820,6 +3572,13 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
         # Setup watchdog observer
         observer = Observer()
         observer.schedule(git_aware_handler, str(config.codebase_dir), recursive=True)
+
+        # Register FTS handler if enabled
+        if fts_watch_handler:
+            observer.schedule(
+                fts_watch_handler, str(config.codebase_dir), recursive=True
+            )
+
         observer.start()
         console.print(f"🔍 Watchdog observer started monitoring: {config.codebase_dir}")
 
@@ -2886,7 +3645,10 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
     help="Exclude files of specified language(s). Can be specified multiple times to exclude multiple languages. Example: --exclude-language javascript --exclude-language typescript",
 )
 @click.option(
-    "--path-filter", "path_filter", help="Filter by file path pattern (e.g., */tests/*)"
+    "--path-filter",
+    "path_filter",
+    multiple=True,
+    help="Filter by file path pattern (e.g., */tests/*). Can be specified multiple times for OR logic.",
 )
 @click.option(
     "--exclude-path",
@@ -2907,6 +3669,48 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool):
     is_flag=True,
     help="Quiet mode - only show results, no headers or metadata",
 )
+@click.option(
+    "--fts",
+    is_flag=True,
+    help="Use full-text search instead of semantic search (requires Tantivy index)",
+)
+@click.option(
+    "--semantic",
+    is_flag=True,
+    help="Use semantic search (default). Combine with --fts for hybrid search.",
+)
+@click.option(
+    "--case-sensitive",
+    is_flag=True,
+    help="Enable case-sensitive matching for FTS queries",
+)
+@click.option(
+    "--case-insensitive",
+    is_flag=True,
+    help="Force case-insensitive matching for FTS queries (default behavior)",
+)
+@click.option(
+    "--fuzzy",
+    is_flag=True,
+    help="Enable fuzzy matching with edit distance of 1 (typo tolerance)",
+)
+@click.option(
+    "--edit-distance",
+    type=int,
+    default=0,
+    help="Fuzzy match tolerance (0-3): 0=exact, 1=1 typo, 2=2 typos, 3=3 typos",
+)
+@click.option(
+    "--snippet-lines",
+    type=int,
+    default=5,
+    help="Context lines to show around matches (0=list only, 1-50=show context)",
+)
+@click.option(
+    "--regex",
+    is_flag=True,
+    help="Interpret query as regex pattern (FTS only, incompatible with --semantic or --fuzzy)",
+)
 @click.pass_context
 @require_mode("local", "remote", "proxy")
 def query(
@@ -2920,6 +3724,14 @@ def query(
     min_score: Optional[float],
     accuracy: str,
     quiet: bool,
+    fts: bool,
+    semantic: bool,
+    case_sensitive: bool,
+    case_insensitive: bool,
+    fuzzy: bool,
+    edit_distance: int,
+    snippet_lines: int,
+    regex: bool,
 ):
     """Search the indexed codebase using semantic similarity.
 
@@ -2994,6 +3806,265 @@ def query(
     mode = ctx.obj.get("mode", "uninitialized")
     project_root = ctx.obj.get("project_root")
 
+    # Import Path - needed by all query modes
+    from pathlib import Path
+
+    # Determine search mode based on flags (Story 4)
+    if fts and semantic:
+        search_mode = "hybrid"
+    elif fts:
+        search_mode = "fts"
+    else:
+        search_mode = "semantic"  # Default behavior
+
+    # Validate --regex flag compatibility
+    if regex:
+        # Regex requires FTS mode
+        if not fts:
+            console.print(
+                "[red]❌ --regex requires --fts flag (regex is only available for full-text search)[/red]"
+            )
+            console.print()
+            console.print("Use:")
+            console.print(
+                "  [cyan]cidx query 'pattern' --fts --regex[/cyan]     # Regex search"
+            )
+            console.print()
+            console.print(
+                "For semantic search, remove --regex and use natural language:"
+            )
+            console.print("  [cyan]cidx query 'function definition'[/cyan]")
+            sys.exit(1)
+
+        # Regex incompatible with semantic (hybrid mode)
+        if semantic:
+            console.print("[red]❌ Cannot combine --regex with --semantic[/red]")
+            console.print()
+            console.print("Regex matching only works with FTS (--fts).")
+            console.print("Remove --semantic or --regex flag.")
+            console.print()
+            console.print("Use one of:")
+            console.print(
+                "  [cyan]cidx query 'pattern' --fts --regex[/cyan]      # Regex search only"
+            )
+            console.print(
+                "  [cyan]cidx query 'text' --fts --semantic[/cyan]      # Hybrid search"
+            )
+            sys.exit(1)
+
+        # Regex incompatible with fuzzy matching
+        if fuzzy or edit_distance > 0:
+            console.print(
+                "[red]❌ Cannot combine --regex with --fuzzy or --edit-distance[/red]"
+            )
+            console.print()
+            console.print("Regex provides its own pattern matching capabilities.")
+            console.print("Remove --fuzzy/--edit-distance or --regex flag.")
+            console.print()
+            console.print("Use one of:")
+            console.print(
+                "  [cyan]cidx query 'pattern' --fts --regex[/cyan]      # Regex matching"
+            )
+            console.print(
+                "  [cyan]cidx query 'term' --fts --fuzzy[/cyan]         # Fuzzy matching"
+            )
+            sys.exit(1)
+
+    # Handle FTS/Hybrid query (Stories 3 & 4)
+    if search_mode in ["fts", "hybrid"]:
+        # FTS only supported in local mode currently
+        if mode != "local":
+            console.print(
+                "[yellow]⚠️  Full-text search is only supported in local mode[/yellow]"
+            )
+            sys.exit(1)
+
+        # Lazy import - only load when --fts used
+        from .services.tantivy_index_manager import TantivyIndexManager
+
+        # Check if FTS index exists
+        config_dir = Path(project_root) / ".code-indexer"
+        fts_index_dir = config_dir / "tantivy_index"
+
+        # Graceful degradation for hybrid mode (Story 4 AC#4)
+        if not fts_index_dir.exists():
+            if search_mode == "hybrid":
+                console.print(
+                    "[yellow]⚠️  FTS index not available, falling back to semantic-only search[/yellow]"
+                )
+                console.print(
+                    "[dim]   To enable hybrid search, build the FTS index first: cidx index --fts[/dim]"
+                )
+                search_mode = "semantic"
+            else:
+                console.print("[red]❌ FTS index not found[/red]")
+                console.print()
+                console.print("To use full-text search, first build the FTS index:")
+                console.print()
+                console.print("  [cyan]cidx index --fts[/cyan]")
+                console.print()
+                console.print("This will create both semantic and FTS indexes.")
+                console.print("For more info: [cyan]cidx index --help[/cyan]")
+                sys.exit(1)
+
+        # Only validate FTS-specific flags if we're actually using FTS
+        if search_mode in ["fts", "hybrid"]:
+            # Validate conflicting flags
+            if case_sensitive and case_insensitive:
+                console.print(
+                    "[red]❌ Cannot use both --case-sensitive and --case-insensitive[/red]"
+                )
+                console.print()
+                console.print("Use one of:")
+                console.print(
+                    "  [cyan]cidx query 'term' --fts[/cyan]                      # Case-insensitive (default)"
+                )
+                console.print(
+                    "  [cyan]cidx query 'term' --fts --case-sensitive[/cyan]     # Case-sensitive"
+                )
+                sys.exit(1)
+
+            # Validate edit_distance range
+            if not (0 <= edit_distance <= 3):
+                console.print(
+                    f"[red]❌ --edit-distance must be between 0 and 3 (got {edit_distance})[/red]"
+                )
+                console.print()
+                console.print("Valid values:")
+                console.print("  0 = Exact match (default)")
+                console.print("  1 = Allow 1 character difference")
+                console.print("  2 = Allow 2 character differences")
+                console.print("  3 = Allow 3 character differences")
+                sys.exit(1)
+
+            # Validate snippet_lines range
+            if not (0 <= snippet_lines <= 50):
+                console.print(
+                    f"[red]❌ --snippet-lines must be between 0 and 50 (got {snippet_lines})[/red]"
+                )
+                console.print()
+                console.print("Valid values:")
+                console.print("  0  = List files only (no content snippets)")
+                console.print("  5  = Show 5 lines of context (default)")
+                console.print("  10 = Show 10 lines of context")
+                sys.exit(1)
+
+            # Handle --fuzzy flag as shorthand for --edit-distance 1
+            if fuzzy and edit_distance == 0:
+                edit_distance = 1
+
+        # Execute hybrid search (Story 4 AC#1 & AC#5 - TRUE PARALLEL EXECUTION)
+        if search_mode == "hybrid":
+            from concurrent.futures import ThreadPoolExecutor
+
+            # Convert languages tuple to single language (FTS uses first language if multiple)
+            language_filter = languages[0] if languages else None
+
+            # Define FTS search function for parallel execution
+            def execute_fts():
+                try:
+                    tantivy_manager = TantivyIndexManager(fts_index_dir)
+                    tantivy_manager.initialize_index(create_new=False)
+                    return tantivy_manager.search(
+                        query_text=query,
+                        case_sensitive=case_sensitive,
+                        edit_distance=edit_distance,
+                        snippet_lines=snippet_lines,
+                        limit=limit,
+                        language_filter=language_filter,
+                        path_filter=path_filter,
+                        exclude_paths=list(exclude_paths) if exclude_paths else None,
+                        use_regex=regex,  # Pass regex flag
+                    )
+                except Exception as e:
+                    console.print(f"[yellow]⚠️  FTS search failed: {e}[/yellow]")
+                    return []
+
+            # Execute BOTH searches in parallel (AC#5 - CRITICAL: Not sequential!)
+            # Both FTS and semantic run simultaneously, not one after the other
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                # Submit BOTH searches simultaneously
+                fts_future = executor.submit(execute_fts)
+                semantic_future = executor.submit(
+                    _execute_semantic_search,
+                    query=query,
+                    limit=limit,
+                    languages=languages,
+                    exclude_languages=exclude_languages,
+                    path_filter=path_filter,
+                    exclude_paths=exclude_paths,
+                    min_score=min_score,
+                    accuracy=accuracy,
+                    quiet=quiet,
+                    project_root=project_root,
+                    config_manager=ctx.obj["config_manager"],
+                    console=console,
+                )
+
+                # Wait for BOTH to complete (parallel execution)
+                try:
+                    fts_results = fts_future.result()
+                except Exception as e:
+                    console.print(f"[yellow]⚠️  FTS search failed: {e}[/yellow]")
+                    fts_results = []
+
+                try:
+                    semantic_results = semantic_future.result()
+                except Exception as e:
+                    console.print(f"[yellow]⚠️  Semantic search failed: {e}[/yellow]")
+                    semantic_results = []
+
+            # Display hybrid results with clear separation (AC#2)
+            _display_hybrid_results(
+                fts_results=fts_results,
+                semantic_results=semantic_results,
+                quiet=quiet,
+                console=console,
+            )
+            sys.exit(0)  # Exit after hybrid display (no fall-through to semantic logic)
+
+        # Execute FTS-only search (Story 3)
+        elif search_mode == "fts":
+            # Convert friendly language names to file extensions using LanguageMapper
+            language_extensions = None
+            if languages:
+                from .services.language_mapper import LanguageMapper
+
+                mapper = LanguageMapper()
+                # Expand all languages to their extensions
+                all_extensions = set()
+                for lang in languages:
+                    all_extensions.update(mapper.get_extensions(lang))
+                language_extensions = list(all_extensions) if all_extensions else None
+
+            try:
+                tantivy_manager = TantivyIndexManager(fts_index_dir)
+                tantivy_manager.initialize_index(create_new=False)
+                fts_results = tantivy_manager.search(
+                    query_text=query,
+                    case_sensitive=case_sensitive,
+                    edit_distance=edit_distance,
+                    snippet_lines=snippet_lines,
+                    limit=limit,
+                    languages=language_extensions,
+                    path_filters=list(path_filter) if path_filter else None,
+                    exclude_paths=list(exclude_paths) if exclude_paths else None,
+                    exclude_languages=(
+                        list(exclude_languages) if exclude_languages else None
+                    ),
+                    use_regex=regex,  # Pass regex flag
+                )
+
+                # Display results
+                _display_fts_results(fts_results, quiet=quiet, console=console)
+                sys.exit(0)
+
+            except Exception as e:
+                console.print(f"[red]❌ FTS query failed: {e}[/red]")
+                import traceback
+
+                console.print(traceback.format_exc())
+                sys.exit(1)
     # Handle proxy mode (Story 2.2)
     if mode == "proxy":
         from .proxy import execute_proxy_command
@@ -3003,7 +4074,8 @@ def query(
         for lang in languages:
             args.extend(["--language", lang])
         if path_filter:
-            args.extend(["--path-filter", path_filter])
+            for pf in path_filter:
+                args.extend(["--path-filter", pf])
         for exclude_path in exclude_paths:
             args.extend(["--exclude-path", exclude_path])
         if min_score is not None:
@@ -3044,11 +4116,14 @@ def query(
 
         try:
             # Execute remote query with transparent repository linking
+            from typing import cast
+
             from .remote.query_execution import execute_remote_query
+            from .server.app import QueryResultItem
 
             # NOTE: Remote query API currently supports single language only
             # Use first language from tuple, ignore additional languages for remote mode
-            results = asyncio.run(
+            results_raw = asyncio.run(
                 execute_remote_query(
                     query_text=query,
                     limit=limit,
@@ -3061,34 +4136,47 @@ def query(
                 )
             )
 
-            if not results:
+            # Cast to help MyPy understand the actual return type
+            remote_results: List[QueryResultItem] = cast(
+                List[QueryResultItem], results_raw
+            )
+
+            if not remote_results:
                 console.print("No results found.", style="yellow")
                 sys.exit(0)
 
             # Convert API client results to local format for display
             converted_results: List[Dict[str, Any]] = []
-            for result in results:
+            for result_item in remote_results:
                 converted_result = {
                     "score": getattr(
-                        result, "score", getattr(result, "similarity_score", 0.0)
+                        result_item,
+                        "score",
+                        getattr(result_item, "similarity_score", 0.0),
                     ),
                     "payload": {
-                        "path": result.file_path,
-                        "language": getattr(result, "language", None),
+                        "path": result_item.file_path,
+                        "language": getattr(result_item, "language", None),
                         "content": getattr(
-                            result, "content", getattr(result, "code_snippet", "")
+                            result_item,
+                            "content",
+                            getattr(result_item, "code_snippet", ""),
                         ),
-                        "line_start": getattr(result, "line_start", result.line_number),
-                        "line_end": getattr(result, "line_end", result.line_number + 1),
+                        "line_start": getattr(
+                            result_item, "line_start", result_item.line_number
+                        ),
+                        "line_end": getattr(
+                            result_item, "line_end", result_item.line_number + 1
+                        ),
                     },
                 }
 
                 # Add staleness info if available (EnhancedQueryResultItem)
-                if hasattr(result, "staleness_indicator"):
+                if hasattr(result_item, "staleness_indicator"):
                     converted_result["staleness"] = {
-                        "is_stale": result.is_stale,
-                        "staleness_indicator": result.staleness_indicator,
-                        "staleness_delta_seconds": result.staleness_delta_seconds,
+                        "is_stale": result_item.is_stale,
+                        "staleness_indicator": result_item.staleness_indicator,
+                        "staleness_delta_seconds": result_item.staleness_delta_seconds,
                     }
 
                 converted_results.append(converted_result)

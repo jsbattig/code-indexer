@@ -90,9 +90,7 @@ class QdrantClient:
         pass
 
     def end_indexing(
-        self,
-        collection_name: str,
-        progress_callback: Optional[Any] = None
+        self, collection_name: str, progress_callback: Optional[Any] = None
     ) -> Dict[str, Any]:
         """Finalize indexing session.
 
@@ -117,7 +115,7 @@ class QdrantClient:
         return {
             "status": "ok",
             "vectors_indexed": vector_count,
-            "collection": collection
+            "collection": collection,
         }
 
     def create_collection(

@@ -49,42 +49,44 @@ Total: 3090ms per query
 │              CIDX CLI Client                │
 │         (Lightweight, 50ms startup)         │
 └──────────────────┬──────────────────────────┘
-                   │ RPyC (TCP/Unix Socket)
+                   │ RPyC (Unix Socket Only)
                    ▼
 ┌─────────────────────────────────────────────┐
-│           CIDX Daemon Service               │
+│    CIDX Daemon Service (Per-Repository)     │
+│      Socket: .code-indexer/daemon.sock      │
 │                                             │
-│  ┌─────────────────────────────────────┐   │
+│  ┌─────────────────────────────────────────┐   │
 │  │    In-Memory Index Cache            │   │
 │  │  ┌──────────────────────────────┐   │   │
-│  │  │ Project A: HNSW + ID Map     │   │   │
-│  │  │ (TTL: 60 min, last: 2m ago)  │   │   │
-│  │  ├──────────────────────────────┤   │   │
-│  │  │ Project B: HNSW + ID Map     │   │   │
-│  │  │ (TTL: 60 min, last: 5m ago)  │   │   │
+│  │  │ HNSW + ID Map + FTS Indexes  │   │   │
+│  │  │ (TTL: 10 min, last: 2m ago)  │   │   │
 │  │  └──────────────────────────────┘   │   │
 │  └─────────────────────────────────────┘   │
 │                                             │
-│  ┌─────────────────────────────────────┐   │
+│  ┌─────────────────────────────────────────┐   │
 │  │    Concurrency Manager              │   │
 │  │  - RLock per project (reads)        │   │
 │  │  - Lock per project (writes)        │   │
-│  └─────────────────────────────────────┘   │
+│  │  - Multi-client support             │   │
+│  └─────────────────────────────────────────┘   │
 └─────────────────────────────────────────────┘
 ```
 
 ### Key Components
 
 **1. RPyC Daemon Service**
+- **One daemon per repository** (identified by config location after backtrack)
 - Persistent Python process with pre-loaded imports
-- Listens on Unix socket (local) or TCP (remote)
-- Handles multiple concurrent connections
-- Automatic restart on failure
+- Listens on Unix socket at `.code-indexer/daemon.sock`
+- Handles multiple concurrent connections from different clients
+- Automatic restart on failure with crash recovery (2 attempts before fallback)
 
 **2. In-Memory Index Cache**
-- Per-project HNSW index and ID mapping storage
-- TTL-based eviction (default 60 minutes, configurable)
-- Background thread monitors and evicts expired entries
+- Single project cache (daemon is per-repository)
+- HNSW index, ID mapping, and FTS Tantivy indexes
+- TTL-based eviction (default 10 minutes, configurable)
+- Background thread monitors and evicts expired entries every 60 seconds
+- Optional auto-shutdown when idle and cache expired
 - No hard memory limits (trust OS management)
 
 **3. Client Delegation**
@@ -92,12 +94,19 @@ Total: 3090ms per query
 - Establishes RPyC connection (~50ms)
 - Delegates query to daemon
 - Loads Rich imports async during RPC call
+- **Crash recovery:** 2 restart attempts before fallback to standalone
 
 **4. Concurrency Control**
-- Per-project RLock for concurrent reads
-- Per-project Lock for serialized writes
+- RLock for concurrent reads (multiple clients can query simultaneously)
+- Lock for serialized writes (indexing operations)
 - Thread-safe cache operations
 - Connection pooling for multiple clients
+
+**5. Socket Management**
+- **Socket binding as atomic lock** (no PID files needed)
+- Socket path: `.code-indexer/daemon.sock` (next to config.json)
+- Automatic cleanup of stale sockets
+- Unix domain sockets only (no TCP/IP support)
 
 ## User Stories
 
@@ -129,9 +138,10 @@ Enable progress streaming from daemon to client terminal.
 
 ### Decision: Memory Management (TTL-based Selected)
 **Approach:** TTL eviction without hard limits
-- Default 60-minute TTL per project
-- Configurable via `daemon_ttl_minutes` in config.json
-- Background monitoring thread
+- Default 10-minute TTL per project
+- Configurable via `ttl_minutes` in config.json
+- Background monitoring thread (60-second intervals)
+- Auto-shutdown on idle when enabled
 - No memory caps
 
 **Rationale:** Simple, predictable, avoids premature eviction
@@ -140,8 +150,9 @@ Enable progress streaming from daemon to client terminal.
 **Approach:** Automatic daemon startup
 - First query auto-starts daemon if configured
 - No manual daemon commands needed
-- PID file tracking
+- Socket binding for process tracking (no PID files)
 - Health monitoring
+- Crash recovery with 2 restart attempts
 
 **Rationale:** Frictionless user experience
 
@@ -151,8 +162,26 @@ Enable progress streaming from daemon to client terminal.
 - Never fail due to daemon issues
 - Clear console messages
 - Troubleshooting tips provided
+- 2 restart attempts before fallback
 
 **Rationale:** Reliability over performance
+
+### Decision: Socket Architecture (Unix Only)
+**Approach:** Unix domain sockets only
+- Socket at `.code-indexer/daemon.sock` (per-repository)
+- Socket binding as atomic lock mechanism
+- No TCP/IP support (simplified architecture)
+- Automatic cleanup of stale sockets
+
+**Rationale:** Simplicity, security, atomic operations
+
+### Decision: Retry Strategy (Exponential Backoff)
+**Approach:** Progressive retry delays
+- 4 retry attempts: [100, 500, 1000, 2000]ms
+- Exponential backoff reduces connection storms
+- Graceful degradation after retries exhausted
+
+**Rationale:** Balance between quick recovery and system load
 
 ## Non-Functional Requirements
 
@@ -162,65 +191,73 @@ Enable progress streaming from daemon to client terminal.
 - Cache miss: Normal load time + <10ms overhead
 - RPC overhead: <100ms per call
 - Concurrent queries: Support 10+ simultaneous reads
+- FTS queries: <100ms with warm cache (95% improvement)
 
 ### Reliability Requirements
-- Automatic daemon restart on crash
+- Automatic daemon restart on crash (2 attempts)
 - Graceful fallback to standalone mode
 - No data corruption on daemon failure
 - Clean shutdown on system signals
-- PID file management for process tracking
+- Socket binding for atomic process management
+- Multi-client concurrent access support
 
 ### Scalability Requirements
-- Support 100+ projects in cache
-- Handle 1000+ queries/minute
-- Efficient memory usage with TTL eviction
+- One daemon per repository (not system-wide)
+- Handle 1000+ queries/minute per daemon
+- Efficient memory usage with 10-minute TTL eviction
 - Connection pooling for multiple clients
+- Auto-shutdown on idle to free resources
 
 ## Implementation Approach
 
 ### Phase 1: Core Daemon Infrastructure
 1. RPyC service skeleton
-2. Basic cache implementation
+2. Basic cache implementation (semantic + FTS)
 3. Configuration management
-4. PID file handling
+4. Socket binding mechanism
 
 ### Phase 2: Client Integration
 1. Daemon detection logic
-2. RPyC client implementation
-3. Fallback mechanism
+2. RPyC client implementation with retry backoff
+3. Fallback mechanism with crash recovery
 4. Async import warming
 
 ### Phase 3: Advanced Features
 1. Progress callback streaming
-2. TTL-based eviction
+2. TTL-based eviction with 60-second checks
 3. Health monitoring
-4. Auto-restart logic
+4. Auto-restart logic with 2 attempts
+5. Auto-shutdown on idle
 
 ## Testing Strategy
 
 ### Unit Tests
 - Cache operations (get/set/evict)
-- TTL expiration logic
+- TTL expiration logic (10-minute default)
 - Concurrency control (locks)
 - Configuration parsing
+- Socket binding race conditions
 
 ### Integration Tests
 - Client-daemon communication
 - Fallback scenarios
 - Progress streaming
-- Multi-project caching
+- Multi-client concurrent access
+- Crash recovery (2 attempts)
 
 ### Performance Tests
 - Baseline vs daemon comparison
 - Cache hit/miss scenarios
 - Concurrent query handling
 - Memory growth over time
+- FTS query performance (95% improvement target)
 
 ### Reliability Tests
-- Daemon crash recovery
+- Daemon crash recovery (2 attempts)
 - Network interruption handling
 - Clean shutdown behavior
-- PID file management
+- Socket binding conflicts
+- Multi-client race conditions
 
 ## Success Metrics
 
@@ -228,24 +265,28 @@ Enable progress streaming from daemon to client terminal.
 - [ ] Startup time: 1.86s → ≤50ms
 - [ ] Index load elimination: 376ms → 0ms (cached)
 - [ ] Total query time: 3.09s → ≤1.0s (with cache hit)
+- [ ] FTS query time: 2.24s → ≤100ms (with cache hit, 95% improvement)
 - [ ] Concurrent support: ≥10 simultaneous queries
 - [ ] Memory stability: <500MB growth over 1000 queries
+- [ ] TTL accuracy: Cache evicted within 60s of expiry
 
 **Qualitative:**
 - [ ] Transparent daemon operation
 - [ ] No manual daemon management
 - [ ] Clear fallback messaging
 - [ ] Zero breaking changes
+- [ ] Multi-client support working
 
 ## Risk Analysis
 
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
 | RPyC instability | High | Low | Comprehensive PoC validation |
-| Memory growth | High | Medium | TTL eviction + monitoring |
-| Daemon crashes | High | Low | Auto-restart + fallback |
+| Memory growth | High | Medium | 10-min TTL + auto-shutdown |
+| Daemon crashes | High | Low | 2 auto-restarts + fallback |
 | Complex debugging | Medium | Medium | Extensive logging |
-| Platform issues | Low | Low | Unix/TCP socket options |
+| Socket conflicts | Low | Low | Per-project sockets |
+| Race conditions | Medium | Low | Socket binding as lock |
 
 ## Documentation Requirements
 
@@ -260,13 +301,14 @@ Enable progress streaming from daemon to client terminal.
 ### Configuration Schema
 ```json
 {
+  "version": "2.0.0",
   "daemon": {
     "enabled": true,
-    "ttl_minutes": 60,
-    "socket_type": "unix",
-    "socket_path": "/tmp/cidx-daemon.sock",
-    "tcp_port": 9876,
-    "auto_start": true
+    "ttl_minutes": 10,
+    "auto_shutdown_on_idle": true,
+    "max_retries": 4,
+    "retry_delays_ms": [100, 500, 1000, 2000],
+    "eviction_check_interval_seconds": 60
   }
 }
 ```
@@ -277,6 +319,12 @@ class CIDXDaemonService(rpyc.Service):
     def exposed_query(self, project_path, query, limit, **kwargs):
         """Execute semantic search query."""
 
+    def exposed_query_fts(self, project_path, query, **kwargs):
+        """Execute FTS query with caching."""
+
+    def exposed_query_hybrid(self, project_path, query, **kwargs):
+        """Execute parallel semantic + FTS search."""
+
     def exposed_index(self, project_path, callback=None, **kwargs):
         """Perform indexing with optional progress callback."""
 
@@ -284,30 +332,52 @@ class CIDXDaemonService(rpyc.Service):
         """Return daemon status and cache statistics."""
 
     def exposed_clear_cache(self, project_path=None):
-        """Clear cache for project or all projects."""
+        """Clear cache for project."""
 ```
 
 ### Cache Structure
 ```python
 {
-    "/path/to/project1": {
-        "hnsw_index": <loaded_index>,
-        "id_mapping": <loaded_mapping>,
-        "last_accessed": datetime.now(),
-        "ttl_minutes": 60,
-        "lock": RLock()  # For reads
-        "write_lock": Lock()  # For indexing
-    }
+    # Single project cache (daemon is per-repository)
+    "hnsw_index": <loaded_index>,
+    "id_mapping": <loaded_mapping>,
+    "tantivy_index": <loaded_fts_index>,
+    "tantivy_searcher": <cached_searcher>,
+    "fts_available": True,
+    "last_accessed": datetime.now(),
+    "ttl_minutes": 10,
+    "lock": RLock(),  # For reads
+    "write_lock": Lock()  # For indexing
 }
+```
+
+### Socket Management
+```python
+def get_socket_path() -> Path:
+    """Determine socket path from config location."""
+    config_path = ConfigManager.find_config_upward(Path.cwd())
+    return config_path.parent / "daemon.sock"
+
+def bind_socket_as_lock():
+    """Use socket binding as atomic lock."""
+    try:
+        server.bind(socket_path)  # Atomic operation
+    except OSError as e:
+        if "Address already in use" in str(e):
+            # Daemon already running
+            sys.exit(0)
 ```
 
 ## References
 
 **Conversation Context:**
-- "Persistent RPyC daemon with in-memory index caching"
-- "Client delegation with async import warming"
-- "Progress streaming via RPyC callbacks"
-- "Per-project concurrency control"
-- "Option A selected: Daemon optional with auto-fallback"
-- "Option B selected: Automatic daemon startup on first query"
-- "TTL-based eviction (default 60 minutes, configurable)"
+- "One daemon per indexed repository"
+- "Socket at .code-indexer/daemon.sock"
+- "Socket binding as atomic lock (no PID files)"
+- "Unix sockets only (no TCP/IP)"
+- "TTL default 10 minutes"
+- "Auto-shutdown on idle when enabled"
+- "Retry with exponential backoff [100, 500, 1000, 2000]ms"
+- "2 restart attempts before fallback"
+- "Multi-client concurrent access support"
+- "FTS integration for 95% query improvement"

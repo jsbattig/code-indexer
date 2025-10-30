@@ -259,6 +259,7 @@ class TestParallelProcessingReplacement:
             "batch_size",
             "progress_callback",
             "slot_tracker",
+            "fts_manager",
         ]
         actual_params = list(sig.parameters.keys())
 

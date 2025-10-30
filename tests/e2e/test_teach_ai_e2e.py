@@ -174,4 +174,6 @@ class TestTeachAiClaude:
 
         # Error should indicate command doesn't exist (completely removed)
         output = result.stderr + result.stdout
-        assert "no such command" in output.lower() or "unknown command" in output.lower()
+        assert (
+            "no such command" in output.lower() or "unknown command" in output.lower()
+        )

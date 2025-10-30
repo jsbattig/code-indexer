@@ -270,6 +270,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         batch_size: int = 50,
         progress_callback: Optional[Callable] = None,
         slot_tracker: Optional[CleanSlotTracker] = None,
+        fts_manager: Optional[Any] = None,
     ) -> ProcessingStats:
         """Process files with maximum throughput using pre-queued chunks."""
 
@@ -297,6 +298,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 thread_count=vector_thread_count,
                 slot_tracker=local_slot_tracker,
                 codebase_dir=self.config.codebase_dir,
+                fts_manager=fts_manager,
             ) as file_manager:
 
                 # PARALLEL HASH CALCULATION - eliminate serial bottleneck
@@ -786,6 +788,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         vector_thread_count: Optional[int] = None,
         slot_tracker: Optional[CleanSlotTracker] = None,
         watch_mode: bool = False,
+        fts_manager: Optional[Any] = None,
     ):
         """
         Process branch changes using high-throughput parallel processing.
@@ -847,6 +850,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                     vector_thread_count=vector_thread_count or 8,
                     batch_size=50,
                     progress_callback=progress_callback,
+                    fts_manager=fts_manager,
                 )
 
                 result.files_processed = stats.files_processed

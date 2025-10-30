@@ -12,8 +12,7 @@ import json
 import numpy as np
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch, call
-import time
+from unittest.mock import Mock, patch
 
 
 class TestFilesystemVectorStoreLifecycle:
@@ -585,9 +584,7 @@ class TestFilesystemVectorStoreWatchModeOptimization:
 
         # Verify behavior
         assert rebuild_called, "HNSW rebuild SHOULD be called in normal mode"
-        assert (
-            not mark_stale_called
-        ), "mark_stale() should NOT be called in normal mode"
+        assert not mark_stale_called, "mark_stale() should NOT be called in normal mode"
         assert result.get("hnsw_skipped", False) is False
 
     def test_end_indexing_default_parameter_rebuilds_hnsw(self, store, test_vectors):

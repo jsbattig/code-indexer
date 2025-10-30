@@ -24,15 +24,15 @@ User runs: cidx query "authentication"
 │  1. Parse args (minimal imports)    │
 │  2. Detect daemon config             │
 │  3. Fork: Async import warming      │
-│  4. Connect to daemon via RPyC      │
+│  4. Connect to daemon via socket    │
 │  5. Delegate query                  │
 │  6. Stream results back             │
 └─────────────────────────────────────┘
            │
            ├─[If daemon available]──────► Daemon executes query
            │
-           └─[If daemon unavailable]────► Fallback to standalone
-                                           (with console message)
+           └─[If daemon unavailable]────► Crash recovery (2 attempts)
+                                          └─► Fallback to standalone
 ```
 
 ### Lightweight Client Implementation
@@ -69,6 +69,7 @@ class LightweightCLI:
         self.start_time = time.perf_counter()
         self.daemon_client = None
         self.console = None  # Lazy load
+        self.restart_attempts = 0
 
     def query(self, query_text: str, **kwargs) -> int:
         """Execute query with daemon delegation."""
@@ -104,6 +105,10 @@ class LightweightCLI:
             current = current.parent
         return None
 
+    def _get_socket_path(self, config_path: Path) -> Path:
+        """Calculate socket path from config location."""
+        return config_path.parent / "daemon.sock"
+
     def _query_via_daemon(self, query: str, daemon_config: dict, **kwargs):
         """Delegate query to daemon with async import warming."""
         # Step 2: Start async import warming
@@ -123,14 +128,30 @@ class LightweightCLI:
         import_thread = threading.Thread(target=warm_imports, daemon=True)
         import_thread.start()
 
-        # Step 3: Connect to daemon (parallel with imports)
+        # Step 3: Connect to daemon with crash recovery
+        config_path = self._find_config_file()
+        socket_path = self._get_socket_path(config_path)
+
         try:
-            connection = self._connect_to_daemon(daemon_config)
+            connection = self._connect_to_daemon(socket_path, daemon_config)
         except Exception as e:
-            # Fallback with message
-            self._report_fallback(e)
-            import_thread.join(timeout=1)  # Wait for imports
-            return self._query_standalone(query, **kwargs)
+            # Crash recovery: Try to restart daemon (2 attempts)
+            if self.restart_attempts < 2:
+                self.restart_attempts += 1
+                self._report_crash_recovery(e, self.restart_attempts)
+
+                # Cleanup stale socket and restart daemon
+                self._cleanup_stale_socket(socket_path)
+                self._start_daemon(config_path)
+                time.sleep(0.5)  # Give daemon time to start
+
+                # Retry connection
+                return self._query_via_daemon(query, daemon_config, **kwargs)
+            else:
+                # Exhausted restart attempts, fallback
+                self._report_fallback(e)
+                import_thread.join(timeout=1)
+                return self._query_standalone(query, **kwargs)
 
         # Step 4: Execute query via daemon
         try:
@@ -154,70 +175,76 @@ class LightweightCLI:
             connection.close()
             return 1
 
-    def _connect_to_daemon(self, daemon_config: dict):
-        """Establish RPyC connection to daemon."""
+    def _connect_to_daemon(self, socket_path: Path, daemon_config: dict):
+        """Establish RPyC connection to daemon with exponential backoff."""
         global rpyc
         if rpyc is None:
             import rpyc as _rpyc
             rpyc = _rpyc
 
-        # Auto-start daemon if configured
-        if daemon_config.get("auto_start", True):
-            self._ensure_daemon_running(daemon_config)
+        # Auto-start daemon if not running
+        if not socket_path.exists():
+            self._ensure_daemon_running(socket_path.parent / "config.json")
 
-        # Connect with retries
-        max_retries = daemon_config.get("max_retries", 3)
-        retry_delay = daemon_config.get("retry_delay_ms", 100) / 1000
+        # Connect with exponential backoff
+        retry_delays = daemon_config.get("retry_delays_ms", [100, 500, 1000, 2000])
+        retry_delays = [d / 1000.0 for d in retry_delays]  # Convert to seconds
 
-        for attempt in range(max_retries):
+        for attempt, delay in enumerate(retry_delays):
             try:
-                if daemon_config.get("socket_type") == "unix":
-                    socket_path = daemon_config.get("socket_path")
-                    return rpyc.connect_unix(socket_path)
-                else:
-                    port = daemon_config.get("tcp_port", 9876)
-                    return rpyc.connect("localhost", port)
+                return rpyc.connect_unix(str(socket_path))
             except Exception as e:
-                if attempt == max_retries - 1:
+                if attempt == len(retry_delays) - 1:
                     raise
-                time.sleep(retry_delay)
+                time.sleep(delay)
 
-    def _ensure_daemon_running(self, daemon_config: dict):
-        """Start daemon if not running."""
-        pid_file = Path(f"/tmp/cidx-daemon-{self._get_project_hash()}.pid")
+    def _ensure_daemon_running(self, config_path: Path):
+        """Start daemon if not running (socket binding handles race)."""
+        socket_path = config_path.parent / "daemon.sock"
 
-        # Check if daemon already running
-        if pid_file.exists():
+        # Check if socket exists (daemon likely running)
+        if socket_path.exists():
+            # Try to connect to verify it's alive
             try:
-                pid = int(pid_file.read_text())
-                os.kill(pid, 0)  # Check if process exists
+                import socket
+                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                sock.connect(str(socket_path))
+                sock.close()
                 return  # Daemon is running
-            except (OSError, ValueError):
-                # Stale PID file
-                pid_file.unlink(missing_ok=True)
+            except:
+                # Socket exists but daemon not responding
+                self._cleanup_stale_socket(socket_path)
 
         # Start daemon in background
+        self._start_daemon(config_path)
+
+    def _start_daemon(self, config_path: Path):
+        """Start daemon process (socket binding prevents duplicates)."""
         import subprocess
         import sys
 
         daemon_cmd = [
             sys.executable, "-m", "code_indexer.daemon",
-            "--config", str(self._find_config_file())
+            "--config", str(config_path)
         ]
 
         # Start daemon process
-        process = subprocess.Popen(
+        subprocess.Popen(
             daemon_cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True
         )
 
-        # Write PID file
-        pid_file.write_text(str(process.pid))
-
-        # Give daemon time to start
+        # Give daemon time to bind socket
         time.sleep(0.5)
+
+    def _cleanup_stale_socket(self, socket_path: Path):
+        """Remove stale socket file."""
+        try:
+            socket_path.unlink()
+        except:
+            pass  # Socket might not exist
 
     def _query_standalone(self, query: str, **kwargs):
         """Fallback to standalone execution."""
@@ -228,6 +255,17 @@ class LightweightCLI:
         # Execute via full CLI
         return typer.run(app, ["query", query])
 
+    def _report_crash_recovery(self, error: Exception, attempt: int):
+        """Report crash recovery attempt."""
+        if not self.console:
+            r = lazy_import_rich()
+            self.console = r.Console(stderr=True)
+
+        self.console.print(
+            f"[yellow]⚠️ Daemon crashed, attempting restart ({attempt}/2)[/yellow]",
+            f"[dim](Error: {error})[/dim]"
+        )
+
     def _report_fallback(self, error: Exception):
         """Report fallback to console."""
         if not self.console:
@@ -235,7 +273,7 @@ class LightweightCLI:
             self.console = r.Console(stderr=True)
 
         self.console.print(
-            f"[yellow]ℹ️ Daemon unavailable, using standalone mode[/yellow]",
+            f"[yellow]ℹ️ Daemon unavailable after 2 restart attempts, using standalone mode[/yellow]",
             f"[dim](Error: {error})[/dim]"
         )
         self.console.print(
@@ -260,12 +298,67 @@ class LightweightCLI:
         for i, result in enumerate(results.get("results", []), 1):
             self.console.print(f"{i}. {result['file']}:{result['line']}")
             self.console.print(f"   {result['content'][:100]}...")
+```
 
-    def _get_project_hash(self) -> str:
-        """Get project hash for daemon identification."""
-        import hashlib
-        project_path = Path.cwd().resolve()
-        return hashlib.md5(str(project_path).encode()).hexdigest()[:8]
+### FTS and Hybrid Query Support
+
+```python
+# cli_light.py (continued)
+    def _query_fts_via_daemon(self, query: str, daemon_config: dict, **kwargs):
+        """Delegate FTS query to daemon."""
+        config_path = self._find_config_file()
+        socket_path = self._get_socket_path(config_path)
+
+        connection = self._connect_with_recovery(socket_path, daemon_config)
+
+        try:
+            result = connection.root.query_fts(
+                project_path=str(Path.cwd()),
+                query=query,
+                **kwargs  # Pass all FTS parameters
+            )
+            self._display_results(result, time.perf_counter() - self.start_time)
+            connection.close()
+            return 0
+        except Exception as e:
+            self._report_error(e)
+            connection.close()
+            return 1
+
+    def _query_hybrid_via_daemon(self, query: str, daemon_config: dict, **kwargs):
+        """Delegate hybrid search to daemon."""
+        config_path = self._find_config_file()
+        socket_path = self._get_socket_path(config_path)
+
+        connection = self._connect_with_recovery(socket_path, daemon_config)
+
+        try:
+            result = connection.root.query_hybrid(
+                project_path=str(Path.cwd()),
+                query=query,
+                **kwargs
+            )
+            self._display_hybrid_results(result)
+            connection.close()
+            return 0
+        except Exception as e:
+            self._report_error(e)
+            connection.close()
+            return 1
+
+    def _connect_with_recovery(self, socket_path: Path, daemon_config: dict):
+        """Connect with crash recovery (2 restart attempts)."""
+        for attempt in range(3):  # Initial + 2 restarts
+            try:
+                return self._connect_to_daemon(socket_path, daemon_config)
+            except Exception as e:
+                if attempt < 2:
+                    self._report_crash_recovery(e, attempt + 1)
+                    self._cleanup_stale_socket(socket_path)
+                    self._start_daemon(socket_path.parent / "config.json")
+                    time.sleep(0.5)
+                else:
+                    raise
 ```
 
 ### Graceful Fallback Mechanism
@@ -330,21 +423,29 @@ class FallbackHandler:
 - [ ] CLI detects daemon configuration automatically
 - [ ] Daemon auto-starts if configured and not running
 - [ ] Query delegated to daemon when available
-- [ ] Fallback to standalone when daemon unavailable
+- [ ] FTS queries delegated to daemon
+- [ ] Hybrid queries delegated to daemon
+- [ ] Crash recovery with 2 restart attempts
+- [ ] Fallback to standalone after recovery exhausted
 - [ ] Console messages explain fallback reason
 - [ ] Results displayed identically in both modes
+- [ ] Socket path calculated from config location
 
 ### Performance Requirements
 - [ ] Daemon mode startup: <50ms to first RPC call
 - [ ] Import warming completes during RPC execution
 - [ ] Total daemon query: <1.0s (warm cache)
+- [ ] FTS query: <100ms (warm cache)
 - [ ] Fallback adds <100ms overhead
+- [ ] Exponential backoff on retries
 
 ### Reliability Requirements
 - [ ] Graceful handling of daemon crashes
+- [ ] 2 automatic restart attempts
 - [ ] Clean fallback on connection failures
 - [ ] No data loss during fallback
 - [ ] Clear error messages for users
+- [ ] Stale socket cleanup
 
 ## Implementation Tasks
 
@@ -352,19 +453,22 @@ class FallbackHandler:
 - [ ] Create minimal cli_light.py
 - [ ] Implement lazy import pattern
 - [ ] Add quick config detection
+- [ ] Calculate socket path from config
 - [ ] Measure startup time
 
 ### Task 2: Daemon Connection (Day 1 Afternoon)
-- [ ] Implement RPyC connection logic
-- [ ] Add retry mechanism
-- [ ] Handle socket types (unix/tcp)
+- [ ] Implement RPyC Unix socket connection
+- [ ] Add exponential backoff retry [100, 500, 1000, 2000]ms
+- [ ] Handle socket at .code-indexer/daemon.sock
 - [ ] Test connection scenarios
+- [ ] Implement crash detection
 
-### Task 3: Auto-start Logic (Day 1 Afternoon)
-- [ ] Detect if daemon running (PID file)
-- [ ] Start daemon subprocess if needed
-- [ ] Handle startup race conditions
-- [ ] Test auto-start behavior
+### Task 3: Crash Recovery (Day 1 Afternoon)
+- [ ] Detect daemon crashes
+- [ ] Cleanup stale sockets
+- [ ] Restart daemon (2 attempts max)
+- [ ] Track restart attempts
+- [ ] Test recovery scenarios
 
 ### Task 4: Async Import Warming (Day 2 Morning)
 - [ ] Implement background import thread
@@ -372,54 +476,65 @@ class FallbackHandler:
 - [ ] Ensure imports ready for display
 - [ ] Measure time savings
 
-### Task 5: Fallback Mechanism (Day 2 Afternoon)
-- [ ] Implement graceful fallback
-- [ ] Add console messaging
-- [ ] Provide helpful tips
-- [ ] Test fallback scenarios
+### Task 5: FTS/Hybrid Support (Day 2 Afternoon)
+- [ ] Add FTS query delegation
+- [ ] Add hybrid query delegation
+- [ ] Route based on query type
+- [ ] Test all query modes
 
 ## Testing Strategy
 
 ### Unit Tests
 
 ```python
-def test_daemon_detection():
-    """Test daemon configuration detection."""
-    # Create config with daemon enabled
-    config = {"daemon": {"enabled": True}}
-    write_config(config)
-
+def test_socket_path_calculation():
+    """Test socket path from config location."""
     cli = LightweightCLI()
-    daemon_config = cli._check_daemon_config()
+    config_path = Path("/project/.code-indexer/config.json")
+    socket_path = cli._get_socket_path(config_path)
 
-    assert daemon_config["enabled"] is True
+    assert socket_path == Path("/project/.code-indexer/daemon.sock")
 
-def test_auto_start():
-    """Test daemon auto-start."""
-    cli = LightweightCLI()
-    daemon_config = {"auto_start": True, "socket_type": "unix"}
-
-    # Ensure daemon not running
-    kill_any_daemon()
-
-    # Should start daemon
-    cli._ensure_daemon_running(daemon_config)
-
-    # Verify daemon started
-    assert is_daemon_running()
-
-def test_fallback_on_connection_error():
-    """Test fallback when daemon unavailable."""
+def test_crash_recovery():
+    """Test daemon crash recovery (2 attempts)."""
     cli = LightweightCLI()
 
-    # Simulate connection failure
+    with patch.object(cli, "_connect_to_daemon") as mock_connect:
+        # Simulate crashes then success
+        mock_connect.side_effect = [
+            ConnectionError("Daemon crashed"),
+            ConnectionError("Still crashed"),
+            Mock()  # Success on third attempt
+        ]
+
+        result = cli._connect_with_recovery(Path("/sock"), {})
+
+        assert cli.restart_attempts == 2
+        assert result is not None
+
+def test_exponential_backoff():
+    """Test retry with exponential backoff."""
+    cli = LightweightCLI()
+    daemon_config = {
+        "retry_delays_ms": [100, 500, 1000, 2000]
+    }
+
     with patch("rpyc.connect_unix") as mock_connect:
-        mock_connect.side_effect = ConnectionRefusedError()
+        mock_connect.side_effect = [
+            ConnectionError(),
+            ConnectionError(),
+            ConnectionError(),
+            Mock()  # Success on 4th attempt
+        ]
 
-        result = cli.query("test query")
+        with patch("time.sleep") as mock_sleep:
+            cli._connect_to_daemon(Path("/sock"), daemon_config)
 
-        # Should fallback to standalone
-        assert result == 0  # Success via fallback
+            # Verify exponential backoff
+            assert mock_sleep.call_count == 3
+            assert mock_sleep.call_args_list[0][0][0] == 0.1
+            assert mock_sleep.call_args_list[1][0][0] == 0.5
+            assert mock_sleep.call_args_list[2][0][0] == 1.0
 ```
 
 ### Integration Tests
@@ -441,17 +556,37 @@ def test_end_to_end_daemon_query():
     assert "Query completed in" in result.stdout
     assert result.stdout.count("ms") > 0  # Fast execution
 
-def test_import_warming_timing():
-    """Test that imports warm during RPC."""
-    cli = LightweightCLI()
+def test_crash_recovery_e2e():
+    """Test crash recovery in real scenario."""
+    # Start daemon
+    daemon_pid = start_test_daemon()
 
-    # Measure with warming
-    start = time.perf_counter()
-    cli._query_via_daemon("test", {"enabled": True})
-    warm_time = time.perf_counter() - start
+    # Kill daemon to simulate crash
+    os.kill(daemon_pid, 9)
 
-    # Should be faster than serial import + query
-    assert warm_time < 1.0  # Target: <1s total
+    # Query should recover
+    result = subprocess.run(
+        ["cidx", "query", "test"],
+        capture_output=True,
+        text=True
+    )
+
+    assert "attempting restart (1/2)" in result.stderr
+    assert result.returncode == 0
+
+def test_fts_delegation():
+    """Test FTS query delegation."""
+    start_test_daemon()
+
+    result = subprocess.run(
+        ["cidx", "query", "function", "--fts"],
+        capture_output=True,
+        text=True
+    )
+
+    assert result.returncode == 0
+    # FTS queries should be very fast
+    assert any(x in result.stdout for x in ["ms", "0.0", "0.1"])
 ```
 
 ### Performance Tests
@@ -479,41 +614,49 @@ def benchmark_startup_time():
 
 - [ ] Enable daemon mode with `cidx config --daemon`
 - [ ] Run first query - verify daemon auto-starts
+- [ ] Check socket at .code-indexer/daemon.sock
 - [ ] Run second query - verify uses running daemon
 - [ ] Kill daemon process manually
-- [ ] Run query - verify auto-restart
-- [ ] Disable daemon with `cidx config --no-daemon`
-- [ ] Run query - verify standalone execution
-- [ ] Create network issues (firewall, etc)
-- [ ] Verify graceful fallback with messages
+- [ ] Run query - verify auto-restart (1/2)
+- [ ] Kill daemon again
+- [ ] Run query - verify auto-restart (2/2)
+- [ ] Kill daemon third time
+- [ ] Run query - verify fallback to standalone
+- [ ] Test FTS query delegation
+- [ ] Test hybrid query delegation
 
 ## Error Scenarios
 
 ### Scenario 1: Daemon Not Running
-- **Detection:** PID file missing or stale
+- **Detection:** Socket doesn't exist
 - **Action:** Auto-start daemon
 - **Fallback:** If start fails, use standalone
 
 ### Scenario 2: Connection Refused
 - **Detection:** RPyC connection error
-- **Action:** Retry with backoff
-- **Fallback:** After retries, use standalone
+- **Action:** Exponential backoff retry
+- **Fallback:** After 4 retries, restart daemon
 
 ### Scenario 3: Daemon Crash During Query
 - **Detection:** RPyC exception during call
-- **Action:** Log error, close connection
-- **Fallback:** Complete query in standalone
+- **Action:** Restart daemon (up to 2 times)
+- **Fallback:** After 2 restarts, use standalone
 
-### Scenario 4: Import Warming Timeout
-- **Detection:** Import thread doesn't complete
-- **Action:** Continue without some imports
-- **Fallback:** Load remaining imports synchronously
+### Scenario 4: Stale Socket
+- **Detection:** Socket exists but no daemon
+- **Action:** Remove socket, start fresh daemon
+- **Fallback:** If cleanup fails, use standalone
 
 ## Definition of Done
 
 - [ ] Lightweight CLI with minimal imports
-- [ ] Daemon auto-detection and connection
+- [ ] Daemon auto-detection via config
+- [ ] Socket path calculation from config
 - [ ] Auto-start functionality working
+- [ ] Crash recovery with 2 restart attempts
+- [ ] Exponential backoff on retries
+- [ ] FTS query delegation implemented
+- [ ] Hybrid query delegation implemented
 - [ ] Async import warming implemented
 - [ ] Graceful fallback with messaging
 - [ ] All tests passing
@@ -524,8 +667,11 @@ def benchmark_startup_time():
 ## References
 
 **Conversation Context:**
-- "Lightweight CLI detects daemon mode, delegates via RPyC (~50ms)"
-- "Rich imports in parallel during RPC wait (300ms saved)"
-- "Graceful fallback with error messages"
-- "Automatic daemon startup on first query"
-- "Never fail query due to daemon issues"
+- "Socket at .code-indexer/daemon.sock"
+- "Socket binding as atomic lock"
+- "2 restart attempts before fallback"
+- "Exponential backoff [100, 500, 1000, 2000]ms"
+- "No PID files needed"
+- "Multi-client concurrent support"
+- "FTS query delegation"
+- "Crash recovery mechanism"

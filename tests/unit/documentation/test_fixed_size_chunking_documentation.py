@@ -305,6 +305,7 @@ class TestFixedSizeChunkingDocumentation:
                     "backlog",
                     "epic-",
                     "sql_parser_rewrite_summary",  # Exclude planning documents
+                    "plans/completed/full-text-search",  # Exclude FTS planning documents
                 ]
             )
         ]

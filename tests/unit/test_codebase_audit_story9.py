@@ -384,6 +384,7 @@ class TestCodebaseAuditStory9:
                     or "migration" in line.lower()
                     or "STORY" in str(file_path)
                     or "changelog" in line.lower()
+                    or "plans/Completed/full-text-search" in str(file_path)  # FTS planning docs
                 )
 
                 # Allow references in tests that are specifically testing the removal of semantic references
@@ -561,6 +562,7 @@ class TestCodebaseAuditStory9:
                     or "migration" in line.lower()
                     or "STORY" in str(file_path)
                     or "changelog" in line.lower()
+                    or "plans/Completed/full-text-search" in str(file_path)  # FTS planning docs
                 )
 
                 is_cleanup_test = (

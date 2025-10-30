@@ -7,7 +7,7 @@ Multi-user semantic code search server with JWT authentication and role-based ac
 from fastapi import FastAPI, HTTPException, status, Depends, Response, Request, Query
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Dict, Any, Optional, List, Callable
+from typing import Dict, Any, Optional, List, Callable, Literal
 import os
 import json
 from pathlib import Path
@@ -15,6 +15,9 @@ import psutil
 import logging
 import requests  # type: ignore
 from datetime import datetime, timezone
+
+# Initialize logger for server module
+logger = logging.getLogger(__name__)
 
 from .auth.jwt_manager import JWTManager
 from .auth.user_manager import UserManager, UserRole
@@ -549,7 +552,7 @@ class SwitchBranchRequest(BaseModel):
 
 
 class SemanticQueryRequest(BaseModel):
-    """Request model for semantic query operations."""
+    """Request model for semantic query operations with FTS support."""
 
     query_text: str = Field(
         ..., min_length=1, max_length=1000, description="Natural language query text"
@@ -569,6 +572,41 @@ class SemanticQueryRequest(BaseModel):
     )
     async_query: bool = Field(
         default=False, description="Submit as background job if True"
+    )
+
+    # Search mode selection (Story 5)
+    search_mode: Literal["semantic", "fts", "hybrid"] = Field(
+        default="semantic",
+        description="Search mode: 'semantic' (AI-based, default), 'fts' (full-text), 'hybrid' (both in parallel)",
+    )
+
+    # FTS-specific parameters (Story 5)
+    case_sensitive: bool = Field(
+        default=False, description="FTS only: Enable case-sensitive matching"
+    )
+    fuzzy: bool = Field(
+        default=False, description="FTS only: Enable fuzzy matching (edit distance 1)"
+    )
+    edit_distance: int = Field(
+        default=0,
+        ge=0,
+        le=3,
+        description="FTS only: Fuzzy match tolerance (0=exact, 1-3=typo tolerance)",
+    )
+    snippet_lines: int = Field(
+        default=5,
+        ge=0,
+        le=50,
+        description="FTS only: Context lines around matches (0=list only, default=5)",
+    )
+
+    # Common filtering parameters
+    language: Optional[str] = Field(
+        None,
+        description="Filter by programming language (e.g., 'python', 'javascript')",
+    )
+    path_filter: Optional[str] = Field(
+        None, description="Filter by path pattern (e.g., '*/tests/*', '*.py')"
     )
 
     @field_validator("query_text")
@@ -661,6 +699,44 @@ class SemanticQueryResponse(BaseModel):
     results: List[QueryResultItem]
     total_results: int
     query_metadata: QueryMetadata
+
+
+class FTSResultItem(BaseModel):
+    """Individual FTS (full-text search) result item (Story 5)."""
+
+    path: str = Field(description="File path relative to repository root")
+    line_start: int = Field(description="Starting line number of match")
+    line_end: int = Field(description="Ending line number of match")
+    snippet: str = Field(description="Code snippet with context around match")
+    language: str = Field(description="Programming language detected")
+    repository_alias: str = Field(description="Repository alias")
+
+
+class UnifiedSearchMetadata(BaseModel):
+    """Unified metadata for all search modes (Story 5)."""
+
+    query_text: str
+    search_mode_requested: str = Field(description="Search mode requested by user")
+    search_mode_actual: str = Field(description="Actual mode used (after degradation)")
+    execution_time_ms: int
+    fts_available: bool = Field(description="Whether FTS index is available")
+    semantic_available: bool = Field(description="Whether semantic index is available")
+    repositories_searched: int = Field(default=0)
+
+
+class UnifiedSearchResponse(BaseModel):
+    """Unified response for all search modes: semantic, FTS, hybrid (Story 5)."""
+
+    search_mode: str = Field(description="Search mode used")
+    query: str = Field(description="Query text")
+    fts_results: List[FTSResultItem] = Field(
+        default_factory=list, description="FTS results (if FTS or hybrid mode)"
+    )
+    semantic_results: List[QueryResultItem] = Field(
+        default_factory=list,
+        description="Semantic results (if semantic or hybrid mode)",
+    )
+    metadata: UnifiedSearchMetadata
 
 
 class RepositoryInfo(BaseModel):
@@ -3541,21 +3617,33 @@ def create_app() -> FastAPI:
         current_user: dependencies.User = Depends(dependencies.get_current_user),
     ):
         """
-        Perform semantic query on activated repositories.
+        Unified search endpoint supporting semantic, FTS, and hybrid modes (Story 5).
 
         Args:
-            request: Semantic query request data
+            request: Search request with mode selection and parameters
             current_user: Current authenticated user
 
         Returns:
-            Query results with metadata or job information
+            UnifiedSearchResponse for FTS/hybrid modes, or
+            SemanticQueryResponse for backward compatibility with semantic mode
 
         Raises:
-            HTTPException: If query fails or user has no repositories
+            HTTPException: If query fails, index missing, or invalid parameters
         """
+        import time
+        from pathlib import Path as PathLib
+
+        start_time = time.time()
+
         try:
-            # Handle background job submission
+            # Handle background job submission (semantic mode only)
             if request.async_query:
+                if request.search_mode != "semantic":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Async query only supported for semantic search mode",
+                    )
+
                 job_id = semantic_query_manager.submit_query_job(
                     username=current_user.username,
                     query_text=request.query_text,
@@ -3564,7 +3652,6 @@ def create_app() -> FastAPI:
                     min_score=request.min_score,
                     file_extensions=request.file_extensions,
                 )
-                # Use JSONResponse to control status code
                 from fastapi.responses import JSONResponse
 
                 return JSONResponse(
@@ -3575,7 +3662,170 @@ def create_app() -> FastAPI:
                     },
                 )
 
-            # Perform synchronous query
+            # Story 5: Handle FTS and Hybrid modes
+            if request.search_mode in ["fts", "hybrid"]:
+                # Get user's activated repositories
+                activated_repos = activated_repo_manager.list_activated_repositories(
+                    current_user.username
+                )
+
+                if not activated_repos:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="No activated repositories found for user",
+                    )
+
+                # Filter to specific repository if requested
+                if request.repository_alias:
+                    activated_repos = [
+                        repo
+                        for repo in activated_repos
+                        if repo["user_alias"] == request.repository_alias
+                    ]
+                    if not activated_repos:
+                        raise HTTPException(
+                            status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Repository '{request.repository_alias}' not found",
+                        )
+
+                # Check FTS index availability for each repository
+                fts_available = False
+                repo_path = None
+                for repo in activated_repos:
+                    # Construct path from activated_repos_dir + username + user_alias
+                    repo_path = (
+                        PathLib(activated_repo_manager.activated_repos_dir)
+                        / current_user.username
+                        / repo["user_alias"]
+                    )
+                    fts_index_dir = repo_path / ".code-indexer" / "tantivy_index"
+                    if fts_index_dir.exists():
+                        fts_available = True
+                        break
+
+                # Validate search mode based on index availability
+                search_mode_actual = request.search_mode
+                if request.search_mode == "fts" and not fts_available:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail={
+                            "error": "FTS index not available",
+                            "suggestion": "Build FTS index with 'cidx index --fts' in the repository",
+                            "available_modes": ["semantic"],
+                        },
+                    )
+
+                if request.search_mode == "hybrid" and not fts_available:
+                    # Graceful degradation for hybrid mode
+                    logger.warning(
+                        f"FTS index not available for user {current_user.username}, degrading hybrid to semantic-only"
+                    )
+                    search_mode_actual = "semantic"
+
+                # Execute FTS or hybrid search
+                fts_results = []
+                semantic_results_list = []
+
+                if search_mode_actual in ["fts", "hybrid"] and fts_available:
+                    # Execute FTS search
+                    from ..services.tantivy_index_manager import TantivyIndexManager
+
+                    try:
+                        # repo_path is guaranteed to be set if fts_available is True
+                        if repo_path is None:
+                            raise RuntimeError(
+                                "repo_path is None despite FTS being available"
+                            )
+
+                        # Initialize Tantivy manager for first available repository
+                        tantivy_manager = TantivyIndexManager(
+                            repo_path / ".code-indexer" / "tantivy_index"
+                        )
+                        tantivy_manager.initialize_index(create_new=False)
+
+                        # Handle fuzzy flag
+                        edit_dist = request.edit_distance
+                        if request.fuzzy and edit_dist == 0:
+                            edit_dist = 1
+
+                        # Execute FTS query
+                        fts_raw_results = tantivy_manager.search(
+                            query_text=request.query_text,
+                            case_sensitive=request.case_sensitive,
+                            edit_distance=edit_dist,
+                            snippet_lines=request.snippet_lines,
+                            limit=request.limit,
+                            language_filter=request.language,
+                            path_filter=request.path_filter,
+                        )
+
+                        # Convert to API response format
+                        for result in fts_raw_results:
+                            fts_results.append(
+                                FTSResultItem(
+                                    path=result.get("path", ""),
+                                    line_start=result.get("line_start", 0),
+                                    line_end=result.get("line_end", 0),
+                                    snippet=result.get("snippet", ""),
+                                    language=result.get("language", "unknown"),
+                                    repository_alias=request.repository_alias
+                                    or activated_repos[0]["user_alias"],
+                                )
+                            )
+
+                    except Exception as e:
+                        logger.error(f"FTS search failed: {e}")
+                        if request.search_mode == "fts":
+                            raise HTTPException(
+                                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                detail=f"FTS search failed: {str(e)}",
+                            )
+                        # For hybrid mode, continue with semantic only
+                        search_mode_actual = "semantic"
+
+                # Execute semantic search for hybrid or degraded mode
+                if search_mode_actual in ["semantic", "hybrid"]:
+                    try:
+                        semantic_results_raw = (
+                            semantic_query_manager.query_user_repositories(
+                                username=current_user.username,
+                                query_text=request.query_text,
+                                repository_alias=request.repository_alias,
+                                limit=request.limit,
+                                min_score=request.min_score,
+                                file_extensions=request.file_extensions,
+                            )
+                        )
+                        semantic_results_list = [
+                            QueryResultItem(**result)
+                            for result in semantic_results_raw["results"]
+                        ]
+                    except Exception as e:
+                        logger.error(f"Semantic search failed: {e}")
+                        if search_mode_actual == "semantic":
+                            raise
+
+                # Calculate execution time
+                execution_time_ms = int((time.time() - start_time) * 1000)
+
+                # Return unified response
+                return UnifiedSearchResponse(
+                    search_mode=search_mode_actual,
+                    query=request.query_text,
+                    fts_results=fts_results,
+                    semantic_results=semantic_results_list,
+                    metadata=UnifiedSearchMetadata(
+                        query_text=request.query_text,
+                        search_mode_requested=request.search_mode,
+                        search_mode_actual=search_mode_actual,
+                        execution_time_ms=execution_time_ms,
+                        fts_available=fts_available,
+                        semantic_available=True,  # Assuming semantic always available
+                        repositories_searched=len(activated_repos),
+                    ),
+                )
+
+            # Default semantic mode (backward compatibility)
             results = semantic_query_manager.query_user_repositories(
                 username=current_user.username,
                 query_text=request.query_text,
@@ -3590,6 +3840,10 @@ def create_app() -> FastAPI:
                 total_results=results["total_results"],
                 query_metadata=QueryMetadata(**results["query_metadata"]),
             )
+
+        except HTTPException:
+            # Re-raise HTTP exceptions as-is
+            raise
 
         except SemanticQueryError as e:
             error_message = str(e)
@@ -3610,6 +3864,7 @@ def create_app() -> FastAPI:
             )
 
         except Exception as e:
+            logger.error(f"Unexpected error in unified search: {e}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Internal search error: {str(e)}",
@@ -4017,7 +4272,12 @@ def create_app() -> FastAPI:
                         or repo["golden_repo_alias"] == cleaned_repo_id
                     ):
                         repo_found = True
-                        repo_path = Path(repo["path"])
+                        # Construct path from activated_repos_dir + username + user_alias
+                        repo_path = (
+                            Path(activated_repo_manager.activated_repos_dir)
+                            / current_user.username
+                            / repo["user_alias"]
+                        )
                         break
 
             if not repo_found:

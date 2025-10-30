@@ -1320,7 +1320,9 @@ class TestHNSWStalenessCoordination:
         # Verify HNSW is fresh
         collection_path = tmp_path / "test_coll"
         hnsw_manager = HNSWIndexManager(vector_dim=1536, space="cosine")
-        assert not hnsw_manager.is_stale(collection_path), "HNSW should be fresh after build"
+        assert not hnsw_manager.is_stale(
+            collection_path
+        ), "HNSW should be fresh after build"
 
         # Simulate watch mode: add more vectors and skip rebuild
         new_points = [
@@ -1336,11 +1338,15 @@ class TestHNSWStalenessCoordination:
         store.end_indexing("test_coll", skip_hnsw_rebuild=True)  # Watch mode
 
         # Verify HNSW is now stale
-        assert hnsw_manager.is_stale(collection_path), "HNSW should be stale after watch mode"
+        assert hnsw_manager.is_stale(
+            collection_path
+        ), "HNSW should be stale after watch mode"
 
         # Perform search - should auto-rebuild
         mock_embedding_provider = Mock()
-        mock_embedding_provider.get_embedding.return_value = np.random.randn(1536).tolist()
+        mock_embedding_provider.get_embedding.return_value = np.random.randn(
+            1536
+        ).tolist()
 
         results = store.search(
             query="test query",
@@ -1353,7 +1359,9 @@ class TestHNSWStalenessCoordination:
         assert len(results) > 0, "Search should return results"
 
         # Verify HNSW is now fresh (rebuilt during search)
-        assert not hnsw_manager.is_stale(collection_path), "HNSW should be fresh after search rebuild"
+        assert not hnsw_manager.is_stale(
+            collection_path
+        ), "HNSW should be fresh after search rebuild"
 
     def test_search_uses_fresh_hnsw_without_rebuild(self, tmp_path):
         """GIVEN fresh HNSW index
@@ -1392,7 +1400,9 @@ class TestHNSWStalenessCoordination:
 
         # Perform search (should use existing HNSW)
         mock_embedding_provider = Mock()
-        mock_embedding_provider.get_embedding.return_value = np.random.randn(1536).tolist()
+        mock_embedding_provider.get_embedding.return_value = np.random.randn(
+            1536
+        ).tolist()
 
         results = store.search(
             query="test query",

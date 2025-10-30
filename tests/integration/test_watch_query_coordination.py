@@ -8,7 +8,6 @@ This test suite verifies the end-to-end workflow:
 
 import subprocess
 import time
-from pathlib import Path
 from unittest.mock import Mock
 
 import numpy as np
@@ -226,9 +225,7 @@ class TestWatchQueryCoordination:
         )
 
         assert len(results2) > 0, "Second search should return results"
-        assert not hnsw_manager.is_stale(
-            collection_path
-        ), "HNSW should still be fresh"
+        assert not hnsw_manager.is_stale(collection_path), "HNSW should still be fresh"
 
         # Verify HNSW was NOT rebuilt (file not modified)
         mtime_after_second_query = hnsw_file.stat().st_mtime

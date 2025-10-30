@@ -23,38 +23,47 @@ def test_codebase():
     # Create Python files
     python_dir = base_path / "python_code"
     python_dir.mkdir()
-    (python_dir / "auth.py").write_text("""
+    (python_dir / "auth.py").write_text(
+        """
 def authenticate_user(username, password):
     '''Authenticate user with credentials'''
     return verify_credentials(username, password)
-""")
-    (python_dir / "database.py").write_text("""
+"""
+    )
+    (python_dir / "database.py").write_text(
+        """
 def connect_database(host, port):
     '''Connect to database server'''
     return establish_connection(host, port)
-""")
+"""
+    )
 
     # Create JavaScript files
     js_dir = base_path / "js_code"
     js_dir.mkdir()
-    (js_dir / "app.js").write_text("""
+    (js_dir / "app.js").write_text(
+        """
 function initializeApp() {
     // Initialize application
     setupRoutes();
     startServer();
 }
-""")
-    (js_dir / "utils.js").write_text("""
+"""
+    )
+    (js_dir / "utils.js").write_text(
+        """
 function formatDate(date) {
     // Format date string
     return date.toISOString();
 }
-""")
+"""
+    )
 
     # Create TypeScript files
     ts_dir = base_path / "ts_code"
     ts_dir.mkdir()
-    (ts_dir / "component.ts").write_text("""
+    (ts_dir / "component.ts").write_text(
+        """
 interface ComponentProps {
     name: string;
     value: number;
@@ -63,18 +72,21 @@ interface ComponentProps {
 function renderComponent(props: ComponentProps) {
     return `Component: ${props.name}`;
 }
-""")
+"""
+    )
 
     # Create Java file
     java_dir = base_path / "java_code"
     java_dir.mkdir()
-    (java_dir / "Main.java").write_text("""
+    (java_dir / "Main.java").write_text(
+        """
 public class Main {
     public static void main(String[] args) {
         System.out.println("Hello, World!");
     }
 }
-""")
+"""
+    )
 
     yield base_path
 
@@ -111,17 +123,27 @@ def test_exclude_javascript_returns_only_non_js_files(test_codebase):
         # Query with JavaScript exclusion
         query_result = runner.invoke(
             cli,
-            ["query", "function implementation", "--exclude-language", "javascript", "--quiet"],
+            [
+                "query",
+                "function implementation",
+                "--exclude-language",
+                "javascript",
+                "--quiet",
+            ],
         )
         assert query_result.exit_code == 0, f"Query failed: {query_result.output}"
 
         # Verify no JavaScript files in output
         output = query_result.output
-        assert ".js" not in output or "app.js" not in output, "Should not contain JavaScript files"
+        assert (
+            ".js" not in output or "app.js" not in output
+        ), "Should not contain JavaScript files"
         assert "utils.js" not in output, "Should not contain JavaScript utility files"
 
         # Should contain other languages
-        assert any(ext in output for ext in [".py", ".ts", ".java"]), "Should contain non-JavaScript files"
+        assert any(
+            ext in output for ext in [".py", ".ts", ".java"]
+        ), "Should contain non-JavaScript files"
 
 
 @pytest.mark.slow
@@ -146,8 +168,10 @@ def test_exclude_multiple_languages(test_codebase):
             [
                 "query",
                 "function code",
-                "--exclude-language", "javascript",
-                "--exclude-language", "typescript",
+                "--exclude-language",
+                "javascript",
+                "--exclude-language",
+                "typescript",
                 "--quiet",
             ],
         )
@@ -156,11 +180,17 @@ def test_exclude_multiple_languages(test_codebase):
         output = query_result.output
 
         # Verify no JS or TS files in output
-        assert ".js" not in output or "app.js" not in output, "Should not contain JavaScript files"
-        assert ".ts" not in output or "component.ts" not in output, "Should not contain TypeScript files"
+        assert (
+            ".js" not in output or "app.js" not in output
+        ), "Should not contain JavaScript files"
+        assert (
+            ".ts" not in output or "component.ts" not in output
+        ), "Should not contain TypeScript files"
 
         # Should contain Python or Java
-        assert any(ext in output for ext in [".py", ".java"]), "Should contain Python or Java files"
+        assert any(
+            ext in output for ext in [".py", ".java"]
+        ), "Should contain Python or Java files"
 
 
 @pytest.mark.slow
@@ -185,8 +215,10 @@ def test_exclude_with_include_language_filter(test_codebase):
             [
                 "query",
                 "function",
-                "--language", "python",
-                "--exclude-language", "javascript",
+                "--language",
+                "python",
+                "--exclude-language",
+                "javascript",
                 "--quiet",
             ],
         )
@@ -196,8 +228,12 @@ def test_exclude_with_include_language_filter(test_codebase):
 
         # Verify only Python files in output
         if output.strip():  # If there are results
-            assert ".py" in output or "python" in output.lower(), "Should contain Python files"
-            assert ".js" not in output or "app.js" not in output, "Should not contain JavaScript files"
+            assert (
+                ".py" in output or "python" in output.lower()
+            ), "Should contain Python files"
+            assert (
+                ".js" not in output or "app.js" not in output
+            ), "Should not contain JavaScript files"
 
 
 @pytest.mark.slow
@@ -222,8 +258,10 @@ def test_exclude_with_path_filter(test_codebase):
             [
                 "query",
                 "code",
-                "--path", "*/python_code/*",
-                "--exclude-language", "javascript",
+                "--path",
+                "*/python_code/*",
+                "--exclude-language",
+                "javascript",
                 "--quiet",
             ],
         )
@@ -233,5 +271,9 @@ def test_exclude_with_path_filter(test_codebase):
 
         # Verify path filter worked and JS is excluded
         if output.strip():  # If there are results
-            assert "python_code" in output, "Should contain files from python_code directory"
-            assert ".js" not in output or "app.js" not in output, "Should not contain JavaScript files"
+            assert (
+                "python_code" in output
+            ), "Should contain files from python_code directory"
+            assert (
+                ".js" not in output or "app.js" not in output
+            ), "Should not contain JavaScript files"

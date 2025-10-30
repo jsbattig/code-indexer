@@ -298,7 +298,9 @@ class HNSWIndexManager:
 
                 # Report progress periodically
                 if progress_callback and idx % 100 == 0:
-                    progress_callback(idx, total_files, Path(""), info="Rebuilding HNSW index")
+                    progress_callback(
+                        idx, total_files, Path(""), info="Rebuilding HNSW index"
+                    )
 
             except (json.JSONDecodeError, KeyError, ValueError):
                 # Skip malformed files
