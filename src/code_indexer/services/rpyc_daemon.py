@@ -115,10 +115,7 @@ class CacheEntry:
             oldest_key = next(iter(self.query_cache))
             del self.query_cache[oldest_key]
 
-        self.query_cache[query_key] = {
-            "result": result,
-            "timestamp": datetime.now()
-        }
+        self.query_cache[query_key] = {"result": result, "timestamp": datetime.now()}
 
     def get_cached_query(self, query_key: str) -> Optional[Any]:
         """Get cached query result if available and fresh."""
@@ -153,7 +150,9 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
         self._socket_path = None  # Socket path for cleanup
 
         # Choose shutdown method based on platform
-        self._shutdown_method = 'signal'  # Options: 'signal', 'server_stop', 'delayed_exit'
+        self._shutdown_method = (
+            "signal"  # Options: 'signal', 'server_stop', 'delayed_exit'
+        )
 
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGTERM, self._signal_handler)
@@ -194,7 +193,9 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
         # Exit process
         os._exit(0)
 
-    def exposed_query(self, project_path: str, query: str, limit: int = 10, **kwargs) -> List[Dict]:
+    def exposed_query(
+        self, project_path: str, query: str, limit: int = 10, **kwargs
+    ) -> List[Dict]:
         """
         Execute semantic search with caching.
 
@@ -252,11 +253,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
 
         # Perform search OUTSIDE the lock for true concurrency
         results = self._execute_search_optimized(
-            hnsw_index,
-            id_mapping,
-            query,
-            limit,
-            **kwargs
+            hnsw_index, id_mapping, query, limit, **kwargs
         )
 
         # Cache the result with minimal lock time
@@ -320,11 +317,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             self.cache_entry.rw_lock.release_read()
 
         # Perform FTS search OUTSIDE the lock for true concurrency
-        results = self._execute_fts_search(
-            tantivy_searcher,
-            query,
-            **kwargs
-        )
+        results = self._execute_fts_search(tantivy_searcher, query, **kwargs)
 
         # Cache the result with minimal lock time
         self.cache_entry.rw_lock.acquire_read()
@@ -352,7 +345,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
         return self._merge_hybrid_results(semantic_results, fts_results)
 
     def exposed_index(self, project_path: str, callback=None, **kwargs) -> Dict:
-        """Perform indexing with serialized writes."""
+        """Perform indexing with serialized writes and optional progress callback."""
         project_path_obj = Path(project_path).resolve()
 
         # Get or create cache entry
@@ -360,10 +353,13 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             if self.cache_entry is None:
                 self.cache_entry = CacheEntry(project_path_obj)
 
+        # Wrap callback for safe RPC calls
+        safe_callback = self._wrap_callback(callback) if callback else None
+
         # Serialized write with Lock
         with self.cache_entry.write_lock:
-            # Perform indexing
-            self._perform_indexing(project_path_obj, callback, **kwargs)
+            # Perform indexing with wrapped callback
+            self._perform_indexing(project_path_obj, safe_callback, **kwargs)
 
             # Invalidate all caches
             self.cache_entry.hnsw_index = None
@@ -374,6 +370,39 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             self.cache_entry.last_accessed = datetime.now()
 
         return {"status": "completed", "project": str(project_path_obj)}
+
+    def _wrap_callback(self, callback):
+        """
+        Wrap client callback for safe RPC calls.
+
+        This wrapper:
+        1. Converts Path objects to strings for RPC serialization
+        2. Catches and logs callback errors without crashing indexing
+        3. Preserves callback signature
+
+        Args:
+            callback: Client callback function or None
+
+        Returns:
+            Wrapped callback function or None if callback is None
+        """
+        if callback is None:
+            return None
+
+        def safe_callback(current, total, file_path, info=""):
+            try:
+                # Convert Path to string for RPC
+                if isinstance(file_path, Path):
+                    file_path = str(file_path)
+
+                # Call client callback via RPC
+                callback(current, total, file_path, info)
+
+            except Exception as e:
+                # Log but don't crash on callback errors
+                logger.debug(f"Progress callback error: {e}")
+
+        return safe_callback
 
     def exposed_get_status(self) -> Dict:
         """Return daemon and cache statistics."""
@@ -390,7 +419,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                 "query_cache_size": len(self.cache_entry.query_cache),
                 "last_accessed": self.cache_entry.last_accessed.isoformat(),
                 "access_count": self.cache_entry.access_count,
-                "ttl_minutes": self.cache_entry.ttl_minutes
+                "ttl_minutes": self.cache_entry.ttl_minutes,
             }
 
     def exposed_clear_cache(self) -> Dict:
@@ -410,6 +439,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             # Create watch handler
             try:
                 from ..services.git_aware_watch_handler import GitAwareWatchHandler
+
                 # Get or create indexer for watch
                 if self.cache_entry is None:
                     self.cache_entry = CacheEntry(project_path_obj)
@@ -418,18 +448,18 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                     project_path=project_path_obj,
                     indexer=self._get_or_create_indexer(project_path_obj),
                     progress_callback=callback,
-                    **kwargs
+                    **kwargs,
                 )
 
                 # Start watch in background thread
                 self.watch_thread = threading.Thread(
-                    target=self.watch_handler.start,
-                    daemon=True
+                    target=self.watch_handler.start, daemon=True
                 )
                 self.watch_thread.start()
             except ImportError:
                 # For testing without GitAwareWatchHandler
                 from unittest.mock import MagicMock
+
                 self.watch_handler = MagicMock()
                 self.watch_handler.project_path = project_path_obj
 
@@ -437,7 +467,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             return {
                 "status": "started",
                 "project": str(project_path_obj),
-                "watching": True
+                "watching": True,
             }
 
     def exposed_watch_stop(self, project_path: str) -> Dict:
@@ -457,8 +487,8 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             stats = {
                 "status": "stopped",
                 "project": str(project_path_obj),
-                "files_processed": getattr(self.watch_handler, 'files_processed', 0),
-                "updates_applied": getattr(self.watch_handler, 'updates_applied', 0)
+                "files_processed": getattr(self.watch_handler, "files_processed", 0),
+                "updates_applied": getattr(self.watch_handler, "updates_applied", 0),
             }
 
             # Clean up
@@ -477,8 +507,10 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             return {
                 "watching": True,
                 "project": str(self.watch_handler.project_path),
-                "files_processed": getattr(self.watch_handler, 'files_processed', 0),
-                "last_update": getattr(self.watch_handler, 'last_update', datetime.now()).isoformat()
+                "files_processed": getattr(self.watch_handler, "files_processed", 0),
+                "last_update": getattr(
+                    self.watch_handler, "last_update", datetime.now()
+                ).isoformat(),
             }
 
     def exposed_clean(self, project_path: str, **kwargs) -> Dict:
@@ -495,7 +527,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                 from ..services.cleanup_service import CleanupService
             except ImportError:
                 # For testing
-                CleanupService = globals().get('CleanupService', None)
+                CleanupService = globals().get("CleanupService", None)
                 if not CleanupService:
                     return {"error": "CleanupService not available"}
 
@@ -506,7 +538,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                 "status": "success",
                 "operation": "clean",
                 "cache_invalidated": True,
-                "result": result
+                "result": result,
             }
 
     def exposed_clean_data(self, project_path: str, **kwargs) -> Dict:
@@ -523,7 +555,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                 from ..services.cleanup_service import CleanupService
             except ImportError:
                 # For testing
-                CleanupService = globals().get('CleanupService', None)
+                CleanupService = globals().get("CleanupService", None)
                 if not CleanupService:
                     return {"error": "CleanupService not available"}
 
@@ -534,7 +566,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                 "status": "success",
                 "operation": "clean_data",
                 "cache_invalidated": True,
-                "result": result
+                "result": result,
             }
 
     def exposed_status(self, project_path: str) -> Dict:
@@ -547,16 +579,13 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
         # Get storage status
         try:
             from ..services.status_service import StatusService
+
             status_service = StatusService(project_path_obj)
             storage_status = status_service.get_storage_status()
         except ImportError:
             storage_status = {"error": "StatusService not available"}
 
-        return {
-            "daemon": daemon_status,
-            "storage": storage_status,
-            "mode": "daemon"
-        }
+        return {"daemon": daemon_status, "storage": storage_status, "mode": "daemon"}
 
     def exposed_shutdown(self) -> Dict:
         """
@@ -578,10 +607,10 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
         self.exposed_clear_cache()
 
         # Use appropriate shutdown method
-        if self._shutdown_method == 'signal':
+        if self._shutdown_method == "signal":
             # Option A: Signal-based shutdown (most reliable)
             os.kill(os.getpid(), signal.SIGTERM)
-        elif self._shutdown_method == 'server_stop' and self._server:
+        elif self._shutdown_method == "server_stop" and self._server:
             # Option B: Server stop method
             self._server.close()
         else:
@@ -599,18 +628,26 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
         """Load HNSW and ID mapping indexes."""
         try:
             from ..storage.filesystem_vector_store import FilesystemVectorStore
+
             # Note: FilesystemVectorStore import needed for HNSW loading
             _ = FilesystemVectorStore  # Keep import for availability
 
             # Load HNSW index
             from ..storage.hnsw_index_manager import HNSWIndexManager
+
             hnsw_manager = HNSWIndexManager(
                 index_dir=entry.project_path / ".code-indexer" / "index"
             )
             entry.hnsw_index = hnsw_manager.load_index(Path("code_vectors"))
 
             # Load ID mapping
-            id_mapping_path = entry.project_path / ".code-indexer" / "index" / "code_vectors" / "id_mapping.json"
+            id_mapping_path = (
+                entry.project_path
+                / ".code-indexer"
+                / "index"
+                / "code_vectors"
+                / "id_mapping.json"
+            )
             if id_mapping_path.exists():
                 with open(id_mapping_path) as f:
                     entry.id_mapping = json.load(f)
@@ -640,6 +677,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             except Exception:
                 # Create new index if open fails
                 from ..services.tantivy_index_manager import TantivyIndexManager
+
                 manager = TantivyIndexManager(tantivy_index_dir)
                 if not manager._index:
                     manager.open_or_create_index()
@@ -654,8 +692,9 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             logger.error(f"Error loading Tantivy index: {e}")
             entry.fts_available = False
 
-    def _execute_search_optimized(self, hnsw_index, id_mapping, query: str,
-                                   limit: int, **kwargs) -> List[Dict]:
+    def _execute_search_optimized(
+        self, hnsw_index, id_mapping, query: str, limit: int, **kwargs
+    ) -> List[Dict]:
         """
         Optimized search execution for <100ms performance.
 
@@ -673,13 +712,17 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             from ..config import ConfigManager
             from ..services.embedding_service import EmbeddingProviderFactory
 
-            config_manager = ConfigManager.create_with_backtrack(self.cache_entry.project_path)
+            config_manager = ConfigManager.create_with_backtrack(
+                self.cache_entry.project_path
+            )
             config = config_manager.get_config()
             embedding_service = EmbeddingProviderFactory.create(config)
             query_embedding = embedding_service.get_embedding(query)
 
             # Direct HNSW search (optimized C++ backend)
-            indices, distances = hnsw_index.search(query_embedding.reshape(1, -1), limit)
+            indices, distances = hnsw_index.search(
+                query_embedding.reshape(1, -1), limit
+            )
 
             # Format results efficiently
             results = []
@@ -695,11 +738,13 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                         break
 
                 if file_path:
-                    results.append({
-                        "file": file_path,
-                        "score": float(1 - dist),  # Convert distance to similarity
-                        "index": int(idx)
-                    })
+                    results.append(
+                        {
+                            "file": file_path,
+                            "score": float(1 - dist),  # Convert distance to similarity
+                            "index": int(idx),
+                        }
+                    )
 
             return results
 
@@ -715,10 +760,13 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                 return {"error": "No cache entry", "results": [], "query": query}
 
             # Get TantivyIndexManager for actual search implementation
-            tantivy_index_dir = self.cache_entry.project_path / ".code-indexer" / "tantivy_index"
+            tantivy_index_dir = (
+                self.cache_entry.project_path / ".code-indexer" / "tantivy_index"
+            )
 
             # Use the actual TantivyIndexManager search method
             from ..services.tantivy_index_manager import TantivyIndexManager
+
             manager = TantivyIndexManager(tantivy_index_dir)
 
             if self.cache_entry.tantivy_index:
@@ -730,22 +778,18 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             # Extract search parameters from kwargs
             results = manager.search(
                 query_text=query,
-                case_sensitive=kwargs.get('case_sensitive', False),
-                edit_distance=kwargs.get('edit_distance', 0),
-                snippet_lines=kwargs.get('snippet_lines', 5),
-                limit=kwargs.get('limit', 10),
-                languages=kwargs.get('languages'),
-                path_filters=kwargs.get('path_filters'),
-                exclude_paths=kwargs.get('exclude_paths'),
-                exclude_languages=kwargs.get('exclude_languages'),
-                use_regex=kwargs.get('use_regex', False)
+                case_sensitive=kwargs.get("case_sensitive", False),
+                edit_distance=kwargs.get("edit_distance", 0),
+                snippet_lines=kwargs.get("snippet_lines", 5),
+                limit=kwargs.get("limit", 10),
+                languages=kwargs.get("languages"),
+                path_filters=kwargs.get("path_filters"),
+                exclude_paths=kwargs.get("exclude_paths"),
+                exclude_languages=kwargs.get("exclude_languages"),
+                use_regex=kwargs.get("use_regex", False),
             )
 
-            return {
-                "results": results,
-                "query": query,
-                "total": len(results)
-            }
+            return {"results": results, "query": query, "total": len(results)}
         except Exception as e:
             logger.error(f"FTS search error: {e}")
             return {"error": str(e), "results": [], "query": query}
@@ -768,7 +812,9 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
 
         # Extract results arrays
         semantic_list = semantic_results if isinstance(semantic_results, list) else []
-        fts_list = fts_results.get("results", []) if isinstance(fts_results, dict) else []
+        fts_list = (
+            fts_results.get("results", []) if isinstance(fts_results, dict) else []
+        )
 
         # Create merged results map by file path
         merged_map = {}
@@ -785,7 +831,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                     "combined_score": score * 0.6,  # Initial weighted score
                     "source": "semantic",
                     "content": result.get("content", ""),
-                    "snippet": result.get("snippet", "")
+                    "snippet": result.get("snippet", ""),
                 }
 
         # Process FTS results (weight: 0.4)
@@ -800,12 +846,13 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                     merged_map[file_path]["fts_score"] = score
                     # Recalculate combined score
                     merged_map[file_path]["combined_score"] = (
-                        merged_map[file_path]["semantic_score"] * 0.6 +
-                        score * 0.4
+                        merged_map[file_path]["semantic_score"] * 0.6 + score * 0.4
                     )
                     merged_map[file_path]["source"] = "both"
                     # Add snippet if not present
-                    if not merged_map[file_path].get("snippet") and result.get("snippet"):
+                    if not merged_map[file_path].get("snippet") and result.get(
+                        "snippet"
+                    ):
                         merged_map[file_path]["snippet"] = result["snippet"]
                 else:
                     # New entry from FTS only
@@ -817,14 +864,12 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                         "source": "fts",
                         "content": result.get("match_text", ""),
                         "snippet": result.get("snippet", ""),
-                        "line": result.get("line")
+                        "line": result.get("line"),
                     }
 
         # Sort by combined score descending
         merged_list = sorted(
-            merged_map.values(),
-            key=lambda x: x["combined_score"],
-            reverse=True
+            merged_map.values(), key=lambda x: x["combined_score"], reverse=True
         )
 
         return {
@@ -832,7 +877,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             "semantic_count": len(semantic_list),
             "fts_count": len(fts_list),
             "merged_count": len(merged_list),
-            "merged": True
+            "merged": True,
         }
 
     def _perform_indexing(self, project_path: Path, callback, **kwargs) -> None:
@@ -845,8 +890,8 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             chunking_manager = FileChunkingManager(config_manager)
             chunking_manager.index_repository(
                 repo_path=str(project_path),
-                force_reindex=kwargs.get('force_reindex', False),
-                progress_callback=callback
+                force_reindex=kwargs.get("force_reindex", False),
+                progress_callback=callback,
             )
         except Exception as e:
             logger.error(f"Indexing error: {e}")
@@ -937,10 +982,10 @@ def start_daemon(config_path: Path) -> None:
             service,
             socket_path=str(socket_path),
             protocol_config={
-                'allow_public_attrs': True,
-                'allow_pickle': False,
-                'allow_all_attrs': True
-            }
+                "allow_public_attrs": True,
+                "allow_pickle": False,
+                "allow_all_attrs": True,
+            },
         )
 
         # Store server reference for shutdown

@@ -15,7 +15,9 @@ class TestStartCommand:
         """Test start fails with clear error when daemon not enabled."""
         from code_indexer.cli_daemon_lifecycle import start_daemon_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": False}
             mock_config.return_value = mock_mgr
@@ -34,7 +36,9 @@ class TestStartCommand:
         """Test start detects daemon already running via socket connection."""
         from code_indexer.cli_daemon_lifecycle import start_daemon_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": True}
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
@@ -52,13 +56,17 @@ class TestStartCommand:
 
                     # Verify message about already running
                     print_calls = [str(call) for call in mock_print.call_args_list]
-                    assert any("already running" in call.lower() for call in print_calls)
+                    assert any(
+                        "already running" in call.lower() for call in print_calls
+                    )
 
     def test_start_launches_daemon_subprocess(self):
         """Test start launches daemon as background subprocess."""
         from code_indexer.cli_daemon_lifecycle import start_daemon_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": True}
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
@@ -87,7 +95,9 @@ class TestStartCommand:
         """Test start verifies daemon is responsive after starting."""
         from code_indexer.cli_daemon_lifecycle import start_daemon_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": True}
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
@@ -113,7 +123,9 @@ class TestStartCommand:
         """Test start reports failure if daemon doesn't become responsive."""
         from code_indexer.cli_daemon_lifecycle import start_daemon_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": True}
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
@@ -132,7 +144,9 @@ class TestStartCommand:
                             assert result == 1
 
                             # Verify failure message
-                            print_calls = [str(call) for call in mock_print.call_args_list]
+                            print_calls = [
+                                str(call) for call in mock_print.call_args_list
+                            ]
                             assert any("failed" in call.lower() for call in print_calls)
 
 
@@ -143,7 +157,9 @@ class TestStopCommand:
         """Test stop shows warning when daemon mode not enabled."""
         from code_indexer.cli_daemon_lifecycle import stop_daemon_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": False}
             mock_config.return_value = mock_mgr
@@ -161,7 +177,9 @@ class TestStopCommand:
         """Test stop succeeds silently when daemon already stopped."""
         from code_indexer.cli_daemon_lifecycle import stop_daemon_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": True}
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
@@ -183,7 +201,9 @@ class TestStopCommand:
         """Test stop calls exposed_shutdown on daemon."""
         from code_indexer.cli_daemon_lifecycle import stop_daemon_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": True}
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
@@ -205,7 +225,9 @@ class TestStopCommand:
         """Test stop stops active watch before shutting down daemon."""
         from code_indexer.cli_daemon_lifecycle import stop_daemon_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": True}
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
@@ -230,7 +252,9 @@ class TestStopCommand:
         """Test stop verifies daemon is no longer responsive."""
         from code_indexer.cli_daemon_lifecycle import stop_daemon_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": True}
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
@@ -258,7 +282,9 @@ class TestStopCommand:
         """Test stop reports failure if daemon still responsive after shutdown."""
         from code_indexer.cli_daemon_lifecycle import stop_daemon_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": True}
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
@@ -287,7 +313,9 @@ class TestWatchStopCommand:
         """Test watch-stop fails when daemon mode not enabled."""
         from code_indexer.cli_daemon_lifecycle import watch_stop_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": False}
             mock_config.return_value = mock_mgr
@@ -305,7 +333,9 @@ class TestWatchStopCommand:
         """Test watch-stop reports error when daemon not running."""
         from code_indexer.cli_daemon_lifecycle import watch_stop_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": True}
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
@@ -327,7 +357,9 @@ class TestWatchStopCommand:
         """Test watch-stop calls exposed_watch_stop on daemon."""
         from code_indexer.cli_daemon_lifecycle import watch_stop_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": True}
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
@@ -357,7 +389,9 @@ class TestWatchStopCommand:
         """Test watch-stop reports when watch not running."""
         from code_indexer.cli_daemon_lifecycle import watch_stop_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": True}
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
@@ -365,7 +399,9 @@ class TestWatchStopCommand:
 
             with patch("rpyc.utils.factory.unix_connect") as mock_connect:
                 mock_conn = Mock()
-                mock_conn.root.exposed_watch_stop.return_value = {"status": "not_running"}
+                mock_conn.root.exposed_watch_stop.return_value = {
+                    "status": "not_running"
+                }
                 mock_connect.return_value = mock_conn
 
                 with patch("rich.console.Console.print") as mock_print:

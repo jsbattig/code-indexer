@@ -53,7 +53,10 @@ class TestInitWithDaemon:
         with runner.isolated_filesystem(temp_dir=isolated_project.parent):
             result = runner.invoke(cli, ["init", str(isolated_project), "--daemon"])
             assert result.exit_code == 0
-            assert "Daemon mode enabled" in result.output or "daemon" in result.output.lower()
+            assert (
+                "Daemon mode enabled" in result.output
+                or "daemon" in result.output.lower()
+            )
 
             # Check config file
             config_path = isolated_project / ".code-indexer" / "config.json"
@@ -85,7 +88,9 @@ class TestInitWithDaemon:
     def test_init_daemon_ttl_without_daemon_flag(self, runner, isolated_project):
         """Using --daemon-ttl without --daemon should show warning or be ignored."""
         with runner.isolated_filesystem(temp_dir=isolated_project.parent):
-            result = runner.invoke(cli, ["init", str(isolated_project), "--daemon-ttl", "15"])
+            result = runner.invoke(
+                cli, ["init", str(isolated_project), "--daemon-ttl", "15"]
+            )
             # Should either warn user or just ignore the TTL flag
             assert result.exit_code == 0
 
@@ -101,13 +106,20 @@ class TestConfigShow:
 
             # Show config (from within project directory)
             import os
+
             original_cwd = os.getcwd()
             try:
                 os.chdir(str(isolated_project))
-                result = runner.invoke(cli, ["config", "--show"], catch_exceptions=False)
+                result = runner.invoke(
+                    cli, ["config", "--show"], catch_exceptions=False
+                )
                 assert result.exit_code == 0
-                assert "Daemon Mode" in result.output or "daemon" in result.output.lower()
-                assert "Disabled" in result.output or "disabled" in result.output.lower()
+                assert (
+                    "Daemon Mode" in result.output or "daemon" in result.output.lower()
+                )
+                assert (
+                    "Disabled" in result.output or "disabled" in result.output.lower()
+                )
             finally:
                 os.chdir(original_cwd)
 
@@ -115,16 +127,23 @@ class TestConfigShow:
         """Show config when daemon is enabled."""
         with runner.isolated_filesystem(temp_dir=isolated_project.parent):
             # Create config with daemon
-            runner.invoke(cli, ["init", str(isolated_project), "--daemon", "--daemon-ttl", "15"])
+            runner.invoke(
+                cli, ["init", str(isolated_project), "--daemon", "--daemon-ttl", "15"]
+            )
 
             # Show config (from within project directory)
             import os
+
             original_cwd = os.getcwd()
             try:
                 os.chdir(str(isolated_project))
-                result = runner.invoke(cli, ["config", "--show"], catch_exceptions=False)
+                result = runner.invoke(
+                    cli, ["config", "--show"], catch_exceptions=False
+                )
                 assert result.exit_code == 0
-                assert "Daemon Mode" in result.output or "daemon" in result.output.lower()
+                assert (
+                    "Daemon Mode" in result.output or "daemon" in result.output.lower()
+                )
                 assert "Enabled" in result.output or "enabled" in result.output.lower()
                 assert "15" in result.output  # TTL value
             finally:
@@ -142,10 +161,13 @@ class TestConfigDaemonToggle:
 
             # Enable daemon (from within project directory)
             import os
+
             original_cwd = os.getcwd()
             try:
                 os.chdir(str(isolated_project))
-                result = runner.invoke(cli, ["config", "--daemon"], catch_exceptions=False)
+                result = runner.invoke(
+                    cli, ["config", "--daemon"], catch_exceptions=False
+                )
                 assert result.exit_code == 0
                 assert "enabled" in result.output.lower()
             finally:
@@ -166,10 +188,13 @@ class TestConfigDaemonToggle:
 
             # Disable daemon (from within project directory)
             import os
+
             original_cwd = os.getcwd()
             try:
                 os.chdir(str(isolated_project))
-                result = runner.invoke(cli, ["config", "--no-daemon"], catch_exceptions=False)
+                result = runner.invoke(
+                    cli, ["config", "--no-daemon"], catch_exceptions=False
+                )
                 assert result.exit_code == 0
                 assert "disabled" in result.output.lower()
             finally:
@@ -194,10 +219,13 @@ class TestConfigDaemonTTL:
 
             # Update TTL (from within project directory)
             import os
+
             original_cwd = os.getcwd()
             try:
                 os.chdir(str(isolated_project))
-                result = runner.invoke(cli, ["config", "--daemon-ttl", "30"], catch_exceptions=False)
+                result = runner.invoke(
+                    cli, ["config", "--daemon-ttl", "30"], catch_exceptions=False
+                )
                 assert result.exit_code == 0
                 assert "30" in result.output
             finally:
@@ -218,10 +246,13 @@ class TestConfigDaemonTTL:
 
             # Update TTL (should create daemon config) (from within project directory)
             import os
+
             original_cwd = os.getcwd()
             try:
                 os.chdir(str(isolated_project))
-                result = runner.invoke(cli, ["config", "--daemon-ttl", "25"], catch_exceptions=False)
+                result = runner.invoke(
+                    cli, ["config", "--daemon-ttl", "25"], catch_exceptions=False
+                )
                 assert result.exit_code == 0
             finally:
                 os.chdir(original_cwd)
@@ -244,10 +275,13 @@ class TestConfigValidation:
 
             # Test with negative TTL (from within project directory)
             import os
+
             original_cwd = os.getcwd()
             try:
                 os.chdir(str(isolated_project))
-                result = runner.invoke(cli, ["config", "--daemon-ttl", "-1"], catch_exceptions=False)
+                result = runner.invoke(
+                    cli, ["config", "--daemon-ttl", "-1"], catch_exceptions=False
+                )
                 # Should fail or show error
                 assert result.exit_code != 0 or "error" in result.output.lower()
             finally:
@@ -260,10 +294,13 @@ class TestConfigValidation:
 
             # Test with too large TTL (from within project directory)
             import os
+
             original_cwd = os.getcwd()
             try:
                 os.chdir(str(isolated_project))
-                result = runner.invoke(cli, ["config", "--daemon-ttl", "10081"], catch_exceptions=False)
+                result = runner.invoke(
+                    cli, ["config", "--daemon-ttl", "10081"], catch_exceptions=False
+                )
                 # Should fail or show error
                 assert result.exit_code != 0 or "error" in result.output.lower()
             finally:
@@ -273,8 +310,9 @@ class TestConfigValidation:
         """Invalid TTL in init should be rejected."""
         with runner.isolated_filesystem(temp_dir=isolated_project.parent):
             result = runner.invoke(
-                cli, ["init", str(isolated_project), "--daemon", "--daemon-ttl", "0"],
-                catch_exceptions=False
+                cli,
+                ["init", str(isolated_project), "--daemon", "--daemon-ttl", "0"],
+                catch_exceptions=False,
             )
             # Should fail or show error
             assert result.exit_code != 0 or "error" in result.output.lower()
@@ -295,11 +333,16 @@ class TestConfigWithBacktracking:
 
             # Run config from subdirectory (should backtrack and find config)
             import os
+
             original_cwd = os.getcwd()
             try:
                 os.chdir(str(subdir))
-                result = runner.invoke(cli, ["config", "--show"], catch_exceptions=False)
+                result = runner.invoke(
+                    cli, ["config", "--show"], catch_exceptions=False
+                )
                 assert result.exit_code == 0
-                assert "Daemon Mode" in result.output or "daemon" in result.output.lower()
+                assert (
+                    "Daemon Mode" in result.output or "daemon" in result.output.lower()
+                )
             finally:
                 os.chdir(original_cwd)

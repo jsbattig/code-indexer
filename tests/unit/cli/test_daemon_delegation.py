@@ -108,17 +108,25 @@ class TestCrashRecovery:
         with patch("code_indexer.cli_daemon_delegation._find_config_file") as mock_find:
             mock_find.return_value = Path("/project/.code-indexer/config.json")
 
-            with patch("code_indexer.cli_daemon_delegation._connect_to_daemon") as mock_connect:
+            with patch(
+                "code_indexer.cli_daemon_delegation._connect_to_daemon"
+            ) as mock_connect:
                 # First attempt: crash
                 # Second attempt: success
                 mock_conn = Mock()
                 mock_conn.root.exposed_query.return_value = {"results": []}
                 mock_connect.side_effect = [ConnectionRefusedError(), mock_conn]
 
-                with patch("code_indexer.cli_daemon_delegation._cleanup_stale_socket") as mock_cleanup:
-                    with patch("code_indexer.cli_daemon_delegation._start_daemon") as mock_start:
+                with patch(
+                    "code_indexer.cli_daemon_delegation._cleanup_stale_socket"
+                ) as mock_cleanup:
+                    with patch(
+                        "code_indexer.cli_daemon_delegation._start_daemon"
+                    ) as mock_start:
                         with patch("time.sleep"):
-                            with patch("code_indexer.cli_daemon_delegation._display_results"):
+                            with patch(
+                                "code_indexer.cli_daemon_delegation._display_results"
+                            ):
                                 result = _query_via_daemon(
                                     query_text, daemon_config, limit=10
                                 )
@@ -138,13 +146,17 @@ class TestCrashRecovery:
         with patch("code_indexer.cli_daemon_delegation._find_config_file") as mock_find:
             mock_find.return_value = Path("/project/.code-indexer/config.json")
 
-            with patch("code_indexer.cli_daemon_delegation._connect_to_daemon") as mock_connect:
+            with patch(
+                "code_indexer.cli_daemon_delegation._connect_to_daemon"
+            ) as mock_connect:
                 # All connection attempts fail
                 mock_connect.side_effect = ConnectionRefusedError()
 
                 with patch("code_indexer.cli_daemon_delegation._cleanup_stale_socket"):
                     with patch("code_indexer.cli_daemon_delegation._start_daemon"):
-                        with patch("code_indexer.cli_daemon_delegation._query_standalone") as mock_standalone:
+                        with patch(
+                            "code_indexer.cli_daemon_delegation._query_standalone"
+                        ) as mock_standalone:
                             with patch("time.sleep"):
                                 mock_standalone.return_value = 0
 
@@ -193,17 +205,23 @@ class TestFallbackToStandalone:
         with patch("code_indexer.cli_daemon_delegation._find_config_file") as mock_find:
             mock_find.return_value = Path("/project/.code-indexer/config.json")
 
-            with patch("code_indexer.cli_daemon_delegation._connect_to_daemon") as mock_connect:
+            with patch(
+                "code_indexer.cli_daemon_delegation._connect_to_daemon"
+            ) as mock_connect:
                 mock_connect.side_effect = ConnectionRefusedError("Connection refused")
 
                 with patch("code_indexer.cli_daemon_delegation._cleanup_stale_socket"):
                     with patch("code_indexer.cli_daemon_delegation._start_daemon"):
-                        with patch("code_indexer.cli_daemon_delegation._query_standalone") as mock_standalone:
+                        with patch(
+                            "code_indexer.cli_daemon_delegation._query_standalone"
+                        ) as mock_standalone:
                             with patch("time.sleep"):
                                 with patch("rich.console.Console.print") as mock_print:
                                     mock_standalone.return_value = 0
 
-                                    _query_via_daemon(query_text, daemon_config, limit=10)
+                                    _query_via_daemon(
+                                        query_text, daemon_config, limit=10
+                                    )
 
                                     # Should print warning about fallback
                                     warning_printed = any(
@@ -254,7 +272,9 @@ class TestDaemonAutoStart:
 
                 # Verify daemon module is invoked
                 cmd = popen_call[0][0]
-                assert "code_indexer.daemon" in " ".join(cmd) or "rpyc_daemon" in " ".join(cmd)
+                assert "code_indexer.daemon" in " ".join(
+                    cmd
+                ) or "rpyc_daemon" in " ".join(cmd)
 
                 # Verify process is detached
                 kwargs = popen_call[1]
@@ -276,7 +296,9 @@ class TestQueryDelegation:
         with patch("code_indexer.cli_daemon_delegation._find_config_file") as mock_find:
             mock_find.return_value = Path("/project/.code-indexer/config.json")
 
-            with patch("code_indexer.cli_daemon_delegation._connect_to_daemon") as mock_connect:
+            with patch(
+                "code_indexer.cli_daemon_delegation._connect_to_daemon"
+            ) as mock_connect:
                 mock_conn = Mock()
                 mock_conn.root.exposed_query.return_value = {"results": []}
                 mock_connect.return_value = mock_conn
@@ -299,7 +321,9 @@ class TestQueryDelegation:
         with patch("code_indexer.cli_daemon_delegation._find_config_file") as mock_find:
             mock_find.return_value = Path("/project/.code-indexer/config.json")
 
-            with patch("code_indexer.cli_daemon_delegation._connect_to_daemon") as mock_connect:
+            with patch(
+                "code_indexer.cli_daemon_delegation._connect_to_daemon"
+            ) as mock_connect:
                 mock_conn = Mock()
                 mock_conn.root.exposed_query_fts.return_value = {"results": []}
                 mock_connect.return_value = mock_conn
@@ -322,7 +346,9 @@ class TestQueryDelegation:
         with patch("code_indexer.cli_daemon_delegation._find_config_file") as mock_find:
             mock_find.return_value = Path("/project/.code-indexer/config.json")
 
-            with patch("code_indexer.cli_daemon_delegation._connect_to_daemon") as mock_connect:
+            with patch(
+                "code_indexer.cli_daemon_delegation._connect_to_daemon"
+            ) as mock_connect:
                 mock_conn = Mock()
                 mock_conn.root.exposed_query_hybrid.return_value = {"results": []}
                 mock_connect.return_value = mock_conn
@@ -343,7 +369,9 @@ class TestLifecycleCommands:
         """Test start command fails when daemon not enabled."""
         from code_indexer.cli_daemon_lifecycle import start_daemon_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": False}
             mock_config.return_value = mock_mgr
@@ -363,7 +391,9 @@ class TestLifecycleCommands:
         """Test start command detects daemon already running."""
         from code_indexer.cli_daemon_lifecycle import start_daemon_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": True}
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
@@ -388,7 +418,9 @@ class TestLifecycleCommands:
         """Test start command starts daemon when not running."""
         from code_indexer.cli_daemon_lifecycle import start_daemon_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": True}
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
@@ -400,7 +432,9 @@ class TestLifecycleCommands:
                 mock_conn = Mock()
                 mock_connect.side_effect = [ConnectionRefusedError(), mock_conn]
 
-                with patch("code_indexer.cli_daemon_lifecycle._start_daemon") as mock_start:
+                with patch(
+                    "code_indexer.cli_daemon_lifecycle._start_daemon"
+                ) as mock_start:
                     with patch("time.sleep"):
                         with patch("rich.console.Console.print"):
                             result = start_daemon_command()
@@ -412,7 +446,9 @@ class TestLifecycleCommands:
         """Test stop command stops running daemon."""
         from code_indexer.cli_daemon_lifecycle import stop_daemon_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": True}
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
@@ -435,7 +471,9 @@ class TestLifecycleCommands:
         """Test watch-stop command requires daemon mode."""
         from code_indexer.cli_daemon_lifecycle import watch_stop_command
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_daemon_config.return_value = {"enabled": False}
             mock_config.return_value = mock_mgr
@@ -459,12 +497,16 @@ class TestStorageCommandRouting:
         """Test clean command routes to daemon when enabled."""
         from code_indexer.cli_daemon_delegation import _clean_via_daemon
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
             mock_config.return_value = mock_mgr
 
-            with patch("code_indexer.cli_daemon_delegation._connect_to_daemon") as mock_connect:
+            with patch(
+                "code_indexer.cli_daemon_delegation._connect_to_daemon"
+            ) as mock_connect:
                 mock_conn = Mock()
                 mock_conn.root.exposed_clean.return_value = {"cache_invalidated": True}
                 mock_connect.return_value = mock_conn
@@ -479,14 +521,20 @@ class TestStorageCommandRouting:
         """Test clean-data command routes to daemon when enabled."""
         from code_indexer.cli_daemon_delegation import _clean_data_via_daemon
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
             mock_config.return_value = mock_mgr
 
-            with patch("code_indexer.cli_daemon_delegation._connect_to_daemon") as mock_connect:
+            with patch(
+                "code_indexer.cli_daemon_delegation._connect_to_daemon"
+            ) as mock_connect:
                 mock_conn = Mock()
-                mock_conn.root.exposed_clean_data.return_value = {"cache_invalidated": True}
+                mock_conn.root.exposed_clean_data.return_value = {
+                    "cache_invalidated": True
+                }
                 mock_connect.return_value = mock_conn
 
                 with patch("rich.console.Console.print"):
@@ -499,15 +547,23 @@ class TestStorageCommandRouting:
         """Test status command routes to daemon when enabled."""
         from code_indexer.cli_daemon_delegation import _status_via_daemon
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
             mock_config.return_value = mock_mgr
 
-            with patch("code_indexer.cli_daemon_delegation._connect_to_daemon") as mock_connect:
+            with patch(
+                "code_indexer.cli_daemon_delegation._connect_to_daemon"
+            ) as mock_connect:
                 mock_conn = Mock()
                 mock_conn.root.exposed_status.return_value = {
-                    "daemon": {"running": True, "semantic_cached": True, "fts_available": False},
+                    "daemon": {
+                        "running": True,
+                        "semantic_cached": True,
+                        "fts_available": False,
+                    },
                     "storage": {"index_size": 1000},
                 }
                 mock_connect.return_value = mock_conn
@@ -522,15 +578,21 @@ class TestStorageCommandRouting:
         """Test status falls back to standalone when daemon unavailable."""
         from code_indexer.cli_daemon_delegation import _status_via_daemon
 
-        with patch("code_indexer.config.ConfigManager.create_with_backtrack") as mock_config:
+        with patch(
+            "code_indexer.config.ConfigManager.create_with_backtrack"
+        ) as mock_config:
             mock_mgr = Mock()
             mock_mgr.get_socket_path.return_value = Path("/tmp/test.sock")
             mock_config.return_value = mock_mgr
 
-            with patch("code_indexer.cli_daemon_delegation._connect_to_daemon") as mock_connect:
+            with patch(
+                "code_indexer.cli_daemon_delegation._connect_to_daemon"
+            ) as mock_connect:
                 mock_connect.side_effect = ConnectionRefusedError()
 
-                with patch("code_indexer.cli_daemon_delegation._status_standalone") as mock_standalone:
+                with patch(
+                    "code_indexer.cli_daemon_delegation._status_standalone"
+                ) as mock_standalone:
                     mock_standalone.return_value = 0
 
                     result = _status_via_daemon()

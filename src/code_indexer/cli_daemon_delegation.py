@@ -66,7 +66,9 @@ def _connect_to_daemon(socket_path: Path, daemon_config: Dict) -> Any:
     try:
         from rpyc.utils.factory import unix_connect
     except ImportError:
-        raise ImportError("RPyC is required for daemon mode. Install with: pip install rpyc")
+        raise ImportError(
+            "RPyC is required for daemon mode. Install with: pip install rpyc"
+        )
 
     # Get retry delays from config (default: [100, 500, 1000, 2000]ms)
     retry_delays_ms = daemon_config.get("retry_delays_ms", [100, 500, 1000, 2000])
@@ -112,6 +114,7 @@ def _start_daemon(config_path: Path) -> None:
         try:
             # Try to connect to see if daemon is actually running
             import socket
+
             sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             sock.settimeout(0.1)
             sock.connect(str(socket_path))
@@ -189,7 +192,9 @@ def _display_results(results, query_time: float = 0) -> None:
             console.print(f"   {content}")
 
 
-def _query_standalone(query_text: str, fts: bool = False, semantic: bool = True, limit: int = 10, **kwargs) -> int:
+def _query_standalone(
+    query_text: str, fts: bool = False, semantic: bool = True, limit: int = 10, **kwargs
+) -> int:
     """
     Fallback to standalone query execution.
 
@@ -209,30 +214,33 @@ def _query_standalone(query_text: str, fts: bool = False, semantic: bool = True,
     # Import full CLI (expensive, but we're in fallback mode)
     from .cli import query as cli_query
     from .config import ConfigManager
-    from .mode_detection.command_mode_detector import CommandModeDetector, find_project_root
+    from .mode_detection.command_mode_detector import (
+        CommandModeDetector,
+        find_project_root,
+    )
     import click
 
     try:
         # Remove daemon-specific kwargs that CLI doesn't accept
-        cli_kwargs = {k: v for k, v in kwargs.items() if k not in ['standalone']}
+        cli_kwargs = {k: v for k, v in kwargs.items() if k not in ["standalone"]}
 
         # Set default values for missing parameters
-        cli_kwargs.setdefault('languages', ())
-        cli_kwargs.setdefault('exclude_languages', ())
-        cli_kwargs.setdefault('path_filter', None)
-        cli_kwargs.setdefault('exclude_paths', ())
-        cli_kwargs.setdefault('min_score', None)
-        cli_kwargs.setdefault('accuracy', 'fast')
-        cli_kwargs.setdefault('quiet', False)
-        cli_kwargs.setdefault('case_sensitive', False)
-        cli_kwargs.setdefault('case_insensitive', False)
-        cli_kwargs.setdefault('fuzzy', False)
-        cli_kwargs.setdefault('edit_distance', 0)
-        cli_kwargs.setdefault('snippet_lines', 5)
-        cli_kwargs.setdefault('regex', False)
+        cli_kwargs.setdefault("languages", ())
+        cli_kwargs.setdefault("exclude_languages", ())
+        cli_kwargs.setdefault("path_filter", None)
+        cli_kwargs.setdefault("exclude_paths", ())
+        cli_kwargs.setdefault("min_score", None)
+        cli_kwargs.setdefault("accuracy", "fast")
+        cli_kwargs.setdefault("quiet", False)
+        cli_kwargs.setdefault("case_sensitive", False)
+        cli_kwargs.setdefault("case_insensitive", False)
+        cli_kwargs.setdefault("fuzzy", False)
+        cli_kwargs.setdefault("edit_distance", 0)
+        cli_kwargs.setdefault("snippet_lines", 5)
+        cli_kwargs.setdefault("regex", False)
 
         # CRITICAL: Add standalone flag to prevent recursive daemon delegation
-        cli_kwargs['standalone'] = True
+        cli_kwargs["standalone"] = True
 
         # Setup context object with mode detection (required by query command)
         project_root = find_project_root(Path.cwd())
@@ -257,11 +265,19 @@ def _query_standalone(query_text: str, fts: bool = False, semantic: bool = True,
 
         # Invoke query command using ctx.invoke()
         with ctx:
-            ctx.invoke(cli_query, query=query_text, limit=limit, fts=fts, semantic=semantic, **cli_kwargs)
+            ctx.invoke(
+                cli_query,
+                query=query_text,
+                limit=limit,
+                fts=fts,
+                semantic=semantic,
+                **cli_kwargs,
+            )
         return 0
     except Exception as e:
         console.print(f"[red]Query failed: {e}[/red]")
         import traceback
+
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         return 1
 
@@ -277,7 +293,10 @@ def _status_standalone(**kwargs) -> int:
         Exit code (0 = success)
     """
     from .cli import status as cli_status
-    from .mode_detection.command_mode_detector import CommandModeDetector, find_project_root
+    from .mode_detection.command_mode_detector import (
+        CommandModeDetector,
+        find_project_root,
+    )
     import click
 
     try:
@@ -287,23 +306,24 @@ def _status_standalone(**kwargs) -> int:
         mode = mode_detector.detect_mode()
 
         # Create a click context with required attributes
-        ctx = click.Context(click.Command('status'))
+        ctx = click.Context(click.Command("status"))
         ctx.obj = {
             "mode": mode,
             "project_root": project_root,
-            "standalone": True  # Prevent daemon delegation
+            "standalone": True,  # Prevent daemon delegation
         }
 
         # Load config manager if in local mode
         if mode == "local" and project_root:
             try:
                 from .config import ConfigManager
+
                 config_manager = ConfigManager.create_with_backtrack(project_root)
                 ctx.obj["config_manager"] = config_manager
             except Exception:
                 pass  # Config might not exist yet
 
-        force_docker = kwargs.get('force_docker', False)
+        force_docker = kwargs.get("force_docker", False)
         # Call status function directly (not as a click command)
         with ctx:
             cli_status(ctx, force_docker=force_docker)
@@ -311,6 +331,7 @@ def _status_standalone(**kwargs) -> int:
     except Exception as e:
         console.print(f"[red]Status failed: {e}[/red]")
         import traceback
+
         console.print(f"[dim]{traceback.format_exc()}[/dim]")
         return 1
 
@@ -321,7 +342,7 @@ def _query_via_daemon(
     fts: bool = False,
     semantic: bool = True,
     limit: int = 10,
-    **kwargs
+    **kwargs,
 ) -> int:
     """
     Delegate query to daemon with crash recovery.
@@ -346,7 +367,9 @@ def _query_via_daemon(
     config_path = _find_config_file()
     if not config_path:
         console.print("[yellow]No config found, using standalone mode[/yellow]")
-        return _query_standalone(query_text, fts=fts, semantic=semantic, limit=limit, **kwargs)
+        return _query_standalone(
+            query_text, fts=fts, semantic=semantic, limit=limit, **kwargs
+        )
 
     socket_path = _get_socket_path(config_path)
 
@@ -420,7 +443,9 @@ def _query_via_daemon(
                 console.print(f"[dim](Error: {e})[/dim]")
                 console.print("[dim]Tip: Check daemon with 'cidx daemon status'[/dim]")
 
-                return _query_standalone(query_text, fts=fts, semantic=semantic, limit=limit, **kwargs)
+                return _query_standalone(
+                    query_text, fts=fts, semantic=semantic, limit=limit, **kwargs
+                )
 
     # Should never reach here
     return 1
@@ -460,10 +485,11 @@ def _clean_via_daemon(**kwargs) -> int:
         # Fallback to standalone
         from .cli import clean as cli_clean
         import click
+
         try:
-            ctx = click.Context(click.Command('clean'))
+            ctx = click.Context(click.Command("clean"))
             ctx.obj = {"standalone": True}  # Prevent daemon delegation
-            force_docker = kwargs.get('force_docker', False)
+            force_docker = kwargs.get("force_docker", False)
             cli_clean(ctx, force_docker=force_docker)
             return 0
         except Exception as e2:
@@ -505,10 +531,11 @@ def _clean_data_via_daemon(**kwargs) -> int:
         # Fallback to standalone
         from .cli import clean_data as cli_clean_data
         import click
+
         try:
-            ctx = click.Context(click.Command('clean-data'))
+            ctx = click.Context(click.Command("clean-data"))
             ctx.obj = {"standalone": True}  # Prevent daemon delegation
-            force_docker = kwargs.get('force_docker', False)
+            force_docker = kwargs.get("force_docker", False)
             cli_clean_data(ctx, force_docker=force_docker)
             return 0
         except Exception as e2:
@@ -538,13 +565,13 @@ def _status_via_daemon(**kwargs) -> int:
 
         # Extract data while connection is still open
         daemon_info = result.get("daemon", {})
-        daemon_running = daemon_info.get('running', False)
-        daemon_semantic_cached = daemon_info.get('semantic_cached', False)
-        daemon_fts_available = daemon_info.get('fts_available', False)
-        daemon_watching = daemon_info.get('watching', False)
+        daemon_running = daemon_info.get("running", False)
+        daemon_semantic_cached = daemon_info.get("semantic_cached", False)
+        daemon_fts_available = daemon_info.get("fts_available", False)
+        daemon_watching = daemon_info.get("watching", False)
 
         storage_info = result.get("storage", {})
-        storage_index_size = storage_info.get('index_size', 'unknown')
+        storage_index_size = storage_info.get("index_size", "unknown")
 
         # Close connection after extracting data
         conn.close()
@@ -568,3 +595,137 @@ def _status_via_daemon(**kwargs) -> int:
 
         # Fallback to standalone status
         return _status_standalone(**kwargs)
+
+
+def _index_standalone(force_reindex: bool = False, **kwargs) -> int:
+    """
+    Fallback to standalone index execution.
+
+    This imports the full CLI and executes indexing locally without daemon.
+
+    Args:
+        force_reindex: Whether to force reindex all files
+        **kwargs: Additional indexing parameters
+
+    Returns:
+        Exit code (0 = success)
+    """
+    from .cli import index as cli_index
+    from .mode_detection.command_mode_detector import (
+        CommandModeDetector,
+        find_project_root,
+    )
+    import click
+
+    try:
+        # Setup context object with mode detection
+        project_root = find_project_root(Path.cwd())
+        mode_detector = CommandModeDetector(project_root)
+        mode = mode_detector.detect_mode()
+
+        # Create click context
+        ctx = click.Context(click.Command("index"))
+        ctx.obj = {
+            "mode": mode,
+            "project_root": project_root,
+            "standalone": True,  # Prevent daemon delegation
+        }
+
+        # Load config manager if in local mode
+        if mode == "local" and project_root:
+            try:
+                from .config import ConfigManager
+
+                config_manager = ConfigManager.create_with_backtrack(project_root)
+                ctx.obj["config_manager"] = config_manager
+            except Exception:
+                pass  # Config might not exist yet
+
+        # Call index function directly
+        with ctx:
+            cli_index(ctx, force_reindex=force_reindex, **kwargs)
+        return 0
+    except Exception as e:
+        console.print(f"[red]Index failed: {e}[/red]")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        return 1
+
+
+def _index_via_daemon(
+    force_reindex: bool = False, daemon_config: Optional[Dict] = None, **kwargs
+) -> int:
+    """
+    Delegate indexing to daemon with progress callbacks.
+
+    Implements progress streaming:
+    1. Creates ClientProgressHandler for Rich progress bar
+    2. Passes callback to daemon via RPC
+    3. Daemon streams progress updates back to client
+    4. Displays real-time progress in terminal
+
+    Args:
+        force_reindex: Whether to force reindex all files
+        daemon_config: Daemon configuration with retry delays
+        **kwargs: Additional indexing parameters (enable_fts, etc.)
+
+    Returns:
+        Exit code (0 = success)
+    """
+    config_path = _find_config_file()
+    if not config_path:
+        console.print("[yellow]No config found, using standalone mode[/yellow]")
+        return _index_standalone(force_reindex=force_reindex, **kwargs)
+
+    socket_path = _get_socket_path(config_path)
+
+    # Use default daemon config if not provided
+    if daemon_config is None:
+        from .config import ConfigManager
+
+        config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+        daemon_config = config_manager.get_daemon_config()
+
+    conn = None
+    try:
+        # Connect to daemon
+        conn = _connect_to_daemon(socket_path, daemon_config)
+
+        # Create progress handler
+        from .cli_progress_handler import ClientProgressHandler
+
+        progress_handler = ClientProgressHandler()
+        callback = progress_handler.create_progress_callback()
+
+        # Execute indexing with callback
+        result = conn.root.exposed_index(
+            project_path=str(Path.cwd()),
+            callback=callback,
+            force_reindex=force_reindex,
+            **kwargs,
+        )
+
+        # Close connection
+        conn.close()
+
+        # Display success message
+        stats = result.get("stats", {})
+        files_processed = stats.get("files_processed", "unknown")
+        console.print(f"[green]✓ Indexed {files_processed} files[/green]")
+        return 0
+
+    except Exception as e:
+        # Handle error with progress handler
+        if "progress_handler" in locals():
+            progress_handler.error(str(e))
+
+        # Close connection on error
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        # Re-raise the error
+        raise

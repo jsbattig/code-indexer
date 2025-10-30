@@ -2336,10 +2336,14 @@ def config(
             # Daemon mode status
             daemon_status = "Enabled" if daemon_config["enabled"] else "Disabled"
             status_style = "green" if daemon_config["enabled"] else "yellow"
-            console.print(f"  Daemon Mode:    [{status_style}]{daemon_status}[/{status_style}]")
+            console.print(
+                f"  Daemon Mode:    [{status_style}]{daemon_status}[/{status_style}]"
+            )
 
             if daemon_config["enabled"]:
-                console.print(f"  Cache TTL:      {daemon_config['ttl_minutes']} minutes")
+                console.print(
+                    f"  Cache TTL:      {daemon_config['ttl_minutes']} minutes"
+                )
                 auto_start = daemon_config.get("auto_start", True)
                 console.print(f"  Auto-start:     {'Yes' if auto_start else 'No'}")
                 auto_shutdown = daemon_config["auto_shutdown_on_idle"]
@@ -2377,7 +2381,9 @@ def config(
     if daemon_ttl is not None:
         try:
             config_manager.update_daemon_ttl(daemon_ttl)
-            console.print(f"✅ Cache TTL updated to {daemon_ttl} minutes", style="green")
+            console.print(
+                f"✅ Cache TTL updated to {daemon_ttl} minutes", style="green"
+            )
             update_performed = True
         except ValueError as e:
             console.print(f"❌ Invalid daemon TTL: {e}", style="red")
@@ -14203,8 +14209,6 @@ def main():
     except Exception as e:
         console.print(f"❌ Unexpected error: {e}", style="red")
         sys.exit(1)
-
-
 
 
 @cli.command("start")
