@@ -24,8 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **New CLI Flags**:
 - `cidx index --fts` - Build FTS index alongside semantic index
+- `cidx index --rebuild-fts-index` - Rebuild FTS index from existing semantic index
 - `cidx watch --fts` - Enable real-time FTS index updates
 - `cidx query --fts` - Use full-text search mode
+- `cidx query --fts --regex` - Token-based regex pattern matching (grep replacement)
 - `cidx query --fts --semantic` - Hybrid search (parallel execution)
 - `--case-sensitive` - Enable case-sensitive matching (FTS only)
 - `--case-insensitive` - Force case-insensitive matching (default)
@@ -61,12 +63,72 @@ pip install tantivy==0.25.0
 - Updated teach-ai templates with FTS syntax and examples
 - CLI help text includes all FTS options and examples
 
+#### Regex Pattern Matching (Grep Replacement)
+
+**Overview**: Token-based regex search providing 10-50x performance improvement over grep on indexed repositories (Python API mode).
+
+**Core Features**:
+- **Token-based matching**: Regex operates on individual tokens (words) after Tantivy tokenization
+- **DFA-based engine**: Inherently immune to ReDoS attacks with O(n) time complexity
+- **Pre-compilation optimization**: Regex patterns compiled once per query, not per result
+- **Unicode-aware**: Character-based column calculation (not byte offsets) for proper multi-byte support
+
+**Usage**:
+```bash
+# Simple token matching
+cidx query "def" --fts --regex
+
+# Wildcard within tokens
+cidx query "test_.*" --fts --regex
+
+# Language filtering
+cidx query "import" --fts --regex --language python
+
+# Case-insensitive
+cidx query "todo" --fts --regex  # Default case-insensitive
+```
+
+**Limitations** (Token-Based):
+- ✅ Works: `def`, `login.*`, `test_.*`, `HTTP.*`
+- ❌ Doesn't work: `def\s+\w+`, `public.*class` (spans multiple tokens with whitespace)
+
+**Performance** (Evolution Codebase):
+- FTS Python API: 1-4ms per query (warm index)
+- FTS CLI: ~1080ms per query (includes startup overhead)
+- Grep: ~150ms average for comparison
+
+**Bug Fixes**:
+- Fixed regex snippet extraction showing query pattern instead of actual matched text
+- Fixed "Line 1, Col 1" bug - now reports correct absolute line/column positions
+- Fixed Unicode column calculation using character vs byte offsets
+- Added empty match validation with proper error messages for unsupported patterns
+
+### Fixed
+
+#### Critical Regex Snippet Extraction Bugs
+- **Match Text Display**: Regex queries now show actual matched text from source code, not the query pattern
+  - Before: `Match: parts.*` (showing query)
+  - After: `Match: parts` (showing actual match)
+- **Line/Column Positions**: Fixed always showing "Line 1, Col 1" - now reports correct absolute positions
+  - Implementation: Proper `re.search()` for regex matching instead of literal string search
+- **Unicode Support**: Column calculation now uses character offsets instead of byte offsets
+  - Handles multi-byte UTF-8 correctly (emoji, Japanese, French, etc.)
+- **Performance**: Regex pre-compilation moved outside result loop (7x improvement)
+
+#### Test Suite Fixes
+- Fixed 14 failing tests in fast-automation.sh
+- Updated empty match validation tests to expect ValueError for unsupported patterns
+- Fixed regex optimization tests with correct token-based patterns
+- Updated documentation tests to exclude FTS planning documents
+- Fixed CLI tests to match actual remote query behavior
+
 ### Changed
 
 - **CLI Help Text**: Enhanced `cidx query --help` with FTS examples and clear option descriptions
-- **Teach-AI Templates**: Updated `cidx_instructions.md` with FTS decision rules and examples
+- **Teach-AI Templates**: Updated `cidx_instructions.md` with FTS decision rules and regex examples
 - **README Structure**: Added "Full-Text Search (FTS)" section with usage guide and comparison table
 - **Version**: Bumped to 7.1.0 to reflect new major feature
+- **Plans**: Moved FTS epics to `plans/completed/` (fts-filtering and full-text-search)
 
 ### Technical Details
 

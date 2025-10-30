@@ -191,7 +191,7 @@ The code-indexer uses a sophisticated dual-phase parallel processing architectur
 ### pipx (Recommended)
 ```bash
 # Install the package
-pipx install git+https://github.com/jsbattig/code-indexer.git@v7.0.1
+pipx install git+https://github.com/jsbattig/code-indexer.git@v7.1.0
 
 # Setup global registry (standalone command - requires sudo)
 cidx setup-global-registry
