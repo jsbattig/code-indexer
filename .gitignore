@@ -127,10 +127,12 @@ tests/projects/*/docker-compose.yml
 /debug/
 dev/debug/
 /test_server_validation.py
-/cleanup_test_containers.py  
+/cleanup_test_containers.py
 /parse_test_results.py
 /.tmp/
 /.local/
+/.analysis/
+/reports/troubleshooting/
 
 # Test data directories (regeneratable)
 /test-data/
@@ -148,6 +150,15 @@ test_output_*/
 /.test-e2e-large-files
 .aider*
 .ssh-mcp-server.port
+
+# FilesystemVectorStore collection
+voyage-code-3/
+
+# FilesystemVectorStore collection
+voyage-code-3/
+
+# FilesystemVectorStore collection
+voyage-code-3/
 
 # FilesystemVectorStore collection
 voyage-code-3/

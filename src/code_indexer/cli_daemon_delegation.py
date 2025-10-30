@@ -1,0 +1,570 @@
+"""
+Daemon delegation functions for CLI commands.
+
+This module provides helper functions for delegating CLI commands to the daemon
+when daemon mode is enabled. It handles:
+- Connection to daemon with exponential backoff
+- Crash recovery with automatic restart (2 attempts)
+- Graceful fallback to standalone mode
+- Query delegation (semantic, FTS, hybrid)
+- Storage command delegation (clean, clean-data, status)
+"""
+
+import sys
+import time
+import subprocess
+from pathlib import Path
+from typing import Optional, Dict, Any
+from rich.console import Console
+
+console = Console()
+
+
+def _find_config_file() -> Optional[Path]:
+    """
+    Walk up directory tree looking for .code-indexer/config.json.
+
+    Returns:
+        Path to config.json or None if not found
+    """
+    current = Path.cwd()
+    while current != current.parent:
+        config_path = current / ".code-indexer" / "config.json"
+        if config_path.exists():
+            return config_path
+        current = current.parent
+    return None
+
+
+def _get_socket_path(config_path: Path) -> Path:
+    """
+    Calculate socket path from config location.
+
+    Args:
+        config_path: Path to config.json file
+
+    Returns:
+        Path to daemon socket file
+    """
+    return config_path.parent / "daemon.sock"
+
+
+def _connect_to_daemon(socket_path: Path, daemon_config: Dict) -> Any:
+    """
+    Establish RPyC connection to daemon with exponential backoff.
+
+    Args:
+        socket_path: Path to Unix domain socket
+        daemon_config: Daemon configuration with retry_delays_ms
+
+    Returns:
+        RPyC connection object
+
+    Raises:
+        ConnectionError: If all retries exhausted
+    """
+    try:
+        from rpyc.utils.factory import unix_connect
+    except ImportError:
+        raise ImportError("RPyC is required for daemon mode. Install with: pip install rpyc")
+
+    # Get retry delays from config (default: [100, 500, 1000, 2000]ms)
+    retry_delays_ms = daemon_config.get("retry_delays_ms", [100, 500, 1000, 2000])
+    retry_delays = [d / 1000.0 for d in retry_delays_ms]  # Convert to seconds
+
+    last_error = None
+    for attempt, delay in enumerate(retry_delays):
+        try:
+            return unix_connect(str(socket_path))
+        except (ConnectionRefusedError, FileNotFoundError) as e:
+            last_error = e
+            if attempt < len(retry_delays) - 1:
+                time.sleep(delay)
+            else:
+                # Last attempt failed, re-raise
+                raise last_error
+
+
+def _cleanup_stale_socket(socket_path: Path) -> None:
+    """
+    Remove stale socket file.
+
+    Args:
+        socket_path: Path to socket file to remove
+    """
+    try:
+        socket_path.unlink()
+    except (FileNotFoundError, OSError):
+        # Socket might not exist or already removed
+        pass
+
+
+def _start_daemon(config_path: Path) -> None:
+    """
+    Start daemon process as background subprocess.
+
+    Args:
+        config_path: Path to config.json for daemon
+    """
+    # Check if daemon is already running
+    socket_path = _get_socket_path(config_path)
+    if socket_path.exists():
+        try:
+            # Try to connect to see if daemon is actually running
+            import socket
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.settimeout(0.1)
+            sock.connect(str(socket_path))
+            sock.close()
+            # Daemon is running, don't start another
+            console.print("[dim]Daemon already running, skipping start[/dim]")
+            return
+        except (ConnectionRefusedError, FileNotFoundError, OSError):
+            # Socket exists but daemon not responding, clean it up
+            _cleanup_stale_socket(socket_path)
+
+    daemon_cmd = [
+        sys.executable,
+        "-m",
+        "code_indexer.daemon",
+        str(config_path),
+    ]
+
+    # Start daemon process detached
+    subprocess.Popen(
+        daemon_cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+    # Give daemon time to bind socket
+    time.sleep(0.5)
+
+
+def _display_results(results, query_time: float = 0) -> None:
+    """
+    Display query results to console.
+
+    Args:
+        results: Query results (list or dict with "results" key)
+        query_time: Query execution time in seconds
+    """
+    if query_time > 0:
+        console.print(f"[green]✓[/green] Query completed in {query_time:.3f}s")
+
+    # Handle both list and dict formats
+    if isinstance(results, list):
+        result_list = results
+    elif isinstance(results, dict):
+        result_list = results.get("results", [])
+    else:
+        console.print("[yellow]No results found[/yellow]")
+        return
+
+    if not result_list:
+        console.print("[yellow]No results found[/yellow]")
+        return
+
+    for i, result in enumerate(result_list, 1):
+        # Extract path from payload if present (daemon format)
+        if "payload" in result:
+            file_path = result["payload"].get("path", "")
+            content = result["payload"].get("content", "")
+        else:
+            file_path = result.get("file", result.get("path", ""))
+            content = result.get("content", result.get("snippet", ""))
+
+        line_num = result.get("line", "")
+
+        if line_num:
+            console.print(f"{i}. {file_path}:{line_num}")
+        else:
+            console.print(f"{i}. {file_path}")
+
+        if content:
+            # Truncate long content
+            if len(content) > 100:
+                content = content[:100] + "..."
+            console.print(f"   {content}")
+
+
+def _query_standalone(query_text: str, fts: bool = False, semantic: bool = True, limit: int = 10, **kwargs) -> int:
+    """
+    Fallback to standalone query execution.
+
+    This imports the full CLI and executes the query locally.
+    CRITICAL FIX: Pass standalone=True flag to prevent recursive daemon delegation.
+
+    Args:
+        query_text: Query string
+        fts: Use FTS search
+        semantic: Use semantic search
+        limit: Result limit
+        **kwargs: Additional query parameters
+
+    Returns:
+        Exit code (0 = success)
+    """
+    # Import full CLI (expensive, but we're in fallback mode)
+    from .cli import query as cli_query
+    from .config import ConfigManager
+    from .mode_detection.command_mode_detector import CommandModeDetector, find_project_root
+    import click
+
+    try:
+        # Remove daemon-specific kwargs that CLI doesn't accept
+        cli_kwargs = {k: v for k, v in kwargs.items() if k not in ['standalone']}
+
+        # Set default values for missing parameters
+        cli_kwargs.setdefault('languages', ())
+        cli_kwargs.setdefault('exclude_languages', ())
+        cli_kwargs.setdefault('path_filter', None)
+        cli_kwargs.setdefault('exclude_paths', ())
+        cli_kwargs.setdefault('min_score', None)
+        cli_kwargs.setdefault('accuracy', 'fast')
+        cli_kwargs.setdefault('quiet', False)
+        cli_kwargs.setdefault('case_sensitive', False)
+        cli_kwargs.setdefault('case_insensitive', False)
+        cli_kwargs.setdefault('fuzzy', False)
+        cli_kwargs.setdefault('edit_distance', 0)
+        cli_kwargs.setdefault('snippet_lines', 5)
+        cli_kwargs.setdefault('regex', False)
+
+        # CRITICAL: Add standalone flag to prevent recursive daemon delegation
+        cli_kwargs['standalone'] = True
+
+        # Setup context object with mode detection (required by query command)
+        project_root = find_project_root(Path.cwd())
+        mode_detector = CommandModeDetector(project_root)
+        mode = mode_detector.detect_mode()
+
+        # Create context with required obj attributes
+        ctx = click.Context(cli_query)
+        ctx.obj = {
+            "mode": mode,
+            "project_root": project_root,
+            "standalone": True,  # CRITICAL: Prevent daemon delegation
+        }
+
+        # Load config manager if in local mode
+        if mode == "local" and project_root:
+            try:
+                config_manager = ConfigManager.create_with_backtrack(project_root)
+                ctx.obj["config_manager"] = config_manager
+            except Exception:
+                pass  # Config might not exist yet
+
+        # Invoke query command using ctx.invoke()
+        with ctx:
+            ctx.invoke(cli_query, query=query_text, limit=limit, fts=fts, semantic=semantic, **cli_kwargs)
+        return 0
+    except Exception as e:
+        console.print(f"[red]Query failed: {e}[/red]")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        return 1
+
+
+def _status_standalone(**kwargs) -> int:
+    """
+    Fallback to standalone status execution.
+
+    Args:
+        **kwargs: Additional status parameters
+
+    Returns:
+        Exit code (0 = success)
+    """
+    from .cli import status as cli_status
+    from .mode_detection.command_mode_detector import CommandModeDetector, find_project_root
+    import click
+
+    try:
+        # Setup context object with mode detection (required by status command)
+        project_root = find_project_root(Path.cwd())
+        mode_detector = CommandModeDetector(project_root)
+        mode = mode_detector.detect_mode()
+
+        # Create a click context with required attributes
+        ctx = click.Context(click.Command('status'))
+        ctx.obj = {
+            "mode": mode,
+            "project_root": project_root,
+            "standalone": True  # Prevent daemon delegation
+        }
+
+        # Load config manager if in local mode
+        if mode == "local" and project_root:
+            try:
+                from .config import ConfigManager
+                config_manager = ConfigManager.create_with_backtrack(project_root)
+                ctx.obj["config_manager"] = config_manager
+            except Exception:
+                pass  # Config might not exist yet
+
+        force_docker = kwargs.get('force_docker', False)
+        # Call status function directly (not as a click command)
+        with ctx:
+            cli_status(ctx, force_docker=force_docker)
+        return 0
+    except Exception as e:
+        console.print(f"[red]Status failed: {e}[/red]")
+        import traceback
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        return 1
+
+
+def _query_via_daemon(
+    query_text: str,
+    daemon_config: Dict,
+    fts: bool = False,
+    semantic: bool = True,
+    limit: int = 10,
+    **kwargs
+) -> int:
+    """
+    Delegate query to daemon with crash recovery.
+
+    Implements 2-attempt restart recovery:
+    1. Try to connect and execute
+    2. If fails, restart daemon and retry (attempt 1/2)
+    3. If fails again, restart daemon and retry (attempt 2/2)
+    4. If still fails, fallback to standalone
+
+    Args:
+        query_text: Query string
+        daemon_config: Daemon configuration
+        fts: Use FTS search
+        semantic: Use semantic search
+        limit: Result limit
+        **kwargs: Additional query parameters
+
+    Returns:
+        Exit code (0 = success)
+    """
+    config_path = _find_config_file()
+    if not config_path:
+        console.print("[yellow]No config found, using standalone mode[/yellow]")
+        return _query_standalone(query_text, fts=fts, semantic=semantic, limit=limit, **kwargs)
+
+    socket_path = _get_socket_path(config_path)
+
+    # Crash recovery: up to 2 restart attempts
+    for restart_attempt in range(3):  # Initial + 2 restarts
+        conn = None
+        try:
+            # Connect to daemon
+            conn = _connect_to_daemon(socket_path, daemon_config)
+
+            # Determine query type and execute
+            start_time = time.perf_counter()
+
+            if fts and semantic:
+                # Hybrid search
+                result = conn.root.exposed_query_hybrid(
+                    str(Path.cwd()), query_text, limit=limit, **kwargs
+                )
+            elif fts:
+                # FTS-only search
+                result = conn.root.exposed_query_fts(
+                    str(Path.cwd()), query_text, limit=limit, **kwargs
+                )
+            else:
+                # Semantic search
+                result = conn.root.exposed_query(
+                    str(Path.cwd()), query_text, limit=limit, **kwargs
+                )
+
+            query_time = time.perf_counter() - start_time
+
+            # Display results first (while connection is still open)
+            _display_results(result, query_time)
+
+            # Close connection after displaying results
+            try:
+                conn.close()
+            except Exception:
+                pass  # Connection already closed
+
+            return 0
+
+        except Exception as e:
+            # Close connection on error to prevent resource leaks
+            try:
+                if conn is not None:
+                    conn.close()
+            except Exception:
+                pass
+
+            # Connection or query failed
+            if restart_attempt < 2:
+                # Still have restart attempts left
+                console.print(
+                    f"[yellow]⚠️  Daemon connection failed, attempting restart ({restart_attempt + 1}/2)[/yellow]"
+                )
+                console.print(f"[dim](Error: {e})[/dim]")
+
+                # Clean up stale socket before restart
+                _cleanup_stale_socket(socket_path)
+                _start_daemon(config_path)
+
+                # Wait longer for daemon to fully start
+                time.sleep(1.0)
+                continue
+            else:
+                # Exhausted all restart attempts
+                console.print(
+                    "[yellow]ℹ️  Daemon unavailable after 2 restart attempts, using standalone mode[/yellow]"
+                )
+                console.print(f"[dim](Error: {e})[/dim]")
+                console.print("[dim]Tip: Check daemon with 'cidx daemon status'[/dim]")
+
+                return _query_standalone(query_text, fts=fts, semantic=semantic, limit=limit, **kwargs)
+
+    # Should never reach here
+    return 1
+
+
+def _clean_via_daemon(**kwargs) -> int:
+    """
+    Execute clean command via daemon.
+
+    Args:
+        **kwargs: Additional clean parameters
+
+    Returns:
+        Exit code (0 = success)
+    """
+    from .config import ConfigManager
+
+    config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+    socket_path = config_manager.get_socket_path()
+    daemon_config = config_manager.get_daemon_config()
+
+    try:
+        conn = _connect_to_daemon(socket_path, daemon_config)
+
+        console.print("[yellow]Clearing vectors (via daemon)...[/yellow]")
+        result = conn.root.exposed_clean(str(Path.cwd()), **kwargs)
+        conn.close()
+
+        console.print("[green]✓ Vectors cleared[/green]")
+        console.print(f"  Cache invalidated: {result.get('cache_invalidated', False)}")
+        return 0
+
+    except Exception as e:
+        console.print(f"[red]Failed to clean via daemon: {e}[/red]")
+        console.print("[yellow]Falling back to standalone mode[/yellow]")
+
+        # Fallback to standalone
+        from .cli import clean as cli_clean
+        import click
+        try:
+            ctx = click.Context(click.Command('clean'))
+            ctx.obj = {"standalone": True}  # Prevent daemon delegation
+            force_docker = kwargs.get('force_docker', False)
+            cli_clean(ctx, force_docker=force_docker)
+            return 0
+        except Exception as e2:
+            console.print(f"[red]Clean failed: {e2}[/red]")
+            return 1
+
+
+def _clean_data_via_daemon(**kwargs) -> int:
+    """
+    Execute clean-data command via daemon.
+
+    Args:
+        **kwargs: Additional clean-data parameters
+
+    Returns:
+        Exit code (0 = success)
+    """
+    from .config import ConfigManager
+
+    config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+    socket_path = config_manager.get_socket_path()
+    daemon_config = config_manager.get_daemon_config()
+
+    try:
+        conn = _connect_to_daemon(socket_path, daemon_config)
+
+        console.print("[yellow]Clearing project data (via daemon)...[/yellow]")
+        result = conn.root.exposed_clean_data(str(Path.cwd()), **kwargs)
+        conn.close()
+
+        console.print("[green]✓ Project data cleared[/green]")
+        console.print(f"  Cache invalidated: {result.get('cache_invalidated', False)}")
+        return 0
+
+    except Exception as e:
+        console.print(f"[red]Failed to clean data via daemon: {e}[/red]")
+        console.print("[yellow]Falling back to standalone mode[/yellow]")
+
+        # Fallback to standalone
+        from .cli import clean_data as cli_clean_data
+        import click
+        try:
+            ctx = click.Context(click.Command('clean-data'))
+            ctx.obj = {"standalone": True}  # Prevent daemon delegation
+            force_docker = kwargs.get('force_docker', False)
+            cli_clean_data(ctx, force_docker=force_docker)
+            return 0
+        except Exception as e2:
+            console.print(f"[red]Clean data failed: {e2}[/red]")
+            return 1
+
+
+def _status_via_daemon(**kwargs) -> int:
+    """
+    Execute status command via daemon.
+
+    Args:
+        **kwargs: Additional status parameters
+
+    Returns:
+        Exit code (0 = success)
+    """
+    from .config import ConfigManager
+
+    config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+    socket_path = config_manager.get_socket_path()
+    daemon_config = config_manager.get_daemon_config()
+
+    try:
+        conn = _connect_to_daemon(socket_path, daemon_config)
+        result = conn.root.exposed_status(str(Path.cwd()))
+
+        # Extract data while connection is still open
+        daemon_info = result.get("daemon", {})
+        daemon_running = daemon_info.get('running', False)
+        daemon_semantic_cached = daemon_info.get('semantic_cached', False)
+        daemon_fts_available = daemon_info.get('fts_available', False)
+        daemon_watching = daemon_info.get('watching', False)
+
+        storage_info = result.get("storage", {})
+        storage_index_size = storage_info.get('index_size', 'unknown')
+
+        # Close connection after extracting data
+        conn.close()
+
+        # Display daemon status (after connection is closed)
+        console.print("[bold]Daemon Status:[/bold]")
+        console.print(f"  Running: {daemon_running}")
+        console.print(f"  Semantic Cached: {daemon_semantic_cached}")
+        console.print(f"  FTS Available: {daemon_fts_available}")
+        console.print(f"  Watching: {daemon_watching}")
+
+        # Display storage status
+        console.print("\n[bold]Storage Status:[/bold]")
+        console.print(f"  Index Size: {storage_index_size}")
+
+        return 0
+
+    except Exception as e:
+        console.print(f"[yellow]Daemon not available: {e}[/yellow]")
+        console.print("[yellow]Showing local storage status only[/yellow]")
+
+        # Fallback to standalone status
+        return _status_standalone(**kwargs)

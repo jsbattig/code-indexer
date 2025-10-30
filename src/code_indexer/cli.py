@@ -38,6 +38,10 @@ from .services.docker_manager import DockerManager  # noqa: F401
 from .services.qdrant import QdrantClient  # noqa: F401
 from .remote.credential_manager import ProjectCredentialManager  # noqa: F401
 
+# Daemon delegation imports (lazy loaded when daemon enabled)
+from . import cli_daemon_delegation  # noqa: F401
+from . import cli_daemon_lifecycle  # noqa: F401
+
 
 def run_async(coro):
     """
@@ -1650,11 +1654,10 @@ def cli(
 
 
 @cli.command()
-@click.option(
-    "--codebase-dir",
-    "-d",
+@click.argument(
+    "codebase_dir",
+    required=False,
     type=click.Path(exists=True),
-    help="Directory to index (default: current directory)",
 )
 @click.option("--force", "-f", is_flag=True, help="Overwrite existing configuration")
 @click.option(
@@ -1722,6 +1725,17 @@ def cli(
     default="filesystem",
     help="Vector storage backend: 'filesystem' (container-free) or 'qdrant' (containers required)",
 )
+@click.option(
+    "--daemon",
+    is_flag=True,
+    help="Enable daemon mode for performance optimization",
+)
+@click.option(
+    "--daemon-ttl",
+    type=int,
+    default=10,
+    help="Cache TTL in minutes for daemon mode (default: 10)",
+)
 @click.pass_context
 def init(
     ctx,
@@ -1739,6 +1753,8 @@ def init(
     password: Optional[str],
     proxy_mode: bool,
     vector_store: str,
+    daemon: bool,
+    daemon_ttl: int,
 ):
     """Initialize code indexing in current directory (OPTIONAL).
 
@@ -2229,9 +2245,159 @@ def init(
 
         console.print("🔧 Run 'code-indexer start' to start services")
 
+        # Enable daemon mode if requested
+        if daemon:
+            try:
+                config_manager.enable_daemon(ttl_minutes=daemon_ttl)
+                console.print(
+                    f"✅ Daemon mode enabled (Cache TTL: {daemon_ttl} minutes)",
+                    style="green",
+                )
+                console.print("ℹ️  Daemon will auto-start on first query", style="dim")
+            except ValueError as e:
+                console.print(f"❌ Invalid daemon TTL: {e}", style="red")
+                sys.exit(1)
+
     except Exception as e:
         console.print(f"❌ Failed to initialize: {e}", style="red")
         sys.exit(1)
+
+
+@cli.command()
+@click.option(
+    "--show",
+    is_flag=True,
+    help="Display current configuration",
+)
+@click.option(
+    "--daemon/--no-daemon",
+    default=None,
+    help="Enable or disable daemon mode",
+)
+@click.option(
+    "--daemon-ttl",
+    type=int,
+    help="Update cache TTL in minutes for daemon mode",
+)
+@click.pass_context
+def config(
+    ctx,
+    show: bool,
+    daemon: Optional[bool],
+    daemon_ttl: Optional[int],
+):
+    """Manage repository configuration.
+
+    \b
+    Configure daemon mode and other repository settings.
+
+    \b
+    EXAMPLES:
+      cidx config --show                    # Display current config
+      cidx config --daemon                  # Enable daemon mode
+      cidx config --no-daemon               # Disable daemon mode
+      cidx config --daemon-ttl 20           # Set TTL to 20 minutes
+      cidx config --daemon --daemon-ttl 30  # Enable daemon with 30min TTL
+
+    \b
+    DAEMON MODE:
+      Daemon mode optimizes performance by keeping indexed data in memory
+      and providing faster query responses. The daemon auto-starts on
+      first query and auto-shuts down after idle timeout.
+    """
+    # Get config_manager from context (set by main CLI function with backtracking)
+    config_manager = ctx.obj.get("config_manager")
+
+    # If no config_manager in context, fall back to backtracking from cwd
+    if not config_manager:
+        config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+
+    # Check if config exists
+    if not config_manager.config_path.exists():
+        console.print("❌ No CIDX configuration found", style="red")
+        console.print()
+        console.print("Initialize a repository first:")
+        console.print("  cidx init", style="cyan")
+        console.print()
+        console.print("Or navigate to an initialized repository directory")
+        sys.exit(1)
+
+    # Handle --show
+    if show:
+        try:
+            _ = config_manager.load()
+            daemon_config = config_manager.get_daemon_config()
+
+            console.print()
+            console.print("[bold cyan]Repository Configuration[/bold cyan]")
+            console.print("─" * 50)
+            console.print()
+
+            # Daemon mode status
+            daemon_status = "Enabled" if daemon_config["enabled"] else "Disabled"
+            status_style = "green" if daemon_config["enabled"] else "yellow"
+            console.print(f"  Daemon Mode:    [{status_style}]{daemon_status}[/{status_style}]")
+
+            if daemon_config["enabled"]:
+                console.print(f"  Cache TTL:      {daemon_config['ttl_minutes']} minutes")
+                auto_start = daemon_config.get("auto_start", True)
+                console.print(f"  Auto-start:     {'Yes' if auto_start else 'No'}")
+                auto_shutdown = daemon_config["auto_shutdown_on_idle"]
+                console.print(f"  Auto-shutdown:  {'Yes' if auto_shutdown else 'No'}")
+
+                # Show socket path
+                socket_path = config_manager.get_socket_path()
+                console.print(f"  Socket Path:    {socket_path}")
+
+            console.print()
+            return 0
+
+        except Exception as e:
+            console.print(f"❌ Failed to load configuration: {e}", style="red")
+            sys.exit(1)
+
+    # Handle configuration updates
+    update_performed = False
+
+    if daemon is not None:
+        try:
+            if daemon:
+                config_manager.enable_daemon()
+                console.print("✅ Daemon mode enabled", style="green")
+                console.print("ℹ️  Daemon will auto-start on first query", style="dim")
+            else:
+                config_manager.disable_daemon()
+                console.print("✅ Daemon mode disabled", style="green")
+                console.print("ℹ️  Queries will run in standalone mode", style="dim")
+            update_performed = True
+        except Exception as e:
+            console.print(f"❌ Failed to update daemon mode: {e}", style="red")
+            sys.exit(1)
+
+    if daemon_ttl is not None:
+        try:
+            config_manager.update_daemon_ttl(daemon_ttl)
+            console.print(f"✅ Cache TTL updated to {daemon_ttl} minutes", style="green")
+            update_performed = True
+        except ValueError as e:
+            console.print(f"❌ Invalid daemon TTL: {e}", style="red")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"❌ Failed to update daemon TTL: {e}", style="red")
+            sys.exit(1)
+
+    # If no operations performed, show help message
+    if not update_performed and not show:
+        console.print("ℹ️  No configuration changes requested", style="yellow")
+        console.print()
+        console.print("Use --show to display current configuration")
+        console.print("Use --daemon or --no-daemon to toggle daemon mode")
+        console.print("Use --daemon-ttl <minutes> to update cache TTL")
+        console.print()
+        console.print("Run 'cidx config --help' for more information")
+        return 0
+
+    return 0
 
 
 @cli.command()
@@ -2835,6 +3001,18 @@ def index(
     """
     config_manager = ctx.obj["config_manager"]
 
+    # Check daemon delegation (Story 2.3)
+    # NOTE: index delegation not yet implemented in cli_daemon_delegation.py
+    # TODO: Implement _index_via_daemon for full daemon support
+    try:
+        daemon_config = config_manager.get_daemon_config()
+        if daemon_config and daemon_config.get("enabled"):
+            # For now, fall through to standalone mode
+            # Future: call cli_daemon_delegation._index_via_daemon()
+            pass
+    except Exception:
+        pass
+
     # Validate flag combinations
     if detect_deletions and reconcile:
         console.print(
@@ -3424,6 +3602,22 @@ def index(
 @require_mode("local", "proxy")
 def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
     """Git-aware watch for file changes with branch support."""
+    # Check daemon delegation (Story 2.3)
+    # NOTE: watch delegation not yet implemented in cli_daemon_delegation.py
+    # TODO: Implement _watch_via_daemon for full daemon support
+    try:
+        mode = ctx.obj.get("mode")
+        if mode == "local":
+            config_manager = ctx.obj.get("config_manager")
+            if config_manager:
+                daemon_config = config_manager.get_daemon_config()
+                if daemon_config and daemon_config.get("enabled"):
+                    # For now, fall through to standalone mode
+                    # Future: call cli_daemon_delegation._watch_via_daemon()
+                    pass
+    except Exception:
+        pass
+
     # Handle proxy mode (Story 2.2)
     mode = ctx.obj.get("mode")
     if mode == "proxy":
@@ -3808,6 +4002,39 @@ def query(
 
     # Import Path - needed by all query modes
     from pathlib import Path
+
+    # Check daemon delegation for local mode (Story 2.3)
+    # CRITICAL: Skip daemon delegation if standalone flag is set (prevents recursive loop)
+    standalone_mode = ctx.obj.get("standalone", False)
+    if mode == "local" and not standalone_mode:
+        try:
+            config_manager = ctx.obj.get("config_manager")
+            if config_manager:
+                daemon_config = config_manager.get_daemon_config()
+                if daemon_config and daemon_config.get("enabled"):
+                    # Delegate to daemon - will handle retry/fallback automatically
+                    exit_code = cli_daemon_delegation._query_via_daemon(
+                        query_text=query,
+                        daemon_config=daemon_config,
+                        fts=fts,
+                        semantic=semantic,
+                        limit=limit,
+                        languages=languages,
+                        exclude_languages=exclude_languages,
+                        path_filter=path_filter,
+                        exclude_paths=exclude_paths,
+                        min_score=min_score,
+                        accuracy=accuracy,
+                        quiet=quiet,
+                        case_sensitive=case_sensitive,
+                        edit_distance=edit_distance,
+                        snippet_lines=snippet_lines,
+                        regex=regex,
+                    )
+                    sys.exit(exit_code)
+        except Exception:
+            # Daemon delegation failed, continue with standalone mode
+            pass
 
     # Determine search mode based on flags (Story 4)
     if fts and semantic:
@@ -5350,6 +5577,24 @@ def status(ctx, force_docker: bool):
     mode = ctx.obj["mode"]
     project_root = ctx.obj["project_root"]
 
+    # Check daemon delegation for local mode (Story 2.3)
+    # CRITICAL: Skip daemon delegation if standalone flag is set (prevents recursive loop)
+    standalone_mode = ctx.obj.get("standalone", False)
+    if mode == "local" and not standalone_mode:
+        try:
+            config_manager = ctx.obj.get("config_manager")
+            if config_manager:
+                daemon_config = config_manager.get_daemon_config()
+                if daemon_config and daemon_config.get("enabled"):
+                    # Delegate to daemon
+                    exit_code = cli_daemon_delegation._status_via_daemon(
+                        force_docker=force_docker,
+                    )
+                    sys.exit(exit_code)
+        except Exception:
+            # Daemon delegation failed, continue with standalone mode
+            pass
+
     # Handle proxy mode (Story 2.2)
     if mode == "proxy":
         from .proxy import execute_proxy_command
@@ -6618,6 +6863,29 @@ def clean_data(
       This is much faster than 'uninstall' since containers stay running.
       Perfect for test cleanup and project switching.
     """
+    # Check daemon delegation (Story 2.3)
+    # CRITICAL: Skip daemon delegation if standalone flag is set (prevents recursive loop)
+    standalone_mode = ctx.obj.get("standalone", False)
+    if not standalone_mode:
+        try:
+            config_manager = ctx.obj.get("config_manager")
+            if config_manager:
+                daemon_config = config_manager.get_daemon_config()
+                if daemon_config and daemon_config.get("enabled"):
+                    # Delegate to daemon
+                    exit_code = cli_daemon_delegation._clean_data_via_daemon(
+                        all_projects=all_projects,
+                        force_docker=force_docker,
+                        all_containers=all_containers,
+                        container_type=container_type,
+                        json_output=json_output,
+                        verify=verify,
+                    )
+                    sys.exit(exit_code)
+        except Exception:
+            # Daemon delegation failed, continue with standalone mode
+            pass
+
     try:
         # Lazy imports for clean_data command
 
@@ -7122,6 +7390,27 @@ def clean(
       --force                        Skip confirmation prompt
       --show-recommendations         Show git-aware cleanup recommendations
     """
+    # Check daemon delegation (Story 2.3)
+    # CRITICAL: Skip daemon delegation if standalone flag is set (prevents recursive loop)
+    standalone_mode = ctx.obj.get("standalone", False)
+    if not standalone_mode:
+        try:
+            config_manager = ctx.obj.get("config_manager")
+            if config_manager:
+                daemon_config = config_manager.get_daemon_config()
+                if daemon_config and daemon_config.get("enabled"):
+                    # Delegate to daemon
+                    exit_code = cli_daemon_delegation._clean_via_daemon(
+                        collection=collection,
+                        remove_projection_matrix=remove_projection_matrix,
+                        force=force,
+                        show_recommendations=show_recommendations,
+                    )
+                    sys.exit(exit_code)
+        except Exception:
+            # Daemon delegation failed, continue with standalone mode
+            pass
+
     try:
         config_manager = ctx.obj.get("config_manager")
         project_root = ctx.obj.get("project_root")
@@ -13914,6 +14203,51 @@ def main():
     except Exception as e:
         console.print(f"❌ Unexpected error: {e}", style="red")
         sys.exit(1)
+
+
+
+
+@cli.command("start")
+@click.pass_context
+@require_mode("local")
+def start_command(ctx):
+    """Start CIDX daemon manually.
+
+    Only available when daemon.enabled: true in config.
+    Normally daemon auto-starts on first query, but this allows
+    explicit control for debugging or pre-loading.
+    """
+    exit_code = cli_daemon_lifecycle.start_daemon_command()
+    sys.exit(exit_code)
+
+
+@cli.command("stop")
+@click.pass_context
+@require_mode("local")
+def stop_command(ctx):
+    """Stop CIDX daemon gracefully.
+
+    Gracefully shuts down daemon:
+    - Stops any active watch
+    - Clears cache
+    - Closes connections
+    - Exits daemon process
+    """
+    exit_code = cli_daemon_lifecycle.stop_daemon_command()
+    sys.exit(exit_code)
+
+
+@cli.command("watch-stop")
+@click.pass_context
+@require_mode("local")
+def watch_stop_command(ctx):
+    """Stop watch mode running in daemon.
+
+    Only available in daemon mode. Use this to stop watch
+    without stopping the entire daemon. Queries continue to work.
+    """
+    exit_code = cli_daemon_lifecycle.watch_stop_command()
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

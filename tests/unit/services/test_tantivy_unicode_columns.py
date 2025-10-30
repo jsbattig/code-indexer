@@ -402,7 +402,7 @@ flag = "🇺🇸 USA"
             for result in results:
                 column = result.get("column", 0)
                 # Columns should be reasonable
-                assert column > 0, f"Column calculation should work with any encoding"
+                assert column > 0, "Column calculation should work with any encoding"
 
     def test_unicode_normalization_doesnt_break_columns(
         self, indexed_manager_unicode
