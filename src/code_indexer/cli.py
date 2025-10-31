@@ -890,6 +890,7 @@ def _display_semantic_results(
     # Auto-detect current branch if not provided
     if current_display_branch is None and not quiet:
         import subprocess
+
         try:
             git_result = subprocess.run(
                 ["git", "symbolic-ref", "--short", "HEAD"],
@@ -898,7 +899,9 @@ def _display_semantic_results(
                 text=True,
                 timeout=5,
             )
-            current_display_branch = git_result.stdout.strip() if git_result.returncode == 0 else "unknown"
+            current_display_branch = (
+                git_result.stdout.strip() if git_result.returncode == 0 else "unknown"
+            )
         except Exception:
             current_display_branch = "unknown"
 
@@ -1013,9 +1016,7 @@ def _display_semantic_results(
                     if line_start == line_end:
                         content_header = f"📖 Content (Line {line_start}):"
                     else:
-                        content_header = (
-                            f"📖 Content (Lines {line_start}-{line_end}):"
-                        )
+                        content_header = f"📖 Content (Lines {line_start}-{line_end}):"
                 else:
                     content_header = "📖 Content:"
 
@@ -5693,7 +5694,7 @@ def _status_impl(ctx, force_docker: bool):
 
         # Add daemon mode indicator (requested by user)
         try:
-            daemon_config = config.daemon if hasattr(config, 'daemon') else None
+            daemon_config = config.daemon if hasattr(config, "daemon") else None
             socket_path = config_manager.config_path.parent / "daemon.sock"
             daemon_running = socket_path.exists()
 
@@ -5702,19 +5703,19 @@ def _status_impl(ctx, force_docker: bool):
                     table.add_row(
                         "Daemon Mode",
                         "✅ Active",
-                        f"Socket: {socket_path.name} | TTL: {daemon_config.ttl_minutes}min | Queries use daemon"
+                        f"Socket: {socket_path.name} | TTL: {daemon_config.ttl_minutes}min | Queries use daemon",
                     )
                 else:
                     table.add_row(
                         "Daemon Mode",
                         "⚠️ Configured",
-                        "Enabled but stopped (auto-starts on first query)"
+                        "Enabled but stopped (auto-starts on first query)",
                     )
             else:
                 table.add_row(
                     "Daemon Mode",
                     "❌ Disabled",
-                    "Standalone mode (enable: cidx config --daemon)"
+                    "Standalone mode (enable: cidx config --daemon)",
                 )
         except Exception:
             # If daemon config check fails, just skip the row

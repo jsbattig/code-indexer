@@ -23,9 +23,9 @@ logger = logging.getLogger(__name__)
 class CIDXDaemonService(Service):
     """RPyC daemon service for in-memory index caching.
 
-    Provides 14 exposed methods organized into categories:
+    Provides 15 exposed methods organized into categories:
     - Query Operations (3): query, query_fts, query_hybrid
-    - Indexing (1): index
+    - Indexing (3): index_blocking, index, get_index_progress
     - Watch Mode (3): watch_start, watch_stop, watch_status
     - Storage Operations (3): clean, clean_data, status
     - Daemon Management (4): get_status, clear_cache, shutdown, ping
@@ -165,8 +165,96 @@ class CIDXDaemonService(Service):
         }
 
     # =============================================================================
-    # Indexing (2 methods)
+    # Indexing (3 methods)
     # =============================================================================
+
+    def exposed_index_blocking(
+        self, project_path: str, callback: Optional[Any] = None, **kwargs
+    ) -> Dict[str, Any]:
+        """Perform BLOCKING indexing with real-time progress callbacks.
+
+        This method executes indexing synchronously in the main daemon thread,
+        streaming progress updates to the client via RPyC callbacks. The RPyC
+        connection remains open during indexing, allowing real-time progress
+        streaming.
+
+        CRITICAL UX FIX: This provides UX parity with standalone mode by
+        displaying real-time progress bar updates in the client terminal.
+
+        Args:
+            project_path: Path to project root
+            callback: Optional progress callback for real-time updates
+            **kwargs: Additional indexing parameters (force_full, enable_fts, batch_size)
+
+        Returns:
+            Dict with indexing stats and status
+        """
+        logger.info(f"exposed_index_blocking: project={project_path} [BLOCKING MODE]")
+
+        try:
+            # Invalidate cache BEFORE indexing
+            with self.cache_lock:
+                if self.cache_entry:
+                    logger.info("Invalidating cache before indexing")
+                    self.cache_entry = None
+
+            from code_indexer.services.smart_indexer import SmartIndexer
+            from code_indexer.config import ConfigManager
+            from code_indexer.backends.backend_factory import BackendFactory
+            from code_indexer.services.embedding_factory import EmbeddingProviderFactory
+
+            # Initialize configuration and backend
+            config_manager = ConfigManager.create_with_backtrack(Path(project_path))
+            config = config_manager.get_config()
+
+            # Create embedding provider and vector store
+            embedding_provider = EmbeddingProviderFactory.create(config=config)
+            backend = BackendFactory.create(config, Path(project_path))
+            vector_store_client = backend.get_vector_store_client()
+
+            # Initialize SmartIndexer
+            metadata_path = config_manager.config_path.parent / "metadata.json"
+            indexer = SmartIndexer(
+                config, embedding_provider, vector_store_client, metadata_path
+            )
+
+            # Execute indexing SYNCHRONOUSLY with callback
+            # This BLOCKS until indexing completes, streaming progress via callback
+            stats = indexer.smart_index(
+                force_full=kwargs.get('force_full', False),
+                batch_size=kwargs.get('batch_size', 50),
+                progress_callback=callback,  # RPyC handles callback streaming
+                quiet=True,  # Suppress daemon-side output
+                enable_fts=kwargs.get('enable_fts', False),
+            )
+
+            # Invalidate cache after indexing completes
+            with self.cache_lock:
+                if self.cache_entry:
+                    logger.info("Invalidating cache after indexing completed")
+                    self.cache_entry = None
+
+            # Return stats dict (NOT a status dict, but actual stats)
+            return {
+                "status": "completed",
+                "stats": {
+                    "files_processed": stats.files_processed,
+                    "chunks_created": stats.chunks_created,
+                    "failed_files": stats.failed_files,
+                    "duration_seconds": stats.duration,
+                    "cancelled": getattr(stats, "cancelled", False),
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Blocking indexing failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+            return {
+                "status": "error",
+                "message": str(e),
+            }
 
     def exposed_index(
         self, project_path: str, callback: Optional[Any] = None, **kwargs

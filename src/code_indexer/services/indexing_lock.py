@@ -168,7 +168,7 @@ class IndexingLock:
                 # Process exists, now check heartbeat freshness
                 last_heartbeat = heartbeat_data.get("last_heartbeat", 0)
                 age = time.time() - last_heartbeat
-                return age <= self.timeout
+                return bool(age <= self.timeout)
             except (OSError, ProcessLookupError):
                 # Process doesn't exist - heartbeat is stale regardless of timestamp
                 return False

@@ -650,7 +650,8 @@ def _index_standalone(force_reindex: bool = False, **kwargs) -> int:
         cli_kwargs['rebuild_fts_index'] = False
 
         # Invoke index command properly via Click context
-        return ctx.invoke(cli_index, **cli_kwargs)
+        result = ctx.invoke(cli_index, **cli_kwargs)
+        return int(result) if result is not None else 0
     except Exception as e:
         console.print(f"[red]Index failed: {e}[/red]")
         import traceback
@@ -691,13 +692,17 @@ def _index_via_daemon(
         daemon_config = config_manager.get_daemon_config()
 
     conn = None
+    progress_handler = None
     try:
         # Connect to daemon
         conn = _connect_to_daemon(socket_path, daemon_config)
 
-        # TODO: Index delegation with progress callbacks not yet implemented
-        # For now, raise to fall back to standalone mode
-        raise NotImplementedError("Index delegation with progress callbacks pending")
+        # Import ClientProgressHandler (EXISTS in cli_progress_handler.py)
+        from .cli_progress_handler import ClientProgressHandler
+
+        # Create progress handler for real-time updates
+        progress_handler = ClientProgressHandler(console=console)
+        progress_callback = progress_handler.create_progress_callback()
 
         # Map parameters for daemon
         daemon_kwargs = {
@@ -708,23 +713,26 @@ def _index_via_daemon(
 
         # Execute indexing (BLOCKS until complete, streams progress via callback)
         # RPyC automatically handles callback streaming to client
-        result = conn.root.exposed_index(
+        result = conn.root.exposed_index_blocking(
             project_path=str(Path.cwd()),
             callback=progress_callback,  # Real-time progress streaming
             **daemon_kwargs,
         )
 
-        # Stop progress display before showing completion
-        progress_manager.stop_progress()
-        rich_live_manager.stop_display()
+        # Extract result data FIRST (while connection and proxies still valid)
+        status = str(result.get("status", "unknown"))
+        message = str(result.get("message", ""))
+        stats_dict = dict(result.get("stats", {}))
 
-        # Extract result data BEFORE closing connection
-        status = result.get("status", "unknown")
-        message = result.get("message", "")
-        stats_dict = result.get("stats", {})
-
-        # Close connection AFTER extracting data
+        # Close connection after extracting data
         conn.close()
+
+        # Stop progress display after connection closed
+        if progress_handler and progress_handler.progress:
+            try:
+                progress_handler.progress.stop()
+            except:
+                pass
 
         # Display completion status (IDENTICAL to standalone)
         if status == "completed":
@@ -766,11 +774,11 @@ def _index_via_daemon(
 
     except Exception as e:
         # Clean up progress display on error
-        try:
-            progress_manager.stop_progress()
-            rich_live_manager.stop_display()
-        except Exception:
-            pass
+        if progress_handler and progress_handler.progress:
+            try:
+                progress_handler.progress.stop()
+            except Exception:
+                pass
 
         # Close connection on error
         if conn is not None:

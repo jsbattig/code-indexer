@@ -90,7 +90,7 @@ class ClientProgressHandler:
         )
 
         # Create callback function for daemon
-        def progress_callback(current: int, total: int, file_path, info: str = ""):
+        def progress_callback(current: int, total: int, file_path, info: str = "", **kwargs):
             """
             Callback that daemon will call via RPyC.
 
