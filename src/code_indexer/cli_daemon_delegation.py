@@ -698,8 +698,8 @@ def _index_via_daemon(
         conn = _connect_to_daemon(socket_path, daemon_config)
 
         # CRITICAL: Create progress handler for Rich progress bar display
-        from .services.multi_threaded_progress_manager import MultiThreadedProgressManager
-        from .services.rich_live_manager import RichLiveManager
+        from .progress.multi_threaded_display import MultiThreadedProgressManager
+        from .progress.rich_live_manager import RichLiveManager
 
         # Initialize progress manager and Rich Live display (IDENTICAL to standalone)
         progress_manager = MultiThreadedProgressManager()

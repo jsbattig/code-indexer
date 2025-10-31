@@ -104,10 +104,11 @@ class CIDXDaemonService(Service):
             # Execute semantic search (protected by cache_lock)
             results, timing_info = self._execute_semantic_search(project_path, query, limit, **kwargs)
 
-        return {
-            "results": results,
-            "timing": timing_info,
-        }
+        # Convert to plain dict for RPyC serialization (avoid netref issues)
+        return dict(
+            results=list(results) if results else [],
+            timing=dict(timing_info) if timing_info else {},
+        )
 
     def exposed_query_fts(
         self, project_path: str, query: str, **kwargs

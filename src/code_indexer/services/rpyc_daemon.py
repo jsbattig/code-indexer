@@ -195,15 +195,26 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
 
     def exposed_query(
         self, project_path: str, query: str, limit: int = 10, **kwargs
-    ) -> List[Dict]:
+    ) -> Dict[str, Any]:
         """
-        Execute semantic search with caching.
+        Execute semantic search with caching and timing telemetry.
 
         Performance optimizations:
         1. Query result caching for identical queries
         2. Optimized search execution path
         3. Minimal overhead for cache hits
+
+        Returns:
+            Dict with keys:
+            - results: List of search results
+            - timing: Dict with timing telemetry (ms)
         """
+        import time
+
+        # Initialize timing telemetry
+        timing_info = {}
+        overall_start = time.time()
+
         project_path_obj = Path(project_path).resolve()
 
         # Create query cache key
@@ -215,6 +226,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                 self.cache_entry = CacheEntry(project_path_obj)
 
         # Check query cache first with minimal lock time
+        cache_check_start = time.time()
         self.cache_entry.rw_lock.acquire_read()
         try:
             cached_result = self.cache_entry.get_cached_query(query_key)
@@ -222,7 +234,14 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                 # Direct cache hit - minimal overhead
                 self.cache_entry.last_accessed = datetime.now()
                 self.cache_entry.access_count += 1
-                return cached_result
+                cache_hit_time = (time.time() - cache_check_start) * 1000
+                return {
+                    "results": cached_result,
+                    "timing": {
+                        "cache_hit_ms": cache_hit_time,
+                        "total_ms": cache_hit_time,
+                    },
+                }
 
             # Get references to indexes while holding read lock
             hnsw_index = self.cache_entry.hnsw_index
@@ -230,8 +249,11 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
         finally:
             self.cache_entry.rw_lock.release_read()
 
+        timing_info["cache_check_ms"] = (time.time() - cache_check_start) * 1000
+
         # Load indexes if not cached (outside read lock to avoid blocking)
         if hnsw_index is None:
+            index_load_start = time.time()
             # Acquire write lock only for loading
             self.cache_entry.rw_lock.acquire_write()
             try:
@@ -242,6 +264,7 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                 id_mapping = self.cache_entry.id_mapping
             finally:
                 self.cache_entry.rw_lock.release_write()
+            timing_info["index_load_ms"] = (time.time() - index_load_start) * 1000
 
         # Update access time with minimal lock
         self.cache_entry.rw_lock.acquire_read()
@@ -252,9 +275,25 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             self.cache_entry.rw_lock.release_read()
 
         # Perform search OUTSIDE the lock for true concurrency
+        search_start = time.time()
         results = self._execute_search_optimized(
             hnsw_index, id_mapping, query, limit, **kwargs
         )
+        search_ms = (time.time() - search_start) * 1000
+
+        # Build timing info compatible with FilesystemVectorStore timing keys
+        # NOTE: Daemon has indexes pre-loaded, so timing differs from standalone
+        timing_info["hnsw_search_ms"] = search_ms  # Detailed timing
+        timing_info["vector_search_ms"] = search_ms  # High-level timing (for display)
+        timing_info["daemon_optimized"] = True  # Flag for daemon-specific path
+
+        # If index was loaded during this request, report it
+        if "index_load_ms" in timing_info:
+            # Indexes loaded from disk (cold start)
+            timing_info["parallel_load_ms"] = timing_info["index_load_ms"]
+        else:
+            # Indexes were cached (warm cache)
+            timing_info["cache_hit"] = True
 
         # Cache the result with minimal lock time
         self.cache_entry.rw_lock.acquire_read()
@@ -263,7 +302,10 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
         finally:
             self.cache_entry.rw_lock.release_read()
 
-        return results
+        # Calculate total time
+        timing_info["total_ms"] = (time.time() - overall_start) * 1000
+
+        return {"results": results, "timing": timing_info}
 
     def exposed_query_fts(self, project_path: str, query: str, **kwargs) -> Dict:
         """Execute FTS search with caching."""

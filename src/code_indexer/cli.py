@@ -851,6 +851,204 @@ def _display_fts_results(
         console.print()
 
 
+def _display_semantic_results(
+    results: List[Dict[str, Any]],
+    console: Console,
+    quiet: bool = False,
+    timing_info: Optional[Dict[str, Any]] = None,
+    current_display_branch: Optional[str] = None,
+) -> None:
+    """Display semantic search results (shared by standalone and daemon modes).
+
+    This function contains the complete display logic for semantic search results
+    and is used by both:
+    - cli.py query command (standalone mode)
+    - cli_daemon_fast.py (daemon mode)
+
+    Args:
+        results: List of search results with 'score' and 'payload' keys
+        console: Rich console for output
+        quiet: If True, minimal output (score + path + content only)
+        timing_info: Optional timing information for performance display
+        current_display_branch: Optional current git branch name for display
+    """
+    if not results:
+        if not quiet:
+            console.print("❌ No results found", style="yellow")
+            # Display timing summary even when no results
+            if timing_info:
+                _display_query_timing(console, timing_info)
+        return
+
+    if not quiet:
+        console.print(f"\n✅ Found {len(results)} results:")
+        console.print("=" * 80)
+        # Display timing summary
+        if timing_info:
+            _display_query_timing(console, timing_info)
+
+    # Auto-detect current branch if not provided
+    if current_display_branch is None and not quiet:
+        import subprocess
+        try:
+            git_result = subprocess.run(
+                ["git", "symbolic-ref", "--short", "HEAD"],
+                cwd=Path.cwd(),
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            current_display_branch = git_result.stdout.strip() if git_result.returncode == 0 else "unknown"
+        except Exception:
+            current_display_branch = "unknown"
+
+    for i, result in enumerate(results, 1):
+        payload = result["payload"]
+        score = result["score"]
+
+        # File info
+        file_path = payload.get("path", "unknown")
+        language = payload.get("language", "unknown")
+        content = payload.get("content", "")
+
+        # Staleness info (if available)
+        staleness_info = result.get("staleness", {})
+        staleness_indicator = staleness_info.get("staleness_indicator", "")
+
+        # Line number info
+        line_start = payload.get("line_start")
+        line_end = payload.get("line_end")
+
+        # Create file path with line numbers
+        if line_start is not None and line_end is not None:
+            if line_start == line_end:
+                file_path_with_lines = f"{file_path}:{line_start}"
+            else:
+                file_path_with_lines = f"{file_path}:{line_start}-{line_end}"
+        else:
+            file_path_with_lines = file_path
+
+        if quiet:
+            # Quiet mode - minimal output: score, staleness, path with line numbers
+            if staleness_indicator:
+                console.print(
+                    f"{score:.3f} {staleness_indicator} {file_path_with_lines}"
+                )
+            else:
+                console.print(f"{score:.3f} {file_path_with_lines}")
+            if content:
+                # Show full content with line numbers in quiet mode (no truncation)
+                content_lines = content.split("\n")
+
+                # Add line number prefixes if we have line start info
+                if line_start is not None:
+                    numbered_lines = []
+                    for j, line in enumerate(content_lines):
+                        line_num = line_start + j
+                        numbered_lines.append(f"{line_num:3}: {line}")
+                    content_with_line_numbers = "\n".join(numbered_lines)
+                    console.print(content_with_line_numbers)
+                else:
+                    console.print(content)
+            console.print()  # Empty line between results
+        else:
+            # Normal verbose mode
+            file_size = payload.get("file_size", 0)
+            indexed_at = payload.get("indexed_at", "unknown")
+
+            # Git-aware metadata
+            git_available = payload.get("git_available", False)
+            project_id = payload.get("project_id", "unknown")
+
+            # Create header with git info and line numbers
+            header = f"📄 File: {file_path_with_lines}"
+            if language != "unknown":
+                header += f" | 🏷️  Language: {language}"
+            header += f" | 📊 Score: {score:.3f}"
+
+            # Add staleness indicator to header if available
+            if staleness_indicator:
+                header += f" | {staleness_indicator}"
+
+            console.print(f"\n[bold cyan]{header}[/bold cyan]")
+
+            # Enhanced metadata display
+            metadata_info = f"📏 Size: {file_size} bytes | 🕒 Indexed: {indexed_at}"
+
+            # Add staleness details in verbose mode
+            if staleness_info.get("staleness_delta_seconds") is not None:
+                delta_seconds = staleness_info["staleness_delta_seconds"]
+                if delta_seconds > 0:
+                    delta_hours = delta_seconds / 3600
+                    if delta_hours < 1:
+                        delta_minutes = int(delta_seconds / 60)
+                        staleness_detail = f"Local file newer by {delta_minutes}m"
+                    elif delta_hours < 24:
+                        delta_hours_int = int(delta_hours)
+                        staleness_detail = f"Local file newer by {delta_hours_int}h"
+                    else:
+                        delta_days = int(delta_hours / 24)
+                        staleness_detail = f"Local file newer by {delta_days}d"
+                    metadata_info += f" | ⏰ Staleness: {staleness_detail}"
+
+            if git_available:
+                # Use current branch for display (content points are branch-agnostic)
+                git_branch = current_display_branch
+                git_commit = payload.get("git_commit_hash", "unknown")
+                if git_commit != "unknown" and len(git_commit) > 8:
+                    git_commit = git_commit[:8] + "..."
+                metadata_info += f" | 🌿 Branch: {git_branch}"
+                if git_commit != "unknown":
+                    metadata_info += f" | 📦 Commit: {git_commit}"
+
+            metadata_info += f" | 🏗️  Project: {project_id}"
+            console.print(metadata_info)
+
+            # Note: Fixed-size chunking no longer provides semantic metadata
+
+            # Content display with line numbers (full chunk, no truncation)
+            if content:
+                # Create content header with line range
+                if line_start is not None and line_end is not None:
+                    if line_start == line_end:
+                        content_header = f"📖 Content (Line {line_start}):"
+                    else:
+                        content_header = (
+                            f"📖 Content (Lines {line_start}-{line_end}):"
+                        )
+                else:
+                    content_header = "📖 Content:"
+
+                console.print(f"\n{content_header}")
+                console.print("─" * 50)
+
+                # Add line number prefixes to full content (no truncation)
+                content_lines = content.split("\n")
+
+                # Add line number prefixes if we have line start info
+                if line_start is not None:
+                    numbered_lines = []
+                    for j, line in enumerate(content_lines):
+                        line_num = line_start + j
+                        numbered_lines.append(f"{line_num:3}: {line}")
+                    content_with_line_numbers = "\n".join(numbered_lines)
+                else:
+                    content_with_line_numbers = content
+
+                # Syntax highlighting if possible (note: syntax highlighting with line numbers is complex)
+                if language and language != "unknown":
+                    try:
+                        # For now, use plain text with line numbers for better readability
+                        # Rich's Syntax with line_numbers=True uses its own numbering system
+                        console.print(content_with_line_numbers)
+                    except Exception:
+                        console.print(content_with_line_numbers)
+                else:
+                    console.print(content_with_line_numbers)
+
+            console.print("─" * 50)
+
+
 def _execute_semantic_search(
     query: str,
     limit: int,
@@ -5006,164 +5204,14 @@ def query(
                         f"⚠️  Staleness detection unavailable: {e}", style="dim yellow"
                     )
 
-        if not results:
-            if not quiet:
-                console.print("❌ No results found", style="yellow")
-                # Display timing summary even when no results
-                _display_query_timing(console, timing_info)
-            return
-
-        if not quiet:
-            console.print(f"\n✅ Found {len(results)} results:")
-            console.print("=" * 80)
-            # Display timing summary
-            _display_query_timing(console, timing_info)
-
-        for i, result in enumerate(results, 1):
-            payload = result["payload"]
-            score = result["score"]
-
-            # File info
-            file_path = payload.get("path", "unknown")
-            language = payload.get("language", "unknown")
-            content = payload.get("content", "")
-
-            # Staleness info (if available)
-            staleness_info = result.get("staleness", {})
-            staleness_indicator = staleness_info.get("staleness_indicator", "")
-
-            # Line number info
-            line_start = payload.get("line_start")
-            line_end = payload.get("line_end")
-
-            # Create file path with line numbers
-            if line_start is not None and line_end is not None:
-                if line_start == line_end:
-                    file_path_with_lines = f"{file_path}:{line_start}"
-                else:
-                    file_path_with_lines = f"{file_path}:{line_start}-{line_end}"
-            else:
-                file_path_with_lines = file_path
-
-            if quiet:
-                # Quiet mode - minimal output: score, staleness, path with line numbers
-                if staleness_indicator:
-                    console.print(
-                        f"{score:.3f} {staleness_indicator} {file_path_with_lines}"
-                    )
-                else:
-                    console.print(f"{score:.3f} {file_path_with_lines}")
-                if content:
-                    # Show full content with line numbers in quiet mode (no truncation)
-                    content_lines = content.split("\n")
-
-                    # Add line number prefixes if we have line start info
-                    if line_start is not None:
-                        numbered_lines = []
-                        for i, line in enumerate(content_lines):
-                            line_num = line_start + i
-                            numbered_lines.append(f"{line_num:3}: {line}")
-                        content_with_line_numbers = "\n".join(numbered_lines)
-                        console.print(content_with_line_numbers)
-                    else:
-                        console.print(content)
-                console.print()  # Empty line between results
-            else:
-                # Normal verbose mode
-                file_size = payload.get("file_size", 0)
-                indexed_at = payload.get("indexed_at", "unknown")
-
-                # Git-aware metadata
-                git_available = payload.get("git_available", False)
-                project_id = payload.get("project_id", "unknown")
-
-                # Create header with git info and line numbers
-                header = f"📄 File: {file_path_with_lines}"
-                if language != "unknown":
-                    header += f" | 🏷️  Language: {language}"
-                header += f" | 📊 Score: {score:.3f}"
-
-                # Add staleness indicator to header if available
-                if staleness_indicator:
-                    header += f" | {staleness_indicator}"
-
-                console.print(f"\n[bold cyan]{header}[/bold cyan]")
-
-                # Enhanced metadata display
-                metadata_info = f"📏 Size: {file_size} bytes | 🕒 Indexed: {indexed_at}"
-
-                # Add staleness details in verbose mode
-                if staleness_info.get("staleness_delta_seconds") is not None:
-                    delta_seconds = staleness_info["staleness_delta_seconds"]
-                    if delta_seconds > 0:
-                        delta_hours = delta_seconds / 3600
-                        if delta_hours < 1:
-                            delta_minutes = int(delta_seconds / 60)
-                            staleness_detail = f"Local file newer by {delta_minutes}m"
-                        elif delta_hours < 24:
-                            delta_hours_int = int(delta_hours)
-                            staleness_detail = f"Local file newer by {delta_hours_int}h"
-                        else:
-                            delta_days = int(delta_hours / 24)
-                            staleness_detail = f"Local file newer by {delta_days}d"
-                        metadata_info += f" | ⏰ Staleness: {staleness_detail}"
-
-                if git_available:
-                    # Use current branch for display (content points are branch-agnostic)
-                    git_branch = current_display_branch
-                    git_commit = payload.get("git_commit_hash", "unknown")
-                    if git_commit != "unknown" and len(git_commit) > 8:
-                        git_commit = git_commit[:8] + "..."
-                    metadata_info += f" | 🌿 Branch: {git_branch}"
-                    if git_commit != "unknown":
-                        metadata_info += f" | 📦 Commit: {git_commit}"
-
-                metadata_info += f" | 🏗️  Project: {project_id}"
-                console.print(metadata_info)
-
-                # Note: Fixed-size chunking no longer provides semantic metadata
-
-                # Content display with line numbers (full chunk, no truncation)
-                if content:
-                    # Create content header with line range
-                    if line_start is not None and line_end is not None:
-                        if line_start == line_end:
-                            content_header = f"📖 Content (Line {line_start}):"
-                        else:
-                            content_header = (
-                                f"📖 Content (Lines {line_start}-{line_end}):"
-                            )
-                    else:
-                        content_header = "📖 Content:"
-
-                    console.print(f"\n{content_header}")
-                    console.print("─" * 50)
-
-                    # Add line number prefixes to full content (no truncation)
-                    content_lines = content.split("\n")
-
-                    # Add line number prefixes if we have line start info
-                    if line_start is not None:
-                        numbered_lines = []
-                        for i, line in enumerate(content_lines):
-                            line_num = line_start + i
-                            numbered_lines.append(f"{line_num:3}: {line}")
-                        content_with_line_numbers = "\n".join(numbered_lines)
-                    else:
-                        content_with_line_numbers = content
-
-                    # Syntax highlighting if possible (note: syntax highlighting with line numbers is complex)
-                    if language and language != "unknown":
-                        try:
-                            # For now, use plain text with line numbers for better readability
-                            # Rich's Syntax with line_numbers=True uses its own numbering system
-                            console.print(content_with_line_numbers)
-                        except Exception:
-                            console.print(content_with_line_numbers)
-                    else:
-                        console.print(content_with_line_numbers)
-
-                console.print("─" * 50)
+        # Display results using shared display function (DRY principle)
+        _display_semantic_results(
+            results=results,
+            console=console,
+            quiet=quiet,
+            timing_info=timing_info,
+            current_display_branch=current_display_branch,
+        )
 
     except Exception as e:
         console.print(f"❌ Search failed: {e}", style="red")
