@@ -618,6 +618,14 @@ def _index_standalone(force_reindex: bool = False, **kwargs) -> int:
     import click
 
     try:
+        # Filter out daemon-specific kwargs that CLI doesn't understand
+        daemon_only_keys = {'daemon_config', 'force_full'}
+        cli_kwargs = {k: v for k, v in kwargs.items() if k not in daemon_only_keys}
+
+        # Map enable_fts to fts (CLI uses 'fts' parameter)
+        if 'enable_fts' in cli_kwargs:
+            cli_kwargs['fts'] = cli_kwargs.pop('enable_fts')
+
         # Setup context object with mode detection
         project_root = find_project_root(Path.cwd())
         mode_detector = CommandModeDetector(project_root)
@@ -641,9 +649,22 @@ def _index_standalone(force_reindex: bool = False, **kwargs) -> int:
             except Exception:
                 pass  # Config might not exist yet
 
+        # Map force_reindex to clear parameter (CLI uses 'clear' for full reindex)
+        # Note: The index command has both --clear and internal force_reindex
+        # We pass it as-is since cli.index() accepts force_reindex parameter
+        cli_kwargs['clear'] = force_reindex
+        cli_kwargs['reconcile'] = False
+        cli_kwargs['batch_size'] = cli_kwargs.get('batch_size', 50)
+        cli_kwargs['files_count_to_process'] = None
+        cli_kwargs['detect_deletions'] = False
+        cli_kwargs['rebuild_indexes'] = False
+        cli_kwargs['rebuild_index'] = False
+        cli_kwargs['fts'] = cli_kwargs.get('fts', False)
+        cli_kwargs['rebuild_fts_index'] = False
+
         # Call index function directly
         with ctx:
-            cli_index(ctx, force_reindex=force_reindex, **kwargs)
+            cli_index(ctx, **cli_kwargs)
         return 0
     except Exception as e:
         console.print(f"[red]Index failed: {e}[/red]")
@@ -698,20 +719,32 @@ def _index_via_daemon(
         progress_handler = ClientProgressHandler()
         callback = progress_handler.create_progress_callback()
 
+        # Map parameters for daemon
+        # CLI uses force_reindex, but daemon.service.exposed_index expects force_full
+        daemon_kwargs = {
+            'force_full': force_reindex,
+            'enable_fts': kwargs.get('enable_fts', False),
+            'batch_size': kwargs.get('batch_size', 50),
+        }
+
         # Execute indexing with callback
         result = conn.root.exposed_index(
             project_path=str(Path.cwd()),
             callback=callback,
-            force_reindex=force_reindex,
-            **kwargs,
+            **daemon_kwargs,
         )
 
-        # Close connection
+        # Extract result data BEFORE closing connection
+        # RPyC proxies become invalid after connection closes
+        status = result.get("status", "unknown")
+        message = result.get("message", "Indexing completed")
+        stats = result.get("stats", {})
+        files_processed = stats.get("files_processed", "unknown") if stats else "unknown"
+
+        # Close connection AFTER extracting data
         conn.close()
 
         # Display success message
-        stats = result.get("stats", {})
-        files_processed = stats.get("files_processed", "unknown")
         console.print(f"[green]✓ Indexed {files_processed} files[/green]")
         return 0
 
@@ -727,5 +760,174 @@ def _index_via_daemon(
             except Exception:
                 pass
 
-        # Re-raise the error
-        raise
+        console.print(f"[yellow]Failed to index via daemon: {e}[/yellow]")
+        console.print("[yellow]Falling back to standalone mode[/yellow]")
+
+        return _index_standalone(force_reindex=force_reindex, **kwargs)
+
+
+def _watch_standalone(
+    debounce: float = 1.0,
+    batch_size: int = 50,
+    initial_sync: bool = True,
+    enable_fts: bool = False,
+    **kwargs,
+) -> int:
+    """
+    Fallback to standalone watch execution.
+
+    This imports the full CLI and executes watch locally without daemon.
+
+    Args:
+        debounce: Debounce time in seconds
+        batch_size: Batch size for indexing
+        initial_sync: Whether to do initial sync before watching
+        enable_fts: Whether to enable FTS indexing
+        **kwargs: Additional watch parameters
+
+    Returns:
+        Exit code (0 = success)
+    """
+    from .cli import watch as cli_watch
+    from .mode_detection.command_mode_detector import (
+        CommandModeDetector,
+        find_project_root,
+    )
+    import click
+
+    try:
+        # Filter out daemon-specific kwargs that CLI doesn't understand
+        daemon_only_keys = {'daemon_config', 'debounce_seconds'}
+        # Remove daemon-specific keys from kwargs
+        cli_kwargs = {k: v for k, v in kwargs.items() if k not in daemon_only_keys}
+
+        # Setup context object with mode detection
+        project_root = find_project_root(Path.cwd())
+        mode_detector = CommandModeDetector(project_root)
+        mode = mode_detector.detect_mode()
+
+        # Create click context
+        ctx = click.Context(click.Command("watch"))
+        ctx.obj = {
+            "mode": mode,
+            "project_root": project_root,
+            "standalone": True,  # Prevent daemon delegation
+        }
+
+        # Load config manager if in local mode
+        if mode == "local" and project_root:
+            try:
+                from .config import ConfigManager
+
+                config_manager = ConfigManager.create_with_backtrack(project_root)
+                ctx.obj["config_manager"] = config_manager
+            except Exception:
+                pass  # Config might not exist yet
+
+        # Call watch function directly with mapped parameters
+        # CLI watch uses 'fts' parameter, not 'enable_fts'
+        with ctx:
+            cli_watch(
+                ctx,
+                debounce=debounce,
+                batch_size=batch_size,
+                initial_sync=initial_sync,
+                fts=enable_fts,
+            )
+        return 0
+    except Exception as e:
+        console.print(f"[red]Watch failed: {e}[/red]")
+        import traceback
+
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
+        return 1
+
+
+def _watch_via_daemon(
+    debounce: float = 1.0,
+    batch_size: int = 50,
+    initial_sync: bool = True,
+    enable_fts: bool = False,
+    daemon_config: Optional[Dict] = None,
+    **kwargs,
+) -> int:
+    """
+    Delegate watch command to daemon.
+
+    Implements watch mode via daemon RPC:
+    1. Connects to daemon
+    2. Calls exposed_watch_start with parameters
+    3. Daemon handles file watching and indexing
+    4. Returns immediately, watch runs in background
+
+    Args:
+        debounce: Debounce time in seconds for file change detection
+        batch_size: Batch size for indexing operations
+        initial_sync: Whether to perform initial sync before watching
+        enable_fts: Whether to enable FTS indexing
+        daemon_config: Daemon configuration with retry delays
+        **kwargs: Additional watch parameters
+
+    Returns:
+        Exit code (0 = success)
+    """
+    config_path = _find_config_file()
+    if not config_path:
+        console.print("[yellow]No config found, using standalone mode[/yellow]")
+        return _watch_standalone(
+            debounce=debounce,
+            batch_size=batch_size,
+            initial_sync=initial_sync,
+            enable_fts=enable_fts,
+            **kwargs,
+        )
+
+    socket_path = _get_socket_path(config_path)
+
+    # Use default daemon config if not provided
+    if daemon_config is None:
+        from .config import ConfigManager
+
+        config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+        daemon_config = config_manager.get_daemon_config()
+
+    conn = None
+    try:
+        # Connect to daemon
+        conn = _connect_to_daemon(socket_path, daemon_config)
+
+        # Execute watch via daemon
+        result = conn.root.exposed_watch_start(
+            project_path=str(Path.cwd()),
+            debounce_seconds=debounce,
+            batch_size=batch_size,
+            initial_sync=initial_sync,
+            enable_fts=enable_fts,
+        )
+
+        # Close connection
+        conn.close()
+
+        # Display success message
+        console.print("[green]✓ Watch mode started in daemon[/green]")
+        console.print(f"[dim]Status: {result.get('status', 'unknown')}[/dim]")
+        return 0
+
+    except Exception as e:
+        # Close connection on error
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        console.print(f"[yellow]Failed to start watch via daemon: {e}[/yellow]")
+        console.print("[yellow]Falling back to standalone mode[/yellow]")
+
+        return _watch_standalone(
+            debounce=debounce,
+            batch_size=batch_size,
+            initial_sync=initial_sync,
+            enable_fts=enable_fts,
+            **kwargs,
+        )

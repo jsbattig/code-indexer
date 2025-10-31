@@ -201,11 +201,87 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
             from . import cli_daemon_lifecycle
             return cli_daemon_lifecycle.stop_daemon_command()
 
-        elif command == "status":
-            # Status command needs full CLI for Rich table display
-            # Close daemon connection and fallback to full CLI
+        elif command == "index":
+            # Index command with progress callbacks
+            from . import cli_daemon_delegation
+
+            # Parse flags
+            force_reindex = "--clear" in args
+            enable_fts = "--fts" in args
+
+            # Get daemon config from connection
+            # We need to get config for retry delays
+            from .config import ConfigManager
+
+            try:
+                config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+                daemon_config = config_manager.get_daemon_config()
+            except Exception:
+                daemon_config = {"enabled": True, "retry_delays_ms": [100, 500, 1000, 2000]}
+
+            # Close the connection before calling delegation (it will create its own)
             conn.close()
-            raise NotImplementedError("Status requires full CLI for table formatting")
+
+            # Delegate to index via daemon
+            return cli_daemon_delegation._index_via_daemon(
+                force_reindex=force_reindex,
+                enable_fts=enable_fts,
+                daemon_config=daemon_config,
+            )
+
+        elif command == "watch":
+            # Watch command delegation
+            from . import cli_daemon_delegation
+
+            # Parse arguments
+            debounce = 1.0
+            batch_size = 50
+            initial_sync = False
+            enable_fts = False
+
+            i = 0
+            while i < len(args):
+                if args[i] == "--debounce" and i + 1 < len(args):
+                    debounce = float(args[i + 1])
+                    i += 2
+                elif args[i] == "--batch-size" and i + 1 < len(args):
+                    batch_size = int(args[i + 1])
+                    i += 2
+                elif args[i] == "--initial-sync":
+                    initial_sync = True
+                    i += 1
+                elif args[i] == "--fts":
+                    enable_fts = True
+                    i += 1
+                else:
+                    i += 1
+
+            # Get daemon config
+            from .config import ConfigManager
+
+            try:
+                config_manager = ConfigManager.create_with_backtrack(Path.cwd())
+                daemon_config = config_manager.get_daemon_config()
+            except Exception:
+                daemon_config = {"enabled": True, "retry_delays_ms": [100, 500, 1000, 2000]}
+
+            # Close the connection before calling delegation (it will create its own)
+            conn.close()
+
+            # Delegate to watch via daemon
+            return cli_daemon_delegation._watch_via_daemon(
+                debounce=debounce,
+                batch_size=batch_size,
+                initial_sync=initial_sync,
+                enable_fts=enable_fts,
+                daemon_config=daemon_config,
+            )
+
+        elif command == "status":
+            # Status command needs full CLI (Rich table formatting)
+            # Don't delegate via fast path - use full CLI for better UX
+            conn.close()
+            raise NotImplementedError(f"Command '{command}' needs full CLI for rich output")
 
         else:
             # Unsupported command in fast path

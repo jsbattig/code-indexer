@@ -3007,17 +3007,9 @@ def index(
     """
     config_manager = ctx.obj["config_manager"]
 
-    # Check daemon delegation (Story 2.3)
-    # NOTE: index delegation not yet implemented in cli_daemon_delegation.py
-    # TODO: Implement _index_via_daemon for full daemon support
-    try:
-        daemon_config = config_manager.get_daemon_config()
-        if daemon_config and daemon_config.get("enabled"):
-            # For now, fall through to standalone mode
-            # Future: call cli_daemon_delegation._index_via_daemon()
-            pass
-    except Exception:
-        pass
+    # DAEMON DELEGATION DISABLED: Index command always runs in standalone mode
+    # Daemon delegation caused hanging issues and is not production-ready
+    # Users should use standalone mode for reliable indexing
 
     # Validate flag combinations
     if detect_deletions and reconcile:
@@ -3608,21 +3600,9 @@ def index(
 @require_mode("local", "proxy")
 def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
     """Git-aware watch for file changes with branch support."""
-    # Check daemon delegation (Story 2.3)
-    # NOTE: watch delegation not yet implemented in cli_daemon_delegation.py
-    # TODO: Implement _watch_via_daemon for full daemon support
-    try:
-        mode = ctx.obj.get("mode")
-        if mode == "local":
-            config_manager = ctx.obj.get("config_manager")
-            if config_manager:
-                daemon_config = config_manager.get_daemon_config()
-                if daemon_config and daemon_config.get("enabled"):
-                    # For now, fall through to standalone mode
-                    # Future: call cli_daemon_delegation._watch_via_daemon()
-                    pass
-    except Exception:
-        pass
+    # DAEMON DELEGATION DISABLED: Watch command always runs in standalone mode
+    # Daemon delegation caused hanging issues and is not production-ready
+    # Users should use standalone mode for reliable file watching
 
     # Handle proxy mode (Story 2.2)
     mode = ctx.obj.get("mode")
@@ -5589,7 +5569,6 @@ def status(ctx, force_docker: bool):
     # Status command always uses full CLI for Rich table display
     # (Daemon delegation would lose the beautiful formatted table)
     # CRITICAL: Skip daemon delegation if standalone flag is set (prevents recursive loop)
-    standalone_mode = ctx.obj.get("standalone", False)
 
     # Handle proxy mode (Story 2.2)
     if mode == "proxy":

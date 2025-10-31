@@ -599,3 +599,193 @@ class TestStorageCommandRouting:
 
                     assert result == 0
                     assert mock_standalone.call_count == 1
+
+
+class TestIndexDelegation:
+    """Test index command delegation to daemon."""
+
+    def test_index_delegates_to_daemon_when_enabled(self):
+        """Test index command delegates to daemon with progress callbacks."""
+        from code_indexer.cli_daemon_delegation import _index_via_daemon
+
+        daemon_config = {"enabled": True, "retry_delays_ms": [100, 500, 1000, 2000]}
+
+        with patch("code_indexer.cli_daemon_delegation._find_config_file") as mock_find:
+            mock_find.return_value = Path("/project/.code-indexer/config.json")
+
+            with patch(
+                "code_indexer.cli_daemon_delegation._connect_to_daemon"
+            ) as mock_connect:
+                mock_conn = Mock()
+                mock_conn.root.exposed_index.return_value = {
+                    "stats": {"files_processed": 42}
+                }
+                mock_connect.return_value = mock_conn
+
+                with patch(
+                    "code_indexer.cli_progress_handler.ClientProgressHandler"
+                ) as mock_progress:
+                    mock_handler = Mock()
+                    mock_callback = Mock()
+                    mock_handler.create_progress_callback.return_value = mock_callback
+                    mock_progress.return_value = mock_handler
+
+                    with patch("rich.console.Console.print"):
+                        result = _index_via_daemon(
+                            force_reindex=False, daemon_config=daemon_config
+                        )
+
+                        assert result == 0
+                        mock_conn.root.exposed_index.assert_called_once()
+                        # Verify callback was passed to daemon
+                        call_kwargs = mock_conn.root.exposed_index.call_args[1]
+                        assert "callback" in call_kwargs
+
+    def test_index_passes_force_reindex_flag(self):
+        """Test index delegation passes force_reindex flag to daemon."""
+        from code_indexer.cli_daemon_delegation import _index_via_daemon
+
+        daemon_config = {"enabled": True, "retry_delays_ms": [100, 500, 1000, 2000]}
+
+        with patch("code_indexer.cli_daemon_delegation._find_config_file") as mock_find:
+            mock_find.return_value = Path("/project/.code-indexer/config.json")
+
+            with patch(
+                "code_indexer.cli_daemon_delegation._connect_to_daemon"
+            ) as mock_connect:
+                mock_conn = Mock()
+                mock_conn.root.exposed_index.return_value = {
+                    "stats": {"files_processed": 42}
+                }
+                mock_connect.return_value = mock_conn
+
+                with patch("code_indexer.cli_progress_handler.ClientProgressHandler"):
+                    with patch("rich.console.Console.print"):
+                        _index_via_daemon(
+                            force_reindex=True, daemon_config=daemon_config
+                        )
+
+                        call_kwargs = mock_conn.root.exposed_index.call_args[1]
+                        assert call_kwargs["force_reindex"] is True
+
+    def test_index_falls_back_to_standalone_when_daemon_unavailable(self):
+        """Test index falls back to standalone when daemon unavailable."""
+        from code_indexer.cli_daemon_delegation import _index_via_daemon
+
+        daemon_config = {"enabled": True, "retry_delays_ms": [100, 500, 1000, 2000]}
+
+        with patch("code_indexer.cli_daemon_delegation._find_config_file") as mock_find:
+            mock_find.return_value = Path("/project/.code-indexer/config.json")
+
+            with patch(
+                "code_indexer.cli_daemon_delegation._connect_to_daemon"
+            ) as mock_connect:
+                mock_connect.side_effect = ConnectionRefusedError()
+
+                with patch(
+                    "code_indexer.cli_daemon_delegation._index_standalone"
+                ) as mock_standalone:
+                    with patch("rich.console.Console.print"):
+                        mock_standalone.return_value = 0
+
+                        result = _index_via_daemon(
+                            force_reindex=False, daemon_config=daemon_config
+                        )
+
+                        assert result == 0
+                        assert mock_standalone.call_count == 1
+
+
+class TestWatchDelegation:
+    """Test watch command delegation to daemon."""
+
+    def test_watch_delegates_to_daemon_when_enabled(self):
+        """Test watch command delegates to daemon with proper parameters."""
+        from code_indexer.cli_daemon_delegation import _watch_via_daemon
+
+        daemon_config = {"enabled": True, "retry_delays_ms": [100, 500, 1000, 2000]}
+
+        with patch("code_indexer.cli_daemon_delegation._find_config_file") as mock_find:
+            mock_find.return_value = Path("/project/.code-indexer/config.json")
+
+            with patch(
+                "code_indexer.cli_daemon_delegation._connect_to_daemon"
+            ) as mock_connect:
+                mock_conn = Mock()
+                mock_conn.root.exposed_watch_start.return_value = {"status": "watching"}
+                mock_connect.return_value = mock_conn
+
+                with patch("rich.console.Console.print"):
+                    result = _watch_via_daemon(
+                        debounce=1.0,
+                        batch_size=50,
+                        initial_sync=True,
+                        enable_fts=False,
+                        daemon_config=daemon_config,
+                    )
+
+                    assert result == 0
+                    mock_conn.root.exposed_watch_start.assert_called_once()
+                    call_kwargs = mock_conn.root.exposed_watch_start.call_args[1]
+                    assert call_kwargs["debounce_seconds"] == 1.0
+                    assert call_kwargs["batch_size"] == 50
+                    assert call_kwargs["initial_sync"] is True
+
+    def test_watch_passes_fts_flag(self):
+        """Test watch delegation passes enable_fts flag to daemon."""
+        from code_indexer.cli_daemon_delegation import _watch_via_daemon
+
+        daemon_config = {"enabled": True, "retry_delays_ms": [100, 500, 1000, 2000]}
+
+        with patch("code_indexer.cli_daemon_delegation._find_config_file") as mock_find:
+            mock_find.return_value = Path("/project/.code-indexer/config.json")
+
+            with patch(
+                "code_indexer.cli_daemon_delegation._connect_to_daemon"
+            ) as mock_connect:
+                mock_conn = Mock()
+                mock_conn.root.exposed_watch_start.return_value = {"status": "watching"}
+                mock_connect.return_value = mock_conn
+
+                with patch("rich.console.Console.print"):
+                    _watch_via_daemon(
+                        debounce=1.0,
+                        batch_size=50,
+                        initial_sync=False,
+                        enable_fts=True,
+                        daemon_config=daemon_config,
+                    )
+
+                    call_kwargs = mock_conn.root.exposed_watch_start.call_args[1]
+                    assert call_kwargs["enable_fts"] is True
+
+    def test_watch_falls_back_to_standalone_when_daemon_unavailable(self):
+        """Test watch falls back to standalone when daemon unavailable."""
+        from code_indexer.cli_daemon_delegation import _watch_via_daemon
+
+        daemon_config = {"enabled": True, "retry_delays_ms": [100, 500, 1000, 2000]}
+
+        with patch("code_indexer.cli_daemon_delegation._find_config_file") as mock_find:
+            mock_find.return_value = Path("/project/.code-indexer/config.json")
+
+            with patch(
+                "code_indexer.cli_daemon_delegation._connect_to_daemon"
+            ) as mock_connect:
+                mock_connect.side_effect = ConnectionRefusedError()
+
+                with patch(
+                    "code_indexer.cli_daemon_delegation._watch_standalone"
+                ) as mock_standalone:
+                    with patch("rich.console.Console.print"):
+                        mock_standalone.return_value = 0
+
+                        result = _watch_via_daemon(
+                            debounce=1.0,
+                            batch_size=50,
+                            initial_sync=False,
+                            enable_fts=False,
+                            daemon_config=daemon_config,
+                        )
+
+                        assert result == 0
+                        assert mock_standalone.call_count == 1
