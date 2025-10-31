@@ -37,7 +37,7 @@ def quick_daemon_check() -> Tuple[bool, Optional[Path]]:
                 # Use stdlib json for fast parsing
                 with open(config_path) as f:
                     config = json.load(f)
-                    daemon_config = config.get("daemon", {})
+                    daemon_config = config.get("daemon") or {}
                     if daemon_config.get("enabled"):
                         return True, config_path
             except (json.JSONDecodeError, IOError, KeyError):
