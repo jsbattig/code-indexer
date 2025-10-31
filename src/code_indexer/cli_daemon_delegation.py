@@ -649,10 +649,8 @@ def _index_standalone(force_reindex: bool = False, **kwargs) -> int:
         cli_kwargs['fts'] = cli_kwargs.get('fts', False)
         cli_kwargs['rebuild_fts_index'] = False
 
-        # Call index function directly
-        with ctx:
-            cli_index(ctx, **cli_kwargs)
-        return 0
+        # Invoke index command properly via Click context
+        return ctx.invoke(cli_index, **cli_kwargs)
     except Exception as e:
         console.print(f"[red]Index failed: {e}[/red]")
         import traceback
@@ -697,26 +695,9 @@ def _index_via_daemon(
         # Connect to daemon
         conn = _connect_to_daemon(socket_path, daemon_config)
 
-        # CRITICAL: Create progress handler for Rich progress bar display
-        from .progress.multi_threaded_display import MultiThreadedProgressManager
-        from .progress.rich_live_manager import RichLiveManager
-
-        # Initialize progress manager and Rich Live display (IDENTICAL to standalone)
-        progress_manager = MultiThreadedProgressManager()
-        rich_live_manager = RichLiveManager(progress_manager)
-
-        # Start Rich Live display before indexing
-        rich_live_manager.start_display()
-
-        # Create progress callback that updates Rich progress bar
-        def progress_callback(current: int, total: int, file_path: Path, info: str = "") -> None:
-            """RPyC-compatible progress callback for real-time updates."""
-            progress_manager.update_progress(
-                current_file=current,
-                total_files=total,
-                current_file_path=str(file_path),
-                info=info,
-            )
+        # TODO: Index delegation with progress callbacks not yet implemented
+        # For now, raise to fall back to standalone mode
+        raise NotImplementedError("Index delegation with progress callbacks pending")
 
         # Map parameters for daemon
         daemon_kwargs = {
