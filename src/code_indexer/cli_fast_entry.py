@@ -108,6 +108,18 @@ def main() -> int:
     Returns:
         Exit code (0 for success, non-zero for error)
     """
+    # Check for help flags FIRST (before daemon delegation)
+    if "--help" in sys.argv or "-h" in sys.argv:
+        # Always use full CLI for help (has all Click help text)
+        from .cli import cli
+        try:
+            cli(obj={})
+            return 0
+        except KeyboardInterrupt:
+            from rich.console import Console
+            Console().print("\n❌ Interrupted by user", style="red")
+            return 1
+
     # Quick check for daemon mode (5ms, no heavy imports)
     is_daemon_mode, config_path = quick_daemon_check()
 

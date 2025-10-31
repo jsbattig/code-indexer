@@ -51,10 +51,16 @@ class CIDXDaemonService(Service):
         self.watch_thread: Optional[threading.Thread] = None
         self.watch_project_path: Optional[str] = None
 
-        # Indexing state
+        # Indexing state (background thread + progress tracking)
         self.indexing_thread: Optional[threading.Thread] = None
         self.indexing_project_path: Optional[str] = None
         self.indexing_lock_internal: threading.Lock = threading.Lock()
+
+        # Indexing progress state (for polling)
+        self.current_files_processed: int = 0
+        self.total_files: int = 0
+        self.indexing_error: Optional[str] = None
+        self.indexing_stats: Optional[Dict[str, Any]] = None
 
         # Configuration (TODO: Load from config file)
         self.config = type('Config', (), {'auto_shutdown_on_idle': False})()
@@ -71,8 +77,8 @@ class CIDXDaemonService(Service):
 
     def exposed_query(
         self, project_path: str, query: str, limit: int = 10, **kwargs
-    ) -> List[Dict[str, Any]]:
-        """Execute semantic search with caching.
+    ) -> Dict[str, Any]:
+        """Execute semantic search with caching and timing information.
 
         Args:
             project_path: Path to project root
@@ -81,7 +87,7 @@ class CIDXDaemonService(Service):
             **kwargs: Additional search parameters
 
         Returns:
-            List of search results with scores
+            Dictionary with 'results' and 'timing' keys
         """
         logger.debug(f"exposed_query: project={project_path}, query={query[:50]}...")
 
@@ -96,9 +102,12 @@ class CIDXDaemonService(Service):
                 self.cache_entry.update_access()
 
             # Execute semantic search (protected by cache_lock)
-            results = self._execute_semantic_search(project_path, query, limit, **kwargs)
+            results, timing_info = self._execute_semantic_search(project_path, query, limit, **kwargs)
 
-        return results
+        return {
+            "results": results,
+            "timing": timing_info,
+        }
 
     def exposed_query_fts(
         self, project_path: str, query: str, **kwargs
@@ -155,77 +164,123 @@ class CIDXDaemonService(Service):
         }
 
     # =============================================================================
-    # Indexing (1 method)
+    # Indexing (2 methods)
     # =============================================================================
 
     def exposed_index(
         self, project_path: str, callback: Optional[Any] = None, **kwargs
     ) -> Dict[str, Any]:
-        """Perform indexing with cache invalidation in background thread.
+        """Start BACKGROUND indexing with progress polling (non-blocking).
 
-        This method starts indexing in a background thread and returns immediately.
-        The indexing continues asynchronously while queries can still be served.
+        CRITICAL ARCHITECTURE FIX: This method now starts indexing in a
+        background thread and returns immediately. The daemon remains
+        responsive to handle queries and status checks during indexing.
+
+        Client polls for progress using exposed_get_index_progress().
 
         Args:
             project_path: Path to project root
-            callback: Optional progress callback
-            **kwargs: Additional indexing parameters
+            callback: IGNORED (progress polling used instead)
+            **kwargs: Additional indexing parameters (force_full, enable_fts, batch_size)
 
         Returns:
-            Indexing status (started, already_running, or error)
+            Indexing start status with job ID for progress polling
         """
-        logger.info(f"exposed_index: project={project_path}")
+        logger.info(f"exposed_index: project={project_path} [BACKGROUND MODE]")
 
-        # FIX Race Condition #2: Single lock scope for entire operation
-        # This prevents TOCTOU vulnerability where multiple threads could start indexing
-        with self.cache_lock:
-            with self.indexing_lock_internal:
-                # Check if indexing is already running
-                if self.indexing_thread and self.indexing_thread.is_alive():
-                    return {
-                        "status": "already_running",
-                        "message": "Indexing already in progress",
-                        "project_path": self.indexing_project_path,
-                    }
+        # Check if indexing is already running (prevent concurrent indexing)
+        with self.indexing_lock_internal:
+            if self.indexing_thread and self.indexing_thread.is_alive():
+                return {
+                    "status": "already_running",
+                    "message": "Indexing already in progress",
+                    "project_path": self.indexing_project_path,
+                }
+            # Mark as running
+            self.indexing_project_path = project_path
 
-                # Invalidate cache BEFORE starting indexing
-                if self.cache_entry:
-                    logger.info("Invalidating cache before indexing")
-                    self.cache_entry = None
+            # Reset progress state
+            self.current_files_processed = 0
+            self.total_files = 0
+            self.indexing_error = None
+            self.indexing_stats = None
 
-                # Start indexing in background thread
-                self.indexing_project_path = project_path
-                self.indexing_thread = threading.Thread(
-                    target=self._run_indexing_background,
-                    args=(project_path, callback, kwargs),
-                    daemon=True,
-                    name="IndexingThread"
-                )
-                self.indexing_thread.start()
+            # Start background thread
+            self.indexing_thread = threading.Thread(
+                target=self._run_indexing_background,
+                args=(project_path, kwargs),
+                daemon=True
+            )
+            self.indexing_thread.start()
 
+        # Return immediately - client polls for progress
         return {
             "status": "started",
             "message": "Indexing started in background",
             "project_path": project_path,
         }
 
-    def _run_indexing_background(
-        self, project_path: str, callback: Optional[Any], kwargs: Dict[str, Any]
-    ) -> None:
-        """Run indexing in background thread.
+    def exposed_get_index_progress(self) -> Dict[str, Any]:
+        """Get current indexing progress (for polling).
 
-        This method executes the actual indexing work and catches any exceptions
-        to prevent thread crashes.
+        Returns:
+            Progress dictionary with running status, files processed, total files,
+            completion stats, or error information
+        """
+        with self.indexing_lock_internal:
+            is_running = self.indexing_thread is not None and self.indexing_thread.is_alive()
+
+            if not is_running and self.indexing_stats:
+                # Indexing completed
+                return {
+                    "running": False,
+                    "status": "completed",
+                    "stats": self.indexing_stats,
+                }
+            elif not is_running and self.indexing_error:
+                # Indexing failed
+                return {
+                    "running": False,
+                    "status": "error",
+                    "message": self.indexing_error,
+                }
+            elif is_running:
+                # Indexing in progress
+                return {
+                    "running": True,
+                    "status": "indexing",
+                    "files_processed": self.current_files_processed,
+                    "total_files": self.total_files,
+                }
+            else:
+                # No indexing job
+                return {
+                    "running": False,
+                    "status": "idle",
+                }
+
+    def _run_indexing_background(
+        self, project_path: str, kwargs: Dict[str, Any]
+    ) -> None:
+        """Run indexing in background thread with progress tracking.
+
+        This method executes the actual indexing work and updates progress
+        state for polling. Catches exceptions to prevent thread crashes.
 
         Args:
             project_path: Path to project root
-            callback: Optional progress callback
             kwargs: Additional indexing parameters
         """
         try:
-            logger.info(f"=== BACKGROUND INDEXING THREAD STARTED ===")
+            logger.info("=== BACKGROUND INDEXING THREAD STARTED ===")
             logger.info(f"Project path: {project_path}")
             logger.info(f"Kwargs: {kwargs}")
+
+            # Invalidate cache BEFORE indexing
+            with self.cache_lock:
+                if self.cache_entry:
+                    logger.info("Invalidating cache before indexing")
+                    self.cache_entry = None
 
             from code_indexer.services.smart_indexer import SmartIndexer
             from code_indexer.config import ConfigManager
@@ -258,6 +313,14 @@ class CIDXDaemonService(Service):
             )
             logger.info("Step 5 Complete: SmartIndexer created")
 
+            # Create progress callback to update state
+            def progress_callback(current: int, total: int, file_path: Path, info: str = ""):
+                """Update progress state for polling."""
+                with self.indexing_lock_internal:
+                    self.current_files_processed = current
+                    self.total_files = total
+                logger.debug(f"Progress: {current}/{total} - {file_path.name}")
+
             # Execute indexing using smart_index method
             logger.info("Step 6: Calling smart_index()...")
             logger.info(f"  force_full={kwargs.get('force_full', False)}")
@@ -267,13 +330,23 @@ class CIDXDaemonService(Service):
             stats = indexer.smart_index(
                 force_full=kwargs.get('force_full', False),
                 batch_size=kwargs.get('batch_size', 50),
-                progress_callback=callback,
+                progress_callback=progress_callback,
                 quiet=True,
                 enable_fts=kwargs.get('enable_fts', False),
             )
 
-            logger.info(f"Step 6 Complete: Indexing finished")
+            logger.info("Step 6 Complete: Indexing finished")
             logger.info(f"=== INDEXING STATS: {stats} ===")
+
+            # Store completion stats
+            with self.indexing_lock_internal:
+                self.indexing_stats = {
+                    "files_processed": stats.files_processed,
+                    "chunks_created": stats.chunks_created,
+                    "failed_files": stats.failed_files,
+                    "duration_seconds": stats.duration,
+                    "cancelled": getattr(stats, "cancelled", False),
+                }
 
             # Invalidate cache after indexing completes so next query loads fresh data
             with self.cache_lock:
@@ -284,10 +357,14 @@ class CIDXDaemonService(Service):
             logger.info("=== BACKGROUND INDEXING THREAD COMPLETED SUCCESSFULLY ===")
 
         except Exception as e:
-            logger.error(f"=== BACKGROUND INDEXING FAILED ===")
+            logger.error("=== BACKGROUND INDEXING FAILED ===")
             logger.error(f"Error: {e}")
             import traceback
             logger.error(traceback.format_exc())
+
+            # Store error message
+            with self.indexing_lock_internal:
+                self.indexing_error = str(e)
 
         finally:
             # Clear indexing state
@@ -825,8 +902,8 @@ class CIDXDaemonService(Service):
 
     def _execute_semantic_search(
         self, project_path: str, query: str, limit: int = 10, **kwargs
-    ) -> List[Dict[str, Any]]:
-        """Execute REAL semantic search using cached indexes.
+    ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """Execute REAL semantic search using cached indexes with timing.
 
         Args:
             project_path: Path to project root
@@ -835,9 +912,10 @@ class CIDXDaemonService(Service):
             **kwargs: Additional search parameters
 
         Returns:
-            List of search results
+            Tuple of (results list, timing info dict)
         """
         try:
+            import time
             from code_indexer.config import ConfigManager
             from code_indexer.backends.backend_factory import BackendFactory
             from code_indexer.services.embedding_factory import EmbeddingProviderFactory
@@ -858,7 +936,7 @@ class CIDXDaemonService(Service):
             filter_conditions = kwargs.get('filter_conditions')
             score_threshold = kwargs.get('score_threshold')
 
-            # Execute search using FilesystemVectorStore.search()
+            # Execute search using FilesystemVectorStore.search() with timing
             # This uses HNSW index for fast approximate nearest neighbor search
             results_raw = vector_store.search(
                 query=query,
@@ -867,20 +945,24 @@ class CIDXDaemonService(Service):
                 limit=limit,
                 score_threshold=score_threshold,
                 filter_conditions=filter_conditions,
-                return_timing=False,
+                return_timing=True,  # CRITICAL FIX: Request timing information
             )
 
-            # Ensure return type is list of dicts (not tuple with timing)
-            results: List[Dict[str, Any]] = results_raw if isinstance(results_raw, list) else []
+            # Parse return value (tuple when return_timing=True)
+            if isinstance(results_raw, tuple):
+                results, timing_info = results_raw
+            else:
+                results = results_raw
+                timing_info = {}
 
             logger.info(f"Semantic search returned {len(results)} results")
-            return results
+            return results, timing_info
 
         except Exception as e:
             logger.error(f"Semantic search failed: {e}")
             import traceback
             logger.error(traceback.format_exc())
-            return []
+            return [], {}
 
     def _execute_fts_search(
         self, project_path: str, query: str, **kwargs

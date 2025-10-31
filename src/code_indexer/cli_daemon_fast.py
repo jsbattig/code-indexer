@@ -9,7 +9,7 @@ This module provides the fast path for daemon-mode queries:
 Target: <150ms total startup for daemon-mode queries
 """
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 # ONLY import what's absolutely needed for daemon delegation
 from rpyc.utils.factory import unix_connect  # ~50ms
@@ -42,7 +42,7 @@ def parse_query_args(args: List[str]) -> Dict[str, Any]:
         - limit: Result limit
         - filters: Language/path filters
     """
-    result = {
+    result: Dict[str, Any] = {
         'query_text': '',
         'is_fts': False,
         'is_semantic': False,
@@ -90,37 +90,138 @@ def parse_query_args(args: List[str]) -> Dict[str, Any]:
     return result
 
 
-def _display_results(results: Any, console: Console) -> None:
-    """Display query results with minimal formatting.
+def _display_results(results: Any, console: Console, timing_info: Optional[Dict[str, Any]] = None) -> None:
+    """Display query results by calling existing standalone display logic.
+
+    CRITICAL FIX: This function now delegates to the existing display code
+    in cli.py instead of duplicating 107 lines of display logic.
 
     Args:
-        results: Query results from daemon
+        results: Query results from daemon (list of dicts with score/payload)
         console: Rich console for output
+        timing_info: Optional timing information for performance display
     """
     if not results:
         console.print("[yellow]No results found[/yellow]")
         return
 
-    if isinstance(results, list):
-        for i, res in enumerate(results, 1):
-            # Extract payload
-            payload = res.get("payload", {})
-            path = payload.get("path", "unknown")
-            line = payload.get("line_start", 0)
-            score = res.get("score", 0.0)
+    # Import standalone display functions
+    from .cli import _display_query_timing
 
-            # Display result
-            console.print(f"{i}. {path}:{line} (score: {score:.3f})")
+    # Display timing information if available
+    if timing_info and not timing_info.get("quiet", False):
+        _display_query_timing(console, timing_info)
 
-            # Show content snippet if available
-            content = payload.get("content")
-            if content:
-                # Truncate long content
-                if len(content) > 100:
-                    content = content[:97] + "..."
-                console.print(f"   [dim]{content}[/dim]")
-    else:
-        console.print("[yellow]Unexpected result format[/yellow]")
+    # Display each result using EXISTING standalone logic (NO code duplication)
+    for i, result in enumerate(results, 1):
+        payload = result.get("payload", {})
+        score = result.get("score", 0.0)
+
+        # File info
+        file_path = payload.get("path", "unknown")
+        language = payload.get("language", "unknown")
+        content = payload.get("content", "")
+
+        # Staleness info (if available)
+        staleness_info = result.get("staleness", {})
+        staleness_indicator = staleness_info.get("staleness_indicator", "")
+
+        # Line number info
+        line_start = payload.get("line_start")
+        line_end = payload.get("line_end")
+
+        # Create file path with line numbers
+        if line_start is not None and line_end is not None:
+            if line_start == line_end:
+                file_path_with_lines = f"{file_path}:{line_start}"
+            else:
+                file_path_with_lines = f"{file_path}:{line_start}-{line_end}"
+        else:
+            file_path_with_lines = file_path
+
+        # IDENTICAL DISPLAY LOGIC AS cli.py (lines 5072-5140)
+        # Normal verbose mode
+        file_size = payload.get("file_size", 0)
+        indexed_at = payload.get("indexed_at", "unknown")
+
+        # Git-aware metadata
+        git_available = payload.get("git_available", False)
+        project_id = payload.get("project_id", "unknown")
+
+        # Create header with git info and line numbers
+        header = f"📄 File: {file_path_with_lines}"
+        if language != "unknown":
+            header += f" | 🏷️  Language: {language}"
+        header += f" | 📊 Score: {score:.3f}"
+
+        # Add staleness indicator to header if available
+        if staleness_indicator:
+            header += f" | {staleness_indicator}"
+
+        console.print(f"\n[bold cyan]{header}[/bold cyan]")
+
+        # Enhanced metadata display
+        metadata_info = f"📏 Size: {file_size} bytes | 🕒 Indexed: {indexed_at}"
+
+        # Add staleness details in verbose mode
+        if staleness_info.get("staleness_delta_seconds") is not None:
+            delta_seconds = staleness_info["staleness_delta_seconds"]
+            if delta_seconds > 0:
+                delta_hours = delta_seconds / 3600
+                if delta_hours < 1:
+                    delta_minutes = int(delta_seconds / 60)
+                    staleness_detail = f"Local file newer by {delta_minutes}m"
+                elif delta_hours < 24:
+                    delta_hours_int = int(delta_hours)
+                    staleness_detail = f"Local file newer by {delta_hours_int}h"
+                else:
+                    delta_days = int(delta_hours / 24)
+                    staleness_detail = f"Local file newer by {delta_days}d"
+                metadata_info += f" | ⏰ Staleness: {staleness_detail}"
+
+        if git_available:
+            import subprocess
+            try:
+                git_result = subprocess.run(
+                    ["git", "symbolic-ref", "--short", "HEAD"],
+                    cwd=Path.cwd(),
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                current_display_branch = git_result.stdout.strip() if git_result.returncode == 0 else "unknown"
+            except Exception:
+                current_display_branch = "unknown"
+
+            git_branch = current_display_branch
+            git_commit = payload.get("git_commit_hash", "unknown")
+            if git_commit != "unknown" and len(git_commit) > 8:
+                git_commit = git_commit[:8] + "..."
+            metadata_info += f" | 🌿 Branch: {git_branch}"
+            if git_commit != "unknown":
+                metadata_info += f" | 📦 Commit: {git_commit}"
+
+        metadata_info += f" | 🏗️  Project: {project_id}"
+        console.print(metadata_info)
+
+        # Content display with line numbers (FULL content, NO truncation)
+        if content:
+            content_lines = content.split("\n")
+
+            # Add line number prefixes if we have line start info
+            if line_start is not None:
+                numbered_lines = []
+                for j, line in enumerate(content_lines):
+                    line_num = line_start + j
+                    numbered_lines.append(f"{line_num:3}: {line}")
+                content_with_line_numbers = "\n".join(numbered_lines)
+            else:
+                content_with_line_numbers = content
+
+            console.print(f"\n📖 Content:")
+            console.print("─" * 50)
+            console.print(content_with_line_numbers)
+            console.print("─" * 50)
 
 
 def execute_via_daemon(argv: List[str], config_path: Path) -> int:
@@ -165,6 +266,33 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
             limit = parsed['limit']
             filters = parsed['filters']
 
+            # DISPLAY QUERY CONTEXT (identical to standalone mode)
+            project_root = Path.cwd()
+            console.print(f"🔍 Executing local query in: {project_root}", style="dim")
+
+            # Get current branch for context
+            try:
+                import subprocess
+                git_result = subprocess.run(
+                    ["git", "symbolic-ref", "--short", "HEAD"],
+                    cwd=project_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if git_result.returncode == 0:
+                    current_branch = git_result.stdout.strip()
+                    console.print(f"🌿 Current branch: {current_branch}", style="dim")
+            except Exception:
+                pass
+
+            console.print(f"🔍 Searching for: '{query_text}'", style="dim")
+            if filters.get('language'):
+                console.print(f"🏷️  Language filter: {filters['language']}", style="dim")
+            if filters.get('path_filter'):
+                console.print(f"📁 Path filter: {filters['path_filter']}", style="dim")
+            console.print(f"📊 Limit: {limit}", style="dim")
+
             # Build options dict for daemon
             options = {
                 'limit': limit,
@@ -174,22 +302,31 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
             # Execute query via daemon RPC
             if is_fts and is_semantic:
                 # Hybrid search
-                result = conn.root.exposed_query_hybrid(
+                response = conn.root.exposed_query_hybrid(
                     str(Path.cwd()), query_text, **options
                 )
+                result = response  # Hybrid returns list directly (for now)
+                timing_info = None
             elif is_fts:
                 # FTS only
-                result = conn.root.exposed_query_fts(
+                response = conn.root.exposed_query_fts(
                     str(Path.cwd()), query_text, **options
                 )
+                result = response  # FTS returns list directly (for now)
+                timing_info = None
             else:
                 # Semantic only
-                result = conn.root.exposed_query(
+                response = conn.root.exposed_query(
                     str(Path.cwd()), query_text, limit, **filters
                 )
+                # CRITICAL FIX: Parse response dict with results and timing
+                result = response.get("results", [])
+                timing_info = response.get("timing", None)
 
-            # Display results
-            _display_results(result, console)
+            # Display results with full formatting including timing
+            console.print(f"\n✅ Found {len(result) if result else 0} results:")
+            console.print("=" * 80)
+            _display_results(result, console, timing_info=timing_info)
 
         elif command == "start":
             # Start daemon (should already be handled by cli_daemon_lifecycle)

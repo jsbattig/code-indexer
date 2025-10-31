@@ -147,14 +147,17 @@ def _start_daemon(config_path: Path) -> None:
 
 def _display_results(results, query_time: float = 0) -> None:
     """
-    Display query results to console.
+    Display query results using standalone display logic for UX parity.
+
+    This delegates to cli_daemon_fast._display_results which uses the FULL
+    standalone display logic (no truncation, full metadata).
 
     Args:
         results: Query results (list or dict with "results" key)
         query_time: Query execution time in seconds
     """
-    if query_time > 0:
-        console.print(f"[green]✓[/green] Query completed in {query_time:.3f}s")
+    # Import full display function from daemon fast path
+    from .cli_daemon_fast import _display_results as fast_display_results
 
     # Handle both list and dict formats
     if isinstance(results, list):
@@ -169,27 +172,11 @@ def _display_results(results, query_time: float = 0) -> None:
         console.print("[yellow]No results found[/yellow]")
         return
 
-    for i, result in enumerate(result_list, 1):
-        # Extract path from payload if present (daemon format)
-        if "payload" in result:
-            file_path = result["payload"].get("path", "")
-            content = result["payload"].get("content", "")
-        else:
-            file_path = result.get("file", result.get("path", ""))
-            content = result.get("content", result.get("snippet", ""))
+    # Build timing info for display
+    timing_info = {"total_ms": query_time * 1000} if query_time > 0 else {}
 
-        line_num = result.get("line", "")
-
-        if line_num:
-            console.print(f"{i}. {file_path}:{line_num}")
-        else:
-            console.print(f"{i}. {file_path}")
-
-        if content:
-            # Truncate long content
-            if len(content) > 100:
-                content = content[:100] + "..."
-            console.print(f"   {content}")
+    # Use full standalone display (FULL content, ALL metadata)
+    fast_display_results(result_list, console, timing_info)
 
 
 def _query_standalone(
@@ -678,11 +665,10 @@ def _index_via_daemon(
     force_reindex: bool = False, daemon_config: Optional[Dict] = None, **kwargs
 ) -> int:
     """
-    Delegate indexing to daemon (runs in background).
+    Delegate indexing to daemon with BLOCKING progress callbacks for UX parity.
 
-    The daemon starts indexing in a background thread and returns immediately.
-    Progress callbacks are NOT supported in background mode (would cause RPC issues).
-    Users can monitor progress via logs or by running queries.
+    CRITICAL UX FIX: This method now BLOCKS until indexing completes,
+    displaying a Rich progress bar identical to standalone mode via RPyC callbacks.
 
     Args:
         force_reindex: Whether to force reindex all files
@@ -711,46 +697,100 @@ def _index_via_daemon(
         # Connect to daemon
         conn = _connect_to_daemon(socket_path, daemon_config)
 
+        # CRITICAL: Create progress handler for Rich progress bar display
+        from .services.multi_threaded_progress_manager import MultiThreadedProgressManager
+        from .services.rich_live_manager import RichLiveManager
+
+        # Initialize progress manager and Rich Live display (IDENTICAL to standalone)
+        progress_manager = MultiThreadedProgressManager()
+        rich_live_manager = RichLiveManager(progress_manager)
+
+        # Start Rich Live display before indexing
+        rich_live_manager.start_display()
+
+        # Create progress callback that updates Rich progress bar
+        def progress_callback(current: int, total: int, file_path: Path, info: str = "") -> None:
+            """RPyC-compatible progress callback for real-time updates."""
+            progress_manager.update_progress(
+                current_file=current,
+                total_files=total,
+                current_file_path=str(file_path),
+                info=info,
+            )
+
         # Map parameters for daemon
-        # CLI uses force_reindex, but daemon.service.exposed_index expects force_full
         daemon_kwargs = {
             'force_full': force_reindex,
             'enable_fts': kwargs.get('enable_fts', False),
             'batch_size': kwargs.get('batch_size', 50),
         }
 
-        # Execute indexing (starts background thread, returns immediately)
-        # NOTE: callback=None because background threads + RPyC callbacks = deadlock
+        # Execute indexing (BLOCKS until complete, streams progress via callback)
+        # RPyC automatically handles callback streaming to client
         result = conn.root.exposed_index(
             project_path=str(Path.cwd()),
-            callback=None,
+            callback=progress_callback,  # Real-time progress streaming
             **daemon_kwargs,
         )
 
+        # Stop progress display before showing completion
+        progress_manager.stop_progress()
+        rich_live_manager.stop_display()
+
         # Extract result data BEFORE closing connection
-        # RPyC proxies become invalid after connection closes
         status = result.get("status", "unknown")
         message = result.get("message", "")
-        project_path = result.get("project_path", "")
+        stats_dict = result.get("stats", {})
 
         # Close connection AFTER extracting data
         conn.close()
 
-        # Display appropriate message based on status
-        if status == "started":
-            console.print("[green]✓ Indexing started in daemon background[/green]")
-            console.print("[dim]Tip: Run queries or check status to monitor progress[/dim]")
+        # Display completion status (IDENTICAL to standalone)
+        if status == "completed":
+            cancelled = stats_dict.get("cancelled", False)
+            if cancelled:
+                console.print("🛑 Indexing cancelled!", style="yellow")
+                console.print(f"📄 Files processed before cancellation: {stats_dict.get('files_processed', 0)}", style="yellow")
+                console.print(f"📦 Chunks indexed before cancellation: {stats_dict.get('chunks_created', 0)}", style="yellow")
+                console.print("💾 Progress saved - you can resume indexing later", style="blue")
+            else:
+                console.print("✅ Indexing complete!", style="green")
+                console.print(f"📄 Files processed: {stats_dict.get('files_processed', 0)}")
+                console.print(f"📦 Chunks indexed: {stats_dict.get('chunks_created', 0)}")
+
+            duration = stats_dict.get("duration_seconds", 0)
+            console.print(f"⏱️  Duration: {duration:.2f}s")
+
+            # Calculate throughput
+            if duration > 0:
+                files_per_min = (stats_dict.get('files_processed', 0) / duration) * 60
+                chunks_per_min = (stats_dict.get('chunks_created', 0) / duration) * 60
+                console.print(f"🚀 Throughput: {files_per_min:.1f} files/min, {chunks_per_min:.1f} chunks/min")
+
+            if stats_dict.get('failed_files', 0) > 0:
+                console.print(f"⚠️  Failed files: {stats_dict.get('failed_files', 0)}", style="yellow")
+
             return 0
+
         elif status == "already_running":
             console.print("[yellow]⚠ Indexing already in progress[/yellow]")
-            console.print(f"[dim]Project: {project_path}[/dim]")
             return 0
+        elif status == "error":
+            console.print(f"[red]❌ Indexing failed: {message}[/red]")
+            return 1
         else:
             console.print(f"[yellow]⚠ Unexpected status: {status}[/yellow]")
             console.print(f"[dim]Message: {message}[/dim]")
             return 1
 
     except Exception as e:
+        # Clean up progress display on error
+        try:
+            progress_manager.stop_progress()
+            rich_live_manager.stop_display()
+        except Exception:
+            pass
+
         # Close connection on error
         if conn is not None:
             try:
@@ -794,11 +834,6 @@ def _watch_standalone(
     import click
 
     try:
-        # Filter out daemon-specific kwargs that CLI doesn't understand
-        daemon_only_keys = {'daemon_config', 'debounce_seconds'}
-        # Remove daemon-specific keys from kwargs
-        cli_kwargs = {k: v for k, v in kwargs.items() if k not in daemon_only_keys}
-
         # Setup context object with mode detection
         project_root = find_project_root(Path.cwd())
         mode_detector = CommandModeDetector(project_root)
