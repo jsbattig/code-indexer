@@ -5691,6 +5691,35 @@ def _status_impl(ctx, force_docker: bool):
         table.add_column("Status", style="magenta")
         table.add_column("Details", style="green")
 
+        # Add daemon mode indicator (requested by user)
+        try:
+            daemon_config = config.daemon if hasattr(config, 'daemon') else None
+            socket_path = config_manager.config_path.parent / "daemon.sock"
+            daemon_running = socket_path.exists()
+
+            if daemon_config and daemon_config.enabled:
+                if daemon_running:
+                    table.add_row(
+                        "Daemon Mode",
+                        "✅ Active",
+                        f"Socket: {socket_path.name} | TTL: {daemon_config.ttl_minutes}min | Queries use daemon"
+                    )
+                else:
+                    table.add_row(
+                        "Daemon Mode",
+                        "⚠️ Configured",
+                        "Enabled but stopped (auto-starts on first query)"
+                    )
+            else:
+                table.add_row(
+                    "Daemon Mode",
+                    "❌ Disabled",
+                    "Standalone mode (enable: cidx config --daemon)"
+                )
+        except Exception:
+            # If daemon config check fails, just skip the row
+            pass
+
         # Check backend provider first to determine if containers are needed
         backend_provider = getattr(config, "vector_store", None)
         backend_provider = (
