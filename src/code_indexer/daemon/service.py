@@ -42,12 +42,19 @@ class CIDXDaemonService(Service):
 
         # Cache state
         self.cache_entry: Optional[CacheEntry] = None
-        self.cache_lock: threading.Lock = threading.Lock()
+        # FIX Race Condition #1: Use RLock (reentrant lock) to allow nested locking
+        # This allows _ensure_cache_loaded to be called both standalone and within lock
+        self.cache_lock: threading.RLock = threading.RLock()
 
         # Watch mode state
         self.watch_handler: Optional[Any] = None
         self.watch_thread: Optional[threading.Thread] = None
         self.watch_project_path: Optional[str] = None
+
+        # Indexing state
+        self.indexing_thread: Optional[threading.Thread] = None
+        self.indexing_project_path: Optional[str] = None
+        self.indexing_lock_internal: threading.Lock = threading.Lock()
 
         # Configuration (TODO: Load from config file)
         self.config = type('Config', (), {'auto_shutdown_on_idle': False})()
@@ -78,16 +85,18 @@ class CIDXDaemonService(Service):
         """
         logger.debug(f"exposed_query: project={project_path}, query={query[:50]}...")
 
-        # Ensure cache is loaded
-        self._ensure_cache_loaded(project_path)
-
-        # Update access tracking
+        # FIX Race Condition #1: Hold cache_lock during entire query execution
+        # This prevents cache invalidation from occurring mid-query
         with self.cache_lock:
+            # Ensure cache is loaded
+            self._ensure_cache_loaded(project_path)
+
+            # Update access tracking
             if self.cache_entry:
                 self.cache_entry.update_access()
 
-        # Execute semantic search
-        results = self._execute_semantic_search(project_path, query, limit, **kwargs)
+            # Execute semantic search (protected by cache_lock)
+            results = self._execute_semantic_search(project_path, query, limit, **kwargs)
 
         return results
 
@@ -106,16 +115,18 @@ class CIDXDaemonService(Service):
         """
         logger.debug(f"exposed_query_fts: project={project_path}, query={query[:50]}...")
 
-        # Ensure cache is loaded
-        self._ensure_cache_loaded(project_path)
-
-        # Update access tracking
+        # FIX Race Condition #1: Hold cache_lock during entire query execution
+        # This prevents cache invalidation from occurring mid-query
         with self.cache_lock:
+            # Ensure cache is loaded
+            self._ensure_cache_loaded(project_path)
+
+            # Update access tracking
             if self.cache_entry:
                 self.cache_entry.update_access()
 
-        # Execute FTS search
-        results = self._execute_fts_search(project_path, query, **kwargs)
+            # Execute FTS search (protected by cache_lock)
+            results = self._execute_fts_search(project_path, query, **kwargs)
 
         return results
 
@@ -150,7 +161,10 @@ class CIDXDaemonService(Service):
     def exposed_index(
         self, project_path: str, callback: Optional[Any] = None, **kwargs
     ) -> Dict[str, Any]:
-        """Perform indexing with cache invalidation.
+        """Perform indexing with cache invalidation in background thread.
+
+        This method starts indexing in a background thread and returns immediately.
+        The indexing continues asynchronously while queries can still be served.
 
         Args:
             project_path: Path to project root
@@ -158,18 +172,59 @@ class CIDXDaemonService(Service):
             **kwargs: Additional indexing parameters
 
         Returns:
-            Indexing status
+            Indexing status (started, already_running, or error)
         """
         logger.info(f"exposed_index: project={project_path}")
 
-        # Invalidate cache BEFORE indexing
+        # FIX Race Condition #2: Single lock scope for entire operation
+        # This prevents TOCTOU vulnerability where multiple threads could start indexing
         with self.cache_lock:
-            if self.cache_entry:
-                logger.info("Invalidating cache before indexing")
-                self.cache_entry = None
+            with self.indexing_lock_internal:
+                # Check if indexing is already running
+                if self.indexing_thread and self.indexing_thread.is_alive():
+                    return {
+                        "status": "already_running",
+                        "message": "Indexing already in progress",
+                        "project_path": self.indexing_project_path,
+                    }
 
-        # Perform indexing using SmartIndexer
+                # Invalidate cache BEFORE starting indexing
+                if self.cache_entry:
+                    logger.info("Invalidating cache before indexing")
+                    self.cache_entry = None
+
+                # Start indexing in background thread
+                self.indexing_project_path = project_path
+                self.indexing_thread = threading.Thread(
+                    target=self._run_indexing_background,
+                    args=(project_path, callback, kwargs),
+                    daemon=True,
+                    name="IndexingThread"
+                )
+                self.indexing_thread.start()
+
+        return {
+            "status": "started",
+            "message": "Indexing started in background",
+            "project_path": project_path,
+        }
+
+    def _run_indexing_background(
+        self, project_path: str, callback: Optional[Any], kwargs: Dict[str, Any]
+    ) -> None:
+        """Run indexing in background thread.
+
+        This method executes the actual indexing work and catches any exceptions
+        to prevent thread crashes.
+
+        Args:
+            project_path: Path to project root
+            callback: Optional progress callback
+            kwargs: Additional indexing parameters
+        """
         try:
+            logger.info(f"Background indexing started for {project_path}")
+
             from code_indexer.services.smart_indexer import SmartIndexer
             from code_indexer.config import ConfigManager
             from code_indexer.backends.backend_factory import BackendFactory
@@ -191,18 +246,32 @@ class CIDXDaemonService(Service):
             )
 
             # Execute indexing using smart_index method
-            indexer.smart_index(
+            stats = indexer.smart_index(
                 force_full=kwargs.get('force_full', False),
                 batch_size=kwargs.get('batch_size', 50),
                 progress_callback=callback,
                 quiet=True,
+                enable_fts=kwargs.get('enable_fts', False),
             )
 
-            return {"status": "success", "message": "Indexing completed"}
+            logger.info(f"Background indexing completed for {project_path}: {stats}")
+
+            # Invalidate cache after indexing completes so next query loads fresh data
+            with self.cache_lock:
+                if self.cache_entry:
+                    logger.info("Invalidating cache after indexing completed")
+                    self.cache_entry = None
 
         except Exception as e:
-            logger.error(f"Indexing failed: {e}")
-            return {"status": "error", "message": str(e)}
+            logger.error(f"Background indexing failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+        finally:
+            # Clear indexing state
+            with self.indexing_lock_internal:
+                self.indexing_thread = None
+                self.indexing_project_path = None
 
     # =============================================================================
     # Watch Mode (3 methods)
@@ -223,68 +292,83 @@ class CIDXDaemonService(Service):
         """
         logger.info(f"exposed_watch_start: project={project_path}")
 
-        # Check if watch already running (watch_handler exists AND thread is alive)
-        # This prevents duplicate watch starts
-        if self.watch_handler and self.watch_thread and self.watch_thread.is_alive():
-            return {
-                "status": "error",
-                "message": "Watch already running",
-            }
+        # FIX Race Condition #3: Protect all watch state access with cache_lock
+        # This prevents duplicate watch handlers from starting
+        with self.cache_lock:
+            # Check if watch already running (watch_handler exists AND thread is alive)
+            # This prevents duplicate watch starts
+            if self.watch_handler and self.watch_thread and self.watch_thread.is_alive():
+                return {
+                    "status": "error",
+                    "message": "Watch already running",
+                }
 
-        try:
-            from code_indexer.services.git_aware_watch_handler import GitAwareWatchHandler
-            from code_indexer.config import ConfigManager
-            from code_indexer.backends.backend_factory import BackendFactory
-            from code_indexer.services.embedding_factory import EmbeddingProviderFactory
-            from code_indexer.services.smart_indexer import SmartIndexer
-            from code_indexer.services.git_topology_service import GitTopologyService
-            from code_indexer.services.watch_metadata import WatchMetadata
+            try:
+                from code_indexer.services.git_aware_watch_handler import GitAwareWatchHandler
+                from code_indexer.config import ConfigManager
+                from code_indexer.backends.backend_factory import BackendFactory
+                from code_indexer.services.embedding_factory import EmbeddingProviderFactory
+                from code_indexer.services.smart_indexer import SmartIndexer
+                from code_indexer.services.git_topology_service import GitTopologyService
+                from code_indexer.services.watch_metadata import WatchMetadata
 
-            # Initialize configuration and services
-            config_manager = ConfigManager.create_with_backtrack(Path(project_path))
-            config = config_manager.get_config()
+                # Initialize configuration and services
+                config_manager = ConfigManager.create_with_backtrack(Path(project_path))
+                config = config_manager.get_config()
 
-            # Create embedding provider and vector store
-            embedding_provider = EmbeddingProviderFactory.create(config=config)
-            backend = BackendFactory.create(config, Path(project_path))
-            vector_store_client = backend.get_vector_store_client()
+                # Create embedding provider and vector store
+                embedding_provider = EmbeddingProviderFactory.create(config=config)
+                backend = BackendFactory.create(config, Path(project_path))
+                vector_store_client = backend.get_vector_store_client()
 
-            # Initialize SmartIndexer
-            metadata_path = config_manager.config_path.parent / "metadata.json"
-            smart_indexer = SmartIndexer(
-                config, embedding_provider, vector_store_client, metadata_path
-            )
+                # Initialize SmartIndexer
+                metadata_path = config_manager.config_path.parent / "metadata.json"
+                smart_indexer = SmartIndexer(
+                    config, embedding_provider, vector_store_client, metadata_path
+                )
 
-            # Initialize git topology service
-            git_topology_service = GitTopologyService(config.codebase_dir)
+                # Initialize git topology service
+                git_topology_service = GitTopologyService(config.codebase_dir)
 
-            # Initialize watch metadata
-            watch_metadata_path = config_manager.config_path.parent / "watch_metadata.json"
-            watch_metadata = WatchMetadata.load_from_disk(watch_metadata_path)
+                # Initialize watch metadata
+                watch_metadata_path = config_manager.config_path.parent / "watch_metadata.json"
+                watch_metadata = WatchMetadata.load_from_disk(watch_metadata_path)
 
-            # Create watch handler with correct signature
-            debounce_seconds = kwargs.get('debounce', 2.0)
-            self.watch_handler = GitAwareWatchHandler(
-                config=config,
-                smart_indexer=smart_indexer,
-                git_topology_service=git_topology_service,
-                watch_metadata=watch_metadata,
-                debounce_seconds=debounce_seconds,
-            )
+                # Create watch handler with correct signature
+                debounce_seconds = kwargs.get('debounce_seconds', 2.0)
+                self.watch_handler = GitAwareWatchHandler(
+                    config=config,
+                    smart_indexer=smart_indexer,
+                    git_topology_service=git_topology_service,
+                    watch_metadata=watch_metadata,
+                    debounce_seconds=debounce_seconds,
+                )
 
-            # Start watching
-            self.watch_handler.start_watching()
-            self.watch_project_path = project_path
+                # Start watching
+                self.watch_handler.start_watching()
+                self.watch_project_path = project_path
 
-            # Capture thread reference from watch handler
-            self.watch_thread = self.watch_handler.processing_thread
+                # Capture thread reference from watch handler
+                self.watch_thread = self.watch_handler.processing_thread
 
-            logger.info("Watch started successfully")
-            return {"status": "success", "message": "Watch started"}
+                # Verify thread actually started
+                if not self.watch_thread or not self.watch_thread.is_alive():
+                    raise RuntimeError("Watch thread failed to start")
 
-        except Exception as e:
-            logger.error(f"Watch start failed: {e}")
-            return {"status": "error", "message": str(e)}
+                logger.info("Watch started successfully")
+                return {"status": "success", "message": "Watch started"}
+
+            except Exception as e:
+                logger.error(f"Watch start failed: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+
+                # Clean up watch state on error (protected by cache_lock)
+                self.watch_handler = None
+                self.watch_thread = None
+                self.watch_project_path = None
+
+                return {"status": "error", "message": str(e)}
 
     def exposed_watch_stop(self, project_path: str) -> Dict[str, Any]:
         """Stop watch gracefully with statistics.
@@ -297,38 +381,40 @@ class CIDXDaemonService(Service):
         """
         logger.info(f"exposed_watch_stop: project={project_path}")
 
-        if not self.watch_handler:
-            return {
-                "status": "error",
-                "message": "No watch running",
-            }
+        # FIX Race Condition #3: Protect watch state access with cache_lock
+        with self.cache_lock:
+            if not self.watch_handler:
+                return {
+                    "status": "error",
+                    "message": "No watch running",
+                }
 
-        try:
-            # Stop watch handler
-            self.watch_handler.stop_watching()
+            try:
+                # Stop watch handler
+                self.watch_handler.stop_watching()
 
-            # Wait for thread to finish
-            if self.watch_thread:
-                self.watch_thread.join(timeout=5)
+                # Wait for thread to finish
+                if self.watch_thread:
+                    self.watch_thread.join(timeout=5)
 
-            # Get statistics
-            stats = self.watch_handler.get_stats() if hasattr(self.watch_handler, 'get_stats') else {}
+                # Get statistics
+                stats = self.watch_handler.get_stats() if hasattr(self.watch_handler, 'get_stats') else {}
 
-            # Clear watch state
-            self.watch_handler = None
-            self.watch_thread = None
-            self.watch_project_path = None
+                # Clear watch state (protected by cache_lock)
+                self.watch_handler = None
+                self.watch_thread = None
+                self.watch_project_path = None
 
-            logger.info("Watch stopped successfully")
-            return {
-                "status": "success",
-                "message": "Watch stopped",
-                "stats": stats,
-            }
+                logger.info("Watch stopped successfully")
+                return {
+                    "status": "success",
+                    "message": "Watch stopped",
+                    "stats": stats,
+                }
 
-        except Exception as e:
-            logger.error(f"Watch stop failed: {e}")
-            return {"status": "error", "message": str(e)}
+            except Exception as e:
+                logger.error(f"Watch stop failed: {e}")
+                return {"status": "error", "message": str(e)}
 
     def exposed_watch_status(self) -> Dict[str, Any]:
         """Get current watch state.
@@ -336,20 +422,22 @@ class CIDXDaemonService(Service):
         Returns:
             Watch status with project path and statistics
         """
-        if not self.watch_handler or not self.watch_thread or not self.watch_thread.is_alive():
+        # FIX Race Condition #3: Protect watch state access with cache_lock
+        with self.cache_lock:
+            if not self.watch_handler or not self.watch_thread or not self.watch_thread.is_alive():
+                return {
+                    "running": False,
+                    "project_path": None,
+                }
+
+            # Get statistics from watch handler
+            stats = self.watch_handler.get_stats() if hasattr(self.watch_handler, 'get_stats') else {}
+
             return {
-                "running": False,
-                "project_path": None,
+                "running": True,
+                "project_path": self.watch_project_path,
+                "stats": stats,
             }
-
-        # Get statistics from watch handler
-        stats = self.watch_handler.get_stats() if hasattr(self.watch_handler, 'get_stats') else {}
-
-        return {
-            "running": True,
-            "project_path": self.watch_project_path,
-            "stats": stats,
-        }
 
     # =============================================================================
     # Storage Operations (3 methods)
@@ -502,19 +590,32 @@ class CIDXDaemonService(Service):
     # =============================================================================
 
     def exposed_get_status(self) -> Dict[str, Any]:
-        """Daemon cache status only.
+        """Daemon cache and indexing status.
 
         Returns:
-            Cache status dictionary
+            Status dictionary with cache and indexing info
         """
         with self.cache_lock:
+            cache_status = {}
             if self.cache_entry:
-                return {
+                cache_status = {
                     "cache_loaded": True,
                     **self.cache_entry.get_stats(),
                 }
             else:
-                return {"cache_loaded": False}
+                cache_status = {"cache_loaded": False}
+
+        # Check indexing status
+        with self.indexing_lock_internal:
+            indexing_status = {
+                "indexing_running": self.indexing_thread is not None and self.indexing_thread.is_alive(),
+                "indexing_project": self.indexing_project_path if self.indexing_thread and self.indexing_thread.is_alive() else None,
+            }
+
+        return {
+            **cache_status,
+            **indexing_status,
+        }
 
     def exposed_clear_cache(self) -> Dict[str, Any]:
         """Clear cache manually.

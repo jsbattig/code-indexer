@@ -678,13 +678,11 @@ def _index_via_daemon(
     force_reindex: bool = False, daemon_config: Optional[Dict] = None, **kwargs
 ) -> int:
     """
-    Delegate indexing to daemon with progress callbacks.
+    Delegate indexing to daemon (runs in background).
 
-    Implements progress streaming:
-    1. Creates ClientProgressHandler for Rich progress bar
-    2. Passes callback to daemon via RPC
-    3. Daemon streams progress updates back to client
-    4. Displays real-time progress in terminal
+    The daemon starts indexing in a background thread and returns immediately.
+    Progress callbacks are NOT supported in background mode (would cause RPC issues).
+    Users can monitor progress via logs or by running queries.
 
     Args:
         force_reindex: Whether to force reindex all files
@@ -713,12 +711,6 @@ def _index_via_daemon(
         # Connect to daemon
         conn = _connect_to_daemon(socket_path, daemon_config)
 
-        # Create progress handler
-        from .cli_progress_handler import ClientProgressHandler
-
-        progress_handler = ClientProgressHandler()
-        callback = progress_handler.create_progress_callback()
-
         # Map parameters for daemon
         # CLI uses force_reindex, but daemon.service.exposed_index expects force_full
         daemon_kwargs = {
@@ -727,32 +719,38 @@ def _index_via_daemon(
             'batch_size': kwargs.get('batch_size', 50),
         }
 
-        # Execute indexing with callback
+        # Execute indexing (starts background thread, returns immediately)
+        # NOTE: callback=None because background threads + RPyC callbacks = deadlock
         result = conn.root.exposed_index(
             project_path=str(Path.cwd()),
-            callback=callback,
+            callback=None,
             **daemon_kwargs,
         )
 
         # Extract result data BEFORE closing connection
         # RPyC proxies become invalid after connection closes
         status = result.get("status", "unknown")
-        message = result.get("message", "Indexing completed")
-        stats = result.get("stats", {})
-        files_processed = stats.get("files_processed", "unknown") if stats else "unknown"
+        message = result.get("message", "")
+        project_path = result.get("project_path", "")
 
         # Close connection AFTER extracting data
         conn.close()
 
-        # Display success message
-        console.print(f"[green]✓ Indexed {files_processed} files[/green]")
-        return 0
+        # Display appropriate message based on status
+        if status == "started":
+            console.print("[green]✓ Indexing started in daemon background[/green]")
+            console.print("[dim]Tip: Run queries or check status to monitor progress[/dim]")
+            return 0
+        elif status == "already_running":
+            console.print("[yellow]⚠ Indexing already in progress[/yellow]")
+            console.print(f"[dim]Project: {project_path}[/dim]")
+            return 0
+        else:
+            console.print(f"[yellow]⚠ Unexpected status: {status}[/yellow]")
+            console.print(f"[dim]Message: {message}[/dim]")
+            return 1
 
     except Exception as e:
-        # Handle error with progress handler
-        if "progress_handler" in locals():
-            progress_handler.error(str(e))
-
         # Close connection on error
         if conn is not None:
             try:
@@ -905,13 +903,26 @@ def _watch_via_daemon(
             enable_fts=enable_fts,
         )
 
-        # Close connection
+        # Extract result data BEFORE closing connection
+        # RPyC proxies become invalid after connection closes
+        status = result.get("status", "unknown")
+        message = result.get("message", "")
+
+        # Close connection AFTER extracting data
         conn.close()
 
-        # Display success message
-        console.print("[green]✓ Watch mode started in daemon[/green]")
-        console.print(f"[dim]Status: {result.get('status', 'unknown')}[/dim]")
-        return 0
+        # Display success message based on status
+        if status == "success":
+            console.print("[green]✓ Watch mode started in daemon[/green]")
+            console.print("[dim]Monitoring file changes in background...[/dim]")
+            console.print("[dim]Run 'cidx watch-stop' to stop watching[/dim]")
+            return 0
+        elif status == "error":
+            console.print(f"[yellow]⚠ Watch start failed: {message}[/yellow]")
+            return 1
+        else:
+            console.print(f"[yellow]⚠ Unexpected status: {status}[/yellow]")
+            return 1
 
     except Exception as e:
         # Close connection on error
