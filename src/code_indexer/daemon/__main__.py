@@ -14,10 +14,13 @@ from pathlib import Path
 
 from .server import start_daemon
 
-# Setup logging
+# Setup logging - Output to both console and file
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # Console output
+    ]
 )
 
 logger = logging.getLogger(__name__)
@@ -47,6 +50,14 @@ def main():
 
     # Validate config path
     config_path = args.config_path
+
+    # Add file handler for daemon logs
+    daemon_log_file = config_path.parent / "daemon.log"
+    file_handler = logging.FileHandler(daemon_log_file)
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logging.getLogger().addHandler(file_handler)
+    logger.info(f"Daemon logging to {daemon_log_file}")
     if not config_path.exists():
         logger.error(f"Config file not found: {config_path}")
         print(f"ERROR: Config file not found: {config_path}", file=sys.stderr)

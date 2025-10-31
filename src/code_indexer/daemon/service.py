@@ -223,29 +223,47 @@ class CIDXDaemonService(Service):
             kwargs: Additional indexing parameters
         """
         try:
-            logger.info(f"Background indexing started for {project_path}")
+            logger.info(f"=== BACKGROUND INDEXING THREAD STARTED ===")
+            logger.info(f"Project path: {project_path}")
+            logger.info(f"Kwargs: {kwargs}")
 
             from code_indexer.services.smart_indexer import SmartIndexer
             from code_indexer.config import ConfigManager
             from code_indexer.backends.backend_factory import BackendFactory
             from code_indexer.services.embedding_factory import EmbeddingProviderFactory
 
+            logger.info("Step 1: Importing modules complete")
+
             # Initialize configuration and backend
+            logger.info("Step 2: Creating ConfigManager...")
             config_manager = ConfigManager.create_with_backtrack(Path(project_path))
             config = config_manager.get_config()
+            logger.info(f"Step 2 Complete: Config loaded (codebase_dir={config.codebase_dir})")
 
             # Create embedding provider and vector store
+            logger.info("Step 3: Creating embedding provider...")
             embedding_provider = EmbeddingProviderFactory.create(config=config)
+            logger.info(f"Step 3 Complete: Embedding provider created ({type(embedding_provider).__name__})")
+
+            logger.info("Step 4: Creating backend and vector store...")
             backend = BackendFactory.create(config, Path(project_path))
             vector_store_client = backend.get_vector_store_client()
+            logger.info(f"Step 4 Complete: Backend created ({type(vector_store_client).__name__})")
 
             # Initialize SmartIndexer with correct signature
             metadata_path = config_manager.config_path.parent / "metadata.json"
+            logger.info(f"Step 5: Creating SmartIndexer (metadata_path={metadata_path})...")
             indexer = SmartIndexer(
                 config, embedding_provider, vector_store_client, metadata_path
             )
+            logger.info("Step 5 Complete: SmartIndexer created")
 
             # Execute indexing using smart_index method
+            logger.info("Step 6: Calling smart_index()...")
+            logger.info(f"  force_full={kwargs.get('force_full', False)}")
+            logger.info(f"  batch_size={kwargs.get('batch_size', 50)}")
+            logger.info(f"  enable_fts={kwargs.get('enable_fts', False)}")
+
             stats = indexer.smart_index(
                 force_full=kwargs.get('force_full', False),
                 batch_size=kwargs.get('batch_size', 50),
@@ -254,7 +272,8 @@ class CIDXDaemonService(Service):
                 enable_fts=kwargs.get('enable_fts', False),
             )
 
-            logger.info(f"Background indexing completed for {project_path}: {stats}")
+            logger.info(f"Step 6 Complete: Indexing finished")
+            logger.info(f"=== INDEXING STATS: {stats} ===")
 
             # Invalidate cache after indexing completes so next query loads fresh data
             with self.cache_lock:
@@ -262,8 +281,11 @@ class CIDXDaemonService(Service):
                     logger.info("Invalidating cache after indexing completed")
                     self.cache_entry = None
 
+            logger.info("=== BACKGROUND INDEXING THREAD COMPLETED SUCCESSFULLY ===")
+
         except Exception as e:
-            logger.error(f"Background indexing failed: {e}")
+            logger.error(f"=== BACKGROUND INDEXING FAILED ===")
+            logger.error(f"Error: {e}")
             import traceback
             logger.error(traceback.format_exc())
 
@@ -272,6 +294,7 @@ class CIDXDaemonService(Service):
             with self.indexing_lock_internal:
                 self.indexing_thread = None
                 self.indexing_project_path = None
+            logger.info("=== BACKGROUND INDEXING THREAD EXITING ===")
 
     # =============================================================================
     # Watch Mode (3 methods)
