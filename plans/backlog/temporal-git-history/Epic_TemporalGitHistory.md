@@ -111,14 +111,92 @@ CREATE INDEX idx_commit_branches_name ON commit_branches(branch_name);
 
 **New Components:**
 1. `TemporalIndexer` - Orchestrates git history indexing (mode-agnostic)
-2. `TemporalSearchService` - Handles temporal queries (mode-agnostic)
-3. `TemporalFormatter` - Formats temporal results with Rich
+2. `TemporalBlobScanner` - Discovers blobs in git history via `git ls-tree`
+3. `GitBlobReader` - Reads blob content from git object store via `git cat-file`
+4. `HistoricalBlobProcessor` - Parallel blob processing (analogous to HighThroughputProcessor)
+5. `TemporalSearchService` - Handles temporal queries (mode-agnostic)
+6. `TemporalFormatter` - Formats temporal results with Rich
 
 **Integration Points:**
 - CLI: New flags for index and query commands
 - Config: `enable_temporal` setting
 - Watch Mode: Maintains temporal index if enabled
 - Daemon Mode: Automatic delegation when `daemon.enabled: true`
+
+### Indexing Pipeline Reuse Strategy (CRITICAL)
+
+**What We Index: Full Blob Versions, NOT Diffs**
+
+Git blobs represent **complete file versions** at specific points in time. We index full blob content for semantic search, not diffs:
+
+```
+✅ CORRECT: Index full blob content
+Commit abc123: user.py (blob def456)
+→ Complete file: class User with all methods and context
+
+❌ WRONG: Index diffs
+Commit abc123: user.py diff
+→ Partial: +def greet(): ... (no class context)
+```
+
+**Why Full Blobs:**
+1. **Semantic search requires full context** - can't find code patterns in partial diffs
+2. **Users want complete implementations** - "find removed authentication code" needs full class
+3. **Git already stores blobs efficiently** - compression + deduplication is built-in
+4. **Deduplication works better** - same content across commits = same blob hash = reuse vectors
+
+**Pipeline Component Reuse (85% Reuse Rate):**
+
+**✅ Reused AS-IS (No Changes):**
+- `VectorCalculationManager` - Takes text chunks → embeddings (source-agnostic)
+- `FilesystemVectorStore` - Writes vector JSON files (already supports blob_hash)
+- `FixedSizeChunker` - Add `chunk_text(text)` method for git blobs
+- Threading patterns (`ThreadPoolExecutor`, `CleanSlotTracker`)
+- Progress callback mechanism (works with any source)
+
+**🆕 New Git-Specific Components:**
+- `TemporalBlobScanner` - Replaces FileFinder (walks git history, not disk)
+- `GitBlobReader` - Replaces file reads (extracts from git object store)
+- `HistoricalBlobProcessor` - Orchestrates: blob → read → chunk → vector → store
+
+**Architecture Comparison:**
+
+```
+Workspace Indexing (HEAD):
+  Disk Files → FileIdentifier → FixedSizeChunker
+    → VectorCalculationManager → FilesystemVectorStore
+
+Git History Indexing (Temporal):
+  Git Blobs → GitBlobReader → FixedSizeChunker.chunk_text()
+    → VectorCalculationManager → FilesystemVectorStore
+           ↑                         ↑
+        SAME COMPONENTS REUSED
+```
+
+**Deduplication Strategy:**
+```python
+# For each commit
+for commit in commits:
+    # 1. Get all blobs in commit (git ls-tree)
+    all_blobs = scanner.get_blobs_for_commit(commit)  # 150 blobs
+
+    # 2. Check blob registry (SQLite lookup, microseconds)
+    new_blobs = [b for b in all_blobs if not registry.has_blob(b.hash)]
+    # Result: ~12 new blobs (92% already have vectors)
+
+    # 3. Process ONLY new blobs (reuse existing for rest)
+    if new_blobs:
+        processor.process_blobs_high_throughput(new_blobs)
+        # Uses VectorCalculationManager + FilesystemVectorStore
+```
+
+**Performance Expectations (42K files, 10GB repo):**
+- First run: 150K blobs → 92% dedup → 12K new embeddings → 4-7 minutes
+- Incremental: Only new commit blobs → <1 minute
+
+**See Analysis Documents:**
+- `.analysis/temporal_indexing_pipeline_reuse_strategy.md` - Complete implementation guide
+- `.analysis/temporal_blob_registry_sqlite_decision.md` - SQLite rationale
 
 ### Daemon Mode Architecture
 
