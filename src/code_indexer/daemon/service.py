@@ -218,14 +218,53 @@ class CIDXDaemonService(Service):
                 config, embedding_provider, vector_store_client, metadata_path
             )
 
+            # Test string transmission
+            import time as time_module
+            import threading
+            callback_counter = [0]  # Correlation ID
+            callback_lock = threading.Lock()
+
+            def correlated_callback(current, total, file_path, info="", **cb_kwargs):
+                """Test if concatenated filenames string transmits correctly."""
+                with callback_lock:
+                    callback_counter[0] += 1
+                    correlation_id = callback_counter[0]
+                # FROZEN SLOTS FIX: Serialize concurrent_files as JSON to avoid RPyC list/dict issues
+                import json
+                concurrent_files = cb_kwargs.get('concurrent_files', [])
+                # RPyC WORKAROUND: Serialize concurrent_files to JSON to avoid proxy caching issues
+                # This ensures the client receives fresh data on every callback, not stale proxies
+                concurrent_files_json = json.dumps(concurrent_files)
+                cb_kwargs['concurrent_files_json'] = concurrent_files_json
+                cb_kwargs['correlation_id'] = correlation_id
+
+                # Call actual client callback
+                if callback:
+                    callback(current, total, file_path, info, **cb_kwargs)
+
+            # BUG FIX: Add reset_progress_timers method to correlated_callback
+            # This method is called by HighThroughputProcessor during phase transitions
+            # (hash→indexing, indexing→branch isolation) to reset Rich Progress internal timers.
+            # Without this, the clock freezes at the hash phase completion time.
+            def reset_progress_timers():
+                """Reset progress timers by delegating to client callback."""
+                if callback and hasattr(callback, 'reset_progress_timers'):
+                    callback.reset_progress_timers()
+
+            # Attach reset method to callback function (makes it accessible via hasattr check)
+            correlated_callback.reset_progress_timers = reset_progress_timers  # type: ignore[attr-defined]
+
             # Execute indexing SYNCHRONOUSLY with callback
             # This BLOCKS until indexing completes, streaming progress via callback
             stats = indexer.smart_index(
                 force_full=kwargs.get('force_full', False),
                 batch_size=kwargs.get('batch_size', 50),
-                progress_callback=callback,  # RPyC handles callback streaming
+                progress_callback=correlated_callback,  # With correlation IDs
                 quiet=True,  # Suppress daemon-side output
                 enable_fts=kwargs.get('enable_fts', False),
+                reconcile_with_database=kwargs.get('reconcile_with_database', False),
+                files_count_to_process=kwargs.get('files_count_to_process'),
+                detect_deletions=kwargs.get('detect_deletions', False),
             )
 
             # Invalidate cache after indexing completes
@@ -402,13 +441,13 @@ class CIDXDaemonService(Service):
             )
             logger.info("Step 5 Complete: SmartIndexer created")
 
-            # Create progress callback to update state
-            def progress_callback(current: int, total: int, file_path: Path, info: str = ""):
-                """Update progress state for polling."""
+            # Create progress callback wrapper that updates internal state for polling
+            def progress_callback(current: int, total: int, file_path: Path, info: str = "", **kwargs):
+                """Update internal progress state for polling-based progress tracking."""
+                # Update internal state for polling
                 with self.indexing_lock_internal:
                     self.current_files_processed = current
                     self.total_files = total
-                logger.debug(f"Progress: {current}/{total} - {file_path.name}")
 
             # Execute indexing using smart_index method
             logger.info("Step 6: Calling smart_index()...")
@@ -1004,7 +1043,6 @@ class CIDXDaemonService(Service):
             Tuple of (results list, timing info dict)
         """
         try:
-            import time
             from code_indexer.config import ConfigManager
             from code_indexer.backends.backend_factory import BackendFactory
             from code_indexer.services.embedding_factory import EmbeddingProviderFactory

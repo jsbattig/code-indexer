@@ -42,9 +42,12 @@ class TestExecuteViaDaemon:
         """Test semantic query execution via daemon."""
         # Arrange
         mock_conn = Mock()
-        mock_conn.root.exposed_query.return_value = [
-            {"payload": {"path": "module.py", "line_start": 5}, "score": 0.88}
-        ]
+        mock_conn.root.exposed_query.return_value = {
+            "results": [
+                {"payload": {"path": "module.py", "line_start": 5}, "score": 0.88}
+            ],
+            "timing": {"search_ms": 150, "total_ms": 200},
+        }
         mock_connect.return_value = mock_conn
 
         from code_indexer.cli_daemon_fast import execute_via_daemon
@@ -105,6 +108,7 @@ class TestExecuteViaDaemon:
         """Test that results are displayed correctly."""
         # Arrange
         mock_conn = Mock()
+        # FTS returns list directly (not dict like semantic search)
         mock_conn.root.exposed_query_fts.return_value = [
             {
                 "payload": {
@@ -135,9 +139,11 @@ class TestExecuteViaDaemon:
 
         # Assert - check output contains results
         captured = capsys.readouterr()
-        assert "src/module.py:42" in captured.out
+        assert "src/module.py" in captured.out
+        assert "42:" in captured.out
         assert "0.95" in captured.out
-        assert "tests/test_module.py:10" in captured.out
+        assert "tests/test_module.py" in captured.out
+        assert "10:" in captured.out
 
 
 class TestMinimalArgumentParsing:

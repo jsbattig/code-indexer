@@ -419,8 +419,9 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
 
         This wrapper:
         1. Converts Path objects to strings for RPC serialization
-        2. Catches and logs callback errors without crashing indexing
-        3. Preserves callback signature
+        2. Makes async RPC calls to prevent blocking daemon thread
+        3. Catches and logs callback errors without crashing indexing
+        4. Preserves callback signature
 
         Args:
             callback: Client callback function or None
@@ -431,14 +432,16 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
         if callback is None:
             return None
 
-        def safe_callback(current, total, file_path, info=""):
+        def safe_callback(current, total, file_path, info="", **kwargs):
             try:
                 # Convert Path to string for RPC
                 if isinstance(file_path, Path):
                     file_path = str(file_path)
 
-                # Call client callback via RPC
-                callback(current, total, file_path, info)
+                # ASYNC: Don't block daemon on client rendering
+                # Using rpyc.async_() prevents callbacks from blocking indexing
+                async_call = rpyc.async_(callback)
+                async_call(current, total, file_path, info, **kwargs)
 
             except Exception as e:
                 # Log but don't crash on callback errors

@@ -3206,9 +3206,40 @@ def index(
     """
     config_manager = ctx.obj["config_manager"]
 
-    # DAEMON DELEGATION DISABLED: Index command always runs in standalone mode
-    # Daemon delegation caused hanging issues and is not production-ready
-    # Users should use standalone mode for reliable indexing
+    # Check if daemon mode is enabled and delegate accordingly
+    config = config_manager.load()
+    daemon_enabled = config.daemon and config.daemon.enabled
+
+    if daemon_enabled:
+        # Check for unsupported flags in daemon mode
+        if rebuild_indexes or rebuild_index or rebuild_fts_index:
+            console.print(
+                "❌ Rebuild flags (--rebuild-indexes, --rebuild-index, --rebuild-fts-index) "
+                "are not yet supported in daemon mode",
+                style="red",
+            )
+            console.print(
+                "💡 Use local mode for rebuild operations: cidx config --no-daemon",
+                style="yellow",
+            )
+            sys.exit(1)
+
+        # Delegate to daemon with all parameters
+        from .cli_daemon_delegation import _index_via_daemon
+
+        exit_code = _index_via_daemon(
+            force_reindex=clear,
+            daemon_config=config.daemon.model_dump(),  # config.daemon is guaranteed to exist here
+            enable_fts=fts,
+            batch_size=batch_size,
+            reconcile=reconcile,
+            files_count_to_process=files_count_to_process,
+            detect_deletions=detect_deletions,
+        )
+        sys.exit(exit_code)
+    else:
+        # Display mode indicator
+        console.print("🔧 Running in local mode", style="blue")
 
     # Validate flag combinations
     if detect_deletions and reconcile:
@@ -4200,6 +4231,10 @@ def query(
             if config_manager:
                 daemon_config = config_manager.get_daemon_config()
                 if daemon_config and daemon_config.get("enabled"):
+                    # Display mode indicator (unless --quiet flag is set)
+                    if not quiet:
+                        console.print("🔧 Running in daemon mode", style="blue")
+
                     # Delegate to daemon - will handle retry/fallback automatically
                     exit_code = cli_daemon_delegation._query_via_daemon(
                         query_text=query,

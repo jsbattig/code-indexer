@@ -9,6 +9,7 @@ Key Components:
 - No dictionaries, no complex data operations
 """
 
+import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from rich.console import Console
@@ -25,6 +26,8 @@ from rich.text import Text
 
 from .progress_display import RichLiveProgressManager
 from ..services.clean_slot_tracker import CleanSlotTracker, FileData
+
+logger = logging.getLogger(__name__)
 
 
 class MultiThreadedProgressManager:
@@ -175,8 +178,8 @@ class MultiThreadedProgressManager:
         """Update complete state using direct slot tracker array access.
 
         Args:
-            current: Current progress count
-            total: Total items to process
+            current: Current progress count (or -1 for display-only update)
+            total: Total items to process (or -1 for display-only update)
             files_per_second: Processing rate in files/second
             kb_per_second: Processing rate in KB/second
             active_threads: Number of active threads
@@ -184,6 +187,24 @@ class MultiThreadedProgressManager:
             slot_tracker: CleanSlotTracker with status_array
             info: Optional info string containing phase indicators
         """
+        # DEFENSIVE: Ensure current and total are always integers, never None
+        # This prevents "None/None" display and TypeError exceptions
+        if current is None:
+            logger.warning("BUG: None current value in progress! Converting to 0.")
+            current = 0
+        if total is None:
+            logger.warning("BUG: None total value in progress! Converting to 0.")
+            total = 0
+
+        # BUG FIX: Handle display-only updates (current=-1, total=-1)
+        # FileChunkingManager sends -1/-1 to update concurrent_files display without progress bar change
+        if current == -1 and total == -1:
+            # Display update only - don't update progress bar
+            self._concurrent_files = concurrent_files or []
+            if slot_tracker is not None:
+                self.set_slot_tracker(slot_tracker)
+            return
+
         # Store slot_tracker for get_integrated_display() - use consistent attribute
         if slot_tracker is not None:
             # Set slot tracker for direct connection (replaces CLI connection)
@@ -194,6 +215,7 @@ class MultiThreadedProgressManager:
             self.slot_tracker = None
 
         # Store concurrent files for display when slot_tracker is None (e.g., hash phase)
+        # Note: This is only used as fallback when slot_tracker is None
         self._concurrent_files = concurrent_files or []
 
         # Detect phase from info string if provided
@@ -243,6 +265,10 @@ class MultiThreadedProgressManager:
         Returns:
             Rich Table with progress bar at top, metrics line, and file lines
         """
+        # CRITICAL FIX: Capture slot_tracker in local variable to prevent race condition
+        # where self.slot_tracker becomes None between check and attribute access
+        slot_tracker = self.slot_tracker
+
         # Create main table to hold all display components
         main_table = Table.grid(padding=(0, 0))
         main_table.add_column(justify="left")
@@ -261,33 +287,25 @@ class MultiThreadedProgressManager:
             metrics_text = Text(self._current_metrics_info, style="dim white")
             main_table.add_row(metrics_text)
 
-        # ADD: Simple slot display lines (NEW)
-        if self.slot_tracker is not None:
-            # Use slot tracker when available (indexing phase)
-            for slot_id in range(self.slot_tracker.max_slots):
-                file_data = self.slot_tracker.status_array[slot_id]
-                if file_data is not None:
-                    status_display = file_data.status.value
-                    if status_display == "complete":
-                        status_display = "complete ✓"
-                    elif status_display in ["vectorizing", "processing"]:
-                        # Detect if we're in hash phase based on current phase
-                        if self._current_phase == "🔍 Hashing":
-                            status_display = "hashing..."
-                        else:
-                            status_display = "vectorizing..."
-                    elif status_display == "finalizing":
-                        status_display = "finalizing..."
-                    elif status_display == "chunking":
-                        status_display = "chunking..."
-                    elif status_display == "starting":
-                        status_display = "starting"
+        # CRITICAL FIX: PREFER serialized concurrent_files over RPyC proxy calls
+        # In daemon mode:
+        #   - self._concurrent_files = Fresh serialized data passed in kwargs (FAST, always current)
+        #   - slot_tracker.get_concurrent_files_data() = RPyC proxy call (SLOW, may be stale)
+        # CORRECT PRECEDENCE: Use serialized data first, fallback to proxy only if unavailable
+        # This ensures Rich Live refresh (10x/sec) uses pre-serialized data, not slow RPyC calls
 
-                    line = f"├─ {file_data.filename} ({file_data.file_size/1024:.1f} KB) {status_display}"
-                    main_table.add_row(Text(line, style="cyan"))
-        elif self._concurrent_files:
-            # Fallback to concurrent_files when slot_tracker is None (hash phase)
-            for file_info in self._concurrent_files:
+        # Get concurrent files data with correct precedence
+        fresh_concurrent_files = []
+        if self._concurrent_files:
+            # PREFER serialized concurrent_files - it's already fresh from daemon
+            fresh_concurrent_files = self._concurrent_files
+        elif slot_tracker is not None:
+            # Fallback to slot_tracker only if concurrent_files not available
+            # This happens in direct mode (non-daemon) or when daemon doesn't send concurrent_files
+            fresh_concurrent_files = slot_tracker.get_concurrent_files_data()
+
+        if fresh_concurrent_files:
+            for file_info in fresh_concurrent_files:
                 if file_info:
                     filename = file_info.get("file_path", "unknown")
                     if isinstance(filename, Path):
@@ -366,10 +384,32 @@ class MultiThreadedProgressManager:
         to fix the frozen timing issue when transitioning from hash to indexing phase.
         The Rich Progress component tracks its own start time which must be reset
         separately from the stats timer reset.
+
+        BUG FIX: Create NEW Progress instance instead of reusing stopped one.
+        When Progress.stop() is called, the internal timers become frozen and cannot
+        be properly reset by restarting the same instance. Creating a fresh Progress
+        instance ensures elapsed time and ETA calculations start from zero.
         """
         if self._progress_started:
             # Stop current progress to clear internal timers
             self.progress.stop()
+
+            # BUG FIX: Create NEW Progress instance with fresh timers
+            # Reusing stopped Progress instance causes frozen elapsed/remaining time
+            self.progress = Progress(
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(bar_width=40),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                "•",
+                TimeElapsedColumn(),
+                "•",
+                TimeRemainingColumn(),
+                "•",
+                TextColumn("{task.fields[files_info]}"),
+                console=self.console,
+                transient=False,
+                expand=False,
+            )
 
             # Reset progress state to allow fresh initialization
             self._progress_started = False

@@ -5,16 +5,13 @@ These tests verify the complete CLI → daemon delegation flow WITHOUT mocking,
 ensuring the "stream has been closed" error is fixed and infinite spawning prevented.
 """
 
-import os
 import sys
 import json
 import time
 import socket
-import signal
 import tempfile
 import subprocess
 from pathlib import Path
-from unittest.mock import patch
 import pytest
 
 

@@ -81,7 +81,7 @@ def is_delegatable_command(command: str) -> bool:
         "clean",
         "clean-data",
         # "status" removed - needs full CLI for Rich table formatting
-        "start",
+        # "start" removed - can't delegate starting daemon to non-existent daemon!
         "stop",
         "watch-stop",
     }

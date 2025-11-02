@@ -47,6 +47,7 @@ def parse_query_args(args: List[str]) -> Dict[str, Any]:
         'is_fts': False,
         'is_semantic': False,
         'limit': 10,
+        'quiet': False,
         'filters': {}
     }
 
@@ -60,6 +61,8 @@ def parse_query_args(args: List[str]) -> Dict[str, Any]:
                 result['is_fts'] = True
             elif arg == '--semantic':
                 result['is_semantic'] = True
+            elif arg == '--quiet':
+                result['quiet'] = True
             elif arg == '--limit' and i + 1 < len(args):
                 result['limit'] = int(args[i + 1])
                 i += 1
@@ -138,7 +141,13 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
 
     # Connect to daemon
     try:
-        conn = unix_connect(str(socket_path))
+        conn = unix_connect(
+            str(socket_path),
+            config={
+                "allow_public_attrs": True,
+                "sync_request_timeout": None,  # Disable timeout for long operations
+            },
+        )
     except ConnectionRefusedError:
         console.print("[red]❌ Daemon not running[/red]")
         console.print("[dim]Run 'cidx start' to start daemon[/dim]")
@@ -155,6 +164,13 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
             is_semantic = parsed['is_semantic']
             limit = parsed['limit']
             filters = parsed['filters']
+
+            # Check if --quiet flag is present
+            is_quiet = parsed.get('quiet', False)
+
+            # Display daemon mode indicator (unless --quiet flag is set)
+            if not is_quiet:
+                console.print("🔧 Running in daemon mode", style="blue")
 
             # DISPLAY QUERY CONTEXT (identical to standalone mode)
             project_root = Path.cwd()
@@ -233,9 +249,24 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
             # Parse flags
             force_reindex = "--clear" in args
             enable_fts = "--fts" in args
+            reconcile = "--reconcile" in args
+            detect_deletions = "--detect-deletions" in args
+
+            # Parse numeric parameters
+            batch_size = 50  # default
+            files_count = None
+            i = 0
+            while i < len(args):
+                if args[i] == "--batch-size" and i + 1 < len(args):
+                    batch_size = int(args[i + 1])
+                    i += 2
+                elif args[i] == "--files-count-to-process" and i + 1 < len(args):
+                    files_count = int(args[i + 1])
+                    i += 2
+                else:
+                    i += 1
 
             # Get daemon config from connection
-            # We need to get config for retry delays
             from .config import ConfigManager
 
             try:
@@ -247,11 +278,16 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
             # Close the connection before calling delegation (it will create its own)
             conn.close()
 
-            # Delegate to index via daemon
+            # Delegate to index via daemon with all parameters
+            # (mode indicator will be shown inside _index_via_daemon after progress display setup)
             return cli_daemon_delegation._index_via_daemon(
                 force_reindex=force_reindex,
                 enable_fts=enable_fts,
                 daemon_config=daemon_config,
+                batch_size=batch_size,
+                reconcile=reconcile,
+                files_count_to_process=files_count,
+                detect_deletions=detect_deletions,
             )
 
         elif command == "watch":

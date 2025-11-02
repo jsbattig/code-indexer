@@ -123,8 +123,8 @@ class TestFastPathRPCSignatures:
         mock_conn.root = mock_root
         mock_unix_connect.return_value = mock_conn
 
-        # Mock semantic query result
-        mock_root.exposed_query.return_value = []
+        # Mock semantic query result (should return dict with results/timing)
+        mock_root.exposed_query.return_value = {"results": [], "timing": {}}
 
         # Create config path
         config_path = Path("/tmp/test/.code-indexer/config.json")

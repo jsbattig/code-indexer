@@ -146,8 +146,6 @@ class TestCommandClassification:
             "watch",
             "clean",
             "clean-data",
-            "status",
-            "start",
             "stop",
             "watch-stop",
         ]

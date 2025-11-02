@@ -103,17 +103,15 @@ class HNSWIndexManager:
         # We'll store the ID mapping separately in metadata
         labels = np.arange(num_vectors)
 
-        # Report progress before adding items
+        # Report info message at start
         if progress_callback:
-            progress_callback(0, num_vectors, Path(""), info="Building HNSW index")
+            progress_callback(0, 0, Path(""), info="🔧 Building HNSW index...")
 
         index.add_items(vectors, labels)
 
-        # Report progress after adding items
+        # Report info message at completion
         if progress_callback:
-            progress_callback(
-                num_vectors, num_vectors, Path(""), info="HNSW index complete"
-            )
+            progress_callback(0, 0, Path(""), info="🔧 HNSW index built ✓")
 
         # Save index to disk
         index_file = collection_path / self.INDEX_FILENAME
@@ -277,11 +275,15 @@ class HNSWIndexManager:
         if total_files == 0:
             return 0
 
+        # Report info message at start
+        if progress_callback:
+            progress_callback(0, 0, Path(""), info="🔧 Rebuilding HNSW index...")
+
         # Load all vectors and IDs
         vectors_list = []
         ids_list = []
 
-        for idx, vector_file in enumerate(vector_files, 1):
+        for vector_file in vector_files:
             try:
                 with open(vector_file) as f:
                     data = json.load(f)
@@ -296,18 +298,16 @@ class HNSWIndexManager:
                 vectors_list.append(vector)
                 ids_list.append(point_id)
 
-                # Report progress periodically
-                if progress_callback and idx % 100 == 0:
-                    progress_callback(
-                        idx, total_files, Path(""), info="Rebuilding HNSW index"
-                    )
-
             except (json.JSONDecodeError, KeyError, ValueError):
                 # Skip malformed files
                 continue
 
         if not vectors_list:
             return 0
+
+        # Report info message before building index
+        if progress_callback:
+            progress_callback(0, 0, Path(""), info="🔧 HNSW index rebuilt ✓")
 
         # Convert to numpy array
         vectors = np.array(vectors_list, dtype=np.float32)

@@ -80,7 +80,7 @@ class TestExposedQueryMethods:
         """exposed_query should load cache on first call."""
         # Mock the cache loading
         with patch.object(service, '_ensure_cache_loaded') as mock_ensure:
-            with patch.object(service, '_execute_semantic_search', return_value=[]):
+            with patch.object(service, '_execute_semantic_search', return_value=([], {})):
                 service.exposed_query(str(mock_project_path), "test query")
                 mock_ensure.assert_called_once_with(str(mock_project_path))
 
@@ -90,7 +90,7 @@ class TestExposedQueryMethods:
         service.cache_entry = CacheEntry(mock_project_path)
         initial_count = service.cache_entry.access_count
 
-        with patch.object(service, '_execute_semantic_search', return_value=[]):
+        with patch.object(service, '_execute_semantic_search', return_value=([], {})):
             service.exposed_query(str(mock_project_path), "test query")
 
         assert service.cache_entry.access_count == initial_count + 1
@@ -101,11 +101,13 @@ class TestExposedQueryMethods:
             {"path": "file1.py", "score": 0.95},
             {"path": "file2.py", "score": 0.88},
         ]
+        mock_timing = {"query_time_ms": 50, "total_time_ms": 100}
 
-        with patch.object(service, '_execute_semantic_search', return_value=mock_results):
-            results = service.exposed_query(str(mock_project_path), "test query", limit=10)
+        with patch.object(service, '_execute_semantic_search', return_value=(mock_results, mock_timing)):
+            result = service.exposed_query(str(mock_project_path), "test query", limit=10)
 
-        assert results == mock_results
+        assert result["results"] == mock_results
+        assert result["timing"] == mock_timing
 
     def test_exposed_query_fts_loads_cache_on_first_call(self, service, mock_project_path):
         """exposed_query_fts should load cache on first call."""
@@ -441,7 +443,9 @@ class TestExposedDaemonManagement:
         service.watch_thread = Mock()
         service.watch_thread.is_alive.return_value = False
 
-        with patch('sys.exit'):  # Fixed: use sys.exit not os._exit
+        # Mock os.kill to prevent SIGTERM being sent to test process
+        with patch('os.kill') as mock_kill, \
+             patch('os.getpid', return_value=12345):
             service.exposed_shutdown()
 
             # Should stop watch - Fixed: use stop_watching() not stop()
@@ -449,6 +453,10 @@ class TestExposedDaemonManagement:
 
             # Should stop eviction
             assert service.eviction_thread.running is False
+
+            # Verify SIGTERM was sent
+            import signal
+            mock_kill.assert_called_once_with(12345, signal.SIGTERM)
 
     def test_exposed_ping_returns_success(self, service):
         """exposed_ping should return success for health check."""
@@ -542,7 +550,7 @@ class TestConcurrency:
         results = []
 
         def query():
-            with patch.object(service, '_execute_semantic_search', return_value=[]):
+            with patch.object(service, '_execute_semantic_search', return_value=([], {})):
                 result = service.exposed_query(str(project_path), "test")
                 results.append(result)
 

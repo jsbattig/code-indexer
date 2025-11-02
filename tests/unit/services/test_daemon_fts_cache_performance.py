@@ -17,9 +17,7 @@ import pytest
 import time
 import json
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-import tempfile
-import shutil
+from unittest.mock import patch, MagicMock
 
 
 @pytest.fixture
@@ -196,7 +194,6 @@ def test_daemon_routing_fts_queries():
     correctly calls exposed_query_fts for FTS queries.
     """
     from code_indexer.cli_daemon_delegation import _query_via_daemon
-    from unittest.mock import MagicMock, patch
 
     daemon_config = {
         "enabled": True,
@@ -297,7 +294,7 @@ def test_daemon_fts_performance_benchmark(test_project_with_fts):
     result3 = daemon.exposed_query_fts(project_str, "hello", limit=10)
     cache_hit_time = time.perf_counter() - start_time
 
-    print(f"\n=== FTS Performance Benchmark ===")
+    print("\n=== FTS Performance Benchmark ===")
     print(f"Cold cache (first query):  {cold_time*1000:.1f}ms")
     print(f"Warm cache (index loaded): {warm_time*1000:.1f}ms")
     print(f"Query cache hit:           {cache_hit_time*1000:.1f}ms")

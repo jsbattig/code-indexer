@@ -133,16 +133,21 @@ class TestBug3WatchStateNotCheckedProperly:
 class TestBug4ShutdownSocketCleanupBypassed:
     """Bug #4: Shutdown uses os._exit() bypassing finally block cleanup."""
 
-    @patch('sys.exit')
-    def test_shutdown_uses_sys_exit_not_os_exit(self, mock_sys_exit):
-        """Verify exposed_shutdown uses sys.exit() instead of os._exit()."""
+    @patch('os.kill')
+    @patch('os.getpid')
+    def test_shutdown_uses_sigterm_not_os_exit(self, mock_getpid, mock_kill):
+        """Verify exposed_shutdown uses SIGTERM instead of os._exit()."""
+        import signal
+
         service = CIDXDaemonService()
+        mock_getpid.return_value = 12345
 
         # Call shutdown
-        service.exposed_shutdown()
+        result = service.exposed_shutdown()
 
-        # VERIFY: sys.exit(0) was called (not os._exit)
-        mock_sys_exit.assert_called_once_with(0)
+        # VERIFY: SIGTERM was sent to current process (not os._exit)
+        mock_kill.assert_called_once_with(12345, signal.SIGTERM)
+        assert result["status"] == "success"
 
 
 class TestBug5SemanticIndexesFailToLoad:
@@ -256,8 +261,8 @@ class TestBug6ServiceInstancePerConnection:
         assert hasattr(shared_service, 'watch_handler')
         assert hasattr(shared_service, 'watch_thread')
 
-        # Verify cache_lock is threading.Lock (thread-safe)
-        assert isinstance(shared_service.cache_lock, type(threading.Lock()))
+        # Verify cache_lock is threading.RLock (reentrant, thread-safe)
+        assert isinstance(shared_service.cache_lock, type(threading.RLock()))
 
     def test_cache_entry_shared_across_calls(self, tmp_path):
         """Verify single service instance shares cache across multiple calls."""

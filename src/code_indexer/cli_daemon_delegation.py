@@ -701,193 +701,269 @@ def _index_via_daemon(
     rich_live_manager = None
     progress_manager = None
 
-    try:
-        # Connect to daemon
-        conn = _connect_to_daemon(socket_path, daemon_config)
+    # Retry loop with auto-start (EXACTLY like query command)
+    for restart_attempt in range(3):
+        try:
+            # Connect to daemon (will auto-start if needed)
+            conn = _connect_to_daemon(socket_path, daemon_config)
 
-        # Import standalone display components (EXACTLY what standalone uses)
-        from .progress.progress_display import RichLiveProgressManager
-        from .progress import MultiThreadedProgressManager
+            # Import standalone display components (EXACTLY what standalone uses)
+            from .progress.progress_display import RichLiveProgressManager
+            from .progress import MultiThreadedProgressManager
 
-        # Create progress managers (IDENTICAL to standalone)
-        rich_live_manager = RichLiveProgressManager(console=console)
-        progress_manager = MultiThreadedProgressManager(
-            console=console,
-            live_manager=rich_live_manager,
-            max_slots=14,  # Default thread count + 2
-        )
+            # Create progress managers (IDENTICAL to standalone)
+            rich_live_manager = RichLiveProgressManager(console=console)
+            progress_manager = MultiThreadedProgressManager(
+                console=console,
+                live_manager=rich_live_manager,
+                max_slots=14,  # Default thread count + 2
+            )
 
-        # Create callback that feeds progress manager (IDENTICAL to standalone pattern)
-        def progress_callback(current, total, file_path, info="", **kwargs):
-            """
-            Progress callback for daemon indexing with Rich Live display.
+            # Display mode indicator BEFORE any daemon callbacks
+            console.print("🔧 Running in [cyan]daemon mode[/cyan]")
 
-            Handles:
-            - Setup messages (total=0) -> scrolling at top
-            - Progress updates (total>0) -> bottom-pinned progress bar
-            """
-            # Setup messages scroll at top (when total=0)
-            if total == 0:
-                rich_live_manager.handle_setup_message(info)
-                return
+            # Create callback that feeds progress manager (IDENTICAL to standalone pattern)
+            def progress_callback(current, total, file_path, info="", **kwargs):
+                """
+                Progress callback for daemon indexing with Rich Live display.
 
-            # Parse progress info for metrics
-            try:
-                parts = info.split(" | ")
-                if len(parts) >= 4:
-                    files_per_second = float(parts[1].replace(" files/s", ""))
-                    kb_per_second = float(parts[2].replace(" KB/s", ""))
-                    threads_text = parts[3]
-                    active_threads = (
-                        int(threads_text.split()[0]) if threads_text.split() else 12
-                    )
-                else:
+                Handles:
+                - Setup messages (total=0) -> scrolling at top
+                - Progress updates (total>0) -> bottom-pinned progress bar
+
+                Args:
+                    current: Current files processed
+                    total: Total files to process
+                    file_path: Current file being processed
+                    info: Progress info string with metrics
+                    **kwargs: Additional params (concurrent_files, slot_tracker)
+                """
+                # DEFENSIVE: Ensure current and total are always integers, never None
+                # This prevents "None/None" display and TypeError exceptions
+                current = int(current) if current is not None else 0
+                total = int(total) if total is not None else 0
+
+                # Setup messages scroll at top (when total=0)
+                if total == 0:
+                    rich_live_manager.handle_setup_message(info)
+                    return
+
+                # RPyC WORKAROUND: Deserialize concurrent_files from JSON to get fresh data
+                # RPyC caches proxy objects, causing frozen/stale display. JSON serialization
+                # on daemon side + deserialization here ensures we always get current state.
+                import json
+                concurrent_files_json = kwargs.get("concurrent_files_json", "[]")
+                concurrent_files = json.loads(concurrent_files_json)
+                slot_tracker = kwargs.get("slot_tracker", None)
+
+                # Parse progress info for metrics
+                try:
+                    parts = info.split(" | ")
+                    if len(parts) >= 4:
+                        files_per_second = float(parts[1].replace(" files/s", ""))
+                        kb_per_second = float(parts[2].replace(" KB/s", ""))
+                        threads_text = parts[3]
+                        active_threads = (
+                            int(threads_text.split()[0]) if threads_text.split() else 12
+                        )
+                    else:
+                        files_per_second = 0.0
+                        kb_per_second = 0.0
+                        active_threads = 12
+                except (ValueError, IndexError):
                     files_per_second = 0.0
                     kb_per_second = 0.0
                     active_threads = 12
-            except (ValueError, IndexError):
-                files_per_second = 0.0
-                kb_per_second = 0.0
-                active_threads = 12
 
-            # Update progress manager (feeds bottom display)
-            # TODO: Daemon mode doesn't provide concurrent file list (simplified streaming)
-            # Concurrent file display shows "├─ filename.py (size, 1s) vectorizing..."
-            # This requires streaming slot tracker data from daemon, which adds complexity.
-            # Current implementation: Progress bar + metrics only (50% UX parity with standalone)
-            progress_manager.update_complete_state(
-                current=current,
-                total=total,
-                files_per_second=files_per_second,
-                kb_per_second=kb_per_second,
-                active_threads=active_threads,
-                concurrent_files=[],  # Daemon doesn't stream concurrent files (limitation)
-                slot_tracker=None,  # Daemon doesn't stream slot tracker (limitation)
-                info=info,
+                # Update progress manager with concurrent files and slot tracker
+                # FIX: Now extracts concurrent_files and slot_tracker from kwargs
+                # This provides UX parity with standalone mode (shows concurrent file list)
+                progress_manager.update_complete_state(
+                    current=current,
+                    total=total,
+                    files_per_second=files_per_second,
+                    kb_per_second=kb_per_second,
+                    active_threads=active_threads,
+                    concurrent_files=concurrent_files,  # Now extracted from kwargs
+                    slot_tracker=slot_tracker,  # Now extracted from kwargs
+                    info=info,
+                )
+
+                # Get integrated display and update bottom area
+                rich_table = progress_manager.get_integrated_display()
+                rich_live_manager.handle_progress_update(rich_table)
+
+            # BUG FIX: Add reset_progress_timers method to progress_callback
+            # This method is called by HighThroughputProcessor during phase transitions
+            # to reset Rich Progress internal timers for accurate time tracking
+            def reset_progress_timers():
+                """Reset Rich Progress timers for phase transitions."""
+                if progress_manager:
+                    progress_manager.reset_progress_timers()
+
+            # Attach reset method to callback function (makes it accessible via hasattr check)
+            progress_callback.reset_progress_timers = reset_progress_timers  # type: ignore[attr-defined]
+
+            # Map parameters for daemon
+            daemon_kwargs = {
+                "force_full": force_reindex,
+                "enable_fts": kwargs.get("enable_fts", False),
+                "batch_size": kwargs.get("batch_size", 50),
+                "reconcile_with_database": kwargs.get("reconcile", False),
+                "files_count_to_process": kwargs.get("files_count_to_process"),
+                "detect_deletions": kwargs.get("detect_deletions", False),
+                # rebuild_* flags not supported in daemon mode yet (early-exit paths in local mode)
+            }
+
+            # CRITICAL: Start bottom display BEFORE daemon call to enable setup message scrolling
+            # This ensures setup messages appear at top (scrolling) before progress bar appears at bottom
+            rich_live_manager.start_bottom_display()
+
+            # Execute indexing (BLOCKS until complete, streams progress via callback)
+            # RPyC automatically handles callback streaming to client
+            result = conn.root.exposed_index_blocking(
+                project_path=str(Path.cwd()),
+                callback=progress_callback,  # Real-time progress streaming
+                **daemon_kwargs,
             )
 
-            # Get integrated display and update bottom area
-            rich_table = progress_manager.get_integrated_display()
-            rich_live_manager.handle_progress_update(rich_table)
+            # Extract result data FIRST (while connection and proxies still valid)
+            status = str(result.get("status", "unknown"))
+            message = str(result.get("message", ""))
+            stats_dict = dict(result.get("stats", {}))
 
-        # Map parameters for daemon
-        daemon_kwargs = {
-            "force_full": force_reindex,
-            "enable_fts": kwargs.get("enable_fts", False),
-            "batch_size": kwargs.get("batch_size", 50),
-        }
+            # Close connection after extracting data
+            conn.close()
 
-        # CRITICAL: Start bottom display BEFORE daemon call to enable setup message scrolling
-        # This ensures setup messages appear at top (scrolling) before progress bar appears at bottom
-        rich_live_manager.start_bottom_display()
+            # Stop progress display after connection closed
+            if rich_live_manager:
+                try:
+                    rich_live_manager.stop_display()
+                except Exception:
+                    pass
+            if progress_manager:
+                try:
+                    progress_manager.stop_progress()
+                except Exception:
+                    pass
 
-        # Execute indexing (BLOCKS until complete, streams progress via callback)
-        # RPyC automatically handles callback streaming to client
-        result = conn.root.exposed_index_blocking(
-            project_path=str(Path.cwd()),
-            callback=progress_callback,  # Real-time progress streaming
-            **daemon_kwargs,
-        )
+            # Display completion status (IDENTICAL to standalone)
+            if status == "completed":
+                cancelled = stats_dict.get("cancelled", False)
+                if cancelled:
+                    console.print("🛑 Indexing cancelled!", style="yellow")
+                    console.print(
+                        f"📄 Files processed before cancellation: {stats_dict.get('files_processed', 0)}",
+                        style="yellow",
+                    )
+                    console.print(
+                        f"📦 Chunks indexed before cancellation: {stats_dict.get('chunks_created', 0)}",
+                        style="yellow",
+                    )
+                    console.print(
+                        "💾 Progress saved - you can resume indexing later", style="blue"
+                    )
+                else:
+                    console.print("✅ Indexing complete!", style="green")
+                    console.print(
+                        f"📄 Files processed: {stats_dict.get('files_processed', 0)}"
+                    )
+                    console.print(
+                        f"📦 Chunks indexed: {stats_dict.get('chunks_created', 0)}"
+                    )
 
-        # Extract result data FIRST (while connection and proxies still valid)
-        status = str(result.get("status", "unknown"))
-        message = str(result.get("message", ""))
-        stats_dict = dict(result.get("stats", {}))
+                duration = stats_dict.get("duration_seconds", 0)
+                console.print(f"⏱️  Duration: {duration:.2f}s")
 
-        # Close connection after extracting data
-        conn.close()
+                # Calculate throughput
+                if duration > 0:
+                    files_per_min = (stats_dict.get("files_processed", 0) / duration) * 60
+                    chunks_per_min = (stats_dict.get("chunks_created", 0) / duration) * 60
+                    console.print(
+                        f"🚀 Throughput: {files_per_min:.1f} files/min, {chunks_per_min:.1f} chunks/min"
+                    )
 
-        # Stop progress display after connection closed
-        if rich_live_manager:
-            try:
-                rich_live_manager.stop_display()
-            except Exception:
-                pass
-        if progress_manager:
-            try:
-                progress_manager.stop_progress()
-            except Exception:
-                pass
+                if stats_dict.get("failed_files", 0) > 0:
+                    console.print(
+                        f"⚠️  Failed files: {stats_dict.get('failed_files', 0)}",
+                        style="yellow",
+                    )
 
-        # Display completion status (IDENTICAL to standalone)
-        if status == "completed":
-            cancelled = stats_dict.get("cancelled", False)
-            if cancelled:
-                console.print("🛑 Indexing cancelled!", style="yellow")
-                console.print(
-                    f"📄 Files processed before cancellation: {stats_dict.get('files_processed', 0)}",
-                    style="yellow",
-                )
-                console.print(
-                    f"📦 Chunks indexed before cancellation: {stats_dict.get('chunks_created', 0)}",
-                    style="yellow",
-                )
-                console.print(
-                    "💾 Progress saved - you can resume indexing later", style="blue"
-                )
+                # Success - break out of retry loop
+                return 0
+
+            elif status == "already_running":
+                console.print("[yellow]⚠ Indexing already in progress[/yellow]")
+                return 0
+            elif status == "error":
+                console.print(f"[red]❌ Indexing failed: {message}[/red]")
+                return 1
             else:
-                console.print("✅ Indexing complete!", style="green")
+                console.print(f"[yellow]⚠ Unexpected status: {status}[/yellow]")
+                console.print(f"[dim]Message: {message}[/dim]")
+                return 1
+
+        except Exception as e:
+            # Clean up progress display on error
+            if rich_live_manager:
+                try:
+                    rich_live_manager.stop_display()
+                except Exception:
+                    pass
+            if progress_manager:
+                try:
+                    progress_manager.stop_progress()
+                except Exception:
+                    pass
+
+            # Close connection on error
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+            # Retry logic with auto-start (EXACTLY like query command)
+            if restart_attempt < 2:
+                # Still have restart attempts left
                 console.print(
-                    f"📄 Files processed: {stats_dict.get('files_processed', 0)}"
+                    f"[yellow]⚠️  Daemon connection failed, attempting restart ({restart_attempt + 1}/2)[/yellow]"
                 )
+                console.print(f"[dim](Error: {e})[/dim]")
+
+                # Clean up stale socket before restart
+                _cleanup_stale_socket(socket_path)
+                _start_daemon(config_path)
+
+                # Wait longer for daemon to fully start
+                time.sleep(1.0)
+                continue
+            else:
+                # Exhausted all restart attempts
                 console.print(
-                    f"📦 Chunks indexed: {stats_dict.get('chunks_created', 0)}"
+                    "[yellow]ℹ️  Daemon unavailable after 2 restart attempts, using standalone mode[/yellow]"
+                )
+                console.print(f"[dim](Error: {e})[/dim]")
+                console.print("[dim]Tip: Check daemon with 'cidx daemon status'[/dim]")
+
+                # Clean kwargs to avoid duplicate parameter errors
+                clean_kwargs = {k: v for k, v in kwargs.items() if k not in [
+                    "enable_fts", "batch_size", "reconcile",
+                    "files_count_to_process", "detect_deletions"
+                ]}
+
+                return _index_standalone(
+                    force_reindex=force_reindex,
+                    enable_fts=kwargs.get("enable_fts", False),
+                    batch_size=kwargs.get("batch_size", 50),
+                    reconcile=kwargs.get("reconcile", False),
+                    files_count_to_process=kwargs.get("files_count_to_process"),
+                    detect_deletions=kwargs.get("detect_deletions", False),
+                    **clean_kwargs,
                 )
 
-            duration = stats_dict.get("duration_seconds", 0)
-            console.print(f"⏱️  Duration: {duration:.2f}s")
-
-            # Calculate throughput
-            if duration > 0:
-                files_per_min = (stats_dict.get("files_processed", 0) / duration) * 60
-                chunks_per_min = (stats_dict.get("chunks_created", 0) / duration) * 60
-                console.print(
-                    f"🚀 Throughput: {files_per_min:.1f} files/min, {chunks_per_min:.1f} chunks/min"
-                )
-
-            if stats_dict.get("failed_files", 0) > 0:
-                console.print(
-                    f"⚠️  Failed files: {stats_dict.get('failed_files', 0)}",
-                    style="yellow",
-                )
-
-            return 0
-
-        elif status == "already_running":
-            console.print("[yellow]⚠ Indexing already in progress[/yellow]")
-            return 0
-        elif status == "error":
-            console.print(f"[red]❌ Indexing failed: {message}[/red]")
-            return 1
-        else:
-            console.print(f"[yellow]⚠ Unexpected status: {status}[/yellow]")
-            console.print(f"[dim]Message: {message}[/dim]")
-            return 1
-
-    except Exception as e:
-        # Clean up progress display on error
-        if rich_live_manager:
-            try:
-                rich_live_manager.stop_display()
-            except Exception:
-                pass
-        if progress_manager:
-            try:
-                progress_manager.stop_progress()
-            except Exception:
-                pass
-
-        # Close connection on error
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-        console.print(f"[yellow]Failed to index via daemon: {e}[/yellow]")
-        console.print("[yellow]Falling back to standalone mode[/yellow]")
-
-        return _index_standalone(force_reindex=force_reindex, **kwargs)
+    # Should never reach here
+    return 1
 
 
 def _watch_standalone(

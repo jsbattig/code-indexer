@@ -28,7 +28,10 @@ class TestDaemonConnection:
 
             assert result == mock_conn
             assert mock_connect.call_count == 1
-            mock_connect.assert_called_once_with(str(socket_path))
+            mock_connect.assert_called_once_with(
+                str(socket_path),
+                config={"allow_public_attrs": True, "sync_request_timeout": None},
+            )
 
     def test_connect_with_exponential_backoff_success_after_retries(self):
         """Test successful connection after 3 retries."""

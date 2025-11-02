@@ -11,9 +11,12 @@ DESIGN PRINCIPLES:
 import queue
 import threading
 import time
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 
 class FileStatus(Enum):
@@ -58,7 +61,7 @@ class CleanSlotTracker:
         # Fixed-size status array (the display array)
         self.status_array: List[Optional[FileData]] = [None] * max_slots
 
-        # Concurrent stack for available slot numbers
+        # Concurrent queue for available slot numbers (LIFO for stack-like allocation)
         self.available_slots: queue.LifoQueue[int] = queue.LifoQueue()
         for i in range(max_slots):
             self.available_slots.put(i)  # Preload 0, 1, 2, ..., max_slots-1
@@ -89,13 +92,10 @@ class CleanSlotTracker:
                 file_data.last_updated = time.time()
 
     def release_slot(self, slot_id: int):
-        """Release slot by integer ID, keeping file visible for UX."""
-        # CRITICAL UX DECISION: Keep files visible after completion for better user feedback
-        # Following user instructions: DO NOT clear completed files from display
-        # Files stay visible in COMPLETE state to show user what was processed
-
+        """Release slot for reuse but keep file visible in COMPLETE state."""
         # Return slot to available pool for reuse without clearing display
         self.available_slots.put(slot_id)
+        # Note: status_array[slot_id] stays as-is to maintain visual feedback
 
     def release_slot_keep_visible(self, slot_id: int):
         """Release slot for reuse but keep file visible in COMPLETE state."""
@@ -150,4 +150,5 @@ class CleanSlotTracker:
                         "last_updated": slot_data.last_updated,
                     }
                     concurrent_data.append(file_dict)
+
         return concurrent_data
