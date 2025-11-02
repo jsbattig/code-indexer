@@ -830,8 +830,9 @@ def _display_fts_results(
             console.print(f"   Match: [red]{match_text}[/red]")
 
         # Show snippet with syntax highlighting if available
-        snippet = result.get("snippet")
-        if snippet:
+        # snippet_lines=0 returns empty string, so we skip display
+        snippet = result.get("snippet", "")
+        if snippet and snippet.strip():  # Only show if snippet is non-empty
             console.print("   Context:")
             try:
                 from rich.syntax import Syntax
@@ -5823,16 +5824,6 @@ def _status_impl(ctx, force_docker: bool):
         except Exception as e:
             table.add_row("Embedding Provider", "❌ Error", str(e))
 
-        # Check Ollama status specifically
-        if config.embedding_provider == "ollama":
-            # Ollama is required, status already shown above
-            pass
-        else:
-            # Ollama is not needed with this configuration
-            table.add_row(
-                "Ollama", "✅ Not needed", f"Using {config.embedding_provider}"
-            )
-
         # Check Vector Storage Backend (Qdrant or Filesystem)
         # backend_provider already determined above
         qdrant_ok = False  # Initialize to False
@@ -5930,6 +5921,39 @@ def _status_impl(ctx, force_docker: bool):
                             else:
                                 index_files_status.append(
                                     "ID Index: ⚠️ Missing (rebuilds automatically)"
+                                )
+
+                            # FTS (Full-Text Search) index check
+                            fts_index_path = (
+                                config_manager.config_path.parent / "tantivy_index"
+                            )
+                            if fts_index_path.exists() and fts_index_path.is_dir():
+                                # Check for tantivy meta files to verify it's a valid index
+                                meta_file = fts_index_path / "meta.json"
+                                managed_file = fts_index_path / ".managed.json"
+
+                                if meta_file.exists() or managed_file.exists():
+                                    # Valid FTS index exists - get size
+                                    total_size = sum(
+                                        f.stat().st_size
+                                        for f in fts_index_path.rglob("*")
+                                        if f.is_file()
+                                    )
+                                    size_mb = total_size / (1024 * 1024)
+                                    # Count index segments (*.idx files indicate indexed data)
+                                    segment_count = len(
+                                        list(fts_index_path.glob("*.idx"))
+                                    )
+                                    index_files_status.append(
+                                        f"FTS Index: ✅ {size_mb:.1f} MB ({segment_count} segments)"
+                                    )
+                                else:
+                                    index_files_status.append(
+                                        "FTS Index: ⚠️ Invalid (missing meta files)"
+                                    )
+                            else:
+                                index_files_status.append(
+                                    "FTS Index: ❌ Not created (use --fts flag)"
                                 )
 
                             # Track missing components for recovery guidance

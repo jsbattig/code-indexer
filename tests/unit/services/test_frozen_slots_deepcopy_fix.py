@@ -7,14 +7,9 @@ frozen/stale display in daemon mode.
 """
 
 import copy
-from pathlib import Path
-from typing import Any, Dict, List
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 from code_indexer.services.clean_slot_tracker import CleanSlotTracker, FileData, FileStatus
-from code_indexer.services.high_throughput_processor import HighThroughputProcessor
 
 
 class TestFrozenSlotsDeepCopyFix:

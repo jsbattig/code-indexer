@@ -78,6 +78,9 @@ def parse_query_args(args: List[str]) -> Dict[str, Any]:
             elif arg == '--exclude-path' and i + 1 < len(args):
                 result['filters']['exclude_path'] = args[i + 1]
                 i += 1
+            elif arg == '--snippet-lines' and i + 1 < len(args):
+                result['filters']['snippet_lines'] = int(args[i + 1])
+                i += 1
             # Skip other flags for now
         else:
             # Query text (first non-flag argument)
@@ -94,27 +97,48 @@ def parse_query_args(args: List[str]) -> Dict[str, Any]:
 
 
 def _display_results(results: Any, console: Console, timing_info: Optional[Dict[str, Any]] = None) -> None:
-    """Display query results by delegating to shared display function (DRY principle).
+    """Display query results by delegating to shared display functions (DRY principle).
 
     CRITICAL: This function calls the EXISTING display code from cli.py instead of
-    duplicating 107 lines. This ensures identical display in both daemon and standalone modes.
+    duplicating lines. This ensures identical display in both daemon and standalone modes.
+
+    FTS Display Fix: Detects result type (FTS vs semantic) and routes to appropriate
+    display function. FTS results have 'match_text' key and no 'payload' key.
+    Semantic results have 'payload' key and no 'match_text' key.
 
     Args:
-        results: Query results from daemon (list of dicts with score/payload)
+        results: Query results from daemon (FTS or semantic format)
         console: Rich console for output
-        timing_info: Optional timing information for performance display
+        timing_info: Optional timing information for performance display (semantic only)
     """
-    # Import shared display function (SINGLE source of truth)
-    from .cli import _display_semantic_results
+    # Import shared display functions (SINGLE source of truth)
+    from .cli import _display_semantic_results, _display_fts_results
 
-    # Delegate to shared function (NO code duplication)
-    _display_semantic_results(
-        results=results,
-        console=console,
-        quiet=False,  # Daemon mode always shows full output
-        timing_info=timing_info,
-        current_display_branch=None,  # Auto-detect in shared function
-    )
+    # Detect result type by examining first result
+    # FTS results have 'match_text' and no 'payload'
+    # Semantic results have 'payload' and no 'match_text'
+    is_fts_result = False
+    if results and len(results) > 0:
+        first_result = results[0]
+        is_fts_result = "match_text" in first_result or "payload" not in first_result
+
+    # Route to appropriate display function
+    if is_fts_result:
+        # FTS results: display with FTS-specific formatting
+        _display_fts_results(
+            results=results,
+            console=console,
+            quiet=False,  # Daemon mode always shows full output
+        )
+    else:
+        # Semantic results: display with semantic-specific formatting
+        _display_semantic_results(
+            results=results,
+            console=console,
+            quiet=False,  # Daemon mode always shows full output
+            timing_info=timing_info,
+            current_display_branch=None,  # Auto-detect in shared function
+        )
 
 
 def execute_via_daemon(argv: List[str], config_path: Path) -> int:
@@ -211,14 +235,16 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
                 response = conn.root.exposed_query_hybrid(
                     str(Path.cwd()), query_text, **options
                 )
-                result = response  # Hybrid returns list directly (for now)
+                # Extract results from response dict
+                result = response.get("results", []) if isinstance(response, dict) else response
                 timing_info = None
             elif is_fts:
                 # FTS only
                 response = conn.root.exposed_query_fts(
                     str(Path.cwd()), query_text, **options
                 )
-                result = response  # FTS returns list directly (for now)
+                # Extract results from response dict
+                result = response.get("results", []) if isinstance(response, dict) else response
                 timing_info = None
             else:
                 # Semantic only

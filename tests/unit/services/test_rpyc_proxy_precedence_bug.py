@@ -1,17 +1,11 @@
-"""Test that proves the RPyC proxy precedence bug causing frozen slots.
+"""Test that verifies NO fallback to slot_tracker.get_concurrent_files_data() in daemon mode.
 
-THE BUG:
-In daemon mode, MultiThreadedProgressManager.get_integrated_display() calls:
-  1. slot_tracker.get_concurrent_files_data() - RPyC proxy call (SLOW, may be stale)
-  2. self._concurrent_files - Fresh serialized data already passed in kwargs
+ARCHITECTURE:
+- Daemon mode: ALWAYS uses concurrent_files_json (JSON-serialized data), NO RPyC proxy calls
+- Standalone mode: Uses set_slot_tracker() to populate self._concurrent_files
+- NO FALLBACK: get_integrated_display() never calls slot_tracker.get_concurrent_files_data()
 
-This is BACKWARD! We should prefer fresh serialized data over RPyC proxy calls.
-
-CORRECT BEHAVIOR:
-  1. PREFER self._concurrent_files (fresh serialized data from daemon)
-  2. Fallback to slot_tracker.get_concurrent_files_data() only if concurrent_files unavailable
-
-This test uses a mock to simulate RPyC proxy behavior and verify correct precedence.
+This eliminates 50-100ms RPyC proxy overhead per callback and prevents stale data issues.
 """
 
 from src.code_indexer.services.clean_slot_tracker import (
@@ -94,10 +88,11 @@ def test_prefers_serialized_concurrent_files_over_rpyc_proxy():
     mock_slot_tracker.get_concurrent_files_data.assert_not_called()
 
 
-def test_falls_back_to_proxy_when_no_concurrent_files():
-    """Test that display falls back to RPyC proxy only when concurrent_files unavailable.
+def test_no_fallback_when_concurrent_files_empty():
+    """Test that display does NOT fallback to RPyC proxy when concurrent_files is empty.
 
-    This handles the case where daemon doesn't send concurrent_files for some reason.
+    CRITICAL: Empty concurrent_files means completion state, not missing data.
+    The display should show NO files, NOT fallback to slot_tracker.get_concurrent_files_data().
     """
     # Setup
     console = Console(file=StringIO(), force_terminal=True, width=120)
@@ -113,18 +108,18 @@ def test_falls_back_to_proxy_when_no_concurrent_files():
     ]
     mock_slot_tracker.get_concurrent_files_data = Mock(return_value=proxy_data)
 
-    # Update with slot_tracker but NO concurrent_files (empty list)
+    # Update with slot_tracker AND empty concurrent_files (completion state)
     progress_manager.update_complete_state(
         current=10,
         total=100,
         files_per_second=5.0,
         kb_per_second=128.0,
         active_threads=8,
-        concurrent_files=[],  # No concurrent files provided
+        concurrent_files=[],  # Empty = completion state, NOT missing data
         slot_tracker=mock_slot_tracker,
     )
 
-    # Get display - should fallback to RPyC proxy
+    # Get display - should NOT fallback to RPyC proxy
     display = progress_manager.get_integrated_display()
 
     # Render to string
@@ -134,18 +129,19 @@ def test_falls_back_to_proxy_when_no_concurrent_files():
     render_console.print(display)
     display_text = render_buffer.getvalue()
 
-    # ASSERTION 1: Display should show proxy data (fallback)
-    assert "proxy_file1.py" in display_text, \
-        f"Display should fallback to RPyC proxy when no concurrent_files. Got: {display_text}"
+    # CRITICAL: Display should NOT show proxy data (no fallback)
+    assert "proxy_file1.py" not in display_text, \
+        f"Display must NOT fallback to RPyC proxy. Got: {display_text}"
 
-    # ASSERTION 2: RPyC proxy method SHOULD be called (fallback scenario)
-    mock_slot_tracker.get_concurrent_files_data.assert_called_once()
+    # CRITICAL: RPyC proxy method should NOT be called (no fallback)
+    mock_slot_tracker.get_concurrent_files_data.assert_not_called()
 
 
 def test_real_slot_tracker_still_works_for_direct_mode():
-    """Test that real CleanSlotTracker still works in direct (non-daemon) mode.
+    """Test that real CleanSlotTracker still works in standalone (non-daemon) mode.
 
-    This ensures we don't break the direct connection use case.
+    In standalone mode, set_slot_tracker() populates self._concurrent_files.
+    NO direct calls to slot_tracker.get_concurrent_files_data() from get_integrated_display().
     """
     # Setup: Real slot tracker (not RPyC proxy)
     slot_tracker = CleanSlotTracker(max_slots=8)
@@ -164,18 +160,24 @@ def test_real_slot_tracker_still_works_for_direct_mode():
         )
         slot_tracker.acquire_slot(file_data)
 
-    # Update with real slot_tracker and empty concurrent_files (direct mode)
+    # Set slot tracker (standalone mode) - provides concurrent files via slot_tracker
+    progress_manager.set_slot_tracker(slot_tracker)
+
+    # In standalone mode, concurrent_files should come from slot_tracker
+    concurrent_files_data = slot_tracker.get_concurrent_files_data()
+
+    # Update progress (standalone mode passes concurrent_files from slot_tracker)
     progress_manager.update_complete_state(
         current=10,
         total=100,
         files_per_second=5.0,
         kb_per_second=128.0,
         active_threads=4,
-        concurrent_files=[],  # Empty in direct mode
+        concurrent_files=concurrent_files_data,  # Get data from slot_tracker
         slot_tracker=slot_tracker,  # Real CleanSlotTracker
     )
 
-    # Get display - should work with real slot tracker
+    # Get display - should work via set_slot_tracker (not get_concurrent_files_data)
     display = progress_manager.get_integrated_display()
 
     # Render to string
@@ -185,6 +187,6 @@ def test_real_slot_tracker_still_works_for_direct_mode():
     render_console.print(display)
     display_text = render_buffer.getvalue()
 
-    # Verify real slot tracker data appears
+    # Verify slot tracker data appears (via set_slot_tracker mechanism)
     assert "direct_file0.py" in display_text or "direct_file1.py" in display_text, \
-        f"Display should work with real CleanSlotTracker in direct mode. Got: {display_text}"
+        f"Display should work with CleanSlotTracker in standalone mode. Got: {display_text}"

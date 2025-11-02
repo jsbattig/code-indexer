@@ -219,13 +219,12 @@ class CIDXDaemonService(Service):
             )
 
             # Test string transmission
-            import time as time_module
             import threading
             callback_counter = [0]  # Correlation ID
             callback_lock = threading.Lock()
 
             def correlated_callback(current, total, file_path, info="", **cb_kwargs):
-                """Test if concatenated filenames string transmits correctly."""
+                """Serialize concurrent_files and remove slot_tracker for daemon transmission."""
                 with callback_lock:
                     callback_counter[0] += 1
                     correlation_id = callback_counter[0]
@@ -235,12 +234,17 @@ class CIDXDaemonService(Service):
                 # RPyC WORKAROUND: Serialize concurrent_files to JSON to avoid proxy caching issues
                 # This ensures the client receives fresh data on every callback, not stale proxies
                 concurrent_files_json = json.dumps(concurrent_files)
-                cb_kwargs['concurrent_files_json'] = concurrent_files_json
-                cb_kwargs['correlation_id'] = correlation_id
 
-                # Call actual client callback
+                # CRITICAL FIX: Filter out slot_tracker to prevent RPyC proxy leakage
+                # Only pass JSON-serializable data to client callback
+                filtered_kwargs = {
+                    'concurrent_files_json': concurrent_files_json,
+                    'correlation_id': correlation_id,
+                }
+
+                # Call actual client callback with filtered kwargs
                 if callback:
-                    callback(current, total, file_path, info, **cb_kwargs)
+                    callback(current, total, file_path, info, **filtered_kwargs)
 
             # BUG FIX: Add reset_progress_timers method to correlated_callback
             # This method is called by HighThroughputProcessor during phase transitions
@@ -1121,6 +1125,7 @@ class CIDXDaemonService(Service):
             edit_distance = kwargs.get('edit_distance', 0)  # 0=exact, >0=fuzzy
             case_sensitive = kwargs.get('case_sensitive', False)
             use_regex = kwargs.get('use_regex', False)
+            snippet_lines = kwargs.get('snippet_lines', 5)  # Default 5, 0 for no snippets
             languages = kwargs.get('languages', [])
             exclude_languages = kwargs.get('exclude_languages', [])
             path_filters = kwargs.get('path_filters', [])
@@ -1132,6 +1137,7 @@ class CIDXDaemonService(Service):
                 limit=limit,
                 edit_distance=edit_distance,
                 case_sensitive=case_sensitive,
+                snippet_lines=snippet_lines,  # Pass through snippet_lines parameter
                 use_regex=use_regex,
                 languages=languages,
                 exclude_languages=exclude_languages,

@@ -309,6 +309,9 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
 
     def exposed_query_fts(self, project_path: str, query: str, **kwargs) -> Dict:
         """Execute FTS search with caching."""
+        # DEBUG: Log RPC entry parameters
+        logger.info(f"DEBUG exposed_query_fts: query={query}, kwargs={kwargs}")
+
         project_path_obj = Path(project_path).resolve()
 
         # Create query cache key
@@ -829,11 +832,16 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                 return {"error": "FTS index not loaded", "results": [], "query": query}
 
             # Extract search parameters from kwargs
+            snippet_lines = kwargs.get("snippet_lines", 5)
+
+            # DEBUG: Log snippet_lines value
+            logger.info(f"DEBUG _execute_fts_search: snippet_lines={snippet_lines}, kwargs={kwargs}")
+
             results = manager.search(
                 query_text=query,
                 case_sensitive=kwargs.get("case_sensitive", False),
                 edit_distance=kwargs.get("edit_distance", 0),
-                snippet_lines=kwargs.get("snippet_lines", 5),
+                snippet_lines=snippet_lines,
                 limit=kwargs.get("limit", 10),
                 languages=kwargs.get("languages"),
                 path_filters=kwargs.get("path_filters"),
@@ -841,6 +849,10 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
                 exclude_languages=kwargs.get("exclude_languages"),
                 use_regex=kwargs.get("use_regex", False),
             )
+
+            # DEBUG: Log results
+            if results:
+                logger.info(f"DEBUG _execute_fts_search: First result snippet length={len(results[0].get('snippet', ''))}")
 
             return {"results": results, "query": query, "total": len(results)}
         except Exception as e:

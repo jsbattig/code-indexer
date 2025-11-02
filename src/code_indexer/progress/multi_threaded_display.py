@@ -205,17 +205,19 @@ class MultiThreadedProgressManager:
                 self.set_slot_tracker(slot_tracker)
             return
 
-        # Store slot_tracker for get_integrated_display() - use consistent attribute
+        # Store slot_tracker for standalone/direct mode compatibility
+        # NOTE: Only used in standalone mode (non-daemon), not used in daemon mode
+        # Daemon mode uses concurrent_files_json exclusively
         if slot_tracker is not None:
-            # Set slot tracker for direct connection (replaces CLI connection)
+            # Set slot tracker for direct connection (standalone mode)
             self.set_slot_tracker(slot_tracker)
         else:
-            # CRITICAL FIX: Clear stale slot_tracker when None is passed (e.g., hash phase)
-            # This ensures concurrent_files data is used instead of stale slot tracker data
+            # Clear slot_tracker when None is passed
             self.slot_tracker = None
 
-        # Store concurrent files for display when slot_tracker is None (e.g., hash phase)
-        # Note: This is only used as fallback when slot_tracker is None
+        # Store concurrent files for display (used in both daemon and standalone modes)
+        # In daemon mode: populated from concurrent_files_json
+        # In standalone mode: populated from slot_tracker via set_slot_tracker()
         self._concurrent_files = concurrent_files or []
 
         # Detect phase from info string if provided
@@ -265,10 +267,6 @@ class MultiThreadedProgressManager:
         Returns:
             Rich Table with progress bar at top, metrics line, and file lines
         """
-        # CRITICAL FIX: Capture slot_tracker in local variable to prevent race condition
-        # where self.slot_tracker becomes None between check and attribute access
-        slot_tracker = self.slot_tracker
-
         # Create main table to hold all display components
         main_table = Table.grid(padding=(0, 0))
         main_table.add_column(justify="left")
@@ -287,22 +285,15 @@ class MultiThreadedProgressManager:
             metrics_text = Text(self._current_metrics_info, style="dim white")
             main_table.add_row(metrics_text)
 
-        # CRITICAL FIX: PREFER serialized concurrent_files over RPyC proxy calls
+        # CRITICAL: Always use serialized concurrent_files from JSON (no fallback)
         # In daemon mode:
-        #   - self._concurrent_files = Fresh serialized data passed in kwargs (FAST, always current)
-        #   - slot_tracker.get_concurrent_files_data() = RPyC proxy call (SLOW, may be stale)
-        # CORRECT PRECEDENCE: Use serialized data first, fallback to proxy only if unavailable
-        # This ensures Rich Live refresh (10x/sec) uses pre-serialized data, not slow RPyC calls
+        #   - self._concurrent_files = Fresh serialized data passed via concurrent_files_json
+        # In standalone mode:
+        #   - self._concurrent_files = Data from slot_tracker via set_slot_tracker()
+        # NO FALLBACK to slot_tracker.get_concurrent_files_data() - eliminates RPyC proxy calls
 
-        # Get concurrent files data with correct precedence
-        fresh_concurrent_files = []
-        if self._concurrent_files:
-            # PREFER serialized concurrent_files - it's already fresh from daemon
-            fresh_concurrent_files = self._concurrent_files
-        elif slot_tracker is not None:
-            # Fallback to slot_tracker only if concurrent_files not available
-            # This happens in direct mode (non-daemon) or when daemon doesn't send concurrent_files
-            fresh_concurrent_files = slot_tracker.get_concurrent_files_data()
+        # Get concurrent files data (always from self._concurrent_files)
+        fresh_concurrent_files = self._concurrent_files or []
 
         if fresh_concurrent_files:
             for file_info in fresh_concurrent_files:

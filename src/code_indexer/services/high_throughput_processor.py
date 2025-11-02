@@ -15,6 +15,7 @@ This module contains progress_callback calls that MUST follow the pattern:
 - See BranchAwareIndexer and CLI progress_callback for the exact pattern
 """
 
+import copy
 import logging
 import os
 import time
@@ -464,7 +465,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                         len(files),
                         Path(""),
                         info=f"0/{len(files)} files (0%) | 0.0 files/s | 0.0 KB/s | 0 threads | 🔍 Starting hash calculation...",
-                        concurrent_files=[],
+                        concurrent_files=copy.deepcopy(hash_slot_tracker.get_concurrent_files_data()),
                         slot_tracker=hash_slot_tracker,
                     )
 
@@ -521,7 +522,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                         len(files),
                         Path(""),
                         info=f"{len(files)}/{len(files)} files (100%) | {files_per_sec:.1f} files/s | {kb_per_sec:.1f} KB/s | {vector_thread_count} threads | 🔍 ✅ Hash calculation complete",
-                        concurrent_files=[],
+                        concurrent_files=copy.deepcopy(hash_slot_tracker.get_concurrent_files_data()),
                         slot_tracker=hash_slot_tracker,
                     )
 
@@ -737,6 +738,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 len(files),  # total files
                 Path(""),  # Empty path with info = progress bar description update
                 info=final_info_msg,
+                concurrent_files=[],  # Empty for completion state
                 slot_tracker=local_slot_tracker,
             )
 
