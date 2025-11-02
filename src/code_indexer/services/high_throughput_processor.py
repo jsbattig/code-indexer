@@ -411,7 +411,6 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                                     # When running via daemon, RPyC proxies can cache stale references.
                                     # Deep copying ensures daemon gets plain Python objects that serialize
                                     # correctly through JSON (daemon/service.py serializes these to JSON).
-                                    import copy
                                     concurrent_files = copy.deepcopy(hash_slot_tracker.get_concurrent_files_data())
 
                                     # Format: "files (%) | files/s | KB/s | threads | message"
@@ -655,7 +654,6 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                                 # When running via daemon, RPyC proxies can cache stale references.
                                 # Deep copying ensures daemon gets plain Python objects that serialize
                                 # correctly through JSON (daemon/service.py serializes these to JSON).
-                                import copy
                                 concurrent_files = copy.deepcopy(local_slot_tracker.get_concurrent_files_data())
 
                                 # Format progress info in expected format

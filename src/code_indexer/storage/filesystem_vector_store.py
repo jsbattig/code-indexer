@@ -72,6 +72,10 @@ class FilesystemVectorStore:
         self._collection_metadata_cache: Dict[str, Dict[str, Any]] = {}
         self._metadata_lock = threading.Lock()  # Protect cache from concurrent access
 
+        # HNSW-001 & HNSW-002: Incremental update change tracking
+        # Structure: {collection_name: {'added': set(), 'updated': set(), 'deleted': set()}}
+        self._indexing_session_changes: Dict[str, Dict[str, set]] = {}
+
     def create_collection(self, collection_name: str, vector_size: int) -> bool:
         """Create a new collection with projection matrix.
 
@@ -165,6 +169,8 @@ class FilesystemVectorStore:
         Note:
             This is part of the storage provider lifecycle interface that enables O(n)
             performance by deferring index rebuilding until end_indexing().
+
+            HNSW-001 & HNSW-002: Initializes change tracking for incremental HNSW updates.
         """
         self.logger.info(
             f"Beginning indexing session for collection '{collection_name}'"
@@ -174,6 +180,15 @@ class FilesystemVectorStore:
         with self._id_index_lock:
             if collection_name in self._file_path_cache:
                 del self._file_path_cache[collection_name]
+
+        # HNSW-001 & HNSW-002: Initialize change tracking for incremental updates
+        self._indexing_session_changes[collection_name] = {
+            "added": set(),
+            "updated": set(),
+            "deleted": set(),
+        }
+
+        self.logger.debug(f"Change tracking initialized for '{collection_name}'")
 
     def end_indexing(
         self,
@@ -223,20 +238,51 @@ class FilesystemVectorStore:
         hnsw_manager = HNSWIndexManager(vector_dim=vector_size, space="cosine")
         hnsw_skipped = False
 
-        if skip_hnsw_rebuild:
-            # Watch mode: Mark index as stale, defer rebuild to query time
-            hnsw_manager.mark_stale(collection_path)
-            hnsw_skipped = True
-            self.logger.info(
-                f"HNSW rebuild skipped for '{collection_name}' (watch mode), "
-                f"marked as stale for query-time rebuild"
-            )
-        else:
-            # Normal mode: Rebuild HNSW index from ALL vectors on disk (ONCE)
-            hnsw_manager.rebuild_from_vectors(
-                collection_path=collection_path, progress_callback=progress_callback
-            )
-            self.logger.info(f"HNSW index rebuilt for '{collection_name}'")
+        # HNSW-002: Auto-detection for incremental vs full rebuild
+        incremental_update_result = None
+        if (
+            hasattr(self, "_indexing_session_changes")
+            and collection_name in self._indexing_session_changes
+        ):
+            changes = self._indexing_session_changes[collection_name]
+            has_changes = changes["added"] or changes["updated"] or changes["deleted"]
+
+            if has_changes and not skip_hnsw_rebuild:
+                # INCREMENTAL UPDATE PATH
+                self.logger.info(
+                    f"Applying incremental HNSW update for '{collection_name}': "
+                    f"{len(changes['added'])} added, {len(changes['updated'])} updated, "
+                    f"{len(changes['deleted'])} deleted"
+                )
+                incremental_update_result = self._apply_incremental_hnsw_batch_update(
+                    collection_name=collection_name,
+                    changes=changes,
+                    progress_callback=progress_callback,
+                )
+
+                # Clear session changes after applying
+                del self._indexing_session_changes[collection_name]
+
+                self.logger.info(
+                    f"Incremental HNSW update complete for '{collection_name}'"
+                )
+
+        # Fallback to original logic if no incremental update was applied
+        if incremental_update_result is None:
+            if skip_hnsw_rebuild:
+                # Watch mode: Mark index as stale, defer rebuild to query time
+                hnsw_manager.mark_stale(collection_path)
+                hnsw_skipped = True
+                self.logger.info(
+                    f"HNSW rebuild skipped for '{collection_name}' (watch mode), "
+                    f"marked as stale for query-time rebuild"
+                )
+            else:
+                # Normal mode: Rebuild HNSW index from ALL vectors on disk (ONCE)
+                hnsw_manager.rebuild_from_vectors(
+                    collection_path=collection_path, progress_callback=progress_callback
+                )
+                self.logger.info(f"HNSW index rebuilt for '{collection_name}'")
 
         # Save ID index to disk (ALWAYS - needed for queries)
         from .id_index_manager import IDIndexManager
@@ -252,12 +298,18 @@ class FilesystemVectorStore:
             f"Indexing finalized for '{collection_name}': {vector_count} vectors indexed"
         )
 
-        return {
+        result = {
             "status": "ok",
             "vectors_indexed": vector_count,
             "collection": collection_name,
             "hnsw_skipped": hnsw_skipped,
         }
+
+        # Add HNSW update type if incremental was used
+        if incremental_update_result is not None:
+            result["hnsw_update"] = "incremental"
+
+        return result
 
     def _get_vector_size(self, collection_name: str) -> int:
         """Get vector size for collection (cached to avoid repeated file I/O).
@@ -360,6 +412,7 @@ class FilesystemVectorStore:
         collection_name: Optional[str],
         points: List[Dict[str, Any]],
         progress_callback: Optional[Any] = None,
+        watch_mode: bool = False,
     ) -> Dict[str, Any]:
         """Store vectors in filesystem with git-aware optimization.
 
@@ -367,12 +420,20 @@ class FilesystemVectorStore:
             collection_name: Name of the collection (if None, auto-resolves to only collection)
             points: List of point dictionaries with id, vector, payload
             progress_callback: Optional callback(current, total, Path, info) for progress reporting
+            watch_mode: If True, triggers immediate real-time HNSW updates (HNSW-001)
 
         Returns:
             Status dictionary with operation result
 
         Raises:
             ValueError: If collection_name is None and multiple collections exist
+
+        Note:
+            HNSW-001 (Watch Mode): When watch_mode=True, updates HNSW index immediately
+            after upserting points, enabling real-time semantic search without delays.
+
+            HNSW-002 (Batch Mode): When watch_mode=False and session changes are tracked,
+            changes are accumulated for batch incremental update at end_indexing().
         """
         # Auto-resolve collection_name if None
         if collection_name is None:
@@ -488,10 +549,37 @@ class FilesystemVectorStore:
 
             # Update ID index and file path cache
             with self._id_index_lock:
+                # Check if point existed before (for change tracking)
+                point_existed = point_id in self._id_index.get(collection_name, {})
+
                 self._id_index[collection_name][point_id] = vector_file
+
                 # Update file path cache
                 if file_path:
                     self._file_path_cache[collection_name].add(file_path)
+
+                # HNSW-001 & HNSW-002: Track changes for incremental updates
+                if collection_name in self._indexing_session_changes:
+                    if point_existed:
+                        self._indexing_session_changes[collection_name]["updated"].add(
+                            point_id
+                        )
+                    else:
+                        self._indexing_session_changes[collection_name]["added"].add(
+                            point_id
+                        )
+
+        # HNSW-001: Watch mode real-time HNSW update
+        if watch_mode:
+            # In watch mode, update HNSW immediately for all upserted points
+            # Note: Watch mode can be called outside of indexing sessions,
+            # so we don't rely on _indexing_session_changes tracking
+            if points:
+                self._update_hnsw_incrementally_realtime(
+                    collection_name=collection_name,
+                    changed_points=points,
+                    progress_callback=progress_callback,
+                )
 
         # Return success - index rebuilding now happens in end_indexing() (O(n) not O(n²))
         # This fixes the performance disaster where we rebuilt indexes after EVERY file.
@@ -523,6 +611,9 @@ class FilesystemVectorStore:
 
         Returns:
             Status dictionary with deletion result
+
+        Note:
+            HNSW-001 & HNSW-002: Tracks deletions for incremental HNSW updates.
         """
         deleted = 0
 
@@ -543,6 +634,12 @@ class FilesystemVectorStore:
 
                     # Remove from index
                     del index[point_id]
+
+                    # HNSW-001 & HNSW-002: Track deletion for incremental updates
+                    if collection_name in self._indexing_session_changes:
+                        self._indexing_session_changes[collection_name]["deleted"].add(
+                            point_id
+                        )
 
             # Clear file path cache since file structure changed
             if deleted > 0 and collection_name in self._file_path_cache:
@@ -2161,3 +2258,221 @@ class FilesystemVectorStore:
                     pass
 
         return total_size
+
+    # === HNSW INCREMENTAL UPDATE HELPER METHODS (HNSW-001 & HNSW-002) ===
+
+    def _update_hnsw_incrementally_realtime(
+        self,
+        collection_name: str,
+        changed_points: List[Dict[str, Any]],
+        progress_callback: Optional[Any] = None,
+    ) -> None:
+        """Update HNSW index incrementally in real-time (watch mode).
+
+        Args:
+            collection_name: Name of the collection
+            changed_points: List of points that were added/updated
+            progress_callback: Optional progress callback
+
+        Note:
+            HNSW-001: Real-time incremental updates for watch mode.
+            Updates HNSW immediately after each batch of file changes,
+            enabling queries without rebuild delays.
+        """
+        if not changed_points:
+            return
+
+        collection_path = self.base_path / collection_name
+        vector_size = self._get_vector_size(collection_name)
+
+        from .hnsw_index_manager import HNSWIndexManager
+
+        hnsw_manager = HNSWIndexManager(vector_dim=vector_size, space="cosine")
+
+        # Load existing index for incremental update
+        index, id_to_label, label_to_id, next_label = (
+            hnsw_manager.load_for_incremental_update(collection_path)
+        )
+
+        if index is None:
+            # No existing index - mark as stale for query-time rebuild
+            self.logger.debug(
+                f"No existing HNSW index for watch mode update in '{collection_name}', "
+                f"marking as stale"
+            )
+            hnsw_manager.mark_stale(collection_path)
+            return
+
+        # Process each changed point
+        processed = 0
+        for point in changed_points:
+            point_id = point["id"]
+            vector = np.array(point["vector"], dtype=np.float32)
+
+            try:
+                # Add or update in HNSW
+                old_count = len(id_to_label)
+                label, id_to_label, label_to_id, next_label = (
+                    hnsw_manager.add_or_update_vector(
+                        index, point_id, vector, id_to_label, label_to_id, next_label
+                    )
+                )
+                new_count = len(id_to_label)
+
+                self.logger.debug(
+                    f"Watch mode HNSW: added '{point_id}' with label {label}, "
+                    f"mappings: {old_count} -> {new_count}, next_label: {next_label}"
+                )
+
+                processed += 1
+
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to update HNSW for point '{point_id}': {e}"
+                )
+                continue
+
+        # Save updated index
+        total_vectors = len(id_to_label)
+        hnsw_manager.save_incremental_update(
+            index, collection_path, id_to_label, label_to_id, total_vectors
+        )
+
+        self.logger.debug(
+            f"Watch mode HNSW update complete for '{collection_name}': "
+            f"{processed} points updated, total vectors: {total_vectors}"
+        )
+
+    def _apply_incremental_hnsw_batch_update(
+        self,
+        collection_name: str,
+        changes: Dict[str, set],
+        progress_callback: Optional[Any] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Apply incremental HNSW update for batch of changes.
+
+        Args:
+            collection_name: Name of the collection
+            changes: Dictionary with 'added', 'updated', 'deleted' sets
+            progress_callback: Optional progress callback
+
+        Returns:
+            Dictionary with update results, or None if no existing index (fallback to full rebuild)
+
+        Note:
+            HNSW-002: Batch incremental updates at end of indexing session.
+            Applies all accumulated changes in one batch operation,
+            significantly faster than full rebuild.
+        """
+        collection_path = self.base_path / collection_name
+        vector_size = self._get_vector_size(collection_name)
+
+        from .hnsw_index_manager import HNSWIndexManager
+
+        hnsw_manager = HNSWIndexManager(vector_dim=vector_size, space="cosine")
+
+        # DEBUG: Mark that we're entering incremental update path
+        self.logger.info(f"⚡ ENTERING INCREMENTAL HNSW UPDATE PATH for '{collection_name}'")
+
+        # Load existing index for incremental update
+        index, id_to_label, label_to_id, next_label = (
+            hnsw_manager.load_for_incremental_update(collection_path)
+        )
+
+        if index is None:
+            # No existing index - return None to trigger full rebuild fallback
+            self.logger.info(
+                f"🔨 No existing HNSW index for '{collection_name}', "
+                f"falling back to FULL REBUILD"
+            )
+            return None
+
+        # Process additions and updates
+        total_changes = (
+            len(changes["added"]) + len(changes["updated"]) + len(changes["deleted"])
+        )
+        processed = 0
+
+        for point_id in changes["added"] | changes["updated"]:
+            # Load vector from disk
+            try:
+                vector_file = self._id_index[collection_name].get(point_id)
+                if not vector_file or not Path(vector_file).exists():
+                    self.logger.warning(
+                        f"Vector file not found for point '{point_id}', skipping"
+                    )
+                    continue
+
+                with open(vector_file) as f:
+                    data = json.load(f)
+
+                vector = np.array(data["vector"], dtype=np.float32)
+
+                # Add or update in HNSW
+                label, id_to_label, label_to_id, next_label = (
+                    hnsw_manager.add_or_update_vector(
+                        index, point_id, vector, id_to_label, label_to_id, next_label
+                    )
+                )
+
+                processed += 1
+
+                # Report progress periodically
+                if progress_callback and processed % 10 == 0:
+                    progress_callback(
+                        processed,
+                        total_changes,
+                        Path(""),
+                        info=f"🔄 Incremental HNSW update: {processed}/{total_changes} changes",
+                    )
+
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                self.logger.warning(
+                    f"Failed to process point '{point_id}': {e}, skipping"
+                )
+                continue
+
+        # Process deletions
+        for point_id in changes["deleted"]:
+            hnsw_manager.remove_vector(index, point_id, id_to_label)
+            processed += 1
+
+            # Report progress periodically
+            if progress_callback and processed % 10 == 0:
+                progress_callback(
+                    processed,
+                    total_changes,
+                    Path(""),
+                    info=f"🔄 Incremental HNSW update: {processed}/{total_changes} changes",
+                )
+
+        # Save updated index
+        total_vectors = len(id_to_label)
+        hnsw_manager.save_incremental_update(
+            index, collection_path, id_to_label, label_to_id, total_vectors
+        )
+
+        # Final progress report
+        if progress_callback:
+            progress_callback(
+                total_changes,
+                total_changes,
+                Path(""),
+                info=f"✓ Incremental HNSW update complete: {total_changes} changes applied",
+            )
+
+        self.logger.info(
+            f"Incremental HNSW update complete for '{collection_name}': "
+            f"{len(changes['added'])} added, {len(changes['updated'])} updated, "
+            f"{len(changes['deleted'])} deleted, total vectors: {total_vectors}"
+        )
+
+        return {
+            "status": "incremental_update_applied",
+            "vectors": total_vectors,
+            "changes_applied": {
+                "added": len(changes["added"]),
+                "updated": len(changes["updated"]),
+                "deleted": len(changes["deleted"]),
+            },
+        }

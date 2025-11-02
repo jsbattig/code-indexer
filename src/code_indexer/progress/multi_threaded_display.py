@@ -285,15 +285,31 @@ class MultiThreadedProgressManager:
             metrics_text = Text(self._current_metrics_info, style="dim white")
             main_table.add_row(metrics_text)
 
-        # CRITICAL: Always use serialized concurrent_files from JSON (no fallback)
+        # CRITICAL: Use serialized concurrent_files OR fallback to slot_tracker
         # In daemon mode:
         #   - self._concurrent_files = Fresh serialized data passed via concurrent_files_json
         # In standalone mode:
         #   - self._concurrent_files = Data from slot_tracker via set_slot_tracker()
-        # NO FALLBACK to slot_tracker.get_concurrent_files_data() - eliminates RPyC proxy calls
+        # FALLBACK: If concurrent_files is empty but slot_tracker available, extract from slot_tracker
 
-        # Get concurrent files data (always from self._concurrent_files)
+        # Get concurrent files data (prefer self._concurrent_files, fallback to slot_tracker)
         fresh_concurrent_files = self._concurrent_files or []
+
+        # BUG FIX: Fallback to slot_tracker if concurrent_files is empty
+        # CRITICAL: Only for REAL CleanSlotTracker objects (standalone mode), NOT RPyC proxies (daemon mode)
+        # RPyC proxies are slow and may have stale data - we NEVER want to access them directly
+        if not fresh_concurrent_files and self.slot_tracker is not None and hasattr(self.slot_tracker, 'status_array'):
+            # Extract file data from slot_tracker for display (standalone mode only)
+            from code_indexer.services.clean_slot_tracker import FileStatus
+            for file_data in self.slot_tracker.status_array:
+                if file_data is not None and file_data.filename:
+                    # Convert FileData to dict format for display
+                    file_info = {
+                        "file_path": file_data.filename,
+                        "file_size": file_data.file_size,
+                        "status": file_data.status.name.lower() if hasattr(file_data.status, 'name') else str(file_data.status)
+                    }
+                    fresh_concurrent_files.append(file_info)
 
         if fresh_concurrent_files:
             for file_info in fresh_concurrent_files:
@@ -303,8 +319,10 @@ class MultiThreadedProgressManager:
                         filename = filename.name
                     elif "/" in str(filename):
                         filename = str(filename).split("/")[-1]
-                    file_size = file_info.get("file_size", 0)
-                    status = file_info.get("status", "processing")
+                    file_size_raw = file_info.get("file_size", 0)
+                    file_size = int(file_size_raw) if isinstance(file_size_raw, (int, float)) else 0
+                    status_raw = file_info.get("status", "processing")
+                    status = str(status_raw) if status_raw else "processing"
 
                     # Format status for display
                     if status == "complete":

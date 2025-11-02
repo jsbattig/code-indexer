@@ -306,15 +306,28 @@ class SmartIndexer(HighThroughputProcessor):
                         self.config.codebase_dir / ".code-indexer" / "tantivy_index"
                     )
                     fts_manager = TantivyIndexManager(fts_index_dir)
-                    fts_manager.initialize_index(create_new=True)
+
+                    # Check if FTS index already exists to enable incremental updates
+                    # FTS uses meta.json as the marker file for existing indexes
+                    fts_index_exists = (fts_index_dir / "meta.json").exists()
+
+                    # Only force full rebuild if forcing full reindex or index doesn't exist
+                    create_new_fts = force_full or not fts_index_exists
+
+                    fts_manager.initialize_index(create_new=create_new_fts)
+
                     if progress_callback:
+                        if create_new_fts:
+                            info_message = "✅ FTS indexing enabled - Creating new Tantivy index"
+                        else:
+                            info_message = "✅ FTS indexing enabled - Opening existing Tantivy index for incremental updates"
                         progress_callback(
                             0,
                             0,
                             Path(""),
-                            info="✅ FTS indexing enabled - Tantivy index initialized",
+                            info=info_message,
                         )
-                    logger.info(f"FTS indexing enabled: {fts_index_dir}")
+                    logger.info(f"FTS indexing enabled: {fts_index_dir} (create_new={create_new_fts})")
                 except ImportError as e:
                     logger.error(
                         f"FTS indexing failed - Tantivy library not installed: {e}"

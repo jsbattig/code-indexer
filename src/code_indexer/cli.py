@@ -1783,6 +1783,11 @@ def cli(
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
 
+    # TEMPORARY: Enable DEBUG logging for manual testing
+    logging.basicConfig(
+        level=logging.DEBUG, format="%(levelname)s:%(name)s:%(message)s"
+    )
+
     # Configure logging to suppress noisy third-party messages
     if not verbose:
         logging.getLogger("httpx").setLevel(logging.WARNING)

@@ -95,10 +95,11 @@ CREATE INDEX idx_commit_branches_hash ON commit_branches(commit_hash);
 CREATE INDEX idx_commit_branches_name ON commit_branches(branch_name);
 ```
 
-**Blob Registry** (`.code-indexer/index/temporal/blob_registry.json`):
-- Maps blob_hash → point_ids from existing vectors
-- Start with JSON, auto-migrate to SQLite if >100MB
-- Lazy loading with in-memory caching
+**Blob Registry** (`.code-indexer/index/temporal/blob_registry.db`):
+- SQLite database mapping blob_hash → point_ids from existing vectors
+- Required for large-scale repos (40K+ files, 10GB+ with history)
+- Indexed for fast lookups (microseconds per blob)
+- Lazy connection with result caching
 
 **Temporal Metadata** (`.code-indexer/index/temporal/temporal_meta.json`):
 - Tracks last_indexed_commit, indexing state, statistics
@@ -109,14 +110,46 @@ CREATE INDEX idx_commit_branches_name ON commit_branches(branch_name);
 ### Component Architecture
 
 **New Components:**
-1. `TemporalIndexer` - Orchestrates git history indexing
-2. `TemporalSearchService` - Handles temporal queries
+1. `TemporalIndexer` - Orchestrates git history indexing (mode-agnostic)
+2. `TemporalSearchService` - Handles temporal queries (mode-agnostic)
 3. `TemporalFormatter` - Formats temporal results with Rich
 
 **Integration Points:**
 - CLI: New flags for index and query commands
 - Config: `enable_temporal` setting
 - Watch Mode: Maintains temporal index if enabled
+- Daemon Mode: Automatic delegation when `daemon.enabled: true`
+
+### Daemon Mode Architecture
+
+**CRITICAL: Temporal indexing works identically in standalone and daemon modes.**
+
+**Standalone Mode (daemon.enabled: false):**
+- CLI directly instantiates `TemporalIndexer`
+- Executes indexing in-process with direct progress callbacks
+- Progress bar displayed directly in terminal
+
+**Daemon Mode (daemon.enabled: true):**
+- CLI delegates to daemon via `_index_via_daemon()` with `index_commits` flag
+- Daemon's `exposed_index_blocking()` instantiates `TemporalIndexer` internally
+- Executes indexing synchronously (blocking RPC call)
+- Progress callbacks streamed back to CLI over RPyC connection
+- Client displays progress bar in real-time (perfect UX parity with standalone)
+- Cache automatically invalidated before and after indexing
+
+**Mode Detection:**
+- Automatic based on `.code-indexer/config.json` daemon configuration
+- Zero code changes needed in `TemporalIndexer` (mode-agnostic design)
+- Same progress callback signature in both modes
+- Same SQLite/file operations in both modes
+- Same git subprocess calls in both modes
+
+**Cache Invalidation (Daemon Mode Only):**
+- Temporal indexing adds new vectors to FilesystemVectorStore for historical blobs
+- Semantic HNSW index must be rebuilt to include new vectors
+- FTS index (if enabled) must include new historical content
+- **Already implemented** in `daemon/service.py::exposed_index_blocking()` (lines 195-199)
+- No additional cache invalidation code needed
 
 ### Query Flow Architecture
 
@@ -169,7 +202,7 @@ CREATE INDEX idx_commit_branches_name ON commit_branches(branch_name);
 
 ## Acceptance Criteria
 
-### Functional Requirements
+### Functional Requirements (Both Modes)
 - [ ] Temporal indexing with `cidx index --index-commits` (defaults to current branch)
 - [ ] Multi-branch indexing with `cidx index --index-commits --all-branches`
 - [ ] Selective branch indexing with `cidx index --index-commits --branches "feature/*,bugfix/*"`
@@ -177,6 +210,16 @@ CREATE INDEX idx_commit_branches_name ON commit_branches(branch_name);
 - [ ] Point-in-time queries with `--at-commit` with branch information
 - [ ] Evolution display with `--show-evolution` including branch visualization
 - [ ] Incremental indexing on re-runs preserving branch metadata
+
+### Daemon Mode Requirements
+- [ ] Temporal indexing works in daemon mode when `daemon.enabled: true`
+- [ ] CLI automatically delegates to daemon via `_index_via_daemon()`
+- [ ] Progress callbacks stream correctly from daemon to client
+- [ ] Progress bar displays identically in both modes (UX parity)
+- [ ] Cache invalidation before temporal indexing (daemon mode)
+- [ ] Cache automatically cleared after temporal indexing completes
+- [ ] Graceful fallback to standalone mode if daemon unavailable
+- [ ] All temporal flags passed correctly through delegation layer
 - [ ] Watch mode integration with config (respects branch settings)
 - [ ] Cost warning before indexing all branches in large repos
 
@@ -203,32 +246,52 @@ CREATE INDEX idx_commit_branches_name ON commit_branches(branch_name);
 | Breaking changes | High | All features opt-in via flags |
 | Users accidentally index all branches | Medium | Explicit flag required, cost warning with confirmation |
 | Branch metadata overhead | Low | Indexed efficiently, minimal query impact |
+| Daemon cache coherence | Medium | Automatic cache invalidation already implemented |
+| Mode-specific bugs | Medium | Mode-agnostic design, comprehensive testing in both modes |
 
 ## Dependencies
 
 - Existing: FilesystemVectorStore, HNSW index, HighThroughputProcessor
+- Existing: Daemon mode architecture (cli_daemon_delegation.py, daemon/service.py)
 - New: sqlite3 (lazy), difflib (lazy), git commands
 - Configuration: enable_temporal setting
 - Feature 04 depends on Features 01-03 (CLI temporal implementation must exist)
 - Feature 05 depends on Feature 04 (temporal index must be created during registration)
 - Both API features integrate with existing server architecture (GoldenRepoManager, SemanticSearchService)
+- Daemon integration: No new dependencies (uses existing RPC and cache invalidation)
 
 ## Testing Strategy
 
-### Unit Tests
+### Unit Tests (Mode-Agnostic)
 - TemporalIndexer blob registry building
 - TemporalSearchService filtering logic
 - SQLite performance with mock data
+- Branch metadata storage and retrieval
+- Cost estimation calculations
 
-### Integration Tests
-- End-to-end temporal indexing
+### Integration Tests (Standalone Mode)
+- End-to-end temporal indexing in standalone mode
 - Query filtering accuracy
 - Watch mode temporal updates
+- Single-branch vs all-branches behavior
+- Cost warnings and confirmations
 
-### Manual Tests
+### Integration Tests (Daemon Mode)
+- **CRITICAL:** All temporal operations must work in daemon mode
+- Temporal indexing delegation via `_index_via_daemon()`
+- Progress callback streaming from daemon to client
+- Cache invalidation before/after temporal indexing
+- UX parity verification (progress bar display)
+- Graceful fallback to standalone if daemon unavailable
+- Daemon remains responsive during long temporal indexing operations
+
+### Manual Tests (Both Modes)
 - Each story has specific manual test scenarios
-- Performance validation on large repos
+- Performance validation on large repos (40K+ commits, 1000+ branches)
 - Error handling verification
+- **Test in daemon mode:** Enable daemon, verify identical behavior
+- **Test cache coherence:** Query before/after temporal indexing in daemon mode
+- **Test progress streaming:** Verify real-time progress in daemon mode
 
 ## Documentation Requirements
 

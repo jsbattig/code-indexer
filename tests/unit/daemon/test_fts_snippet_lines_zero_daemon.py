@@ -159,6 +159,12 @@ class TestFTSSnippetLinesZeroDaemon:
 
         daemon = CIDXDaemonService()
 
+        # Setup cache entry with FTS available
+        from code_indexer.services.rpyc_daemon import CacheEntry
+        daemon.cache_entry = CacheEntry(project_path)
+        daemon.cache_entry.fts_available = True  # Enable FTS
+        daemon.cache_entry.tantivy_searcher = Mock()  # Mock searcher
+
         # Call exposed_query_fts with snippet_lines=0 in kwargs
         with patch.object(daemon, "_execute_fts_search") as mock_search:
             mock_search.return_value = {"results": [], "query": "test", "total": 0}

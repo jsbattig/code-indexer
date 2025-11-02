@@ -302,8 +302,12 @@ class GitAwareWatchHandler(FileSystemEventHandler):
 
             # Use git topology analysis for branch transition (same as index command)
             if old_branch and new_branch:
+                # Pass commit hashes to enable same-branch commit detection
+                old_commit = change_event.get("old_commit")
+                new_commit = change_event.get("new_commit")
+
                 branch_analysis = self.git_topology_service.analyze_branch_change(
-                    old_branch, new_branch
+                    old_branch, new_branch, old_commit=old_commit, new_commit=new_commit
                 )
 
                 # Use HighThroughputProcessor for proper branch transition

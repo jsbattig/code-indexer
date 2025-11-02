@@ -150,7 +150,7 @@ class TantivyIndexManager:
             # Create or open index
             if create_new or not (self.index_dir / "meta.json").exists():
                 self._index = self._tantivy.Index(self._schema, str(self.index_dir))
-                logger.info(f"Created new Tantivy index at {self.index_dir}")
+                logger.info(f"🔨 FULL FTS INDEX BUILD: Creating Tantivy index from scratch at {self.index_dir}")
             else:
                 self._index = self._tantivy.Index.open(str(self.index_dir))
                 logger.info(f"Opened existing Tantivy index at {self.index_dir}")
@@ -962,6 +962,10 @@ class TantivyIndexManager:
             )
 
         try:
+            # DEBUG: Mark incremental update for manual testing
+            total_docs = self.get_document_count()
+            logger.info(f"⚡ INCREMENTAL FTS UPDATE: Adding/updating 1 document (total index: {total_docs})")
+
             with self._lock:
                 # Delete old version if it exists using query-based deletion (idempotent)
                 delete_query = self._index.parse_query(file_path, ["path"])

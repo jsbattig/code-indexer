@@ -158,9 +158,23 @@ class GitTopologyService:
             return None
 
     def analyze_branch_change(
-        self, old_branch: str, new_branch: str
+        self,
+        old_branch: str,
+        new_branch: str,
+        old_commit: Optional[str] = None,
+        new_commit: Optional[str] = None,
     ) -> BranchChangeAnalysis:
-        """Analyze what needs indexing when switching branches."""
+        """Analyze what needs indexing when switching branches or detecting commits.
+
+        Args:
+            old_branch: Previous branch name
+            new_branch: Current branch name
+            old_commit: Optional previous commit hash (for same-branch commit detection)
+            new_commit: Optional current commit hash (for same-branch commit detection)
+
+        Returns:
+            BranchChangeAnalysis with files to reindex and metadata updates
+        """
         start_time = time.time()
 
         if not self.is_git_available():
@@ -179,11 +193,21 @@ class GitTopologyService:
 
         logger.info(f"Analyzing branch change: {old_branch} -> {new_branch}")
 
-        # Find merge base between branches
-        merge_base = self._get_merge_base(old_branch, new_branch)
-
-        # Get files that changed between branches
-        raw_changed_files = self._get_changed_files(old_branch, new_branch)
+        # CRITICAL: For same-branch commit changes (watch mode scenario),
+        # use commit hashes for comparison instead of branch names
+        merge_base: Optional[str]
+        if old_branch == new_branch and old_commit and new_commit and old_commit != new_commit:
+            # Same branch, different commits - use commit comparison
+            logger.info(
+                f"Same-branch commit change detected: {old_commit[:8]} -> {new_commit[:8]}, "
+                f"analyzing file changes between commits"
+            )
+            merge_base = old_commit
+            raw_changed_files = self._get_changed_files(old_commit, new_commit)
+        else:
+            # Different branches - use branch comparison
+            merge_base = self._get_merge_base(old_branch, new_branch)
+            raw_changed_files = self._get_changed_files(old_branch, new_branch)
 
         # Get all files in target branch for metadata updates
         all_files = self._get_all_tracked_files(new_branch)

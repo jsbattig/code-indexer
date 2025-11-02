@@ -15,15 +15,24 @@
 
 ## Acceptance Criteria
 
-### Core Functionality
+### Core Functionality (Both Modes)
 - [ ] Running `cidx index --index-commits` indexes current branch only (default behavior)
 - [ ] Running `cidx index --index-commits --all-branches` indexes all branches
 - [ ] Creates SQLite database at `.code-indexer/index/temporal/commits.db` with commit graph
 - [ ] Creates `commit_branches` table tracking which branches each commit appears in
-- [ ] Builds blob registry at `.code-indexer/index/temporal/blob_registry.json` mapping blob_hash → point_ids
+- [ ] Builds blob registry at `.code-indexer/index/temporal/blob_registry.db` (SQLite) mapping blob_hash → point_ids
 - [ ] Reuses existing vectors for blobs already in HEAD (deduplication)
 - [ ] Only embeds new blobs not present in current HEAD
 - [ ] Stores temporal metadata including branch information in `.code-indexer/index/temporal/temporal_meta.json`
+
+### Daemon Mode Functionality
+- [ ] Temporal indexing works when `daemon.enabled: true` in config
+- [ ] CLI automatically delegates to daemon via `_index_via_daemon(index_commits=True)`
+- [ ] Daemon's `exposed_index_blocking()` handles temporal indexing via TemporalIndexer
+- [ ] Progress callbacks stream from daemon to CLI in real-time
+- [ ] Cache invalidated before temporal indexing starts (daemon mode)
+- [ ] Graceful fallback to standalone mode if daemon unavailable
+- [ ] All flags (`--all-branches`, `--max-commits`, `--since-date`) passed through delegation
 
 ### User Experience
 - [ ] Shows progress during indexing: "Indexing commits: 500/5000 (10%) [development branch]"
@@ -140,30 +149,90 @@ class TemporalIndexer:
         )
 ```
 
-### Blob Registry Building
+### Blob Registry Building (SQLite)
 ```python
-def _build_blob_registry(self) -> Dict[str, List[str]]:
-    """Scan FilesystemVectorStore for existing blob hashes"""
-    registry = {}
-    collection_path = self.vector_store.collection_path
+def _build_blob_registry(self) -> str:
+    """Scan FilesystemVectorStore and build SQLite blob registry.
 
-    # Walk all vector JSON files
+    Returns path to blob_registry.db file.
+
+    For large repos (40K+ files, 10GB+ with history), SQLite is required
+    for performance. JSON would be 100MB+ and too slow for lookups.
+    """
+    import sqlite3
+
+    registry_path = Path(".code-indexer/index/temporal/blob_registry.db")
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Create SQLite database
+    conn = sqlite3.connect(registry_path)
+
+    # Create table with index for fast lookups
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS blob_registry (
+            blob_hash TEXT NOT NULL,
+            point_id TEXT NOT NULL,
+            PRIMARY KEY (blob_hash, point_id)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_blob_hash ON blob_registry(blob_hash)")
+
+    # Performance tuning for bulk inserts
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA cache_size=10000")
+
+    # Scan all vector JSON files in FilesystemVectorStore
+    collection_path = self.vector_store.collection_path
+    batch = []
+    batch_size = 1000
+
     for json_path in collection_path.glob("**/*.json"):
         with open(json_path) as f:
             point_data = json.load(f)
             blob_hash = point_data.get("payload", {}).get("blob_hash")
             if blob_hash:
-                if blob_hash not in registry:
-                    registry[blob_hash] = []
-                registry[blob_hash].append(point_data["id"])
+                batch.append((blob_hash, point_data["id"]))
 
-    # Save registry
-    registry_path = Path(".code-indexer/index/temporal/blob_registry.json")
-    registry_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(registry_path, "w") as f:
-        json.dump(registry, f)
+                # Batch insert for performance
+                if len(batch) >= batch_size:
+                    conn.executemany(
+                        "INSERT OR IGNORE INTO blob_registry (blob_hash, point_id) VALUES (?, ?)",
+                        batch
+                    )
+                    conn.commit()
+                    batch = []
 
-    return registry
+    # Insert remaining
+    if batch:
+        conn.executemany(
+            "INSERT OR IGNORE INTO blob_registry (blob_hash, point_id) VALUES (?, ?)",
+            batch
+        )
+        conn.commit()
+
+    conn.close()
+    return str(registry_path)
+
+def _lookup_blob_vectors(self, blob_hash: str) -> List[str]:
+    """Look up existing vector point IDs for a blob hash.
+
+    Fast indexed lookup in SQLite (microseconds).
+    """
+    import sqlite3
+
+    registry_path = Path(".code-indexer/index/temporal/blob_registry.db")
+    if not registry_path.exists():
+        return []
+
+    conn = sqlite3.connect(registry_path)
+    results = conn.execute(
+        "SELECT point_id FROM blob_registry WHERE blob_hash = ?",
+        (blob_hash,)
+    ).fetchall()
+    conn.close()
+
+    return [r[0] for r in results]
 ```
 
 ### SQLite Storage
@@ -409,10 +478,13 @@ def estimate_all_branches_cost(self) -> CostEstimate:
    # Should show only current branch (e.g., "development")
    ```
 
-4. **Verify Blob Registry:**
+4. **Verify Blob Registry (SQLite):**
    ```bash
-   jq 'keys | length' .code-indexer/index/temporal/blob_registry.json
+   sqlite3 .code-indexer/index/temporal/blob_registry.db "SELECT COUNT(DISTINCT blob_hash) FROM blob_registry"
    # Should show number of unique blobs
+
+   sqlite3 .code-indexer/index/temporal/blob_registry.db "SELECT COUNT(*) FROM blob_registry"
+   # Should show total blob_hash → point_id mappings
    ```
 
 5. **Check Deduplication and Branch Stats:**
@@ -487,10 +559,70 @@ def estimate_all_branches_cost(self) -> CostEstimate:
    # Should index all branches but only recent commits
    ```
 
+#### Test 5: Daemon Mode (CRITICAL)
+1. **Enable Daemon Mode:**
+   ```bash
+   cidx config --daemon
+   cidx start  # Manually start daemon for testing
+   ```
+
+2. **Execute Temporal Indexing in Daemon Mode:**
+   ```bash
+   # Verify daemon is running
+   cidx status
+   # Should show: "Daemon Running: true"
+
+   # Execute temporal indexing (should delegate to daemon)
+   cidx index --index-commits
+   # Should show identical progress bar as standalone mode
+   # Progress should stream in real-time
+   ```
+
+3. **Verify Cache Invalidation:**
+   ```bash
+   # Query before temporal indexing
+   cidx query "test query"  # Warms up cache
+
+   # Run temporal indexing
+   cidx index --index-commits
+
+   # Query after temporal indexing
+   cidx query "historical code"  # Should include new historical vectors
+   # Verify new vectors are searchable (cache was invalidated)
+   ```
+
+4. **Test All-Branches in Daemon Mode:**
+   ```bash
+   cidx index --index-commits --all-branches
+   # Should show cost warning
+   # Progress should stream from daemon
+   # Daemon should remain responsive
+   ```
+
+5. **Test Fallback to Standalone:**
+   ```bash
+   # Stop daemon
+   cidx stop
+
+   # Try temporal indexing (should fall back to standalone)
+   cidx index --index-commits
+   # Should execute in standalone mode without errors
+   # Progress bar should display correctly
+   ```
+
+6. **Verify UX Parity:**
+   - Compare standalone vs daemon mode side-by-side
+   - Progress bar format should be identical
+   - Timing information should be accurate
+   - File processing display should match
+   - Final statistics should match
+
 ### Automated Tests
+
+#### Unit Tests (Mode-Agnostic)
 ```python
 def test_git_history_indexing_with_deduplication():
-    """Test complete temporal indexing with blob deduplication"""
+    """Test complete temporal indexing with blob deduplication (standalone)"""
     # Setup test repo with history
     with temp_git_repo() as repo_path:
         # Create commits
@@ -513,10 +645,119 @@ def test_git_history_indexing_with_deduplication():
         commit_count = conn.execute("SELECT COUNT(*) FROM commits").fetchone()[0]
         assert commit_count == 10
 
-        # Check blob registry
-        with open(".code-indexer/index/temporal/blob_registry.json") as f:
-            registry = json.load(f)
-            assert len(registry) > 0
+        # Check blob registry (SQLite)
+        conn = sqlite3.connect(".code-indexer/index/temporal/blob_registry.db")
+        blob_count = conn.execute("SELECT COUNT(DISTINCT blob_hash) FROM blob_registry").fetchone()[0]
+        assert blob_count > 0
+        conn.close()
+```
+
+#### Integration Tests (Daemon Mode)
+```python
+def test_temporal_indexing_daemon_delegation():
+    """Test temporal indexing delegates correctly to daemon"""
+    with temp_git_repo() as repo_path:
+        # Enable daemon mode
+        config_manager = ConfigManager(repo_path)
+        config_manager.enable_daemon()
+
+        # Start daemon
+        start_daemon_command()
+        time.sleep(1)  # Wait for daemon startup
+
+        try:
+            # Execute via CLI (should delegate to daemon)
+            result = runner.invoke(cli, ['index', '--index-commits'])
+
+            # Verify success
+            assert result.exit_code == 0
+            assert Path('.code-indexer/index/temporal/commits.db').exists()
+
+            # Verify output contains progress
+            assert 'Indexing commits' in result.output or 'commits processed' in result.output
+        finally:
+            # Cleanup
+            stop_daemon_command()
+
+def test_temporal_indexing_daemon_cache_invalidation():
+    """Test daemon cache is invalidated after temporal indexing"""
+    with temp_git_repo() as repo_path:
+        # Setup with daemon
+        config_manager = ConfigManager(repo_path)
+        config_manager.enable_daemon()
+        start_daemon_command()
+        time.sleep(1)
+
+        try:
+            # Run regular indexing first
+            runner.invoke(cli, ['index'])
+
+            # Warm up cache with query
+            result1 = runner.invoke(cli, ['query', 'test'])
+            assert result1.exit_code == 0
+
+            # Get daemon status (cache should be warm)
+            status1 = get_daemon_status()
+            assert status1['semantic_cached'] == True
+
+            # Run temporal indexing
+            result2 = runner.invoke(cli, ['index', '--index-commits'])
+            assert result2.exit_code == 0
+
+            # Verify cache was invalidated
+            status2 = get_daemon_status()
+            assert status2['semantic_cached'] == False  # Cache cleared
+
+            # Query should work with new historical vectors
+            result3 = runner.invoke(cli, ['query', 'historical code'])
+            assert result3.exit_code == 0
+        finally:
+            stop_daemon_command()
+
+def test_temporal_indexing_progress_streaming():
+    """Test progress callbacks stream from daemon to client"""
+    with temp_git_repo() as repo_path:
+        create_test_commits(repo_path, count=50)  # Enough for observable progress
+
+        config_manager = ConfigManager(repo_path)
+        config_manager.enable_daemon()
+        start_daemon_command()
+        time.sleep(1)
+
+        try:
+            # Track progress callback invocations
+            progress_updates = []
+
+            # Mock progress handler to capture callbacks
+            with patch('code_indexer.cli_progress_handler.ClientProgressHandler') as mock_handler:
+                mock_callback = Mock()
+                mock_callback.side_effect = lambda *args, **kwargs: progress_updates.append((args, kwargs))
+                mock_handler.return_value.create_progress_callback.return_value = mock_callback
+
+                # Execute temporal indexing
+                result = runner.invoke(cli, ['index', '--index-commits'])
+                assert result.exit_code == 0
+
+            # Verify progress updates were received
+            assert len(progress_updates) > 0
+            # Verify incremental progress (not just start and end)
+            assert len(progress_updates) > 5
+        finally:
+            stop_daemon_command()
+
+def test_temporal_indexing_fallback_to_standalone():
+    """Test graceful fallback when daemon unavailable"""
+    with temp_git_repo() as repo_path:
+        # Enable daemon config but don't start daemon
+        config_manager = ConfigManager(repo_path)
+        config_manager.enable_daemon()
+
+        # Execute should fall back to standalone
+        result = runner.invoke(cli, ['index', '--index-commits'])
+
+        # Verify success (fallback worked)
+        assert result.exit_code == 0
+        assert Path('.code-indexer/index/temporal/commits.db').exists()
 ```
 
 ## Error Scenarios
@@ -554,6 +795,8 @@ def test_git_history_indexing_with_deduplication():
 - sqlite3 Python module (lazy loaded)
 - Existing FilesystemVectorStore
 - Existing HighThroughputProcessor for embedding
+- Existing daemon mode infrastructure (cli_daemon_delegation.py, daemon/service.py)
+- RPyC for daemon communication (already installed for daemon mode)
 
 ## Notes
 
@@ -578,3 +821,7 @@ def test_git_history_indexing_with_deduplication():
 3. **Branch Metadata Always:** Even single-branch mode tracks which branch (future-proof)
 4. **Cost Warnings:** Display storage and API cost estimates before multi-branch indexing
 5. **Confirmation Required:** Large repos (>50 branches) require user confirmation for --all-branches
+6. **Mode-Agnostic Design:** TemporalIndexer works identically in standalone and daemon modes
+7. **Automatic Delegation:** Daemon mode enabled → automatic delegation via CLI (zero config)
+8. **Cache Coherence:** Daemon automatically invalidates cache before/after temporal indexing
+9. **UX Parity:** Progress bar displays identically in both modes via RPC callback streaming
