@@ -1,10 +1,7 @@
 """Test that daemon mode respects --snippet-lines 0 for FTS queries."""
 
-import pytest
 from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch, call
-import sys
-import io
+from unittest.mock import patch
 
 
 class TestDaemonFTSSnippetLinesZero:
@@ -19,7 +16,7 @@ class TestDaemonFTSSnippetLinesZero:
         result = parse_query_args(args)
 
         assert result["query_text"] == "voyage"
-        assert result["is_fts"] == True
+        assert result["is_fts"]
         assert result["limit"] == 2
         assert result["filters"]["snippet_lines"] == 0
 
@@ -28,7 +25,7 @@ class TestDaemonFTSSnippetLinesZero:
         result = parse_query_args(args)
 
         assert result["query_text"] == "search"
-        assert result["is_fts"] == True
+        assert result["is_fts"]
         assert result["filters"]["snippet_lines"] == 3
 
     def test_daemon_rpyc_service_extracts_snippet_lines_from_kwargs(self):

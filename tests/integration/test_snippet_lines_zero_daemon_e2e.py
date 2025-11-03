@@ -10,7 +10,6 @@ This test uses a real project with real FTS index and real daemon process.
 import pytest
 import subprocess
 import time
-from pathlib import Path
 
 
 @pytest.fixture

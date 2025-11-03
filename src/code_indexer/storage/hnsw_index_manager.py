@@ -251,6 +251,9 @@ class HNSWIndexManager:
     ) -> int:
         """Rebuild HNSW index by scanning all vector JSON files.
 
+        Uses BackgroundIndexRebuilder for atomic file swapping with exclusive
+        locking. Queries can continue using old index during rebuild.
+
         Args:
             collection_path: Path to collection directory
             progress_callback: Optional callback(current, total, file_path, info) for progress tracking
@@ -261,6 +264,8 @@ class HNSWIndexManager:
         Raises:
             FileNotFoundError: If collection metadata is missing
         """
+        from .background_index_rebuilder import BackgroundIndexRebuilder
+
         # Load collection metadata to get vector dimension
         meta_file = collection_path / "collection_meta.json"
         if not meta_file.exists():
@@ -307,19 +312,42 @@ class HNSWIndexManager:
         if not vectors_list:
             return 0
 
-        # Report info message before building index
-        if progress_callback:
-            progress_callback(0, 0, Path(""), info="🔧 HNSW index rebuilt ✓")
-
         # Convert to numpy array
         vectors = np.array(vectors_list, dtype=np.float32)
 
-        # Build index
-        self.build_index(
+        # Use BackgroundIndexRebuilder for atomic swap with locking
+        rebuilder = BackgroundIndexRebuilder(collection_path)
+        index_file = collection_path / self.INDEX_FILENAME
+
+        def build_hnsw_index_to_temp(temp_file: Path) -> None:
+            """Build HNSW index to temp file."""
+            # Create HNSW index
+            index = hnswlib.Index(space=self.space, dim=self.vector_dim)
+            index.init_index(max_elements=len(vectors), M=16, ef_construction=200)
+
+            # Add vectors
+            labels = np.arange(len(vectors))
+            if progress_callback:
+                progress_callback(0, 0, Path(""), info="🔧 Building HNSW index...")
+            index.add_items(vectors, labels)
+
+            # Save to temp file
+            index.save_index(str(temp_file))
+
+            if progress_callback:
+                progress_callback(0, 0, Path(""), info="🔧 HNSW index built ✓")
+
+        # Rebuild with lock (entire rebuild duration)
+        rebuilder.rebuild_with_lock(build_hnsw_index_to_temp, index_file)
+
+        # Update metadata AFTER atomic swap
+        self._update_metadata(
             collection_path=collection_path,
-            vectors=vectors,
+            vector_count=len(vectors),
+            M=16,
+            ef_construction=200,
             ids=ids_list,
-            progress_callback=progress_callback,
+            index_file_size=index_file.stat().st_size,
         )
 
         return len(vectors)
@@ -443,6 +471,7 @@ class HNSWIndexManager:
             index_file_size: Size of index file in bytes
         """
         import fcntl
+        import uuid
 
         meta_file = collection_path / "collection_meta.json"
 
@@ -464,9 +493,10 @@ class HNSWIndexManager:
                 # Create ID mapping (label -> ID)
                 id_mapping = {str(i): ids[i] for i in range(len(ids))}
 
-                # Update HNSW index metadata with staleness tracking
+                # Update HNSW index metadata with staleness tracking + rebuild version (AC12)
                 metadata["hnsw_index"] = {
                     "version": 1,
+                    "index_rebuild_uuid": str(uuid.uuid4()),  # AC12: Track rebuild version
                     "vector_count": vector_count,
                     "vector_dim": self.vector_dim,
                     "M": M,
@@ -687,9 +717,12 @@ class HNSWIndexManager:
                 # Create ID mapping (label -> ID) for metadata
                 id_mapping = {str(label): point_id for label, point_id in label_to_id.items()}
 
-                # Update HNSW index metadata
+                # Update HNSW index metadata (AC12: preserve or generate new UUID)
+                import uuid
+                # Generate new UUID for incremental updates too (version tracking)
                 metadata["hnsw_index"] = {
                     "version": 1,
+                    "index_rebuild_uuid": str(uuid.uuid4()),  # AC12: Track rebuild version
                     "vector_count": vector_count,
                     "vector_dim": self.vector_dim,
                     "M": M,

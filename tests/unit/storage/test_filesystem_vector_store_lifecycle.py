@@ -642,7 +642,7 @@ class TestFilesystemVectorStoreWatchModeOptimization:
             mock_hnsw_instance.rebuild_from_vectors.side_effect = track_rebuild
 
             # Call end_indexing WITHOUT skip_hnsw_rebuild parameter
-            result = store.end_indexing("test_coll")
+            store.end_indexing("test_coll")
 
         # Verify default behavior
         assert (

@@ -424,7 +424,7 @@ class TestFormattedErrorOutput:
         )
 
         executor = SequentialCommandExecutor(["backend/auth-service"])
-        result = executor.execute_sequential("start", [])
+        executor.execute_sequential("start", [])
 
         # Check print calls for formatted error
         print_calls = [str(call) for call in mock_print.call_args_list]
@@ -484,7 +484,7 @@ class TestFormattedErrorOutput:
 
         repos = ["repo1", "repo2", "repo3"]
         executor = SequentialCommandExecutor(repos)
-        result = executor.execute_sequential("start", [])
+        executor.execute_sequential("start", [])
 
         # Check print calls for error section
         print_calls = [str(call) for call in mock_print.call_args_list]
@@ -521,7 +521,7 @@ class TestFormattedErrorOutput:
 
         repos = ["repo1", "repo2", "repo3", "repo4"]
         executor = SequentialCommandExecutor(repos)
-        result = executor.execute_sequential("start", [])
+        executor.execute_sequential("start", [])
 
         print_calls = [str(call) for call in mock_print.call_args_list]
         print_output = " ".join(print_calls)
@@ -612,7 +612,7 @@ class TestDetailedErrorReporting:
 
         repos = ["repo1", "repo2", "repo3"]
         executor = SequentialCommandExecutor(repos)
-        result = executor.execute_sequential("start", [])
+        executor.execute_sequential("start", [])
 
         print_calls = [str(call) for call in mock_print.call_args_list]
 

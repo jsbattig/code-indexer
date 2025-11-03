@@ -915,12 +915,28 @@ class CIDXDaemonService(Service):
     def _ensure_cache_loaded(self, project_path: str) -> None:
         """Load indexes into cache if not already loaded.
 
+        AC11: Detects background rebuild via version tracking and invalidates cache.
+
         Args:
             project_path: Path to project root
         """
         project_path_obj = Path(project_path)
 
         with self.cache_lock:
+            # AC11: Check for staleness after background rebuild
+            if self.cache_entry is not None and self.cache_entry.project_path == project_path_obj:
+                # Same project - check if rebuild occurred
+                index_dir = project_path_obj / ".code-indexer" / "index"
+                if index_dir.exists():
+                    # Find collection directory (assume single collection)
+                    collections = [d for d in index_dir.iterdir() if d.is_dir()]
+                    if collections:
+                        collection_path = collections[0]
+                        if self.cache_entry.is_stale_after_rebuild(collection_path):
+                            logger.info("Background rebuild detected, invalidating cache")
+                            self.cache_entry.invalidate()
+                            self.cache_entry = None
+
             # Check if we need to load or replace cache
             if self.cache_entry is None or self.cache_entry.project_path != project_path_obj:
                 logger.info(f"Loading cache for {project_path}")
@@ -988,7 +1004,9 @@ class CIDXDaemonService(Service):
             # Set semantic indexes
             if hnsw_index and id_index:
                 entry.set_semantic_indexes(hnsw_index, id_index)
-                logger.info(f"Semantic indexes loaded successfully (collection: {collection_name})")
+                # AC11: Track loaded index version for rebuild detection
+                entry.hnsw_index_version = entry._read_index_rebuild_uuid(collection_path)
+                logger.info(f"Semantic indexes loaded successfully (collection: {collection_name}, version: {entry.hnsw_index_version})")
             else:
                 logger.warning("Failed to load semantic indexes")
 

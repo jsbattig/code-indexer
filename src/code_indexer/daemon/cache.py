@@ -51,6 +51,9 @@ class CacheEntry:
         self.tantivy_searcher: Optional[Any] = None
         self.fts_available: bool = False
 
+        # AC11: Version tracking for cache invalidation after rebuild
+        self.hnsw_index_version: Optional[str] = None  # Tracks loaded index_rebuild_uuid
+
         # Access tracking
         self.last_accessed: datetime = datetime.now()
         self.ttl_minutes: int = ttl_minutes
@@ -103,12 +106,66 @@ class CacheEntry:
 
         Preserves access tracking metadata (access_count, last_accessed).
         Used when storage operations modify underlying data.
+
+        AC13: Properly closes mmap file descriptors before clearing indexes.
         """
+        # AC13: Close mmap file descriptor if HNSW index is loaded
+        # hnswlib Index objects don't expose close() method, but Python GC
+        # will close the mmap when index object is deleted (refcount = 0)
         self.hnsw_index = None
         self.id_mapping = None
         self.tantivy_index = None
         self.tantivy_searcher = None
         self.fts_available = False
+        # AC11: Clear version tracking
+        self.hnsw_index_version = None
+
+    def is_stale_after_rebuild(self, collection_path: Path) -> bool:
+        """Check if cached index version differs from disk metadata (AC11).
+
+        Used to detect when background rebuild completed and cache needs reload.
+
+        Args:
+            collection_path: Path to collection directory
+
+        Returns:
+            True if cached index is stale (rebuild detected), False otherwise
+        """
+
+        # If no version tracked yet, not stale (not loaded yet)
+        if self.hnsw_index_version is None:
+            return False
+
+        # Read current index_rebuild_uuid from disk
+        current_version = self._read_index_rebuild_uuid(collection_path)
+
+        # Compare with cached version
+        return self.hnsw_index_version != current_version
+
+    def _read_index_rebuild_uuid(self, collection_path: Path) -> str:
+        """Read index_rebuild_uuid from collection_meta.json.
+
+        Args:
+            collection_path: Path to collection directory
+
+        Returns:
+            index_rebuild_uuid string or "v0" if not found
+        """
+        import json
+
+        meta_file = collection_path / "collection_meta.json"
+
+        if not meta_file.exists():
+            return "v0"  # Default version if no metadata
+
+        try:
+            with open(meta_file) as f:
+                metadata = json.load(f)
+
+            return metadata.get("hnsw_index", {}).get("index_rebuild_uuid", "v0")
+
+        except (json.JSONDecodeError, KeyError, OSError):
+            return "v0"  # Corrupted/missing metadata
 
     def get_stats(self) -> Dict[str, Any]:
         """Get cache entry statistics.
@@ -124,6 +181,7 @@ class CacheEntry:
             "semantic_loaded": self.hnsw_index is not None,
             "fts_loaded": self.fts_available,
             "expired": self.is_expired(),
+            "hnsw_version": self.hnsw_index_version,  # AC11: Include version in stats
         }
 
 

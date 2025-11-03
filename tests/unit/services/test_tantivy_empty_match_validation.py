@@ -248,12 +248,10 @@ class TestTantivyEmptyMatchValidation:
 
         if empty_matches:
             # Should have logged warning
-            warning_found = False
             for record in caplog.records:
                 if record.levelname == "WARNING":
                     message = record.message.lower()
                     if "empty" in message or "zero" in message or "length" in message:
-                        warning_found = True
                         print(f"Empty match warning: {record.message}")
                         break
 

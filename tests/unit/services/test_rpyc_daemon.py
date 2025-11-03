@@ -89,7 +89,7 @@ class TestRPyCDaemon(TestCase):
 
                 # Second query (cache hit) - measure performance
                 start_time = time.perf_counter()
-                result2 = service.exposed_query(str(self.project_path), "test query 2", limit=10)
+                service.exposed_query(str(self.project_path), "test query 2", limit=10)
                 cache_hit_time = time.perf_counter() - start_time
 
                 # Performance assertion: cache hit must be <100ms
@@ -150,7 +150,7 @@ class TestRPyCDaemon(TestCase):
             self.assertEqual(result["status"], "shutting_down")
 
         # Option C: Delayed forceful exit (fallback)
-        with patch('os._exit') as mock_exit:
+        with patch('os._exit'):
             with patch('threading.Thread') as mock_thread:
                 service._shutdown_method = 'delayed_exit'
                 result = service.exposed_shutdown()
@@ -203,7 +203,7 @@ class TestRPyCDaemon(TestCase):
 
         with patch('os.kill'):
             with patch('os.getpid', return_value=12345):
-                result = service.exposed_shutdown()
+                service.exposed_shutdown()
 
         # Verify watch was stopped
         mock_watch.stop.assert_called_once()
@@ -372,7 +372,7 @@ class TestRPyCDaemon(TestCase):
         with patch('tantivy.Index.open', return_value=mock_index):
             with patch.object(service, '_execute_fts_search', return_value={"results": []}):
                 # First FTS query - loads index
-                result1 = service.exposed_query_fts(str(self.project_path), "test")
+                service.exposed_query_fts(str(self.project_path), "test")
 
                 self.assertIsNotNone(service.cache_entry.tantivy_index)
                 self.assertIsNotNone(service.cache_entry.tantivy_searcher)
@@ -380,7 +380,7 @@ class TestRPyCDaemon(TestCase):
 
                 # Second FTS query - uses cache
                 with patch('tantivy.Index.open') as mock_open:
-                    result2 = service.exposed_query_fts(str(self.project_path), "test2")
+                    service.exposed_query_fts(str(self.project_path), "test2")
 
                     # Should NOT reload index
                     mock_open.assert_not_called()
@@ -430,7 +430,7 @@ class TestRPyCDaemon(TestCase):
             # Second daemon fails with OSError
             mock_server_class.side_effect = OSError("Address already in use")
 
-            with patch('sys.exit') as mock_exit:
+            with patch('sys.exit'):
                 try:
                     # This simulates attempting to start duplicate daemon
                     mock_server_class(MagicMock(), socket_path=str(socket_path))

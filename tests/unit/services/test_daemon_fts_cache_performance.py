@@ -90,7 +90,7 @@ def test_fts_index_caching_on_second_query(test_project_with_fts):
 
     # First query - should load index
     start_time = time.perf_counter()
-    result1 = daemon.exposed_query_fts(project_str, "hello", limit=10)
+    daemon.exposed_query_fts(project_str, "hello", limit=10)
     first_query_time = time.perf_counter() - start_time
 
     # Verify index is now cached
@@ -100,7 +100,7 @@ def test_fts_index_caching_on_second_query(test_project_with_fts):
 
     # Second query - should use cached index
     start_time = time.perf_counter()
-    result2 = daemon.exposed_query_fts(project_str, "hello", limit=10)
+    daemon.exposed_query_fts(project_str, "hello", limit=10)
     second_query_time = time.perf_counter() - start_time
 
     # CRITICAL: Second query MUST be faster than first
@@ -135,12 +135,12 @@ def test_fts_query_cache_hit(test_project_with_fts):
 
     # First query
     start_time = time.perf_counter()
-    result1 = daemon.exposed_query_fts(project_str, "hello", limit=10)
+    daemon.exposed_query_fts(project_str, "hello", limit=10)
     first_time = time.perf_counter() - start_time
 
     # Second identical query - should hit query cache
     start_time = time.perf_counter()
-    result2 = daemon.exposed_query_fts(project_str, "hello", limit=10)
+    daemon.exposed_query_fts(project_str, "hello", limit=10)
     second_time = time.perf_counter() - start_time
 
     print(f"\nFirst query: {first_time*1000:.1f}ms")
@@ -248,7 +248,7 @@ def test_daemon_fts_cache_key_generation(test_project_with_fts):
 
     # Query 1
     daemon.exposed_query_fts(project_str, "hello", limit=10)
-    cache_keys_1 = set(daemon.cache_entry.query_cache.keys())
+    set(daemon.cache_entry.query_cache.keys())
 
     # Query 2 (different)
     daemon.exposed_query_fts(project_str, "world", limit=10)
@@ -281,17 +281,17 @@ def test_daemon_fts_performance_benchmark(test_project_with_fts):
 
     # Cold cache - first query
     start_time = time.perf_counter()
-    result1 = daemon.exposed_query_fts(project_str, "hello", limit=10)
+    daemon.exposed_query_fts(project_str, "hello", limit=10)
     cold_time = time.perf_counter() - start_time
 
     # Warm cache - different query
     start_time = time.perf_counter()
-    result2 = daemon.exposed_query_fts(project_str, "world", limit=10)
+    daemon.exposed_query_fts(project_str, "world", limit=10)
     warm_time = time.perf_counter() - start_time
 
     # Query cache hit - same query
     start_time = time.perf_counter()
-    result3 = daemon.exposed_query_fts(project_str, "hello", limit=10)
+    daemon.exposed_query_fts(project_str, "hello", limit=10)
     cache_hit_time = time.perf_counter() - start_time
 
     print("\n=== FTS Performance Benchmark ===")

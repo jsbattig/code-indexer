@@ -9,7 +9,7 @@ import pytest
 import tempfile
 import subprocess
 from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch, call
+from unittest.mock import Mock
 
 from code_indexer.services.git_topology_service import GitTopologyService
 from code_indexer.services.git_aware_watch_handler import GitAwareWatchHandler
@@ -93,7 +93,7 @@ class TestWatchModeFileChangeDetection:
         new_commit = result.stdout.strip()
 
         # Get current branch
-        current_branch = git_topology_service.get_current_branch()
+        git_topology_service.get_current_branch()
 
         # Analyze changes between commits (simulating watch mode commit detection)
         # BUG: Currently watch mode reports "0 changed files" when it should detect changes

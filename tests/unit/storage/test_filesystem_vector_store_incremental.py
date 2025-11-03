@@ -5,7 +5,6 @@ Tests change tracking for HNSW-001 (Watch Mode) and HNSW-002 (Batch Mode).
 
 import numpy as np
 import pytest
-from pathlib import Path
 from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
 
@@ -229,7 +228,7 @@ class TestEndIndexingAutoDetection:
         vector_store.upsert_points(test_collection, sample_points[:5])
 
         # RED: Will fail - cleanup not implemented
-        result = vector_store.end_indexing(test_collection)
+        vector_store.end_indexing(test_collection)
 
         # Session changes should be cleared
         if hasattr(vector_store, '_indexing_session_changes'):

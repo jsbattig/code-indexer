@@ -69,7 +69,7 @@ class TestFTSSnippetLinesZeroDaemon:
             mock_manager.search.side_effect = capture_search_params
 
             # Call _execute_fts_search directly with snippet_lines=0
-            result = daemon._execute_fts_search(
+            daemon._execute_fts_search(
                 mock_searcher,
                 "voyage",
                 snippet_lines=0,  # CRITICAL: Pass snippet_lines=0
@@ -129,7 +129,7 @@ class TestFTSSnippetLinesZeroDaemon:
             ]
 
             # Execute FTS query with snippet_lines=0
-            result = daemon.exposed_query_fts(
+            daemon.exposed_query_fts(
                 project_path=str(project_path),
                 query="voyage",
                 snippet_lines=0,  # CRITICAL: Request no snippets
@@ -170,7 +170,7 @@ class TestFTSSnippetLinesZeroDaemon:
             mock_search.return_value = {"results": [], "query": "test", "total": 0}
 
             # Simulate RPC call from client
-            result = daemon.exposed_query_fts(
+            daemon.exposed_query_fts(
                 project_path=str(project_path),
                 query="test",
                 snippet_lines=0,  # Pass as keyword argument

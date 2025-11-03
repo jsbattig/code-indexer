@@ -31,19 +31,19 @@
 
 ## Acceptance Criteria
 
-- [ ] HNSW index rebuilds happen in background with atomic file swap
-- [ ] ID index rebuilds use same background+swap pattern
-- [ ] FTS index rebuilds use same background+swap pattern
-- [ ] Queries continue using old indexes during rebuild (stale reads)
-- [ ] Atomic swap happens in <2ms with exclusive lock
-- [ ] Entire rebuild process holds exclusive lock (serializes rebuilds)
-- [ ] File locks work across daemon and standalone modes
-- [ ] No race conditions between concurrent rebuild requests
-- [ ] Proper cleanup of .tmp files on crashes
-- [ ] Performance: Queries unaffected by ongoing rebuilds
-- [ ] **Cache invalidation:** In-memory index caches detect version changes after atomic swap
-- [ ] **Version tracking:** Metadata file changes trigger automatic cache reload
-- [ ] **mmap safety:** Cached mmap'd indexes properly invalidated after file swap
+- [x] HNSW index rebuilds happen in background with atomic file swap
+- [x] ID index rebuilds use same background+swap pattern
+- [x] FTS index rebuilds use same background+swap pattern
+- [x] Queries continue using old indexes during rebuild (stale reads)
+- [x] Atomic swap happens in <2ms with exclusive lock
+- [x] Entire rebuild process holds exclusive lock (serializes rebuilds)
+- [x] File locks work across daemon and standalone modes
+- [x] No race conditions between concurrent rebuild requests
+- [x] Proper cleanup of .tmp files on crashes
+- [x] Performance: Queries unaffected by ongoing rebuilds
+- [x] **Cache invalidation:** In-memory index caches detect version changes after atomic swap
+- [x] **Version tracking:** Metadata file changes trigger automatic cache reload
+- [x] **mmap safety:** Cached mmap'd indexes properly invalidated after file swap
 
 ## Implementation Overview
 

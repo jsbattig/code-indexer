@@ -300,7 +300,6 @@ class MultiThreadedProgressManager:
         # RPyC proxies are slow and may have stale data - we NEVER want to access them directly
         if not fresh_concurrent_files and self.slot_tracker is not None and hasattr(self.slot_tracker, 'status_array'):
             # Extract file data from slot_tracker for display (standalone mode only)
-            from code_indexer.services.clean_slot_tracker import FileStatus
             for file_data in self.slot_tracker.status_array:
                 if file_data is not None and file_data.filename:
                     # Convert FileData to dict format for display

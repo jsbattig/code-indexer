@@ -5,7 +5,6 @@ Tests HNSW-001 (Watch Mode Real-Time Updates) and HNSW-002 (Batch Incremental Up
 
 import numpy as np
 import pytest
-from pathlib import Path
 from code_indexer.storage.hnsw_index_manager import HNSWIndexManager
 
 

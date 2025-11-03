@@ -26,7 +26,7 @@ class TestFrozenSlotsDeepCopyFix:
             file_size=1000,
             status=FileStatus.PROCESSING
         ))
-        slot2 = tracker.acquire_slot(FileData(
+        tracker.acquire_slot(FileData(
             filename="file2.py",
             file_size=2000,
             status=FileStatus.PROCESSING
@@ -70,7 +70,7 @@ class TestFrozenSlotsDeepCopyFix:
         tracker = CleanSlotTracker(max_slots=3)
 
         # Acquire some slots to simulate active files
-        slot1 = tracker.acquire_slot(FileData(
+        tracker.acquire_slot(FileData(
             filename="file_a.py",
             file_size=500,
             status=FileStatus.PROCESSING

@@ -8,7 +8,6 @@ incremental updates instead of always doing full rebuilds.
 import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch
 
 from code_indexer.services.tantivy_index_manager import TantivyIndexManager
 

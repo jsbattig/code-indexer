@@ -133,7 +133,7 @@ class DatabaseManager:
         # Try to connect
         try:
             conn = rpyc.connect(str(self.socket_path), config={'allow_all_attrs': True})
-            status = conn.root.get_status()
+            conn.root.get_status()
             conn.close()
             print(f"✓ Connected to daemon via socket: {self.socket_path}")
             return True
@@ -183,14 +183,14 @@ class DatabaseManager:
         # First query - loads indexes (cache miss)
         print("  First query (cache miss)...")
         start = time.perf_counter()
-        results1 = conn.root.query(str(self.project_path), "authenticate user", limit=5)
+        conn.root.query(str(self.project_path), "authenticate user", limit=5)
         load_time = (time.perf_counter() - start) * 1000
         print(f"    Load time: {load_time:.1f}ms")
 
         # Second query - uses cache (cache hit)
         print("  Second query (cache hit)...")
         start = time.perf_counter()
-        results2 = conn.root.query(str(self.project_path), "database connection", limit=5)
+        conn.root.query(str(self.project_path), "database connection", limit=5)
         cache_time = (time.perf_counter() - start) * 1000
         print(f"    Cache hit time: {cache_time:.1f}ms")
 

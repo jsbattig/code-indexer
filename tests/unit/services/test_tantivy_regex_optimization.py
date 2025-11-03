@@ -190,7 +190,7 @@ class Manager_{i}:
         """
         start_time = time.time()
 
-        results = indexed_manager_many_docs.search(
+        indexed_manager_many_docs.search(
             query_text=r"Auth.*",  # Capital A
             use_regex=True,
             case_sensitive=True,
@@ -413,7 +413,7 @@ class Manager_{i}:
         for content in content_samples:
             flags = re.IGNORECASE
             pattern = re.compile(pattern_str, flags)  # Compiled 100 times
-            match = pattern.search(content)
+            pattern.search(content)
         time_unoptimized = time.time() - start_unoptimized
 
         # Scenario 2: Compile outside loop (optimized)
@@ -421,7 +421,7 @@ class Manager_{i}:
         flags = re.IGNORECASE
         compiled_pattern = re.compile(pattern_str, flags)  # Compiled once
         for content in content_samples:
-            match = compiled_pattern.search(content)
+            compiled_pattern.search(content)
         time_optimized = time.time() - start_optimized
 
         # Calculate speedup

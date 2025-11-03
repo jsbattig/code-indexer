@@ -326,7 +326,7 @@ def format_timestamp(ts):
 
         # Measure query time
         start = time.perf_counter()
-        results = tantivy_manager.search(
+        tantivy_manager.search(
             query_text="authenticate",
             case_sensitive=False,
             edit_distance=0,

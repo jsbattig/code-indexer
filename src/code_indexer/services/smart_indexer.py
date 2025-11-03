@@ -1531,7 +1531,7 @@ class SmartIndexer(HighThroughputProcessor):
                 collection_name=collection_name,
                 progress_callback=progress_callback,
                 vector_thread_count=vector_thread_count,
-                fts_manager=fts_manager,  # type: ignore[name-defined]
+                fts_manager=fts_manager,  # type: ignore[name-defined]  # noqa: F821 (lazy-loaded FTS manager)
             )
 
             # Convert BranchIndexingResult to ProcessingStats
@@ -1813,7 +1813,7 @@ class SmartIndexer(HighThroughputProcessor):
             vector_thread_count=vector_thread_count,
             batch_size=batch_size,
             progress_callback=progress_callback,
-            fts_manager=fts_manager,  # type: ignore[name-defined]
+            fts_manager=fts_manager,  # type: ignore[name-defined]  # noqa: F821 (lazy-loaded FTS manager)
         )
 
         # Update metadata for all files based on success/failure
@@ -2015,7 +2015,7 @@ class SmartIndexer(HighThroughputProcessor):
                         progress_callback=None,  # No progress callback for incremental processing
                         vector_thread_count=vector_thread_count,
                         watch_mode=watch_mode,  # Pass through watch_mode
-                        fts_manager=fts_manager,  # type: ignore[name-defined]
+                        fts_manager=fts_manager,  # type: ignore[name-defined]  # noqa: F821 (lazy-loaded FTS manager)
                     )
 
                     # For incremental file processing, also ensure branch isolation

@@ -1015,6 +1015,108 @@ class TantivyIndexManager:
             logger.error(f"Failed to delete document {file_path}: {e}")
             raise
 
+    def rebuild_from_documents_background(
+        self,
+        collection_path: Path,
+        documents: List[Dict[str, Any]]
+    ) -> threading.Thread:
+        """
+        Rebuild Tantivy FTS index in background (non-blocking).
+
+        Uses BackgroundIndexRebuilder for atomic swap pattern matching HNSW/ID
+        indexes. This ensures queries continue during rebuild without blocking (AC3).
+
+        Pattern:
+            1. Acquire exclusive lock
+            2. Cleanup orphaned .tmp directories
+            3. Build new FTS index to tantivy_fts.tmp directory
+            4. Atomic rename tantivy_fts.tmp → tantivy_fts
+            5. Release lock
+
+        Args:
+            collection_path: Path to collection directory
+            documents: List of document dictionaries with required FTS fields
+
+        Returns:
+            threading.Thread: Background rebuild thread (call .join() to wait)
+
+        Note:
+            Queries don't need locks - OS-level atomic rename guarantees they
+            see either old or new index. This is the same pattern as HNSW/ID.
+        """
+        from ..storage.background_index_rebuilder import BackgroundIndexRebuilder
+
+        def _build_fts_index_to_temp(temp_dir: Path) -> None:
+            """Build Tantivy FTS index to temp directory."""
+            # Create temp FTS manager
+            temp_fts_manager = TantivyIndexManager(temp_dir)
+
+            # Initialize new index in temp directory
+            temp_fts_manager.initialize_index(create_new=True)
+
+            # Add all documents
+            for doc in documents:
+                temp_fts_manager.add_document(doc)
+
+            # Commit all documents
+            temp_fts_manager.commit()
+
+            # Close writer
+            temp_fts_manager.close()
+
+            logger.info(f"Built FTS index to temp directory: {temp_dir}")
+
+        # Use BackgroundIndexRebuilder for atomic swap with locking
+        rebuilder = BackgroundIndexRebuilder(collection_path)
+
+        # FTS uses directory, not single file
+        target_dir = collection_path / "tantivy_fts"
+        temp_dir = Path(str(target_dir) + ".tmp")
+
+        def rebuild_thread_fn():
+            """Thread function for background rebuild."""
+            try:
+                with rebuilder.acquire_lock():
+                    logger.info(f"Starting FTS background rebuild: {target_dir}")
+
+                    # Cleanup orphaned .tmp directories (AC9)
+                    removed_count = rebuilder.cleanup_orphaned_temp_files()
+                    if removed_count > 0:
+                        logger.info(
+                            f"Cleaned up {removed_count} orphaned temp files before FTS rebuild"
+                        )
+
+                    # Build to temp directory
+                    _build_fts_index_to_temp(temp_dir)
+
+                    # Atomic swap (directory rename)
+                    import shutil
+                    import os
+
+                    # Remove old target if exists
+                    if target_dir.exists():
+                        shutil.rmtree(target_dir)
+
+                    # Atomic rename (directory)
+                    os.rename(temp_dir, target_dir)
+
+                    logger.info(f"Completed FTS background rebuild: {target_dir}")
+
+            except Exception as e:
+                logger.error(f"FTS background rebuild failed: {e}")
+                # Cleanup temp directory on error
+                if temp_dir.exists():
+                    import shutil
+                    shutil.rmtree(temp_dir)
+                    logger.debug(f"Cleaned up temp directory after error: {temp_dir}")
+                raise
+
+        # Start background thread
+        rebuild_thread = threading.Thread(target=rebuild_thread_fn, daemon=False)
+        rebuild_thread.start()
+
+        return rebuild_thread
+
     def close(self) -> None:
         """Close the index and writer."""
         if self._writer is not None:

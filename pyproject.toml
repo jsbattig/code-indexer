@@ -115,6 +115,10 @@ exclude = [
     "tests/manual/"
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# Intentional lazy loading after logger initialization
+"src/code_indexer/server/app.py" = ["E402"]
+
 [tool.mypy]
 python_version = "3.9"
 warn_return_any = true

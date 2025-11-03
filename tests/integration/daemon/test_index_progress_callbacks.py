@@ -161,7 +161,7 @@ def test_progress_callback_handles_path_objects(tmp_path, daemon_service):
         received_paths.append((type(file_path).__name__, str(file_path)))
 
     # Call exposed_index_blocking
-    result = daemon_service.exposed_index_blocking(
+    daemon_service.exposed_index_blocking(
         project_path=str(test_project),
         callback=path_callback,
         force_full=True,

@@ -379,5 +379,5 @@ class TestQueryResultAggregator:
         output = aggregator.aggregate_results(repo_outputs, limit=10)
 
         # Blank line should be preserved in output
-        lines = output.split("\n")
+        output.split("\n")
         assert "  3:" in output  # Line 3 exists (even if empty after colon)

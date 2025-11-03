@@ -146,7 +146,7 @@ class TestDaemonE2EIntegration:
         socket_path = test_project / ".code-indexer" / "daemon.sock"
 
         # Start daemon
-        start_result = subprocess.run(
+        subprocess.run(
             [sys.executable, "-m", "code_indexer.cli", "start"],
             cwd=str(test_project),
             capture_output=True,
@@ -163,7 +163,7 @@ class TestDaemonE2EIntegration:
         assert daemon_count == 1, f"Should have exactly 1 daemon, found {daemon_count}"
 
         # Stop daemon
-        stop_result = subprocess.run(
+        subprocess.run(
             [sys.executable, "-m", "code_indexer.cli", "stop"],
             cwd=str(test_project),
             capture_output=True,

@@ -75,7 +75,6 @@ class TestHashSlotTrackerReuseBug:
         chunking_tracker = CleanSlotTracker(max_slots=10)
 
         # Simulate the CORRECT code pattern (what fix should be)
-        slot_tracker = chunking_tracker  # This is passed but IGNORED
         hash_slot_tracker = CleanSlotTracker(max_slots=vector_thread_count)  # ALWAYS create new
 
         # ASSERTIONS: These should PASS after fix
