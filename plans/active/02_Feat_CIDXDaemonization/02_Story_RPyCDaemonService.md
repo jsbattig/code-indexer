@@ -11,6 +11,21 @@
 **I want** a persistent daemon service that caches indexes in memory with integrated watch mode and cache-coherent storage operations
 **So that** repeated queries complete in under 1 second, file changes are reflected instantly, and storage operations maintain cache coherence
 
+---
+
+## ⚠️ CRITICAL IMPLEMENTATION INSTRUCTION
+
+**STOP AFTER COMPLETION:** When asked to "start implementing" or "implement stories," implement ONLY this Story 2.1 and then STOP. Do not proceed to subsequent stories without explicit approval.
+
+**Implementation Checkpoint Workflow:**
+1. Implement Story 2.1 completely (TDD workflow with all tests passing)
+2. Run code review and manual testing
+3. Commit changes
+4. **STOP and wait for user review/approval**
+5. Only proceed to next story after user explicitly approves
+
+**Rationale:** This story contains critical daemon infrastructure and multi-threaded concurrency handling. User must review and validate the implementation before continuing with dependent stories.
+
 ## Technical Requirements
 
 ### Core Service Implementation

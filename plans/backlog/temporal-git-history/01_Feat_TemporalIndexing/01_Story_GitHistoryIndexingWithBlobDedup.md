@@ -13,6 +13,21 @@
 - Analysis of Evolution repo (1,135 branches, 89K commits) showed single-branch indexing covers 91.6% of commits
 - Default to current branch only, opt-in for all branches to avoid 85% storage increase
 
+---
+
+## ⚠️ CRITICAL IMPLEMENTATION INSTRUCTION
+
+**STOP AFTER COMPLETION:** When asked to "start implementing" the Temporal Epic, implement ONLY Story 1 (this story) and then STOP. Do not proceed to Story 2 or subsequent stories without explicit approval.
+
+**Implementation Checkpoint Workflow:**
+1. Implement Story 1 completely (TDD workflow with all tests passing)
+2. Run code review and manual testing
+3. Commit changes
+4. **STOP and wait for user review/approval**
+5. Only proceed to Story 2 after user explicitly approves
+
+**Rationale:** This is the foundational story establishing temporal indexing architecture. User must review and validate the implementation approach before building dependent features on top of it.
+
 ## Acceptance Criteria
 
 ### Core Functionality (Both Modes)
