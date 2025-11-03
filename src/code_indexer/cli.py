@@ -5865,8 +5865,10 @@ def _status_impl(ctx, force_docker: bool):
 
                         if fs_store.collection_exists(collection_name):
                             vector_count = fs_store.count_points(collection_name)
-                            # Use fast file count (estimation) for status display performance
-                            file_count = fs_store.get_indexed_file_count_fast(collection_name)
+                            # Use fast file count (accurate from metadata, instant lookup)
+                            file_count = fs_store.get_indexed_file_count_fast(
+                                collection_name
+                            )
 
                             # Validate dimensions
                             expected_dims = embedding_provider.get_model_info()[
