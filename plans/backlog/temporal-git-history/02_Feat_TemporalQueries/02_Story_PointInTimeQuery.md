@@ -444,6 +444,254 @@ def test_commit_not_found_error():
     assert "not found in temporal index" in str(exc.value)
 ```
 
+### Daemon Mode Integration Tests
+
+**CRITICAL:** Point-in-time queries must work in both standalone and daemon modes with proper cache coordination (Story 0 integration).
+
+#### Test: Daemon Mode Query with Cache Coordination
+
+```python
+def test_point_in_time_daemon_mode():
+    """
+    Test point-in-time queries in daemon mode with cached indexes.
+
+    Scenario:
+    - Daemon running with cached HNSW and ID indexes
+    - Execute point-in-time queries at specific commits
+    - Verify cache used efficiently
+    - Verify results identical to standalone mode
+    """
+    with temp_git_repo() as repo_path:
+        # Create commits
+        create_file(repo_path, "auth.py", "def login_v1(): pass")
+        commit1 = git_commit(repo_path, "Initial auth")
+
+        create_file(repo_path, "auth.py", "def login_v2(): pass")
+        commit2 = git_commit(repo_path, "Updated auth")
+
+        # Index
+        temporal = TemporalIndexer(config_manager, vector_store)
+        temporal.index_commits()
+
+        # Start daemon
+        daemon_process = start_cidx_daemon(repo_path)
+
+        try:
+            # Warm up cache
+            run_query("warmup query")  # Loads HNSW into cache
+
+            # Execute point-in-time query at first commit
+            start_time = time.time()
+            results = query_at_commit(
+                query="login authentication",
+                commit=commit1[:8]
+            )
+            query_time = time.time() - start_time
+
+            # Verify results
+            assert len(results) > 0
+            assert query_time < 0.3  # Fast (using cached index)
+
+            # Verify correct version found
+            assert "login_v1" in results[0]["content"]
+            assert results[0]["temporal_context"]["at_commit"]["hash"] == commit1[:8]
+
+            # Query at second commit
+            results2 = query_at_commit(
+                query="login authentication",
+                commit=commit2[:8]
+            )
+
+            # Should find v2
+            assert "login_v2" in results2[0]["content"]
+
+        finally:
+            daemon_process.terminate()
+
+
+def test_point_in_time_daemon_concurrent_queries():
+    """
+    Test concurrent point-in-time queries for different commits.
+
+    Scenario:
+    - Multiple clients query different commits simultaneously
+    - All queries use shared cached indexes
+    - No race conditions or data corruption
+    - All queries return correct commit-specific results
+    """
+    with temp_git_repo() as repo_path:
+        # Create multiple commits
+        commits = []
+        for i in range(5):
+            create_file(repo_path, f"version_{i}.py", f"def func_v{i}(): pass")
+            commit_hash = git_commit(repo_path, f"Version {i}")
+            commits.append(commit_hash)
+
+        # Index
+        temporal = TemporalIndexer(config_manager, vector_store)
+        temporal.index_commits()
+
+        # Start daemon
+        daemon_process = start_cidx_daemon(repo_path)
+
+        try:
+            import concurrent.futures
+
+            def query_specific_commit(commit_index):
+                """Query at specific commit"""
+                commit_hash = commits[commit_index]
+                results = query_at_commit(
+                    query=f"func_v{commit_index}",
+                    commit=commit_hash[:8]
+                )
+
+                # Verify correct version found
+                if results:
+                    content = results[0]["content"]
+                    return f"func_v{commit_index}" in content
+                return False
+
+            # Run 10 concurrent queries across different commits
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                futures = [
+                    executor.submit(query_specific_commit, i % len(commits))
+                    for i in range(10)
+                ]
+
+                success_results = [f.result() for f in futures]
+
+            # Verify all queries succeeded with correct data
+            assert all(success_results), "Some concurrent queries failed"
+
+        finally:
+            daemon_process.terminate()
+
+
+def test_point_in_time_daemon_after_background_rebuild():
+    """
+    Test point-in-time queries after Story 0 background HNSW rebuild.
+
+    Scenario:
+    - Daemon running with active point-in-time queries
+    - Background HNSW rebuild triggered (temporal indexing added new blobs)
+    - Continue querying during rebuild (stale reads OK)
+    - Verify cache invalidation after rebuild
+    - Verify queries use new index
+    """
+    with temp_git_repo() as repo_path:
+        # Create initial commits
+        create_file(repo_path, "old.py", "def old_func(): pass")
+        old_commit = git_commit(repo_path, "Old version")
+
+        # Index
+        temporal = TemporalIndexer(config_manager, vector_store)
+        temporal.index_commits()
+
+        # Start daemon
+        daemon_process = start_cidx_daemon(repo_path)
+
+        try:
+            # Initial query (old index)
+            old_results = query_at_commit(
+                query="old_func",
+                commit=old_commit[:8]
+            )
+            assert len(old_results) > 0
+
+            # Trigger background rebuild
+            # (Simulates adding new commits and re-indexing)
+            trigger_background_hnsw_rebuild(repo_path)
+
+            # Query during rebuild (should use old cached index - stale reads OK)
+            during_results = query_at_commit(
+                query="old_func",
+                commit=old_commit[:8]
+            )
+            assert len(during_results) == len(old_results)
+
+            # Wait for rebuild completion
+            wait_for_rebuild_completion()
+
+            # Query after rebuild (should detect version change, load new index)
+            new_results = query_at_commit(
+                query="old_func",
+                commit=old_commit[:8]
+            )
+
+            # Verify results still correct
+            assert len(new_results) > 0
+            assert "old_func" in new_results[0]["content"]
+
+        finally:
+            daemon_process.terminate()
+
+
+def test_point_in_time_daemon_cache_invalidation():
+    """
+    Test cache invalidation when incremental indexing adds new commits.
+
+    Scenario:
+    - Daemon running with cached indexes
+    - Query at specific commit (baseline)
+    - Add new commits and run incremental indexing
+    - Query again - should find new commits
+    - Verify cache invalidated and new data loaded
+    """
+    with temp_git_repo() as repo_path:
+        # Create initial commit
+        create_file(repo_path, "test.py", "def initial(): pass")
+        commit1 = git_commit(repo_path, "Initial commit")
+
+        # Index
+        temporal = TemporalIndexer(config_manager, vector_store)
+        temporal.index_commits()
+
+        # Start daemon
+        daemon_process = start_cidx_daemon(repo_path)
+
+        try:
+            # Query at initial commit
+            old_results = query_at_commit(
+                query="initial",
+                commit=commit1[:8]
+            )
+            assert len(old_results) > 0
+
+            # Add new commits
+            create_file(repo_path, "test.py", "def new_feature(): pass")
+            commit2 = git_commit(repo_path, "Add new feature")
+
+            create_file(repo_path, "test.py", "def another_feature(): pass")
+            commit3 = git_commit(repo_path, "Add another feature")
+
+            # Run incremental indexing (adds new commits to temporal index)
+            run_incremental_indexing(repo_path)
+
+            # Query at new commit (cache should invalidate)
+            new_results = query_at_commit(
+                query="new_feature",
+                commit=commit2[:8]
+            )
+
+            # Verify new commit found
+            assert len(new_results) > 0
+            assert "new_feature" in new_results[0]["content"]
+            assert new_results[0]["temporal_context"]["at_commit"]["hash"] == commit2[:8]
+
+            # Query at latest commit
+            latest_results = query_at_commit(
+                query="another_feature",
+                commit=commit3[:8]
+            )
+
+            # Verify latest commit found
+            assert len(latest_results) > 0
+            assert "another_feature" in latest_results[0]["content"]
+
+        finally:
+            daemon_process.terminate()
+```
+
 ## Error Scenarios
 
 1. **Commit Not Found:**

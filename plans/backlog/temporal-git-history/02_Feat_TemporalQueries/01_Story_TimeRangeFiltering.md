@@ -135,6 +135,72 @@ class TemporalSearchService:
         )
 ```
 
+### Helper Methods
+```python
+def _get_head_file_blobs(self) -> Set[Tuple[str, str]]:
+    """
+    Get current HEAD file-blob mappings (Issue #11 fix).
+
+    Returns:
+        Set of (file_path, blob_hash) tuples for all files at HEAD
+
+    Why tuples instead of just blob hashes:
+        Same blob can appear in multiple files. To detect "removed code",
+        we need to check if a specific FILE has been removed, not just if
+        the blob content exists SOMEWHERE in the repo.
+
+    Example:
+        HEAD state:
+          src/auth.py → blob abc123
+          lib/utils.py → blob abc123  (same content)
+
+        Historical state:
+          src/auth.py → blob abc123  (later removed)
+          src/login.py → blob def456
+
+        Query finds "src/auth.py" with blob abc123.
+        - Wrong logic: Check if abc123 exists → YES (in lib/utils.py) → NOT removed ❌
+        - Correct logic: Check if (src/auth.py, abc123) exists → NO → IS removed ✅
+    """
+    import subprocess
+    file_blobs = set()
+
+    try:
+        # Get git ls-tree for current HEAD
+        # Format: <mode> <type> <hash>\t<file>
+        result = subprocess.run(
+            ["git", "ls-tree", "-r", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+
+            # Parse line: "100644 blob abc123def\tpath/to/file.py"
+            parts = line.split("\t")
+            if len(parts) != 2:
+                continue
+
+            meta, file_path = parts
+            meta_parts = meta.split()
+            if len(meta_parts) != 3:
+                continue
+
+            mode, obj_type, blob_hash = meta_parts
+
+            if obj_type == "blob":
+                file_blobs.add((file_path, blob_hash))
+
+    except subprocess.CalledProcessError as e:
+        self.logger.error(f"Failed to get HEAD file-blob mappings: {e}")
+        # Return empty set - will treat all code as removed (safe fallback)
+
+    return file_blobs
+```
+
 ### SQLite Filtering Logic
 ```python
 def _filter_by_time_range(self, semantic_results: List[SearchResult],
@@ -205,18 +271,35 @@ def _filter_by_time_range(self, semantic_results: List[SearchResult],
                 "author": row["author_name"]
             })
 
-    # Check if blobs still exist (for include_removed logic)
+    # === REMOVED CODE DETECTION (Issue #11) ===
+    # CRITICAL: Check (file_path, blob_hash) tuple, NOT just blob_hash
+    # Same blob in different file should NOT prevent "removed" detection
     if not include_removed:
-        # Get current HEAD blobs
-        head_blobs = self._get_head_blobs()
+        # Get current HEAD (file_path, blob_hash) tuples
+        head_file_blobs = self._get_head_file_blobs()
 
     # Build temporal results
     for result in semantic_results:
         blob_hash = result.metadata.get("blob_hash")
+        file_path = result.file_path
+
         if blob_hash in blob_data:
-            # Skip removed code unless requested
-            if not include_removed and blob_hash not in head_blobs:
-                continue
+            # CRITICAL: Check tuple (file_path, blob_hash), not just blob_hash
+            # Example why this matters:
+            #   src/auth.py blob abc123 - removed
+            #   lib/utils.py blob abc123 - still exists (same content, different file)
+            # Without tuple check: Would incorrectly say src/auth.py NOT removed
+            is_removed = False
+            if not include_removed:
+                file_blob_tuple = (file_path, blob_hash)
+                if file_blob_tuple not in head_file_blobs:
+                    # This specific file+blob combination removed
+                    continue  # Skip unless include_removed
+                is_removed = False
+            else:
+                # When include_removed=True, check if this specific file+blob exists
+                file_blob_tuple = (file_path, blob_hash)
+                is_removed = file_blob_tuple not in head_file_blobs
 
             temporal_data = blob_data[blob_hash]
 
@@ -234,7 +317,7 @@ def _filter_by_time_range(self, semantic_results: List[SearchResult],
                     "last_seen": datetime.fromtimestamp(
                         temporal_data["last_seen"]).strftime("%Y-%m-%d"),
                     "appearance_count": temporal_data["appearance_count"],
-                    "is_removed": blob_hash not in head_blobs if not include_removed else None,
+                    "is_removed": is_removed,
                     "commits": temporal_data["commits"]
                 }
             )
@@ -440,6 +523,257 @@ def test_performance_target():
 
     assert elapsed < 300, f"Query took {elapsed}ms, target is <300ms"
     assert results.performance["total_ms"] < 300
+
+def test_removed_code_detection_with_duplicate_blobs():
+    """
+    Test removed code detection when same blob exists in different files (Issue #11).
+
+    Critical scenario:
+      - File src/auth.py with blob abc123 was removed
+      - File lib/utils.py with SAME blob abc123 still exists (duplicate content)
+      - Query should correctly identify src/auth.py as removed
+    """
+    with temp_git_repo() as repo_path:
+        # Commit 1: Create two files with SAME content
+        shared_content = "function authenticate() { return true; }"
+
+        Path("src/auth.py").write_text(shared_content)
+        Path("lib/utils.py").write_text(shared_content)
+        git_add_commit("Add auth files with duplicate content")
+
+        # Index temporal
+        temporal = TemporalIndexer(config_manager, vector_store)
+        temporal.index_commits()
+
+        # Get blob hashes - should be identical
+        blob1 = subprocess.run(
+            ["git", "hash-object", "src/auth.py"],
+            capture_output=True, text=True
+        ).stdout.strip()
+
+        blob2 = subprocess.run(
+            ["git", "hash-object", "lib/utils.py"],
+            capture_output=True, text=True
+        ).stdout.strip()
+
+        assert blob1 == blob2, "Blobs should be identical (same content)"
+
+        # Commit 2: Remove src/auth.py (but lib/utils.py with same blob still exists)
+        subprocess.run(["git", "rm", "src/auth.py"], check=True)
+        git_add_commit("Remove src/auth.py")
+
+        # Re-index
+        temporal.index_commits(incremental=True)
+
+        # Query for the content WITHOUT include_removed
+        service = TemporalSearchService(semantic_service, config_manager)
+        results = service.query_temporal(
+            query="authenticate function",
+            time_range=("2020-01-01", "2025-01-01"),
+            include_removed=False  # Should NOT include removed files
+        )
+
+        # CRITICAL ASSERTION: Should ONLY find lib/utils.py, NOT src/auth.py
+        # Because src/auth.py was removed even though same blob exists in lib/utils.py
+        file_paths = [r.file_path for r in results.results]
+        assert "lib/utils.py" in file_paths, "lib/utils.py should be found"
+        assert "src/auth.py" not in file_paths, "src/auth.py should NOT be found (removed)"
+
+        # Now WITH include_removed - should find BOTH
+        results_with_removed = service.query_temporal(
+            query="authenticate function",
+            time_range=("2020-01-01", "2025-01-01"),
+            include_removed=True
+        )
+
+        file_paths_all = [r.file_path for r in results_with_removed.results]
+        assert "lib/utils.py" in file_paths_all
+        assert "src/auth.py" in file_paths_all
+
+        # Verify is_removed flag correct
+        for result in results_with_removed.results:
+            if result.file_path == "src/auth.py":
+                assert result.temporal_context["is_removed"] == True
+            elif result.file_path == "lib/utils.py":
+                assert result.temporal_context["is_removed"] == False
+```
+
+### Daemon Mode Integration Tests
+
+**CRITICAL:** Time-range filtering must work in both standalone and daemon modes with proper cache coordination (Story 0 integration).
+
+```python
+def test_time_range_filtering_daemon_mode():
+    """
+    Test time-range filtering in daemon mode with cached indexes.
+
+    Scenario:
+    - Daemon running with cached HNSW and ID indexes
+    - Execute time-range filtered queries
+    - Verify cache used efficiently
+    - Verify results identical to standalone mode
+    """
+    daemon_process = start_cidx_daemon(repo_path)
+
+    try:
+        # Warm up cache
+        run_query("warmup query")  # Loads HNSW into cache
+
+        # Execute time-range query
+        start_time = time.time()
+        results = query_temporal(
+            query="authentication code",
+            time_range=("2024-01-01", "2024-12-31")
+        )
+        query_time = time.time() - start_time
+
+        # Verify results
+        assert len(results) > 0
+        assert query_time < 0.3  # Fast (using cached index)
+
+        # Verify all results within date range
+        for result in results:
+            commit_date = result["first_seen_date"]
+            assert "2024-01-01" <= commit_date <= "2024-12-31"
+
+    finally:
+        daemon_process.terminate()
+
+
+def test_time_range_daemon_concurrent_queries():
+    """
+    Test concurrent time-range queries in daemon mode.
+
+    Scenario:
+    - Multiple clients query different date ranges simultaneously
+    - All queries use shared cached indexes
+    - No race conditions or result corruption
+    - All queries return correct date-filtered results
+    """
+    daemon_process = start_cidx_daemon(repo_path)
+
+    try:
+        import concurrent.futures
+
+        def run_concurrent_time_range_query(year):
+            results = query_temporal(
+                query="function",
+                time_range=(f"{year}-01-01", f"{year}-12-31")
+            )
+            # Verify results match year
+            for r in results:
+                assert r["first_seen_date"].startswith(str(year))
+            return len(results)
+
+        # Run queries for different years concurrently
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [
+                executor.submit(run_concurrent_time_range_query, year)
+                for year in [2020, 2021, 2022, 2023, 2024]
+            ]
+
+            result_counts = [f.result() for f in futures]
+
+        # Verify all queries succeeded
+        assert all(count >= 0 for count in result_counts)
+
+    finally:
+        daemon_process.terminate()
+
+
+def test_time_range_daemon_after_background_rebuild():
+    """
+    Test time-range queries after Story 0 background HNSW rebuild.
+
+    Scenario:
+    - Daemon running with active time-range queries
+    - Background HNSW rebuild triggered (temporal indexing added new blobs)
+    - Continue querying during rebuild (stale reads OK)
+    - Verify cache invalidation after rebuild
+    - Verify queries use new index with new temporal blobs
+    """
+    daemon_process = start_cidx_daemon(repo_path)
+
+    try:
+        # Initial query (old index)
+        old_results = query_temporal(
+            query="test",
+            time_range=("2024-01-01", "2024-12-31")
+        )
+
+        # Trigger background rebuild (simulates adding historical blobs)
+        trigger_background_hnsw_rebuild(repo_path)
+
+        # Query during rebuild (should use old cached index)
+        during_results = query_temporal(
+            query="test",
+            time_range=("2024-01-01", "2024-12-31")
+        )
+        # Stale reads OK during rebuild
+        assert len(during_results) == len(old_results)
+
+        # Wait for rebuild completion
+        wait_for_rebuild_completion()
+
+        # Query after rebuild (should detect version change, load new index)
+        new_results = query_temporal(
+            query="test",
+            time_range=("2024-01-01", "2024-12-31")
+        )
+
+        # Results still correct (may include new historical blobs)
+        assert len(new_results) >= len(old_results)
+        # All results still in date range
+        for result in new_results:
+            commit_date = result["first_seen_date"]
+            assert "2024-01-01" <= commit_date <= "2024-12-31"
+
+    finally:
+        daemon_process.terminate()
+
+
+def test_time_range_daemon_cache_invalidation():
+    """
+    Test cache invalidation when temporal index updated.
+
+    Scenario:
+    - Daemon running with cached indexes
+    - Run incremental temporal indexing (adds new commits)
+    - Verify cache invalidated
+    - Verify new commits appear in time-range queries
+    """
+    daemon_process = start_cidx_daemon(repo_path)
+
+    try:
+        # Query before incremental indexing
+        old_results = query_temporal(
+            query="new code",
+            time_range=("2024-01-01", "2024-12-31")
+        )
+        old_count = len(old_results)
+
+        # Add new commits and run incremental indexing
+        create_new_commit(repo_path, "new code feature", "2024-06-15")
+        run_incremental_temporal_indexing(repo_path)
+
+        # Query after incremental indexing
+        new_results = query_temporal(
+            query="new code",
+            time_range=("2024-01-01", "2024-12-31")
+        )
+
+        # Should find new commit
+        assert len(new_results) > old_count
+
+        # Verify new commit in results
+        new_commit_found = any(
+            "new code feature" in r["content"]
+            for r in new_results
+        )
+        assert new_commit_found
+
+    finally:
+        daemon_process.terminate()
 ```
 
 ## Error Scenarios

@@ -601,6 +601,16 @@ class HealthMonitor:
 - [ ] Proper error propagation to client
 - [ ] Socket binding prevents duplicate daemons
 
+### Critical E2E Test Requirements
+- [ ] **MANDATORY**: `test_concurrent_watch_query_index_operations()` passes without race conditions
+  - Thread 1: Watch mode making file changes
+  - Thread 2: Concurrent queries (10+ queries) during file changes
+  - Thread 3: Index operation while watch and queries active
+  - All operations complete successfully without errors
+  - No cache corruption, NoneType errors, or deadlocks
+  - Cache coherence maintained throughout
+  - This test validates the most complex real-world concurrent scenario
+
 ## Implementation Tasks
 
 ### Task 1: Core Service Structure (Day 1)
@@ -845,6 +855,134 @@ def test_hybrid_parallel_execution():
     assert duration < 1.5  # Not 2.5s
     assert result["semantic_count"] > 0
     assert result["fts_count"] > 0
+
+def test_concurrent_watch_query_index_operations():
+    """
+    CRITICAL E2E TEST: Verify daemon handles concurrent operations without race conditions.
+
+    This test reproduces the most complex real-world scenario:
+    - Thread 1: Watch mode making file changes
+    - Thread 2: Concurrent queries during file changes
+    - Thread 3: Index operation requested while watch and queries active
+
+    All three operations must work correctly without:
+    - Cache corruption
+    - NoneType errors
+    - Deadlocks
+    - Duplicate watch handlers
+    - Lost file change events
+
+    Test Scenario:
+    1. Start daemon with empty cache
+    2. Thread 1: Start watch mode
+    3. Thread 1: Make file changes (create/modify/delete files)
+    4. Thread 2: Run concurrent queries (10 queries during file changes)
+    5. Thread 3: Request full re-index while watch and queries running
+    6. Verify all operations complete successfully
+    7. Verify cache coherence maintained
+    8. Verify no race conditions occurred
+    """
+    service, project_path = daemon_service_with_project
+
+    # Storage for results and errors
+    watch_errors = []
+    query_results = []
+    query_errors = []
+    index_result = None
+    index_error = None
+    results_lock = threading.Lock()
+
+    # Thread 1: Watch mode with file changes
+    def watch_and_modify_files():
+        try:
+            # Start watch
+            watch_response = service.exposed_watch_start(
+                project_path=str(project_path),
+                callback=None,
+                debounce_seconds=1.0,
+            )
+            assert watch_response["status"] == "success", "Watch should start"
+
+            # Make file changes
+            test_file = project_path / "test_file.py"
+            for i in range(5):
+                test_file.write_text(f"# Modified content {i}\n")
+                time.sleep(0.2)  # Trigger watch events
+
+        except Exception as e:
+            with results_lock:
+                watch_errors.append(e)
+
+    # Thread 2: Concurrent queries
+    def run_concurrent_queries():
+        for i in range(10):
+            try:
+                result = service.exposed_query(
+                    project_path=str(project_path),
+                    query=f"test query {i}",
+                    limit=5,
+                )
+                with results_lock:
+                    query_results.append(result)
+                time.sleep(0.1)
+            except Exception as e:
+                with results_lock:
+                    query_errors.append(e)
+
+    # Thread 3: Index operation
+    def request_indexing():
+        nonlocal index_result, index_error
+        try:
+            time.sleep(0.3)  # Let watch and queries start first
+            result = service.exposed_index(
+                project_path=str(project_path),
+                callback=None,
+            )
+            index_result = result
+        except Exception as e:
+            index_error = e
+
+    # Run all three operations concurrently
+    thread1 = threading.Thread(target=watch_and_modify_files, daemon=True)
+    thread2 = threading.Thread(target=run_concurrent_queries, daemon=True)
+    thread3 = threading.Thread(target=request_indexing, daemon=True)
+
+    thread1.start()
+    thread2.start()
+    thread3.start()
+
+    # Wait for completion
+    thread1.join(timeout=15)
+    thread2.join(timeout=15)
+    thread3.join(timeout=15)
+
+    # CRITICAL ASSERTIONS: No race conditions should occur
+    if watch_errors:
+        pytest.fail(f"Watch errors detected: {watch_errors}")
+
+    if query_errors:
+        pytest.fail(f"Query errors detected ({len(query_errors)}/10 failed): {query_errors}")
+
+    if index_error:
+        pytest.fail(f"Index operation failed: {index_error}")
+
+    # All operations should succeed
+    assert len(query_results) == 10, f"Expected 10 successful queries, got {len(query_results)}"
+    assert index_result is not None, "Index operation should complete"
+    assert index_result["status"] in ["completed", "started"], "Index should complete or be running"
+
+    # Verify cache coherence
+    assert service.cache_entry is not None or index_result["status"] == "completed", \
+        "Cache should exist or be invalidated by index operation"
+
+    # Verify watch is still running (only stopped explicitly)
+    watch_status = service.exposed_watch_status()
+    assert watch_status["running"], "Watch should still be running after concurrent operations"
+
+    # Cleanup
+    service.exposed_watch_stop(str(project_path))
+    if service.indexing_thread:
+        service.indexing_thread.join(timeout=30)
 ```
 
 ### Performance Tests
@@ -931,6 +1069,9 @@ def test_cache_performance():
 - [ ] Concurrent read/write locks properly implemented
 - [ ] All unit tests passing
 - [ ] All integration tests passing
+- [ ] **CRITICAL**: `test_concurrent_watch_query_index_operations()` E2E test passing
+  - Validates concurrent watch + queries + indexing without race conditions
+  - This test MUST pass before story completion
 - [ ] Performance targets met (<100ms cache hit)
 - [ ] Health monitoring operational
 - [ ] Documentation updated

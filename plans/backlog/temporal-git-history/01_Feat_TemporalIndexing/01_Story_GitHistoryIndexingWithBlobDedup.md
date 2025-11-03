@@ -294,6 +294,15 @@ class TemporalIndexer:
             # 3d. Store commit metadata in SQLite (links commit → blobs)
             self._store_commit_tree(commit, all_blobs)
 
+            # 3e. Store branch metadata for THIS COMMIT (CRITICAL: During processing)
+            # DO NOT defer this to after the loop - branch metadata must be stored
+            # as we process each commit for accuracy and to avoid expensive lookups later
+            self._store_commit_branch_metadata(
+                commit_hash=commit.hash,
+                all_branches_mode=all_branches,
+                current_branch=current_branch
+            )
+
             # Progress with branch info
             if progress_callback:
                 branch_info = f" [{current_branch}]" if not all_branches else ""
@@ -303,9 +312,6 @@ class TemporalIndexer:
                     Path(f"commit {commit.hash[:8]}"),
                     info=f"{i+1}/{len(commits)} commits{branch_info}"
                 )
-
-        # Step 4: Store commit data and branch metadata in SQLite
-        self._store_branch_metadata(commits, all_branches, current_branch)
 
         # Step 5: Save temporal metadata with branch info
         branch_stats = self._calculate_branch_statistics(commits, all_branches)
@@ -544,6 +550,131 @@ class HistoricalBlobProcessor:
         )
 ```
 
+### VoyageAI Token Limit Handling (Issue #8)
+
+**CRITICAL: VoyageAI API enforces 120,000 token limit per batch request.**
+
+#### Problem
+
+Voyage AI's batch embedding API has a hard limit:
+- **Maximum tokens per batch:** 120,000 tokens
+- **Error if exceeded:** `max allowed tokens per submitted batch is 120000`
+- **Impact:** Large historical files (>100K tokens) will fail without batching
+
+#### Solution: Token-Aware Batching (Already Implemented in VectorCalculationManager)
+
+**Good News:** The `VectorCalculationManager` that we REUSE already implements token-aware batching. No new code needed!
+
+```python
+# From services/vector_calculation_manager.py (ALREADY EXISTS)
+class VectorCalculationManager:
+    MAX_BATCH_TOKENS = 120_000  # VoyageAI limit
+
+    def submit_chunks_batch(self, chunk_texts: List[str]) -> List[Future]:
+        """
+        Submit chunks for embedding with automatic token-aware batching.
+
+        CRITICAL: Automatically splits large batches to respect 120K token limit.
+        """
+        # Count tokens for ALL chunks
+        total_tokens = self._count_tokens(chunk_texts)
+
+        if total_tokens <= self.MAX_BATCH_TOKENS:
+            # Single batch - submit all at once
+            return self._submit_single_batch(chunk_texts)
+        else:
+            # Multiple batches - split intelligently
+            return self._submit_multiple_batches(chunk_texts)
+
+    def _submit_multiple_batches(self, chunks: List[str]) -> List[Future]:
+        """Split chunks into multiple batches respecting token limit"""
+        batches = []
+        current_batch = []
+        current_tokens = 0
+
+        for chunk in chunks:
+            chunk_tokens = self._count_tokens([chunk])
+
+            if current_tokens + chunk_tokens > self.MAX_BATCH_TOKENS:
+                # Current batch would exceed limit, start new batch
+                if current_batch:
+                    batches.append(current_batch)
+                current_batch = [chunk]
+                current_tokens = chunk_tokens
+            else:
+                current_batch.append(chunk)
+                current_tokens += chunk_tokens
+
+        # Add final batch
+        if current_batch:
+            batches.append(current_batch)
+
+        # Submit all batches and collect futures
+        all_futures = []
+        for batch in batches:
+            futures = self._submit_single_batch(batch)
+            all_futures.extend(futures)
+
+        return all_futures
+```
+
+#### How It Works for Temporal Indexing
+
+1. **Large Historical File (150K tokens):**
+   - File chunked into 100 chunks
+   - VectorCalculationManager counts: 150K total tokens
+   - Automatically splits into 2 batches:
+     - Batch 1: 60 chunks (~90K tokens)
+     - Batch 2: 40 chunks (~60K tokens)
+   - Both batches submitted to VoyageAI successfully
+   - Results merged seamlessly
+
+2. **Normal Files (<120K tokens):**
+   - Single batch processing (fast path)
+   - No splitting overhead
+
+#### Token Counting
+
+```python
+# REUSE embedded_voyage_tokenizer.py (optimized, fast)
+from ...embedded_voyage_tokenizer import count_tokens
+
+def _count_tokens(self, texts: List[str]) -> int:
+    """
+    Count tokens using embedded VoyageAI tokenizer.
+
+    Uses cached tokenizer (0.03ms per call after first load).
+    100% accuracy match with voyageai.Client.count_tokens().
+    """
+    return sum(count_tokens(text, model="voyage-code-2") for text in texts)
+```
+
+#### Why This Works
+
+- **Transparent:** HistoricalBlobProcessor calls `vector_manager.submit_chunks_batch(chunk_texts)`
+- **Automatic:** VectorCalculationManager handles batching internally
+- **Efficient:** Token counting is cached and blazing fast
+- **Accurate:** Uses official VoyageAI tokenizer models
+- **Proven:** Already working in workspace indexing
+
+#### Edge Cases Handled
+
+1. **Single chunk >120K tokens:** Fails gracefully with clear error (file too large)
+2. **Many small chunks:** Single batch (optimal performance)
+3. **Mix of sizes:** Intelligent packing to minimize batch count
+4. **Empty chunks:** Filtered out before token counting
+
+#### Testing Requirements
+
+1. **Large File Test:** Create historical file with >120K tokens, verify splits into multiple batches
+2. **Token Count Accuracy:** Verify count matches VoyageAI official tokenizer
+3. **Batch Splitting:** Verify batches stay under 120K token limit
+4. **Performance:** Verify token counting doesn't add significant overhead (<5%)
+
+#### No Changes Needed
+
+**CRITICAL:** Because we REUSE VectorCalculationManager, token limit handling is AUTOMATIC. No additional code required in HistoricalBlobProcessor.
+
 ### Blob Registry Building (SQLite)
 ```python
 def _build_blob_registry(self) -> str:
@@ -677,45 +808,205 @@ def _initialize_database(self):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_commit_branches_hash ON commit_branches(commit_hash)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_commit_branches_name ON commit_branches(branch_name)")
 
-    # Performance tuning
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA cache_size=8192")
+    # Performance tuning (Issue #7: SQLite Locking and Concurrency)
+    conn.execute("PRAGMA journal_mode=WAL")  # Write-Ahead Logging for concurrent reads
+    conn.execute("PRAGMA cache_size=8192")   # 8MB cache
+    conn.execute("PRAGMA busy_timeout=5000") # Wait up to 5 seconds for locks
+    conn.execute("PRAGMA synchronous=NORMAL") # Good balance of safety/performance
 
     conn.commit()
     return conn
 
-def _store_branch_metadata(self, commits: List[CommitInfo],
-                            all_branches: bool,
-                            current_branch: str):
-    """Store branch metadata for each commit"""
-    import sqlite3
+def _store_commit_branch_metadata(
+    self,
+    commit_hash: str,
+    all_branches_mode: bool,
+    current_branch: str
+):
+    """
+    Store branch metadata for a single commit (CALLED DURING PROCESSING).
+
+    CRITICAL: This method is called INSIDE the commit processing loop,
+    not after all commits are done. This ensures we can track branches
+    efficiently without expensive post-processing lookups.
+
+    Args:
+        commit_hash: The commit to store metadata for
+        all_branches_mode: If True, discover all branches containing commit
+        current_branch: The current branch name
+    """
     import time
 
-    conn = sqlite3.connect(self.db_path)
     timestamp = int(time.time())
 
-    for commit in commits:
-        if all_branches:
-            # Get all branches containing this commit
-            branches = self._get_branches_for_commit(commit.hash)
-        else:
-            # Single branch mode: only record current branch
-            branches = [current_branch]
+    # Determine which branches contain this commit
+    if all_branches_mode:
+        # Multi-branch mode: Find ALL branches containing this commit
+        # Use: git branch --contains <commit> --format='%(refname:short)'
+        result = subprocess.run(
+            ["git", "branch", "--contains", commit_hash, "--format=%(refname:short)"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        branches = [b.strip() for b in result.stdout.split('\n') if b.strip()]
+    else:
+        # Single-branch mode: Only record current branch
+        branches = [current_branch]
 
-        # Check if this commit is HEAD of current branch
-        is_head = (commit.hash == self._get_branch_head(current_branch))
+    # Check if this commit is HEAD of current branch
+    head_hash = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True
+    ).stdout.strip()
+    is_head = (commit_hash == head_hash)
 
-        # Insert branch records
+    # Store in SQLite with EXCLUSIVE transaction (see Issue #7)
+    with self.commits_db.connection() as conn:
         for branch in branches:
             conn.execute("""
-                INSERT OR IGNORE INTO commit_branches
+                INSERT OR REPLACE INTO commit_branches
                 (commit_hash, branch_name, is_head, indexed_at)
                 VALUES (?, ?, ?, ?)
-            """, (commit.hash, branch, 1 if is_head and branch == current_branch else 0, timestamp))
-
-    conn.commit()
-    conn.close()
+            """, (
+                commit_hash,
+                branch,
+                1 if is_head and branch == current_branch else 0,
+                timestamp
+            ))
+        conn.commit()
 ```
+
+### SQLite Locking and Concurrency Strategy (Issue #7)
+
+**CRITICAL: SQLite requires proper locking configuration for concurrent access in daemon mode.**
+
+#### Concurrency Scenarios
+
+1. **Standalone Mode:** Single process, no concurrency issues
+2. **Daemon Mode:** Daemon process indexing while queries happen
+3. **Watch Mode + Daemon:** Incremental indexing during active queries
+
+#### Locking Configuration
+
+```python
+def _initialize_database(self):
+    """Initialize SQLite with proper locking configuration"""
+    conn = sqlite3.connect(self.db_path, timeout=5.0)  # 5-second timeout
+
+    # CRITICAL: WAL mode enables concurrent readers during writes
+    conn.execute("PRAGMA journal_mode=WAL")
+
+    # Busy timeout: Wait up to 5 seconds for locks to clear
+    conn.execute("PRAGMA busy_timeout=5000")
+
+    # Synchronous mode: NORMAL provides good balance
+    # FULL = safest but slower, NORMAL = faster with minimal risk
+    conn.execute("PRAGMA synchronous=NORMAL")
+
+    # Cache size: 8MB (8192 pages * 1KB)
+    conn.execute("PRAGMA cache_size=8192")
+
+    return conn
+```
+
+#### Write Transaction Pattern (EXCLUSIVE Locks)
+
+```python
+def _store_commit_tree(self, commit: CommitInfo, blobs: List[BlobInfo]):
+    """
+    Store commit and its file tree in SQLite.
+
+    Uses EXCLUSIVE transaction to prevent write conflicts.
+    """
+    with self.commits_db.connection() as conn:
+        # BEGIN EXCLUSIVE - Acquires exclusive write lock immediately
+        conn.execute("BEGIN EXCLUSIVE")
+
+        try:
+            # 1. Insert commit
+            conn.execute("""
+                INSERT OR REPLACE INTO commits
+                (hash, date, author_name, author_email, message, parent_hashes)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                commit.hash,
+                commit.timestamp,
+                commit.author_name,
+                commit.author_email,
+                commit.message,
+                commit.parent_hashes
+            ))
+
+            # 2. Insert tree entries (file → blob mappings)
+            for blob in blobs:
+                conn.execute("""
+                    INSERT OR REPLACE INTO trees
+                    (commit_hash, file_path, blob_hash)
+                    VALUES (?, ?, ?)
+                """, (commit.hash, blob.file_path, blob.blob_hash))
+
+            conn.commit()  # Release lock
+        except Exception as e:
+            conn.rollback()
+            raise
+```
+
+#### Read Pattern (Shared Locks)
+
+```python
+def has_commit_indexed(self, commit_hash: str) -> bool:
+    """
+    Check if commit is already indexed.
+
+    Uses shared read lock - multiple queries can run concurrently.
+    """
+    with self.commits_db.connection() as conn:
+        # SELECT acquires shared lock - doesn't block other readers
+        cursor = conn.execute(
+            "SELECT 1 FROM commits WHERE hash = ? LIMIT 1",
+            (commit_hash,)
+        )
+        return cursor.fetchone() is not None
+```
+
+#### Daemon Mode Considerations
+
+**Problem:** Long-running temporal indexing (4-7 min) blocks daemon queries
+
+**Solution:** WAL mode allows:
+- **Writers:** Single exclusive writer (temporal indexing)
+- **Readers:** Unlimited concurrent readers (queries)
+- **Isolation:** Readers see last committed state, not partial writes
+
+**Key Benefits:**
+1. Queries work during indexing (read old snapshot)
+2. No "database locked" errors for queries
+3. Writes serialized but readers never wait
+
+#### Error Handling
+
+```python
+def _execute_with_retry(self, conn, query, params, max_retries=3):
+    """Execute query with retry on busy/locked errors"""
+    for attempt in range(max_retries):
+        try:
+            return conn.execute(query, params)
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e) and attempt < max_retries - 1:
+                time.sleep(0.1 * (attempt + 1))  # Exponential backoff
+                continue
+            raise
+```
+
+#### Testing Requirements
+
+1. **Concurrent Access Test:** Start temporal indexing, run queries simultaneously
+2. **Lock Timeout Test:** Verify busy_timeout prevents immediate failures
+3. **WAL Checkpoint:** Verify periodic WAL checkpointing doesn't block
+4. **Daemon Mode Stress:** Long indexing + high query load
 
 ### Git Integration
 ```python
@@ -844,6 +1135,547 @@ def estimate_all_branches_cost(self) -> CostEstimate:
         api_cost=api_cost
     )
 ```
+
+---
+
+## Daemon Mode Cache Invalidation Strategy (Issue #3)
+
+### Current Behavior (As Implemented)
+
+**CRITICAL FINDING:** The current daemon cache implementation already handles temporal indexing correctly through complete cache invalidation.
+
+**Architecture Review:**
+
+```python
+# From daemon/service.py (lines 195-199)
+with self.cache_lock:
+    if self.cache_entry:
+        logger.info("Invalidating cache before indexing")
+        self.cache_entry = None  # Complete invalidation
+```
+
+**Lock Pattern (from daemon/cache.py):**
+```python
+self.read_lock: threading.RLock = threading.RLock()  # Concurrent reads
+self.write_lock: threading.Lock = threading.Lock()   # Serialized writes
+```
+
+### Temporal Indexing Workflow
+
+**Scenario:** Long-running temporal indexing (4-7 minutes) in daemon mode
+
+**What Happens:**
+
+1. **Before Indexing:**
+   - Cache invalidated: `cache_entry = None`
+   - All queries now go directly to FilesystemVectorStore
+
+2. **During Indexing (4-7 minutes):**
+   - New historical blob vectors written to FilesystemVectorStore
+   - HNSW index marked stale (from Story 0 background rebuild)
+   - Queries continue using old HNSW index (stale reads, but fast)
+
+3. **After Indexing:**
+   - Cache remains empty (no pre-loading)
+   - First query triggers HNSW rebuild if needed (Story 0 background)
+   - Results cached for subsequent queries
+
+### Performance Characteristics
+
+**Current Implementation:**
+
+| Operation | Behavior | Performance |
+|-----------|----------|-------------|
+| Queries during indexing | Uses old HNSW index | ~500ms (stale but fast) |
+| First query after indexing | Triggers HNSW rebuild | Story 0 handles in background |
+| Subsequent queries | Uses fresh cache | ~100-200ms (fast) |
+
+**User Experience:**
+- ✅ Queries never blocked during temporal indexing
+- ✅ Stale reads acceptable (old code still searchable)
+- ⚠️ First query after indexing may use stale index briefly
+- ✅ Story 0 background rebuild makes this transparent
+
+### Future Enhancement (Optional, Not Required)
+
+**Stale-Read Enhancement Proposal:**
+- Allow queries to use OLD HNSW index during rebuild
+- Background rebuild happens asynchronously (Story 0)
+- Accept that results might not include newest vectors until rebuild completes
+
+**Status:** DEFERRED - Current implementation is acceptable, Story 0 makes this enhancement optional
+
+**Decision:** Document current behavior, rely on Story 0 for background rebuilds
+
+### Testing Requirements
+
+**Daemon Mode Integration Tests:**
+
+```python
+def test_temporal_indexing_with_concurrent_queries():
+    """Test queries work during long-running temporal indexing."""
+
+    # Start temporal indexing in background (4-7 min)
+    daemon = DaemonService(config)
+    indexing_thread = threading.Thread(
+        target=lambda: daemon.index_commits(branch_strategy=BranchStrategy.CURRENT)
+    )
+    indexing_thread.start()
+
+    # Run queries concurrently during indexing
+    for i in range(50):
+        result = daemon.query("authentication code")
+        assert result  # Should work (may use stale index)
+        assert len(result.results) > 0
+
+    indexing_thread.join()
+
+
+def test_cache_invalidation_before_temporal_indexing():
+    """Test cache is invalidated before temporal indexing starts."""
+
+    daemon = DaemonService(config)
+
+    # Populate cache with query
+    daemon.query("test query")
+    assert daemon.cache_entry is not None
+
+    # Start temporal indexing
+    daemon.index_commits(branch_strategy=BranchStrategy.CURRENT)
+
+    # Verify cache was invalidated
+    assert daemon.cache_entry is None
+
+
+def test_hnsw_rebuild_after_temporal_indexing():
+    """Test HNSW rebuild happens after temporal indexing (Story 0)."""
+
+    from code_indexer.storage.hnsw_index_manager import HNSWIndexManager
+
+    daemon = DaemonService(config)
+
+    # Index temporal data
+    daemon.index_commits(branch_strategy=BranchStrategy.CURRENT)
+
+    # Verify HNSW marked stale
+    hnsw_manager = HNSWIndexManager(vector_dim=1536)
+    collection_path = Path(".code-indexer/index/default")
+    assert hnsw_manager.is_stale(collection_path)
+
+    # First query should trigger background rebuild (Story 0)
+    result = daemon.query("removed code")
+
+    # Query should complete even if rebuild in progress
+    assert result is not None
+```
+
+### Coordination with Story 0
+
+**Integration Points:**
+
+1. **Temporal Indexing Completion:**
+   ```python
+   # After writing all vectors
+   if daemon_mode:
+       # Mark HNSW stale, Story 0 will rebuild in background
+       hnsw_manager.mark_stale(collection_path)
+   else:
+       # Standalone: rebuild synchronously
+       hnsw_manager.rebuild_from_vectors(collection_path)
+   ```
+
+2. **Query During Rebuild:**
+   ```python
+   # Story 0 handles this transparently
+   # - Query uses old index (fast, stale)
+   # - Rebuild happens in background
+   # - Atomic swap when ready (<2ms)
+   ```
+
+3. **Cache Rebuild:**
+   ```python
+   # Cache rebuilds naturally on first query after indexing
+   # Story 0 ensures HNSW is fresh (or rebuilding in background)
+   ```
+
+### Conclusion
+
+**Issue #3 Status:** ✅ RESOLVED
+
+**Current Implementation:** Adequate for temporal indexing needs
+- Complete cache invalidation works correctly
+- Stale reads during rebuild are acceptable
+- Story 0 handles HNSW rebuild transparently
+
+**No Additional Work Required:** Document current behavior, rely on Story 0
+
+---
+
+## Checkpoint and Resume Strategy (Issue #25)
+
+### Problem Statement
+
+Temporal indexing can process thousands of commits (4-7 minutes for 7K commits). If interrupted:
+- **Without checkpoints:** Must restart from beginning (wasted work)
+- **With checkpoints:** Resume from last saved progress
+
+**User Requirement:** "Save every 1000 commits, resume from last checkpoint"
+
+### Implementation
+
+```python
+class TemporalIndexer:
+    """Temporal git history indexer with checkpoint/resume support."""
+
+    CHECKPOINT_INTERVAL = 1000  # Save every 1000 commits
+
+    def __init__(self, config_manager, vector_store):
+        self.config_manager = config_manager
+        self.vector_store = vector_store
+        self.checkpoint_path = Path(".code-indexer/index/temporal/checkpoint.json")
+
+    def index_commits(self, all_branches: bool = False,
+                      max_commits: Optional[int] = None,
+                      since_date: Optional[str] = None,
+                      resume: bool = True,
+                      progress_callback: Optional[Callable] = None) -> IndexingResult:
+        """Index git history with checkpoint/resume support."""
+
+        # === CHECKPOINT/RESUME LOGIC (Issue #25) ===
+
+        # Step 1: Check for existing checkpoint
+        checkpoint = None
+        if resume and self.checkpoint_path.exists():
+            checkpoint = self._load_checkpoint()
+            if checkpoint and self._validate_checkpoint(checkpoint):
+                logger.info(f"Resuming from checkpoint: {checkpoint['last_commit'][:8]}, "
+                          f"{checkpoint['commits_processed']} commits already processed")
+            else:
+                logger.warning("Invalid checkpoint found, starting from beginning")
+                checkpoint = None
+
+        # Step 2: Build blob registry from existing vectors
+        self.blob_registry.build_from_vector_store(self.vector_store)
+
+        # Step 3: Get commit history (skip already processed if resuming)
+        all_commits = self._get_commit_history(all_branches, max_commits, since_date)
+
+        if checkpoint:
+            # Find index of last processed commit
+            start_index = next(
+                (i for i, c in enumerate(all_commits) if c.hash == checkpoint['last_commit']),
+                0
+            )
+            commits_to_process = all_commits[start_index + 1:]  # Skip processed
+            logger.info(f"Skipping {start_index + 1} already processed commits")
+        else:
+            commits_to_process = all_commits
+            start_index = 0
+
+        if not commits_to_process:
+            logger.info("All commits already processed")
+            return IndexingResult(
+                total_commits=len(all_commits),
+                unique_blobs=0,
+                new_blobs_indexed=0,
+                resumed_from_checkpoint=True
+            )
+
+        # Step 4: Process commits with periodic checkpointing
+        total_blobs_processed = checkpoint['total_blobs'] if checkpoint else 0
+        total_vectors_created = checkpoint['total_vectors'] if checkpoint else 0
+        current_branch = self._get_current_branch()
+
+        for i, commit in enumerate(commits_to_process):
+            # Process commit (same logic as before)
+            all_blobs = self.blob_scanner.get_blobs_for_commit(commit.hash)
+
+            new_blobs = [
+                blob for blob in all_blobs
+                if not self.blob_registry.has_blob(blob.blob_hash)
+            ]
+
+            if new_blobs:
+                stats = self.blob_processor.process_blobs_high_throughput(
+                    new_blobs,
+                    vector_thread_count=8,
+                    progress_callback=progress_callback
+                )
+                total_vectors_created += stats.vectors_created
+
+            total_blobs_processed += len(all_blobs)
+
+            # Store commit metadata
+            self._store_commit_tree(commit, all_blobs)
+            self._store_commit_branch_metadata(
+                commit_hash=commit.hash,
+                all_branches_mode=all_branches,
+                current_branch=current_branch
+            )
+
+            # === CHECKPOINT SAVING (Every 1000 commits) ===
+            commits_processed = start_index + i + 1
+            if commits_processed % self.CHECKPOINT_INTERVAL == 0:
+                self._save_checkpoint(
+                    last_commit=commit.hash,
+                    commits_processed=commits_processed,
+                    total_blobs=total_blobs_processed,
+                    total_vectors=total_vectors_created,
+                    all_branches=all_branches
+                )
+                logger.info(f"Checkpoint saved: {commits_processed} commits processed")
+
+            # Progress reporting
+            if progress_callback:
+                branch_info = f" [{current_branch}]" if not all_branches else ""
+                progress_callback(
+                    commits_processed,
+                    len(all_commits),
+                    Path(f"commit {commit.hash[:8]}"),
+                    info=f"{commits_processed}/{len(all_commits)} commits{branch_info}"
+                )
+
+        # Step 5: Clear checkpoint on successful completion
+        self._clear_checkpoint()
+        logger.info("Temporal indexing complete, checkpoint cleared")
+
+        # Save final metadata
+        branch_stats = self._calculate_branch_statistics(all_commits, all_branches)
+        self._save_temporal_metadata(
+            last_commit=all_commits[-1].hash,
+            total_commits=len(all_commits),
+            total_blobs=total_blobs_processed,
+            new_blobs=total_vectors_created // 3,
+            branch_stats=branch_stats,
+            indexing_mode='all-branches' if all_branches else 'single-branch'
+        )
+
+        return IndexingResult(
+            total_commits=len(all_commits),
+            unique_blobs=total_blobs_processed,
+            new_blobs_indexed=total_vectors_created // 3,
+            deduplication_ratio=1 - (total_vectors_created / (total_blobs_processed * 3)),
+            branches_indexed=branch_stats.branches,
+            commits_per_branch=branch_stats.per_branch_counts,
+            resumed_from_checkpoint=checkpoint is not None
+        )
+
+    def _save_checkpoint(self, last_commit: str, commits_processed: int,
+                        total_blobs: int, total_vectors: int,
+                        all_branches: bool):
+        """Save checkpoint to disk (atomic write)."""
+        import tempfile
+
+        checkpoint_data = {
+            "version": 1,
+            "timestamp": datetime.now().isoformat(),
+            "last_commit": last_commit,
+            "commits_processed": commits_processed,
+            "total_blobs": total_blobs,
+            "total_vectors": total_vectors,
+            "all_branches": all_branches,
+            "git_repo_hash": self._get_repo_hash()  # Detect repo changes
+        }
+
+        # Atomic write: write to temp, then rename
+        temp_file = self.checkpoint_path.with_suffix('.tmp')
+        with open(temp_file, 'w') as f:
+            json.dump(checkpoint_data, f, indent=2)
+
+        # Atomic rename
+        temp_file.rename(self.checkpoint_path)
+
+    def _load_checkpoint(self) -> Optional[dict]:
+        """Load checkpoint from disk."""
+        try:
+            with open(self.checkpoint_path) as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load checkpoint: {e}")
+            return None
+
+    def _validate_checkpoint(self, checkpoint: dict) -> bool:
+        """Validate checkpoint is still valid for current repo."""
+
+        # Check version
+        if checkpoint.get("version") != 1:
+            logger.warning("Checkpoint version mismatch")
+            return False
+
+        # Check repo hasn't changed (force-push, different repo, etc.)
+        current_repo_hash = self._get_repo_hash()
+        if checkpoint.get("git_repo_hash") != current_repo_hash:
+            logger.warning("Repository changed since checkpoint, cannot resume")
+            return False
+
+        # Check last commit still exists
+        try:
+            subprocess.run(
+                ["git", "rev-parse", checkpoint["last_commit"]],
+                check=True,
+                capture_output=True
+            )
+        except subprocess.CalledProcessError:
+            logger.warning(f"Last commit {checkpoint['last_commit'][:8]} no longer exists")
+            return False
+
+        return True
+
+    def _clear_checkpoint(self):
+        """Remove checkpoint file after successful completion."""
+        if self.checkpoint_path.exists():
+            self.checkpoint_path.unlink()
+
+    def _get_repo_hash(self) -> str:
+        """Get unique hash for current repo state (detect repo changes)."""
+        # Use .git directory inode + HEAD commit as repo identifier
+        import hashlib
+
+        git_dir = Path(".git")
+        if not git_dir.exists():
+            return "no-git"
+
+        # Combine git dir path and current HEAD
+        head_commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True
+        ).stdout.strip()
+
+        repo_id = f"{git_dir.absolute()}:{head_commit}"
+        return hashlib.sha256(repo_id.encode()).hexdigest()[:16]
+```
+
+### Error Recovery Scenarios
+
+**Scenario 1: Process Killed Mid-Indexing**
+```bash
+# Terminal 1: Start indexing
+cidx index --index-commits
+
+# Terminal 2: Kill process after 2000 commits processed
+killall cidx
+
+# Resume - automatically picks up from last checkpoint (2000 commits)
+cidx index --index-commits
+# Output: "Resuming from checkpoint: abc12345, 2000 commits already processed"
+```
+
+**Scenario 2: Force-Push Invalidates Checkpoint**
+```bash
+# Index 3000 commits, checkpoint at 3000
+cidx index --index-commits
+
+# Force push changes history
+git reset --hard HEAD~5000
+git push --force
+
+# Try to resume - checkpoint invalidated
+cidx index --index-commits
+# Output: "Repository changed since checkpoint, cannot resume"
+# Starts from beginning
+```
+
+**Scenario 3: Manual Checkpoint Clearing**
+```bash
+# Clear checkpoint to force fresh start
+rm .code-indexer/index/temporal/checkpoint.json
+cidx index --index-commits
+```
+
+### Testing
+
+```python
+def test_checkpoint_saves_every_1000_commits():
+    """Test checkpoint saved at intervals."""
+
+    indexer = TemporalIndexer(config_manager, vector_store)
+
+    # Create 2500 commits
+    create_test_commits(count=2500)
+
+    # Start indexing
+    indexer.index_commits(all_branches=False)
+
+    # Verify checkpoint was saved at 1000 and 2000
+    # (cleared at end since completed)
+    assert not Path(".code-indexer/index/temporal/checkpoint.json").exists()
+
+
+def test_resume_from_checkpoint():
+    """Test resuming from checkpoint."""
+
+    indexer = TemporalIndexer(config_manager, vector_store)
+
+    # Create 1500 commits
+    create_test_commits(count=1500)
+
+    # Process 1200 commits, then interrupt
+    with interrupt_after_commits(1200):
+        try:
+            indexer.index_commits()
+        except InterruptException:
+            pass
+
+    # Verify checkpoint exists
+    checkpoint_path = Path(".code-indexer/index/temporal/checkpoint.json")
+    assert checkpoint_path.exists()
+
+    with open(checkpoint_path) as f:
+        checkpoint = json.load(f)
+    assert checkpoint["commits_processed"] == 1000  # Last checkpoint
+
+    # Resume
+    result = indexer.index_commits(resume=True)
+
+    # Should process remaining 500 commits only
+    assert result.resumed_from_checkpoint == True
+    assert result.total_commits == 1500
+
+
+def test_checkpoint_invalidated_after_force_push():
+    """Test checkpoint rejected after repo changes."""
+
+    indexer = TemporalIndexer(config_manager, vector_store)
+
+    # Index some commits
+    create_test_commits(count=1500)
+    with interrupt_after_commits(1200):
+        try:
+            indexer.index_commits()
+        except InterruptException:
+            pass
+
+    # Simulate force push
+    subprocess.run(["git", "reset", "--hard", "HEAD~500"], check=True)
+
+    # Resume should reject checkpoint
+    with patch('logger.warning') as mock_warning:
+        indexer.index_commits(resume=True)
+        mock_warning.assert_called_with(
+            unittest.mock.ANY  # Message about repo change
+        )
+```
+
+### Performance Impact
+
+**Checkpoint Overhead:**
+- Save every 1000 commits: ~2-5ms per checkpoint
+- Total overhead for 10K commits: ~20-50ms (negligible)
+
+**Storage:**
+- Checkpoint file size: ~500 bytes (JSON)
+- No cleanup needed (removed on completion)
+
+### User Experience
+
+**Without Checkpoints:**
+- Interrupt at 6000/7000 commits → Restart from 0 → 7 minutes total wasted
+
+**With Checkpoints:**
+- Interrupt at 6000/7000 commits → Resume from 5000 → Only 2 minutes lost (5-6K processed twice)
+
+---
 
 ## Test Scenarios
 
