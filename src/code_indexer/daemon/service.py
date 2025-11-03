@@ -258,36 +258,85 @@ class CIDXDaemonService(Service):
             # Attach reset method to callback function (makes it accessible via hasattr check)
             correlated_callback.reset_progress_timers = reset_progress_timers  # type: ignore[attr-defined]
 
-            # Execute indexing SYNCHRONOUSLY with callback
-            # This BLOCKS until indexing completes, streaming progress via callback
-            stats = indexer.smart_index(
-                force_full=kwargs.get('force_full', False),
-                batch_size=kwargs.get('batch_size', 50),
-                progress_callback=correlated_callback,  # With correlation IDs
-                quiet=True,  # Suppress daemon-side output
-                enable_fts=kwargs.get('enable_fts', False),
-                reconcile_with_database=kwargs.get('reconcile_with_database', False),
-                files_count_to_process=kwargs.get('files_count_to_process'),
-                detect_deletions=kwargs.get('detect_deletions', False),
-            )
+            # Check if temporal indexing is requested
+            if kwargs.get('index_commits', False):
+                # Temporal indexing mode
+                from code_indexer.services.temporal.temporal_indexer import TemporalIndexer
+                from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
-            # Invalidate cache after indexing completes
-            with self.cache_lock:
-                if self.cache_entry:
-                    logger.info("Invalidating cache after indexing completed")
-                    self.cache_entry = None
+                # Initialize vector store
+                index_dir = Path(project_path) / ".code-indexer" / "index"
+                vector_store = FilesystemVectorStore(
+                    base_path=index_dir,
+                    project_root=Path(project_path)
+                )
 
-            # Return stats dict (NOT a status dict, but actual stats)
-            return {
-                "status": "completed",
-                "stats": {
-                    "files_processed": stats.files_processed,
-                    "chunks_created": stats.chunks_created,
-                    "failed_files": stats.failed_files,
-                    "duration_seconds": stats.duration,
-                    "cancelled": getattr(stats, "cancelled", False),
+                # Initialize temporal indexer
+                temporal_indexer = TemporalIndexer(config_manager, vector_store)
+
+                # Run temporal indexing with progress callback
+                result = temporal_indexer.index_commits(
+                    all_branches=kwargs.get('all_branches', False),
+                    max_commits=kwargs.get('max_commits'),
+                    since_date=kwargs.get('since_date'),
+                    progress_callback=correlated_callback
+                )
+
+                temporal_indexer.close()
+
+                # Invalidate cache after temporal indexing completes
+                with self.cache_lock:
+                    if self.cache_entry:
+                        logger.info("Invalidating cache after temporal indexing completed")
+                        self.cache_entry = None
+
+                # Return temporal indexing results
+                return {
+                    "status": "completed",
+                    "stats": {
+                        "total_commits": result.total_commits,
+                        "unique_blobs": result.unique_blobs,
+                        "new_blobs_indexed": result.new_blobs_indexed,
+                        "deduplication_ratio": result.deduplication_ratio,
+                        "branches_indexed": result.branches_indexed,
+                        "commits_per_branch": result.commits_per_branch,
+                        "files_processed": result.unique_blobs,  # For compatibility
+                        "chunks_created": result.new_blobs_indexed * 3,  # Estimate
+                        "failed_files": 0,
+                        "duration_seconds": 0,  # Not tracked yet
+                        "cancelled": False,
+                    }
                 }
-            }
+            else:
+                # Standard workspace indexing mode
+                stats = indexer.smart_index(
+                    force_full=kwargs.get('force_full', False),
+                    batch_size=kwargs.get('batch_size', 50),
+                    progress_callback=correlated_callback,  # With correlation IDs
+                    quiet=True,  # Suppress daemon-side output
+                    enable_fts=kwargs.get('enable_fts', False),
+                    reconcile_with_database=kwargs.get('reconcile_with_database', False),
+                    files_count_to_process=kwargs.get('files_count_to_process'),
+                    detect_deletions=kwargs.get('detect_deletions', False),
+                )
+
+                # Invalidate cache after indexing completes
+                with self.cache_lock:
+                    if self.cache_entry:
+                        logger.info("Invalidating cache after indexing completed")
+                        self.cache_entry = None
+
+                # Return stats dict (NOT a status dict, but actual stats)
+                return {
+                    "status": "completed",
+                    "stats": {
+                        "files_processed": stats.files_processed,
+                        "chunks_created": stats.chunks_created,
+                        "failed_files": stats.failed_files,
+                        "duration_seconds": stats.duration,
+                        "cancelled": getattr(stats, "cancelled", False),
+                    }
+                }
 
         except Exception as e:
             logger.error(f"Blocking indexing failed: {e}")

@@ -859,6 +859,10 @@ def _index_via_daemon(
                 "reconcile_with_database": kwargs.get("reconcile", False),
                 "files_count_to_process": kwargs.get("files_count_to_process"),
                 "detect_deletions": kwargs.get("detect_deletions", False),
+                "index_commits": kwargs.get("index_commits", False),
+                "all_branches": kwargs.get("all_branches", False),
+                "max_commits": kwargs.get("max_commits"),
+                "since_date": kwargs.get("since_date"),
                 # rebuild_* flags not supported in daemon mode yet (early-exit paths in local mode)
             }
 

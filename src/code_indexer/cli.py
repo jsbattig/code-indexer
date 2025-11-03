@@ -3118,6 +3118,26 @@ def validate_index_flags(ctx, param, value):
     is_flag=True,
     help="Rebuild ONLY the FTS index from already-indexed files (does not touch semantic vectors)",
 )
+@click.option(
+    "--index-commits",
+    is_flag=True,
+    help="Index git commit history for temporal search (current branch only by default)",
+)
+@click.option(
+    "--all-branches",
+    is_flag=True,
+    help="Index all branches (requires --index-commits, may increase storage significantly)",
+)
+@click.option(
+    "--max-commits",
+    type=int,
+    help="Maximum number of commits to index per branch (default: all)",
+)
+@click.option(
+    "--since-date",
+    type=str,
+    help="Index commits since date (YYYY-MM-DD format)",
+)
 @click.pass_context
 @require_mode("local")
 def index(
@@ -3131,6 +3151,10 @@ def index(
     rebuild_index: bool,
     fts: bool,
     rebuild_fts_index: bool,
+    index_commits: bool,
+    all_branches: bool,
+    max_commits: Optional[int],
+    since_date: Optional[str],
 ):
     """Index the codebase for semantic search.
 
@@ -3241,6 +3265,10 @@ def index(
             reconcile=reconcile,
             files_count_to_process=files_count_to_process,
             detect_deletions=detect_deletions,
+            index_commits=index_commits,
+            all_branches=all_branches,
+            max_commits=max_commits,
+            since_date=since_date,
         )
         sys.exit(exit_code)
     else:
@@ -3268,6 +3296,126 @@ def index(
             "💡 --clear empties the collection completely, making deletion detection unnecessary",
             style="yellow",
         )
+
+    # Validate temporal indexing flags
+    if all_branches and not index_commits:
+        console.print(
+            "❌ Cannot use --all-branches without --index-commits",
+            style="red",
+        )
+        console.print(
+            "💡 Use: cidx index --index-commits --all-branches",
+            style="yellow",
+        )
+        sys.exit(1)
+
+    if max_commits and not index_commits:
+        console.print(
+            "❌ Cannot use --max-commits without --index-commits",
+            style="red",
+        )
+        sys.exit(1)
+
+    if since_date and not index_commits:
+        console.print(
+            "❌ Cannot use --since-date without --index-commits",
+            style="red",
+        )
+        sys.exit(1)
+
+    # Handle --index-commits flag (early exit path for temporal indexing)
+    if index_commits:
+        try:
+            # Lazy import temporal indexing components
+            from .services.temporal.temporal_indexer import TemporalIndexer
+            from .storage.filesystem_vector_store import FilesystemVectorStore
+
+            config = config_manager.load()
+
+            # Initialize vector store
+            index_dir = config.codebase_dir / ".code-indexer" / "index"
+            vector_store = FilesystemVectorStore(
+                base_path=index_dir,
+                project_root=config.codebase_dir
+            )
+
+            # Initialize temporal indexer
+            temporal_indexer = TemporalIndexer(config_manager, vector_store)
+
+            # Cost estimation and warning for all-branches
+            if all_branches:
+                # Get branch count for cost warning
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        ["git", "branch", "-a"],
+                        cwd=config.codebase_dir,
+                        capture_output=True,
+                        text=True,
+                        check=True
+                    )
+                    branch_count = len([
+                        line for line in result.stdout.split('\n')
+                        if line.strip() and not line.strip().startswith('*')
+                    ])
+
+                    if branch_count > 50:
+                        console.print(
+                            f"⚠️  [yellow]Indexing all branches will process {branch_count} branches[/yellow]",
+                            markup=True
+                        )
+                        console.print(
+                            "   This may significantly increase storage and API costs.",
+                            style="yellow"
+                        )
+                        console.print()
+
+                        if not click.confirm("Continue with all-branches indexing?", default=False):
+                            console.print("[yellow]Cancelled. Use --index-commits without --all-branches for current branch only.[/yellow]", markup=True)
+                            sys.exit(0)
+                except subprocess.CalledProcessError:
+                    pass  # Ignore git command failures
+
+            # Progress callback for temporal indexing
+            from .utils.progress_manager import MultiThreadedProgressManager
+
+            with MultiThreadedProgressManager() as progress_manager:
+                def progress_callback(current: int, total: int, path: Path, info: str = ""):
+                    progress_manager.update(current, total, path, info)
+
+                # Run temporal indexing
+                console.print("🕒 Starting temporal git history indexing...", style="cyan")
+                if all_branches:
+                    console.print("   Mode: All branches", style="cyan")
+                else:
+                    console.print("   Mode: Current branch only", style="cyan")
+
+                indexing_result = temporal_indexer.index_commits(
+                    all_branches=all_branches,
+                    max_commits=max_commits,
+                    since_date=since_date,
+                    progress_callback=progress_callback
+                )
+
+            # Display results
+            console.print()
+            console.print("✅ Temporal indexing completed!", style="green bold")
+            console.print(f"   Total commits indexed: {indexing_result.total_commits}", style="green")
+            console.print(f"   Unique blobs processed: {indexing_result.unique_blobs}", style="green")
+            console.print(f"   New blobs indexed: {indexing_result.new_blobs_indexed}", style="green")
+            console.print(f"   Deduplication ratio: {indexing_result.deduplication_ratio:.1%}", style="green")
+            console.print(f"   Branches indexed: {', '.join(indexing_result.branches_indexed)}", style="green")
+            console.print()
+
+            temporal_indexer.close()
+            sys.exit(0)
+
+        except Exception as e:
+            console.print(f"❌ Temporal indexing failed: {e}", style="red")
+            if ctx.obj.get("verbose"):
+                import traceback
+                console.print(traceback.format_exc())
+            sys.exit(1)
 
     # Handle --rebuild-fts-index flag (early exit path)
     if rebuild_fts_index:
