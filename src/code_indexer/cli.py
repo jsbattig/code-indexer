@@ -5865,9 +5865,8 @@ def _status_impl(ctx, force_docker: bool):
 
                         if fs_store.collection_exists(collection_name):
                             vector_count = fs_store.count_points(collection_name)
-                            file_count = len(
-                                fs_store.get_all_indexed_files(collection_name)
-                            )
+                            # Use fast file count (estimation) for status display performance
+                            file_count = fs_store.get_indexed_file_count_fast(collection_name)
 
                             # Validate dimensions
                             expected_dims = embedding_provider.get_model_info()[
@@ -6434,7 +6433,8 @@ def _status_impl(ctx, force_docker: bool):
                 EmbeddingProviderFactory.create(config, console),
                 QdrantClient(config.qdrant),
             )
-            git_status = processor.get_git_status()
+            # Use fast git status (no file scanning) for status display performance
+            git_status = processor.get_git_status_fast()
 
             if git_status["git_available"]:
                 git_info = f"Branch: {git_status['current_branch']}"
