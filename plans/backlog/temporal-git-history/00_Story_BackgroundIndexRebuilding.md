@@ -12,6 +12,23 @@
 - Must support both daemon mode (same process) and standalone mode (concurrent processes)
 - File locks required for cross-process coordination
 
+**Epic Position:** This is Story 0 - the **prerequisite foundation** for the Temporal Git History Epic. It must be implemented BEFORE Story 1 (Git History Indexing) to ensure proper index locking and atomic updates.
+
+---
+
+## ⚠️ CRITICAL IMPLEMENTATION INSTRUCTION
+
+**IMPLEMENT FIRST - STOP FOR REVIEW:** When asked to "start implementing the Temporal Epic," implement ONLY this Story 0 and then STOP. Do not proceed to Story 1 without explicit approval.
+
+**Implementation Checkpoint Workflow:**
+1. Implement Story 0 completely (TDD workflow with all tests passing)
+2. Run code review and manual testing
+3. Commit changes
+4. **STOP and wait for user review/approval**
+5. Only proceed to Story 1 after user explicitly approves
+
+**Rationale:** This story establishes the foundational locking mechanism for all index updates. The temporal indexing stories (1-7) depend on this infrastructure. User must review and validate the atomic swap and locking implementation before building temporal features on top of it.
+
 ## Acceptance Criteria
 
 - [ ] HNSW index rebuilds happen in background with atomic file swap

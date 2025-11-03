@@ -42,6 +42,12 @@ We index each **unique blob hash ONCE**, regardless of how many commits referenc
 
 ## Features
 
+### 00_Story_BackgroundIndexRebuilding (PREREQUISITE)
+**Purpose:** Establish foundational locking mechanism for atomic index updates
+**Story:** Background Index Rebuilding with Atomic Swap
+**Status:** **MUST BE IMPLEMENTED FIRST** - All subsequent stories depend on this infrastructure
+**Implementation Order:** Story 0 → STOP for review → Story 1 (after approval)
+
 ### 01_Feat_TemporalIndexing
 **Purpose:** Build and maintain temporal index of git history with branch awareness
 **Stories:**
