@@ -20,18 +20,34 @@ class TestDaemonConnection:
         socket_path = Path("/tmp/test.sock")
         daemon_config = {"retry_delays_ms": [100, 500, 1000, 2000]}
 
-        with patch("rpyc.utils.factory.unix_connect") as mock_connect:
-            mock_conn = Mock()
-            mock_connect.return_value = mock_conn
+        with patch("socket.socket") as mock_socket_class:
+            mock_sock = Mock()
+            mock_socket_class.return_value = mock_sock
 
-            result = _connect_to_daemon(socket_path, daemon_config)
+            with patch("rpyc.core.stream.SocketStream") as mock_stream_class:
+                mock_stream = Mock()
+                mock_stream_class.return_value = mock_stream
 
-            assert result == mock_conn
-            assert mock_connect.call_count == 1
-            mock_connect.assert_called_once_with(
-                str(socket_path),
-                config={"allow_public_attrs": True, "sync_request_timeout": None},
-            )
+                with patch("rpyc.utils.factory.connect_stream") as mock_connect_stream:
+                    mock_conn = Mock()
+                    mock_connect_stream.return_value = mock_conn
+
+                    result = _connect_to_daemon(socket_path, daemon_config)
+
+                    assert result == mock_conn
+                    # Verify socket timeout was set, then reset
+                    mock_sock.settimeout.assert_any_call(2.0)
+                    mock_sock.connect.assert_called_once_with(str(socket_path))
+                    mock_sock.settimeout.assert_any_call(None)
+                    # Verify stream and connection created
+                    mock_stream_class.assert_called_once_with(mock_sock)
+                    mock_connect_stream.assert_called_once_with(
+                        mock_stream,
+                        config={
+                            "allow_public_attrs": True,
+                            "sync_request_timeout": None,
+                        },
+                    )
 
     def test_connect_with_exponential_backoff_success_after_retries(self):
         """Test successful connection after 3 retries."""
@@ -40,26 +56,35 @@ class TestDaemonConnection:
         socket_path = Path("/tmp/test.sock")
         daemon_config = {"retry_delays_ms": [100, 500, 1000, 2000]}
 
-        with patch("rpyc.utils.factory.unix_connect") as mock_connect:
-            mock_conn = Mock()
+        with patch("socket.socket") as mock_socket_class:
+            mock_sock = Mock()
+            mock_socket_class.return_value = mock_sock
             # Fail 3 times, succeed on 4th
-            mock_connect.side_effect = [
+            mock_sock.connect.side_effect = [
                 ConnectionRefusedError(),
                 ConnectionRefusedError(),
                 ConnectionRefusedError(),
-                mock_conn,
+                None,  # Success on 4th attempt
             ]
 
-            with patch("time.sleep") as mock_sleep:
-                result = _connect_to_daemon(socket_path, daemon_config)
+            with patch("rpyc.core.stream.SocketStream") as mock_stream_class:
+                mock_stream = Mock()
+                mock_stream_class.return_value = mock_stream
 
-                assert result == mock_conn
-                assert mock_connect.call_count == 4
+                with patch("rpyc.utils.factory.connect_stream") as mock_connect_stream:
+                    mock_conn = Mock()
+                    mock_connect_stream.return_value = mock_conn
 
-                # Verify exponential backoff delays
-                assert mock_sleep.call_count == 3
-                sleep_calls = [c[0][0] for c in mock_sleep.call_args_list]
-                assert sleep_calls == [0.1, 0.5, 1.0]
+                    with patch("time.sleep") as mock_sleep:
+                        result = _connect_to_daemon(socket_path, daemon_config)
+
+                        assert result == mock_conn
+                        assert mock_sock.connect.call_count == 4
+
+                        # Verify exponential backoff delays
+                        assert mock_sleep.call_count == 3
+                        sleep_calls = [c[0][0] for c in mock_sleep.call_args_list]
+                        assert sleep_calls == [0.1, 0.5, 1.0]
 
     def test_connect_with_exponential_backoff_all_retries_exhausted(self):
         """Test connection failure after all retries exhausted."""
@@ -68,15 +93,17 @@ class TestDaemonConnection:
         socket_path = Path("/tmp/test.sock")
         daemon_config = {"retry_delays_ms": [100, 500, 1000, 2000]}
 
-        with patch("rpyc.utils.factory.unix_connect") as mock_connect:
+        with patch("socket.socket") as mock_socket_class:
+            mock_sock = Mock()
+            mock_socket_class.return_value = mock_sock
             # Fail all 4 attempts
-            mock_connect.side_effect = ConnectionRefusedError("Connection refused")
+            mock_sock.connect.side_effect = ConnectionRefusedError("Connection refused")
 
             with patch("time.sleep"):
                 with pytest.raises(ConnectionRefusedError):
                     _connect_to_daemon(socket_path, daemon_config)
 
-                assert mock_connect.call_count == 4
+                assert mock_sock.connect.call_count == 4
 
     def test_connect_with_custom_retry_delays(self):
         """Test connection with custom retry delays."""
@@ -85,17 +112,29 @@ class TestDaemonConnection:
         socket_path = Path("/tmp/test.sock")
         daemon_config = {"retry_delays_ms": [50, 100]}  # Only 2 retries
 
-        with patch("rpyc.utils.factory.unix_connect") as mock_connect:
-            mock_conn = Mock()
-            mock_connect.side_effect = [ConnectionRefusedError(), mock_conn]
+        with patch("socket.socket") as mock_socket_class:
+            mock_sock = Mock()
+            mock_socket_class.return_value = mock_sock
+            mock_sock.connect.side_effect = [
+                ConnectionRefusedError(),
+                None,
+            ]  # Success on 2nd
 
-            with patch("time.sleep") as mock_sleep:
-                result = _connect_to_daemon(socket_path, daemon_config)
+            with patch("rpyc.core.stream.SocketStream") as mock_stream_class:
+                mock_stream = Mock()
+                mock_stream_class.return_value = mock_stream
 
-                assert result == mock_conn
-                assert mock_connect.call_count == 2
-                assert mock_sleep.call_count == 1
-                mock_sleep.assert_called_once_with(0.05)
+                with patch("rpyc.utils.factory.connect_stream") as mock_connect_stream:
+                    mock_conn = Mock()
+                    mock_connect_stream.return_value = mock_conn
+
+                    with patch("time.sleep") as mock_sleep:
+                        result = _connect_to_daemon(socket_path, daemon_config)
+
+                        assert result == mock_conn
+                        assert mock_sock.connect.call_count == 2
+                        assert mock_sleep.call_count == 1
+                        mock_sleep.assert_called_once_with(0.05)
 
 
 class TestCrashRecovery:

@@ -14,7 +14,7 @@ import pytest
 class TestExecuteViaDaemon:
     """Test lightweight daemon execution."""
 
-    @patch("code_indexer.cli_daemon_fast.unix_connect")
+    @patch("code_indexer.cli_daemon_delegation._connect_to_daemon")
     def test_execute_query_fts_via_daemon(self, mock_connect):
         """Test FTS query execution via daemon."""
         # Arrange
@@ -37,7 +37,7 @@ class TestExecuteViaDaemon:
         mock_conn.root.exposed_query_fts.assert_called_once()
         mock_conn.close.assert_called_once()
 
-    @patch("code_indexer.cli_daemon_fast.unix_connect")
+    @patch("code_indexer.cli_daemon_delegation._connect_to_daemon")
     def test_execute_query_semantic_via_daemon(self, mock_connect):
         """Test semantic query execution via daemon."""
         # Arrange
@@ -62,7 +62,7 @@ class TestExecuteViaDaemon:
         assert exit_code == 0
         mock_conn.root.exposed_query.assert_called_once()
 
-    @patch("code_indexer.cli_daemon_fast.unix_connect")
+    @patch("code_indexer.cli_daemon_delegation._connect_to_daemon")
     def test_execute_query_hybrid_via_daemon(self, mock_connect):
         """Test hybrid search execution via daemon."""
         # Arrange
@@ -88,7 +88,7 @@ class TestExecuteViaDaemon:
         assert exit_code == 0
         mock_conn.root.exposed_query_hybrid.assert_called_once()
 
-    @patch("code_indexer.cli_daemon_fast.unix_connect")
+    @patch("code_indexer.cli_daemon_delegation._connect_to_daemon")
     def test_handles_daemon_connection_error(self, mock_connect):
         """Test graceful handling when daemon connection fails."""
         # Arrange
@@ -103,7 +103,7 @@ class TestExecuteViaDaemon:
         with pytest.raises(ConnectionRefusedError):
             execute_via_daemon(argv, config_path)
 
-    @patch("code_indexer.cli_daemon_fast.unix_connect")
+    @patch("code_indexer.cli_daemon_delegation._connect_to_daemon")
     def test_displays_results_correctly(self, mock_connect, capsys):
         """Test that results are displayed correctly."""
         # Arrange
@@ -222,7 +222,7 @@ class TestLightweightDelegationPerformance:
         # Assert - should be <100ms (rpyc ~50ms + rich ~40ms)
         assert elapsed_ms < 150, f"Import took {elapsed_ms:.0f}ms, expected <150ms"
 
-    @patch("code_indexer.cli_daemon_fast.unix_connect")
+    @patch("code_indexer.cli_daemon_delegation._connect_to_daemon")
     def test_execute_via_daemon_overhead(self, mock_connect):
         """Test that execute_via_daemon has minimal overhead."""
         # Arrange

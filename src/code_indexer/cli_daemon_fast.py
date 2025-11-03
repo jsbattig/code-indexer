@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 # ONLY import what's absolutely needed for daemon delegation
-from rpyc.utils.factory import unix_connect  # ~50ms
+# Import timeout-aware connection function from delegation module
+# (rpyc unix_connect imported inside _connect_to_daemon as needed)
 from rich.console import Console              # ~40ms
 
 
@@ -163,16 +164,17 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
     # Get socket path
     socket_path = get_socket_path(config_path)
 
-    # Connect to daemon
+    # Connect to daemon with timeout protection (prevents indefinite hangs)
     try:
-        conn = unix_connect(
-            str(socket_path),
-            config={
-                "allow_public_attrs": True,
-                "sync_request_timeout": None,  # Disable timeout for long operations
-            },
-        )
-    except ConnectionRefusedError:
+        from . import cli_daemon_delegation
+        from .config import ConfigManager
+
+        # Load daemon config for retry settings
+        config_manager = ConfigManager.create_with_backtrack(config_path.parent)
+        daemon_config = config_manager.get_daemon_config()
+
+        conn = cli_daemon_delegation._connect_to_daemon(socket_path, daemon_config)
+    except (ConnectionRefusedError, FileNotFoundError, TimeoutError):
         console.print("[red]❌ Daemon not running[/red]")
         console.print("[dim]Run 'cidx start' to start daemon[/dim]")
         raise

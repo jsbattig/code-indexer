@@ -804,10 +804,11 @@ class FilesystemVectorStore:
             tmp_file.replace(file_path)
 
     def _load_id_index(self, collection_name: str) -> Dict[str, Path]:
-        """Load ID index from filenames only - no file I/O required.
+        """Load ID index from persistent binary file for fast loading.
 
-        Point IDs are encoded in filenames as: vector_POINTID.json
-        This allows instant index loading without parsing JSON files.
+        Uses IDIndexManager to load from id_index.bin binary file which contains
+        all vector ID to file path mappings. Falls back to directory scan only
+        if binary index doesn't exist (for backward compatibility).
 
         Args:
             collection_name: Name of the collection
@@ -815,10 +816,21 @@ class FilesystemVectorStore:
         Returns:
             Dictionary mapping point IDs to file paths
         """
-        collection_path = self.base_path / collection_name
-        index = {}
+        from .id_index_manager import IDIndexManager
 
-        # Scan vector files by filename pattern only
+        collection_path = self.base_path / collection_name
+        index_manager = IDIndexManager()
+
+        # Try loading from persistent binary index first (FAST - O(1) file read)
+        index = index_manager.load_index(collection_path)
+
+        if index:
+            # Binary index loaded successfully
+            return index
+
+        # Fallback: Scan vector files by filename pattern (SLOW - O(n) directory traversal)
+        # Only used for backward compatibility with indexes created before binary index
+        index = {}
         for json_file in collection_path.rglob("vector_*.json"):
             # Extract point ID from filename: vector_POINTID.json
             filename = json_file.name

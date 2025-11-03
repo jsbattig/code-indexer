@@ -49,22 +49,35 @@ def _get_socket_path(config_path: Path) -> Path:
     return config_path.parent / "daemon.sock"
 
 
-def _connect_to_daemon(socket_path: Path, daemon_config: Dict) -> Any:
+def _connect_to_daemon(socket_path: Path, daemon_config: Dict, connection_timeout: float = 2.0) -> Any:
     """
-    Establish RPyC connection to daemon with exponential backoff.
+    Establish RPyC connection to daemon with exponential backoff and timeout.
+
+    ARCHITECTURAL NOTE: This function uses socket-level operations (socket.socket,
+    SocketStream, connect_stream) instead of rpyc.utils.factory.unix_connect to enable
+    fine-grained timeout control. We need to set a connection timeout to prevent
+    indefinite hangs during daemon startup/connection, but allow unlimited timeout
+    for long-running RPC operations (queries, indexing).
 
     Args:
         socket_path: Path to Unix domain socket
         daemon_config: Daemon configuration with retry_delays_ms
+        connection_timeout: Connection timeout in seconds (default: 2.0)
+                          This 2-second timeout balances responsiveness (fails fast
+                          when daemon is truly unavailable) with reliability (allows
+                          sufficient time for daemon startup on slower systems).
 
     Returns:
         RPyC connection object
 
     Raises:
         ConnectionError: If all retries exhausted
+        TimeoutError: If connection times out
     """
     try:
-        from rpyc.utils.factory import unix_connect
+        from rpyc.core.stream import SocketStream
+        from rpyc.utils.factory import connect_stream
+        import socket as socket_module
     except ImportError:
         raise ImportError(
             "RPyC is required for daemon mode. Install with: pip install rpyc"
@@ -77,19 +90,45 @@ def _connect_to_daemon(socket_path: Path, daemon_config: Dict) -> Any:
     last_error = None
     for attempt, delay in enumerate(retry_delays):
         try:
-            return unix_connect(
-                str(socket_path),
-                config={
-                    "allow_public_attrs": True,
-                    "sync_request_timeout": None,  # Disable timeout for long operations
-                },
-            )
-        except (ConnectionRefusedError, FileNotFoundError) as e:
+            # Create socket with connection timeout to prevent indefinite hangs
+            sock = socket_module.socket(socket_module.AF_UNIX, socket_module.SOCK_STREAM)
+            sock.settimeout(connection_timeout)
+
+            try:
+                # Connect with timeout
+                sock.connect(str(socket_path))
+
+                # Reset timeout for RPC operations (allow long-running queries)
+                sock.settimeout(None)
+
+                # Create SocketStream and RPyC connection
+                stream = SocketStream(sock)
+                return connect_stream(
+                    stream,
+                    config={
+                        "allow_public_attrs": True,
+                        "sync_request_timeout": None,  # Disable timeout for long operations
+                    },
+                )
+            except Exception:
+                # Ensure socket is closed on error
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+                raise
+
+        except (ConnectionRefusedError, FileNotFoundError, OSError, socket_module.timeout) as e:
             last_error = e
             if attempt < len(retry_delays) - 1:
                 time.sleep(delay)
             else:
-                # Last attempt failed, re-raise
+                # Last attempt failed, convert timeout to TimeoutError for clarity
+                if isinstance(e, socket_module.timeout):
+                    raise TimeoutError(
+                        f"Connection to daemon timed out after {connection_timeout}s"
+                    ) from e
+                # Re-raise other errors
                 raise last_error
 
 
@@ -582,8 +621,16 @@ def _status_via_daemon(**kwargs) -> int:
 
         return 0
 
-    except Exception as e:
+    except (ConnectionRefusedError, FileNotFoundError, TimeoutError, OSError) as e:
+        # Daemon not available - show helpful message and fallback
         console.print(f"[yellow]Daemon not available: {e}[/yellow]")
+        console.print("[yellow]Showing local storage status only[/yellow]")
+
+        # Fallback to standalone status
+        return _status_standalone(**kwargs)
+    except Exception as e:
+        # Unexpected error - show warning and fallback
+        console.print(f"[yellow]Unexpected error connecting to daemon: {e}[/yellow]")
         console.print("[yellow]Showing local storage status only[/yellow]")
 
         # Fallback to standalone status

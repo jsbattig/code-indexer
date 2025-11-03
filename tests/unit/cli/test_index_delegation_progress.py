@@ -11,7 +11,7 @@ Tests cover:
 """
 
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock
 
 
 class TestIndexDelegationProgress:
@@ -335,20 +335,47 @@ class TestIndexDelegationProgress:
                 assert call_args.kwargs.get("batch_size") == 100
 
     def test_connect_to_daemon_disables_rpc_timeout(self):
-        """Test _connect_to_daemon configures sync_request_timeout=None."""
+        """Test _connect_to_daemon configures sync_request_timeout=None and uses timeout."""
         from code_indexer.cli_daemon_delegation import _connect_to_daemon
+        import socket as socket_module
 
-        # Patch at import location (inside _connect_to_daemon function)
-        with patch("rpyc.utils.factory.unix_connect") as mock_unix_connect:
-            socket_path = Path("/test/daemon.sock")
-            daemon_config = {"retry_delays_ms": [100]}
+        # Patch socket, SocketStream and connect_stream
+        with patch("socket.socket") as mock_socket:
+            with patch("rpyc.core.stream.SocketStream") as mock_stream_class:
+                with patch("rpyc.utils.factory.connect_stream") as mock_connect_stream:
+                    mock_sock_instance = Mock()
+                    mock_socket.return_value = mock_sock_instance
+                    mock_stream_instance = Mock()
+                    mock_stream_class.return_value = mock_stream_instance
+                    mock_conn = Mock()
+                    mock_connect_stream.return_value = mock_conn
 
-            _connect_to_daemon(socket_path, daemon_config)
+                    socket_path = Path("/test/daemon.sock")
+                    daemon_config = {"retry_delays_ms": [100]}
 
-            # Verify unix_connect was called with config
-            assert mock_unix_connect.called
-            call_args = mock_unix_connect.call_args
-            config = call_args.kwargs.get("config")
-            assert config is not None
-            assert config.get("sync_request_timeout") is None
-            assert config.get("allow_public_attrs") is True
+                    result = _connect_to_daemon(
+                        socket_path, daemon_config, connection_timeout=2.0
+                    )
+
+                    # Verify socket was created with AF_UNIX and SOCK_STREAM
+                    mock_socket.assert_called_with(
+                        socket_module.AF_UNIX, socket_module.SOCK_STREAM
+                    )
+
+                    # Verify timeout was set (should be called twice: once for connection, once to disable after)
+                    assert mock_sock_instance.settimeout.call_count >= 1
+                    # First call should set timeout to 2.0
+                    first_timeout_call = mock_sock_instance.settimeout.call_args_list[0]
+                    assert first_timeout_call[0][0] == 2.0
+
+                    # Verify SocketStream was created with the socket
+                    mock_stream_class.assert_called_once_with(mock_sock_instance)
+
+                    # Verify connect_stream was called with config
+                    assert mock_connect_stream.called
+                    call_args = mock_connect_stream.call_args
+                    config = call_args.kwargs.get("config")
+                    assert config is not None
+                    assert config.get("sync_request_timeout") is None
+                    assert config.get("allow_public_attrs") is True
+                    assert result == mock_conn

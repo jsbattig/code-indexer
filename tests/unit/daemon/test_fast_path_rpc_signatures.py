@@ -68,7 +68,7 @@ class TestFastPathRPCSignatures:
         assert result["filters"]["path_filter"] == "*/tests/*"
         assert result["filters"]["exclude_language"] == "javascript"
 
-    @patch("code_indexer.cli_daemon_fast.unix_connect")
+    @patch("code_indexer.cli_daemon_delegation._connect_to_daemon")
     def test_fts_query_uses_kwargs_not_positional(self, mock_unix_connect):
         """Test that FTS query calls daemon with **kwargs, not positional args.
 
@@ -114,7 +114,7 @@ class TestFastPathRPCSignatures:
         assert len(call_args.args) == 2  # project_path, query (NO positional options)
         assert "limit" in call_args.kwargs  # limit passed as kwarg
 
-    @patch("code_indexer.cli_daemon_fast.unix_connect")
+    @patch("code_indexer.cli_daemon_delegation._connect_to_daemon")
     def test_semantic_query_signature(self, mock_unix_connect):
         """Test that semantic query uses correct signature."""
         # Setup mock connection
@@ -145,7 +145,7 @@ class TestFastPathRPCSignatures:
         assert len(call_args.args) == 3  # project_path, query, limit
         assert call_args.kwargs == {}  # No additional kwargs in this case
 
-    @patch("code_indexer.cli_daemon_fast.unix_connect")
+    @patch("code_indexer.cli_daemon_delegation._connect_to_daemon")
     def test_hybrid_query_signature(self, mock_unix_connect):
         """Test that hybrid query uses correct signature."""
         # Setup mock connection
@@ -176,7 +176,7 @@ class TestFastPathRPCSignatures:
         assert len(call_args.args) == 2  # project_path, query (NO positional options)
         assert "limit" in call_args.kwargs  # limit passed as kwarg
 
-    @patch("code_indexer.cli_daemon_fast.unix_connect")
+    @patch("code_indexer.cli_daemon_delegation._connect_to_daemon")
     def test_fts_query_with_language_filter(self, mock_unix_connect):
         """Test FTS query with language filter passes kwargs correctly."""
         # Setup mock connection
@@ -216,7 +216,7 @@ class TestFastPathRPCSignatures:
         assert call_args.kwargs["limit"] == 30
         assert call_args.kwargs["language"] == "python"
 
-    @patch("code_indexer.cli_daemon_fast.unix_connect")
+    @patch("code_indexer.cli_daemon_delegation._connect_to_daemon")
     def test_connection_error_raises_properly(self, mock_unix_connect):
         """Test that connection errors are raised properly for fallback."""
         # Simulate connection refused
@@ -236,7 +236,7 @@ class TestFastPathPerformance:
     """Test that fast path achieves performance targets."""
 
     @pytest.mark.performance
-    @patch("code_indexer.cli_daemon_fast.unix_connect")
+    @patch("code_indexer.cli_daemon_delegation._connect_to_daemon")
     def test_fast_path_execution_time(self, mock_unix_connect):
         """Test that fast path executes in <200ms.
 
