@@ -810,6 +810,20 @@ class FilesystemVectorStore:
             # Atomic rename
             tmp_file.replace(file_path)
 
+    def load_id_index(self, collection_name: str) -> set:
+        """Load ID index and return set of existing point IDs.
+
+        Public method for external components that need to check existing points.
+
+        Args:
+            collection_name: Name of the collection
+
+        Returns:
+            Set of existing point IDs
+        """
+        id_index = self._load_id_index(collection_name)
+        return set(id_index.keys())
+
     def _load_id_index(self, collection_name: str) -> Dict[str, Path]:
         """Load ID index from persistent binary file for fast loading.
 
@@ -963,9 +977,27 @@ class FilesystemVectorStore:
         }
 
         file_path = payload.get("path", "")
+        payload_type = payload.get("type", "")
 
-        # Git-aware chunk storage logic using batch results
-        if repo_root and file_path:
+        # Check if this is a temporal diff - these should ALWAYS store content
+        # Temporal diffs represent historical commit content at specific points in time,
+        # NOT current working tree state. Using current HEAD blob hash would be meaningless.
+        if payload_type == "commit_diff":
+            # Storage optimization: added/deleted files use pointer-based storage
+            if payload.get("reconstruct_from_git"):
+                # Added/deleted files: NO chunk_text storage (pointer only)
+                # Content can be reconstructed from git on query using commit hash
+                # This provides 88% storage reduction for these file types
+                pass  # Don't store chunk_text
+            else:
+                # Modified files: store diff in chunk_text (existing behavior)
+                data["chunk_text"] = payload.get("content", "")
+
+            # Remove content from payload to avoid duplication
+            if "content" in data["payload"]:
+                del data["payload"]["content"]
+        # Git-aware chunk storage logic using batch results (for regular files only)
+        elif repo_root and file_path:
             has_uncommitted = file_path in uncommitted_files
 
             if not has_uncommitted and file_path in blob_hashes:
@@ -1197,6 +1229,14 @@ class FilesystemVectorStore:
                             current = current.get(key_part)
                         else:
                             return False
+
+                    # TEMPORAL COLLECTION FIX: If 'path' field is None and key is "path",
+                    # fall back to 'file_path' field (temporal collection format)
+                    # This enables path filters to work with both collection formats:
+                    # - Main collection: uses 'path' field
+                    # - Temporal collection: uses 'file_path' field
+                    if current is None and key == "path" and "file_path" in payload:
+                        current = payload["file_path"]
 
                     # Support both "value" (exact match) and "text" (pattern match)
                     if "value" in match_spec:

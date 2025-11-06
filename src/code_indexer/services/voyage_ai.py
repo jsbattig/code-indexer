@@ -240,6 +240,14 @@ class VoyageAIClient(EmbeddingProvider):
                     batch_embeddings = [
                         list(item["embedding"]) for item in result["data"]
                     ]
+
+                    # VALIDATION: Ensure embeddings match input count
+                    if len(batch_embeddings) != len(current_batch):
+                        raise RuntimeError(
+                            f"VoyageAI returned {len(batch_embeddings)} embeddings "
+                            f"but expected {len(current_batch)}. Partial response detected."
+                        )
+
                     all_embeddings.extend(batch_embeddings)
                 except Exception as e:
                     raise RuntimeError(f"Batch embedding request failed: {e}")
@@ -257,6 +265,14 @@ class VoyageAIClient(EmbeddingProvider):
             try:
                 result = self._make_sync_request(current_batch, model)
                 batch_embeddings = [list(item["embedding"]) for item in result["data"]]
+
+                # VALIDATION: Ensure embeddings match input count
+                if len(batch_embeddings) != len(current_batch):
+                    raise RuntimeError(
+                        f"VoyageAI returned {len(batch_embeddings)} embeddings "
+                        f"but expected {len(current_batch)}. Partial response detected."
+                    )
+
                 all_embeddings.extend(batch_embeddings)
             except Exception as e:
                 raise RuntimeError(f"Batch embedding request failed: {e}")

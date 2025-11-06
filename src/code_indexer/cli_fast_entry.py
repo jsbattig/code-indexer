@@ -49,11 +49,11 @@ def quick_daemon_check() -> Tuple[bool, Optional[Path]]:
     return False, None
 
 
-def is_delegatable_command(command: str) -> bool:
+def is_delegatable_command(command: str, args: list) -> bool:
     """Check if command can be delegated to daemon.
 
     Commands that can be delegated:
-    - query: Semantic/FTS search
+    - query: Semantic/FTS search (EXCEPT temporal queries with --time-range)
     - index: Indexing operations
     - watch: Watch mode
     - clean/clean-data: Cleanup operations
@@ -67,9 +67,11 @@ def is_delegatable_command(command: str) -> bool:
     - reconcile: Non-git indexing
     - sync: Remote operations
     - list-repos: Server operations
+    - query --time-range: Temporal queries (daemon doesn't support this yet)
 
     Args:
         command: Command name (first argument after 'cidx')
+        args: Full command line arguments
 
     Returns:
         True if command can be delegated to daemon
@@ -85,6 +87,10 @@ def is_delegatable_command(command: str) -> bool:
         "stop",
         "watch-stop",
     }
+
+    # Special case: query with --time-range or --time-range-all cannot be delegated (temporal queries)
+    if command == "query" and ("--time-range" in args or "--time-range-all" in args):
+        return False
 
     return command in delegatable
 
@@ -125,7 +131,7 @@ def main() -> int:
 
     # Detect if this is a daemon-delegatable command
     command = sys.argv[1] if len(sys.argv) > 1 else None
-    is_delegatable = command and is_delegatable_command(command)
+    is_delegatable = command and is_delegatable_command(command, sys.argv)
 
     if is_daemon_mode and is_delegatable:
         # FAST PATH: Daemon delegation (~100ms startup)
@@ -152,7 +158,7 @@ def main() -> int:
         return 1
     except Exception as e:
         from rich.console import Console
-        Console().print(f"❌ Unexpected error: {e}", style="red")
+        Console().print(f"❌ Unexpected error: {e}", style="red", markup=False)
         return 1
 
 

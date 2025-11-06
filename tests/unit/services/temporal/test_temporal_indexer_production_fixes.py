@@ -6,11 +6,9 @@ These tests verify critical bug fixes for incremental temporal indexing:
 
 import json
 import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 import pytest
 
-from code_indexer.config import ConfigManager
 from code_indexer.services.temporal.temporal_indexer import TemporalIndexer
 from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 

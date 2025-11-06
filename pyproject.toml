@@ -161,6 +161,7 @@ python_files = ["test_*.py"]
 addopts = "-v"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+tdd_guard_project_root = "."
 filterwarnings = [
     # Pydantic v2 deprecations
     "ignore:The `__fields__` attribute is deprecated.*:DeprecationWarning",

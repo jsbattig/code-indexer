@@ -566,6 +566,12 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                     )
 
                 # FAST FILE SUBMISSION - No more I/O delays
+                # CRITICAL FIX: Get collection name for regular indexing
+                # When temporal collection exists, regular indexing needs explicit collection_name
+                collection_name = self.qdrant_client.resolve_collection_name(
+                    self.config, self.embedding_provider
+                )
+
                 for file_path in files:
                     if self.cancelled:
                         break
@@ -573,6 +579,10 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                     try:
                         # Get pre-calculated metadata and size (no I/O)
                         file_metadata, file_size = hash_results[file_path]
+
+                        # CRITICAL FIX: Add collection_name to metadata for FilesystemVectorStore
+                        # This prevents "collection_name is required when multiple collections exist" error
+                        file_metadata["collection_name"] = collection_name
 
                         # Submit for processing
                         file_future = file_manager.submit_file_for_processing(

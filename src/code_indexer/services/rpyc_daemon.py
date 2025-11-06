@@ -946,18 +946,60 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
         }
 
     def _perform_indexing(self, project_path: Path, callback, **kwargs) -> None:
-        """Perform actual indexing operation."""
+        """Perform actual indexing operation.
+
+        Supports both regular file indexing and temporal git history indexing
+        based on the index_commits flag.
+
+        Args:
+            project_path: Path to the project root
+            callback: Progress callback function
+            **kwargs: Additional options including:
+                - index_commits: If True, use TemporalIndexer instead of FileChunkingManager
+                - force_reindex: Force full reindex
+                - all_branches: Index all git branches (temporal only)
+                - max_commits: Maximum commits to index (temporal only)
+                - since_date: Only index commits after this date (temporal only)
+        """
         try:
-            from ..services.file_chunking_manager import FileChunkingManager
             from ..config import ConfigManager
 
             config_manager = ConfigManager.create_with_backtrack(project_path)
-            chunking_manager = FileChunkingManager(config_manager)
-            chunking_manager.index_repository(
-                repo_path=str(project_path),
-                force_reindex=kwargs.get("force_reindex", False),
-                progress_callback=callback,
-            )
+
+            # Check if temporal indexing is requested
+            if kwargs.get("index_commits", False):
+                # Lazy import temporal indexing components
+                from ..services.temporal.temporal_indexer import TemporalIndexer
+                from ..storage.filesystem_vector_store import FilesystemVectorStore
+
+                config = config_manager.load()
+
+                # Initialize vector store
+                index_dir = config.codebase_dir / ".code-indexer" / "index"
+                vector_store = FilesystemVectorStore(
+                    base_path=index_dir, project_root=config.codebase_dir
+                )
+
+                # Initialize temporal indexer
+                temporal_indexer = TemporalIndexer(config_manager, vector_store)
+
+                # Run temporal indexing
+                temporal_indexer.index_commits(
+                    all_branches=kwargs.get("all_branches", False),
+                    max_commits=kwargs.get("max_commits", None),
+                    since_date=kwargs.get("since_date", None),
+                    progress_callback=callback,
+                )
+            else:
+                # Regular file indexing (non-temporal)
+                from ..services.file_chunking_manager import FileChunkingManager
+
+                chunking_manager = FileChunkingManager(config_manager)
+                chunking_manager.index_repository(
+                    repo_path=str(project_path),
+                    force_reindex=kwargs.get("force_reindex", False),
+                    progress_callback=callback,
+                )
         except Exception as e:
             logger.error(f"Indexing error: {e}")
             raise

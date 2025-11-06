@@ -25,6 +25,7 @@ class DockerManager:
         project_name: Optional[str] = None,
         force_docker: bool = False,
         project_config_dir: Optional[Path] = None,
+        port_registry: Optional[GlobalPortRegistry] = None,
     ):
         self.console = console or Console()
         self.force_docker = force_docker
@@ -33,11 +34,27 @@ class DockerManager:
         self.compose_file = self._get_project_compose_file_path()
         self._config = self._load_service_config()
         self.health_checker = HealthChecker()
-        self.port_registry = GlobalPortRegistry()
+        # Store port_registry parameter; if None, it will be created lazily when needed
+        self._port_registry = port_registry
         self.indexing_root: Optional[Path] = (
             None  # Will be set via set_indexing_root() for first-time setup
         )
         self._closed = False  # Track if resources have been closed
+
+    @property
+    def port_registry(self) -> GlobalPortRegistry:
+        """Lazy initialization of GlobalPortRegistry.
+
+        Creates GlobalPortRegistry only when actually needed.
+        """
+        if self._port_registry is None:
+            self._port_registry = GlobalPortRegistry()
+        return self._port_registry
+
+    @port_registry.setter
+    def port_registry(self, value: GlobalPortRegistry) -> None:
+        """Setter for port_registry to support tests and explicit assignment."""
+        self._port_registry = value
 
     def _detect_project_name(self) -> str:
         """Detect project name from current folder name for qdrant collection naming."""

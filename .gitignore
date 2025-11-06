@@ -63,6 +63,10 @@ venv.bak/
 *.swo
 *~
 
+# TDD Guard runtime data (session-specific)
+.claude/tdd-guard/data/test.json
+.claude/tdd-guard/data/modifications.json
+
 # OS
 .DS_Store
 .DS_Store?

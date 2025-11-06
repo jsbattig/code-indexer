@@ -235,6 +235,14 @@ force_exclude_patterns: []
     return True
 
 
+def _needs_docker_manager(config):
+    """Determine if DockerManager is needed based on backend type."""
+    if hasattr(config, "vector_store") and config.vector_store:
+        if hasattr(config.vector_store, "provider"):
+            return config.vector_store.provider != "filesystem"
+    return True  # Default to True for backward compatibility
+
+
 def _setup_global_registry(quiet: bool = False, test_access: bool = False) -> None:
     """Setup the global port registry with proper permissions.
 
@@ -1056,7 +1064,7 @@ def _execute_semantic_search(
     limit: int,
     languages: tuple,
     exclude_languages: tuple,
-    path_filter: Optional[str],
+    path_filter: tuple,
     exclude_paths: tuple,
     min_score: Optional[float],
     accuracy: str,
@@ -1075,7 +1083,7 @@ def _execute_semantic_search(
         limit: Maximum number of results
         languages: Tuple of language filters
         exclude_languages: Tuple of languages to exclude
-        path_filter: Optional path filter pattern
+        path_filter: Tuple of path filter patterns
         exclude_paths: Tuple of path patterns to exclude
         min_score: Minimum similarity score threshold
         accuracy: Search accuracy mode
@@ -1153,9 +1161,10 @@ def _execute_semantic_search(
             if must_conditions:
                 filter_conditions["must"] = must_conditions
         if path_filter:
-            filter_conditions.setdefault("must", []).append(
-                {"key": "path", "match": {"text": path_filter}}
-            )
+            for pf in path_filter:
+                filter_conditions.setdefault("must", []).append(
+                    {"key": "path", "match": {"text": pf}}
+                )
 
         # Build exclusion filters (must_not conditions)
         if exclude_languages:
@@ -1244,9 +1253,10 @@ def _execute_semantic_search(
                     language_filter = language_mapper.build_language_filter(language)
                     filter_conditions_list.append(language_filter)
             if path_filter:
-                filter_conditions_list.append(
-                    {"key": "path", "match": {"text": path_filter}}
-                )
+                for pf in path_filter:
+                    filter_conditions_list.append(
+                        {"key": "path", "match": {"text": pf}}
+                    )
 
             # Build filter conditions preserving both must and must_not conditions
             query_filter_conditions = (
@@ -1257,7 +1267,7 @@ def _execute_semantic_search(
                 query_filter_conditions["must_not"] = filter_conditions["must_not"]
 
             # Query vector store
-            from code_indexer.storage.filesystem_vector_store import (
+            from .storage.filesystem_vector_store import (
                 FilesystemVectorStore,
             )
 
@@ -1313,7 +1323,7 @@ def _execute_semantic_search(
                 git_results = filtered_results
         else:
             # Use model-specific search for non-git projects
-            from code_indexer.storage.filesystem_vector_store import (
+            from .storage.filesystem_vector_store import (
                 FilesystemVectorStore,
             )
 
@@ -2161,47 +2171,51 @@ def init(
     config_manager = ConfigManager(project_config_path)
 
     # CRITICAL: Check global port registry writeability before proceeding
-    try:
-        from .services.global_port_registry import GlobalPortRegistry
+    # But ONLY for backends that need containers (qdrant)
+    if vector_store != "filesystem":
+        try:
+            from .services.global_port_registry import GlobalPortRegistry
 
-        # This will test registry writeability during initialization
-        GlobalPortRegistry()
-        console.print("✅ Global port registry accessible")
-    except Exception as e:
-        if "Global port registry not accessible" in str(e):
-            if setup_global_registry:
-                _setup_global_registry(quiet=False, test_access=True)
+            # This will test registry writeability during initialization
+            GlobalPortRegistry()
+            console.print("✅ Global port registry accessible")
+        except Exception as e:
+            if "Global port registry not accessible" in str(e):
+                if setup_global_registry:
+                    _setup_global_registry(quiet=False, test_access=True)
+                else:
+                    console.print("❌ Global port registry not accessible", style="red")
+                    console.print(
+                        "📋 The global port registry requires write access to system directories.",
+                        style="yellow",
+                    )
+                    console.print(
+                        "🔧 Setup options (choose one):",
+                        style="yellow",
+                    )
+                    console.print("")
+                    console.print(
+                        "   cidx init --setup-global-registry", style="bold cyan"
+                    )
+                    console.print("   cidx setup-global-registry", style="bold cyan")
+                    console.print("")
+                    console.print(
+                        "   No manual setup required - use either command above.",
+                        style="yellow",
+                    )
+                    console.print("")
+                    console.print(
+                        "💡 This creates /var/lib/code-indexer/port-registry with proper permissions",
+                        style="yellow",
+                    )
+                    console.print(
+                        "   for multi-user port coordination across projects.",
+                        style="yellow",
+                    )
+                    sys.exit(1)
             else:
-                console.print("❌ Global port registry not accessible", style="red")
-                console.print(
-                    "📋 The global port registry requires write access to system directories.",
-                    style="yellow",
-                )
-                console.print(
-                    "🔧 Setup options (choose one):",
-                    style="yellow",
-                )
-                console.print("")
-                console.print("   cidx init --setup-global-registry", style="bold cyan")
-                console.print("   cidx setup-global-registry", style="bold cyan")
-                console.print("")
-                console.print(
-                    "   No manual setup required - use either command above.",
-                    style="yellow",
-                )
-                console.print("")
-                console.print(
-                    "💡 This creates /var/lib/code-indexer/port-registry with proper permissions",
-                    style="yellow",
-                )
-                console.print(
-                    "   for multi-user port coordination across projects.",
-                    style="yellow",
-                )
-                sys.exit(1)
-        else:
-            # Re-raise other registry errors
-            raise
+                # Re-raise other registry errors
+                raise
 
     # Check if config already exists
     if config_manager.config_path.exists():
@@ -3335,9 +3349,33 @@ def index(
             # Initialize vector store
             index_dir = config.codebase_dir / ".code-indexer" / "index"
             vector_store = FilesystemVectorStore(
-                base_path=index_dir,
-                project_root=config.codebase_dir
+                base_path=index_dir, project_root=config.codebase_dir
             )
+
+            # Check if --clear flag is set for temporal collection
+            if clear:
+                console.print("🧹 Clearing temporal index...", style="cyan")
+                vector_store.clear_collection(
+                    collection_name="code-indexer-temporal",
+                    remove_projection_matrix=False,
+                )
+                # Also remove temporal metadata so indexing starts fresh
+                temporal_meta_path = (
+                    config.codebase_dir
+                    / ".code-indexer/index/temporal/temporal_meta.json"
+                )
+                if temporal_meta_path.exists():
+                    temporal_meta_path.unlink()
+
+                # Also remove progressive tracking file (Bug #8 fix)
+                temporal_progress_path = (
+                    config.codebase_dir
+                    / ".code-indexer/index/temporal/temporal_progress.json"
+                )
+                if temporal_progress_path.exists():
+                    temporal_progress_path.unlink()
+
+                console.print("✅ Temporal index cleared", style="green")
 
             # Initialize temporal indexer
             temporal_indexer = TemporalIndexer(config_manager, vector_store)
@@ -3347,64 +3385,174 @@ def index(
                 # Get branch count for cost warning
                 try:
                     import subprocess
+
                     result = subprocess.run(
                         ["git", "branch", "-a"],
                         cwd=config.codebase_dir,
                         capture_output=True,
                         text=True,
-                        check=True
+                        check=True,
                     )
-                    branch_count = len([
-                        line for line in result.stdout.split('\n')
-                        if line.strip() and not line.strip().startswith('*')
-                    ])
+                    branch_count = len(
+                        [
+                            line
+                            for line in result.stdout.split("\n")
+                            if line.strip() and not line.strip().startswith("*")
+                        ]
+                    )
 
                     if branch_count > 50:
                         console.print(
                             f"⚠️  [yellow]Indexing all branches will process {branch_count} branches[/yellow]",
-                            markup=True
+                            markup=True,
                         )
                         console.print(
                             "   This may significantly increase storage and API costs.",
-                            style="yellow"
+                            style="yellow",
                         )
                         console.print()
 
-                        if not click.confirm("Continue with all-branches indexing?", default=False):
-                            console.print("[yellow]Cancelled. Use --index-commits without --all-branches for current branch only.[/yellow]", markup=True)
+                        if not click.confirm(
+                            "Continue with all-branches indexing?", default=False
+                        ):
+                            console.print(
+                                "[yellow]Cancelled. Use --index-commits without --all-branches for current branch only.[/yellow]",
+                                markup=True,
+                            )
                             sys.exit(0)
                 except subprocess.CalledProcessError:
                     pass  # Ignore git command failures
 
-            # Progress callback for temporal indexing
-            from .utils.progress_manager import MultiThreadedProgressManager
+            # Initialize progress managers for rich slot-based display
+            from .progress import MultiThreadedProgressManager
+            from .progress.progress_display import RichLiveProgressManager
 
-            with MultiThreadedProgressManager() as progress_manager:
-                def progress_callback(current: int, total: int, path: Path, info: str = ""):
-                    progress_manager.update(current, total, path, info)
+            # Get parallel processing thread count for display slots
+            parallel_threads = (
+                getattr(config.voyage_ai, "parallel_requests", 8)
+                if hasattr(config, "voyage_ai")
+                else 8
+            )
 
-                # Run temporal indexing
-                console.print("🕒 Starting temporal git history indexing...", style="cyan")
-                if all_branches:
-                    console.print("   Mode: All branches", style="cyan")
-                else:
-                    console.print("   Mode: Current branch only", style="cyan")
+            # Create Rich Live progress manager for bottom-anchored display
+            rich_live_manager = RichLiveProgressManager(console=console)
+            progress_manager = MultiThreadedProgressManager(
+                console=console,
+                live_manager=rich_live_manager,
+                max_slots=parallel_threads + 2,
+            )
 
-                indexing_result = temporal_indexer.index_commits(
-                    all_branches=all_branches,
-                    max_commits=max_commits,
-                    since_date=since_date,
-                    progress_callback=progress_callback
+            display_initialized = False
+
+            def show_setup_message(message: str):
+                """Display setup/informational messages as scrolling cyan text."""
+                rich_live_manager.handle_setup_message(message)
+
+            def update_commit_progress(
+                current: int,
+                total: int,
+                info: str,
+                concurrent_files=None,
+                slot_tracker=None,
+            ):
+                """Update commit processing progress with slot-based display."""
+                nonlocal display_initialized
+
+                # Initialize Rich Live display on first call
+                if not display_initialized:
+                    rich_live_manager.start_bottom_display()
+                    display_initialized = True
+
+                # Parse progress info for metrics if available
+                try:
+                    # Extract files_per_second from info if present
+                    # Info format: "commit_hash | X files/s | ..."
+                    parts = info.split(" | ")
+                    if len(parts) >= 2:
+                        files_per_second = float(parts[1].replace(" files/s", ""))
+                    else:
+                        files_per_second = 0.0
+                except (ValueError, IndexError):
+                    files_per_second = 0.0
+
+                # Update MultiThreadedProgressManager with rich display
+                progress_manager.update_complete_state(
+                    current=current,
+                    total=total,
+                    files_per_second=files_per_second,
+                    kb_per_second=0.0,  # Not applicable for commit processing
+                    active_threads=parallel_threads,
+                    concurrent_files=concurrent_files or [],
+                    slot_tracker=slot_tracker,
+                    info=info,
                 )
+
+                # Get integrated display content (Rich Table) and update Rich Live bottom-anchored display
+                rich_table = progress_manager.get_integrated_display()
+                rich_live_manager.handle_progress_update(rich_table)
+
+            def progress_callback(
+                current: int,
+                total: int,
+                path: Path,
+                info: str = "",
+                concurrent_files=None,
+                slot_tracker=None,
+            ):
+                """Multi-threaded progress callback - uses Rich Live progress display."""
+                # Handle setup messages (total=0)
+                if info and total == 0:
+                    show_setup_message(info)
+                    return
+
+                # Handle commit progress (total>0)
+                if total and total > 0:
+                    update_commit_progress(
+                        current, total, info, concurrent_files, slot_tracker
+                    )
+                    return
+
+            # Run temporal indexing
+            console.print("🕒 Starting temporal git history indexing...", style="cyan")
+            if all_branches:
+                console.print("   Mode: All branches", style="cyan")
+            else:
+                console.print("   Mode: Current branch only", style="cyan")
+
+            indexing_result = temporal_indexer.index_commits(
+                all_branches=all_branches,
+                max_commits=max_commits,
+                since_date=since_date,
+                progress_callback=progress_callback,
+            )
+
+            # Stop Rich Live display before showing results
+            if display_initialized:
+                rich_live_manager.stop_display()
 
             # Display results
             console.print()
             console.print("✅ Temporal indexing completed!", style="green bold")
-            console.print(f"   Total commits indexed: {indexing_result.total_commits}", style="green")
-            console.print(f"   Unique blobs processed: {indexing_result.unique_blobs}", style="green")
-            console.print(f"   New blobs indexed: {indexing_result.new_blobs_indexed}", style="green")
-            console.print(f"   Deduplication ratio: {indexing_result.deduplication_ratio:.1%}", style="green")
-            console.print(f"   Branches indexed: {', '.join(indexing_result.branches_indexed)}", style="green")
+            console.print(
+                f"   Total commits indexed: {indexing_result.total_commits}",
+                style="green",
+            )
+            console.print(
+                f"   Unique blobs processed: {indexing_result.unique_blobs}",
+                style="green",
+            )
+            console.print(
+                f"   New blobs indexed: {indexing_result.new_blobs_indexed}",
+                style="green",
+            )
+            console.print(
+                f"   Deduplication ratio: {indexing_result.deduplication_ratio:.1%}",
+                style="green",
+            )
+            console.print(
+                f"   Branches indexed: {', '.join(indexing_result.branches_indexed)}",
+                style="green",
+            )
             console.print()
 
             temporal_indexer.close()
@@ -3414,6 +3562,7 @@ def index(
             console.print(f"❌ Temporal indexing failed: {e}", style="red")
             if ctx.obj.get("verbose"):
                 import traceback
+
                 console.print(traceback.format_exc())
             sys.exit(1)
 
@@ -3729,7 +3878,7 @@ def index(
                 return "INTERRUPT"
             return None
 
-        def progress_callback(
+        def progress_callback(  # type: ignore[misc]
             current,
             total,
             file_path,
@@ -3813,7 +3962,7 @@ def index(
                 # Handle rebuild index flag
                 if rebuild_index:
                     # Check if filesystem backend is being used
-                    from code_indexer.storage.filesystem_vector_store import (
+                    from .storage.filesystem_vector_store import (
                         FilesystemVectorStore,
                     )
 
@@ -3855,7 +4004,7 @@ def index(
                     console.print(
                         "🔄 Rebuilding HNSW index from existing vector files..."
                     )
-                    from code_indexer.storage.hnsw_index_manager import (
+                    from .storage.hnsw_index_manager import (
                         HNSWIndexManager,
                     )
 
@@ -4190,6 +4339,158 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
         sys.exit(1)
 
 
+# Story 2.1 Display Helper Functions
+
+
+def _display_file_chunk_match(result, index, temporal_service):
+    """Display a file chunk temporal match with diff."""
+    file_path = result.metadata.get("path") or result.metadata.get(
+        "file_path", "unknown"
+    )
+    line_start = result.metadata.get("line_start", 0)
+    line_end = result.metadata.get("line_end", 0)
+    commit_hash = result.metadata.get("commit_hash", "")
+
+    # Get diff_type from metadata to display marker
+    diff_type = result.metadata.get("diff_type", "unknown")
+
+    # Get commit details from result.temporal_context (Story 2: no SQLite)
+    # The temporal_context is populated from payload data by temporal_search_service
+    temporal_ctx = getattr(result, "temporal_context", {})
+    commit_date = temporal_ctx.get("commit_date", "Unknown")
+    author_name = temporal_ctx.get("author_name", "Unknown")
+    commit_message = temporal_ctx.get("commit_message", "[No message available]")
+
+    # For backward compatibility, check metadata too
+    if author_name == "Unknown" and "author_name" in result.metadata:
+        author_name = result.metadata.get("author_name", "Unknown")
+    if commit_date == "Unknown" and "commit_date" in result.metadata:
+        commit_date = result.metadata.get("commit_date", "Unknown")
+    if (
+        commit_message == "[No message available]"
+        and "commit_message" in result.metadata
+    ):
+        commit_message = result.metadata.get("commit_message", "[No message available]")
+
+    # Get author email from metadata
+    author_email = result.metadata.get("author_email", "unknown@example.com")
+
+    # Smart line number display: suppress :0-0 for temporal diffs
+    if line_start == 0 and line_end == 0:
+        # Temporal diffs have no specific line range - suppress :0-0
+        file_location = file_path
+    else:
+        # Regular results or temporal with specific lines - show range
+        file_location = f"{file_path}:{line_start}-{line_end}"
+
+    # Display header with diff-type marker (Story 2 requirement)
+    diff_markers = {
+        "added": "[ADDED]",
+        "deleted": "[DELETED]",
+        "modified": "[MODIFIED]",
+        "renamed": "[RENAMED]",
+        "binary": "[BINARY]",
+    }
+    marker = diff_markers.get(diff_type, "")
+
+    if marker:
+        console.print(f"\n[bold cyan]{index}. {file_location}[/bold cyan] {marker}")
+    else:
+        console.print(f"\n[bold cyan]{index}. {file_location}[/bold cyan]")
+    console.print(f"   Score: {result.score:.3f}")
+    console.print(f"   Commit: {commit_hash[:7]} ({commit_date})")
+    console.print(f"   Author: {author_name} <{author_email}>")
+
+    # Display full commit message (NOT truncated)
+    message_lines = commit_message.split("\n")
+    console.print(f"   Message: {message_lines[0]}")
+    for msg_line in message_lines[1:]:
+        console.print(f"            {msg_line}")
+
+    console.print()
+
+    # Display rename indicator if present
+    if "display_note" in result.metadata:
+        console.print(f"   {result.metadata['display_note']}", style="yellow")
+        console.print()
+
+    # Display content (Story 2: No diff generation, just show content)
+    # All results in temporal index are changes by definition
+    console.print()
+    content = result.content
+    lines = content.split("\n")
+
+    # Modified diffs are self-documenting with @@ markers and +/- prefixes
+    # Suppress line numbers for them to avoid confusion
+    show_line_numbers = diff_type != "modified"
+
+    if show_line_numbers:
+        for i, line in enumerate(lines):
+            line_num = line_start + i
+            console.print(f"{line_num:4d}  {line}")
+    else:
+        # Modified diff - no line numbers (diff markers are self-documenting)
+        for line in lines:
+            console.print(f"  {line}")
+
+
+def _display_commit_message_match(result, index, temporal_service):
+    """Display a commit message temporal match."""
+    commit_hash = result.metadata.get("commit_hash", "")
+
+    # Get commit details from result.temporal_context (Story 2: no SQLite)
+    temporal_ctx = getattr(result, "temporal_context", {})
+    commit_date = temporal_ctx.get(
+        "commit_date", result.metadata.get("commit_date", "Unknown")
+    )
+    author_name = temporal_ctx.get(
+        "author_name", result.metadata.get("author_name", "Unknown")
+    )
+    author_email = result.metadata.get("author_email", "unknown@example.com")
+
+    # Display header
+    console.print(f"\n[bold cyan]{index}. [COMMIT MESSAGE MATCH][/bold cyan]")
+    console.print(f"   Score: {result.score:.3f}")
+    console.print(f"   Commit: {commit_hash[:7]} ({commit_date})")
+    console.print(f"   Author: {author_name} <{author_email}>")
+    console.print()
+
+    # Display matching section of commit message
+    console.print("   Message (matching section):")
+    for line in result.content.split("\n"):
+        console.print(f"   {line}")
+    console.print()
+
+    # Story 2: No file changes available from diff-based indexing
+    # The temporal index only tracks what changed, not full file lists
+    console.print("   [dim]File changes tracked in diff-based index[/dim]")
+
+
+def display_temporal_results(results, temporal_service):
+    """Display temporal search results with proper ordering."""
+    # Separate results by type
+    commit_msg_matches = []
+    file_chunk_matches = []
+
+    for result in results.results:
+        match_type = result.metadata.get("type", "file_chunk")
+        if match_type == "commit_message":
+            commit_msg_matches.append(result)
+        else:
+            file_chunk_matches.append(result)
+
+    # Display commit messages first, then file chunks
+    index = 1
+
+    for result in commit_msg_matches:
+        _display_commit_message_match(result, index, temporal_service)
+        index += 1
+
+    for result in file_chunk_matches:
+        _display_file_chunk_match(result, index, temporal_service)
+        index += 1
+
+
 @cli.command()
 @click.argument("query")
 @click.option(
@@ -4278,6 +4579,28 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
     is_flag=True,
     help="Interpret query as regex pattern (FTS only, incompatible with --semantic or --fuzzy)",
 )
+@click.option(
+    "--time-range",
+    type=str,
+    help="Filter results by time range in format YYYY-MM-DD..YYYY-MM-DD (requires temporal index)",
+)
+@click.option(
+    "--time-range-all",
+    is_flag=True,
+    help="Query entire temporal history (shortcut for full date range)",
+)
+@click.option(
+    "--diff-type",
+    "diff_types",
+    multiple=True,
+    help="Filter by diff type: added, modified, deleted, renamed, binary (requires temporal index). Can be specified multiple times. Example: --diff-type added --diff-type modified",
+)
+@click.option(
+    "--author",
+    type=str,
+    help="Filter by commit author name or email (requires temporal index). Example: --author 'John Doe'",
+)
+# --show-unchanged removed: Story 2 - all temporal results are changes now
 @click.pass_context
 @require_mode("local", "remote", "proxy")
 def query(
@@ -4286,7 +4609,7 @@ def query(
     limit: int,
     languages: tuple,
     exclude_languages: tuple,
-    path_filter: Optional[str],
+    path_filter: tuple,
     exclude_paths: tuple,
     min_score: Optional[float],
     accuracy: str,
@@ -4299,6 +4622,10 @@ def query(
     edit_distance: int,
     snippet_lines: int,
     regex: bool,
+    time_range: Optional[str],
+    time_range_all: bool,
+    diff_types: tuple,
+    author: Optional[str],
 ):
     """Search the indexed codebase using semantic similarity.
 
@@ -4378,8 +4705,9 @@ def query(
 
     # Check daemon delegation for local mode (Story 2.3)
     # CRITICAL: Skip daemon delegation if standalone flag is set (prevents recursive loop)
+    # CRITICAL: Skip daemon delegation for temporal queries (daemon doesn't support --time-range)
     standalone_mode = ctx.obj.get("standalone", False)
-    if mode == "local" and not standalone_mode:
+    if mode == "local" and not standalone_mode and not time_range:
         try:
             config_manager = ctx.obj.get("config_manager")
             if config_manager:
@@ -4412,6 +4740,178 @@ def query(
         except Exception:
             # Daemon delegation failed, continue with standalone mode
             pass
+
+    # Handle --time-range-all flag
+    if time_range_all:
+        # Set time_range to "all" internally
+        time_range = "all"
+
+    # Handle temporal search with time-range filtering (Story 2.1)
+    if time_range:
+        # Temporal search only supported in local mode
+        if mode != "local":
+            console.print(
+                "[yellow]⚠️  Temporal search is only supported in local mode[/yellow]"
+            )
+            sys.exit(1)
+
+        # Lazy import temporal search service
+        from .services.temporal.temporal_search_service import (
+            TemporalSearchService,
+        )
+
+        # Initialize config manager and temporal service
+        config_manager = ctx.obj.get("config_manager")
+        if not config_manager:
+            console.print("[red]❌ Configuration manager not available[/red]")
+            sys.exit(1)
+
+        # Initialize vector store client for temporal service
+        config = config_manager.get_config()
+        index_dir = config.codebase_dir / ".code-indexer" / "index"
+
+        # Import FilesystemVectorStore lazily
+        from .storage.filesystem_vector_store import FilesystemVectorStore
+
+        vector_store_client = FilesystemVectorStore(
+            base_path=index_dir, project_root=config.codebase_dir
+        )
+
+        temporal_service = TemporalSearchService(
+            config_manager=config_manager,
+            project_root=Path(project_root),
+            vector_store_client=vector_store_client,
+        )
+
+        # Check if temporal index exists
+        if not temporal_service.has_temporal_index():
+            console.print("[yellow]⚠️  Temporal index not found[/yellow]")
+            console.print()
+            console.print("Time-range filtering requires a temporal index.")
+            console.print(
+                "Falling back to space-only search (current code state only)."
+            )
+            console.print()
+            console.print("To enable temporal queries, build the temporal index:")
+            console.print("  [cyan]cidx index --index-commits[/cyan]")
+            console.print()
+            # Fall through to regular search without time-range filtering
+            time_range = None
+        else:
+            # Handle time_range="all" from --time-range-all flag
+            if time_range == "all":
+                # Query entire temporal history - get min and max dates from commits.db
+                # For now, use a very wide range (will be improved in future)
+                start_date = "1970-01-01"
+                end_date = "2100-12-31"
+                if not quiet:
+                    console.print("🕒 Searching entire temporal history...")
+            else:
+                # Validate date range format
+                try:
+                    start_date, end_date = temporal_service._validate_date_range(
+                        time_range
+                    )
+                except ValueError as e:
+                    console.print(f"[red]❌ Invalid time range: {e}[/red]")
+                    console.print()
+                    console.print("Use format: YYYY-MM-DD..YYYY-MM-DD")
+                    console.print(
+                        "Example: [cyan]cidx query 'auth' --time-range 2023-01-01..2024-01-01[/cyan]"
+                    )
+                    sys.exit(1)
+
+            # Initialize vector store and embedding provider for temporal queries
+            # Use the same pattern as regular query command
+            config = config_manager.load()
+            embedding_provider = EmbeddingProviderFactory.create(config, console)
+            backend = BackendFactory.create(
+                config=config, project_root=Path(config.codebase_dir)
+            )
+            vector_store_client = backend.get_vector_store_client()
+
+            # Health checks
+            if not embedding_provider.health_check():
+                if not quiet:
+                    console.print(
+                        f"[yellow]⚠️  {embedding_provider.get_provider_name().title()} service not available[/yellow]"
+                    )
+                sys.exit(1)
+
+            if not vector_store_client.health_check():
+                if not quiet:
+                    console.print(
+                        "[yellow]⚠️  Vector store service not available[/yellow]"
+                    )
+                sys.exit(1)
+
+            # Use TEMPORAL collection name (not HEAD collection)
+            # Import here to get constant
+            from .services.temporal.temporal_search_service import (
+                TemporalSearchService as TSS,
+            )
+
+            collection_name = TSS.TEMPORAL_COLLECTION_NAME
+
+            # Re-initialize temporal service with vector store dependencies
+            temporal_service = TemporalSearchService(
+                config_manager=config_manager,
+                project_root=Path(project_root),
+                vector_store_client=vector_store_client,
+                embedding_provider=embedding_provider,
+                collection_name=collection_name,
+            )
+
+            # Execute temporal query
+            if not quiet:
+                if time_range != "all":
+                    console.print(
+                        f"🕒 Searching code from {start_date} to {end_date}..."
+                    )
+                # Story 2: All temporal results are changes now
+                console.print("   Showing changed chunks only (diff-based indexing)")
+
+            temporal_results = temporal_service.query_temporal(
+                query=query,
+                time_range=(start_date, end_date),
+                limit=limit,
+                min_score=min_score,
+                # show_unchanged removed: Story 2
+                language=list(languages) if languages else None,
+                exclude_language=list(exclude_languages) if exclude_languages else None,
+                path_filter=list(path_filter) if path_filter else None,
+                exclude_path=list(exclude_paths) if exclude_paths else None,
+                diff_types=list(diff_types) if diff_types else None,
+                author=author,
+            )
+
+            # Display results
+            if not quiet:
+                console.print()
+                if temporal_results.performance:
+                    perf = temporal_results.performance
+                    console.print(
+                        f"⚡ Search completed in {perf['total_ms']:.1f}ms "
+                        f"(semantic: {perf['semantic_search_ms']:.1f}ms, "
+                        f"temporal filter: {perf['temporal_filter_ms']:.1f}ms)"
+                    )
+                console.print(
+                    f"📊 Found {len(temporal_results.results)} results (total matches: {temporal_results.total_found})"
+                )
+                console.print()
+
+            # Display results using new Story 2.1 implementation
+            if not quiet:
+                display_temporal_results(temporal_results, temporal_service)
+            else:
+                # Quiet mode: minimal output
+                for temporal_result in temporal_results.results:
+                    file_path = temporal_result.metadata.get(
+                        "file_path", "[Commit Message]"
+                    )
+                    console.print(f"{temporal_result.score:.3f} {file_path}")
+
+            sys.exit(0)
 
     # Determine search mode based on flags (Story 4)
     if fts and semantic:
@@ -4576,7 +5076,7 @@ def query(
                         snippet_lines=snippet_lines,
                         limit=limit,
                         language_filter=language_filter,
-                        path_filter=path_filter,
+                        path_filters=list(path_filter) if path_filter else None,
                         exclude_paths=list(exclude_paths) if exclude_paths else None,
                         use_regex=regex,  # Pass regex flag
                     )
@@ -4727,13 +5227,15 @@ def query(
 
             # NOTE: Remote query API currently supports single language only
             # Use first language from tuple, ignore additional languages for remote mode
+            # NOTE: Remote query API currently supports single path only
+            # Use first path from tuple, ignore additional paths for remote mode
             results_raw = asyncio.run(
                 execute_remote_query(
                     query_text=query,
                     limit=limit,
                     project_root=project_root,
                     language=languages[0] if languages else None,
-                    path=path_filter,
+                    path=path_filter[0] if path_filter else None,
                     min_score=min_score,
                     include_source=True,
                     accuracy=accuracy,
@@ -4792,6 +5294,7 @@ def query(
 
             # Display each result using existing logic
             for i, result in enumerate(converted_results, 1):
+                # Type hint: result is Dict[str, Any] here (converted from QueryResultItem)
                 payload = result["payload"]
                 score = result["score"]
 
@@ -4996,9 +5499,10 @@ def query(
             if must_conditions:
                 filter_conditions["must"] = must_conditions
         if path_filter:
-            filter_conditions.setdefault("must", []).append(
-                {"key": "path", "match": {"text": path_filter}}
-            )
+            for pf in path_filter:
+                filter_conditions.setdefault("must", []).append(
+                    {"key": "path", "match": {"text": pf}}
+                )
 
         # Build exclusion filters (must_not conditions)
         if exclude_languages:
@@ -5060,7 +5564,7 @@ def query(
 
         # Prepare filter arguments for conflict detection
         include_languages = list(languages) if languages else []
-        include_paths = [path_filter] if path_filter else []
+        include_paths = list(path_filter) if path_filter else []
 
         conflicts = conflict_detector.detect_conflicts(
             include_languages=include_languages,
@@ -5135,7 +5639,7 @@ def query(
             if languages:
                 console.print(f"🏷️  Language filter: {', '.join(languages)}")
             if path_filter:
-                console.print(f"📁 Path filter: {path_filter}")
+                console.print(f"📁 Path filter: {', '.join(path_filter)}")
             console.print(f"📊 Limit: {limit}")
             if min_score:
                 console.print(f"⭐ Min score: {min_score}")
@@ -5162,7 +5666,7 @@ def query(
             else:
                 # Fallback to metadata if available
                 try:
-                    from code_indexer.services.progressive_metadata import (
+                    from .services.progressive_metadata import (
                         ProgressiveMetadata,
                     )
 
@@ -5202,9 +5706,10 @@ def query(
                     language_filter = language_mapper.build_language_filter(language)
                     filter_conditions_list.append(language_filter)
             if path_filter:
-                filter_conditions_list.append(
-                    {"key": "path", "match": {"text": path_filter}}
-                )
+                for pf in path_filter:
+                    filter_conditions_list.append(
+                        {"key": "path", "match": {"text": pf}}
+                    )
 
             # Build filter conditions preserving both must and must_not conditions
             query_filter_conditions = (
@@ -5218,7 +5723,7 @@ def query(
             # Query vector store (get more results to allow for git filtering)
             # FilesystemVectorStore: parallel execution (query + embedding_provider)
             # QdrantClient: requires pre-computed query_vector
-            from code_indexer.storage.filesystem_vector_store import (
+            from .storage.filesystem_vector_store import (
                 FilesystemVectorStore,
             )
 
@@ -5266,7 +5771,7 @@ def query(
 
             # Apply minimum score filtering (language and path already handled by Qdrant filters)
             if min_score:
-                filtered_results = []
+                filtered_results: List[Dict[str, Any]] = []
                 for result in git_results:
                     # Filter by minimum score
                     if result.get("score", 0) >= min_score:
@@ -5276,7 +5781,7 @@ def query(
             # Use model-specific search for non-git projects
             # FilesystemVectorStore: Use regular search (no model filter needed - single provider)
             # QdrantClient: Use search_with_model_filter for multi-provider support
-            from code_indexer.storage.filesystem_vector_store import (
+            from .storage.filesystem_vector_store import (
                 FilesystemVectorStore,
             )
 
@@ -7272,12 +7777,20 @@ def clean_data(
             result["success"] = success
 
         else:
-            # Use legacy DockerManager approach
-            docker_manager = DockerManager(
-                force_docker=force_docker, project_config_dir=project_config_dir
+            # Use legacy DockerManager approach - but check if containers needed first
+            config = (
+                config_manager.load() if config_manager.config_path.exists() else None
             )
+            if config and _needs_docker_manager(config):
+                docker_manager = DockerManager(
+                    force_docker=force_docker, project_config_dir=project_config_dir
+                )
 
-            success = docker_manager.clean_data_only(all_projects=all_projects)
+                success = docker_manager.clean_data_only(all_projects=all_projects)
+            else:
+                # Filesystem backend - no containers to clean
+                console.print("ℹ️ Filesystem backend - no containers to clean")
+                success = True
             result["success"] = success
             result["containers_processed"].append(
                 {
@@ -7313,300 +7826,6 @@ def clean_data(
         else:
             console.print(f"❌ Data cleanup failed: {e}", style="red")
         sys.exit(1)
-
-
-def _perform_complete_system_wipe(force_docker: bool, console: Console):
-    """Perform complete system wipe including all containers, images, cache, and storage directories.
-
-    This is the nuclear option that removes everything related to code-indexer
-    and container engines, including cached data that might persist between runs.
-    """
-
-    console.print(
-        "⚠️  [bold red]PERFORMING COMPLETE SYSTEM WIPE[/bold red]", style="red"
-    )
-    console.print(
-        "This will remove ALL containers, images, cache, and storage directories!",
-        style="yellow",
-    )
-
-    # Step 1: Enhanced cleanup first
-    console.print("\n🔧 [bold]Step 1: Enhanced container cleanup[/bold]")
-    try:
-        # System wipe operates on current working directory
-        project_config_dir = Path(".code-indexer")
-        docker_manager = DockerManager(
-            force_docker=force_docker, project_config_dir=project_config_dir
-        )
-        if not docker_manager.cleanup(remove_data=True, verbose=True):
-            console.print(
-                "⚠️  Enhanced cleanup had issues, continuing with wipe...",
-                style="yellow",
-            )
-        docker_manager.clean_data_only(all_projects=True)
-        console.print("✅ Enhanced cleanup completed")
-    except Exception as e:
-        console.print(
-            f"⚠️  Standard cleanup failed: {e}, continuing with wipe...", style="yellow"
-        )
-
-    # Step 2: Detect container engine
-    console.print("\n🔧 [bold]Step 2: Detecting container engine[/bold]")
-    container_engine = _detect_container_engine(force_docker)
-    console.print(f"📦 Using container engine: {container_engine}")
-
-    # Step 3: Remove ALL container images
-    console.print("\n🔧 [bold]Step 3: Removing ALL container images[/bold]")
-    _wipe_container_images(container_engine, console)
-
-    # Step 4: Aggressive system prune
-    console.print("\n🔧 [bold]Step 4: Aggressive system prune[/bold]")
-    _aggressive_system_prune(container_engine, console)
-
-    # Step 5: Remove storage directories
-    console.print("\n🔧 [bold]Step 5: Removing storage directories[/bold]")
-    _wipe_storage_directories(console)
-
-    # Step 6: Check for remaining root-owned files in current project
-    console.print("\n🔧 [bold]Step 6: Checking for remaining root-owned files[/bold]")
-    _check_remaining_root_files(console)
-
-    console.print("\n🎯 [bold green]COMPLETE SYSTEM WIPE FINISHED[/bold green]")
-    console.print("💡 Run 'code-indexer start' to reinstall from scratch", style="blue")
-
-
-def _detect_container_engine(force_docker: bool) -> str:
-    """Detect which container engine to use."""
-    import subprocess
-
-    if force_docker:
-        return "docker"
-
-    # Try podman first (preferred)
-    try:
-        subprocess.run(
-            ["podman", "--version"], capture_output=True, check=True, timeout=5
-        )
-        return "podman"
-    except (
-        subprocess.CalledProcessError,
-        FileNotFoundError,
-        subprocess.TimeoutExpired,
-    ):
-        pass
-
-    # Fall back to docker
-    try:
-        subprocess.run(
-            ["docker", "--version"], capture_output=True, check=True, timeout=5
-        )
-        return "docker"
-    except (
-        subprocess.CalledProcessError,
-        FileNotFoundError,
-        subprocess.TimeoutExpired,
-    ):
-        raise RuntimeError("Neither podman nor docker is available")
-
-
-def _wipe_container_images(container_engine: str, console: Console):
-    """Remove all container images, including code-indexer and cached images."""
-    import subprocess
-
-    try:
-        # First, get list of all images
-        result = subprocess.run(
-            [container_engine, "images", "-q"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-
-        if result.returncode == 0 and result.stdout.strip():
-            image_ids = result.stdout.strip().split("\n")
-            console.print(f"🗑️  Found {len(image_ids)} images to remove")
-
-            # Remove images in batches to avoid command line length limits
-            batch_size = 50
-            removed_count = 0
-            for i in range(0, len(image_ids), batch_size):
-                batch = image_ids[i : i + batch_size]
-                try:
-                    cleanup_result = subprocess.run(
-                        [container_engine, "rmi", "-f"] + batch,
-                        capture_output=True,
-                        text=True,
-                        timeout=120,
-                    )
-                    if cleanup_result.returncode == 0:
-                        removed_count += len(batch)
-                    else:
-                        # Some images might be in use, continue with next batch
-                        console.print(
-                            "⚠️  Some images in batch could not be removed",
-                            style="yellow",
-                        )
-                except subprocess.TimeoutExpired:
-                    console.print(
-                        "⚠️  Timeout removing image batch, continuing...", style="yellow"
-                    )
-
-            console.print(f"✅ Removed {removed_count} container images")
-        else:
-            console.print("ℹ️  No container images found to remove")
-
-    except Exception as e:
-        console.print(f"⚠️  Image removal failed: {e}", style="yellow")
-
-
-def _aggressive_system_prune(container_engine: str, console: Console):
-    """Perform aggressive system prune to remove all cached data."""
-    import subprocess
-
-    commands = [
-        (
-            f"{container_engine} system prune -a -f --volumes",
-            "Remove all unused data and volumes",
-        ),
-        (
-            (f"{container_engine} builder prune -a -f", "Remove build cache")
-            if container_engine == "docker"
-            else None
-        ),
-        (f"{container_engine} network prune -f", "Remove unused networks"),
-    ]
-
-    for cmd_info in commands:
-        if cmd_info is None:
-            continue
-
-        cmd, description = cmd_info
-        try:
-            console.print(f"🧹 {description}...")
-            result = subprocess.run(
-                cmd.split(), capture_output=True, text=True, timeout=120
-            )
-            if result.returncode == 0:
-                console.print(f"✅ {description} completed")
-            else:
-                console.print(
-                    f"⚠️  {description} had issues: {result.stderr[:100]}",
-                    style="yellow",
-                )
-        except subprocess.TimeoutExpired:
-            console.print(f"⚠️  {description} timed out", style="yellow")
-        except Exception as e:
-            console.print(f"⚠️  {description} failed: {e}", style="yellow")
-
-
-def _wipe_storage_directories(console: Console):
-    """Remove all code-indexer related storage directories."""
-    import shutil
-    from pathlib import Path
-
-    # Directories to remove
-    directories = [
-        (Path.home() / ".qdrant_collections", "Qdrant collections directory"),
-        (Path.home() / ".code-indexer-data", "Global data directory"),
-        (Path.home() / ".ollama_storage", "Ollama storage directory (if exists)"),
-    ]
-
-    sudo_needed = []
-
-    for dir_path, description in directories:
-        if not dir_path.exists():
-            console.print(f"ℹ️  {description}: not found, skipping")
-            continue
-
-        try:
-            console.print(f"🗑️  Removing {description}...")
-            shutil.rmtree(dir_path)
-            console.print(f"✅ Removed {description}")
-        except PermissionError:
-            console.print(
-                f"🔒 {description}: permission denied, needs sudo", style="yellow"
-            )
-            sudo_needed.append((dir_path, description))
-        except Exception as e:
-            console.print(f"⚠️  Failed to remove {description}: {e}", style="yellow")
-
-    # Handle directories that need sudo
-    if sudo_needed:
-        console.print("\n🔒 [bold yellow]SUDO REQUIRED[/bold yellow]")
-        console.print(
-            "The following directories need sudo to remove (root-owned files):"
-        )
-
-        for dir_path, description in sudo_needed:
-            console.print(f"📁 {description}: {dir_path}")
-
-        console.print("\n💡 [bold]Run this command to complete the cleanup:[/bold]")
-        for dir_path, description in sudo_needed:
-            console.print(f"sudo rm -rf {dir_path}")
-
-
-def _check_remaining_root_files(console: Console):
-    """Check for remaining root-owned files that need manual cleanup."""
-    from pathlib import Path
-
-    # Check current project's .code-indexer directory
-    project_config_dir = Path(".code-indexer")
-    sudo_needed = []
-
-    if project_config_dir.exists():
-        try:
-            # Try to list and check ownership of files in the directory
-            for item in project_config_dir.rglob("*"):
-                try:
-                    item_stat = item.stat()
-                    if item_stat.st_uid == 0:  # Root owned
-                        sudo_needed.append(item)
-                except (OSError, PermissionError):
-                    # If we can't stat it, it might be root-owned
-                    sudo_needed.append(item)
-        except (OSError, PermissionError):
-            # If we can't access the directory at all, it's likely root-owned
-            sudo_needed.append(project_config_dir)
-
-    # Check for any other suspicious directories that might be root-owned
-    suspicious_paths = [
-        Path("~/.tmp").expanduser(),
-        Path("/tmp").glob("code-indexer*"),
-        Path("/var/tmp").glob("code-indexer*") if Path("/var/tmp").exists() else [],
-    ]
-
-    for path_or_glob in suspicious_paths:
-        if hasattr(path_or_glob, "__iter__") and not isinstance(path_or_glob, Path):
-            # It's a glob result
-            for path in path_or_glob:
-                if path.exists():
-                    try:
-                        path_stat = path.stat()
-                        if path_stat.st_uid == 0:
-                            sudo_needed.append(path)
-                    except (OSError, PermissionError):
-                        sudo_needed.append(path)
-        elif isinstance(path_or_glob, Path) and path_or_glob.exists():
-            try:
-                path_stat = path_or_glob.stat()
-                if path_stat.st_uid == 0:
-                    sudo_needed.append(path_or_glob)
-            except (OSError, PermissionError):
-                sudo_needed.append(path_or_glob)
-
-    if sudo_needed:
-        console.print("🔒 [bold yellow]FOUND ROOT-OWNED FILES[/bold yellow]")
-        console.print("The following files/directories need sudo to remove:")
-
-        unique_paths = list(set(str(p) for p in sudo_needed))
-        for path in unique_paths:
-            console.print(f"📁 {path}")
-
-        console.print("\n💡 [bold]Run these commands to complete the cleanup:[/bold]")
-        for path in unique_paths:
-            console.print(f"sudo rm -rf {path}")
-    else:
-        console.print("✅ No root-owned files found")
 
 
 @cli.command("clean")
@@ -8702,8 +8921,8 @@ def auth_update(ctx, username: str, password: str):
         cidx auth update --username newuser --password newpass
     """
     try:
-        from code_indexer.remote.credential_rotation import CredentialRotationManager
-        from code_indexer.mode_detection.command_mode_detector import find_project_root
+        from .remote.credential_rotation import CredentialRotationManager
+        from .mode_detection.command_mode_detector import find_project_root
 
         # Find project root and initialize rotation manager
         from pathlib import Path
@@ -9665,7 +9884,7 @@ def server_start(ctx, server_dir: Optional[str]):
     returns success confirmation with server URL.
     """
     try:
-        from code_indexer.server.lifecycle.server_lifecycle_manager import (
+        from .server.lifecycle.server_lifecycle_manager import (
             ServerLifecycleManager,
         )
 
@@ -9712,7 +9931,7 @@ def server_stop(ctx, force: bool, server_dir: Optional[str]):
     to complete and saving pending data. Use --force for immediate shutdown.
     """
     try:
-        from code_indexer.server.lifecycle.server_lifecycle_manager import (
+        from .server.lifecycle.server_lifecycle_manager import (
             ServerLifecycleManager,
         )
 
@@ -9749,7 +9968,7 @@ def server_status(ctx, verbose: bool, server_dir: Optional[str]):
     Use --verbose for detailed health information including resource usage.
     """
     try:
-        from code_indexer.server.lifecycle.server_lifecycle_manager import (
+        from .server.lifecycle.server_lifecycle_manager import (
             ServerLifecycleManager,
         )
 
@@ -9828,7 +10047,7 @@ def server_restart(ctx, server_dir: Optional[str]):
     then starts with updated configuration. If not running, simply starts.
     """
     try:
-        from code_indexer.server.lifecycle.server_lifecycle_manager import (
+        from .server.lifecycle.server_lifecycle_manager import (
             ServerLifecycleManager,
         )
 
@@ -14468,7 +14687,7 @@ def main():
         console.print("\n❌ Interrupted by user", style="red")
         sys.exit(1)
     except Exception as e:
-        console.print(f"❌ Unexpected error: {e}", style="red")
+        console.print(f"❌ Unexpected error: {str(e)}", style="red", markup=False)
         sys.exit(1)
 
 
