@@ -59,6 +59,9 @@ def test_temporal_service_initialization_includes_vector_store_client():
             patch(
                 "src.code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
             ) as mock_vector_store_class,
+            patch(
+                "src.code_indexer.cli.EmbeddingProviderFactory"
+            ) as mock_embedding_factory,
         ):
 
             # Setup mocks
@@ -67,14 +70,28 @@ def test_temporal_service_initialization_includes_vector_store_client():
             mock_config.embedding_provider = "voyage"
             mock_config.voyage_api = Mock(api_key="test-key")
             mock_config.qdrant = Mock(port=6333)
+            # CRITICAL: Force standalone mode (not daemon mode) for this test
+            # We're testing service initialization, not daemon delegation
+            mock_config.daemon = Mock(enabled=False)
 
             mock_cm_instance = Mock()
             mock_cm_instance.get_config.return_value = mock_config
+            mock_cm_instance.load.return_value = (
+                mock_config  # cli.py calls config_manager.load()
+            )
+            mock_cm_instance.get_daemon_config.return_value = {
+                "enabled": False
+            }  # Force standalone mode
             mock_config_manager.create_with_backtrack.return_value = mock_cm_instance
 
             # Mock vector store
             mock_vector_store = Mock(spec=FilesystemVectorStore)
             mock_vector_store_class.return_value = mock_vector_store
+
+            # Mock embedding provider
+            mock_embedding_service = Mock()
+            mock_embedding_service.embed.return_value = ([0.1] * 1536, 10)
+            mock_embedding_factory.create.return_value = mock_embedding_service
 
             # Mock temporal service
             mock_temporal_service = Mock()

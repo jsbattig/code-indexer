@@ -54,6 +54,11 @@ class CacheEntry:
         # AC11: Version tracking for cache invalidation after rebuild
         self.hnsw_index_version: Optional[str] = None  # Tracks loaded index_rebuild_uuid
 
+        # Temporal collection cache (IDENTICAL pattern to HEAD collection)
+        self.temporal_hnsw_index: Optional[Any] = None
+        self.temporal_id_mapping: Optional[Dict[str, Any]] = None
+        self.temporal_index_version: Optional[str] = None
+
         # Access tracking
         self.last_accessed: datetime = datetime.now()
         self.ttl_minutes: int = ttl_minutes
@@ -120,6 +125,84 @@ class CacheEntry:
         # AC11: Clear version tracking
         self.hnsw_index_version = None
 
+    def load_temporal_indexes(self, collection_path: Path) -> None:
+        """Load temporal HNSW index using mmap.
+
+        Uses IDENTICAL HNSWIndexManager.load_index() as HEAD collection.
+        Follows exact same pattern as existing semantic index loading.
+
+        Args:
+            collection_path: Path to temporal collection directory
+
+        Raises:
+            FileNotFoundError: If collection path doesn't exist
+            OSError: If unable to load indexes
+        """
+        if self.temporal_hnsw_index is not None:
+            logger.debug("Temporal HNSW already loaded")
+            return
+
+        # Verify collection exists
+        if not collection_path.exists():
+            raise FileNotFoundError(f"Temporal collection not found: {collection_path}")
+
+        from code_indexer.storage.hnsw_index_manager import HNSWIndexManager
+        from code_indexer.storage.id_index_manager import IDIndexManager
+        import json
+
+        # Read collection metadata to get vector dimension
+        metadata_file = collection_path / "collection_meta.json"
+        if not metadata_file.exists():
+            raise FileNotFoundError(f"Collection metadata not found: {metadata_file}")
+
+        with open(metadata_file, 'r') as f:
+            metadata = json.load(f)
+
+        vector_dim = metadata.get("vector_size", 1536)
+
+        # IDENTICAL loading mechanism as HEAD collection
+        hnsw_manager = HNSWIndexManager(vector_dim=vector_dim, space="cosine")
+        self.temporal_hnsw_index = hnsw_manager.load_index(collection_path, max_elements=100000)
+
+        # Load ID index using IDIndexManager
+        id_manager = IDIndexManager()
+        self.temporal_id_mapping = id_manager.load_index(collection_path)
+
+        # Track version for rebuild detection
+        self.temporal_index_version = self._read_index_rebuild_uuid(collection_path)
+
+        logger.info(f"Temporal HNSW index loaded via mmap from {collection_path}")
+
+    def invalidate_temporal(self) -> None:
+        """Invalidate temporal cache, closing mmap file descriptors.
+
+        Python GC closes mmap when index object deleted (refcount = 0).
+        Same cleanup pattern as HEAD cache invalidation.
+        """
+        self.temporal_hnsw_index = None
+        self.temporal_id_mapping = None
+        self.temporal_index_version = None
+        logger.info("Temporal cache invalidated")
+
+    def is_temporal_stale_after_rebuild(self, collection_path: Path) -> bool:
+        """Check if cached temporal index version differs from disk metadata.
+
+        Args:
+            collection_path: Path to temporal collection directory
+
+        Returns:
+            True if cached index is stale (rebuild detected), False otherwise
+        """
+        # If no version tracked yet, not stale (not loaded yet)
+        if self.temporal_index_version is None:
+            return False
+
+        # Read current index_rebuild_uuid from disk
+        current_version = self._read_index_rebuild_uuid(collection_path)
+
+        # Compare with cached version
+        return self.temporal_index_version != current_version
+
     def is_stale_after_rebuild(self, collection_path: Path) -> bool:
         """Check if cached index version differs from disk metadata (AC11).
 
@@ -182,6 +265,8 @@ class CacheEntry:
             "fts_loaded": self.fts_available,
             "expired": self.is_expired(),
             "hnsw_version": self.hnsw_index_version,  # AC11: Include version in stats
+            "temporal_loaded": self.temporal_hnsw_index is not None,
+            "temporal_version": self.temporal_index_version,
         }
 
 

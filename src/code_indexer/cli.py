@@ -3380,7 +3380,7 @@ def index(
             # Initialize temporal indexer
             temporal_indexer = TemporalIndexer(config_manager, vector_store)
 
-            # Cost estimation and warning for all-branches
+            # Cost estimation warning for all-branches (no confirmation prompt)
             if all_branches:
                 # Get branch count for cost warning
                 try:
@@ -3411,15 +3411,8 @@ def index(
                             style="yellow",
                         )
                         console.print()
-
-                        if not click.confirm(
-                            "Continue with all-branches indexing?", default=False
-                        ):
-                            console.print(
-                                "[yellow]Cancelled. Use --index-commits without --all-branches for current branch only.[/yellow]",
-                                markup=True,
-                            )
-                            sys.exit(0)
+                        # NOTE: Removed confirmation prompt to enable batch/automated usage
+                        # Proceeding directly with indexing as requested by user
                 except subprocess.CalledProcessError:
                     pass  # Ignore git command failures
 
@@ -3439,7 +3432,7 @@ def index(
             progress_manager = MultiThreadedProgressManager(
                 console=console,
                 live_manager=rich_live_manager,
-                max_slots=parallel_threads + 2,
+                max_slots=parallel_threads,  # FIX Issue 1: Match TemporalIndexer's CleanSlotTracker slot count
             )
 
             display_initialized = False
@@ -3465,11 +3458,17 @@ def index(
 
                 # Parse progress info for metrics if available
                 try:
-                    # Extract files_per_second from info if present
-                    # Info format: "commit_hash | X files/s | ..."
+                    # FIX Issue 2: Extract rate from info (handles both "files/s" and "commits/s")
+                    # Info format: "current/total commits (%) | X.X commits/s | ..."
                     parts = info.split(" | ")
                     if len(parts) >= 2:
-                        files_per_second = float(parts[1].replace(" files/s", ""))
+                        rate_str = parts[1].strip()
+                        # Extract numeric value from "X.X commits/s" or "X.X files/s"
+                        rate_parts = rate_str.split()
+                        if len(rate_parts) >= 1:
+                            files_per_second = float(rate_parts[0])
+                        else:
+                            files_per_second = 0.0
                     else:
                         files_per_second = 0.0
                 except (ValueError, IndexError):
@@ -4155,6 +4154,26 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
         sys.exit(exit_code)
 
     config_manager = ctx.obj["config_manager"]
+    project_root = ctx.obj.get("project_root", Path.cwd())
+
+    # Deprecation warning for --fts flag (auto-detection replaces it)
+    if fts:
+        console.print(
+            "⚠️ --fts flag is deprecated. Auto-detection is now used.",
+            style="yellow",
+        )
+
+    # Auto-detect existing indexes
+    from .cli_watch_helpers import detect_existing_indexes
+
+    available_indexes = detect_existing_indexes(project_root)
+    detected_count = sum(available_indexes.values())
+
+    if detected_count == 0:
+        console.print("⚠️ No indexes found. Run 'cidx index' first.", style="yellow")
+        sys.exit(1)
+
+    console.print(f"🔍 Detected {detected_count} index(es) to watch:", style="blue")
 
     try:
         from watchdog.observers import Observer
@@ -4169,89 +4188,120 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
         # Lazy imports for watch services
         from .services.smart_indexer import SmartIndexer
 
-        # Initialize services (same as index command)
-        embedding_provider = EmbeddingProviderFactory.create(config, console)
-        qdrant_client = QdrantClient(config.qdrant, console, Path(config.codebase_dir))
+        # Display detected indexes
+        if available_indexes["semantic"]:
+            console.print("  ✅ Semantic index (HEAD collection)", style="green")
+        if available_indexes["fts"]:
+            console.print("  ✅ FTS index (full-text search)", style="green")
+        if available_indexes["temporal"]:
+            console.print("  ✅ Temporal index (git history commits)", style="green")
 
-        # Health checks
-        if not embedding_provider.health_check():
-            console.print(
-                f"❌ {embedding_provider.get_provider_name().title()} service not available",
-                style="red",
-            )
-            sys.exit(1)
-
-        if not qdrant_client.health_check():
-            console.print("❌ Qdrant service not available", style="red")
-            sys.exit(1)
-
-        # Initialize SmartIndexer (same as index command)
-        metadata_path = config_manager.config_path.parent / "metadata.json"
-        smart_indexer = SmartIndexer(
-            config, embedding_provider, qdrant_client, metadata_path
-        )
-
-        # Initialize git topology service
-        git_topology_service = GitTopologyService(config.codebase_dir)
-
-        # Initialize watch metadata
-        watch_metadata_path = config_manager.config_path.parent / "watch_metadata.json"
-        watch_metadata = WatchMetadata.load_from_disk(watch_metadata_path)
-
-        # Get git state for metadata
-        git_state = (
-            git_topology_service.get_current_state()
-            if git_topology_service.is_git_available()
-            else {
-                "git_available": False,
-                "current_branch": None,
-                "current_commit": None,
-            }
-        )
-
-        # Start watch session
-        collection_name = qdrant_client.resolve_collection_name(
-            config, embedding_provider
-        )
-        # Ensure payload indexes exist for watch indexing operations
-        qdrant_client.ensure_payload_indexes(collection_name, context="index")
-
-        watch_metadata.start_watch_session(
-            provider_name=embedding_provider.get_provider_name(),
-            model_name=embedding_provider.get_current_model(),
-            git_status=git_state,
-            collection_name=collection_name,
-        )
-
-        # Perform initial sync if requested or if first run
-        if initial_sync or watch_metadata.last_sync_timestamp == 0:
-            console.print("🔄 Performing initial git-aware sync...")
-            try:
-                stats = smart_indexer.smart_index(
-                    batch_size=batch_size, quiet=True, enable_fts=fts
-                )
-                console.print(
-                    f"✅ Initial sync complete: {stats.files_processed} files processed"
-                )
-                watch_metadata.update_after_sync_cycle(
-                    files_processed=stats.files_processed
-                )
-            except Exception as e:
-                console.print(f"⚠️  Initial sync failed: {e}", style="yellow")
-                console.print("Continuing with file watching...", style="yellow")
-
-        # Initialize git-aware watch handler
-        git_aware_handler = GitAwareWatchHandler(
-            config=config,
-            smart_indexer=smart_indexer,
-            git_topology_service=git_topology_service,
-            watch_metadata=watch_metadata,
-            debounce_seconds=debounce,
-        )
-
-        # Initialize FTS watch handler if requested
+        # Initialize services only if semantic index exists (primary index)
+        semantic_handler = None
         fts_watch_handler = None
-        if fts:
+        temporal_watch_handler = None
+        git_topology_service = None
+        git_state = None
+        watch_metadata = None
+        watch_metadata_path = None
+
+        if available_indexes["semantic"]:
+            # Initialize services (same as index command)
+            embedding_provider = EmbeddingProviderFactory.create(config, console)
+            qdrant_client = QdrantClient(
+                config.qdrant, console, Path(config.codebase_dir)
+            )
+
+            # Health checks
+            if not embedding_provider.health_check():
+                console.print(
+                    f"❌ {embedding_provider.get_provider_name().title()} service not available",
+                    style="red",
+                )
+                sys.exit(1)
+
+            if not qdrant_client.health_check():
+                console.print("❌ Qdrant service not available", style="red")
+                sys.exit(1)
+
+            # Initialize SmartIndexer (same as index command)
+            metadata_path = config_manager.config_path.parent / "metadata.json"
+            smart_indexer = SmartIndexer(
+                config, embedding_provider, qdrant_client, metadata_path
+            )
+
+            # Initialize git topology service
+            git_topology_service = GitTopologyService(config.codebase_dir)
+
+            # Initialize watch metadata
+            watch_metadata_path = (
+                config_manager.config_path.parent / "watch_metadata.json"
+            )
+            watch_metadata = WatchMetadata.load_from_disk(watch_metadata_path)
+
+        # Initialize semantic watch handler
+        if available_indexes["semantic"]:
+            # Ensure all required variables are initialized
+            assert (
+                git_topology_service is not None
+            ), "git_topology_service not initialized"
+            assert watch_metadata is not None, "watch_metadata not initialized"
+
+            # Get git state for metadata
+            git_state = (
+                git_topology_service.get_current_state()
+                if git_topology_service.is_git_available()
+                else {
+                    "git_available": False,
+                    "current_branch": None,
+                    "current_commit": None,
+                }
+            )
+
+            # Start watch session
+            collection_name = qdrant_client.resolve_collection_name(
+                config, embedding_provider
+            )
+            # Ensure payload indexes exist for watch indexing operations
+            qdrant_client.ensure_payload_indexes(collection_name, context="index")
+
+            watch_metadata.start_watch_session(
+                provider_name=embedding_provider.get_provider_name(),
+                model_name=embedding_provider.get_current_model(),
+                git_status=git_state,
+                collection_name=collection_name,
+            )
+
+            # Perform initial sync if requested or if first run
+            if initial_sync or watch_metadata.last_sync_timestamp == 0:
+                console.print("🔄 Performing initial git-aware sync...")
+                try:
+                    # Auto-enable FTS if index exists
+                    enable_fts_sync = fts or available_indexes["fts"]
+                    stats = smart_indexer.smart_index(
+                        batch_size=batch_size, quiet=True, enable_fts=enable_fts_sync
+                    )
+                    console.print(
+                        f"✅ Initial sync complete: {stats.files_processed} files processed"
+                    )
+                    watch_metadata.update_after_sync_cycle(
+                        files_processed=stats.files_processed
+                    )
+                except Exception as e:
+                    console.print(f"⚠️  Initial sync failed: {e}", style="yellow")
+                    console.print("Continuing with file watching...", style="yellow")
+
+            # Initialize git-aware watch handler
+            semantic_handler = GitAwareWatchHandler(
+                config=config,
+                smart_indexer=smart_indexer,
+                git_topology_service=git_topology_service,
+                watch_metadata=watch_metadata,
+                debounce_seconds=debounce,
+            )
+
+        # Initialize FTS watch handler if auto-detected or requested
+        if available_indexes["fts"] or fts:
             # Lazy import FTS components
             from .services.fts_watch_handler import FTSWatchHandler
             from .services.tantivy_index_manager import TantivyIndexManager
@@ -4269,28 +4319,72 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
                 tantivy_index_manager=tantivy_manager,
                 config=config,
             )
-            console.print("✅ FTS watch handler enabled")
 
-        console.print(f"\n👀 Starting git-aware watch on {config.codebase_dir}")
+        # Initialize temporal watch handler if auto-detected
+        if available_indexes["temporal"]:
+            # Lazy import temporal components
+            from .cli_temporal_watch_handler import TemporalWatchHandler
+            from .services.temporal.temporal_indexer import TemporalIndexer
+            from .services.temporal.temporal_progressive_metadata import (
+                TemporalProgressiveMetadata,
+            )
+            from .backends.filesystem_vector_store import FilesystemVectorStore
+
+            temporal_index_dir = (
+                project_root / ".code-indexer/index/code-indexer-temporal"
+            )
+
+            # Initialize vector store (FilesystemVectorStore)
+            vector_store = FilesystemVectorStore(temporal_index_dir)
+
+            # Create temporal indexer (using new API)
+            temporal_indexer = TemporalIndexer(config_manager, vector_store)
+
+            # Create progressive metadata
+            progressive_metadata = TemporalProgressiveMetadata(temporal_index_dir)
+
+            # Create TemporalWatchHandler
+            temporal_watch_handler = TemporalWatchHandler(
+                project_root,
+                temporal_indexer=temporal_indexer,
+                progressive_metadata=progressive_metadata,
+            )
+
+        console.print(f"\n👀 Starting watch on {config.codebase_dir}")
         console.print(f"⏱️  Debounce: {debounce}s")
-        if git_topology_service.is_git_available():
+        if (
+            available_indexes["semantic"]
+            and git_topology_service is not None
+            and git_topology_service.is_git_available()
+            and git_state is not None
+        ):
             console.print(
                 f"🌿 Git branch: {git_state.get('current_branch', 'unknown')}"
             )
         console.print("Press Ctrl+C to stop")
 
-        # Start git-aware file watching
-        git_aware_handler.start_watching()
+        # Start git-aware file watching (semantic handler)
+        if semantic_handler:
+            semantic_handler.start_watching()
 
         # Setup watchdog observer
         observer = Observer()
-        observer.schedule(git_aware_handler, str(config.codebase_dir), recursive=True)
+
+        # Register semantic handler
+        if semantic_handler:
+            observer.schedule(
+                semantic_handler, str(config.codebase_dir), recursive=True
+            )
 
         # Register FTS handler if enabled
         if fts_watch_handler:
             observer.schedule(
                 fts_watch_handler, str(config.codebase_dir), recursive=True
             )
+
+        # Register temporal handler if enabled
+        if temporal_watch_handler:
+            observer.schedule(temporal_watch_handler, str(project_root), recursive=True)
 
         observer.start()
         console.print(f"🔍 Watchdog observer started monitoring: {config.codebase_dir}")
@@ -4308,28 +4402,33 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
 
                     time.sleep(1)
         except KeyboardInterrupt:
-            console.print("\n👋 Stopping git-aware file watcher...")
+            console.print("\n👋 Stopping watch mode...")
         finally:
-            git_aware_handler.stop_watching()
+            # Stop semantic handler if present
+            if semantic_handler:
+                semantic_handler.stop_watching()
+
             observer.stop()
             observer.join()
 
-            # Save final metadata
-            watch_metadata.save_to_disk(watch_metadata_path)
+            # Save final metadata if semantic handler was active
+            if available_indexes["semantic"] and watch_metadata and watch_metadata_path:
+                watch_metadata.save_to_disk(watch_metadata_path)
 
-            # Show final statistics
-            watch_stats = git_aware_handler.get_statistics()
-            console.print("\n📊 Watch session complete:")
-            console.print(
-                f"   • Files processed: {watch_stats['handler_files_processed']}"
-            )
-            console.print(
-                f"   • Indexing cycles: {watch_stats['handler_indexing_cycles']}"
-            )
-            if watch_stats["total_branch_changes"] > 0:
-                console.print(
-                    f"   • Branch changes handled: {watch_stats['total_branch_changes']}"
-                )
+                if semantic_handler:
+                    # Show final statistics
+                    watch_stats = semantic_handler.get_statistics()
+                    console.print("\n📊 Watch session complete:")
+                    console.print(
+                        f"   • Files processed: {watch_stats['handler_files_processed']}"
+                    )
+                    console.print(
+                        f"   • Indexing cycles: {watch_stats['handler_indexing_cycles']}"
+                    )
+                    if watch_stats["total_branch_changes"] > 0:
+                        console.print(
+                            f"   • Branch changes handled: {watch_stats['total_branch_changes']}"
+                        )
 
     except Exception as e:
         console.print(f"❌ Git-aware watch failed: {e}", style="red")
@@ -4703,11 +4802,16 @@ def query(
     # Import Path - needed by all query modes
     from pathlib import Path
 
-    # Check daemon delegation for local mode (Story 2.3)
+    # Check daemon delegation for local mode (Story 2.3 + Story 1: Temporal Support)
     # CRITICAL: Skip daemon delegation if standalone flag is set (prevents recursive loop)
-    # CRITICAL: Skip daemon delegation for temporal queries (daemon doesn't support --time-range)
     standalone_mode = ctx.obj.get("standalone", False)
-    if mode == "local" and not standalone_mode and not time_range:
+
+    # Handle --time-range-all flag BEFORE daemon delegation check
+    if time_range_all:
+        # Set time_range to "all" internally
+        time_range = "all"
+
+    if mode == "local" and not standalone_mode:
         try:
             config_manager = ctx.obj.get("config_manager")
             if config_manager:
@@ -4717,34 +4821,48 @@ def query(
                     if not quiet:
                         console.print("🔧 Running in daemon mode", style="blue")
 
-                    # Delegate to daemon - will handle retry/fallback automatically
-                    exit_code = cli_daemon_delegation._query_via_daemon(
-                        query_text=query,
-                        daemon_config=daemon_config,
-                        fts=fts,
-                        semantic=semantic,
-                        limit=limit,
-                        languages=languages,
-                        exclude_languages=exclude_languages,
-                        path_filter=path_filter,
-                        exclude_paths=exclude_paths,
-                        min_score=min_score,
-                        accuracy=accuracy,
-                        quiet=quiet,
-                        case_sensitive=case_sensitive,
-                        edit_distance=edit_distance,
-                        snippet_lines=snippet_lines,
-                        regex=regex,
-                    )
-                    sys.exit(exit_code)
+                    # Delegate based on query type
+                    if time_range:
+                        # Story 1: Delegate temporal query to daemon
+                        exit_code = cli_daemon_delegation._query_temporal_via_daemon(
+                            query_text=query,
+                            time_range=time_range,
+                            daemon_config=daemon_config,
+                            project_root=project_root,
+                            limit=limit,
+                            languages=languages,
+                            exclude_languages=exclude_languages,
+                            path_filter=str(path_filter[0]) if path_filter else None,
+                            exclude_path=exclude_paths,
+                            min_score=min_score,
+                            accuracy=accuracy,
+                            quiet=quiet,
+                        )
+                        sys.exit(exit_code)
+                    else:
+                        # Existing: Delegate HEAD query to daemon
+                        exit_code = cli_daemon_delegation._query_via_daemon(
+                            query_text=query,
+                            daemon_config=daemon_config,
+                            fts=fts,
+                            semantic=semantic,
+                            limit=limit,
+                            languages=languages,
+                            exclude_languages=exclude_languages,
+                            path_filter=path_filter,
+                            exclude_paths=exclude_paths,
+                            min_score=min_score,
+                            accuracy=accuracy,
+                            quiet=quiet,
+                            case_sensitive=case_sensitive,
+                            edit_distance=edit_distance,
+                            snippet_lines=snippet_lines,
+                            regex=regex,
+                        )
+                        sys.exit(exit_code)
         except Exception:
             # Daemon delegation failed, continue with standalone mode
             pass
-
-    # Handle --time-range-all flag
-    if time_range_all:
-        # Set time_range to "all" internally
-        time_range = "all"
 
     # Handle temporal search with time-range filtering (Story 2.1)
     if time_range:

@@ -1,6 +1,6 @@
 """CIDX Daemon Service - RPyC-based daemon for in-memory index caching.
 
-Provides 14 exposed methods for semantic search, FTS, watch mode, and daemon management.
+Provides 16 exposed methods for semantic search, FTS, temporal queries, watch mode, and daemon management.
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 class CIDXDaemonService(Service):
     """RPyC daemon service for in-memory index caching.
 
-    Provides 15 exposed methods organized into categories:
-    - Query Operations (3): query, query_fts, query_hybrid
+    Provides 16 exposed methods organized into categories:
+    - Query Operations (4): query, query_fts, query_hybrid, query_temporal
     - Indexing (3): index_blocking, index, get_index_progress
     - Watch Mode (3): watch_start, watch_stop, watch_status
     - Storage Operations (3): clean, clean_data, status
@@ -162,6 +162,186 @@ class CIDXDaemonService(Service):
         return {
             "semantic": semantic_results,
             "fts": fts_results,
+        }
+
+    def exposed_query_temporal(
+        self,
+        project_path: str,
+        query: str,
+        time_range: str,
+        limit: int = 10,
+        languages: Optional[List[str]] = None,
+        exclude_languages: Optional[List[str]] = None,
+        path_filter: Optional[str] = None,
+        exclude_path: Optional[str] = None,
+        min_score: float = 0.0,
+        accuracy: str = "balanced",
+        correlation_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Query temporal collection via daemon with mmap cache.
+
+        Args:
+            project_path: Path to project root
+            query: Semantic search query text
+            time_range: Time range filter (e.g., "2024-01-01..2024-12-31", "last-30-days")
+            limit: Maximum number of results
+            languages: Language filters (include)
+            exclude_languages: Language filters (exclude)
+            path_filter: Path pattern filter (include)
+            exclude_path: Path pattern filter (exclude)
+            min_score: Minimum similarity score
+            accuracy: Accuracy mode (fast/balanced/high)
+            correlation_id: Correlation ID for progress tracking
+
+        Returns:
+            Dict with results, query metadata, and performance stats
+        """
+        logger.debug(
+            f"exposed_query_temporal: project={project_path}, "
+            f"query={query[:50]}..., time_range={time_range}"
+        )
+
+        project_root = Path(project_path)
+
+        with self.cache_lock:
+            # Ensure cache loaded for project
+            if self.cache_entry is None or self.cache_entry.project_path != project_root:
+                self._ensure_cache_loaded(project_path)
+
+            # Load temporal cache if not loaded
+            temporal_collection_path = (
+                project_root / ".code-indexer/index/code-indexer-temporal"
+            )
+
+            if not temporal_collection_path.exists():
+                logger.warning(f"Temporal index not found: {temporal_collection_path}")
+                return {
+                    "error": "Temporal index not found. Run 'cidx index --index-commits' first.",
+                    "results": [],
+                }
+
+            if self.cache_entry.temporal_hnsw_index is None:
+                logger.info("Loading temporal HNSW index into daemon cache")
+                self.cache_entry.load_temporal_indexes(temporal_collection_path)
+
+            # Check if cache stale (rebuild detected)
+            if self.cache_entry.is_temporal_stale_after_rebuild(temporal_collection_path):
+                logger.info("Temporal cache stale after rebuild, reloading")
+                self.cache_entry.invalidate_temporal()
+                self.cache_entry.load_temporal_indexes(temporal_collection_path)
+
+            # Initialize TemporalSearchService with cached index
+            from code_indexer.services.temporal.temporal_search_service import (
+                TemporalSearchService,
+            )
+            from code_indexer.services.temporal.temporal_indexer import TemporalIndexer
+            from code_indexer.config import ConfigManager
+            from code_indexer.backends.backend_factory import BackendFactory
+            from code_indexer.services.embedding_factory import EmbeddingProviderFactory
+
+            # Get config and services (reuse from cache if available)
+            if not hasattr(self, "config_manager") or self.config_manager is None:
+                self.config_manager = ConfigManager.create_with_backtrack(project_root)
+
+            if not hasattr(self, "vector_store") or self.vector_store is None:
+                config = self.config_manager.get_config()
+                backend = BackendFactory.create(config, project_root)
+                self.vector_store = backend.get_vector_store_client()
+
+            if not hasattr(self, "embedding_provider") or self.embedding_provider is None:
+                config = self.config_manager.get_config()
+                self.embedding_provider = EmbeddingProviderFactory.create(config=config)
+
+            temporal_search_service = TemporalSearchService(
+                config_manager=self.config_manager,
+                project_root=project_root,
+                vector_store_client=self.vector_store,
+                embedding_provider=self.embedding_provider,
+                collection_name=TemporalIndexer.TEMPORAL_COLLECTION_NAME,
+            )
+
+            # Convert time_range string to tuple (same logic as cli.py:4819-4840)
+            if time_range == "all":
+                time_range_tuple = ("1970-01-01", "2100-12-31")
+            elif ".." in time_range:
+                # Split date range (e.g., "2024-01-01..2024-12-31")
+                parts = time_range.split("..")
+                if len(parts) != 2:
+                    return {
+                        "error": f"Invalid time range format: {time_range}. Use YYYY-MM-DD..YYYY-MM-DD",
+                        "results": [],
+                    }
+                time_range_tuple = (parts[0].strip(), parts[1].strip())
+
+                # Validate date format using temporal_search_service
+                try:
+                    temporal_search_service._validate_date_range(time_range)
+                except ValueError as e:
+                    return {
+                        "error": f"Invalid date format: {e}",
+                        "results": [],
+                    }
+            elif time_range.startswith("last-"):
+                # Handle relative date ranges (e.g., "last-7-days", "last-30-days")
+                # Convert to absolute date range
+                from datetime import datetime, timedelta
+                import re
+
+                match = re.match(r"last-(\d+)-days?", time_range)
+                if not match:
+                    return {
+                        "error": f"Invalid time range format: {time_range}. Use 'last-N-days' (e.g., 'last-7-days')",
+                        "results": [],
+                    }
+
+                days = int(match.group(1))
+                end_date = datetime.now().strftime("%Y-%m-%d")
+                start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+                time_range_tuple = (start_date, end_date)
+            else:
+                return {
+                    "error": f"Invalid time range format: {time_range}. Use 'all', 'last-N-days', or YYYY-MM-DD..YYYY-MM-DD",
+                    "results": [],
+                }
+
+            # Query using cached temporal index
+            results = temporal_search_service.query_temporal(
+                query=query,
+                time_range=time_range_tuple,
+                limit=limit,
+                language=languages,  # Parameter name is 'language' not 'languages'
+                exclude_language=exclude_languages,  # Parameter name is 'exclude_language' not 'exclude_languages'
+                path_filter=path_filter,
+                exclude_path=exclude_path,
+                min_score=min_score,
+            )
+
+            # Update cache access tracking
+            self.cache_entry.update_access()
+
+            # Format results for daemon response
+            return self._format_temporal_results(results)
+
+    def _format_temporal_results(self, results: Any) -> Dict[str, Any]:
+        """Format temporal search results for RPC response."""
+        return {
+            "results": [
+                {
+                    "file_path": r.file_path,
+                    "chunk_index": r.chunk_index,
+                    "content": r.content,
+                    "score": r.score,
+                    "metadata": r.metadata,
+                    "temporal_context": getattr(r, "temporal_context", {}),
+                }
+                for r in results.results
+            ],
+            "query": results.query,
+            "filter_type": results.filter_type,
+            "filter_value": results.filter_value,
+            "total_found": results.total_found,
+            "performance": results.performance or {},
+            "warning": results.warning,
         }
 
     # =============================================================================

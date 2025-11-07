@@ -224,6 +224,7 @@ class TemporalSearchService:
             cwd=self.project_root,
             capture_output=True,
             text=True,
+            errors="replace",
             check=False,
         )
 

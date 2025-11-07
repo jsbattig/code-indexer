@@ -279,7 +279,12 @@ class TemporalIndexer:
             cmd.extend(["-n", str(max_commits)])
 
         result = subprocess.run(
-            cmd, cwd=self.codebase_dir, capture_output=True, text=True, check=True
+            cmd,
+            cwd=self.codebase_dir,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=True,
         )
 
         commits = []
@@ -307,6 +312,7 @@ class TemporalIndexer:
             cwd=self.codebase_dir,
             capture_output=True,
             text=True,
+            errors="replace",
             check=True,
         )
         return result.stdout.strip() or "HEAD"
@@ -369,15 +375,27 @@ class TemporalIndexer:
             commit_queue.put(commit)
 
         def worker():
-            """Worker function to process commits from queue."""
+            """Worker function to process commits from queue.
+
+            CRITICAL FIX: Acquire slot IMMEDIATELY when starting commit processing,
+            not inside diff loop. This ensures all threads become active immediately.
+            Pattern follows HighThroughputProcessor.process_files_high_throughput().
+            """
             while True:
                 try:
                     commit = commit_queue.get_nowait()
                 except Empty:
                     break
 
-                # Initialize slot_id outside the loop
-                slot_id = None
+                # CRITICAL FIX: Acquire slot IMMEDIATELY (not inside diff loop)
+                # This ensures all 8 threads become active immediately, not gradually
+                slot_id = commit_slot_tracker.acquire_slot(
+                    FileData(
+                        filename=f"{commit.hash[:8]} - starting",
+                        file_size=0,
+                        status=FileStatus.STARTING,
+                    )
+                )
 
                 try:
                     # Get diffs
@@ -386,33 +404,17 @@ class TemporalIndexer:
                     # Track last file processed for THIS commit (local to this worker)
                     last_file_for_commit = Path(".")  # Default if no diffs
 
-                    # If no diffs, acquire a slot just to show we processed the commit
+                    # If no diffs, mark complete and continue
                     if not diffs:
-                        slot_id = commit_slot_tracker.acquire_slot(
-                            FileData(
-                                filename=f"{commit.hash[:8]} - no changes",
-                                file_size=0,
-                                status=FileStatus.COMPLETE,
-                            )
-                        )
+                        commit_slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
 
                     # Process each diff
                     for diff_info in diffs:
-                        # Option A: Release previous slot and acquire new one for each file
-                        if slot_id is not None:
-                            commit_slot_tracker.release_slot(slot_id)
-
-                        # Acquire new slot with current file information
+                        # Update slot with current file information (no release/reacquire)
                         current_filename = (
                             f"{commit.hash[:8]} - {Path(diff_info.file_path).name}"
                         )
-                        slot_id = commit_slot_tracker.acquire_slot(
-                            FileData(
-                                filename=current_filename,
-                                file_size=len(diff_info.diff_content),  # Diff content size in bytes
-                                status=FileStatus.CHUNKING,
-                            )
-                        )
+                        commit_slot_tracker.update_slot(slot_id, FileStatus.CHUNKING)
 
                         # Update last file for THIS commit (local variable)
                         last_file_for_commit = Path(diff_info.file_path)
@@ -643,14 +645,27 @@ class TemporalIndexer:
             else 8
         )
 
+        # FIX Issue 3: Add proper KeyboardInterrupt handling for graceful shutdown
         # Use ThreadPoolExecutor for parallel processing with multiple workers
-        with ThreadPoolExecutor(max_workers=thread_count) as executor:
-            # Submit multiple workers
-            futures = [executor.submit(worker) for _ in range(thread_count)]
+        futures = []
+        try:
+            with ThreadPoolExecutor(max_workers=thread_count) as executor:
+                # Submit multiple workers
+                futures = [executor.submit(worker) for _ in range(thread_count)]
 
-            # Wait for all workers to complete
-            for future in as_completed(futures):
-                future.result()  # Wait for completion
+                # Wait for all workers to complete
+                for future in as_completed(futures):
+                    future.result()  # Wait for completion
+
+        except KeyboardInterrupt:
+            # Cancel all pending futures on Ctrl+C
+            logger.info("KeyboardInterrupt received, cancelling pending tasks...")
+            for future in futures:
+                future.cancel()
+
+            # Shutdown executor without waiting for running tasks
+            # This prevents atexit handler errors
+            raise  # Re-raise to propagate interrupt
 
         # Return actual totals
         total_vectors_created = completed_count[0] * 3  # Approximate vectors per commit

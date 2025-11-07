@@ -27,7 +27,7 @@ class TemporalDiffScanner:
 
         # Call git to get changed files
         result = subprocess.run(["git", "show", "--name-status", "--format=", commit_hash],
-                               cwd=self.codebase_dir, capture_output=True, text=True)
+                               cwd=self.codebase_dir, capture_output=True, text=True, errors='replace')
 
         for line in result.stdout.strip().split("\n"):
             if not line:
@@ -66,7 +66,7 @@ class TemporalDiffScanner:
                     # Get full content
                     content_result = subprocess.run(
                         ["git", "show", f"{commit_hash}:{file_path}"],
-                        cwd=self.codebase_dir, capture_output=True, text=True
+                        cwd=self.codebase_dir, capture_output=True, text=True, errors='replace'
                     )
 
                     # Format as additions
@@ -97,7 +97,7 @@ class TemporalDiffScanner:
                     # Get content from parent commit
                     content_result = subprocess.run(
                         ["git", "show", f"{commit_hash}^:{file_path}"],
-                        cwd=self.codebase_dir, capture_output=True, text=True
+                        cwd=self.codebase_dir, capture_output=True, text=True, errors='replace'
                     )
 
                     # Format as deletions
@@ -113,7 +113,8 @@ class TemporalDiffScanner:
                     ["git", "rev-parse", f"{commit_hash}^"],
                     cwd=self.codebase_dir,
                     capture_output=True,
-                    text=True
+                    text=True,
+                    errors='replace'
                 )
                 parent_commit_hash = parent_result.stdout.strip() if parent_result.returncode == 0 else ""
 
@@ -138,7 +139,7 @@ class TemporalDiffScanner:
                     # Get diff for modified file
                     content_result = subprocess.run(
                         ["git", "show", commit_hash, "--", file_path],
-                        cwd=self.codebase_dir, capture_output=True, text=True
+                        cwd=self.codebase_dir, capture_output=True, text=True, errors='replace'
                     )
 
                     # Check if git detected it as binary in diff output
@@ -212,7 +213,8 @@ class TemporalDiffScanner:
             cmd,
             cwd=self.codebase_dir,
             capture_output=True,
-            text=True
+            text=True,
+            errors='replace'
         )
 
         if result.returncode == 0:

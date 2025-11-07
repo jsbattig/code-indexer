@@ -49,7 +49,9 @@ def _get_socket_path(config_path: Path) -> Path:
     return config_path.parent / "daemon.sock"
 
 
-def _connect_to_daemon(socket_path: Path, daemon_config: Dict, connection_timeout: float = 2.0) -> Any:
+def _connect_to_daemon(
+    socket_path: Path, daemon_config: Dict, connection_timeout: float = 2.0
+) -> Any:
     """
     Establish RPyC connection to daemon with exponential backoff and timeout.
 
@@ -91,7 +93,9 @@ def _connect_to_daemon(socket_path: Path, daemon_config: Dict, connection_timeou
     for attempt, delay in enumerate(retry_delays):
         try:
             # Create socket with connection timeout to prevent indefinite hangs
-            sock = socket_module.socket(socket_module.AF_UNIX, socket_module.SOCK_STREAM)
+            sock = socket_module.socket(
+                socket_module.AF_UNIX, socket_module.SOCK_STREAM
+            )
             sock.settimeout(connection_timeout)
 
             try:
@@ -118,7 +122,12 @@ def _connect_to_daemon(socket_path: Path, daemon_config: Dict, connection_timeou
                     pass
                 raise
 
-        except (ConnectionRefusedError, FileNotFoundError, OSError, socket_module.timeout) as e:
+        except (
+            ConnectionRefusedError,
+            FileNotFoundError,
+            OSError,
+            socket_module.timeout,
+        ) as e:
             last_error = e
             if attempt < len(retry_delays) - 1:
                 time.sleep(delay)
@@ -799,6 +808,7 @@ def _index_via_daemon(
                 # RPyC caches proxy objects, causing frozen/stale display. JSON serialization
                 # on daemon side + deserialization here ensures we always get current state.
                 import json
+
                 concurrent_files_json = kwargs.get("concurrent_files_json", "[]")
                 concurrent_files = json.loads(concurrent_files_json)
                 slot_tracker = kwargs.get("slot_tracker", None)
@@ -912,7 +922,8 @@ def _index_via_daemon(
                         style="yellow",
                     )
                     console.print(
-                        "💾 Progress saved - you can resume indexing later", style="blue"
+                        "💾 Progress saved - you can resume indexing later",
+                        style="blue",
                     )
                 else:
                     console.print("✅ Indexing complete!", style="green")
@@ -928,8 +939,12 @@ def _index_via_daemon(
 
                 # Calculate throughput
                 if duration > 0:
-                    files_per_min = (stats_dict.get("files_processed", 0) / duration) * 60
-                    chunks_per_min = (stats_dict.get("chunks_created", 0) / duration) * 60
+                    files_per_min = (
+                        stats_dict.get("files_processed", 0) / duration
+                    ) * 60
+                    chunks_per_min = (
+                        stats_dict.get("chunks_created", 0) / duration
+                    ) * 60
                     console.print(
                         f"🚀 Throughput: {files_per_min:.1f} files/min, {chunks_per_min:.1f} chunks/min"
                     )
@@ -998,10 +1013,18 @@ def _index_via_daemon(
                 console.print("[dim]Tip: Check daemon with 'cidx daemon status'[/dim]")
 
                 # Clean kwargs to avoid duplicate parameter errors
-                clean_kwargs = {k: v for k, v in kwargs.items() if k not in [
-                    "enable_fts", "batch_size", "reconcile",
-                    "files_count_to_process", "detect_deletions"
-                ]}
+                clean_kwargs = {
+                    k: v
+                    for k, v in kwargs.items()
+                    if k
+                    not in [
+                        "enable_fts",
+                        "batch_size",
+                        "reconcile",
+                        "files_count_to_process",
+                        "detect_deletions",
+                    ]
+                }
 
                 return _index_standalone(
                     force_reindex=force_reindex,
@@ -1190,3 +1213,130 @@ def _watch_via_daemon(
             enable_fts=enable_fts,
             **kwargs,
         )
+
+
+def _query_temporal_via_daemon(
+    query_text: str,
+    time_range: str,
+    daemon_config: Dict,
+    project_root: Path,
+    limit: int = 10,
+    languages: Optional[tuple] = None,
+    exclude_languages: Optional[tuple] = None,
+    path_filter: Optional[str] = None,
+    exclude_path: Optional[tuple] = None,
+    min_score: Optional[float] = None,
+    accuracy: str = "balanced",
+    quiet: bool = False,
+) -> int:
+    """Delegate temporal query to daemon with crash recovery.
+
+    Implements 2-attempt restart recovery for temporal queries, following
+    the IDENTICAL pattern as _query_via_daemon() for HEAD collection queries.
+
+    Args:
+        query_text: Query string
+        time_range: Time range filter (e.g., "last-7-days", "2024-01-01..2024-12-31")
+        daemon_config: Daemon configuration
+        project_root: Project root directory
+        limit: Result limit
+        languages: Language filters (include)
+        exclude_languages: Language filters (exclude)
+        path_filter: Path pattern filter (include)
+        exclude_path: Path pattern filters (exclude)
+        min_score: Minimum similarity score
+        accuracy: Accuracy mode (fast/balanced/high)
+        quiet: Suppress non-essential output
+
+    Returns:
+        Exit code (0 = success)
+    """
+    config_path = _find_config_file()
+    if not config_path:
+        console.print("[yellow]No config found, using standalone mode[/yellow]")
+        return 1
+
+    socket_path = _get_socket_path(config_path)
+
+    # Crash recovery: up to 2 restart attempts (IDENTICAL to HEAD query pattern)
+    for restart_attempt in range(3):  # Initial + 2 restarts
+        conn = None
+        try:
+            # Connect to daemon
+            conn = _connect_to_daemon(socket_path, daemon_config)
+
+            # Execute temporal query via daemon
+            start_time = time.perf_counter()
+            result = conn.root.exposed_query_temporal(
+                project_path=str(project_root),
+                query=query_text,
+                time_range=time_range,
+                limit=limit,
+                languages=list(languages) if languages else None,
+                exclude_languages=(
+                    list(exclude_languages) if exclude_languages else None
+                ),
+                path_filter=path_filter,
+                exclude_path=list(exclude_path)[0] if exclude_path else None,
+                min_score=min_score or 0.0,
+                accuracy=accuracy,
+            )
+            query_time = time.perf_counter() - start_time
+
+            # Check for errors
+            if "error" in result:
+                console.print(f"[red]❌ {result['error']}[/red]")
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                return 1
+
+            # Display results (while connection is still open)
+            # Use rich temporal display formatting (same as standalone mode)
+            from .utils.temporal_display import display_temporal_results
+
+            display_temporal_results(result, quiet=quiet)
+
+            # Close connection after displaying results
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+            return 0
+
+        except Exception as e:
+            # Close connection on error
+            try:
+                if conn is not None:
+                    conn.close()
+            except Exception:
+                pass
+
+            # Connection or query failed
+            if restart_attempt < 2:
+                # Still have restart attempts left
+                console.print(
+                    f"[yellow]⚠️  Daemon connection failed, attempting restart ({restart_attempt + 1}/2)[/yellow]"
+                )
+                console.print(f"[dim](Error: {e})[/dim]")
+
+                # Clean up stale socket before restart
+                _cleanup_stale_socket(socket_path)
+                _start_daemon(config_path)
+
+                # Wait longer for daemon to fully start
+                time.sleep(1.0)
+                continue
+            else:
+                # Exhausted all restart attempts - fall back to standalone
+                console.print(
+                    "[yellow]ℹ️  Daemon unavailable after 2 restart attempts, using standalone mode[/yellow]"
+                )
+                console.print(f"[dim](Error: {e})[/dim]")
+                console.print("[dim]Tip: Check daemon with 'cidx daemon status'[/dim]")
+                return 1
+
+    # Should never reach here
+    return 1
