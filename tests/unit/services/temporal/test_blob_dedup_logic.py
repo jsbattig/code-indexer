@@ -71,6 +71,12 @@ class TestBlobDeduplicationLogic:
                         mock_manager = MagicMock()
                         mock_vcm.return_value.__enter__.return_value = mock_manager
 
+                        # Mock embedding provider methods for token counting
+                        mock_embedding_provider = MagicMock()
+                        mock_embedding_provider._count_tokens_accurately = MagicMock(return_value=100)
+                        mock_embedding_provider._get_model_token_limit = MagicMock(return_value=120000)
+                        mock_manager.embedding_provider = mock_embedding_provider
+
                         def track_vectorization(chunk_texts, metadata):
                             nonlocal vectorization_called
                             vectorization_called = True

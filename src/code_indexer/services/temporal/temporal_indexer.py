@@ -141,8 +141,8 @@ class TemporalIndexer:
             )
 
     def _count_tokens(self, text: str, vector_manager) -> int:
-        """Count tokens for batching purposes."""
-        return len(text) // 4
+        """Count tokens accurately for batching purposes using VoyageAI's tokenizer."""
+        return vector_manager.embedding_provider._count_tokens_accurately(text)
 
     def index_commits(
         self,
@@ -411,12 +411,18 @@ class TemporalIndexer:
             """
             nonlocal total_bytes_processed  # Access shared byte counter
             while True:
+                # TIMEOUT ARCHITECTURE FIX: Check cancellation before getting next commit
+                if vector_manager.cancellation_event.is_set():
+                    logger.info("Worker cancelled - exiting gracefully")
+                    break
+
                 try:
                     commit = commit_queue.get_nowait()
                 except Empty:
                     break
 
                 slot_id = None
+                commit_had_errors = False  # Track if this commit had any errors
                 try:
                     # Acquire slot IMMEDIATELY (BEFORE get_diffs) with placeholder
                     placeholder_filename = f"{commit.hash[:8]} - Analyzing commit"
@@ -519,7 +525,8 @@ class TemporalIndexer:
                             model_limit = vector_manager.embedding_provider._get_model_token_limit()
                             TOKEN_LIMIT = int(model_limit * 0.9)  # 90% safety margin
 
-                            batch_futures = []
+                            # First, calculate all batch indices (don't submit yet)
+                            batch_indices_list = []
                             current_batch_indices = []
                             current_tokens = 0
 
@@ -527,13 +534,9 @@ class TemporalIndexer:
                                 chunk_text = chunk_data['chunk']['text']
                                 chunk_tokens = self._count_tokens(chunk_text, vector_manager)
 
-                                # If this chunk would exceed limit, submit current batch
+                                # If this chunk would exceed limit, save current batch
                                 if current_tokens + chunk_tokens > TOKEN_LIMIT and current_batch_indices:
-                                    batch_texts = [all_chunks_data[idx]['chunk']['text'] for idx in current_batch_indices]
-                                    batch_future = vector_manager.submit_batch_task(batch_texts, {})
-                                    batch_futures.append(batch_future)
-
-                                    # Reset for next batch
+                                    batch_indices_list.append(current_batch_indices)
                                     current_batch_indices = []
                                     current_tokens = 0
 
@@ -541,17 +544,75 @@ class TemporalIndexer:
                                 current_batch_indices.append(i)
                                 current_tokens += chunk_tokens
 
-                            # Submit final batch if not empty
+                            # Save final batch if not empty
                             if current_batch_indices:
-                                batch_texts = [all_chunks_data[idx]['chunk']['text'] for idx in current_batch_indices]
-                                batch_future = vector_manager.submit_batch_task(batch_texts, {})
-                                batch_futures.append(batch_future)
+                                batch_indices_list.append(current_batch_indices)
 
-                            # Wait for all batches and merge results
+                            # Submit and process batches in waves to prevent monopolization
+                            max_concurrent = getattr(self.config.voyage_ai, 'max_concurrent_batches_per_commit', 10)
                             all_embeddings = []
-                            for batch_future in batch_futures:
-                                batch_result = batch_future.result(timeout=300)
-                                all_embeddings.extend(batch_result.embeddings)
+
+                            with open("/tmp/cidx_debug.log", "a") as f:
+                                f.write(f"Commit {commit.hash[:8]}: Processing {len(batch_indices_list)} batch(es) with {len(all_chunks_data)} total chunks (max {max_concurrent} concurrent)\n")
+                                f.flush()
+
+                            # Process batches in waves of max_concurrent
+                            for wave_start in range(0, len(batch_indices_list), max_concurrent):
+                                # TIMEOUT ARCHITECTURE FIX: Check cancellation between waves
+                                if vector_manager.cancellation_event.is_set():
+                                    logger.warning(f"Commit {commit.hash[:8]}: Cancelled mid-processing - exiting wave loop")
+                                    commit_had_errors = True
+                                    break
+
+                                wave_end = min(wave_start + max_concurrent, len(batch_indices_list))
+                                wave_batches = batch_indices_list[wave_start:wave_end]
+
+                                with open("/tmp/cidx_debug.log", "a") as f:
+                                    f.write(f"Commit {commit.hash[:8]}: Submitting wave {wave_start+1}-{wave_end} of {len(batch_indices_list)}\n")
+                                    f.flush()
+
+                                # Submit this wave of batches
+                                wave_futures = []
+                                for batch_indices in wave_batches:
+                                    batch_texts = [all_chunks_data[idx]['chunk']['text'] for idx in batch_indices]
+                                    batch_future = vector_manager.submit_batch_task(batch_texts, {})
+                                    wave_futures.append(batch_future)
+
+                                # Wait for this wave to complete
+                                for i, batch_future in enumerate(wave_futures, start=wave_start):
+                                    try:
+                                        # TIMEOUT ARCHITECTURE FIX: Remove timeout - worker waits indefinitely
+                                        # Only API calls timeout (handled in VectorCalculationManager)
+                                        batch_result = batch_future.result()
+
+                                        # TIMEOUT ARCHITECTURE FIX: Check for cancellation/timeout errors
+                                        if batch_result.error:
+                                            error_lower = batch_result.error.lower()
+                                            if "timeout" in error_lower or "cancelled" in error_lower:
+                                                logger.warning(f"Commit {commit.hash[:8]}: Batch cancelled/timeout - {batch_result.error}")
+                                                commit_had_errors = True
+                                                break  # Exit batch processing loop
+                                            else:
+                                                # Other error - log and mark commit as failed
+                                                logger.error(f"Commit {commit.hash[:8]}: Batch error - {batch_result.error}")
+                                                commit_had_errors = True
+                                                break
+
+                                        all_embeddings.extend(batch_result.embeddings)
+
+                                        with open("/tmp/cidx_debug.log", "a") as f:
+                                            f.write(f"Commit {commit.hash[:8]}: Wave batch {i+1}/{len(batch_indices_list)} completed - {len(batch_result.embeddings)} embeddings\n")
+                                            f.flush()
+                                    except Exception as e:
+                                        with open("/tmp/cidx_debug.log", "a") as f:
+                                            f.write(f"Commit {commit.hash[:8]}: Wave batch {i+1}/{len(batch_indices_list)} FAILED: {type(e).__name__}: {str(e)}\n")
+                                            f.flush()
+                                        commit_had_errors = True
+                                        raise
+
+                                # If errors occurred in this wave, stop processing remaining waves
+                                if commit_had_errors:
+                                    break
 
                             # Create result object with merged embeddings
                             from types import SimpleNamespace
@@ -669,8 +730,13 @@ class TemporalIndexer:
                     # Mark complete
                     commit_slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
 
-                    # Save completed commit to progressive metadata (Bug #8 fix)
-                    self.progressive_metadata.save_completed(commit.hash)
+                    # TIMEOUT ARCHITECTURE FIX: Only save commit if no errors occurred
+                    # Failed/cancelled commits should not be saved to progressive metadata
+                    if not commit_had_errors:
+                        # Save completed commit to progressive metadata (Bug #8 fix)
+                        self.progressive_metadata.save_completed(commit.hash)
+                    else:
+                        logger.warning(f"Commit {commit.hash[:8]}: Not saved to progressive metadata (errors or cancellation)")
 
                     # DEADLOCK FIX: Get expensive data BEFORE acquiring lock
                     # This prevents holding progress_lock during:
@@ -823,7 +889,7 @@ class TemporalIndexer:
             future = vector_manager.submit_batch_task(
                 chunk_texts, {"commit_hash": commit.hash}
             )
-            result = future.result(timeout=300)
+            result = future.result(timeout=30)
 
             if not result.error and result.embeddings:
                 points = []

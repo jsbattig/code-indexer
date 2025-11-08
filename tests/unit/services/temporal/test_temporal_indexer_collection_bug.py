@@ -105,6 +105,7 @@ def test_temporal_indexer_uses_temporal_collection_name(tmp_path):
                 mock_result.error = None
                 # Return one embedding per text chunk submitted
                 mock_result.embeddings = [[0.1] * 1536 for _ in texts]
+                mock_result.error = None  # No error
                 mock_future.result.return_value = mock_result
                 return mock_future
 

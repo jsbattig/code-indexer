@@ -83,6 +83,10 @@ class TestTemporalAPIOptimizationSimple(unittest.TestCase):
                     # Mock the vector manager
                     with patch('src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager') as MockVectorManager:
                         mock_vector_manager = MagicMock()
+                        # Mock cancellation event (no cancellation)
+                        mock_cancellation_event = MagicMock()
+                        mock_cancellation_event.is_set.return_value = False
+                        mock_vector_manager.cancellation_event = mock_cancellation_event
                         MockVectorManager.return_value.__enter__ = MagicMock(return_value=mock_vector_manager)
                         MockVectorManager.return_value.__exit__ = MagicMock(return_value=None)
 
@@ -95,6 +99,7 @@ class TestTemporalAPIOptimizationSimple(unittest.TestCase):
                             result = MagicMock()
                             # Return embeddings only for the texts we received
                             result.embeddings = [[0.1, 0.2, 0.3] for _ in texts]
+                            result.error = None  # No error
                             future.result.return_value = result
                             return future
 

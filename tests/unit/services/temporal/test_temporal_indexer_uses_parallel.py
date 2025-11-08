@@ -47,6 +47,10 @@ class TestTemporalIndexerUsesParallel(unittest.TestCase):
 
             # Mock vector manager
             mock_vector_manager = MagicMock()
+            # Mock cancellation event (no cancellation)
+            mock_cancellation_event = MagicMock()
+            mock_cancellation_event.is_set.return_value = False
+            mock_vector_manager.cancellation_event = mock_cancellation_event
             mock_vector_manager.__enter__ = Mock(return_value=mock_vector_manager)
             mock_vector_manager.__exit__ = Mock(return_value=None)
             mock_vector_manager_class.return_value = mock_vector_manager

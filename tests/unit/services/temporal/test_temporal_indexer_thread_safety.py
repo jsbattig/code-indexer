@@ -144,6 +144,7 @@ class TestTemporalIndexerThreadSafety:
             mock_future = MagicMock()
             mock_result = MagicMock()
             mock_result.embeddings = [[0.1] * 1536]  # Mock embedding vector
+            mock_result.error = None  # No error
             mock_future.result.return_value = mock_result
             mock_vector_mgr_instance.submit_batch_task.return_value = mock_future
 

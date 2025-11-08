@@ -333,6 +333,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
             mock_result = Mock()
             # Return correct number of embeddings for chunks submitted
             mock_result.embeddings = [[0.1, 0.2, 0.3] for _ in chunk_texts]
+            mock_result.error = None  # No error
             future.set_result(mock_result)
             return future
 

@@ -57,6 +57,10 @@ class VoyageAIConfig(BaseModel):
         default=128,
         description="Maximum number of texts to send in a single batch request",
     )
+    max_concurrent_batches_per_commit: int = Field(
+        default=10,
+        description="Maximum number of batches a single commit can have in-flight simultaneously (prevents monopolization)",
+    )
 
     # Retry configuration for server errors and transient failures
     max_retries: int = Field(

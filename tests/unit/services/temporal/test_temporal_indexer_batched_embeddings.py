@@ -128,6 +128,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
             future = Future()
             mock_result = Mock()
             mock_result.embeddings = [[0.1] * 1024 for _ in chunk_texts]  # Mock embeddings
+            mock_result.error = None  # No error
             future.set_result(mock_result)
             return future
 
@@ -234,6 +235,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
             future = Future()
             mock_result = Mock()
             mock_result.embeddings = [[0.1] * 1024 for _ in chunk_texts]
+            mock_result.error = None  # No error
             future.set_result(mock_result)
             return future
 
@@ -322,6 +324,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
             mock_result = Mock()
             # BUG: API returned only 7 embeddings for 10 chunks!
             mock_result.embeddings = [[0.1] * 1024 for _ in range(7)]
+            mock_result.error = None  # No error
             future.set_result(mock_result)
             return future
 

@@ -3496,6 +3496,7 @@ def index(
                     concurrent_files=concurrent_files or [],
                     slot_tracker=slot_tracker,
                     info=info,
+                    item_type="commits",
                 )
 
                 # Get integrated display content (Rich Table) and update Rich Live bottom-anchored display

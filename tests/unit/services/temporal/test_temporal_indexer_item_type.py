@@ -66,6 +66,10 @@ class TestTemporalIndexerItemType:
 
         # Mock vector manager
         mock_vector_manager = MagicMock()
+        # Mock cancellation event (no cancellation)
+        mock_cancellation_event = MagicMock()
+        mock_cancellation_event.is_set.return_value = False
+        mock_vector_manager.cancellation_event = mock_cancellation_event
 
         # Track progress calls with proper signature
         progress_calls = []

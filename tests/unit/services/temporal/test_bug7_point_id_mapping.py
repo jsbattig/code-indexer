@@ -89,6 +89,10 @@ class TestBug7PointIDMapping(unittest.TestCase):
                     # Simulate the worker logic with the fix
                     with patch('src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager') as MockVectorManager:
                         mock_vector_manager = MagicMock()
+                        # Mock cancellation event (no cancellation)
+                        mock_cancellation_event = MagicMock()
+                        mock_cancellation_event.is_set.return_value = False
+                        mock_vector_manager.cancellation_event = mock_cancellation_event
                         MockVectorManager.return_value.__enter__ = MagicMock(return_value=mock_vector_manager)
                         MockVectorManager.return_value.__exit__ = MagicMock(return_value=None)
 
@@ -98,6 +102,7 @@ class TestBug7PointIDMapping(unittest.TestCase):
                             result = MagicMock()
                             # Return one embedding (for chunk2 only)
                             result.embeddings = [[0.7, 0.8, 0.9]]
+                            result.error = None  # No error
                             future.result.return_value = result
                             return future
 

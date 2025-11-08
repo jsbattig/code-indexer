@@ -113,6 +113,7 @@ class TestTemporalFileSizeDisplay(unittest.TestCase):
             mock_future = Mock()
             mock_result = Mock()
             mock_result.embeddings = [[0.1] * 1536]  # One embedding
+            mock_result.error = None  # No error
             mock_future.result.return_value = mock_result
             mock_vector_manager.submit_batch_task.return_value = mock_future
 

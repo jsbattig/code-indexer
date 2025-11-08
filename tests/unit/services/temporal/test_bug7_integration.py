@@ -88,8 +88,18 @@ class TestBug7Integration(unittest.TestCase):
                         # Mock VectorCalculationManager
                         with patch('src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager') as MockVectorManager:
                             mock_vector_manager = MagicMock()
+                            # Mock cancellation event (no cancellation)
+                            mock_cancellation_event = MagicMock()
+                            mock_cancellation_event.is_set.return_value = False
+                            mock_vector_manager.cancellation_event = mock_cancellation_event
                             MockVectorManager.return_value.__enter__ = MagicMock(return_value=mock_vector_manager)
                             MockVectorManager.return_value.__exit__ = MagicMock(return_value=None)
+
+                            # Mock embedding provider methods for token counting
+                            mock_embedding_provider = MagicMock()
+                            mock_embedding_provider._count_tokens_accurately = MagicMock(return_value=100)
+                            mock_embedding_provider._get_model_token_limit = MagicMock(return_value=120000)
+                            mock_vector_manager.embedding_provider = mock_embedding_provider
 
                             # Track API calls
                             api_calls = []
@@ -99,6 +109,7 @@ class TestBug7Integration(unittest.TestCase):
                                 result = MagicMock()
                                 # Return embeddings for the chunks we received
                                 result.embeddings = [[0.1, 0.2, 0.3] for _ in texts]
+                                result.error = None  # No error
                                 future.result.return_value = result
                                 return future
 

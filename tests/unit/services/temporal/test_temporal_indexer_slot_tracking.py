@@ -57,6 +57,10 @@ class TestTemporalIndexerSlotTracking:
         # Mock dependencies
         mock_embedding_provider = MagicMock()
         mock_vector_manager = MagicMock()
+        # Mock cancellation event (no cancellation)
+        mock_cancellation_event = MagicMock()
+        mock_cancellation_event.is_set.return_value = False
+        mock_vector_manager.cancellation_event = mock_cancellation_event
 
         # Mock diff scanner to return no diffs (simpler test)
         indexer.diff_scanner.get_diffs_for_commit = MagicMock(return_value=[])
@@ -92,6 +96,10 @@ class TestTemporalIndexerSlotTracking:
         # Mock dependencies
         mock_embedding_provider = MagicMock()
         mock_vector_manager = MagicMock()
+        # Mock cancellation event (no cancellation)
+        mock_cancellation_event = MagicMock()
+        mock_cancellation_event.is_set.return_value = False
+        mock_vector_manager.cancellation_event = mock_cancellation_event
 
         # Track slot operations
         slot_operations = []
@@ -171,6 +179,10 @@ class TestTemporalIndexerSlotTracking:
         # Mock dependencies
         mock_embedding_provider = MagicMock()
         mock_vector_manager = MagicMock()
+        # Mock cancellation event (no cancellation)
+        mock_cancellation_event = MagicMock()
+        mock_cancellation_event.is_set.return_value = False
+        mock_vector_manager.cancellation_event = mock_cancellation_event
 
         # Mock diffs
         from src.code_indexer.services.temporal.temporal_diff_scanner import DiffInfo
@@ -234,6 +246,10 @@ class TestTemporalIndexerSlotTracking:
         # Mock dependencies
         mock_embedding_provider = MagicMock()
         mock_vector_manager = MagicMock()
+        # Mock cancellation event (no cancellation)
+        mock_cancellation_event = MagicMock()
+        mock_cancellation_event.is_set.return_value = False
+        mock_vector_manager.cancellation_event = mock_cancellation_event
 
         # Track slot operations
         slot_acquisitions = []

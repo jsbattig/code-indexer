@@ -493,11 +493,22 @@ class VectorCalculationManager:
 
             # Calculate embeddings using batch processing API
             chunk_texts_list = list(task.chunk_texts)  # Convert tuple to list for API
+
+            # DEBUG: Log batch processing start
+            with open("/tmp/cidx_vectorcalc_debug.log", "a") as f:
+                f.write(f"VectorCalc: Processing batch {task.task_id} with {len(chunk_texts_list)} chunks - STARTING API call\n")
+                f.flush()
+
             embeddings_list = self.embedding_provider.get_embeddings_batch(
                 chunk_texts_list
             )
 
             processing_time = time.time() - start_time
+
+            # DEBUG: Log batch processing complete
+            with open("/tmp/cidx_vectorcalc_debug.log", "a") as f:
+                f.write(f"VectorCalc: Batch {task.task_id} COMPLETED in {processing_time:.2f}s - returned {len(embeddings_list)} embeddings\n")
+                f.flush()
 
             # Convert embeddings to immutable tuple format
             immutable_embeddings = tuple(tuple(emb) for emb in embeddings_list)
@@ -534,6 +545,15 @@ class VectorCalculationManager:
         except Exception as e:
             processing_time = time.time() - start_time
             error_msg = str(e)
+
+            # TIMEOUT ARCHITECTURE FIX: Check for API timeout and trigger global cancellation
+            # Import httpx for timeout detection
+            import httpx
+            if isinstance(e, (httpx.TimeoutException, httpx.ReadTimeout, httpx.ConnectTimeout)):
+                logger.error(f"VoyageAI API timeout for batch {task.task_id} - triggering global cancellation")
+                # Signal global cancellation to all workers
+                self.request_cancellation()
+                error_msg = f"VoyageAI API timeout - cancelling all work: {error_msg}"
 
             # Check if this is a server throttling error
             if self._is_server_throttling_error(e):

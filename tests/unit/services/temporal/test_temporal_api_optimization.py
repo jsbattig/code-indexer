@@ -165,8 +165,15 @@ class TestTemporalAPIOptimization(unittest.TestCase):
             MockVectorManager.return_value.__enter__ = MagicMock(return_value=mock_vector_manager)
             MockVectorManager.return_value.__exit__ = MagicMock(return_value=None)
 
+            # Mock cancellation event (no cancellation)
+            mock_cancellation_event = MagicMock()
+            mock_cancellation_event.is_set.return_value = False
+            mock_vector_manager.cancellation_event = mock_cancellation_event
+
             # Mock token limit
             mock_vector_manager.embedding_provider._get_model_token_limit.return_value = 120000
+            # Mock token counting
+            mock_vector_manager.embedding_provider._count_tokens_accurately.return_value = 100
 
             # Mock submit_batch_task to return embeddings matching input count
             def mock_submit(chunk_texts, metadata):
@@ -174,6 +181,7 @@ class TestTemporalAPIOptimization(unittest.TestCase):
                 result = MagicMock()
                 # Return embeddings matching the number of chunks submitted
                 result.embeddings = [[0.1, 0.2, 0.3] for _ in chunk_texts]
+                result.error = None  # Explicitly set error to None (no error)
                 future.result.return_value = result
                 return future
 

@@ -91,7 +91,30 @@ class TestProgressiveSaveE2E(unittest.TestCase):
                         mock_diffs.return_value = [diff]
 
                         # Mock VectorCalculationManager
-                        with patch('src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager'):
+                        with patch('src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager') as MockVCM:
+                            # Setup mock vector manager with embedding provider
+                            mock_vector_manager = MagicMock()
+                            # Mock cancellation event (no cancellation)
+                            mock_cancellation_event = MagicMock()
+                            mock_cancellation_event.is_set.return_value = False
+                            mock_vector_manager.cancellation_event = mock_cancellation_event
+                            MockVCM.return_value.__enter__.return_value = mock_vector_manager
+                            MockVCM.return_value.__exit__.return_value = None
+
+                            # Mock embedding provider methods for token counting
+                            mock_embedding_provider = MagicMock()
+                            mock_embedding_provider._count_tokens_accurately = MagicMock(return_value=100)
+                            mock_embedding_provider._get_model_token_limit = MagicMock(return_value=120000)
+                            mock_vector_manager.embedding_provider = mock_embedding_provider
+
+                            # Mock embedding results
+                            mock_future = MagicMock()
+                            mock_result = MagicMock()
+                            mock_result.embeddings = [[0.1] * 1024]
+                            mock_result.error = None
+                            mock_future.result.return_value = mock_result
+                            mock_vector_manager.submit_batch_task.return_value = mock_future
+
                             # Run indexing
                             result = indexer.index_commits(
                                 all_branches=False,
