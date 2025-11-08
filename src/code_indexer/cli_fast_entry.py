@@ -9,6 +9,7 @@ Performance targets:
 - Daemon mode startup: <150ms (vs current 1,200ms)
 - Standalone mode: ~1,200ms (no regression)
 """
+
 import json
 import sys
 from pathlib import Path
@@ -118,11 +119,13 @@ def main() -> int:
     if "--help" in sys.argv or "-h" in sys.argv:
         # Always use full CLI for help (has all Click help text)
         from .cli import cli
+
         try:
             cli(obj={})
             return 0
         except KeyboardInterrupt:
             from rich.console import Console
+
             Console().print("\n❌ Interrupted by user", style="red")
             return 1
 
@@ -138,10 +141,12 @@ def main() -> int:
         # Import ONLY what's needed for delegation
         try:
             from .cli_daemon_fast import execute_via_daemon
+
             return execute_via_daemon(sys.argv, config_path)
         except Exception as e:
             # Fallback to full CLI if daemon delegation fails
             from rich.console import Console
+
             console = Console()
             console.print(f"[yellow]Daemon unavailable: {e}[/yellow]")
             console.print("[dim]Falling back to standalone mode...[/dim]")
@@ -149,15 +154,18 @@ def main() -> int:
 
     # SLOW PATH: Full CLI (~1200ms startup, existing behavior)
     from .cli import cli
+
     try:
         cli(obj={})
         return 0
     except KeyboardInterrupt:
         from rich.console import Console
+
         Console().print("\n❌ Interrupted by user", style="red")
         return 1
     except Exception as e:
         from rich.console import Console
+
         Console().print(f"❌ Unexpected error: {e}", style="red", markup=False)
         return 1
 

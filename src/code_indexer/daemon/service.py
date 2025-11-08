@@ -63,7 +63,7 @@ class CIDXDaemonService(Service):
         self.indexing_stats: Optional[Dict[str, Any]] = None
 
         # Configuration (TODO: Load from config file)
-        self.config = type('Config', (), {'auto_shutdown_on_idle': False})()
+        self.config = type("Config", (), {"auto_shutdown_on_idle": False})()
 
         # Start TTL eviction thread
         self.eviction_thread = TTLEvictionThread(self, check_interval=60)
@@ -102,7 +102,9 @@ class CIDXDaemonService(Service):
                 self.cache_entry.update_access()
 
             # Execute semantic search (protected by cache_lock)
-            results, timing_info = self._execute_semantic_search(project_path, query, limit, **kwargs)
+            results, timing_info = self._execute_semantic_search(
+                project_path, query, limit, **kwargs
+            )
 
         # Convert to plain dict for RPyC serialization (avoid netref issues)
         return dict(
@@ -123,7 +125,9 @@ class CIDXDaemonService(Service):
         Returns:
             List of FTS search results with snippets
         """
-        logger.debug(f"exposed_query_fts: project={project_path}, query={query[:50]}...")
+        logger.debug(
+            f"exposed_query_fts: project={project_path}, query={query[:50]}..."
+        )
 
         # FIX Race Condition #1: Hold cache_lock during entire query execution
         # This prevents cache invalidation from occurring mid-query
@@ -153,7 +157,9 @@ class CIDXDaemonService(Service):
         Returns:
             Dict with 'semantic' and 'fts' result lists
         """
-        logger.debug(f"exposed_query_hybrid: project={project_path}, query={query[:50]}...")
+        logger.debug(
+            f"exposed_query_hybrid: project={project_path}, query={query[:50]}..."
+        )
 
         # Execute both searches (they share cache loading internally)
         semantic_results = self.exposed_query(project_path, query, **kwargs)
@@ -205,7 +211,10 @@ class CIDXDaemonService(Service):
 
         with self.cache_lock:
             # Ensure cache loaded for project
-            if self.cache_entry is None or self.cache_entry.project_path != project_root:
+            if (
+                self.cache_entry is None
+                or self.cache_entry.project_path != project_root
+            ):
                 self._ensure_cache_loaded(project_path)
 
             # Load temporal cache if not loaded
@@ -225,7 +234,9 @@ class CIDXDaemonService(Service):
                 self.cache_entry.load_temporal_indexes(temporal_collection_path)
 
             # Check if cache stale (rebuild detected)
-            if self.cache_entry.is_temporal_stale_after_rebuild(temporal_collection_path):
+            if self.cache_entry.is_temporal_stale_after_rebuild(
+                temporal_collection_path
+            ):
                 logger.info("Temporal cache stale after rebuild, reloading")
                 self.cache_entry.invalidate_temporal()
                 self.cache_entry.load_temporal_indexes(temporal_collection_path)
@@ -248,7 +259,10 @@ class CIDXDaemonService(Service):
                 backend = BackendFactory.create(config, project_root)
                 self.vector_store = backend.get_vector_store_client()
 
-            if not hasattr(self, "embedding_provider") or self.embedding_provider is None:
+            if (
+                not hasattr(self, "embedding_provider")
+                or self.embedding_provider is None
+            ):
                 config = self.config_manager.get_config()
                 self.embedding_provider = EmbeddingProviderFactory.create(config=config)
 
@@ -296,7 +310,9 @@ class CIDXDaemonService(Service):
 
                 days = int(match.group(1))
                 end_date = datetime.now().strftime("%Y-%m-%d")
-                start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+                start_date = (datetime.now() - timedelta(days=days)).strftime(
+                    "%Y-%m-%d"
+                )
                 time_range_tuple = (start_date, end_date)
             else:
                 return {
@@ -400,6 +416,7 @@ class CIDXDaemonService(Service):
 
             # Test string transmission
             import threading
+
             callback_counter = [0]  # Correlation ID
             callback_lock = threading.Lock()
 
@@ -410,7 +427,8 @@ class CIDXDaemonService(Service):
                     correlation_id = callback_counter[0]
                 # FROZEN SLOTS FIX: Serialize concurrent_files as JSON to avoid RPyC list/dict issues
                 import json
-                concurrent_files = cb_kwargs.get('concurrent_files', [])
+
+                concurrent_files = cb_kwargs.get("concurrent_files", [])
                 # RPyC WORKAROUND: Serialize concurrent_files to JSON to avoid proxy caching issues
                 # This ensures the client receives fresh data on every callback, not stale proxies
                 concurrent_files_json = json.dumps(concurrent_files)
@@ -418,8 +436,8 @@ class CIDXDaemonService(Service):
                 # CRITICAL FIX: Filter out slot_tracker to prevent RPyC proxy leakage
                 # Only pass JSON-serializable data to client callback
                 filtered_kwargs = {
-                    'concurrent_files_json': concurrent_files_json,
-                    'correlation_id': correlation_id,
+                    "concurrent_files_json": concurrent_files_json,
+                    "correlation_id": correlation_id,
                 }
 
                 # Call actual client callback with filtered kwargs
@@ -432,23 +450,26 @@ class CIDXDaemonService(Service):
             # Without this, the clock freezes at the hash phase completion time.
             def reset_progress_timers():
                 """Reset progress timers by delegating to client callback."""
-                if callback and hasattr(callback, 'reset_progress_timers'):
+                if callback and hasattr(callback, "reset_progress_timers"):
                     callback.reset_progress_timers()
 
             # Attach reset method to callback function (makes it accessible via hasattr check)
             correlated_callback.reset_progress_timers = reset_progress_timers  # type: ignore[attr-defined]
 
             # Check if temporal indexing is requested
-            if kwargs.get('index_commits', False):
+            if kwargs.get("index_commits", False):
                 # Temporal indexing mode
-                from code_indexer.services.temporal.temporal_indexer import TemporalIndexer
-                from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
+                from code_indexer.services.temporal.temporal_indexer import (
+                    TemporalIndexer,
+                )
+                from code_indexer.storage.filesystem_vector_store import (
+                    FilesystemVectorStore,
+                )
 
                 # Initialize vector store
                 index_dir = Path(project_path) / ".code-indexer" / "index"
                 vector_store = FilesystemVectorStore(
-                    base_path=index_dir,
-                    project_root=Path(project_path)
+                    base_path=index_dir, project_root=Path(project_path)
                 )
 
                 # Initialize temporal indexer
@@ -456,10 +477,10 @@ class CIDXDaemonService(Service):
 
                 # Run temporal indexing with progress callback
                 result = temporal_indexer.index_commits(
-                    all_branches=kwargs.get('all_branches', False),
-                    max_commits=kwargs.get('max_commits'),
-                    since_date=kwargs.get('since_date'),
-                    progress_callback=correlated_callback
+                    all_branches=kwargs.get("all_branches", False),
+                    max_commits=kwargs.get("max_commits"),
+                    since_date=kwargs.get("since_date"),
+                    progress_callback=correlated_callback,
                 )
 
                 temporal_indexer.close()
@@ -467,7 +488,9 @@ class CIDXDaemonService(Service):
                 # Invalidate cache after temporal indexing completes
                 with self.cache_lock:
                     if self.cache_entry:
-                        logger.info("Invalidating cache after temporal indexing completed")
+                        logger.info(
+                            "Invalidating cache after temporal indexing completed"
+                        )
                         self.cache_entry = None
 
                 # Return temporal indexing results
@@ -485,19 +508,21 @@ class CIDXDaemonService(Service):
                         "failed_files": 0,
                         "duration_seconds": 0,  # Not tracked yet
                         "cancelled": False,
-                    }
+                    },
                 }
             else:
                 # Standard workspace indexing mode
                 stats = indexer.smart_index(
-                    force_full=kwargs.get('force_full', False),
-                    batch_size=kwargs.get('batch_size', 50),
+                    force_full=kwargs.get("force_full", False),
+                    batch_size=kwargs.get("batch_size", 50),
                     progress_callback=correlated_callback,  # With correlation IDs
                     quiet=True,  # Suppress daemon-side output
-                    enable_fts=kwargs.get('enable_fts', False),
-                    reconcile_with_database=kwargs.get('reconcile_with_database', False),
-                    files_count_to_process=kwargs.get('files_count_to_process'),
-                    detect_deletions=kwargs.get('detect_deletions', False),
+                    enable_fts=kwargs.get("enable_fts", False),
+                    reconcile_with_database=kwargs.get(
+                        "reconcile_with_database", False
+                    ),
+                    files_count_to_process=kwargs.get("files_count_to_process"),
+                    detect_deletions=kwargs.get("detect_deletions", False),
                 )
 
                 # Invalidate cache after indexing completes
@@ -515,12 +540,13 @@ class CIDXDaemonService(Service):
                         "failed_files": stats.failed_files,
                         "duration_seconds": stats.duration,
                         "cancelled": getattr(stats, "cancelled", False),
-                    }
+                    },
                 }
 
         except Exception as e:
             logger.error(f"Blocking indexing failed: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
 
             return {
@@ -570,7 +596,7 @@ class CIDXDaemonService(Service):
             self.indexing_thread = threading.Thread(
                 target=self._run_indexing_background,
                 args=(project_path, kwargs),
-                daemon=True
+                daemon=True,
             )
             self.indexing_thread.start()
 
@@ -589,7 +615,9 @@ class CIDXDaemonService(Service):
             completion stats, or error information
         """
         with self.indexing_lock_internal:
-            is_running = self.indexing_thread is not None and self.indexing_thread.is_alive()
+            is_running = (
+                self.indexing_thread is not None and self.indexing_thread.is_alive()
+            )
 
             if not is_running and self.indexing_stats:
                 # Indexing completed
@@ -654,28 +682,38 @@ class CIDXDaemonService(Service):
             logger.info("Step 2: Creating ConfigManager...")
             config_manager = ConfigManager.create_with_backtrack(Path(project_path))
             config = config_manager.get_config()
-            logger.info(f"Step 2 Complete: Config loaded (codebase_dir={config.codebase_dir})")
+            logger.info(
+                f"Step 2 Complete: Config loaded (codebase_dir={config.codebase_dir})"
+            )
 
             # Create embedding provider and vector store
             logger.info("Step 3: Creating embedding provider...")
             embedding_provider = EmbeddingProviderFactory.create(config=config)
-            logger.info(f"Step 3 Complete: Embedding provider created ({type(embedding_provider).__name__})")
+            logger.info(
+                f"Step 3 Complete: Embedding provider created ({type(embedding_provider).__name__})"
+            )
 
             logger.info("Step 4: Creating backend and vector store...")
             backend = BackendFactory.create(config, Path(project_path))
             vector_store_client = backend.get_vector_store_client()
-            logger.info(f"Step 4 Complete: Backend created ({type(vector_store_client).__name__})")
+            logger.info(
+                f"Step 4 Complete: Backend created ({type(vector_store_client).__name__})"
+            )
 
             # Initialize SmartIndexer with correct signature
             metadata_path = config_manager.config_path.parent / "metadata.json"
-            logger.info(f"Step 5: Creating SmartIndexer (metadata_path={metadata_path})...")
+            logger.info(
+                f"Step 5: Creating SmartIndexer (metadata_path={metadata_path})..."
+            )
             indexer = SmartIndexer(
                 config, embedding_provider, vector_store_client, metadata_path
             )
             logger.info("Step 5 Complete: SmartIndexer created")
 
             # Create progress callback wrapper that updates internal state for polling
-            def progress_callback(current: int, total: int, file_path: Path, info: str = "", **kwargs):
+            def progress_callback(
+                current: int, total: int, file_path: Path, info: str = "", **kwargs
+            ):
                 """Update internal progress state for polling-based progress tracking."""
                 # Update internal state for polling
                 with self.indexing_lock_internal:
@@ -689,11 +727,11 @@ class CIDXDaemonService(Service):
             logger.info(f"  enable_fts={kwargs.get('enable_fts', False)}")
 
             stats = indexer.smart_index(
-                force_full=kwargs.get('force_full', False),
-                batch_size=kwargs.get('batch_size', 50),
+                force_full=kwargs.get("force_full", False),
+                batch_size=kwargs.get("batch_size", 50),
                 progress_callback=progress_callback,
                 quiet=True,
-                enable_fts=kwargs.get('enable_fts', False),
+                enable_fts=kwargs.get("enable_fts", False),
             )
 
             logger.info("Step 6 Complete: Indexing finished")
@@ -721,6 +759,7 @@ class CIDXDaemonService(Service):
             logger.error("=== BACKGROUND INDEXING FAILED ===")
             logger.error(f"Error: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
 
             # Store error message
@@ -758,19 +797,29 @@ class CIDXDaemonService(Service):
         with self.cache_lock:
             # Check if watch already running (watch_handler exists AND thread is alive)
             # This prevents duplicate watch starts
-            if self.watch_handler and self.watch_thread and self.watch_thread.is_alive():
+            if (
+                self.watch_handler
+                and self.watch_thread
+                and self.watch_thread.is_alive()
+            ):
                 return {
                     "status": "error",
                     "message": "Watch already running",
                 }
 
             try:
-                from code_indexer.services.git_aware_watch_handler import GitAwareWatchHandler
+                from code_indexer.services.git_aware_watch_handler import (
+                    GitAwareWatchHandler,
+                )
                 from code_indexer.config import ConfigManager
                 from code_indexer.backends.backend_factory import BackendFactory
-                from code_indexer.services.embedding_factory import EmbeddingProviderFactory
+                from code_indexer.services.embedding_factory import (
+                    EmbeddingProviderFactory,
+                )
                 from code_indexer.services.smart_indexer import SmartIndexer
-                from code_indexer.services.git_topology_service import GitTopologyService
+                from code_indexer.services.git_topology_service import (
+                    GitTopologyService,
+                )
                 from code_indexer.services.watch_metadata import WatchMetadata
 
                 # Initialize configuration and services
@@ -792,11 +841,13 @@ class CIDXDaemonService(Service):
                 git_topology_service = GitTopologyService(config.codebase_dir)
 
                 # Initialize watch metadata
-                watch_metadata_path = config_manager.config_path.parent / "watch_metadata.json"
+                watch_metadata_path = (
+                    config_manager.config_path.parent / "watch_metadata.json"
+                )
                 watch_metadata = WatchMetadata.load_from_disk(watch_metadata_path)
 
                 # Create watch handler with correct signature
-                debounce_seconds = kwargs.get('debounce_seconds', 2.0)
+                debounce_seconds = kwargs.get("debounce_seconds", 2.0)
                 self.watch_handler = GitAwareWatchHandler(
                     config=config,
                     smart_indexer=smart_indexer,
@@ -822,6 +873,7 @@ class CIDXDaemonService(Service):
             except Exception as e:
                 logger.error(f"Watch start failed: {e}")
                 import traceback
+
                 logger.error(traceback.format_exc())
 
                 # Clean up watch state on error (protected by cache_lock)
@@ -859,7 +911,11 @@ class CIDXDaemonService(Service):
                     self.watch_thread.join(timeout=5)
 
                 # Get statistics
-                stats = self.watch_handler.get_stats() if hasattr(self.watch_handler, 'get_stats') else {}
+                stats = (
+                    self.watch_handler.get_stats()
+                    if hasattr(self.watch_handler, "get_stats")
+                    else {}
+                )
 
                 # Clear watch state (protected by cache_lock)
                 self.watch_handler = None
@@ -885,14 +941,22 @@ class CIDXDaemonService(Service):
         """
         # FIX Race Condition #3: Protect watch state access with cache_lock
         with self.cache_lock:
-            if not self.watch_handler or not self.watch_thread or not self.watch_thread.is_alive():
+            if (
+                not self.watch_handler
+                or not self.watch_thread
+                or not self.watch_thread.is_alive()
+            ):
                 return {
                     "running": False,
                     "project_path": None,
                 }
 
             # Get statistics from watch handler
-            stats = self.watch_handler.get_stats() if hasattr(self.watch_handler, 'get_stats') else {}
+            stats = (
+                self.watch_handler.get_stats()
+                if hasattr(self.watch_handler, "get_stats")
+                else {}
+            )
 
             return {
                 "running": True,
@@ -923,17 +987,18 @@ class CIDXDaemonService(Service):
                 self.cache_entry = None
 
         try:
-            from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
+            from code_indexer.storage.filesystem_vector_store import (
+                FilesystemVectorStore,
+            )
 
             # Clear vectors using clear_collection method
             index_dir = Path(project_path) / ".code-indexer" / "index"
             vector_store = FilesystemVectorStore(
-                base_path=index_dir,
-                project_root=Path(project_path)
+                base_path=index_dir, project_root=Path(project_path)
             )
 
             # Get collection name from kwargs or auto-resolve
-            collection_name = kwargs.get('collection')
+            collection_name = kwargs.get("collection")
             if collection_name is None:
                 collections = vector_store.list_collections()
                 if len(collections) == 1:
@@ -941,16 +1006,27 @@ class CIDXDaemonService(Service):
                 elif len(collections) == 0:
                     return {"status": "success", "message": "No collections to clear"}
                 else:
-                    return {"status": "error", "message": "Multiple collections exist, specify collection parameter"}
+                    return {
+                        "status": "error",
+                        "message": "Multiple collections exist, specify collection parameter",
+                    }
 
             # Clear collection
-            remove_projection_matrix = kwargs.get('remove_projection_matrix', False)
-            success = vector_store.clear_collection(collection_name, remove_projection_matrix)
+            remove_projection_matrix = kwargs.get("remove_projection_matrix", False)
+            success = vector_store.clear_collection(
+                collection_name, remove_projection_matrix
+            )
 
             if success:
-                return {"status": "success", "message": f"Collection '{collection_name}' cleared"}
+                return {
+                    "status": "success",
+                    "message": f"Collection '{collection_name}' cleared",
+                }
             else:
-                return {"status": "error", "message": f"Failed to clear collection '{collection_name}'"}
+                return {
+                    "status": "error",
+                    "message": f"Failed to clear collection '{collection_name}'",
+                }
 
         except Exception as e:
             logger.error(f"Clean failed: {e}")
@@ -975,24 +1051,31 @@ class CIDXDaemonService(Service):
                 self.cache_entry = None
 
         try:
-            from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
+            from code_indexer.storage.filesystem_vector_store import (
+                FilesystemVectorStore,
+            )
 
             # Clear data by deleting collections
             index_dir = Path(project_path) / ".code-indexer" / "index"
             vector_store = FilesystemVectorStore(
-                base_path=index_dir,
-                project_root=Path(project_path)
+                base_path=index_dir, project_root=Path(project_path)
             )
 
             # Get collection name from kwargs or delete all collections
-            collection_name = kwargs.get('collection')
+            collection_name = kwargs.get("collection")
             if collection_name:
                 # Delete specific collection
                 success = vector_store.delete_collection(collection_name)
                 if success:
-                    return {"status": "success", "message": f"Collection '{collection_name}' deleted"}
+                    return {
+                        "status": "success",
+                        "message": f"Collection '{collection_name}' deleted",
+                    }
                 else:
-                    return {"status": "error", "message": f"Failed to delete collection '{collection_name}'"}
+                    return {
+                        "status": "error",
+                        "message": f"Failed to delete collection '{collection_name}'",
+                    }
             else:
                 # Delete all collections
                 collections = vector_store.list_collections()
@@ -1001,7 +1084,10 @@ class CIDXDaemonService(Service):
                     if vector_store.delete_collection(coll):
                         deleted_count += 1
 
-                return {"status": "success", "message": f"Deleted {deleted_count} collection(s)"}
+                return {
+                    "status": "success",
+                    "message": f"Deleted {deleted_count} collection(s)",
+                }
 
         except Exception as e:
             logger.error(f"Clean data failed: {e}")
@@ -1028,14 +1114,17 @@ class CIDXDaemonService(Service):
                     cache_stats = {"cache_loaded": False}
 
             # Get storage stats
-            from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
+            from code_indexer.storage.filesystem_vector_store import (
+                FilesystemVectorStore,
+            )
 
             index_dir = Path(project_path) / ".code-indexer" / "index"
             vector_store = FilesystemVectorStore(
-                base_path=index_dir,
-                project_root=Path(project_path)
+                base_path=index_dir, project_root=Path(project_path)
             )
-            storage_stats = vector_store.get_status() if hasattr(vector_store, 'get_status') else {}
+            storage_stats = (
+                vector_store.get_status() if hasattr(vector_store, "get_status") else {}
+            )
 
             return {
                 "cache": cache_stats,
@@ -1069,8 +1158,13 @@ class CIDXDaemonService(Service):
         # Check indexing status
         with self.indexing_lock_internal:
             indexing_status = {
-                "indexing_running": self.indexing_thread is not None and self.indexing_thread.is_alive(),
-                "indexing_project": self.indexing_project_path if self.indexing_thread and self.indexing_thread.is_alive() else None,
+                "indexing_running": self.indexing_thread is not None
+                and self.indexing_thread.is_alive(),
+                "indexing_project": (
+                    self.indexing_project_path
+                    if self.indexing_thread and self.indexing_thread.is_alive()
+                    else None
+                ),
             }
 
         return {
@@ -1121,6 +1215,7 @@ class CIDXDaemonService(Service):
             # This triggers signal handler which cleans up socket and exits
             import os
             import signal
+
             os.kill(os.getpid(), signal.SIGTERM)
 
             return {"status": "success", "message": "Shutdown initiated"}
@@ -1153,7 +1248,10 @@ class CIDXDaemonService(Service):
 
         with self.cache_lock:
             # AC11: Check for staleness after background rebuild
-            if self.cache_entry is not None and self.cache_entry.project_path == project_path_obj:
+            if (
+                self.cache_entry is not None
+                and self.cache_entry.project_path == project_path_obj
+            ):
                 # Same project - check if rebuild occurred
                 index_dir = project_path_obj / ".code-indexer" / "index"
                 if index_dir.exists():
@@ -1162,12 +1260,17 @@ class CIDXDaemonService(Service):
                     if collections:
                         collection_path = collections[0]
                         if self.cache_entry.is_stale_after_rebuild(collection_path):
-                            logger.info("Background rebuild detected, invalidating cache")
+                            logger.info(
+                                "Background rebuild detected, invalidating cache"
+                            )
                             self.cache_entry.invalidate()
                             self.cache_entry = None
 
             # Check if we need to load or replace cache
-            if self.cache_entry is None or self.cache_entry.project_path != project_path_obj:
+            if (
+                self.cache_entry is None
+                or self.cache_entry.project_path != project_path_obj
+            ):
                 logger.info(f"Loading cache for {project_path}")
 
                 # Create new cache entry
@@ -1195,10 +1298,12 @@ class CIDXDaemonService(Service):
                 return
 
             # Get list of collections
-            from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
+            from code_indexer.storage.filesystem_vector_store import (
+                FilesystemVectorStore,
+            )
+
             vector_store = FilesystemVectorStore(
-                base_path=index_dir,
-                project_root=entry.project_path
+                base_path=index_dir, project_root=entry.project_path
             )
             collections = vector_store.list_collections()
 
@@ -1217,7 +1322,8 @@ class CIDXDaemonService(Service):
                 return
 
             import json
-            with open(metadata_file, 'r') as f:
+
+            with open(metadata_file, "r") as f:
                 metadata = json.load(f)
 
             vector_dim = metadata.get("vector_size", 1536)
@@ -1234,8 +1340,12 @@ class CIDXDaemonService(Service):
             if hnsw_index and id_index:
                 entry.set_semantic_indexes(hnsw_index, id_index)
                 # AC11: Track loaded index version for rebuild detection
-                entry.hnsw_index_version = entry._read_index_rebuild_uuid(collection_path)
-                logger.info(f"Semantic indexes loaded successfully (collection: {collection_name}, version: {entry.hnsw_index_version})")
+                entry.hnsw_index_version = entry._read_index_rebuild_uuid(
+                    collection_path
+                )
+                logger.info(
+                    f"Semantic indexes loaded successfully (collection: {collection_name}, version: {entry.hnsw_index_version})"
+                )
             else:
                 logger.warning("Failed to load semantic indexes")
 
@@ -1244,6 +1354,7 @@ class CIDXDaemonService(Service):
         except Exception as e:
             logger.error(f"Error loading semantic indexes: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
 
     def _load_fts_indexes(self, entry: CacheEntry) -> None:
@@ -1308,11 +1419,13 @@ class CIDXDaemonService(Service):
             vector_store = backend.get_vector_store_client()
 
             # Get collection name
-            collection_name = vector_store.resolve_collection_name(config, embedding_provider)
+            collection_name = vector_store.resolve_collection_name(
+                config, embedding_provider
+            )
 
             # Extract search parameters
-            filter_conditions = kwargs.get('filter_conditions')
-            score_threshold = kwargs.get('score_threshold')
+            filter_conditions = kwargs.get("filter_conditions")
+            score_threshold = kwargs.get("score_threshold")
 
             # Execute search using FilesystemVectorStore.search() with timing
             # This uses HNSW index for fast approximate nearest neighbor search
@@ -1339,6 +1452,7 @@ class CIDXDaemonService(Service):
         except Exception as e:
             logger.error(f"Semantic search failed: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             return [], {}
 
@@ -1368,15 +1482,17 @@ class CIDXDaemonService(Service):
             tantivy_manager.initialize_index(create_new=False)
 
             # Extract FTS search parameters
-            limit = kwargs.get('limit', 10)
-            edit_distance = kwargs.get('edit_distance', 0)  # 0=exact, >0=fuzzy
-            case_sensitive = kwargs.get('case_sensitive', False)
-            use_regex = kwargs.get('use_regex', False)
-            snippet_lines = kwargs.get('snippet_lines', 5)  # Default 5, 0 for no snippets
-            languages = kwargs.get('languages', [])
-            exclude_languages = kwargs.get('exclude_languages', [])
-            path_filters = kwargs.get('path_filters', [])
-            exclude_paths = kwargs.get('exclude_paths', [])
+            limit = kwargs.get("limit", 10)
+            edit_distance = kwargs.get("edit_distance", 0)  # 0=exact, >0=fuzzy
+            case_sensitive = kwargs.get("case_sensitive", False)
+            use_regex = kwargs.get("use_regex", False)
+            snippet_lines = kwargs.get(
+                "snippet_lines", 5
+            )  # Default 5, 0 for no snippets
+            languages = kwargs.get("languages", [])
+            exclude_languages = kwargs.get("exclude_languages", [])
+            path_filters = kwargs.get("path_filters", [])
+            exclude_paths = kwargs.get("exclude_paths", [])
 
             # Execute FTS search using TantivyIndexManager
             results = tantivy_manager.search(
@@ -1398,5 +1514,6 @@ class CIDXDaemonService(Service):
         except Exception as e:
             logger.error(f"FTS search failed: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             return []

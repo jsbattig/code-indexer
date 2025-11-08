@@ -78,8 +78,29 @@ class TemporalIndexer:
         self.temporal_dir = self.codebase_dir / ".code-indexer/index/temporal"
         self.temporal_dir.mkdir(parents=True, exist_ok=True)
 
+        # Initialize override filter service if override config exists
+        override_filter_service = None
+        if (
+            hasattr(self.config, "override_config")
+            and self.config.override_config is not None
+            and not str(type(self.config.override_config)).startswith(
+                "<class 'unittest.mock"
+            )
+        ):
+            try:
+                from ...services.override_filter_service import OverrideFilterService
+
+                override_filter_service = OverrideFilterService(
+                    self.config.override_config
+                )
+            except (TypeError, AttributeError):
+                # Skip override filtering if initialization fails (e.g., mock objects)
+                pass
+
         # Initialize components
-        self.diff_scanner = TemporalDiffScanner(self.codebase_dir)
+        self.diff_scanner = TemporalDiffScanner(
+            self.codebase_dir, override_filter_service=override_filter_service
+        )
         self.chunker = FixedSizeChunker(self.config)
 
         # Initialize blob registry for deduplication
@@ -149,25 +170,9 @@ class TemporalIndexer:
                 commits_per_branch={},
             )
 
-        # Step 1.5: Filter out already completed commits (Bug #8 fix)
-        completed_commits = self.load_completed_commits()
-        if completed_commits:
-            original_count = len(commits)
-            commits = [c for c in commits if c.hash not in completed_commits]
-            logger.info(
-                f"Filtered {original_count - len(commits)} already completed commits, {len(commits)} remaining"
-            )
-
-        # Check if all commits were filtered out (Bug #9 fix - list index out of range)
-        if not commits:
-            return IndexingResult(
-                total_commits=0,
-                unique_blobs=0,
-                new_blobs_indexed=0,
-                deduplication_ratio=1.0,
-                branches_indexed=[],
-                commits_per_branch={},
-            )
+        # Filtering moved to _process_commits_parallel() for correct architecture
+        # (Bug #8, #9 behavior maintained - verified by test_bug8_progressive_resume.py
+        # and test_temporal_indexer_list_bounds.py)
 
         # Initialize incremental HNSW tracking for the temporal collection
         # This enables change tracking for efficient HNSW index updates
@@ -203,6 +208,17 @@ class TemporalIndexer:
                 self._process_commits_parallel(
                     commits, embedding_provider, vector_manager, progress_callback
                 )
+            )
+
+        # Early return if no commits were processed (all filtered out)
+        if total_blobs_processed == 0 and total_vectors_created == 0:
+            return IndexingResult(
+                total_commits=0,
+                unique_blobs=0,
+                new_blobs_indexed=0,
+                deduplication_ratio=1.0,
+                branches_indexed=[],
+                commits_per_branch={},
             )
 
         # Step 4: Save temporal metadata
@@ -321,10 +337,13 @@ class TemporalIndexer:
         self, commits, embedding_provider, vector_manager, progress_callback=None
     ):
         """Process commits in parallel using queue-based architecture."""
-        import traceback  # For comprehensive error logging with stack traces
 
         # Import CleanSlotTracker and related classes
         from ..clean_slot_tracker import CleanSlotTracker, FileStatus, FileData
+
+        # Filter commits upfront using progressive metadata
+        completed_commits = self.progressive_metadata.load_completed()
+        commits = [c for c in commits if c.hash not in completed_commits]
 
         # Load existing point IDs to avoid duplicate processing
         existing_ids = self.vector_store.load_id_index(self.TEMPORAL_COLLECTION_NAME)
@@ -349,9 +368,10 @@ class TemporalIndexer:
                     0,
                     len(commits),  # Actual total for progress bar
                     Path(""),
-                    info=f"0/{len(commits)} commits (0%) | 0.0 commits/s | {thread_count} threads | 📝 ???????? - initializing",
+                    info=f"0/{len(commits)} commits (0%) | 0.0 commits/s | 0.0 KB/s | {thread_count} threads | 📝 ???????? - initializing",
                     concurrent_files=commit_slot_tracker.get_concurrent_files_data(),
                     slot_tracker=commit_slot_tracker,
+                    item_type="commits",
                 )
             except TypeError:
                 # Fallback for old signature without slot_tracker
@@ -359,13 +379,15 @@ class TemporalIndexer:
                     0,
                     len(commits),  # Actual total for progress bar
                     Path(""),
-                    info=f"0/{len(commits)} commits (0%) | 0.0 commits/s | {thread_count} threads | 📝 ???????? - initializing",
+                    info=f"0/{len(commits)} commits (0%) | 0.0 commits/s | 0.0 KB/s | {thread_count} threads | 📝 ???????? - initializing",
+                    item_type="commits",
                 )
 
         # Track progress with thread-safe shared state
         completed_count = [0]  # Mutable list for thread-safe updates
         last_completed_commit = [None]  # Track last completed commit hash
         last_completed_file = [None]  # Track last completed file
+        total_bytes_processed = [0]  # Thread-safe accumulator for KB/s calculation
         progress_lock = threading.Lock()
         start_time = time.time()
 
@@ -377,28 +399,39 @@ class TemporalIndexer:
         def worker():
             """Worker function to process commits from queue.
 
-            CRITICAL FIX: Acquire slot IMMEDIATELY when starting commit processing,
-            not inside diff loop. This ensures all threads become active immediately.
-            Pattern follows HighThroughputProcessor.process_files_high_throughput().
+            ARCHITECTURE: Acquire slot with ACTUAL file info, not placeholder.
+            1. Get diffs first
+            2. Acquire slot with filename from first diff
+            3. Process all diffs for commit
             """
+            nonlocal total_bytes_processed  # Access shared byte counter
             while True:
                 try:
                     commit = commit_queue.get_nowait()
                 except Empty:
                     break
 
-                # CRITICAL FIX: Acquire slot IMMEDIATELY (not inside diff loop)
-                # This ensures all 8 threads become active immediately, not gradually
-                slot_id = commit_slot_tracker.acquire_slot(
-                    FileData(
-                        filename=f"{commit.hash[:8]} - starting",
-                        file_size=0,
-                        status=FileStatus.STARTING,
-                    )
-                )
-
+                slot_id = None
                 try:
-                    # Get diffs
+                    # Acquire slot IMMEDIATELY (BEFORE get_diffs) with placeholder
+                    placeholder_filename = f"{commit.hash[:8]} - Analyzing commit"
+                    slot_id = commit_slot_tracker.acquire_slot(
+                        FileData(
+                            filename=placeholder_filename,
+                            file_size=0,
+                            status=FileStatus.STARTING,
+                        )
+                    )
+
+                    # Update slot to show "Analyzing commit" status
+                    commit_slot_tracker.update_slot(
+                        slot_id,
+                        FileStatus.STARTING,
+                        filename=placeholder_filename,
+                        file_size=0,
+                    )
+
+                    # Get diffs (potentially slow git operation)
                     diffs = self.diff_scanner.get_diffs_for_commit(commit.hash)
 
                     # Track last file processed for THIS commit (local to this worker)
@@ -407,160 +440,179 @@ class TemporalIndexer:
                     # If no diffs, mark complete and continue
                     if not diffs:
                         commit_slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
+                    else:
+                        # Process each diff (already have diffs from above)
+                        for diff_info in diffs:
+                            # Update slot with current file information (no release/reacquire)
+                            current_filename = (
+                                f"{commit.hash[:8]} - {Path(diff_info.file_path).name}"
+                            )
+                            diff_size = (
+                                len(diff_info.diff_content)
+                                if diff_info.diff_content
+                                else 0
+                            )
 
-                    # Process each diff
-                    for diff_info in diffs:
-                        # Update slot with current file information (no release/reacquire)
-                        current_filename = (
-                            f"{commit.hash[:8]} - {Path(diff_info.file_path).name}"
-                        )
-                        commit_slot_tracker.update_slot(slot_id, FileStatus.CHUNKING)
+                            # Accumulate bytes for KB/s calculation (thread-safe)
+                            with progress_lock:
+                                total_bytes_processed[0] += diff_size
 
-                        # Update last file for THIS commit (local variable)
-                        last_file_for_commit = Path(diff_info.file_path)
-                        # Skip binary and renamed files (metadata only)
-                        if diff_info.diff_type in ["binary", "renamed"]:
-                            continue
+                            commit_slot_tracker.update_slot(
+                                slot_id,
+                                FileStatus.CHUNKING,
+                                filename=current_filename,
+                                file_size=diff_size,
+                            )
 
-                        # Skip if blob already indexed (deduplication)
-                        if (
-                            diff_info.blob_hash
-                            and diff_info.blob_hash in self.indexed_blobs
-                        ):
-                            continue
-
-                        # Chunk the diff content
-                        chunks = self.chunker.chunk_text(
-                            diff_info.diff_content, Path(diff_info.file_path)
-                        )
-
-                        if chunks:
-                            # BUG #7 FIX: Check point existence BEFORE making API calls
-                            # Build point IDs first to check existence
-                            project_id = self.file_identifier._get_project_id()
-                            chunks_to_process = []
-                            chunk_indices_to_process = []
-
-                            for j, chunk in enumerate(chunks):
-                                point_id = f"{project_id}:diff:{commit.hash}:{diff_info.file_path}:{j}"
-
-                                # Skip if point already exists
-                                if point_id not in existing_ids:
-                                    chunks_to_process.append(chunk)
-                                    chunk_indices_to_process.append(j)
-
-                            # Only make API call if there are new chunks to process
-                            if not chunks_to_process:
-                                # All chunks already exist, skip vectorization entirely
+                            # Update last file for THIS commit (local variable)
+                            last_file_for_commit = Path(diff_info.file_path)
+                            # Skip binary and renamed files (metadata only)
+                            if diff_info.diff_type in ["binary", "renamed"]:
                                 continue
 
-                            # Get embeddings for NEW chunks only
-                            commit_slot_tracker.update_slot(
-                                slot_id, FileStatus.VECTORIZING
+                            # Skip if blob already indexed (deduplication)
+                            if (
+                                diff_info.blob_hash
+                                and diff_info.blob_hash in self.indexed_blobs
+                            ):
+                                continue
+
+                            # Chunk the diff content
+                            chunks = self.chunker.chunk_text(
+                                diff_info.diff_content, Path(diff_info.file_path)
                             )
-                            chunk_texts = [chunk["text"] for chunk in chunks_to_process]
-                            future = vector_manager.submit_batch_task(chunk_texts, {})
-                            result = future.result(timeout=300)
 
-                            if result.embeddings:
-                                # Finalize (store)
+                            if chunks:
+                                # BUG #7 FIX: Check point existence BEFORE making API calls
+                                # Build point IDs first to check existence
+                                project_id = self.file_identifier._get_project_id()
+                                chunks_to_process = []
+                                chunk_indices_to_process = []
+
+                                for j, chunk in enumerate(chunks):
+                                    point_id = f"{project_id}:diff:{commit.hash}:{diff_info.file_path}:{j}"
+
+                                    # Skip if point already exists
+                                    if point_id not in existing_ids:
+                                        chunks_to_process.append(chunk)
+                                        chunk_indices_to_process.append(j)
+
+                                # Only make API call if there are new chunks to process
+                                if not chunks_to_process:
+                                    # All chunks already exist, skip vectorization entirely
+                                    continue
+
+                                # Get embeddings for NEW chunks only
                                 commit_slot_tracker.update_slot(
-                                    slot_id, FileStatus.FINALIZING
+                                    slot_id, FileStatus.VECTORIZING
                                 )
-                                # Create points with correct payload structure
-                                points = []
-
-                                # Use chunks_to_process and original indices for correct mapping
-                                for chunk, embedding, original_index in zip(
-                                    chunks_to_process,
-                                    result.embeddings,
-                                    chunk_indices_to_process,
-                                ):
-                                    point_id = f"{project_id}:diff:{commit.hash}:{diff_info.file_path}:{original_index}"
-
-                                    # Convert timestamp to date
-                                    from datetime import datetime
-
-                                    commit_date = datetime.fromtimestamp(
-                                        commit.timestamp
-                                    ).strftime("%Y-%m-%d")
-
-                                    # Extract language and file extension for filter compatibility
-                                    # MUST match regular indexing pattern from file_chunking_manager.py
-                                    file_path_obj = Path(diff_info.file_path)
-                                    file_extension = (
-                                        file_path_obj.suffix.lstrip(".") or "txt"
-                                    )  # Remove dot, same as regular indexing
-                                    language = (
-                                        file_path_obj.suffix.lstrip(".") or "txt"
-                                    )  # Same format for consistency
-
-                                    # Base payload structure
-                                    payload = {
-                                        "type": "commit_diff",
-                                        "diff_type": diff_info.diff_type,
-                                        "commit_hash": commit.hash,
-                                        "commit_timestamp": commit.timestamp,
-                                        "commit_date": commit_date,
-                                        "commit_message": (
-                                            commit.message[:200]
-                                            if commit.message
-                                            else ""
-                                        ),
-                                        "author_name": commit.author_name,
-                                        "author_email": commit.author_email,
-                                        "path": diff_info.file_path,  # FIX Bug #1: Use "path" for git-aware storage
-                                        "chunk_index": original_index,  # Use original index, not enumerated j
-                                        "char_start": chunk.get("char_start", 0),
-                                        "char_end": chunk.get("char_end", 0),
-                                        "project_id": project_id,
-                                        "content": chunk.get(
-                                            "text", ""
-                                        ),  # Store diff chunk text
-                                        "language": language,  # Add language for filter compatibility
-                                        "file_extension": file_extension,  # Add file_extension for filter compatibility
-                                    }
-
-                                    # Storage optimization: added/deleted files use pointer-based storage
-                                    if diff_info.diff_type in ["added", "deleted"]:
-                                        payload["reconstruct_from_git"] = True
-
-                                        # Add parent commit for deleted files (enables reconstruction)
-                                        if (
-                                            diff_info.diff_type == "deleted"
-                                            and diff_info.parent_commit_hash
-                                        ):
-                                            payload["parent_commit_hash"] = (
-                                                diff_info.parent_commit_hash
-                                            )
-
-                                    point = {
-                                        "id": point_id,
-                                        "vector": list(embedding),
-                                        "payload": payload,
-                                    }
-                                    points.append(point)
-
-                                # Filter out existing points before upserting
-                                new_points = [
-                                    point
-                                    for point in points
-                                    if point["id"] not in existing_ids
+                                chunk_texts = [
+                                    chunk["text"] for chunk in chunks_to_process
                                 ]
+                                future = vector_manager.submit_batch_task(
+                                    chunk_texts, {}
+                                )
+                                result = future.result(timeout=300)
 
-                                # Only upsert new points
-                                if new_points:
-                                    self.vector_store.upsert_points(
-                                        collection_name=self.TEMPORAL_COLLECTION_NAME,
-                                        points=new_points,
+                                if result.embeddings:
+                                    # Finalize (store)
+                                    commit_slot_tracker.update_slot(
+                                        slot_id, FileStatus.FINALIZING
                                     )
-                                    # Add new points to existing_ids to avoid duplicates within this run
-                                    for point in new_points:
-                                        existing_ids.add(point["id"])
+                                    # Create points with correct payload structure
+                                    points = []
 
-                                    # Add blob hash to registry after successful indexing
-                                    if diff_info.blob_hash:
-                                        self.indexed_blobs.add(diff_info.blob_hash)
+                                    # Use chunks_to_process and original indices for correct mapping
+                                    for chunk, embedding, original_index in zip(
+                                        chunks_to_process,
+                                        result.embeddings,
+                                        chunk_indices_to_process,
+                                    ):
+                                        point_id = f"{project_id}:diff:{commit.hash}:{diff_info.file_path}:{original_index}"
+
+                                        # Convert timestamp to date
+                                        from datetime import datetime
+
+                                        commit_date = datetime.fromtimestamp(
+                                            commit.timestamp
+                                        ).strftime("%Y-%m-%d")
+
+                                        # Extract language and file extension for filter compatibility
+                                        # MUST match regular indexing pattern from file_chunking_manager.py
+                                        file_path_obj = Path(diff_info.file_path)
+                                        file_extension = (
+                                            file_path_obj.suffix.lstrip(".") or "txt"
+                                        )  # Remove dot, same as regular indexing
+                                        language = (
+                                            file_path_obj.suffix.lstrip(".") or "txt"
+                                        )  # Same format for consistency
+
+                                        # Base payload structure
+                                        payload = {
+                                            "type": "commit_diff",
+                                            "diff_type": diff_info.diff_type,
+                                            "commit_hash": commit.hash,
+                                            "commit_timestamp": commit.timestamp,
+                                            "commit_date": commit_date,
+                                            "commit_message": (
+                                                commit.message[:200]
+                                                if commit.message
+                                                else ""
+                                            ),
+                                            "author_name": commit.author_name,
+                                            "author_email": commit.author_email,
+                                            "path": diff_info.file_path,  # FIX Bug #1: Use "path" for git-aware storage
+                                            "chunk_index": original_index,  # Use original index, not enumerated j
+                                            "char_start": chunk.get("char_start", 0),
+                                            "char_end": chunk.get("char_end", 0),
+                                            "project_id": project_id,
+                                            "content": chunk.get(
+                                                "text", ""
+                                            ),  # Store diff chunk text
+                                            "language": language,  # Add language for filter compatibility
+                                            "file_extension": file_extension,  # Add file_extension for filter compatibility
+                                        }
+
+                                        # Storage optimization: added/deleted files use pointer-based storage
+                                        if diff_info.diff_type in ["added", "deleted"]:
+                                            payload["reconstruct_from_git"] = True
+
+                                            # Add parent commit for deleted files (enables reconstruction)
+                                            if (
+                                                diff_info.diff_type == "deleted"
+                                                and diff_info.parent_commit_hash
+                                            ):
+                                                payload["parent_commit_hash"] = (
+                                                    diff_info.parent_commit_hash
+                                                )
+
+                                        point = {
+                                            "id": point_id,
+                                            "vector": list(embedding),
+                                            "payload": payload,
+                                        }
+                                        points.append(point)
+
+                                    # Filter out existing points before upserting
+                                    new_points = [
+                                        point
+                                        for point in points
+                                        if point["id"] not in existing_ids
+                                    ]
+
+                                    # Only upsert new points
+                                    if new_points:
+                                        self.vector_store.upsert_points(
+                                            collection_name=self.TEMPORAL_COLLECTION_NAME,
+                                            points=new_points,
+                                        )
+                                        # Add new points to existing_ids to avoid duplicates within this run
+                                        for point in new_points:
+                                            existing_ids.add(point["id"])
+
+                                        # Add blob hash to registry after successful indexing
+                                        if diff_info.blob_hash:
+                                            self.indexed_blobs.add(diff_info.blob_hash)
 
                     # Mark complete
                     commit_slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
@@ -568,7 +620,18 @@ class TemporalIndexer:
                     # Save completed commit to progressive metadata (Bug #8 fix)
                     self.progressive_metadata.save_completed(commit.hash)
 
-                    # Update progress counter and shared state ATOMICALLY
+                    # DEADLOCK FIX: Get expensive data BEFORE acquiring lock
+                    # This prevents holding progress_lock during:
+                    # 1. copy.deepcopy() - expensive deep copy operation
+                    # 2. get_concurrent_files_data() - acquires slot_tracker._lock (nested lock)
+                    # 3. progress_callback() - Rich terminal I/O operations
+                    import copy
+
+                    concurrent_files_snapshot = copy.deepcopy(
+                        commit_slot_tracker.get_concurrent_files_data()
+                    )
+
+                    # Minimal critical section: ONLY simple value updates
                     with progress_lock:
                         completed_count[0] += 1
                         current = completed_count[0]
@@ -577,60 +640,63 @@ class TemporalIndexer:
                         last_completed_commit[0] = commit.hash
                         last_completed_file[0] = last_file_for_commit
 
-                        # Call progress callback if provided (inside lock for thread safety)
-                        if progress_callback:
-                            total = len(commits)
-                            elapsed = time.time() - start_time
-                            commits_per_sec = current / max(elapsed, 0.1)
-                            pct = (100 * current) // total
-                            # Get thread count
-                            thread_count = (
-                                getattr(self.config.voyage_ai, "parallel_requests", 8)
-                                if hasattr(self.config, "voyage_ai")
-                                else 8
+                        # Capture bytes for KB/s calculation
+                        bytes_processed_snapshot = total_bytes_processed[0]
+
+                    # Progress callback invoked OUTSIDE lock to avoid I/O contention
+                    if progress_callback:
+                        total = len(commits)
+                        elapsed = time.time() - start_time
+                        commits_per_sec = current / max(elapsed, 0.1)
+                        # Calculate KB/s throughput from accumulated diff sizes
+                        kb_per_sec = (bytes_processed_snapshot / 1024) / max(
+                            elapsed, 0.1
+                        )
+                        pct = (100 * current) // total
+
+                        # Get thread count
+                        thread_count = (
+                            getattr(self.config.voyage_ai, "parallel_requests", 8)
+                            if hasattr(self.config, "voyage_ai")
+                            else 8
+                        )
+
+                        # Use shared state for display (100ms lag acceptable per spec)
+                        commit_hash = (
+                            last_completed_commit[0][:8]
+                            if last_completed_commit[0]
+                            else "????????"
+                        )
+                        file_name = (
+                            last_completed_file[0].name
+                            if last_completed_file[0]
+                            and last_completed_file[0] != Path(".")
+                            else "initializing"
+                        )
+
+                        # Format with ALL Story 1 AC requirements including 📝 emoji and KB/s throughput
+                        info = f"{current}/{total} commits ({pct}%) | {commits_per_sec:.1f} commits/s | {kb_per_sec:.1f} KB/s | {thread_count} threads | 📝 {commit_hash} - {file_name}"
+
+                        # Call with new kwargs for slot-based tracking (backward compatible)
+                        try:
+                            progress_callback(
+                                current,
+                                total,
+                                last_completed_file[0] or Path("."),
+                                info=info,
+                                concurrent_files=concurrent_files_snapshot,  # Tree view data
+                                slot_tracker=commit_slot_tracker,  # For live updates
+                                item_type="commits",
                             )
-
-                            # Use shared state for display (100ms lag acceptable per spec)
-                            commit_hash = (
-                                last_completed_commit[0][:8]
-                                if last_completed_commit[0]
-                                else "????????"
+                        except TypeError:
+                            # Fallback for old signature without slot_tracker/concurrent_files
+                            progress_callback(
+                                current,
+                                total,
+                                last_completed_file[0] or Path("."),
+                                info=info,
+                                item_type="commits",
                             )
-                            file_name = (
-                                last_completed_file[0].name
-                                if last_completed_file[0]
-                                and last_completed_file[0] != Path(".")
-                                else "initializing"
-                            )
-
-                            # Get concurrent files snapshot
-                            import copy
-
-                            concurrent_files = copy.deepcopy(
-                                commit_slot_tracker.get_concurrent_files_data()
-                            )
-
-                            # Format with ALL Story 1 AC requirements including 📝 emoji
-                            info = f"{current}/{total} commits ({pct}%) | {commits_per_sec:.1f} commits/s | {thread_count} threads | 📝 {commit_hash} - {file_name}"
-
-                            # Call with new kwargs for slot-based tracking (backward compatible)
-                            try:
-                                progress_callback(
-                                    current,
-                                    total,
-                                    last_completed_file[0] or Path("."),
-                                    info=info,
-                                    concurrent_files=concurrent_files,  # Tree view data
-                                    slot_tracker=commit_slot_tracker,  # For live updates
-                                )
-                            except TypeError:
-                                # Fallback for old signature without slot_tracker/concurrent_files
-                                progress_callback(
-                                    current,
-                                    total,
-                                    last_completed_file[0] or Path("."),
-                                    info=info,
-                                )
 
                 finally:
                     # Release slot

@@ -28,6 +28,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
         self.vector_store = Mock()
         self.vector_store.project_root = Path(self.temp_dir)
         self.vector_store.collection_exists.return_value = True
+        self.vector_store.load_id_index.return_value = set()  # Return empty set for len() call
 
         # Mock EmbeddingProviderFactory to avoid real provider creation
         with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info') as mock_get_info:
@@ -218,7 +219,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
         self.assertIn("commit_date", payload)  # Human-readable date
         self.assertIn("commit_message", payload)
         self.assertEqual(payload["author_name"], "Test Author")
-        self.assertEqual(payload["file_path"], "test.py")
+        self.assertEqual(payload["path"], "test.py")  # Changed from file_path to path (Story 2)
         self.assertNotIn("blob_hash", payload)  # Should NOT have blob_hash
 
     def test_parallel_processing_with_progress_callback(self):
@@ -262,7 +263,8 @@ class TestTemporalIndexerParallel(unittest.TestCase):
 
         # Track progress callbacks
         progress_calls = []
-        def progress_callback(current, total, file_path, info=""):
+        def progress_callback(current, total, file_path, info="", **kwargs):
+            """Accept new kwargs for slot-based tracking (concurrent_files, slot_tracker, item_type)."""
             progress_calls.append({
                 "current": current,
                 "total": total,

@@ -8,13 +8,14 @@ This module provides the fast path for daemon-mode queries:
 
 Target: <150ms total startup for daemon-mode queries
 """
+
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 # ONLY import what's absolutely needed for daemon delegation
 # Import timeout-aware connection function from delegation module
 # (rpyc unix_connect imported inside _connect_to_daemon as needed)
-from rich.console import Console              # ~40ms
+from rich.console import Console  # ~40ms
 
 
 def get_socket_path(config_path: Path) -> Path:
@@ -44,60 +45,62 @@ def parse_query_args(args: List[str]) -> Dict[str, Any]:
         - filters: Language/path filters
     """
     result: Dict[str, Any] = {
-        'query_text': '',
-        'is_fts': False,
-        'is_semantic': False,
-        'limit': 10,
-        'quiet': False,
-        'filters': {}
+        "query_text": "",
+        "is_fts": False,
+        "is_semantic": False,
+        "limit": 10,
+        "quiet": False,
+        "filters": {},
     }
 
     i = 0
     while i < len(args):
         arg = args[i]
 
-        if arg.startswith('--'):
+        if arg.startswith("--"):
             # Flag arguments
-            if arg == '--fts':
-                result['is_fts'] = True
-            elif arg == '--semantic':
-                result['is_semantic'] = True
-            elif arg == '--quiet':
-                result['quiet'] = True
-            elif arg == '--limit' and i + 1 < len(args):
-                result['limit'] = int(args[i + 1])
+            if arg == "--fts":
+                result["is_fts"] = True
+            elif arg == "--semantic":
+                result["is_semantic"] = True
+            elif arg == "--quiet":
+                result["quiet"] = True
+            elif arg == "--limit" and i + 1 < len(args):
+                result["limit"] = int(args[i + 1])
                 i += 1
-            elif arg == '--language' and i + 1 < len(args):
-                result['filters']['language'] = args[i + 1]
+            elif arg == "--language" and i + 1 < len(args):
+                result["filters"]["language"] = args[i + 1]
                 i += 1
-            elif arg == '--path-filter' and i + 1 < len(args):
-                result['filters']['path_filter'] = args[i + 1]
+            elif arg == "--path-filter" and i + 1 < len(args):
+                result["filters"]["path_filter"] = args[i + 1]
                 i += 1
-            elif arg == '--exclude-language' and i + 1 < len(args):
-                result['filters']['exclude_language'] = args[i + 1]
+            elif arg == "--exclude-language" and i + 1 < len(args):
+                result["filters"]["exclude_language"] = args[i + 1]
                 i += 1
-            elif arg == '--exclude-path' and i + 1 < len(args):
-                result['filters']['exclude_path'] = args[i + 1]
+            elif arg == "--exclude-path" and i + 1 < len(args):
+                result["filters"]["exclude_path"] = args[i + 1]
                 i += 1
-            elif arg == '--snippet-lines' and i + 1 < len(args):
-                result['filters']['snippet_lines'] = int(args[i + 1])
+            elif arg == "--snippet-lines" and i + 1 < len(args):
+                result["filters"]["snippet_lines"] = int(args[i + 1])
                 i += 1
             # Skip other flags for now
         else:
             # Query text (first non-flag argument)
-            if not result['query_text']:
-                result['query_text'] = arg
+            if not result["query_text"]:
+                result["query_text"] = arg
 
         i += 1
 
     # Default: if no mode specified, use semantic
-    if not result['is_fts'] and not result['is_semantic']:
-        result['is_semantic'] = True
+    if not result["is_fts"] and not result["is_semantic"]:
+        result["is_semantic"] = True
 
     return result
 
 
-def _display_results(results: Any, console: Console, timing_info: Optional[Dict[str, Any]] = None) -> None:
+def _display_results(
+    results: Any, console: Console, timing_info: Optional[Dict[str, Any]] = None
+) -> None:
     """Display query results by delegating to shared display functions (DRY principle).
 
     CRITICAL: This function calls the EXISTING display code from cli.py instead of
@@ -185,14 +188,14 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
             # Parse query arguments
             parsed = parse_query_args(args)
 
-            query_text = parsed['query_text']
-            is_fts = parsed['is_fts']
-            is_semantic = parsed['is_semantic']
-            limit = parsed['limit']
-            filters = parsed['filters']
+            query_text = parsed["query_text"]
+            is_fts = parsed["is_fts"]
+            is_semantic = parsed["is_semantic"]
+            limit = parsed["limit"]
+            filters = parsed["filters"]
 
             # Check if --quiet flag is present
-            is_quiet = parsed.get('quiet', False)
+            is_quiet = parsed.get("quiet", False)
 
             # Display daemon mode indicator (unless --quiet flag is set)
             if not is_quiet:
@@ -205,6 +208,7 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
             # Get current branch for context
             try:
                 import subprocess
+
                 git_result = subprocess.run(
                     ["git", "symbolic-ref", "--short", "HEAD"],
                     cwd=project_root,
@@ -219,17 +223,14 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
                 pass
 
             console.print(f"🔍 Searching for: '{query_text}'", style="dim")
-            if filters.get('language'):
+            if filters.get("language"):
                 console.print(f"🏷️  Language filter: {filters['language']}", style="dim")
-            if filters.get('path_filter'):
+            if filters.get("path_filter"):
                 console.print(f"📁 Path filter: {filters['path_filter']}", style="dim")
             console.print(f"📊 Limit: {limit}", style="dim")
 
             # Build options dict for daemon
-            options = {
-                'limit': limit,
-                **filters
-            }
+            options = {"limit": limit, **filters}
 
             # Execute query via daemon RPC
             if is_fts and is_semantic:
@@ -238,7 +239,11 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
                     str(Path.cwd()), query_text, **options
                 )
                 # Extract results from response dict
-                result = response.get("results", []) if isinstance(response, dict) else response
+                result = (
+                    response.get("results", [])
+                    if isinstance(response, dict)
+                    else response
+                )
                 timing_info = None
             elif is_fts:
                 # FTS only
@@ -246,7 +251,11 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
                     str(Path.cwd()), query_text, **options
                 )
                 # Extract results from response dict
-                result = response.get("results", []) if isinstance(response, dict) else response
+                result = (
+                    response.get("results", [])
+                    if isinstance(response, dict)
+                    else response
+                )
                 timing_info = None
             else:
                 # Semantic only
@@ -263,11 +272,13 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
         elif command == "start":
             # Start daemon (should already be handled by cli_daemon_lifecycle)
             from . import cli_daemon_lifecycle
+
             return cli_daemon_lifecycle.start_daemon_command()
 
         elif command == "stop":
             # Stop daemon
             from . import cli_daemon_lifecycle
+
             return cli_daemon_lifecycle.stop_daemon_command()
 
         elif command == "index":
@@ -301,7 +312,10 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
                 config_manager = ConfigManager.create_with_backtrack(Path.cwd())
                 daemon_config = config_manager.get_daemon_config()
             except Exception:
-                daemon_config = {"enabled": True, "retry_delays_ms": [100, 500, 1000, 2000]}
+                daemon_config = {
+                    "enabled": True,
+                    "retry_delays_ms": [100, 500, 1000, 2000],
+                }
 
             # Close the connection before calling delegation (it will create its own)
             conn.close()
@@ -352,7 +366,10 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
                 config_manager = ConfigManager.create_with_backtrack(Path.cwd())
                 daemon_config = config_manager.get_daemon_config()
             except Exception:
-                daemon_config = {"enabled": True, "retry_delays_ms": [100, 500, 1000, 2000]}
+                daemon_config = {
+                    "enabled": True,
+                    "retry_delays_ms": [100, 500, 1000, 2000],
+                }
 
             # Close the connection before calling delegation (it will create its own)
             conn.close()
@@ -370,7 +387,9 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
             # Status command needs full CLI (Rich table formatting)
             # Don't delegate via fast path - use full CLI for better UX
             conn.close()
-            raise NotImplementedError(f"Command '{command}' needs full CLI for rich output")
+            raise NotImplementedError(
+                f"Command '{command}' needs full CLI for rich output"
+            )
 
         else:
             # Unsupported command in fast path

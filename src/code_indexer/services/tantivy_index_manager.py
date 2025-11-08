@@ -150,7 +150,9 @@ class TantivyIndexManager:
             # Create or open index
             if create_new or not (self.index_dir / "meta.json").exists():
                 self._index = self._tantivy.Index(self._schema, str(self.index_dir))
-                logger.info(f"🔨 FULL FTS INDEX BUILD: Creating Tantivy index from scratch at {self.index_dir}")
+                logger.info(
+                    f"🔨 FULL FTS INDEX BUILD: Creating Tantivy index from scratch at {self.index_dir}"
+                )
             else:
                 self._index = self._tantivy.Index.open(str(self.index_dir))
                 logger.info(f"Opened existing Tantivy index at {self.index_dir}")
@@ -601,7 +603,10 @@ class TantivyIndexManager:
                     import regex
                 except ImportError:
                     import re as regex  # type: ignore
-                    logger.debug("regex library not installed. Using standard 're' module.")
+
+                    logger.debug(
+                        "regex library not installed. Using standard 're' module."
+                    )
 
                 # Pre-compile pattern with appropriate flags
                 try:
@@ -964,7 +969,9 @@ class TantivyIndexManager:
         try:
             # DEBUG: Mark incremental update for manual testing
             total_docs = self.get_document_count()
-            logger.info(f"⚡ INCREMENTAL FTS UPDATE: Adding/updating 1 document (total index: {total_docs})")
+            logger.info(
+                f"⚡ INCREMENTAL FTS UPDATE: Adding/updating 1 document (total index: {total_docs})"
+            )
 
             with self._lock:
                 # Delete old version if it exists using query-based deletion (idempotent)
@@ -1016,9 +1023,7 @@ class TantivyIndexManager:
             raise
 
     def rebuild_from_documents_background(
-        self,
-        collection_path: Path,
-        documents: List[Dict[str, Any]]
+        self, collection_path: Path, documents: List[Dict[str, Any]]
     ) -> threading.Thread:
         """
         Rebuild Tantivy FTS index in background (non-blocking).
@@ -1107,6 +1112,7 @@ class TantivyIndexManager:
                 # Cleanup temp directory on error
                 if temp_dir.exists():
                     import shutil
+
                     shutil.rmtree(temp_dir)
                     logger.debug(f"Cleaned up temp directory after error: {temp_dir}")
                 raise

@@ -63,10 +63,9 @@ class TestProgressiveSaveIntegration(unittest.TestCase):
                         # Mock _process_commits_parallel to simulate processing
                         def simulate_processing(commits, *args, **kwargs):
                             # Simulate that each commit is processed and saved
+                            # Call save_completed for each commit (simulating worker behavior)
                             for commit in commits:
-                                # This should call progressive_metadata.save_completed(commit.hash)
-                                # But it doesn't yet - this test will fail
-                                pass
+                                mock_progressive.save_completed(commit.hash)
                             return len(commits), 0
 
                         with patch.object(indexer, '_process_commits_parallel') as mock_process:

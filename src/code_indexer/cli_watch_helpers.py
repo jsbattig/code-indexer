@@ -10,7 +10,7 @@ Story: 02_Feat_WatchModeAutoDetection/01_Story_WatchModeAutoUpdatesAllIndexes.md
 import logging
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 from rich.console import Console
 
 logger = logging.getLogger(__name__)

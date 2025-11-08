@@ -1266,7 +1266,6 @@ def _query_temporal_via_daemon(
             conn = _connect_to_daemon(socket_path, daemon_config)
 
             # Execute temporal query via daemon
-            start_time = time.perf_counter()
             result = conn.root.exposed_query_temporal(
                 project_path=str(project_root),
                 query=query_text,
@@ -1281,7 +1280,6 @@ def _query_temporal_via_daemon(
                 min_score=min_score or 0.0,
                 accuracy=accuracy,
             )
-            query_time = time.perf_counter() - start_time
 
             # Check for errors
             if "error" in result:

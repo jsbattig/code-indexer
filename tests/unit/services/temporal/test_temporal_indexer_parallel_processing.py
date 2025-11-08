@@ -30,6 +30,7 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
+        vector_store.load_id_index.return_value = set()  # Return empty set for len() call
 
         with patch("src.code_indexer.services.file_identifier.FileIdentifier"), \
              patch("src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner"), \
@@ -73,6 +74,7 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
+        vector_store.load_id_index.return_value = set()  # Return empty set for len() call
 
         with patch("src.code_indexer.services.file_identifier.FileIdentifier"), \
              patch("src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner"), \
@@ -139,6 +141,7 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
+        vector_store.load_id_index.return_value = set()  # Return empty set for len() call
 
         with patch("src.code_indexer.services.file_identifier.FileIdentifier"), \
              patch("src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner") as mock_diff_scanner, \
@@ -199,6 +202,7 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
+        vector_store.load_id_index.return_value = set()  # Return empty set for len() call
 
         with patch("src.code_indexer.services.file_identifier.FileIdentifier"), \
              patch("src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner") as mock_diff_scanner_class, \

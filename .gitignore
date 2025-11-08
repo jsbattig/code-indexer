@@ -182,3 +182,8 @@ voyage-code-3/
 # FilesystemVectorStore collection
 voyage-code-3/
 .claude/tdd-guard/data/instructions.md
+
+# FilesystemVectorStore collection
+code-indexer-temporal/
+.test-telemetry/
+/reports/reviews

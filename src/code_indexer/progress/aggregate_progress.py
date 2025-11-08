@@ -43,6 +43,7 @@ class ProgressState:
     files_per_second: float
     kb_per_second: float
     active_threads: int
+    item_type: str = "files"  # Type of items being processed ("files" or "commits")
 
 
 class ProgressMetricsCalculator:
@@ -207,6 +208,7 @@ class AggregateProgressDisplay:
         files_per_second: float,
         kb_per_second: float,
         active_threads: int,
+        item_type: str = "files",
     ) -> None:
         """Update progress with complete state information.
 
@@ -218,6 +220,7 @@ class AggregateProgressDisplay:
             files_per_second: Processing rate in files/s
             kb_per_second: Processing throughput in KB/s
             active_threads: Number of active processing threads
+            item_type: Type of items being processed ("files" or "commits"), default "files"
         """
         self.current_state = ProgressState(
             current=current,
@@ -227,19 +230,20 @@ class AggregateProgressDisplay:
             files_per_second=files_per_second,
             kb_per_second=kb_per_second,
             active_threads=active_threads,
+            item_type=item_type,
         )
 
         # Initialize task if needed
         if self.task_id is None:
             self.task_id = self.progress_bar.add_task(
-                "Processing files...",
+                f"Processing {item_type}...",
                 total=total,
-                file_count=f"{current}/{total} files",
+                file_count=f"{current}/{total} {item_type}",
             )
 
         # Update progress bar with current state
         self.progress_bar.update(
-            self.task_id, completed=current, file_count=f"{current}/{total} files"
+            self.task_id, completed=current, file_count=f"{current}/{total} {item_type}"
         )
 
     def update_metrics(
@@ -334,7 +338,7 @@ class AggregateProgressDisplay:
         empty = bar_width - filled
         progress_visual = "━" * filled + "━" * empty  # Unicode progress bar
 
-        return f"Indexing {progress_visual} {percentage:>2}% • {elapsed_str} • {remaining_str} • {state.current}/{state.total} files"
+        return f"Indexing {progress_visual} {percentage:>2}% • {elapsed_str} • {remaining_str} • {state.current}/{state.total} {state.item_type}"
 
     def get_metrics_line(self) -> str:
         """Get the second line showing performance metrics.
@@ -346,7 +350,7 @@ class AggregateProgressDisplay:
             return "0.0 files/s | 0.0 KB/s | 0 threads"
 
         state = self.current_state
-        return f"{state.files_per_second:.1f} files/s | {state.kb_per_second:.1f} KB/s | {state.active_threads} threads"
+        return f"{state.files_per_second:.1f} {state.item_type}/s | {state.kb_per_second:.1f} KB/s | {state.active_threads} threads"
 
     def get_full_display(self) -> str:
         """Get the complete two-line display.

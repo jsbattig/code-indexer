@@ -429,7 +429,9 @@ class FileChunkingManager:
 
                 # PROGRESS REPORTING ADJUSTMENT: Empty file completion callback
                 if progress_callback:
-                    concurrent_files = slot_tracker.get_concurrent_files_data() if slot_tracker else []
+                    concurrent_files = (
+                        slot_tracker.get_concurrent_files_data() if slot_tracker else []
+                    )
                     progress_callback(
                         -1,  # Signal: display update only, no progress bar change
                         -1,  # Signal: display update only
@@ -706,7 +708,9 @@ class FileChunkingManager:
             # This is the ONLY progress callback - when file truly completes
             # HighThroughputProcessor will handle file count updates and metrics
             if progress_callback:
-                concurrent_files = slot_tracker.get_concurrent_files_data() if slot_tracker else []
+                concurrent_files = (
+                    slot_tracker.get_concurrent_files_data() if slot_tracker else []
+                )
                 progress_callback(
                     -1,  # Signal: display update only, no progress bar change
                     -1,  # Signal: display update only
@@ -732,7 +736,9 @@ class FileChunkingManager:
 
             # PROGRESS REPORTING ADJUSTMENT: Error file completion callback
             if progress_callback:
-                concurrent_files = slot_tracker.get_concurrent_files_data() if slot_tracker else []
+                concurrent_files = (
+                    slot_tracker.get_concurrent_files_data() if slot_tracker else []
+                )
                 progress_callback(
                     -1,  # Signal: display update only, no progress bar change
                     -1,  # Signal: display update only

@@ -55,46 +55,49 @@ class TestBug8ProgressiveResume(unittest.TestCase):
             # This would be loaded from temporal_progress.json
             already_completed = {"commit1", "commit2"}
 
-            # Mock the method that should exist for loading completed commits
-            # This method DOES NOT EXIST yet - this test will fail
-            with patch.object(indexer, 'load_completed_commits') as mock_load:
-                mock_load.return_value = already_completed
+            # Mock progressive_metadata to return already completed commits
+            indexer.progressive_metadata.load_completed = MagicMock(return_value=already_completed)
+            indexer.progressive_metadata.save_completed = MagicMock()
 
-                # Mock _get_commit_history to return all commits
-                with patch.object(indexer, '_get_commit_history') as mock_get_history:
-                    mock_get_history.return_value = all_commits
+            # Mock _get_commit_history to return all commits
+            with patch.object(indexer, '_get_commit_history') as mock_get_history:
+                mock_get_history.return_value = all_commits
 
-                    # Mock _get_current_branch to avoid git subprocess call
-                    with patch.object(indexer, '_get_current_branch') as mock_branch:
-                        mock_branch.return_value = "main"
+                # Mock _get_current_branch to avoid git subprocess call
+                with patch.object(indexer, '_get_current_branch') as mock_branch:
+                    mock_branch.return_value = "main"
 
-                        # Mock the parallel processing to track what gets processed
-                        processed_commits = []
+                    # Track which commits get_diffs is called for (indicates processing)
+                    processed_commits = []
 
-                        def track_processing(commits, *args, **kwargs):
-                            processed_commits.extend(commits)
-                            return len(commits), 0
+                    def track_diffs(commit_hash):
+                        # Find commit object by hash
+                        for c in all_commits:
+                            if c.hash == commit_hash:
+                                processed_commits.append(c)
+                                break
+                        return []  # No diffs to avoid further processing
 
-                        with patch.object(indexer, '_process_commits_parallel') as mock_process:
-                            mock_process.side_effect = track_processing
+                    indexer.diff_scanner.get_diffs_for_commit = MagicMock(side_effect=track_diffs)
+                    indexer.vector_store.load_id_index = MagicMock(return_value=set())
 
-                            # Index commits - should skip already completed ones
-                            result = indexer.index_commits(
-                                all_branches=False,
-                                max_commits=None,
-                                since_date=None
-                            )
+                    # Index commits - should skip already completed ones
+                    result = indexer.index_commits(
+                        all_branches=False,
+                        max_commits=None,
+                        since_date=None
+                    )
 
-                            # ASSERTION: Only 3 commits should be processed (3, 4, 5)
-                            # Commits 1 and 2 should be skipped
-                            self.assertEqual(len(processed_commits), 3,
-                                f"Should process only 3 new commits, but processed {len(processed_commits)}")
+                    # ASSERTION: Only 3 commits should be processed (3, 4, 5)
+                    # Commits 1 and 2 should be skipped
+                    self.assertEqual(len(processed_commits), 3,
+                        f"Should process only 3 new commits, but processed {len(processed_commits)}")
 
-                            # Verify the processed commits are the right ones
-                            processed_hashes = {c.hash for c in processed_commits}
-                            expected_hashes = {"commit3", "commit4", "commit5"}
-                            self.assertEqual(processed_hashes, expected_hashes,
-                                f"Should process commits 3-5, but processed {processed_hashes}")
+                    # Verify the processed commits are the right ones
+                    processed_hashes = {c.hash for c in processed_commits}
+                    expected_hashes = {"commit3", "commit4", "commit5"}
+                    self.assertEqual(processed_hashes, expected_hashes,
+                        f"Should process commits 3-5, but processed {processed_hashes}")
 
 
 if __name__ == "__main__":

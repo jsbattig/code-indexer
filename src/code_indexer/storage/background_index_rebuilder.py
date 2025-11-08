@@ -42,7 +42,9 @@ class BackgroundIndexRebuilder:
     - Support for both file-based and directory-based indexes
     """
 
-    def __init__(self, collection_path: Path, lock_filename: str = ".index_rebuild.lock"):
+    def __init__(
+        self, collection_path: Path, lock_filename: str = ".index_rebuild.lock"
+    ):
         """Initialize BackgroundIndexRebuilder.
 
         Args:
@@ -205,9 +207,13 @@ class BackgroundIndexRebuilder:
                         )
                     removed_count += 1
                 except Exception as e:
-                    logger.warning(f"Failed to remove orphaned temp path {temp_path}: {e}")
+                    logger.warning(
+                        f"Failed to remove orphaned temp path {temp_path}: {e}"
+                    )
 
         if removed_count > 0:
-            logger.info(f"Cleanup complete: removed {removed_count} orphaned temp files/directories")
+            logger.info(
+                f"Cleanup complete: removed {removed_count} orphaned temp files/directories"
+            )
 
         return removed_count

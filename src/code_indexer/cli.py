@@ -3459,7 +3459,7 @@ def index(
                 # Parse progress info for metrics if available
                 try:
                     # FIX Issue 2: Extract rate from info (handles both "files/s" and "commits/s")
-                    # Info format: "current/total commits (%) | X.X commits/s | ..."
+                    # Info format: "current/total commits (%) | X.X commits/s | Y.Y KB/s | ..."
                     parts = info.split(" | ")
                     if len(parts) >= 2:
                         rate_str = parts[1].strip()
@@ -3471,15 +3471,27 @@ def index(
                             files_per_second = 0.0
                     else:
                         files_per_second = 0.0
+
+                    # Parse KB/s from parts[2] if available
+                    if len(parts) >= 3:
+                        kb_str = parts[2].strip()
+                        kb_parts = kb_str.split()
+                        if len(kb_parts) >= 1:
+                            kb_per_second = float(kb_parts[0])
+                        else:
+                            kb_per_second = 0.0
+                    else:
+                        kb_per_second = 0.0
                 except (ValueError, IndexError):
                     files_per_second = 0.0
+                    kb_per_second = 0.0
 
                 # Update MultiThreadedProgressManager with rich display
                 progress_manager.update_complete_state(
                     current=current,
                     total=total,
                     files_per_second=files_per_second,
-                    kb_per_second=0.0,  # Not applicable for commit processing
+                    kb_per_second=kb_per_second,  # Parsed from info string
                     active_threads=parallel_threads,
                     concurrent_files=concurrent_files or [],
                     slot_tracker=slot_tracker,
@@ -3497,6 +3509,7 @@ def index(
                 info: str = "",
                 concurrent_files=None,
                 slot_tracker=None,
+                item_type: str = "commits",
             ):
                 """Multi-threaded progress callback - uses Rich Live progress display."""
                 # Handle setup messages (total=0)
@@ -4328,7 +4341,7 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
             from .services.temporal.temporal_progressive_metadata import (
                 TemporalProgressiveMetadata,
             )
-            from .backends.filesystem_vector_store import FilesystemVectorStore
+            from .storage.filesystem_vector_store import FilesystemVectorStore
 
             temporal_index_dir = (
                 project_root / ".code-indexer/index/code-indexer-temporal"
@@ -4349,6 +4362,16 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
                 temporal_indexer=temporal_indexer,
                 progressive_metadata=progressive_metadata,
             )
+
+            # Show temporal handler status
+            if temporal_watch_handler.use_polling:
+                console.print(
+                    "  ⚠️  Temporal: Using polling fallback (refs file not found)"
+                )
+            else:
+                console.print(
+                    f"  ✅ Temporal: Monitoring {temporal_watch_handler.git_refs_file.name}"
+                )
 
         console.print(f"\n👀 Starting watch on {config.codebase_dir}")
         console.print(f"⏱️  Debounce: {debounce}s")

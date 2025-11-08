@@ -4,7 +4,7 @@ Provides rich console formatting for temporal query results including
 commit messages, file chunks, and diff context.
 """
 
-from typing import Any, Dict, List
+from typing import Any
 from rich.console import Console
 
 console = Console()

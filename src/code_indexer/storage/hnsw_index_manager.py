@@ -107,7 +107,12 @@ class HNSWIndexManager:
         if progress_callback:
             progress_callback(0, 0, Path(""), info="🔧 Building HNSW index...")
             # DEBUG: Mark full build for manual testing
-            progress_callback(0, 0, Path(""), info=f"🔨 FULL HNSW INDEX BUILD: Creating index from scratch with {num_vectors} vectors")
+            progress_callback(
+                0,
+                0,
+                Path(""),
+                info=f"🔨 FULL HNSW INDEX BUILD: Creating index from scratch with {num_vectors} vectors",
+            )
 
         index.add_items(vectors, labels)
 
@@ -496,7 +501,9 @@ class HNSWIndexManager:
                 # Update HNSW index metadata with staleness tracking + rebuild version (AC12)
                 metadata["hnsw_index"] = {
                     "version": 1,
-                    "index_rebuild_uuid": str(uuid.uuid4()),  # AC12: Track rebuild version
+                    "index_rebuild_uuid": str(
+                        uuid.uuid4()
+                    ),  # AC12: Track rebuild version
                     "vector_count": vector_count,
                     "vector_dim": self.vector_dim,
                     "M": M,
@@ -687,7 +694,9 @@ class HNSWIndexManager:
         current_index_size = index.get_current_count() if index else 0
         num_new_vectors = len(id_to_label)
         # Use INFO level so it's visible in logs
-        logger.info(f"⚡ INCREMENTAL HNSW UPDATE: Adding/updating {num_new_vectors} vectors (total index size: {current_index_size})")
+        logger.info(
+            f"⚡ INCREMENTAL HNSW UPDATE: Adding/updating {num_new_vectors} vectors (total index size: {current_index_size})"
+        )
 
         # Save index to disk
         index_file = collection_path / self.INDEX_FILENAME
@@ -715,14 +724,19 @@ class HNSWIndexManager:
                 ef_construction = existing_hnsw.get("ef_construction", 200)
 
                 # Create ID mapping (label -> ID) for metadata
-                id_mapping = {str(label): point_id for label, point_id in label_to_id.items()}
+                id_mapping = {
+                    str(label): point_id for label, point_id in label_to_id.items()
+                }
 
                 # Update HNSW index metadata (AC12: preserve or generate new UUID)
                 import uuid
+
                 # Generate new UUID for incremental updates too (version tracking)
                 metadata["hnsw_index"] = {
                     "version": 1,
-                    "index_rebuild_uuid": str(uuid.uuid4()),  # AC12: Track rebuild version
+                    "index_rebuild_uuid": str(
+                        uuid.uuid4()
+                    ),  # AC12: Track rebuild version
                     "vector_count": vector_count,
                     "vector_dim": self.vector_dim,
                     "M": M,

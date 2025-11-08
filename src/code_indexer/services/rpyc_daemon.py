@@ -722,7 +722,10 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
         tantivy_index_dir = entry.project_path / ".code-indexer" / "tantivy_index"
 
         # Check if index exists
-        if not tantivy_index_dir.exists() or not (tantivy_index_dir / "meta.json").exists():
+        if (
+            not tantivy_index_dir.exists()
+            or not (tantivy_index_dir / "meta.json").exists()
+        ):
             logger.warning(f"Tantivy index not found at {tantivy_index_dir}")
             entry.fts_available = False
             return
@@ -835,7 +838,9 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
             snippet_lines = kwargs.get("snippet_lines", 5)
 
             # DEBUG: Log snippet_lines value
-            logger.info(f"DEBUG _execute_fts_search: snippet_lines={snippet_lines}, kwargs={kwargs}")
+            logger.info(
+                f"DEBUG _execute_fts_search: snippet_lines={snippet_lines}, kwargs={kwargs}"
+            )
 
             results = manager.search(
                 query_text=query,
@@ -852,7 +857,9 @@ class CIDXDaemonService(rpyc.Service if rpyc else object):
 
             # DEBUG: Log results
             if results:
-                logger.info(f"DEBUG _execute_fts_search: First result snippet length={len(results[0].get('snippet', ''))}")
+                logger.info(
+                    f"DEBUG _execute_fts_search: First result snippet length={len(results[0].get('snippet', ''))}"
+                )
 
             return {"results": results, "query": query, "total": len(results)}
         except Exception as e:

@@ -85,7 +85,8 @@ class TestTemporalDiffScanner:
             ["git", "show", "--name-status", "--format=", "abc123"],
             cwd=Path("/tmp/test-repo"),
             capture_output=True,
-            text=True
+            text=True,
+            errors="replace",
         )
 
     @patch("subprocess.run")

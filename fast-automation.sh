@@ -10,6 +10,13 @@
 
 set -e  # Exit on any error
 
+# TELEMETRY: Create telemetry directory for test performance tracking
+TELEMETRY_DIR=".test-telemetry"
+mkdir -p "$TELEMETRY_DIR"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+TELEMETRY_FILE="$TELEMETRY_DIR/fast-automation-${TIMESTAMP}.log"
+DURATION_FILE="$TELEMETRY_DIR/test-durations-${TIMESTAMP}.txt"
+
 # Source .env files if they exist (for local testing)
 if [[ -f ".env.local" ]]; then
     source .env.local
@@ -108,8 +115,12 @@ echo ""
 echo "⚠️  EXCLUDED: Tests requiring real servers, containers, or external APIs"
 
 # Run ONLY fast unit tests that don't require external services
+# TELEMETRY: Add --durations=0 to capture ALL test durations
+echo "📊 Telemetry enabled: Results will be saved to $TELEMETRY_FILE"
+echo "⏱️  Duration report: $DURATION_FILE"
 if python3 -m pytest \
     tests/unit/ \
+    --durations=0 \
     --ignore=tests/unit/server/ \
     --ignore=tests/unit/infrastructure/ \
     --ignore=tests/unit/api_clients/test_base_cidx_remote_api_client_real.py \
@@ -199,7 +210,24 @@ if python3 -m pytest \
     --deselect=tests/unit/storage/test_filesystem_vector_store.py::TestFilesystemVectorStoreCore::test_batch_upsert_performance \
     -m "not slow and not e2e and not real_api and not integration and not requires_server and not requires_containers" \
     --cov=code_indexer \
-    --cov-report=xml --cov-report=term-missing; then
+    --cov-report=xml --cov-report=term-missing \
+    2>&1 | tee "$TELEMETRY_FILE"; then
+
+    # TELEMETRY: Extract duration data
+    grep -E "^[0-9]+\.[0-9]+s (call|setup|teardown)" "$TELEMETRY_FILE" | sort -rn > "$DURATION_FILE"
+
+    # TELEMETRY: Summary
+    TOTAL_TIME=$(grep "passed in" "$TELEMETRY_FILE" | grep -oE "[0-9]+\.[0-9]+s" | head -1)
+    SLOW_TESTS=$(awk '$1 > 5.0' "$DURATION_FILE" | wc -l)
+
+    echo ""
+    echo "📊 TELEMETRY: Total=$TOTAL_TIME, Slow(>5s)=$SLOW_TESTS"
+    echo "   Log: $TELEMETRY_FILE"
+    echo "   Durations: $DURATION_FILE"
+
+    ln -sf "$(basename $TELEMETRY_FILE)" "$TELEMETRY_DIR/latest.log"
+    ln -sf "$(basename $DURATION_FILE)" "$TELEMETRY_DIR/latest-durations.txt"
+
     print_success "Fast unit tests passed"
 else
     print_error "Fast unit tests failed"

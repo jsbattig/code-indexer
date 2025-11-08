@@ -52,7 +52,9 @@ class CacheEntry:
         self.fts_available: bool = False
 
         # AC11: Version tracking for cache invalidation after rebuild
-        self.hnsw_index_version: Optional[str] = None  # Tracks loaded index_rebuild_uuid
+        self.hnsw_index_version: Optional[str] = (
+            None  # Tracks loaded index_rebuild_uuid
+        )
 
         # Temporal collection cache (IDENTICAL pattern to HEAD collection)
         self.temporal_hnsw_index: Optional[Any] = None
@@ -155,14 +157,16 @@ class CacheEntry:
         if not metadata_file.exists():
             raise FileNotFoundError(f"Collection metadata not found: {metadata_file}")
 
-        with open(metadata_file, 'r') as f:
+        with open(metadata_file, "r") as f:
             metadata = json.load(f)
 
         vector_dim = metadata.get("vector_size", 1536)
 
         # IDENTICAL loading mechanism as HEAD collection
         hnsw_manager = HNSWIndexManager(vector_dim=vector_dim, space="cosine")
-        self.temporal_hnsw_index = hnsw_manager.load_index(collection_path, max_elements=100000)
+        self.temporal_hnsw_index = hnsw_manager.load_index(
+            collection_path, max_elements=100000
+        )
 
         # Load ID index using IDIndexManager
         id_manager = IDIndexManager()

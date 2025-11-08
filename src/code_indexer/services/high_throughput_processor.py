@@ -279,8 +279,11 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         local_slot_tracker = CleanSlotTracker(max_slots=vector_thread_count + 2)
         if progress_callback:
             progress_callback(
-                0, 0, Path(""), info="⚙️ Initializing parallel processing threads...",
-                slot_tracker=local_slot_tracker
+                0,
+                0,
+                Path(""),
+                info="⚙️ Initializing parallel processing threads...",
+                slot_tracker=local_slot_tracker,
             )
 
         stats = ProcessingStats()
@@ -320,9 +323,7 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                 # CRITICAL FIX: Always create fresh slot tracker for hash phase
                 # Hash phase uses EXACT thread count (no +2 bonus - that's only for chunking)
                 # Never reuse the chunking tracker (which has +2 bonus slots)
-                hash_slot_tracker = CleanSlotTracker(
-                    max_slots=vector_thread_count
-                )
+                hash_slot_tracker = CleanSlotTracker(max_slots=vector_thread_count)
 
                 def hash_worker(
                     file_queue: Queue,
@@ -355,7 +356,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                             slot_id = worker_slot_tracker.acquire_slot(file_data)
 
                             # Update slot status to show processing
-                            worker_slot_tracker.update_slot(slot_id, FileStatus.PROCESSING)
+                            worker_slot_tracker.update_slot(
+                                slot_id, FileStatus.PROCESSING
+                            )
 
                             # Calculate hash and metadata
                             try:
@@ -372,13 +375,13 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                                 # Update progress thread-safely
                                 with hash_progress_lock:
                                     completed_hashes += 1
-                                    total_bytes_processed += (
-                                        file_size  # Accumulate bytes for KB/s calculation
-                                    )
+                                    total_bytes_processed += file_size  # Accumulate bytes for KB/s calculation
                                     current_progress = completed_hashes
 
                                 # Update slot to complete status
-                                worker_slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
+                                worker_slot_tracker.update_slot(
+                                    slot_id, FileStatus.COMPLETE
+                                )
 
                             except Exception as hash_error:
                                 # Hash calculation failed - this IS a critical error
@@ -411,7 +414,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                                     # When running via daemon, RPyC proxies can cache stale references.
                                     # Deep copying ensures daemon gets plain Python objects that serialize
                                     # correctly through JSON (daemon/service.py serializes these to JSON).
-                                    concurrent_files = copy.deepcopy(hash_slot_tracker.get_concurrent_files_data())
+                                    concurrent_files = copy.deepcopy(
+                                        hash_slot_tracker.get_concurrent_files_data()
+                                    )
 
                                     # Format: "files (%) | files/s | KB/s | threads | message"
                                     info = f"{current_progress}/{len(files)} files ({100 * current_progress // len(files)}%) | {files_per_sec:.1f} files/s | {kb_per_sec:.1f} KB/s | {active_threads} threads | 🔍 {file_path.name}"
@@ -464,7 +469,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                         len(files),
                         Path(""),
                         info=f"0/{len(files)} files (0%) | 0.0 files/s | 0.0 KB/s | 0 threads | 🔍 Starting hash calculation...",
-                        concurrent_files=copy.deepcopy(hash_slot_tracker.get_concurrent_files_data()),
+                        concurrent_files=copy.deepcopy(
+                            hash_slot_tracker.get_concurrent_files_data()
+                        ),
                         slot_tracker=hash_slot_tracker,
                     )
 
@@ -521,15 +528,20 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                         len(files),
                         Path(""),
                         info=f"{len(files)}/{len(files)} files (100%) | {files_per_sec:.1f} files/s | {kb_per_sec:.1f} KB/s | {vector_thread_count} threads | 🔍 ✅ Hash calculation complete",
-                        concurrent_files=copy.deepcopy(hash_slot_tracker.get_concurrent_files_data()),
+                        concurrent_files=copy.deepcopy(
+                            hash_slot_tracker.get_concurrent_files_data()
+                        ),
                         slot_tracker=hash_slot_tracker,
                     )
 
                 # Add transition message 1: Preparing indexing phase
                 if progress_callback:
                     progress_callback(
-                        0, 0, Path(""), info="ℹ️ Preparing indexing phase...",
-                        slot_tracker=local_slot_tracker
+                        0,
+                        0,
+                        Path(""),
+                        info="ℹ️ Preparing indexing phase...",
+                        slot_tracker=local_slot_tracker,
                     )
 
                 # TIMING RESET: Reset timing clock after hash completion for accurate indexing progress
@@ -664,7 +676,9 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
                                 # When running via daemon, RPyC proxies can cache stale references.
                                 # Deep copying ensures daemon gets plain Python objects that serialize
                                 # correctly through JSON (daemon/service.py serializes these to JSON).
-                                concurrent_files = copy.deepcopy(local_slot_tracker.get_concurrent_files_data())
+                                concurrent_files = copy.deepcopy(
+                                    local_slot_tracker.get_concurrent_files_data()
+                                )
 
                                 # Format progress info in expected format
                                 progress_info = (
@@ -729,8 +743,13 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         # STORY 1: Send final progress callback to reach 100% completion
         # This ensures Rich Progress bar shows 100% instead of stopping at ~94%
         if progress_callback and len(files) > 0:
-            progress_callback(0, 0, Path(""), info="Sending final progress callback...",
-                            slot_tracker=local_slot_tracker)
+            progress_callback(
+                0,
+                0,
+                Path(""),
+                info="Sending final progress callback...",
+                slot_tracker=local_slot_tracker,
+            )
             # Calculate final KB/s throughput for completion message
             final_kbs_throughput = self._calculate_kbs_throughput()
 
@@ -753,8 +772,11 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
         # CleanSlotTracker doesn't require explicit cleanup thread management
         if progress_callback:
             progress_callback(
-                0, 0, Path(""), info="High-throughput processor finalizing...",
-                slot_tracker=local_slot_tracker
+                0,
+                0,
+                Path(""),
+                info="High-throughput processor finalizing...",
+                slot_tracker=local_slot_tracker,
             )
 
         return stats
@@ -939,14 +961,22 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
 
             # Hide files that don't exist in the new branch (branch isolation)
             if progress_callback:
-                progress_callback(0, 0, Path(""), info="Applying branch isolation",
-                                slot_tracker=slot_tracker)
+                progress_callback(
+                    0,
+                    0,
+                    Path(""),
+                    info="Applying branch isolation",
+                    slot_tracker=slot_tracker,
+                )
 
             # Get all files that should be visible in the new branch
             all_branch_files = changed_files + unchanged_files
             self.hide_files_not_in_branch_thread_safe(
-                new_branch, all_branch_files, collection_name, progress_callback,
-                slot_tracker
+                new_branch,
+                all_branch_files,
+                collection_name,
+                progress_callback,
+                slot_tracker,
             )
 
             result.processing_time = time.time() - start_time
@@ -967,8 +997,13 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
             # CRITICAL: Always finalize indexes, even on exception
             # This ensures FilesystemVectorStore rebuilds HNSW/ID indexes
             if progress_callback:
-                progress_callback(0, 0, Path(""), info="Finalizing indexing session...",
-                                slot_tracker=slot_tracker)
+                progress_callback(
+                    0,
+                    0,
+                    Path(""),
+                    info="Finalizing indexing session...",
+                    slot_tracker=slot_tracker,
+                )
             end_result = self.qdrant_client.end_indexing(
                 collection_name, progress_callback, skip_hnsw_rebuild=watch_mode
             )
@@ -1295,8 +1330,11 @@ class HighThroughputProcessor(GitAwareDocumentProcessor):
 
         if progress_callback:
             progress_callback(
-                0, 0, Path(""), info="Scanning database for branch isolation...",
-                slot_tracker=slot_tracker
+                0,
+                0,
+                Path(""),
+                info="Scanning database for branch isolation...",
+                slot_tracker=slot_tracker,
             )
 
         # Get all unique file paths from content points in the database

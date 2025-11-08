@@ -95,6 +95,7 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
         vector_store.project_root = self.repo_path
         vector_store.collection_exists.return_value = True
         vector_store.upsert_points = Mock()
+        vector_store.load_id_index.return_value = set()  # Return empty set for len() call
 
         # Mock diff scanner to return test diffs
         from src.code_indexer.services.temporal.temporal_diff_scanner import DiffInfo
@@ -247,6 +248,7 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
         vector_store.project_root = self.repo_path
         vector_store.collection_exists.return_value = True
         vector_store.upsert_points = Mock()
+        vector_store.load_id_index.return_value = set()  # Return empty set for len() call
 
         # Mock diff scanner with delays to simulate real processing
         from src.code_indexer.services.temporal.temporal_diff_scanner import DiffInfo
@@ -375,6 +377,7 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
             vector_store.project_root = self.repo_path
             vector_store.collection_exists.return_value = True
             vector_store.upsert_points = Mock()
+            vector_store.load_id_index.return_value = set()  # Return empty set for len() call
 
             with patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory") as factory_mock:
                 factory_mock.get_provider_model_info.return_value = {"dimensions": 1024}

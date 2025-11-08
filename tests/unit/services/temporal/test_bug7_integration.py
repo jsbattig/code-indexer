@@ -55,6 +55,11 @@ class TestBug7Integration(unittest.TestCase):
             # Create indexer
             indexer = TemporalIndexer(config_manager, vector_store)
 
+            # Mock progressive metadata to return empty set (no completed commits)
+            indexer.progressive_metadata = MagicMock()
+            indexer.progressive_metadata.load_completed.return_value = set()
+            indexer.progressive_metadata.save_completed = MagicMock()
+
             # Mock the file identifier
             with patch.object(indexer.file_identifier, '_get_project_id') as mock_project_id:
                 mock_project_id.return_value = "test-project"

@@ -174,6 +174,7 @@ class MultiThreadedProgressManager:
         concurrent_files: List[Dict[str, Any]],
         slot_tracker=None,
         info: Optional[str] = None,
+        item_type: str = "files",
     ) -> None:
         """Update complete state using direct slot tracker array access.
 
@@ -186,6 +187,7 @@ class MultiThreadedProgressManager:
             concurrent_files: List of concurrent file data (compatibility)
             slot_tracker: CleanSlotTracker with status_array
             info: Optional info string containing phase indicators
+            item_type: Type of items being processed ("files" or "commits"), default "files"
         """
         # DEFENSIVE: Ensure current and total are always integers, never None
         # This prevents "None/None" display and TypeError exceptions
@@ -232,7 +234,7 @@ class MultiThreadedProgressManager:
 
         # Initialize progress bar if not started
         if not self._progress_started and total > 0:
-            files_info = f"{current}/{total} files"
+            files_info = f"{current}/{total} {item_type}"
             self.main_task_id = self.progress.add_task(
                 self._current_phase,
                 total=total,
@@ -243,7 +245,7 @@ class MultiThreadedProgressManager:
 
         # Update Rich Progress bar
         if self._progress_started and self.main_task_id is not None:
-            files_info = f"{current}/{total} files"
+            files_info = f"{current}/{total} {item_type}"
             self.progress.update(
                 self.main_task_id,
                 completed=current,
@@ -253,7 +255,7 @@ class MultiThreadedProgressManager:
 
         # Store metrics info for display below progress bar
         self._current_metrics_info = (
-            f"{files_per_second:.1f} files/s | "
+            f"{files_per_second:.1f} {item_type}/s | "
             f"{kb_per_second:.1f} KB/s | "
             f"{active_threads} threads"
         )
@@ -298,7 +300,11 @@ class MultiThreadedProgressManager:
         # BUG FIX: Fallback to slot_tracker if concurrent_files is empty
         # CRITICAL: Only for REAL CleanSlotTracker objects (standalone mode), NOT RPyC proxies (daemon mode)
         # RPyC proxies are slow and may have stale data - we NEVER want to access them directly
-        if not fresh_concurrent_files and self.slot_tracker is not None and hasattr(self.slot_tracker, 'status_array'):
+        if (
+            not fresh_concurrent_files
+            and self.slot_tracker is not None
+            and hasattr(self.slot_tracker, "status_array")
+        ):
             # Extract file data from slot_tracker for display (standalone mode only)
             for file_data in self.slot_tracker.status_array:
                 if file_data is not None and file_data.filename:
@@ -306,7 +312,11 @@ class MultiThreadedProgressManager:
                     file_info = {
                         "file_path": file_data.filename,
                         "file_size": file_data.file_size,
-                        "status": file_data.status.name.lower() if hasattr(file_data.status, 'name') else str(file_data.status)
+                        "status": (
+                            file_data.status.name.lower()
+                            if hasattr(file_data.status, "name")
+                            else str(file_data.status)
+                        ),
                     }
                     fresh_concurrent_files.append(file_info)
 
@@ -319,7 +329,11 @@ class MultiThreadedProgressManager:
                     elif "/" in str(filename):
                         filename = str(filename).split("/")[-1]
                     file_size_raw = file_info.get("file_size", 0)
-                    file_size = int(file_size_raw) if isinstance(file_size_raw, (int, float)) else 0
+                    file_size = (
+                        int(file_size_raw)
+                        if isinstance(file_size_raw, (int, float))
+                        else 0
+                    )
                     status_raw = file_info.get("status", "processing")
                     status = str(status_raw) if status_raw else "processing"
 

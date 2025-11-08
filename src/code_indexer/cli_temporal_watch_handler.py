@@ -14,7 +14,6 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Optional
 from watchdog.events import FileSystemEventHandler
 
 logger = logging.getLogger(__name__)
@@ -51,6 +50,15 @@ class TemporalWatchHandler(FileSystemEventHandler):
         # Initialize or use injected dependencies
         self.temporal_indexer = temporal_indexer
         self.progressive_metadata = progressive_metadata
+
+        # Load completed commits into in-memory set for O(1) lookups (Story 3)
+        if self.progressive_metadata:
+            self.completed_commits_set = self.progressive_metadata.load_completed()
+            logger.info(
+                f"Loaded {len(self.completed_commits_set)} completed commits into memory"
+            )
+        else:
+            self.completed_commits_set = set()
 
         # Verify git refs file exists
         if not self.git_refs_file.exists():
@@ -103,16 +111,44 @@ class TemporalWatchHandler(FileSystemEventHandler):
             logger.error(f"Failed to get commit hash: {e}")
             return ""
 
+    def on_any_event(self, event):
+        """Debug: Log ALL events to understand what watchdog sees."""
+        # Only log .git events
+        if ".git" in event.src_path:
+            logger.info(f"TemporalWatch: {event.event_type} - {event.src_path}")
+
     def on_modified(self, event):
         """Handle file modification events (inotify).
 
         Args:
             event: Watchdog file system event
+
+        Note: Git uses atomic rename (lock file → refs file), which doesn't trigger
+        MODIFY events on the target file. Instead, we detect MODIFY events on the
+        refs/heads directory. This is a known inotify limitation with atomic writes.
         """
-        # Git commit detection
-        if event.src_path == str(self.git_refs_file):
-            logger.info(f"Git commit detected via inotify: {self.git_refs_file}")
-            self._handle_commit_detected()
+        refs_heads_dir = self.git_refs_file.parent
+
+        # DEBUG: Log events we care about
+        if ".git" in event.src_path:
+            logger.info(f"TemporalWatch.on_modified: {event.src_path}")
+            logger.info(f"  Refs dir: {refs_heads_dir}")
+            logger.info(f"  Match: {event.src_path == str(refs_heads_dir)}")
+
+        # Git commit detection - watch for directory modifications
+        # Git atomically renames master.lock → master, triggering directory MODIFY
+        if event.src_path == str(refs_heads_dir):
+            logger.info(
+                f"Git refs directory modified (possible commit): {refs_heads_dir}"
+            )
+            # Verify it's actually a commit by checking if hash changed
+            current_hash = self._get_last_commit_hash()
+            if current_hash != self.last_commit_hash:
+                logger.info(f"Git commit detected via inotify: {current_hash}")
+                self.last_commit_hash = current_hash
+                self._handle_commit_detected()
+            else:
+                logger.debug("Directory modified but no new commit")
 
         # Branch switch detection (Story 3.1)
         elif event.src_path == str(self.git_head_file):
@@ -248,9 +284,125 @@ class TemporalWatchHandler(FileSystemEventHandler):
             # Non-critical error - daemon might not be running
 
     def _handle_branch_switch(self):
-        """Handle branch switch - catch up temporal index (Story 3.1).
+        """Handle branch switch - catch up temporal index (Story 3).
 
-        This is a placeholder for Story 3.1 implementation.
+        This method:
+        1. Detects new branch name
+        2. Compares with current_branch (no action if same)
+        3. Updates current_branch and git_refs_file
+        4. Calls _catch_up_temporal_index() to index unindexed commits
         """
-        # Story 3.1: Branch switch catch-up
-        pass
+        try:
+            # Get new branch name
+            new_branch = self._get_current_branch()
+
+            if new_branch == self.current_branch:
+                logger.debug("HEAD changed but branch same (detached HEAD?)")
+                return
+
+            logger.info(f"Branch switch detected: {self.current_branch} → {new_branch}")
+
+            # Update current branch and git refs file
+            self.current_branch = new_branch
+            self.git_refs_file = (
+                self.project_root / ".git" / "refs" / "heads" / new_branch
+            )
+
+            # Catch up temporal index for new branch
+            self._catch_up_temporal_index()
+
+        except Exception as e:
+            logger.error(f"Failed to handle branch switch: {e}", exc_info=True)
+
+    def _catch_up_temporal_index(self):
+        """Index unindexed commits in current branch (Story 3).
+
+        This method:
+        1. Gets all commits in current branch via git rev-list
+        2. Filters using in-memory set (O(1) per commit)
+        3. Indexes unindexed commits incrementally with progress
+        4. Updates progressive metadata and in-memory set
+        5. Invalidates daemon temporal cache
+        """
+        try:
+            # Get all commits in current branch
+            result = subprocess.run(
+                ["git", "rev-list", self.current_branch],
+                capture_output=True,
+                text=True,
+                cwd=self.project_root,
+                check=True,
+            )
+            all_commits = result.stdout.strip().split("\n")
+
+            # Filter using in-memory set (O(1) per commit)
+            unindexed_commits = [
+                commit
+                for commit in all_commits
+                if commit not in self.completed_commits_set
+            ]
+
+            if not unindexed_commits:
+                logger.info(
+                    f"Branch {self.current_branch} fully indexed (0 new commits)"
+                )
+                return
+
+            logger.info(
+                f"Catching up {len(unindexed_commits)} unindexed commits "
+                f"in {self.current_branch}"
+            )
+
+            # Index unindexed commits incrementally with progress
+            self._index_commits_incremental(unindexed_commits)
+
+            # Update in-memory set and persistent metadata
+            self.completed_commits_set.update(unindexed_commits)
+            self.progressive_metadata.mark_completed(unindexed_commits)
+
+            # Invalidate daemon temporal cache
+            self._invalidate_daemon_cache()
+
+            logger.info(f"Temporal index catch-up complete for {self.current_branch}")
+
+        except Exception as e:
+            logger.error(f"Failed to catch up temporal index: {e}", exc_info=True)
+
+    def _index_commits_incremental(self, commit_hashes: list):
+        """Index commits incrementally with progress reporting (Story 3).
+
+        This method uses RichLiveProgressManager for identical UX to standalone
+        temporal indexing. It calls TemporalIndexer to perform the actual indexing.
+
+        Args:
+            commit_hashes: List of commit hashes to index
+        """
+        from code_indexer.progress.progress_display import RichLiveProgressManager
+        from rich.console import Console
+
+        console = Console()
+        progress_manager = RichLiveProgressManager(console)
+        progress_manager.start_bottom_display()
+
+        try:
+            # Create progress callback
+            def progress_callback(
+                current: int, total: int, file_path: Path, info: str = ""
+            ):
+                progress_manager.update_display(info)
+
+            # Index commits using TemporalIndexer
+            # Note: This assumes TemporalIndexer has an index_commits_list method
+            # that accepts commit_hashes and progress_callback
+            if self.temporal_indexer:
+                result = self.temporal_indexer.index_commits_list(
+                    commit_hashes=commit_hashes,
+                    progress_callback=progress_callback,
+                )
+
+                logger.info(
+                    f"Indexed {result.new_blobs_indexed} new blobs "
+                    f"(dedup: {result.deduplication_ratio:.1%})"
+                )
+        finally:
+            progress_manager.stop_display()

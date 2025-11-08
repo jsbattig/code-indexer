@@ -17,10 +17,10 @@ from .server import start_daemon
 # Setup logging - Output to both console and file
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(),  # Console output
-    ]
+    ],
 )
 
 logger = logging.getLogger(__name__)
@@ -32,14 +32,10 @@ def main():
         description="CIDX Daemon Service - In-memory index caching"
     )
     parser.add_argument(
-        "config_path",
-        type=Path,
-        help="Path to .code-indexer/config.json"
+        "config_path", type=Path, help="Path to .code-indexer/config.json"
     )
     parser.add_argument(
-        "-v", "--verbose",
-        action="store_true",
-        help="Enable verbose logging"
+        "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
 
     args = parser.parse_args()
@@ -55,7 +51,9 @@ def main():
     daemon_log_file = config_path.parent / "daemon.log"
     file_handler = logging.FileHandler(daemon_log_file)
     file_handler.setLevel(logging.INFO)
-    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
     logging.getLogger().addHandler(file_handler)
     logger.info(f"Daemon logging to {daemon_log_file}")
     if not config_path.exists():

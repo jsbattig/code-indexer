@@ -5,7 +5,6 @@ Story: 02_Feat_WatchModeAutoDetection/01_Story_WatchModeAutoUpdatesAllIndexes.md
 """
 
 import pytest
-from unittest.mock import patch
 from code_indexer.cli_watch_helpers import detect_existing_indexes
 
 
@@ -115,26 +114,17 @@ class TestDetectExistingIndexes:
 class TestStartWatchMode:
     """Test suite for start_watch_mode() orchestration function."""
 
-    @patch("code_indexer.cli_watch_helpers.Observer")
-    @patch("code_indexer.cli_watch_helpers.console")
-    def test_start_watch_with_all_indexes(
-        self, mock_console, mock_observer_class, tmp_path
-    ):
+    def test_start_watch_with_all_indexes(self, tmp_path):
         """Test starting watch mode with all three indexes detected."""
         # This test will be implemented after we create the start_watch_mode function
         pytest.skip("Requires start_watch_mode() implementation")
 
-    @patch("code_indexer.cli_watch_helpers.console")
-    def test_start_watch_with_no_indexes_shows_warning(self, mock_console, tmp_path):
+    def test_start_watch_with_no_indexes_shows_warning(self, tmp_path):
         """Test that warning is displayed when no indexes exist."""
         # This test will be implemented after we create the start_watch_mode function
         pytest.skip("Requires start_watch_mode() implementation")
 
-    @patch("code_indexer.cli_watch_helpers.Observer")
-    @patch("code_indexer.cli_watch_helpers.console")
-    def test_start_watch_with_semantic_only(
-        self, mock_console, mock_observer_class, tmp_path
-    ):
+    def test_start_watch_with_semantic_only(self, tmp_path):
         """Test starting watch mode with only semantic index."""
         # This test will be implemented after we create the start_watch_mode function
         pytest.skip("Requires start_watch_mode() implementation")

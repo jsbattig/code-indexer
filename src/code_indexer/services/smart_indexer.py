@@ -318,7 +318,9 @@ class SmartIndexer(HighThroughputProcessor):
 
                     if progress_callback:
                         if create_new_fts:
-                            info_message = "✅ FTS indexing enabled - Creating new Tantivy index"
+                            info_message = (
+                                "✅ FTS indexing enabled - Creating new Tantivy index"
+                            )
                         else:
                             info_message = "✅ FTS indexing enabled - Opening existing Tantivy index for incremental updates"
                         progress_callback(
@@ -327,7 +329,9 @@ class SmartIndexer(HighThroughputProcessor):
                             Path(""),
                             info=info_message,
                         )
-                    logger.info(f"FTS indexing enabled: {fts_index_dir} (create_new={create_new_fts})")
+                    logger.info(
+                        f"FTS indexing enabled: {fts_index_dir} (create_new={create_new_fts})"
+                    )
                 except ImportError as e:
                     logger.error(
                         f"FTS indexing failed - Tantivy library not installed: {e}"

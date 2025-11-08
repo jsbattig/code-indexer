@@ -77,7 +77,9 @@ class TemporalSearchService:
         # Ensure collection_name is always a string (empty string if None)
         self.collection_name = collection_name or ""
 
-    def _get_file_path_from_payload(self, payload: Dict[str, Any], default: str = "unknown") -> str:
+    def _get_file_path_from_payload(
+        self, payload: Dict[str, Any], default: str = "unknown"
+    ) -> str:
         """Get file path from payload, checking both 'path' and 'file_path' fields.
 
         Args:
@@ -101,7 +103,9 @@ class TemporalSearchService:
         # Story 2: Check for temporal collection instead of commits.db
         if self.vector_store_client:
             return bool(
-                self.vector_store_client.collection_exists(self.TEMPORAL_COLLECTION_NAME)
+                self.vector_store_client.collection_exists(
+                    self.TEMPORAL_COLLECTION_NAME
+                )
             )
         return False
 
@@ -232,7 +236,9 @@ class TemporalSearchService:
             return result_proc.stdout
         else:
             # Graceful error handling - truncate stderr to avoid log spam
-            error_msg = result_proc.stderr[:100] if result_proc.stderr else "unknown error"
+            error_msg = (
+                result_proc.stderr[:100] if result_proc.stderr else "unknown error"
+            )
             return f"[Content unavailable - git error: {error_msg}]"
 
     def query_temporal(
@@ -337,7 +343,8 @@ class TemporalSearchService:
                 query=query,  # Pass query text for parallel embedding
                 embedding_provider=self.embedding_provider,  # Provider for parallel execution
                 filter_conditions=filter_conditions,  # Apply user-specified filters (language, path, etc.)
-                limit=limit * multiplier,  # Smart over-fetch based on limit size (5x to 20x)
+                limit=limit
+                * multiplier,  # Smart over-fetch based on limit size (5x to 20x)
                 collection_name=self.collection_name,
                 return_timing=True,
             )
@@ -349,7 +356,8 @@ class TemporalSearchService:
             raw_results = self.vector_store_client.search(
                 query_vector=query_embedding,
                 filter_conditions=filter_conditions,  # Apply user-specified filters (language, path, etc.)
-                limit=limit * multiplier,  # Smart over-fetch based on limit size (5x to 20x)
+                limit=limit
+                * multiplier,  # Smart over-fetch based on limit size (5x to 20x)
                 collection_name=self.collection_name,
             )
 
@@ -383,15 +391,15 @@ class TemporalSearchService:
         # Phase 3: Filter by diff_types if specified
         if diff_types:
             temporal_results = [
-                r for r in temporal_results
-                if r.metadata.get("diff_type") in diff_types
+                r for r in temporal_results if r.metadata.get("diff_type") in diff_types
             ]
 
         # Phase 3b: Filter by author if specified
         if author:
             author_lower = author.lower()
             temporal_results = [
-                r for r in temporal_results
+                r
+                for r in temporal_results
                 if author_lower in r.metadata.get("author_name", "").lower()
                 or author_lower in r.metadata.get("author_email", "").lower()
             ]
@@ -401,7 +409,7 @@ class TemporalSearchService:
         temporal_results = sorted(
             temporal_results,
             key=lambda r: r.temporal_context.get("commit_timestamp", 0),
-            reverse=True  # Newest first
+            reverse=True,  # Newest first
         )
 
         # Results reverse chronologically sorted (newest first) like git log
@@ -495,7 +503,6 @@ class TemporalSearchService:
         else:
             return "[Unknown match type]"
 
-
     def _filter_by_time_range(
         self,
         semantic_results: List[Dict[str, Any]],
@@ -522,7 +529,9 @@ class TemporalSearchService:
         """
         # Convert dates to Unix timestamps
         start_ts = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp())
-        end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+            hour=23, minute=59, second=59
+        )
         end_ts = int(end_dt.timestamp())
 
         filtered_results = []
@@ -530,8 +539,16 @@ class TemporalSearchService:
         # Process each semantic result
         for result in semantic_results:
             # Get payload - handles both dict and object formats
-            payload = result.get("payload", {}) if isinstance(result, dict) else getattr(result, "payload", {})
-            score = result.get("score", 0.0) if isinstance(result, dict) else getattr(result, "score", 0.0)
+            payload = (
+                result.get("payload", {})
+                if isinstance(result, dict)
+                else getattr(result, "payload", {})
+            )
+            score = (
+                result.get("score", 0.0)
+                if isinstance(result, dict)
+                else getattr(result, "score", 0.0)
+            )
 
             # Storage optimization: Reconstruct content from git for added/deleted files
             if payload.get("reconstruct_from_git"):
@@ -542,7 +559,11 @@ class TemporalSearchService:
                 content = payload.get("content", "")
                 if not content:
                     # Fallback to result.content only if payload doesn't have content
-                    content = result.get("content", "") if isinstance(result, dict) else getattr(result, "content", "")
+                    content = (
+                        result.get("content", "")
+                        if isinstance(result, dict)
+                        else getattr(result, "content", "")
+                    )
 
             # Apply min_score filter if specified
             if min_score and score < min_score:
@@ -568,7 +589,7 @@ class TemporalSearchService:
                         "author_name": payload.get("author_name"),
                         "commit_timestamp": commit_timestamp,
                         "diff_type": payload.get("diff_type"),
-                    }
+                    },
                 )
                 filtered_results.append(temporal_result)
 
@@ -596,7 +617,6 @@ class TemporalSearchService:
             "author_email": "unknown@example.com",
             "message": "[Commit details not available - use payload data]",
         }
-
 
     # _is_new_file method removed - Story 2: SQLite elimination
     # No longer needed with diff-based indexing

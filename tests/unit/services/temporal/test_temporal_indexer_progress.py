@@ -79,7 +79,7 @@ class TestTemporalIndexerProgress:
         progress_calls = []
         progress_lock = threading.Lock()
 
-        def track_progress(current, total, path, info):
+        def track_progress(current, total, path, info=None, **kwargs):
             with progress_lock:
                 progress_calls.append({
                     'current': current,
@@ -218,7 +218,7 @@ class TestTemporalIndexerProgress:
         # Track progress calls
         progress_calls = []
 
-        def track_progress(current, total, path, info):
+        def track_progress(current, total, path, info=None, **kwargs):
             progress_calls.append({
                 'current': current,
                 'total': total,

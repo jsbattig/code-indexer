@@ -37,6 +37,7 @@ class TestTemporalIndexerThreadSafety:
 
         vector_store = Mock(spec=FilesystemVectorStore)
         vector_store.project_root = repo_path
+        vector_store.load_id_index.return_value = set()  # Return empty set for len() call
 
         # Create indexer with mocked dependencies
         with patch("src.code_indexer.services.temporal.temporal_indexer.TemporalDiffScanner") as mock_scanner, \
@@ -160,8 +161,12 @@ class TestTemporalIndexerThreadSafety:
             progress_reports = []
             progress_lock = threading.Lock()
 
-            def progress_callback(current, total, file_path, info=""):
-                """Capture progress reports thread-safely."""
+            def progress_callback(current, total, file_path, info="", **kwargs):
+                """Capture progress reports thread-safely.
+
+                Accepts new kwargs for slot-based tracking (concurrent_files, slot_tracker, item_type)
+                to maintain backward compatibility while supporting the deadlock fix.
+                """
                 with progress_lock:
                     # Extract commit hash and filename from info string
                     # Format: "X/Y commits (Z%) | A commits/s | B threads | 📝 HASH - filename"

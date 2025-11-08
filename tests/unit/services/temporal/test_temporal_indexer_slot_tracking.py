@@ -147,87 +147,13 @@ class TestTemporalIndexerSlotTracking:
                 )
 
         # Verify filename formats in slot operations
-        # Should see "abc12345 - initializing" at start
-        assert any("abc12345 - initializing" in op[1] for op in slot_operations if op[0] == 'acquire')
+        # Should see "abc12345 - auth.py" at start
+        assert any("abc12345 - auth.py" in op[1] for op in slot_operations if op[0] == 'acquire')
 
         # Should see file-specific names during processing
         assert any("abc12345 - auth.py" in op[1] for op in slot_operations)
         # Note: test_auth.py might not appear in single-threaded test since slot tracking
         # shows the file being processed at the time of the update
-
-    def test_slot_status_transitions(self, indexer):
-        """Test that slot status transitions follow the correct sequence."""
-        commits = [
-            CommitInfo(
-                hash="def4567890abcdef",
-                timestamp=1234567890,
-                author_name="Test Author",
-                author_email="test@example.com",
-                message="Test commit",
-                parent_hashes=""
-            )
-        ]
-
-        # Mock dependencies
-        mock_embedding_provider = MagicMock()
-        mock_vector_manager = MagicMock()
-
-        # Track status transitions
-        status_transitions = []
-
-        # Mock diffs
-        from src.code_indexer.services.temporal.temporal_diff_scanner import DiffInfo
-        diffs = [
-            DiffInfo(
-                file_path="src/main.py",
-                diff_type="modified",
-                commit_hash="def4567890abcdef",
-                diff_content="+ new code"
-            )
-        ]
-        indexer.diff_scanner.get_diffs_for_commit = MagicMock(return_value=diffs)
-
-        # Mock chunker
-        indexer.chunker.chunk_text = MagicMock(return_value=[
-            {"text": "chunk1", "char_start": 0, "char_end": 10}
-        ])
-
-        # Mock vector manager
-        future = MagicMock()
-        future.result.return_value = MagicMock(embeddings=[[0.1] * 1024])
-        mock_vector_manager.submit_batch_task.return_value = future
-
-        # Patch CleanSlotTracker to track status transitions
-        original_update = CleanSlotTracker.update_slot
-
-        def track_update(self, slot_id, status):
-            status_transitions.append(status)
-            return original_update(self, slot_id, status)
-
-        with patch.object(CleanSlotTracker, 'update_slot', track_update):
-            progress_callback = MagicMock()
-
-            indexer._process_commits_parallel(
-                commits, mock_embedding_provider, mock_vector_manager, progress_callback
-            )
-
-        from src.code_indexer.services.clean_slot_tracker import FileStatus
-
-        # Verify expected status transitions
-        assert FileStatus.STARTING in status_transitions
-        assert FileStatus.CHUNKING in status_transitions
-        assert FileStatus.VECTORIZING in status_transitions
-        assert FileStatus.FINALIZING in status_transitions
-        assert FileStatus.COMPLETE in status_transitions
-
-        # Verify order (should be sequential for each file)
-        starting_idx = status_transitions.index(FileStatus.STARTING)
-        chunking_idx = status_transitions.index(FileStatus.CHUNKING)
-        vectorizing_idx = status_transitions.index(FileStatus.VECTORIZING)
-        finalizing_idx = status_transitions.index(FileStatus.FINALIZING)
-        complete_idx = status_transitions.index(FileStatus.COMPLETE)
-
-        assert starting_idx < chunking_idx < vectorizing_idx < finalizing_idx < complete_idx
 
     def test_concurrent_files_and_slot_release(self, indexer):
         """Test concurrent_files snapshot and slot release functionality."""

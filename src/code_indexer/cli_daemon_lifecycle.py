@@ -40,6 +40,7 @@ def start_daemon_command() -> int:
     # Check if already running
     try:
         from rpyc.utils.factory import unix_connect
+
         conn = unix_connect(str(socket_path))
         # Try to get status to verify it's responsive
         try:
@@ -64,6 +65,7 @@ def start_daemon_command() -> int:
 
     try:
         from rpyc.utils.factory import unix_connect
+
         conn = unix_connect(str(socket_path))
         _ = conn.root.exposed_get_status()
         conn.close()
@@ -102,6 +104,7 @@ def stop_daemon_command() -> int:
     # Try to connect
     try:
         from rpyc.utils.factory import unix_connect
+
         conn = unix_connect(str(socket_path))
     except Exception:
         console.print("[yellow]Daemon not running[/yellow]")
@@ -131,6 +134,7 @@ def stop_daemon_command() -> int:
     # Verify stopped
     try:
         from rpyc.utils.factory import unix_connect
+
         test_conn = unix_connect(str(socket_path))
         test_conn.close()
         console.print("[red]Failed to stop daemon[/red]")
@@ -163,6 +167,7 @@ def watch_stop_command() -> int:
 
     try:
         from rpyc.utils.factory import unix_connect
+
         conn = unix_connect(str(socket_path))
         stats = conn.root.exposed_watch_stop(str(Path.cwd()))
         conn.close()

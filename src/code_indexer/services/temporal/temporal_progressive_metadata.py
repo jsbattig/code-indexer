@@ -29,7 +29,28 @@ class TemporalProgressiveMetadata:
         data["status"] = "in_progress"
 
         # Save
-        with open(self.progress_path, 'w') as f:
+        with open(self.progress_path, "w") as f:
+            json.dump(data, f, indent=2)
+
+    def mark_completed(self, commit_hashes: list) -> None:
+        """Mark multiple commits as completed (Story 3).
+
+        Args:
+            commit_hashes: List of commit hashes to mark as completed
+        """
+        # Load existing data
+        data = self._load()
+
+        # Initialize completed_commits if not exists
+        if "completed_commits" not in data:
+            data["completed_commits"] = []
+
+        # Add all commits
+        data["completed_commits"].extend(commit_hashes)
+        data["status"] = "in_progress"
+
+        # Save
+        with open(self.progress_path, "w") as f:
             json.dump(data, f, indent=2)
 
     def load_completed(self) -> Set[str]:

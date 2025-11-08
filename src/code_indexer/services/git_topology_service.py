@@ -196,7 +196,12 @@ class GitTopologyService:
         # CRITICAL: For same-branch commit changes (watch mode scenario),
         # use commit hashes for comparison instead of branch names
         merge_base: Optional[str]
-        if old_branch == new_branch and old_commit and new_commit and old_commit != new_commit:
+        if (
+            old_branch == new_branch
+            and old_commit
+            and new_commit
+            and old_commit != new_commit
+        ):
             # Same branch, different commits - use commit comparison
             logger.info(
                 f"Same-branch commit change detected: {old_commit[:8]} -> {new_commit[:8]}, "

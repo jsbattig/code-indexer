@@ -291,7 +291,8 @@ class DaemonConfig(BaseModel):
 
     enabled: bool = Field(default=False, description="Enable daemon mode")
     ttl_minutes: int = Field(
-        default=10, description="Cache TTL in minutes (how long to keep indexes in memory)"
+        default=10,
+        description="Cache TTL in minutes (how long to keep indexes in memory)",
     )
     auto_shutdown_on_idle: bool = Field(
         default=True, description="Automatically shutdown daemon when idle"
@@ -949,7 +950,11 @@ code-indexer index --clear
         config = self.get_config()
 
         # Create daemon config with specified TTL
-        daemon_config_dict = {**self.DAEMON_DEFAULTS, "enabled": True, "ttl_minutes": ttl_minutes}
+        daemon_config_dict = {
+            **self.DAEMON_DEFAULTS,
+            "enabled": True,
+            "ttl_minutes": ttl_minutes,
+        }
 
         # Update config with daemon configuration
         config.daemon = DaemonConfig(**daemon_config_dict)
@@ -989,7 +994,9 @@ code-indexer index --clear
 
         # If no daemon config exists, create one with new TTL
         if config.daemon is None:
-            config.daemon = DaemonConfig(**{**self.DAEMON_DEFAULTS, "ttl_minutes": ttl_minutes})
+            config.daemon = DaemonConfig(
+                **{**self.DAEMON_DEFAULTS, "ttl_minutes": ttl_minutes}
+            )
         else:
             # Update TTL in existing config
             daemon_dict = config.daemon.model_dump()

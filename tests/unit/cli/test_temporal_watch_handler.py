@@ -127,7 +127,12 @@ class TestTemporalWatchHandlerGitRefsMonitoring:
     def test_on_modified_git_refs_file_triggers_commit_detection(
         self, mock_run, tmp_path
     ):
-        """Test that modifying git refs file triggers commit detection."""
+        """Test that modifying git refs directory triggers commit detection.
+
+        Note: Git uses atomic rename (master.lock → master), which doesn't trigger
+        MODIFY events on the target file. Instead, we detect MODIFY events on the
+        refs/heads directory. This test verifies the directory-based detection.
+        """
         # Arrange
         project_root = tmp_path / "test_project"
         project_root.mkdir()
@@ -139,21 +144,22 @@ class TestTemporalWatchHandlerGitRefsMonitoring:
         refs_file.touch()
 
         mock_run.side_effect = [
-            Mock(stdout="main\n", returncode=0),
-            Mock(stdout="abc123\n", returncode=0),
+            Mock(stdout="main\n", returncode=0),  # Initial branch
+            Mock(stdout="abc123\n", returncode=0),  # Initial commit hash
+            Mock(stdout="def456\n", returncode=0),  # New commit hash (changed)
         ]
 
         handler = TemporalWatchHandler(project_root)
         handler._handle_commit_detected = Mock()
 
-        # Create event mock
+        # Create event mock for refs/heads directory (not the file itself)
         event = Mock()
-        event.src_path = str(refs_file)
+        event.src_path = str(refs_heads)  # Directory modification, not file
 
         # Act
         handler.on_modified(event)
 
-        # Assert
+        # Assert - should detect commit via hash change
         handler._handle_commit_detected.assert_called_once()
 
     @patch("code_indexer.cli_temporal_watch_handler.subprocess.run")

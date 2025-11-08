@@ -1,4 +1,5 @@
 """Data models for temporal git history indexing."""
+
 from dataclasses import dataclass
 
 
