@@ -848,7 +848,7 @@ def _index_via_daemon(
 
                 # Get integrated display and update bottom area
                 rich_table = progress_manager.get_integrated_display()
-                rich_live_manager.handle_progress_update(rich_table)
+                rich_live_manager.async_handle_progress_update(rich_table)  # Bug #470 fix - async queue
 
             # BUG FIX: Add reset_progress_timers method to progress_callback
             # This method is called by HighThroughputProcessor during phase transitions

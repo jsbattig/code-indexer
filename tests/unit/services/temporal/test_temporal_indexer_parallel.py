@@ -147,6 +147,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
         future = Mock(spec=Future)
         future.result.return_value = Mock(embeddings=[[0.1, 0.2, 0.3]], error=None)
         vector_manager.submit_batch_task.return_value = future
+        vector_manager.embedding_provider._get_model_token_limit.return_value = 120000
 
         # Process the large commit
         self.indexer._process_commits_parallel(
@@ -197,6 +198,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
         future = Mock(spec=Future)
         future.result.return_value = Mock(embeddings=[[0.1, 0.2, 0.3]], error=None)
         vector_manager.submit_batch_task.return_value = future
+        vector_manager.embedding_provider._get_model_token_limit.return_value = 120000
 
         # Capture the points that would be stored
         stored_points = []
@@ -260,6 +262,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
         future = Mock(spec=Future)
         future.result.return_value = Mock(embeddings=[[0.1, 0.2, 0.3]], error=None)
         vector_manager.submit_batch_task.return_value = future
+        vector_manager.embedding_provider._get_model_token_limit.return_value = 120000
 
         # Track progress callbacks
         progress_calls = []
@@ -324,11 +327,18 @@ class TestTemporalIndexerParallel(unittest.TestCase):
             {"text": "chunk", "char_start": 0, "char_end": 5}
         ]
 
-        # Mock vector manager
+        # Mock vector manager - return embeddings matching chunk count
+        def mock_submit(chunk_texts, metadata):
+            future = Future()
+            mock_result = Mock()
+            # Return correct number of embeddings for chunks submitted
+            mock_result.embeddings = [[0.1, 0.2, 0.3] for _ in chunk_texts]
+            future.set_result(mock_result)
+            return future
+
         vector_manager = Mock()
-        future = Mock(spec=Future)
-        future.result.return_value = Mock(embeddings=[[0.1, 0.2, 0.3]], error=None)
-        vector_manager.submit_batch_task.return_value = future
+        vector_manager.submit_batch_task.side_effect = mock_submit
+        vector_manager.embedding_provider._get_model_token_limit.return_value = 120000
 
         # Process commits and get return values
         total_blobs, total_vectors = self.indexer._process_commits_parallel(
@@ -390,6 +400,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
         future = Mock(spec=Future)
         future.result.return_value = Mock(embeddings=[[0.1, 0.2, 0.3]], error=None)
         vector_manager.submit_batch_task.return_value = future
+        vector_manager.embedding_provider._get_model_token_limit.return_value = 120000
 
         # Process commits
         self.indexer._process_commits_parallel(commits, Mock(), vector_manager)

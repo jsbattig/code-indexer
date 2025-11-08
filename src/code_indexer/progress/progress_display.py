@@ -4,6 +4,8 @@ This module provides Rich Live component integration that creates bottom-locked
 progress display while allowing other output to scroll above it.
 """
 
+import logging
+import queue
 import threading
 from pathlib import Path
 from typing import Optional, Union
@@ -34,6 +36,11 @@ class RichLiveProgressManager:
         # Thread safety lock for protecting concurrent access to state
         self._lock = threading.Lock()
 
+        # Async progress queue for non-blocking updates (Bug #470 fix)
+        self._progress_queue: Optional[queue.Queue] = None
+        self._progress_worker: Optional[threading.Thread] = None
+        self._shutdown_event = threading.Event()
+
     def start_bottom_display(self) -> None:
         """Start bottom-anchored display with Rich Live component.
 
@@ -54,6 +61,16 @@ class RichLiveProgressManager:
             )
             self.live_component.start()
             self.is_active = True
+
+            # Start async progress worker thread (Bug #470 fix)
+            self._progress_queue = queue.Queue(maxsize=100)
+            self._shutdown_event.clear()
+            self._progress_worker = threading.Thread(
+                target=self._async_progress_worker,
+                name="progress_worker",
+                daemon=True,
+            )
+            self._progress_worker.start()
 
     def update_display(self, content: Union[str, RenderableType]) -> None:
         """Update bottom-anchored display content.
@@ -79,11 +96,26 @@ class RichLiveProgressManager:
 
         Thread-safe: Protected by internal lock to prevent concurrent stop operations.
         """
+        # Shutdown async worker thread first
+        if self._progress_queue is not None:
+            self._progress_queue.put(None)  # Shutdown signal
+        if self._progress_worker is not None:
+            self._progress_worker.join(timeout=2.0)  # Increased from 1.0s to prevent thread leaks
+
+            # Warn if thread didn't terminate (potential thread leak)
+            if self._progress_worker.is_alive():
+                logging.warning(
+                    "Progress worker thread did not terminate within 2.0s timeout. "
+                    "Potential thread leak detected."
+                )
+
         with self._lock:
             if self.live_component is not None:
                 self.live_component.stop()
                 self.live_component = None
             self.is_active = False
+            self._progress_worker = None
+            self._progress_queue = None
 
     def handle_setup_message(self, message: str) -> None:
         """Handle setup messages by printing to scrolling console area.
@@ -132,3 +164,38 @@ class RichLiveProgressManager:
         """
         with self._lock:
             return (self.is_active, self.live_component is not None)
+
+    def _async_progress_worker(self) -> None:
+        """Worker thread that processes queued progress updates.
+
+        Handles exceptions during update to prevent worker thread death.
+        """
+        while True:
+            content = self._progress_queue.get()
+            if content is None:  # Shutdown signal
+                break
+            with self._lock:
+                if self.is_active and self.live_component is not None:
+                    try:
+                        self.live_component.update(content)
+                    except Exception as e:
+                        # Log error but continue processing - don't let worker thread die
+                        logging.error(
+                            f"Error updating progress display: {e}. "
+                            "Continuing to process subsequent updates."
+                        )
+
+    def async_handle_progress_update(self, content: Union[str, RenderableType]) -> None:
+        """Queue progress update for async processing.
+
+        Gracefully handles queue overflow by dropping updates instead of raising
+        queue.Full exception. Progress updates are not critical - drops are acceptable
+        to prevent crashes during high-throughput indexing.
+        """
+        if self._progress_queue is not None:
+            try:
+                self._progress_queue.put_nowait(content)
+            except queue.Full:
+                # Drop update gracefully - progress updates are not critical
+                # Better to lose occasional updates than crash the process
+                pass

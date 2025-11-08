@@ -67,21 +67,48 @@ def test_temporal_indexer_uses_temporal_collection_name(tmp_path):
     indexer = TemporalIndexer(config_manager, vector_store)
 
     # Run temporal indexing (mock embedding provider to avoid API calls)
-    with patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory") as mock_factory:
-        mock_provider = Mock()
-        mock_provider.get_embeddings.return_value = [[0.1] * 1536]  # VoyageAI dimension
-        mock_factory.create.return_value = mock_provider
-        mock_factory.get_provider_model_info.return_value = {"dimensions": 1536}
+    # Patch factory BEFORE creating indexer to ensure consistent dimensions
+    with patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory") as mock_factory_before:
+        # Ensure collection is created with 1024 dimensions
+        mock_factory_before.get_provider_model_info.return_value = {
+            "provider": "voyage-ai",
+            "model": "voyage-code-3",
+            "dimensions": 1024
+        }
+        # Re-create indexer with patched factory to ensure collection uses correct dimensions
+        indexer = TemporalIndexer(config_manager, vector_store)
 
-        with patch("src.code_indexer.services.vector_calculation_manager.VectorCalculationManager") as mock_vcm:
+    with patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory") as mock_factory:
+        provider_info = {
+            "provider": "voyage-ai",
+            "model": "voyage-code-3",
+            "dimensions": 1024
+        }
+
+        mock_provider = Mock()
+        # Make get_embeddings return embeddings for any number of texts
+        def mock_get_embeddings(texts):
+            return [[0.1] * 1024 for _ in texts]
+        mock_provider.get_embeddings.side_effect = mock_get_embeddings
+        mock_provider.get_current_model.return_value = "voyage-code-3"
+        mock_factory.create.return_value = mock_provider
+        mock_factory.get_provider_model_info.return_value = provider_info
+
+        with patch("src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager") as mock_vcm:
             # Mock VectorCalculationManager to avoid real embedding calls
             mock_manager = Mock()
-            mock_future = Mock()
-            mock_result = Mock()
-            mock_result.error = None
-            mock_result.embeddings = [[0.1] * 1536]  # One embedding for one chunk
-            mock_future.result.return_value = mock_result
-            mock_manager.submit_batch_task.return_value = mock_future
+
+            def mock_submit_batch(texts, metadata):
+                """Return embeddings matching the number of input texts"""
+                mock_future = Mock()
+                mock_result = Mock()
+                mock_result.error = None
+                # Return one embedding per text chunk submitted
+                mock_result.embeddings = [[0.1] * 1536 for _ in texts]
+                mock_future.result.return_value = mock_result
+                return mock_future
+
+            mock_manager.submit_batch_task.side_effect = mock_submit_batch
             mock_manager.__enter__ = Mock(return_value=mock_manager)
             mock_manager.__exit__ = Mock(return_value=False)
             mock_vcm.return_value = mock_manager

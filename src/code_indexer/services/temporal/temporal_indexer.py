@@ -140,6 +140,10 @@ class TemporalIndexer:
                 self.TEMPORAL_COLLECTION_NAME, vector_size
             )
 
+    def _count_tokens(self, text: str, vector_manager) -> int:
+        """Count tokens for batching purposes."""
+        return len(text) // 4
+
     def index_commits(
         self,
         all_branches: bool = False,
@@ -346,7 +350,8 @@ class TemporalIndexer:
         commits = [c for c in commits if c.hash not in completed_commits]
 
         # Load existing point IDs to avoid duplicate processing
-        existing_ids = self.vector_store.load_id_index(self.TEMPORAL_COLLECTION_NAME)
+        # Create a copy to avoid mutating the store's data structure
+        existing_ids = set(self.vector_store.load_id_index(self.TEMPORAL_COLLECTION_NAME))
         logger.info(
             f"Loaded {len(existing_ids)} existing temporal points for deduplication"
         )
@@ -441,7 +446,12 @@ class TemporalIndexer:
                     if not diffs:
                         commit_slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
                     else:
-                        # Process each diff (already have diffs from above)
+                        # BATCHED EMBEDDINGS: Collect all chunks from all diffs first
+                        # Then batch them into minimal API calls
+                        all_chunks_data = []
+                        project_id = self.file_identifier._get_project_id()
+
+                        # Phase 1: Collect all chunks from all diffs
                         for diff_info in diffs:
                             # Update slot with current file information (no release/reacquire)
                             current_filename = (
@@ -483,136 +493,178 @@ class TemporalIndexer:
                             )
 
                             if chunks:
-                                # BUG #7 FIX: Check point existence BEFORE making API calls
+                                # BUG #7 FIX: Check point existence BEFORE collecting chunks
                                 # Build point IDs first to check existence
-                                project_id = self.file_identifier._get_project_id()
-                                chunks_to_process = []
-                                chunk_indices_to_process = []
-
                                 for j, chunk in enumerate(chunks):
                                     point_id = f"{project_id}:diff:{commit.hash}:{diff_info.file_path}:{j}"
 
                                     # Skip if point already exists
                                     if point_id not in existing_ids:
-                                        chunks_to_process.append(chunk)
-                                        chunk_indices_to_process.append(j)
+                                        # Collect chunk with all metadata needed for point creation
+                                        all_chunks_data.append({
+                                            'chunk': chunk,
+                                            'chunk_index': j,
+                                            'diff_info': diff_info,
+                                            'point_id': point_id,
+                                        })
 
-                                # Only make API call if there are new chunks to process
-                                if not chunks_to_process:
-                                    # All chunks already exist, skip vectorization entirely
-                                    continue
+                        # Phase 2: Batch all chunks and submit API calls with token-aware batching
+                        if all_chunks_data:
+                            commit_slot_tracker.update_slot(
+                                slot_id, FileStatus.VECTORIZING
+                            )
 
-                                # Get embeddings for NEW chunks only
+                            # Token-aware batching: split chunks into multiple batches if needed
+                            # to respect 120,000 token limit (90% safety margin = 108,000)
+                            model_limit = vector_manager.embedding_provider._get_model_token_limit()
+                            TOKEN_LIMIT = int(model_limit * 0.9)  # 90% safety margin
+
+                            batch_futures = []
+                            current_batch_indices = []
+                            current_tokens = 0
+
+                            for i, chunk_data in enumerate(all_chunks_data):
+                                chunk_text = chunk_data['chunk']['text']
+                                chunk_tokens = self._count_tokens(chunk_text, vector_manager)
+
+                                # If this chunk would exceed limit, submit current batch
+                                if current_tokens + chunk_tokens > TOKEN_LIMIT and current_batch_indices:
+                                    batch_texts = [all_chunks_data[idx]['chunk']['text'] for idx in current_batch_indices]
+                                    batch_future = vector_manager.submit_batch_task(batch_texts, {})
+                                    batch_futures.append(batch_future)
+
+                                    # Reset for next batch
+                                    current_batch_indices = []
+                                    current_tokens = 0
+
+                                # Add chunk to current batch
+                                current_batch_indices.append(i)
+                                current_tokens += chunk_tokens
+
+                            # Submit final batch if not empty
+                            if current_batch_indices:
+                                batch_texts = [all_chunks_data[idx]['chunk']['text'] for idx in current_batch_indices]
+                                batch_future = vector_manager.submit_batch_task(batch_texts, {})
+                                batch_futures.append(batch_future)
+
+                            # Wait for all batches and merge results
+                            all_embeddings = []
+                            for batch_future in batch_futures:
+                                batch_result = batch_future.result(timeout=300)
+                                all_embeddings.extend(batch_result.embeddings)
+
+                            # Create result object with merged embeddings
+                            from types import SimpleNamespace
+                            result = SimpleNamespace(embeddings=all_embeddings)
+
+                            # Validate embedding count matches chunk count
+                            if len(result.embeddings) != len(all_chunks_data):
+                                raise RuntimeError(
+                                    f"Embedding count mismatch: Expected {len(all_chunks_data)} embeddings, "
+                                    f"got {len(result.embeddings)}. API may have returned partial results."
+                                )
+
+                            # Phase 3: Create points from results
+                            if result.embeddings:
+                                # Finalize (store)
                                 commit_slot_tracker.update_slot(
-                                    slot_id, FileStatus.VECTORIZING
+                                    slot_id, FileStatus.FINALIZING
                                 )
-                                chunk_texts = [
-                                    chunk["text"] for chunk in chunks_to_process
+                                # Create points with correct payload structure
+                                points = []
+
+                                # Map embeddings back to chunks using all_chunks_data
+                                for chunk_data, embedding in zip(all_chunks_data, result.embeddings):
+                                    chunk = chunk_data['chunk']
+                                    chunk_index = chunk_data['chunk_index']
+                                    diff_info = chunk_data['diff_info']
+                                    point_id = chunk_data['point_id']
+
+                                    # Convert timestamp to date
+                                    from datetime import datetime
+
+                                    commit_date = datetime.fromtimestamp(
+                                        commit.timestamp
+                                    ).strftime("%Y-%m-%d")
+
+                                    # Extract language and file extension for filter compatibility
+                                    # MUST match regular indexing pattern from file_chunking_manager.py
+                                    file_path_obj = Path(diff_info.file_path)
+                                    file_extension = (
+                                        file_path_obj.suffix.lstrip(".") or "txt"
+                                    )  # Remove dot, same as regular indexing
+                                    language = (
+                                        file_path_obj.suffix.lstrip(".") or "txt"
+                                    )  # Same format for consistency
+
+                                    # Base payload structure
+                                    payload = {
+                                        "type": "commit_diff",
+                                        "diff_type": diff_info.diff_type,
+                                        "commit_hash": commit.hash,
+                                        "commit_timestamp": commit.timestamp,
+                                        "commit_date": commit_date,
+                                        "commit_message": (
+                                            commit.message[:200]
+                                            if commit.message
+                                            else ""
+                                        ),
+                                        "author_name": commit.author_name,
+                                        "author_email": commit.author_email,
+                                        "path": diff_info.file_path,  # FIX Bug #1: Use "path" for git-aware storage
+                                        "chunk_index": chunk_index,  # Use stored index
+                                        "char_start": chunk.get("char_start", 0),
+                                        "char_end": chunk.get("char_end", 0),
+                                        "project_id": project_id,
+                                        "content": chunk.get(
+                                            "text", ""
+                                        ),  # Store diff chunk text
+                                        "language": language,  # Add language for filter compatibility
+                                        "file_extension": file_extension,  # Add file_extension for filter compatibility
+                                    }
+
+                                    # Storage optimization: added/deleted files use pointer-based storage
+                                    if diff_info.diff_type in ["added", "deleted"]:
+                                        payload["reconstruct_from_git"] = True
+
+                                        # Add parent commit for deleted files (enables reconstruction)
+                                        if (
+                                            diff_info.diff_type == "deleted"
+                                            and diff_info.parent_commit_hash
+                                        ):
+                                            payload["parent_commit_hash"] = (
+                                                diff_info.parent_commit_hash
+                                            )
+
+                                    point = {
+                                        "id": point_id,
+                                        "vector": list(embedding),
+                                        "payload": payload,
+                                    }
+                                    points.append(point)
+
+                                # Filter out existing points before upserting
+                                new_points = [
+                                    point
+                                    for point in points
+                                    if point["id"] not in existing_ids
                                 ]
-                                future = vector_manager.submit_batch_task(
-                                    chunk_texts, {}
-                                )
-                                result = future.result(timeout=300)
 
-                                if result.embeddings:
-                                    # Finalize (store)
-                                    commit_slot_tracker.update_slot(
-                                        slot_id, FileStatus.FINALIZING
+                                # Only upsert new points
+                                if new_points:
+                                    self.vector_store.upsert_points(
+                                        collection_name=self.TEMPORAL_COLLECTION_NAME,
+                                        points=new_points,
                                     )
-                                    # Create points with correct payload structure
-                                    points = []
+                                    # Add new points to existing_ids to avoid duplicates within this run
+                                    for point in new_points:
+                                        existing_ids.add(point["id"])
 
-                                    # Use chunks_to_process and original indices for correct mapping
-                                    for chunk, embedding, original_index in zip(
-                                        chunks_to_process,
-                                        result.embeddings,
-                                        chunk_indices_to_process,
-                                    ):
-                                        point_id = f"{project_id}:diff:{commit.hash}:{diff_info.file_path}:{original_index}"
-
-                                        # Convert timestamp to date
-                                        from datetime import datetime
-
-                                        commit_date = datetime.fromtimestamp(
-                                            commit.timestamp
-                                        ).strftime("%Y-%m-%d")
-
-                                        # Extract language and file extension for filter compatibility
-                                        # MUST match regular indexing pattern from file_chunking_manager.py
-                                        file_path_obj = Path(diff_info.file_path)
-                                        file_extension = (
-                                            file_path_obj.suffix.lstrip(".") or "txt"
-                                        )  # Remove dot, same as regular indexing
-                                        language = (
-                                            file_path_obj.suffix.lstrip(".") or "txt"
-                                        )  # Same format for consistency
-
-                                        # Base payload structure
-                                        payload = {
-                                            "type": "commit_diff",
-                                            "diff_type": diff_info.diff_type,
-                                            "commit_hash": commit.hash,
-                                            "commit_timestamp": commit.timestamp,
-                                            "commit_date": commit_date,
-                                            "commit_message": (
-                                                commit.message[:200]
-                                                if commit.message
-                                                else ""
-                                            ),
-                                            "author_name": commit.author_name,
-                                            "author_email": commit.author_email,
-                                            "path": diff_info.file_path,  # FIX Bug #1: Use "path" for git-aware storage
-                                            "chunk_index": original_index,  # Use original index, not enumerated j
-                                            "char_start": chunk.get("char_start", 0),
-                                            "char_end": chunk.get("char_end", 0),
-                                            "project_id": project_id,
-                                            "content": chunk.get(
-                                                "text", ""
-                                            ),  # Store diff chunk text
-                                            "language": language,  # Add language for filter compatibility
-                                            "file_extension": file_extension,  # Add file_extension for filter compatibility
-                                        }
-
-                                        # Storage optimization: added/deleted files use pointer-based storage
-                                        if diff_info.diff_type in ["added", "deleted"]:
-                                            payload["reconstruct_from_git"] = True
-
-                                            # Add parent commit for deleted files (enables reconstruction)
-                                            if (
-                                                diff_info.diff_type == "deleted"
-                                                and diff_info.parent_commit_hash
-                                            ):
-                                                payload["parent_commit_hash"] = (
-                                                    diff_info.parent_commit_hash
-                                                )
-
-                                        point = {
-                                            "id": point_id,
-                                            "vector": list(embedding),
-                                            "payload": payload,
-                                        }
-                                        points.append(point)
-
-                                    # Filter out existing points before upserting
-                                    new_points = [
-                                        point
-                                        for point in points
-                                        if point["id"] not in existing_ids
-                                    ]
-
-                                    # Only upsert new points
-                                    if new_points:
-                                        self.vector_store.upsert_points(
-                                            collection_name=self.TEMPORAL_COLLECTION_NAME,
-                                            points=new_points,
-                                        )
-                                        # Add new points to existing_ids to avoid duplicates within this run
-                                        for point in new_points:
-                                            existing_ids.add(point["id"])
-
-                                        # Add blob hash to registry after successful indexing
-                                        if diff_info.blob_hash:
-                                            self.indexed_blobs.add(diff_info.blob_hash)
+                                    # Add blob hashes to registry after successful indexing
+                                    # Collect unique blob hashes from all processed diffs
+                                    for chunk_data in all_chunks_data:
+                                        if chunk_data['diff_info'].blob_hash:
+                                            self.indexed_blobs.add(chunk_data['diff_info'].blob_hash)
 
                     # Mark complete
                     commit_slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)

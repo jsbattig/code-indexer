@@ -76,6 +76,9 @@ class TestTemporalAPIOptimization(unittest.TestCase):
         # Create temporal indexer
         indexer = TemporalIndexer(self.config_manager, self.vector_store)
 
+        # Mock file_identifier to return consistent project_id
+        indexer.file_identifier._get_project_id = MagicMock(return_value="code-indexer")
+
         # Mock existing points in the collection
         existing_point_ids = {
             "code-indexer:diff:abc123:test.py:0",
@@ -112,10 +115,6 @@ class TestTemporalAPIOptimization(unittest.TestCase):
             )
         ]
 
-        # Mock _get_commit_history to return our test commits
-        with patch.object(indexer, '_get_commit_history') as mock_get_history:
-            mock_get_history.return_value = commits
-
         # Debug: Check what the real diff scanner returns for our test repo
         from src.code_indexer.services.temporal.temporal_diff_scanner import TemporalDiffScanner
         real_scanner = TemporalDiffScanner(self.repo_path)
@@ -129,8 +128,13 @@ class TestTemporalAPIOptimization(unittest.TestCase):
         actual_commit_hash = actual_commit_result.stdout.strip()
         print(f"DEBUG: Actual test repo commit: {actual_commit_hash}")
 
-        # Mock diff scanner
-        with patch.object(indexer.diff_scanner, 'get_diffs_for_commit') as mock_get_diffs:
+        # Mock all three together: commit history, diff scanner, and vector manager
+        with patch.object(indexer, '_get_commit_history') as mock_get_history, \
+             patch.object(indexer.diff_scanner, 'get_diffs_for_commit') as mock_get_diffs, \
+             patch('src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager') as MockVectorManager:
+
+            mock_get_history.return_value = commits
+
             mock_get_diffs.side_effect = [
                 # abc123 - already indexed
                 [DiffInfo(
@@ -157,19 +161,23 @@ class TestTemporalAPIOptimization(unittest.TestCase):
                     blob_hash="blob3"
                 )]
             ]
-
-        # Mock vector calculation manager
-        with patch('src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager') as MockVectorManager:
             mock_vector_manager = MagicMock()
             MockVectorManager.return_value.__enter__ = MagicMock(return_value=mock_vector_manager)
             MockVectorManager.return_value.__exit__ = MagicMock(return_value=None)
 
-            # Mock the future result
-            mock_future = MagicMock(spec=Future)
-            mock_result = MagicMock()
-            mock_result.embeddings = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]  # 2 chunks
-            mock_future.result.return_value = mock_result
-            mock_vector_manager.submit_batch_task.return_value = mock_future
+            # Mock token limit
+            mock_vector_manager.embedding_provider._get_model_token_limit.return_value = 120000
+
+            # Mock submit_batch_task to return embeddings matching input count
+            def mock_submit(chunk_texts, metadata):
+                future = MagicMock(spec=Future)
+                result = MagicMock()
+                # Return embeddings matching the number of chunks submitted
+                result.embeddings = [[0.1, 0.2, 0.3] for _ in chunk_texts]
+                future.result.return_value = result
+                return future
+
+            mock_vector_manager.submit_batch_task.side_effect = mock_submit
 
             # Process commits
             result = indexer.index_commits(
@@ -188,19 +196,17 @@ class TestTemporalAPIOptimization(unittest.TestCase):
             for i, call in enumerate(mock_get_diffs.call_args_list):
                 print(f"DEBUG: Call {i}: {call}")
 
-            # CRITICAL ASSERTION: API calls should be made for ALL commits
-            # because Bug #7 is NOT FIXED yet - the system doesn't skip existing points
+            # CRITICAL ASSERTION: With batched embeddings optimization,
+            # all chunks from all commits are batched into minimal API calls
             api_calls = mock_vector_manager.submit_batch_task.call_count
 
-            # This test SHOULD FAIL initially, showing Bug #7 exists
-            # We expect 3 API calls (one for each commit) when bug is present
-            # After fix, we should get only 1 API call (for new commit)
-            self.assertEqual(api_calls, 3,
-                f"Bug #7 appears to be already fixed? Got {api_calls} API calls. "
-                f"Expected 3 calls (one per commit) showing the bug exists.")
-
-            # Once we fix Bug #7, change the assertion to:
-            # self.assertEqual(api_calls, 1, "Only new commit should trigger API call")
+            # Bug #7 fix + batching optimization:
+            # - Bug #7: Skip existing point IDs (deduplication)
+            # - Batching: Batch all new chunks across commits into single call
+            # Expected: 1 API call for all new chunks (not 3 separate calls)
+            self.assertEqual(api_calls, 1,
+                f"Expected 1 batched API call for all new chunks, got {api_calls}. "
+                f"Batching optimization should combine all commits into single call.")
 
             # Verify existing points were detected and logged
             self.vector_store.load_id_index.assert_called_once_with(

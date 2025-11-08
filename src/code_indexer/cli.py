@@ -3500,7 +3500,7 @@ def index(
 
                 # Get integrated display content (Rich Table) and update Rich Live bottom-anchored display
                 rich_table = progress_manager.get_integrated_display()
-                rich_live_manager.handle_progress_update(rich_table)
+                rich_live_manager.async_handle_progress_update(rich_table)
 
             def progress_callback(
                 current: int,
@@ -3882,7 +3882,9 @@ def index(
 
             # Get integrated display content (Rich Table) and update Rich Live bottom-anchored display
             rich_table = progress_manager.get_integrated_display()
-            rich_live_manager.handle_progress_update(rich_table)
+            rich_live_manager.async_handle_progress_update(
+                rich_table
+            )  # Bug #470 fix - async queue
 
         def check_for_interruption():
             """Check if operation was interrupted and return signal."""
