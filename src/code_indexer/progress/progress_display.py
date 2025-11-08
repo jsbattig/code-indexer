@@ -170,6 +170,9 @@ class RichLiveProgressManager:
 
         Handles exceptions during update to prevent worker thread death.
         """
+        # Type assertion: queue is guaranteed to be initialized before worker starts
+        assert self._progress_queue is not None, "Worker started without queue"
+
         while True:
             content = self._progress_queue.get()
             if content is None:  # Shutdown signal

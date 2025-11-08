@@ -103,10 +103,16 @@ class TemporalDiffScanner:
         Returns:
             List of DiffInfo objects
         """
-        import subprocess
 
         diffs = []
         lines = diff_output.split("\n")
+
+        # OPTIMIZATION: Detect if we need parent commit (Issue #1 fix)
+        # Pre-scan for deleted files to avoid unnecessary git call
+        has_deleted_files = "deleted file mode" in diff_output
+        parent_commit_hash = ""
+        if has_deleted_files:
+            parent_commit_hash = self._get_parent_commit(commit_hash)
 
         # State machine variables
         current_file_path = None
@@ -131,6 +137,7 @@ class TemporalDiffScanner:
                         current_diff_content,
                         current_old_path,
                         commit_hash,
+                        parent_commit_hash,
                     )
 
                 # Parse new file paths from: diff --git a/path b/path
@@ -206,6 +213,7 @@ class TemporalDiffScanner:
                 current_diff_content,
                 current_old_path,
                 commit_hash,
+                parent_commit_hash,
             )
 
         return diffs
@@ -220,6 +228,7 @@ class TemporalDiffScanner:
         diff_content,
         old_path,
         commit_hash,
+        parent_commit_hash,
     ):
         """Finalize and append a DiffInfo object to the diffs list.
 
@@ -232,8 +241,8 @@ class TemporalDiffScanner:
             diff_content: List of diff content lines
             old_path: Old path (for renames)
             commit_hash: Git commit hash
+            parent_commit_hash: Parent commit hash (pre-calculated to avoid N+1 git calls)
         """
-        import subprocess
 
         # Apply override filtering
         if not self._should_include_file(file_path):
@@ -258,19 +267,9 @@ class TemporalDiffScanner:
         else:
             formatted_content = "\n".join(diff_content)
 
-        # Get parent commit hash for deleted files
-        parent_commit_hash = ""
-        if diff_type == "deleted":
-            parent_result = subprocess.run(
-                ["git", "rev-parse", f"{commit_hash}^"],
-                cwd=self.codebase_dir,
-                capture_output=True,
-                text=True,
-                errors="replace",
-            )
-            parent_commit_hash = (
-                parent_result.stdout.strip() if parent_result.returncode == 0 else ""
-            )
+        # Use pre-calculated parent commit hash (passed as parameter)
+        # For non-deleted files, parent_commit_hash will be empty string
+        final_parent_hash = parent_commit_hash if diff_type == "deleted" else ""
 
         diffs.append(
             DiffInfo(
@@ -280,9 +279,32 @@ class TemporalDiffScanner:
                 diff_content=formatted_content,
                 blob_hash=blob_hash or "",
                 old_path=old_path or "",
-                parent_commit_hash=parent_commit_hash,
+                parent_commit_hash=final_parent_hash,
             )
         )
+
+    def _get_parent_commit(self, commit_hash: str) -> str:
+        """Get parent commit hash for a commit.
+
+        Calculates parent commit ONCE to avoid N+1 git calls when processing
+        multiple deleted files in a single commit.
+
+        Args:
+            commit_hash: Git commit hash
+
+        Returns:
+            Parent commit hash, or empty string if no parent (root commit)
+        """
+        import subprocess
+
+        result = subprocess.run(
+            ["git", "rev-parse", f"{commit_hash}^"],
+            cwd=self.codebase_dir,
+            capture_output=True,
+            text=True,
+            errors="replace",
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
 
     def _is_binary_file(self, file_path):
         """Check if a file is binary based on its extension or content."""
@@ -340,18 +362,3 @@ class TemporalDiffScanner:
         ext = Path(file_path).suffix.lower()
         return ext in binary_extensions
 
-    def _get_blob_hash(self, commit_hash, file_path):
-        """Get git blob hash for a file in a specific commit."""
-        import subprocess
-
-        # Use git rev-parse to get the blob hash for the file at this commit
-        cmd = ["git", "rev-parse", f"{commit_hash}:{file_path}"]
-        result = subprocess.run(
-            cmd, cwd=self.codebase_dir, capture_output=True, text=True, errors="replace"
-        )
-
-        if result.returncode == 0:
-            return result.stdout.strip()
-        else:
-            # File might not exist at this commit (deleted), return empty
-            return ""
