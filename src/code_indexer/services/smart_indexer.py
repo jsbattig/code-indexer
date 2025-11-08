@@ -1174,6 +1174,9 @@ class SmartIndexer(HighThroughputProcessor):
     ) -> ProcessingStats:
         """Reconcile disk files with database contents and index missing/modified files."""
 
+        # Initialize FTS manager to None (FTS not supported in reconcile)
+        fts_manager: Optional[TantivyIndexManager] = None
+
         # Ensure provider-aware collection exists
         collection_name = self.qdrant_client.ensure_provider_aware_collection(
             self.config, self.embedding_provider, quiet
@@ -1955,6 +1958,9 @@ class SmartIndexer(HighThroughputProcessor):
         Returns:
             ProcessingStats with processing results
         """
+        # Initialize FTS manager to None (FTS not supported in incremental processing)
+        fts_manager: Optional[TantivyIndexManager] = None
+
         stats = ProcessingStats()
         stats.start_time = time.time()
 

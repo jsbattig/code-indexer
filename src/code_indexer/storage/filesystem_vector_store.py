@@ -76,6 +76,10 @@ class FilesystemVectorStore:
         # Structure: {collection_name: {'added': set(), 'updated': set(), 'deleted': set()}}
         self._indexing_session_changes: Dict[str, Dict[str, set]] = {}
 
+        # HNSW-001 (AC3): Daemon mode cache entry (optional, set by daemon service)
+        # When set, enables in-memory HNSW updates for watch mode instead of disk I/O
+        self.cache_entry: Optional[Any] = None
+
     def create_collection(self, collection_name: str, vector_size: int) -> bool:
         """Create a new collection with projection matrix.
 
@@ -2470,6 +2474,10 @@ class FilesystemVectorStore:
             HNSW-001: Real-time incremental updates for watch mode.
             Updates HNSW immediately after each batch of file changes,
             enabling queries without rebuild delays.
+
+            AC2 (Concurrent Query Support): Uses readers-writer lock pattern
+            AC3 (Daemon Cache Updates): Detects daemon mode and updates cache in-memory
+            AC4 (Standalone Persistence): Falls back to disk persistence when no daemon
         """
         if not changed_points:
             return
@@ -2481,59 +2489,154 @@ class FilesystemVectorStore:
 
         hnsw_manager = HNSWIndexManager(vector_dim=vector_size, space="cosine")
 
-        # Load existing index for incremental update
-        index, id_to_label, label_to_id, next_label = (
-            hnsw_manager.load_for_incremental_update(collection_path)
-        )
+        # AC3: Detect daemon mode vs standalone mode
+        daemon_mode = hasattr(self, 'cache_entry') and self.cache_entry is not None
 
-        if index is None:
-            # No existing index - mark as stale for query-time rebuild
-            self.logger.debug(
-                f"No existing HNSW index for watch mode update in '{collection_name}', "
-                f"marking as stale"
-            )
-            hnsw_manager.mark_stale(collection_path)
-            return
+        if daemon_mode:
+            # === DAEMON MODE: Update cache in-memory with locking ===
+            cache_entry = self.cache_entry
 
-        # Process each changed point
-        processed = 0
-        for point in changed_points:
-            point_id = point["id"]
-            vector = np.array(point["vector"], dtype=np.float32)
-
+            # AC2: Acquire write lock for exclusive HNSW update
+            cache_entry.write_lock.acquire()
             try:
-                # Add or update in HNSW
-                old_count = len(id_to_label)
-                label, id_to_label, label_to_id, next_label = (
-                    hnsw_manager.add_or_update_vector(
-                        index, point_id, vector, id_to_label, label_to_id, next_label
+                # AC2: Nest read lock inside write lock to prevent concurrent queries
+                cache_entry.read_lock.acquire()
+                try:
+                    # Load from cache or disk if not cached
+                    if cache_entry.hnsw_index is None:
+                        # Cache not loaded - load from disk
+                        cache_entry.hnsw_index = hnsw_manager.load_index(
+                            collection_path, max_elements=100000
+                        )
+
+                        from .id_index_manager import IDIndexManager
+                        id_manager = IDIndexManager()
+                        cache_entry.id_mapping = id_manager.load_index(collection_path)
+
+                    # Use cache references
+                    index = cache_entry.hnsw_index
+                    id_mapping = cache_entry.id_mapping
+
+                    if index is None:
+                        # No existing index - mark as stale for query-time rebuild
+                        self.logger.debug(
+                            f"No existing HNSW index for watch mode update in '{collection_name}', "
+                            f"marking as stale"
+                        )
+                        hnsw_manager.mark_stale(collection_path)
+                        return
+
+                    # Build ID-to-label and label-to-ID mappings
+                    label_to_id = hnsw_manager._load_id_mapping(collection_path)
+                    id_to_label = {v: k for k, v in label_to_id.items()}
+                    next_label = max(label_to_id.keys()) + 1 if label_to_id else 0
+
+                    # Process each changed point
+                    processed = 0
+                    for point in changed_points:
+                        point_id = point["id"]
+                        vector = np.array(point["vector"], dtype=np.float32)
+
+                        try:
+                            # Add or update in HNSW (updates cache index directly)
+                            old_count = len(id_to_label)
+                            label, id_to_label, label_to_id, next_label = (
+                                hnsw_manager.add_or_update_vector(
+                                    index, point_id, vector, id_to_label, label_to_id, next_label
+                                )
+                            )
+                            new_count = len(id_to_label)
+
+                            self.logger.debug(
+                                f"Daemon watch mode HNSW: added '{point_id}' with label {label}, "
+                                f"mappings: {old_count} -> {new_count}, next_label: {next_label}"
+                            )
+
+                            processed += 1
+
+                        except Exception as e:
+                            self.logger.warning(
+                                f"Failed to update HNSW for point '{point_id}': {e}"
+                            )
+                            continue
+
+                    # Save updated index to disk (also updates cache since index is same object)
+                    total_vectors = len(id_to_label)
+                    hnsw_manager.save_incremental_update(
+                        index, collection_path, id_to_label, label_to_id, total_vectors
                     )
-                )
-                new_count = len(id_to_label)
 
+                    # AC3: Update cache ID mapping (keep cache warm)
+                    cache_entry.id_mapping = id_mapping
+
+                    self.logger.debug(
+                        f"Daemon watch mode HNSW update complete for '{collection_name}': "
+                        f"{processed} points updated, total vectors: {total_vectors}, "
+                        f"cache remains warm"
+                    )
+
+                finally:
+                    # AC2: Release read lock
+                    cache_entry.read_lock.release()
+            finally:
+                # AC2: Release write lock
+                cache_entry.write_lock.release()
+
+        else:
+            # === STANDALONE MODE: Load from disk, update, save to disk ===
+            # Load existing index for incremental update
+            index, id_to_label, label_to_id, next_label = (
+                hnsw_manager.load_for_incremental_update(collection_path)
+            )
+
+            if index is None:
+                # No existing index - mark as stale for query-time rebuild
                 self.logger.debug(
-                    f"Watch mode HNSW: added '{point_id}' with label {label}, "
-                    f"mappings: {old_count} -> {new_count}, next_label: {next_label}"
+                    f"No existing HNSW index for watch mode update in '{collection_name}', "
+                    f"marking as stale"
                 )
+                hnsw_manager.mark_stale(collection_path)
+                return
 
-                processed += 1
+            # Process each changed point
+            processed = 0
+            for point in changed_points:
+                point_id = point["id"]
+                vector = np.array(point["vector"], dtype=np.float32)
 
-            except Exception as e:
-                self.logger.warning(
-                    f"Failed to update HNSW for point '{point_id}': {e}"
-                )
-                continue
+                try:
+                    # Add or update in HNSW
+                    old_count = len(id_to_label)
+                    label, id_to_label, label_to_id, next_label = (
+                        hnsw_manager.add_or_update_vector(
+                            index, point_id, vector, id_to_label, label_to_id, next_label
+                        )
+                    )
+                    new_count = len(id_to_label)
 
-        # Save updated index
-        total_vectors = len(id_to_label)
-        hnsw_manager.save_incremental_update(
-            index, collection_path, id_to_label, label_to_id, total_vectors
-        )
+                    self.logger.debug(
+                        f"Standalone watch mode HNSW: added '{point_id}' with label {label}, "
+                        f"mappings: {old_count} -> {new_count}, next_label: {next_label}"
+                    )
 
-        self.logger.debug(
-            f"Watch mode HNSW update complete for '{collection_name}': "
-            f"{processed} points updated, total vectors: {total_vectors}"
-        )
+                    processed += 1
+
+                except Exception as e:
+                    self.logger.warning(
+                        f"Failed to update HNSW for point '{point_id}': {e}"
+                    )
+                    continue
+
+            # Save updated index to disk
+            total_vectors = len(id_to_label)
+            hnsw_manager.save_incremental_update(
+                index, collection_path, id_to_label, label_to_id, total_vectors
+            )
+
+            self.logger.debug(
+                f"Standalone watch mode HNSW update complete for '{collection_name}': "
+                f"{processed} points updated, total vectors: {total_vectors}"
+            )
 
     def _apply_incremental_hnsw_batch_update(
         self,
