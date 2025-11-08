@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from rpyc import Service
 
 from .cache import CacheEntry, TTLEvictionThread
+from .watch_manager import DaemonWatchManager
 
 if TYPE_CHECKING:
     pass
@@ -46,7 +47,9 @@ class CIDXDaemonService(Service):
         # This allows _ensure_cache_loaded to be called both standalone and within lock
         self.cache_lock: threading.RLock = threading.RLock()
 
-        # Watch mode state
+        # Watch mode state - managed by DaemonWatchManager
+        self.watch_manager = DaemonWatchManager()
+        # Keep legacy fields for compatibility (will be removed later)
         self.watch_handler: Optional[Any] = None
         self.watch_thread: Optional[threading.Thread] = None
         self.watch_project_path: Optional[str] = None
@@ -394,6 +397,98 @@ class CIDXDaemonService(Service):
                     logger.info("Invalidating cache before indexing")
                     self.cache_entry = None
 
+            # CRITICAL FIX for Bug #473: Check temporal indexing FIRST before ANY semantic initialization
+            # This prevents wasting time on SmartIndexer setup and file discovery when only temporal is needed
+            if kwargs.get("index_commits", False):
+                # Temporal-only path: Skip ALL semantic indexing infrastructure
+                logger.info(
+                    "Temporal indexing requested - skipping semantic indexing setup"
+                )
+
+                from code_indexer.config import ConfigManager
+                from code_indexer.services.temporal.temporal_indexer import (
+                    TemporalIndexer,
+                )
+                from code_indexer.storage.filesystem_vector_store import (
+                    FilesystemVectorStore,
+                )
+
+                # Only setup what's needed for temporal
+                config_manager = ConfigManager.create_with_backtrack(Path(project_path))
+                index_dir = Path(project_path) / ".code-indexer" / "index"
+                vector_store = FilesystemVectorStore(
+                    base_path=index_dir, project_root=Path(project_path)
+                )
+
+                # Setup callback infrastructure for temporal progress
+                import threading
+                import json
+
+                callback_counter = [0]
+                callback_lock = threading.Lock()
+
+                def temporal_callback(current, total, file_path, info="", **cb_kwargs):
+                    """Progress callback for temporal indexing."""
+                    with callback_lock:
+                        callback_counter[0] += 1
+                        correlation_id = callback_counter[0]
+
+                    concurrent_files = cb_kwargs.get("concurrent_files", [])
+                    concurrent_files_json = json.dumps(concurrent_files)
+
+                    filtered_kwargs = {
+                        "concurrent_files_json": concurrent_files_json,
+                        "correlation_id": correlation_id,
+                    }
+
+                    if callback:
+                        callback(current, total, file_path, info, **filtered_kwargs)
+
+                def reset_progress_timers():
+                    """Reset progress timers by delegating to client callback."""
+                    if callback and hasattr(callback, "reset_progress_timers"):
+                        callback.reset_progress_timers()
+
+                temporal_callback.reset_progress_timers = reset_progress_timers  # type: ignore[attr-defined]
+
+                # Initialize temporal indexer
+                temporal_indexer = TemporalIndexer(config_manager, vector_store)
+
+                # Run temporal indexing with progress callback
+                result = temporal_indexer.index_commits(
+                    all_branches=kwargs.get("all_branches", False),
+                    max_commits=kwargs.get("max_commits"),
+                    since_date=kwargs.get("since_date"),
+                    progress_callback=temporal_callback,
+                )
+
+                temporal_indexer.close()
+
+                # Invalidate cache after temporal indexing completes
+                with self.cache_lock:
+                    if self.cache_entry:
+                        logger.info(
+                            "Invalidating cache after temporal indexing completed"
+                        )
+                        self.cache_entry = None
+
+                # Return temporal indexing results
+                return {
+                    "status": "completed",
+                    "stats": {
+                        "total_commits": result.total_commits,
+                        "files_processed": result.files_processed,
+                        "approximate_vectors_created": result.approximate_vectors_created,
+                        "skip_ratio": result.skip_ratio,
+                        "branches_indexed": result.branches_indexed,
+                        "commits_per_branch": result.commits_per_branch,
+                        "failed_files": 0,
+                        "duration_seconds": 0,  # Not tracked yet
+                        "cancelled": False,
+                    },
+                }
+
+            # Standard semantic indexing path - only executed if NOT temporal
             from code_indexer.services.smart_indexer import SmartIndexer
             from code_indexer.config import ConfigManager
             from code_indexer.backends.backend_factory import BackendFactory
@@ -456,92 +551,35 @@ class CIDXDaemonService(Service):
             # Attach reset method to callback function (makes it accessible via hasattr check)
             correlated_callback.reset_progress_timers = reset_progress_timers  # type: ignore[attr-defined]
 
-            # Check if temporal indexing is requested
-            if kwargs.get("index_commits", False):
-                # Temporal indexing mode
-                from code_indexer.services.temporal.temporal_indexer import (
-                    TemporalIndexer,
-                )
-                from code_indexer.storage.filesystem_vector_store import (
-                    FilesystemVectorStore,
-                )
+            # Standard workspace indexing mode (temporal check moved to top)
+            stats = indexer.smart_index(
+                force_full=kwargs.get("force_full", False),
+                batch_size=kwargs.get("batch_size", 50),
+                progress_callback=correlated_callback,  # With correlation IDs
+                quiet=True,  # Suppress daemon-side output
+                enable_fts=kwargs.get("enable_fts", False),
+                reconcile_with_database=kwargs.get("reconcile_with_database", False),
+                files_count_to_process=kwargs.get("files_count_to_process"),
+                detect_deletions=kwargs.get("detect_deletions", False),
+            )
 
-                # Initialize vector store
-                index_dir = Path(project_path) / ".code-indexer" / "index"
-                vector_store = FilesystemVectorStore(
-                    base_path=index_dir, project_root=Path(project_path)
-                )
+            # Invalidate cache after indexing completes
+            with self.cache_lock:
+                if self.cache_entry:
+                    logger.info("Invalidating cache after indexing completed")
+                    self.cache_entry = None
 
-                # Initialize temporal indexer
-                temporal_indexer = TemporalIndexer(config_manager, vector_store)
-
-                # Run temporal indexing with progress callback
-                result = temporal_indexer.index_commits(
-                    all_branches=kwargs.get("all_branches", False),
-                    max_commits=kwargs.get("max_commits"),
-                    since_date=kwargs.get("since_date"),
-                    progress_callback=correlated_callback,
-                )
-
-                temporal_indexer.close()
-
-                # Invalidate cache after temporal indexing completes
-                with self.cache_lock:
-                    if self.cache_entry:
-                        logger.info(
-                            "Invalidating cache after temporal indexing completed"
-                        )
-                        self.cache_entry = None
-
-                # Return temporal indexing results
-                return {
-                    "status": "completed",
-                    "stats": {
-                        "total_commits": result.total_commits,
-                        "unique_blobs": result.unique_blobs,
-                        "new_blobs_indexed": result.new_blobs_indexed,
-                        "deduplication_ratio": result.deduplication_ratio,
-                        "branches_indexed": result.branches_indexed,
-                        "commits_per_branch": result.commits_per_branch,
-                        "files_processed": result.unique_blobs,  # For compatibility
-                        "chunks_created": result.new_blobs_indexed * 3,  # Estimate
-                        "failed_files": 0,
-                        "duration_seconds": 0,  # Not tracked yet
-                        "cancelled": False,
-                    },
-                }
-            else:
-                # Standard workspace indexing mode
-                stats = indexer.smart_index(
-                    force_full=kwargs.get("force_full", False),
-                    batch_size=kwargs.get("batch_size", 50),
-                    progress_callback=correlated_callback,  # With correlation IDs
-                    quiet=True,  # Suppress daemon-side output
-                    enable_fts=kwargs.get("enable_fts", False),
-                    reconcile_with_database=kwargs.get(
-                        "reconcile_with_database", False
-                    ),
-                    files_count_to_process=kwargs.get("files_count_to_process"),
-                    detect_deletions=kwargs.get("detect_deletions", False),
-                )
-
-                # Invalidate cache after indexing completes
-                with self.cache_lock:
-                    if self.cache_entry:
-                        logger.info("Invalidating cache after indexing completed")
-                        self.cache_entry = None
-
-                # Return stats dict (NOT a status dict, but actual stats)
-                return {
-                    "status": "completed",
-                    "stats": {
-                        "files_processed": stats.files_processed,
-                        "chunks_created": stats.chunks_created,
-                        "failed_files": stats.failed_files,
-                        "duration_seconds": stats.duration,
-                        "cancelled": getattr(stats, "cancelled", False),
-                    },
-                }
+            # Return stats dict (NOT a status dict, but actual stats)
+            return {
+                "status": "completed",
+                "stats": {
+                    "files_processed": stats.files_processed,
+                    "chunks_created": stats.chunks_created,
+                    "failed_files": stats.failed_files,
+                    "duration_seconds": stats.duration,
+                    "cancelled": getattr(stats, "cancelled", False),
+                },
+            }
 
         except Exception as e:
             logger.error(f"Blocking indexing failed: {e}")
@@ -780,111 +818,40 @@ class CIDXDaemonService(Service):
     def exposed_watch_start(
         self, project_path: str, callback: Optional[Any] = None, **kwargs
     ) -> Dict[str, Any]:
-        """Start GitAwareWatchHandler in daemon.
+        """Start GitAwareWatchHandler in daemon using non-blocking background thread.
+
+        This method delegates to DaemonWatchManager which starts watch mode
+        in a background thread, allowing the RPC call to return immediately
+        and the daemon to remain responsive to concurrent operations.
 
         Args:
             project_path: Path to project root
-            callback: Optional event callback
+            callback: Optional event callback (unused in background mode)
             **kwargs: Additional watch parameters
 
         Returns:
-            Watch start status
+            Watch start status (returns immediately, non-blocking)
         """
         logger.info(f"exposed_watch_start: project={project_path}")
 
-        # FIX Race Condition #3: Protect all watch state access with cache_lock
-        # This prevents duplicate watch handlers from starting
-        with self.cache_lock:
-            # Check if watch already running (watch_handler exists AND thread is alive)
-            # This prevents duplicate watch starts
-            if (
-                self.watch_handler
-                and self.watch_thread
-                and self.watch_thread.is_alive()
-            ):
-                return {
-                    "status": "error",
-                    "message": "Watch already running",
-                }
+        # Delegate to DaemonWatchManager for non-blocking operation
+        # Config will be loaded by the manager
+        result = self.watch_manager.start_watch(project_path, None, **kwargs)
 
-            try:
-                from code_indexer.services.git_aware_watch_handler import (
-                    GitAwareWatchHandler,
-                )
-                from code_indexer.config import ConfigManager
-                from code_indexer.backends.backend_factory import BackendFactory
-                from code_indexer.services.embedding_factory import (
-                    EmbeddingProviderFactory,
-                )
-                from code_indexer.services.smart_indexer import SmartIndexer
-                from code_indexer.services.git_topology_service import (
-                    GitTopologyService,
-                )
-                from code_indexer.services.watch_metadata import WatchMetadata
+        # Update legacy fields for compatibility
+        if result["status"] == "success":
+            # These will be updated after the thread starts
+            self.watch_handler = self.watch_manager.watch_handler
+            self.watch_thread = self.watch_manager.watch_thread
+            self.watch_project_path = self.watch_manager.project_path
 
-                # Initialize configuration and services
-                config_manager = ConfigManager.create_with_backtrack(Path(project_path))
-                config = config_manager.get_config()
-
-                # Create embedding provider and vector store
-                embedding_provider = EmbeddingProviderFactory.create(config=config)
-                backend = BackendFactory.create(config, Path(project_path))
-                vector_store_client = backend.get_vector_store_client()
-
-                # Initialize SmartIndexer
-                metadata_path = config_manager.config_path.parent / "metadata.json"
-                smart_indexer = SmartIndexer(
-                    config, embedding_provider, vector_store_client, metadata_path
-                )
-
-                # Initialize git topology service
-                git_topology_service = GitTopologyService(config.codebase_dir)
-
-                # Initialize watch metadata
-                watch_metadata_path = (
-                    config_manager.config_path.parent / "watch_metadata.json"
-                )
-                watch_metadata = WatchMetadata.load_from_disk(watch_metadata_path)
-
-                # Create watch handler with correct signature
-                debounce_seconds = kwargs.get("debounce_seconds", 2.0)
-                self.watch_handler = GitAwareWatchHandler(
-                    config=config,
-                    smart_indexer=smart_indexer,
-                    git_topology_service=git_topology_service,
-                    watch_metadata=watch_metadata,
-                    debounce_seconds=debounce_seconds,
-                )
-
-                # Start watching
-                self.watch_handler.start_watching()
-                self.watch_project_path = project_path
-
-                # Capture thread reference from watch handler
-                self.watch_thread = self.watch_handler.processing_thread
-
-                # Verify thread actually started
-                if not self.watch_thread or not self.watch_thread.is_alive():
-                    raise RuntimeError("Watch thread failed to start")
-
-                logger.info("Watch started successfully")
-                return {"status": "success", "message": "Watch started"}
-
-            except Exception as e:
-                logger.error(f"Watch start failed: {e}")
-                import traceback
-
-                logger.error(traceback.format_exc())
-
-                # Clean up watch state on error (protected by cache_lock)
-                self.watch_handler = None
-                self.watch_thread = None
-                self.watch_project_path = None
-
-                return {"status": "error", "message": str(e)}
+        return result
 
     def exposed_watch_stop(self, project_path: str) -> Dict[str, Any]:
         """Stop watch gracefully with statistics.
+
+        Delegates to DaemonWatchManager which handles graceful shutdown
+        of the watch thread and cleanup of resources.
 
         Args:
             project_path: Path to project root
@@ -894,74 +861,40 @@ class CIDXDaemonService(Service):
         """
         logger.info(f"exposed_watch_stop: project={project_path}")
 
-        # FIX Race Condition #3: Protect watch state access with cache_lock
-        with self.cache_lock:
-            if not self.watch_handler:
-                return {
-                    "status": "error",
-                    "message": "No watch running",
-                }
+        # Delegate to DaemonWatchManager
+        result = self.watch_manager.stop_watch()
 
-            try:
-                # Stop watch handler
-                self.watch_handler.stop_watching()
+        # Clear legacy fields for compatibility
+        if result["status"] == "success":
+            self.watch_handler = None
+            self.watch_thread = None
+            self.watch_project_path = None
 
-                # Wait for thread to finish
-                if self.watch_thread:
-                    self.watch_thread.join(timeout=5)
-
-                # Get statistics
-                stats = (
-                    self.watch_handler.get_stats()
-                    if hasattr(self.watch_handler, "get_stats")
-                    else {}
-                )
-
-                # Clear watch state (protected by cache_lock)
-                self.watch_handler = None
-                self.watch_thread = None
-                self.watch_project_path = None
-
-                logger.info("Watch stopped successfully")
-                return {
-                    "status": "success",
-                    "message": "Watch stopped",
-                    "stats": stats,
-                }
-
-            except Exception as e:
-                logger.error(f"Watch stop failed: {e}")
-                return {"status": "error", "message": str(e)}
+        return result
 
     def exposed_watch_status(self) -> Dict[str, Any]:
         """Get current watch state.
 
+        Delegates to DaemonWatchManager to get current watch status
+        and statistics.
+
         Returns:
             Watch status with project path and statistics
         """
-        # FIX Race Condition #3: Protect watch state access with cache_lock
-        with self.cache_lock:
-            if (
-                not self.watch_handler
-                or not self.watch_thread
-                or not self.watch_thread.is_alive()
-            ):
-                return {
-                    "running": False,
-                    "project_path": None,
-                }
+        # Get stats from DaemonWatchManager
+        stats = self.watch_manager.get_stats()
 
-            # Get statistics from watch handler
-            stats = (
-                self.watch_handler.get_stats()
-                if hasattr(self.watch_handler, "get_stats")
-                else {}
-            )
-
+        # Convert to legacy format for compatibility
+        if stats["status"] == "running":
             return {
                 "running": True,
-                "project_path": self.watch_project_path,
+                "project_path": stats["project_path"],
                 "stats": stats,
+            }
+        else:
+            return {
+                "running": False,
+                "project_path": None,
             }
 
     # =============================================================================
@@ -1167,9 +1100,19 @@ class CIDXDaemonService(Service):
                 ),
             }
 
+        # Get watch status from DaemonWatchManager
+        watch_stats = self.watch_manager.get_stats()
+        watch_status = {
+            "watch_running": watch_stats["status"] == "running",
+            "watch_project": watch_stats.get("project_path"),
+            "watch_uptime_seconds": watch_stats.get("uptime_seconds", 0),
+            "watch_files_processed": watch_stats.get("files_processed", 0),
+        }
+
         return {
             **cache_status,
             **indexing_status,
+            **watch_status,
         }
 
     def exposed_clear_cache(self) -> Dict[str, Any]:
@@ -1196,11 +1139,9 @@ class CIDXDaemonService(Service):
         logger.info("exposed_shutdown: initiating graceful shutdown")
 
         try:
-            # Stop watch if running
-            if self.watch_handler:
-                self.watch_handler.stop_watching()
-                if self.watch_thread:
-                    self.watch_thread.join(timeout=5)
+            # Stop watch if running (via DaemonWatchManager)
+            if self.watch_manager.is_running():
+                self.watch_manager.stop_watch()
 
             # Clear cache
             with self.cache_lock:
