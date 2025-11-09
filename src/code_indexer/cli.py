@@ -3289,295 +3289,297 @@ def index(
         # Display mode indicator
         console.print("🔧 Running in local mode", style="blue")
 
-    # Validate flag combinations
-    if detect_deletions and reconcile:
-        console.print(
-            "❌ Cannot use --detect-deletions with --reconcile",
-            style="red",
-        )
-        console.print(
-            "💡 --reconcile mode includes deletion detection automatically",
-            style="yellow",
-        )
-        sys.exit(1)
+        # Validate flag combinations
+        if detect_deletions and reconcile:
+            console.print(
+                "❌ Cannot use --detect-deletions with --reconcile",
+                style="red",
+            )
+            console.print(
+                "💡 --reconcile mode includes deletion detection automatically",
+                style="yellow",
+            )
+            sys.exit(1)
 
-    if detect_deletions and clear:
-        console.print(
-            "⚠️  Warning: --detect-deletions is redundant with --clear",
-            style="yellow",
-        )
-        console.print(
-            "💡 --clear empties the collection completely, making deletion detection unnecessary",
-            style="yellow",
-        )
-
-    # Validate temporal indexing flags
-    if all_branches and not index_commits:
-        console.print(
-            "❌ Cannot use --all-branches without --index-commits",
-            style="red",
-        )
-        console.print(
-            "💡 Use: cidx index --index-commits --all-branches",
-            style="yellow",
-        )
-        sys.exit(1)
-
-    if max_commits and not index_commits:
-        console.print(
-            "❌ Cannot use --max-commits without --index-commits",
-            style="red",
-        )
-        sys.exit(1)
-
-    if since_date and not index_commits:
-        console.print(
-            "❌ Cannot use --since-date without --index-commits",
-            style="red",
-        )
-        sys.exit(1)
-
-    # Handle --index-commits flag (early exit path for temporal indexing)
-    if index_commits:
-        try:
-            # Lazy import temporal indexing components
-            from .services.temporal.temporal_indexer import TemporalIndexer
-            from .storage.filesystem_vector_store import FilesystemVectorStore
-
-            config = config_manager.load()
-
-            # Initialize vector store
-            index_dir = config.codebase_dir / ".code-indexer" / "index"
-            vector_store = FilesystemVectorStore(
-                base_path=index_dir, project_root=config.codebase_dir
+        if detect_deletions and clear:
+            console.print(
+                "⚠️  Warning: --detect-deletions is redundant with --clear",
+                style="yellow",
+            )
+            console.print(
+                "💡 --clear empties the collection completely, making deletion detection unnecessary",
+                style="yellow",
             )
 
-            # Check if --clear flag is set for temporal collection
-            if clear:
-                console.print("🧹 Clearing temporal index...", style="cyan")
-                vector_store.clear_collection(
-                    collection_name="code-indexer-temporal",
-                    remove_projection_matrix=False,
+        # Validate temporal indexing flags
+        if all_branches and not index_commits:
+            console.print(
+                "❌ Cannot use --all-branches without --index-commits",
+                style="red",
+            )
+            console.print(
+                "💡 Use: cidx index --index-commits --all-branches",
+                style="yellow",
+            )
+            sys.exit(1)
+
+        if max_commits and not index_commits:
+            console.print(
+                "❌ Cannot use --max-commits without --index-commits",
+                style="red",
+            )
+            sys.exit(1)
+
+        if since_date and not index_commits:
+            console.print(
+                "❌ Cannot use --since-date without --index-commits",
+                style="red",
+            )
+            sys.exit(1)
+
+        # Handle --index-commits flag (early exit path for temporal indexing)
+        if index_commits:
+            try:
+                # Lazy import temporal indexing components
+                from .services.temporal.temporal_indexer import TemporalIndexer
+                from .storage.filesystem_vector_store import FilesystemVectorStore
+
+                config = config_manager.load()
+
+                # Initialize vector store
+                index_dir = config.codebase_dir / ".code-indexer" / "index"
+                vector_store = FilesystemVectorStore(
+                    base_path=index_dir, project_root=config.codebase_dir
                 )
-                # Also remove temporal metadata so indexing starts fresh
-                temporal_meta_path = (
-                    config.codebase_dir
-                    / ".code-indexer/index/temporal/temporal_meta.json"
-                )
-                if temporal_meta_path.exists():
-                    temporal_meta_path.unlink()
 
-                # Also remove progressive tracking file (Bug #8 fix)
-                temporal_progress_path = (
-                    config.codebase_dir
-                    / ".code-indexer/index/temporal/temporal_progress.json"
-                )
-                if temporal_progress_path.exists():
-                    temporal_progress_path.unlink()
-
-                console.print("✅ Temporal index cleared", style="green")
-
-            # Initialize temporal indexer
-            temporal_indexer = TemporalIndexer(config_manager, vector_store)
-
-            # Cost estimation warning for all-branches (no confirmation prompt)
-            if all_branches:
-                # Get branch count for cost warning
-                try:
-                    import subprocess
-
-                    result = subprocess.run(
-                        ["git", "branch", "-a"],
-                        cwd=config.codebase_dir,
-                        capture_output=True,
-                        text=True,
-                        check=True,
+                # Check if --clear flag is set for temporal collection
+                if clear:
+                    console.print("🧹 Clearing temporal index...", style="cyan")
+                    vector_store.clear_collection(
+                        collection_name="code-indexer-temporal",
+                        remove_projection_matrix=False,
                     )
-                    branch_count = len(
-                        [
-                            line
-                            for line in result.stdout.split("\n")
-                            if line.strip() and not line.strip().startswith("*")
-                        ]
+                    # Also remove temporal metadata so indexing starts fresh
+                    temporal_meta_path = (
+                        config.codebase_dir
+                        / ".code-indexer/index/temporal/temporal_meta.json"
                     )
+                    if temporal_meta_path.exists():
+                        temporal_meta_path.unlink()
 
-                    if branch_count > 50:
-                        console.print(
-                            f"⚠️  [yellow]Indexing all branches will process {branch_count} branches[/yellow]",
-                            markup=True,
+                    # Also remove progressive tracking file (Bug #8 fix)
+                    temporal_progress_path = (
+                        config.codebase_dir
+                        / ".code-indexer/index/temporal/temporal_progress.json"
+                    )
+                    if temporal_progress_path.exists():
+                        temporal_progress_path.unlink()
+
+                    console.print("✅ Temporal index cleared", style="green")
+
+                # Initialize temporal indexer
+                temporal_indexer = TemporalIndexer(config_manager, vector_store)
+
+                # Cost estimation warning for all-branches (no confirmation prompt)
+                if all_branches:
+                    # Get branch count for cost warning
+                    try:
+                        import subprocess
+
+                        result = subprocess.run(
+                            ["git", "branch", "-a"],
+                            cwd=config.codebase_dir,
+                            capture_output=True,
+                            text=True,
+                            check=True,
                         )
-                        console.print(
-                            "   This may significantly increase storage and API costs.",
-                            style="yellow",
+                        branch_count = len(
+                            [
+                                line
+                                for line in result.stdout.split("\n")
+                                if line.strip() and not line.strip().startswith("*")
+                            ]
                         )
-                        console.print()
-                        # NOTE: Removed confirmation prompt to enable batch/automated usage
-                        # Proceeding directly with indexing as requested by user
-                except subprocess.CalledProcessError:
-                    pass  # Ignore git command failures
 
-            # Initialize progress managers for rich slot-based display
-            from .progress import MultiThreadedProgressManager
-            from .progress.progress_display import RichLiveProgressManager
+                        if branch_count > 50:
+                            console.print(
+                                f"⚠️  [yellow]Indexing all branches will process {branch_count} branches[/yellow]",
+                                markup=True,
+                            )
+                            console.print(
+                                "   This may significantly increase storage and API costs.",
+                                style="yellow",
+                            )
+                            console.print()
+                            # NOTE: Removed confirmation prompt to enable batch/automated usage
+                            # Proceeding directly with indexing as requested by user
+                    except subprocess.CalledProcessError:
+                        pass  # Ignore git command failures
 
-            # Get parallel processing thread count for display slots
-            parallel_threads = (
-                getattr(config.voyage_ai, "parallel_requests", 8)
-                if hasattr(config, "voyage_ai")
-                else 8
-            )
+                # Initialize progress managers for rich slot-based display
+                from .progress import MultiThreadedProgressManager
+                from .progress.progress_display import RichLiveProgressManager
 
-            # Create Rich Live progress manager for bottom-anchored display
-            rich_live_manager = RichLiveProgressManager(console=console)
-            progress_manager = MultiThreadedProgressManager(
-                console=console,
-                live_manager=rich_live_manager,
-                max_slots=parallel_threads,  # FIX Issue 1: Match TemporalIndexer's CleanSlotTracker slot count
-            )
+                # Get parallel processing thread count for display slots
+                parallel_threads = (
+                    getattr(config.voyage_ai, "parallel_requests", 8)
+                    if hasattr(config, "voyage_ai")
+                    else 8
+                )
 
-            display_initialized = False
+                # Create Rich Live progress manager for bottom-anchored display
+                rich_live_manager = RichLiveProgressManager(console=console)
+                progress_manager = MultiThreadedProgressManager(
+                    console=console,
+                    live_manager=rich_live_manager,
+                    max_slots=parallel_threads,  # FIX Issue 1: Match TemporalIndexer's CleanSlotTracker slot count
+                )
 
-            def show_setup_message(message: str):
-                """Display setup/informational messages as scrolling cyan text."""
-                rich_live_manager.handle_setup_message(message)
+                display_initialized = False
 
-            def update_commit_progress(
-                current: int,
-                total: int,
-                info: str,
-                concurrent_files=None,
-                slot_tracker=None,
-            ):
-                """Update commit processing progress with slot-based display."""
-                nonlocal display_initialized
+                def show_setup_message(message: str):
+                    """Display setup/informational messages as scrolling cyan text."""
+                    rich_live_manager.handle_setup_message(message)
 
-                # Initialize Rich Live display on first call
-                if not display_initialized:
-                    rich_live_manager.start_bottom_display()
-                    display_initialized = True
+                def update_commit_progress(
+                    current: int,
+                    total: int,
+                    info: str,
+                    concurrent_files=None,
+                    slot_tracker=None,
+                ):
+                    """Update commit processing progress with slot-based display."""
+                    nonlocal display_initialized
 
-                # Parse progress info for metrics if available
-                try:
-                    # FIX Issue 2: Extract rate from info (handles both "files/s" and "commits/s")
-                    # Info format: "current/total commits (%) | X.X commits/s | Y.Y KB/s | ..."
-                    parts = info.split(" | ")
-                    if len(parts) >= 2:
-                        rate_str = parts[1].strip()
-                        # Extract numeric value from "X.X commits/s" or "X.X files/s"
-                        rate_parts = rate_str.split()
-                        if len(rate_parts) >= 1:
-                            files_per_second = float(rate_parts[0])
+                    # Initialize Rich Live display on first call
+                    if not display_initialized:
+                        rich_live_manager.start_bottom_display()
+                        display_initialized = True
+
+                    # Parse progress info for metrics if available
+                    try:
+                        # FIX Issue 2: Extract rate from info (handles both "files/s" and "commits/s")
+                        # Info format: "current/total commits (%) | X.X commits/s | Y.Y KB/s | ..."
+                        parts = info.split(" | ")
+                        if len(parts) >= 2:
+                            rate_str = parts[1].strip()
+                            # Extract numeric value from "X.X commits/s" or "X.X files/s"
+                            rate_parts = rate_str.split()
+                            if len(rate_parts) >= 1:
+                                files_per_second = float(rate_parts[0])
+                            else:
+                                files_per_second = 0.0
                         else:
                             files_per_second = 0.0
-                    else:
-                        files_per_second = 0.0
 
-                    # Parse KB/s from parts[2] if available
-                    if len(parts) >= 3:
-                        kb_str = parts[2].strip()
-                        kb_parts = kb_str.split()
-                        if len(kb_parts) >= 1:
-                            kb_per_second = float(kb_parts[0])
+                        # Parse KB/s from parts[2] if available
+                        if len(parts) >= 3:
+                            kb_str = parts[2].strip()
+                            kb_parts = kb_str.split()
+                            if len(kb_parts) >= 1:
+                                kb_per_second = float(kb_parts[0])
+                            else:
+                                kb_per_second = 0.0
                         else:
                             kb_per_second = 0.0
-                    else:
+                    except (ValueError, IndexError):
+                        files_per_second = 0.0
                         kb_per_second = 0.0
-                except (ValueError, IndexError):
-                    files_per_second = 0.0
-                    kb_per_second = 0.0
 
-                # Update MultiThreadedProgressManager with rich display
-                progress_manager.update_complete_state(
-                    current=current,
-                    total=total,
-                    files_per_second=files_per_second,
-                    kb_per_second=kb_per_second,  # Parsed from info string
-                    active_threads=parallel_threads,
-                    concurrent_files=concurrent_files or [],
-                    slot_tracker=slot_tracker,
-                    info=info,
-                    item_type="commits",
+                    # Update MultiThreadedProgressManager with rich display
+                    progress_manager.update_complete_state(
+                        current=current,
+                        total=total,
+                        files_per_second=files_per_second,
+                        kb_per_second=kb_per_second,  # Parsed from info string
+                        active_threads=parallel_threads,
+                        concurrent_files=concurrent_files or [],
+                        slot_tracker=slot_tracker,
+                        info=info,
+                        item_type="commits",
+                    )
+
+                    # Get integrated display content (Rich Table) and update Rich Live bottom-anchored display
+                    rich_table = progress_manager.get_integrated_display()
+                    rich_live_manager.async_handle_progress_update(rich_table)
+
+                def progress_callback(
+                    current: int,
+                    total: int,
+                    path: Path,
+                    info: str = "",
+                    concurrent_files=None,
+                    slot_tracker=None,
+                    item_type: str = "commits",
+                ):
+                    """Multi-threaded progress callback - uses Rich Live progress display."""
+                    # Handle setup messages (total=0)
+                    if info and total == 0:
+                        show_setup_message(info)
+                        return
+
+                    # Handle commit progress (total>0)
+                    if total and total > 0:
+                        update_commit_progress(
+                            current, total, info, concurrent_files, slot_tracker
+                        )
+                        return
+
+                # Run temporal indexing
+                console.print(
+                    "🕒 Starting temporal git history indexing...", style="cyan"
+                )
+                if all_branches:
+                    console.print("   Mode: All branches", style="cyan")
+                else:
+                    console.print("   Mode: Current branch only", style="cyan")
+
+                indexing_result = temporal_indexer.index_commits(
+                    all_branches=all_branches,
+                    max_commits=max_commits,
+                    since_date=since_date,
+                    progress_callback=progress_callback,
                 )
 
-                # Get integrated display content (Rich Table) and update Rich Live bottom-anchored display
-                rich_table = progress_manager.get_integrated_display()
-                rich_live_manager.async_handle_progress_update(rich_table)
+                # Stop Rich Live display before showing results
+                if display_initialized:
+                    rich_live_manager.stop_display()
 
-            def progress_callback(
-                current: int,
-                total: int,
-                path: Path,
-                info: str = "",
-                concurrent_files=None,
-                slot_tracker=None,
-                item_type: str = "commits",
-            ):
-                """Multi-threaded progress callback - uses Rich Live progress display."""
-                # Handle setup messages (total=0)
-                if info and total == 0:
-                    show_setup_message(info)
-                    return
+                # Display results
+                console.print()
+                console.print("✅ Temporal indexing completed!", style="green bold")
+                console.print(
+                    f"   Total commits processed: {indexing_result.total_commits}",
+                    style="green",
+                )
+                console.print(
+                    f"   Files changed: {indexing_result.files_processed}",
+                    style="green",
+                )
+                console.print(
+                    f"   Vectors created (approx): ~{indexing_result.approximate_vectors_created}",
+                    style="green",
+                )
+                console.print(
+                    f"   Skip ratio: {indexing_result.skip_ratio:.1%}",
+                    style="green",
+                )
+                console.print(
+                    f"   Branches indexed: {', '.join(indexing_result.branches_indexed)}",
+                    style="green",
+                )
+                console.print()
 
-                # Handle commit progress (total>0)
-                if total and total > 0:
-                    update_commit_progress(
-                        current, total, info, concurrent_files, slot_tracker
-                    )
-                    return
+                temporal_indexer.close()
+                sys.exit(0)
 
-            # Run temporal indexing
-            console.print("🕒 Starting temporal git history indexing...", style="cyan")
-            if all_branches:
-                console.print("   Mode: All branches", style="cyan")
-            else:
-                console.print("   Mode: Current branch only", style="cyan")
+            except Exception as e:
+                console.print(f"❌ Temporal indexing failed: {e}", style="red")
+                if ctx.obj.get("verbose"):
+                    import traceback
 
-            indexing_result = temporal_indexer.index_commits(
-                all_branches=all_branches,
-                max_commits=max_commits,
-                since_date=since_date,
-                progress_callback=progress_callback,
-            )
-
-            # Stop Rich Live display before showing results
-            if display_initialized:
-                rich_live_manager.stop_display()
-
-            # Display results
-            console.print()
-            console.print("✅ Temporal indexing completed!", style="green bold")
-            console.print(
-                f"   Total commits indexed: {indexing_result.total_commits}",
-                style="green",
-            )
-            console.print(
-                f"   Unique blobs processed: {indexing_result.unique_blobs}",
-                style="green",
-            )
-            console.print(
-                f"   New blobs indexed: {indexing_result.new_blobs_indexed}",
-                style="green",
-            )
-            console.print(
-                f"   Deduplication ratio: {indexing_result.deduplication_ratio:.1%}",
-                style="green",
-            )
-            console.print(
-                f"   Branches indexed: {', '.join(indexing_result.branches_indexed)}",
-                style="green",
-            )
-            console.print()
-
-            temporal_indexer.close()
-            sys.exit(0)
-
-        except Exception as e:
-            console.print(f"❌ Temporal indexing failed: {e}", style="red")
-            if ctx.obj.get("verbose"):
-                import traceback
-
-                console.print(traceback.format_exc())
-            sys.exit(1)
+                    console.print(traceback.format_exc())
+                sys.exit(1)
 
     # Handle --rebuild-fts-index flag (early exit path)
     if rebuild_fts_index:
@@ -4148,9 +4150,8 @@ def index(
 @require_mode("local", "proxy")
 def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
     """Git-aware watch for file changes with branch support."""
-    # DAEMON DELEGATION DISABLED: Watch command always runs in standalone mode
-    # Daemon delegation caused hanging issues and is not production-ready
-    # Users should use standalone mode for reliable file watching
+    # Story #472: Re-enabled daemon delegation with non-blocking RPC
+    # Watch now runs in background thread in daemon, allowing CLI to return immediately
 
     # Handle proxy mode (Story 2.2)
     mode = ctx.obj.get("mode")
@@ -4171,6 +4172,23 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
 
     config_manager = ctx.obj["config_manager"]
     project_root = ctx.obj.get("project_root", Path.cwd())
+
+    # Try daemon delegation first (Story #472)
+    if mode == "local":
+        from .cli_daemon_delegation import start_watch_via_daemon
+
+        # Attempt to delegate to daemon (non-blocking mode)
+        if start_watch_via_daemon(
+            project_root,
+            debounce_seconds=debounce,
+            batch_size=batch_size,
+            initial_sync=initial_sync,
+            fts=fts,
+        ):
+            # Successfully delegated to daemon - exit immediately
+            sys.exit(0)
+
+    # Fall back to standalone mode if daemon delegation failed
 
     # Deprecation warning for --fts flag (auto-detection replaces it)
     if fts:
