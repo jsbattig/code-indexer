@@ -29,6 +29,7 @@ class TestTemporalIndexerItemType:
 
         mock_vector_store = MagicMock()
         mock_vector_store.project_root = Path("/tmp/test_project")
+        mock_vector_store.base_path = Path("/tmp/test_project") / ".code-indexer" / "index"
 
         # Mock EmbeddingProviderFactory
         mock_factory.get_provider_model_info.return_value = {

@@ -36,6 +36,7 @@ class TestTemporalStorageOptimization:
             point_id="test:diff:abc123:test.py:0",
             vector=np.array([0.1, 0.2, 0.3]),
             payload=payload,
+            chunk_text=None,
             repo_root=None,
             blob_hashes={},
             uncommitted_files=set(),

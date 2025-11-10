@@ -23,9 +23,11 @@ class TestBlobCodeCleanup:
         service.commits_db_path = Path("/tmp/test_commits.db")
 
         # Create semantic results with new diff-based payload
+        # NEW FORMAT: chunk_text at root level
         semantic_results = [
             {
                 "score": 0.95,
+                "chunk_text": "test content",  # NEW FORMAT: chunk_text at root level
                 "payload": {
                     "type": "commit_diff",  # New diff-based type
                     "commit_hash": "abc123",

@@ -34,6 +34,7 @@ class TestTemporalTokenCountingBug:
 
         mock_vector_store = Mock()
         mock_vector_store.project_root = tmp_path
+        mock_vector_store.base_path = tmp_path / ".code-indexer" / "index"
         mock_vector_store.collection_exists.return_value = True
 
         # Patch the factory to avoid real initialization

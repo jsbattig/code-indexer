@@ -27,6 +27,7 @@ class TestTemporalIndexerDiffBased:
         """Create a mock vector store."""
         mock = Mock(spec=FilesystemVectorStore)
         mock.project_root = Path("/test/project")
+        mock.base_path = Path("/test/project") / ".code-indexer" / "index"
         mock.collection_exists.return_value = True
         return mock
 

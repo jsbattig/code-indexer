@@ -35,9 +35,11 @@ class TestFilePathFieldBug:
 
         # Create semantic results with 'path' field (as temporal indexer provides)
         # This mimics what the temporal indexer actually stores
+        # NEW FORMAT: chunk_text at root level
         semantic_results = [
             {
                 "score": 0.85,
+                "chunk_text": "def login(username, password):\n    return True",  # NEW FORMAT
                 "payload": {
                     "path": "src/auth.py",  # Temporal indexer uses "path"
                     "chunk_index": 0,
@@ -46,8 +48,7 @@ class TestFilePathFieldBug:
                     "commit_date": "2024-11-01",
                     "commit_message": "Add authentication",
                     "author_name": "Test User",
-                    "diff_type": "added",
-                    "content": "def login(username, password):\n    return True"
+                    "diff_type": "added"
                 }
             }
         ]
@@ -82,9 +83,11 @@ class TestFilePathFieldBug:
         )
 
         # Create semantic results with 'file_path' field (for backward compatibility)
+        # NEW FORMAT: chunk_text at root level
         semantic_results = [
             {
                 "score": 0.85,
+                "chunk_text": "def old_function():\n    pass",  # NEW FORMAT
                 "payload": {
                     "file_path": "src/legacy.py",  # Some code might use "file_path"
                     "chunk_index": 0,
@@ -93,8 +96,7 @@ class TestFilePathFieldBug:
                     "commit_date": "2024-11-01",
                     "commit_message": "Legacy code",
                     "author_name": "Test User",
-                    "diff_type": "modified",
-                    "content": "def old_function():\n    pass"
+                    "diff_type": "modified"
                 }
             }
         ]

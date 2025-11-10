@@ -79,3 +79,56 @@ def test_reads_content_from_chunk_text_at_root_not_fallback(temporal_search_serv
 
     # The content should come from chunk_text at root
     assert result.content == "This is the content from chunk_text at root"
+
+
+def test_missing_chunk_text_raises_runtime_error_no_fallback(temporal_search_service):
+    """Test that missing chunk_text raises RuntimeError with NO fallback (Messi Rule #2).
+
+    This verifies the fix for forbidden fallbacks at lines 571-579:
+    - Line 571-573: Backward compatibility fallback to payload["content"] - FORBIDDEN
+    - Line 579: Silent data loss with "[Content unavailable]" - FORBIDDEN
+
+    Expected behavior:
+    - When chunk_text is None/missing and no reconstruct_from_git flag
+    - Should raise RuntimeError with clear error message
+    - Error message must contain commit_hash and path from payload
+    - NO silent fallbacks allowed - fail fast
+    """
+    # Arrange: Result with missing chunk_text (None) and no reconstruct_from_git
+    import time
+    current_timestamp = int(time.time())
+
+    semantic_results = [
+        {
+            "id": "test_id",
+            "score": 0.95,
+            "payload": {
+                "path": "test_file.py",
+                "commit_hash": "abc123def456",
+                "type": "file_chunk",
+                "commit_timestamp": current_timestamp,
+                # NO "content" key - this is new indexing format
+                # NO "reconstruct_from_git" flag
+            },
+            # NO chunk_text key - simulates missing content
+        }
+    ]
+
+    # Act & Assert: Should raise RuntimeError with clear message
+    with pytest.raises(RuntimeError) as exc_info:
+        temporal_search_service._filter_by_time_range(
+            semantic_results=semantic_results,
+            start_date="2020-01-01",
+            end_date="2030-12-31",
+            min_score=0.0,
+        )
+
+    # Verify error message contains critical information
+    error_message = str(exc_info.value)
+    assert "abc123def456" in error_message, "Error must contain commit_hash"
+    assert "test_file.py" in error_message, "Error must contain file path"
+    assert (
+        "chunk_text" in error_message.lower()
+        or "missing" in error_message.lower()
+        or "unavailable" in error_message.lower()
+    ), "Error must indicate missing content"

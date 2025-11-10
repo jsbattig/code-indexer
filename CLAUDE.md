@@ -103,7 +103,21 @@ CIDX has **three operational modes**. Understanding which mode you're working in
 - E2E tests use `cidx` CLI directly
 - Slow tests excluded from fast suites
 
-**Definition of Done**: Feature complete when fast-automation.sh passes fully
+**MANDATORY Testing Workflow Order**:
+
+1. **Targeted Unit Tests FIRST**: Write and run specific unit tests for the functionality being added/fixed/modified
+2. **Manual Testing SECOND**: Execute manual testing to verify the functionality works end-to-end
+3. **fast-automation.sh LAST**: Run full regression suite as FINAL validation before marking work complete
+
+**Why This Order**:
+- fast-automation.sh takes 6-7 minutes - too slow for rapid feedback loops
+- Targeted unit tests provide immediate feedback (seconds, not minutes)
+- Manual testing validates real-world behavior before committing to full suite
+- fast-automation.sh is the FINAL gate, not a development tool
+
+**ABSOLUTE PROHIBITION**: NEVER run fast-automation.sh as part of iterative development. Use it ONLY as final validation after unit tests pass and manual testing confirms functionality works.
+
+**Definition of Done**: Feature complete when fast-automation.sh passes fully (after targeted unit tests pass AND manual testing confirms functionality)
 
 ### Test Performance Management (MANDATORY)
 

@@ -56,6 +56,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
+        vector_store.base_path = test_dir / ".code-indexer" / "index"
         vector_store.load_id_index.return_value = set()  # No existing points
 
         with patch("src.code_indexer.services.file_identifier.FileIdentifier"), \
@@ -193,6 +194,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
+        vector_store.base_path = test_dir / ".code-indexer" / "index"
         vector_store.load_id_index.return_value = set()
 
         with patch("src.code_indexer.services.file_identifier.FileIdentifier"), \
@@ -310,6 +312,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
+        vector_store.base_path = test_dir / ".code-indexer" / "index"
         vector_store.load_id_index.return_value = set()
 
         # Track Queue.put() calls vs ThreadPoolExecutor creation
@@ -434,6 +437,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
+        vector_store.base_path = test_dir / ".code-indexer" / "index"
         vector_store.load_id_index.return_value = set()
 
         with patch("src.code_indexer.services.file_identifier.FileIdentifier"), \
@@ -543,6 +547,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
+        vector_store.base_path = test_dir / ".code-indexer" / "index"
         vector_store.load_id_index.return_value = set()
 
         # Track FileData passed to acquire_slot
@@ -726,6 +731,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
+        vector_store.base_path = test_dir / ".code-indexer" / "index"
         vector_store.load_id_index.return_value = set()
 
         # Track update_slot calls
@@ -918,6 +924,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
+        vector_store.base_path = test_dir / ".code-indexer" / "index"
         vector_store.load_id_index.return_value = set()
 
         with patch("src.code_indexer.services.file_identifier.FileIdentifier"), \
@@ -1047,6 +1054,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
+        vector_store.base_path = test_dir / ".code-indexer" / "index"
         vector_store.load_id_index.return_value = set()
 
         # Track update_slot calls and get_diffs timing
@@ -1260,6 +1268,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
+        vector_store.base_path = test_dir / ".code-indexer" / "index"
         vector_store.load_id_index.return_value = set()
 
         # Track ALL update_slot calls
@@ -1466,6 +1475,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
+        vector_store.base_path = test_dir / ".code-indexer" / "index"
         vector_store.load_id_index.return_value = set()
 
         with patch("src.code_indexer.services.file_identifier.FileIdentifier"), \

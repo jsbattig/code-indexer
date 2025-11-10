@@ -37,6 +37,7 @@ class TestTemporalIndexerProgress:
 
         mock_vector_store = MagicMock()
         mock_vector_store.project_root = test_dir
+        mock_vector_store.base_path = test_dir / ".code-indexer" / "index"
 
         # Mock EmbeddingProviderFactory
         mock_factory.get_provider_model_info.return_value = {
@@ -187,6 +188,7 @@ class TestTemporalIndexerProgress:
 
         mock_vector_store = MagicMock()
         mock_vector_store.project_root = test_dir
+        mock_vector_store.base_path = test_dir / ".code-indexer" / "index"
 
         # Mock EmbeddingProviderFactory
         mock_factory.get_provider_model_info.return_value = {

@@ -63,7 +63,10 @@ def temporal_service(mock_config_manager, mock_vector_store, mock_embedding_prov
 
 @pytest.fixture
 def sample_search_results():
-    """Sample search results with diverse diff types and authors."""
+    """Sample search results with diverse diff types and authors.
+
+    NEW FORMAT: chunk_text at root level (not in payload)
+    """
     from datetime import datetime
 
     base_timestamp = int(datetime(2025, 11, 1).timestamp())
@@ -71,10 +74,10 @@ def sample_search_results():
     return [
         {
             "score": 0.95,
+            "chunk_text": "def new_feature():\n    pass",  # NEW FORMAT
             "payload": {
                 "file_path": "src/feature.py",
                 "chunk_index": 0,
-                "content": "def new_feature():\n    pass",
                 "commit_hash": "abc123",
                 "commit_date": "2025-11-01",
                 "commit_message": "Add new feature",
@@ -86,10 +89,10 @@ def sample_search_results():
         },
         {
             "score": 0.88,
+            "chunk_text": "def fix_bug():\n    # Fixed",  # NEW FORMAT
             "payload": {
                 "file_path": "src/bug_fix.py",
                 "chunk_index": 0,
-                "content": "def fix_bug():\n    # Fixed",
                 "commit_hash": "def456",
                 "commit_date": "2025-11-02",
                 "commit_message": "Fix critical bug",
@@ -101,10 +104,10 @@ def sample_search_results():
         },
         {
             "score": 0.82,
+            "chunk_text": "# Deleted file content",  # NEW FORMAT
             "payload": {
                 "file_path": "src/deprecated.py",
                 "chunk_index": 0,
-                "content": "# Deleted file content",
                 "commit_hash": "ghi789",
                 "commit_date": "2025-11-03",
                 "commit_message": "Remove deprecated code",
@@ -160,13 +163,14 @@ class TestIncludeRemovedRemoval:
         from unittest.mock import patch
 
         # Setup mock to return sample results
+        # NEW FORMAT: chunk_text at root level
         sample_results = [
             {
                 "score": 0.95,
+                "chunk_text": "test content",  # NEW FORMAT
                 "payload": {
                     "file_path": "test.py",
                     "chunk_index": 0,
-                    "content": "test content",
                     "commit_hash": "abc123",
                     "commit_date": "2025-11-01",
                     "commit_message": "Test commit",

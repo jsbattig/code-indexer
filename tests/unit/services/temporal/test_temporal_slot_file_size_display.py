@@ -64,6 +64,7 @@ class TestTemporalFileSizeDisplay(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
+        vector_store.base_path = test_dir / ".code-indexer" / "index"
         vector_store.load_id_index.return_value = set()  # No existing points
 
         with patch("src.code_indexer.services.file_identifier.FileIdentifier"), \

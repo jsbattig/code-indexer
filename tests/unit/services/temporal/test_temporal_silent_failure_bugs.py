@@ -63,34 +63,39 @@ class TestBug2NoExceptionHandling:
         with open(source_file, 'r') as f:
             source_lines = f.readlines()
 
-        # Find the worker function
+        # Find the worker function (around line 529)
         worker_start_line = None
         for i, line in enumerate(source_lines):
-            if "def worker():" in line and "Worker function to process commits" in source_lines[i+1] if i+1 < len(source_lines) else False:
-                worker_start_line = i
-                break
+            # More flexible search - look for def worker() near expected location
+            if "def worker():" in line and i > 500 and i < 600:
+                # Verify next few lines have worker-related content
+                next_lines = ''.join(source_lines[i:i+10])
+                if "Worker function" in next_lines or "commit_queue" in next_lines or "nonlocal" in next_lines:
+                    worker_start_line = i
+                    break
 
-        assert worker_start_line is not None, "Could not find worker() function"
+        assert worker_start_line is not None, "Could not find worker() function (expected around line 529)"
 
-        # Look for the main try block in worker (around line 523)
+        # Look for the main try/except/finally block in worker
+        # The worker has a try block starting around line 551 with except at 1063 and finally at 1069
         try_block_found = False
         except_block_found = False
         finally_block_found = False
 
-        for i in range(worker_start_line, min(worker_start_line + 500, len(source_lines))):
+        for i in range(worker_start_line, min(worker_start_line + 600, len(source_lines))):
             line = source_lines[i].strip()
-            if line.startswith("try:"):
+            if line.startswith("try:") and not try_block_found:
                 try_block_found = True
-            elif line.startswith("except") and try_block_found:
+            elif line.startswith("except") and try_block_found and not except_block_found:
                 except_block_found = True
-            elif line.startswith("finally:") and try_block_found:
+            elif line.startswith("finally:") and try_block_found and not finally_block_found:
                 finally_block_found = True
 
-        # BUG EXPOSED: This assertion will FAIL because except block is missing
+        # VERIFY: Worker should have try/except/finally structure (now implemented at lines 551/1063/1069)
         assert except_block_found, (
             f"Worker thread (starting at line {worker_start_line + 1}) has try/finally but NO except block. "
             f"This causes errors to be silently swallowed. "
-            f"Bug: Lines 523-993 need an except block to log errors before re-raising."
+            f"Expected structure: try block with except Exception clause and finally block."
         )
 
         # Also verify it has finally (for cleanup) - this should pass

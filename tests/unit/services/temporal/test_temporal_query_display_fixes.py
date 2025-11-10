@@ -36,39 +36,40 @@ class TestTemporalQuerySorting:
         # Simulate semantic search returning results in random order
         # Using timestamps that fall within the date range (adding hours to avoid edge cases)
         # 2023-01-01 12:00 = 1672574400, 2023-01-02 12:00 = 1672660800, 2023-01-03 12:00 = 1672747200
+        # NEW FORMAT: chunk_text at root level
         result1 = {
+            "chunk_text": "content1",  # NEW FORMAT
             "payload": {
                 "path": "file1.py",
                 "commit_hash": "abc123",
                 "commit_timestamp": 1672574400,  # 2023-01-01 12:00 (Oldest)
                 "commit_date": "2023-01-01",
                 "author_name": "User",
-                "diff_type": "modified",
-                "content": "content1",
+                "diff_type": "modified"
             },
             "score": 0.9,
         }
         result2 = {
+            "chunk_text": "content2",  # NEW FORMAT
             "payload": {
                 "path": "file2.py",
                 "commit_hash": "def456",
                 "commit_timestamp": 1672747200,  # 2023-01-03 12:00 (Newest)
                 "commit_date": "2023-01-03",
                 "author_name": "User",
-                "diff_type": "added",
-                "content": "content2",
+                "diff_type": "added"
             },
             "score": 0.95,
         }
         result3 = {
+            "chunk_text": "content3",  # NEW FORMAT
             "payload": {
                 "path": "file3.py",
                 "commit_hash": "ghi789",
                 "commit_timestamp": 1672660800,  # 2023-01-02 12:00 (Middle)
                 "commit_date": "2023-01-02",
                 "author_name": "User",
-                "diff_type": "deleted",
-                "content": "content3",
+                "diff_type": "deleted"
             },
             "score": 0.85,
         }

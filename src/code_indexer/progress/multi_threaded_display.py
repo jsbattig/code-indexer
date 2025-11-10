@@ -10,6 +10,7 @@ Key Components:
 """
 
 import logging
+import re
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from rich.console import Console
@@ -161,8 +162,17 @@ class MultiThreadedProgressManager:
         else:
             status_str = status_value
 
+        # Temporal status strings contain commit hashes and progress info with slashes
+        # Don't treat them as file paths (Path.name would truncate at the slash)
+        if re.match(r'^[0-9a-f]{8} - ', file_data.filename):
+            # Temporal status string - preserve full string
+            file_name = file_data.filename
+        else:
+            # Regular file path - extract basename
+            file_name = Path(file_data.filename).name
+
         # Format: ├─ filename.py (size, 1s) status
-        return f"├─ {Path(file_data.filename).name} ({size_str}, 1s) {status_str}"
+        return f"├─ {file_name} ({size_str}, 1s) {status_str}"
 
     def update_complete_state(
         self,
@@ -324,7 +334,11 @@ class MultiThreadedProgressManager:
             for file_info in fresh_concurrent_files:
                 if file_info:
                     filename = file_info.get("file_path", "unknown")
-                    if isinstance(filename, Path):
+                    # Temporal status strings contain commit hashes - don't truncate them
+                    if isinstance(filename, str) and re.match(r'^[0-9a-f]{8} - ', filename):
+                        # Temporal status string - preserve full string
+                        pass  # Keep filename as-is
+                    elif isinstance(filename, Path):
                         filename = filename.name
                     elif "/" in str(filename):
                         filename = str(filename).split("/")[-1]

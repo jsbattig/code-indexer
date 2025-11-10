@@ -28,7 +28,7 @@ class TestIncrementalCommitDetection:
         subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True)
 
         # Create temporal metadata with last_commit
-        temporal_dir = repo_path / ".code-indexer/index/temporal"
+        temporal_dir = repo_path / ".code-indexer/index/code-indexer-temporal"
         temporal_dir.mkdir(parents=True)
         metadata = {
             "last_commit": "abc123def456",
@@ -51,6 +51,7 @@ class TestIncrementalCommitDetection:
 
         vector_store = MagicMock(spec=FilesystemVectorStore)
         vector_store.project_root = repo_path
+        vector_store.base_path = repo_path / ".code-indexer" / "index"
         vector_store.collection_exists.return_value = True
 
         # Mock the embedding provider factory
@@ -110,6 +111,7 @@ class TestBeginIndexingCall:
 
         vector_store = MagicMock(spec=FilesystemVectorStore)
         vector_store.project_root = repo_path
+        vector_store.base_path = repo_path / ".code-indexer" / "index"
         vector_store.collection_exists.return_value = True
 
         with patch("code_indexer.services.embedding_factory.EmbeddingProviderFactory") as mock_factory:
@@ -163,6 +165,7 @@ class TestPointExistenceFiltering:
         # Create mock vector store with existing points
         vector_store = MagicMock()  # Remove spec to allow dynamic attributes
         vector_store.project_root = repo_path
+        vector_store.base_path = repo_path / ".code-indexer" / "index"
         vector_store.collection_exists.return_value = True
 
         # Simulate existing points in the ID index
@@ -259,6 +262,7 @@ class TestClearFlagSupport:
         vector_store_mock.clear_collection.side_effect = track_clear
         vector_store_mock.collection_exists.return_value = True
         vector_store_mock.project_root = repo_path
+        vector_store_mock.base_path = repo_path / ".code-indexer" / "index"
         vector_store_mock.load_id_index.return_value = set()
         vector_store_mock.begin_indexing.return_value = None
 

@@ -76,10 +76,12 @@ class TestContentDisplay:
             project_root=Path("/test/repo")
         )
 
-        # Create mock semantic results with content in payload
+        # Create mock semantic results with chunk_text at root level
+        # NEW FORMAT: chunk_text at root level (not in payload)
         actual_content = "def authenticate(user, password):\n    return True"
         semantic_results = [
             Mock(
+                chunk_text=actual_content,  # NEW FORMAT: chunk_text at root level
                 payload={
                     "type": "commit_diff",
                     "commit_hash": "abc123",
@@ -89,10 +91,8 @@ class TestContentDisplay:
                     "author_name": "Test User",
                     "file_path": "src/auth.py",
                     "chunk_index": 0,
-                    "diff_type": "added",
-                    "content": actual_content  # Actual content in payload
+                    "diff_type": "added"
                 },
-                content="[Placeholder text]",  # Placeholder in result.content
                 score=0.95
             )
         ]

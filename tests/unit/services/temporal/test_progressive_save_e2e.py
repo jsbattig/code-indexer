@@ -43,6 +43,7 @@ class TestProgressiveSaveE2E(unittest.TestCase):
 
         vector_store = MagicMock()
         vector_store.project_root = self.project_dir
+        vector_store.base_path = self.project_dir / ".code-indexer" / "index"
         vector_store.collection_exists.return_value = True
         vector_store.load_id_index.return_value = set()
         vector_store.begin_indexing = MagicMock()
@@ -123,7 +124,7 @@ class TestProgressiveSaveE2E(unittest.TestCase):
                             )
 
                             # Check that progress file was created and contains the commit
-                            progress_file = self.project_dir / ".code-indexer/index/temporal/temporal_progress.json"
+                            progress_file = self.project_dir / ".code-indexer/index/code-indexer-temporal/temporal_progress.json"
 
                             # This assertion will FAIL because we haven't implemented saving yet
                             self.assertTrue(progress_file.exists(), "Progress file should be created")

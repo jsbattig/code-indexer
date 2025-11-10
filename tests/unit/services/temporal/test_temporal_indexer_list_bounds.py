@@ -37,7 +37,9 @@ def mock_config_manager():
 def mock_vector_store():
     """Create mock vector store."""
     vector_store = Mock()
-    vector_store.project_root = Path(tempfile.mkdtemp())
+    temp_dir = Path(tempfile.mkdtemp())
+    vector_store.project_root = temp_dir
+    vector_store.base_path = temp_dir / ".code-indexer" / "index"
     vector_store.collection_exists.return_value = True
     vector_store.load_id_index.return_value = set()
     return vector_store

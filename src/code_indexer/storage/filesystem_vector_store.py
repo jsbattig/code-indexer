@@ -515,6 +515,7 @@ class FilesystemVectorStore:
                 point_id = point["id"]
                 vector = np.array(point["vector"])
                 payload = point.get("payload", {})
+                chunk_text = point.get("chunk_text")  # Extract chunk_text from root
                 file_path = payload.get("path", "")
 
                 # Progress reporting
@@ -564,6 +565,7 @@ class FilesystemVectorStore:
                 point_id=point_id,
                 vector=vector,
                 payload=payload,
+                chunk_text=chunk_text,
                 repo_root=repo_root,
                 blob_hashes=blob_hashes,
                 uncommitted_files=uncommitted_files,
@@ -966,6 +968,7 @@ class FilesystemVectorStore:
         point_id: str,
         vector: np.ndarray,
         payload: Dict[str, Any],
+        chunk_text: Optional[str],
         repo_root: Optional[Path],
         blob_hashes: Dict[str, str],
         uncommitted_files: set,
@@ -976,6 +979,7 @@ class FilesystemVectorStore:
             point_id: Unique point identifier
             vector: Vector data
             payload: Point payload
+            chunk_text: Content text at root level (optimization path, optional)
             repo_root: Git repository root (None if not a git repo)
             blob_hashes: Dict of file_path -> blob_hash from batch operation
             uncommitted_files: Set of files with uncommitted changes
@@ -1008,8 +1012,13 @@ class FilesystemVectorStore:
                 # This provides 88% storage reduction for these file types
                 pass  # Don't store chunk_text
             else:
-                # Modified files: store diff in chunk_text (existing behavior)
-                data["chunk_text"] = payload.get("content", "")
+                # Modified files: store diff in chunk_text
+                # Prefer chunk_text from point root (optimization path)
+                if chunk_text is not None:
+                    data["chunk_text"] = chunk_text
+                else:
+                    # Legacy: extract from payload if present
+                    data["chunk_text"] = payload.get("content", "")
 
             # Remove content from payload to avoid duplication
             if "content" in data["payload"]:
@@ -1027,14 +1036,24 @@ class FilesystemVectorStore:
                     del data["payload"]["content"]
             else:
                 # File has uncommitted changes or untracked: store chunk text
-                data["chunk_text"] = payload.get("content", "")
+                # Prefer chunk_text from point root (optimization path)
+                if chunk_text is not None:
+                    data["chunk_text"] = chunk_text
+                else:
+                    # Legacy: extract from payload if present
+                    data["chunk_text"] = payload.get("content", "")
                 data["indexed_with_uncommitted_changes"] = True
                 # Remove content from payload (stored in chunk_text instead)
                 if "content" in data["payload"]:
                     del data["payload"]["content"]
         else:
             # Non-git repo: always store chunk_text
-            data["chunk_text"] = payload.get("content", "")
+            # Prefer chunk_text from point root (optimization path)
+            if chunk_text is not None:
+                data["chunk_text"] = chunk_text
+            else:
+                # Legacy: extract from payload if present
+                data["chunk_text"] = payload.get("content", "")
             # Remove content from payload (stored in chunk_text instead)
             if "content" in data["payload"]:
                 del data["payload"]["content"]
@@ -1174,11 +1193,15 @@ class FilesystemVectorStore:
 
                 # Payload should always exist in new format, but provide empty fallback
                 payload = data.get("payload", {})
-                return {
+                result = {
                     "id": data["id"],
                     "vector": data["vector"],
                     "payload": payload,
                 }
+                # Include chunk_text if present
+                if "chunk_text" in data:
+                    result["chunk_text"] = data["chunk_text"]
+                return result
             except (json.JSONDecodeError, KeyError):
                 return None
 
@@ -1659,6 +1682,9 @@ class FilesystemVectorStore:
             content, staleness = self._get_chunk_content_with_staleness(vector_data)
             result["payload"]["content"] = content
             result["staleness"] = staleness
+            # Return chunk_text at root level for optimization contract
+            if "chunk_text" in vector_data:
+                result["chunk_text"] = vector_data["chunk_text"]
             enhanced_results.append(result)
 
         timing["staleness_detection_ms"] = (time.time() - t0) * 1000

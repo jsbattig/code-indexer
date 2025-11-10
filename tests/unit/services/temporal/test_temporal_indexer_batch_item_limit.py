@@ -39,6 +39,7 @@ class TestTemporalIndexerBatchItemLimit(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
         self.vector_store = Mock()
         self.vector_store.project_root = Path(self.temp_dir)
+        self.vector_store.base_path = Path(self.temp_dir) / ".code-indexer" / "index"
         self.vector_store.collection_exists.return_value = True
         self.vector_store.load_id_index.return_value = set()
 

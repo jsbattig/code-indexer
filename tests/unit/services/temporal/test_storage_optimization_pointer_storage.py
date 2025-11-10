@@ -57,6 +57,7 @@ class TestPointerBasedStorage:
         # Create minimal mock vector store
         mock_vector_store = Mock(spec=FilesystemVectorStore)
         mock_vector_store.project_root = Path("/tmp/test_repo")
+        mock_vector_store.base_path = Path("/tmp/test_repo/.code-indexer/index")
         mock_vector_store.collection_exists.return_value = True
         mock_vector_store.load_id_index.return_value = set()
         mock_vector_store.upsert_points.return_value = {"status": "ok"}

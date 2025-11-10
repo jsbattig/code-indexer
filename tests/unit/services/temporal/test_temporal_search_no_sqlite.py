@@ -49,10 +49,11 @@ class TestTemporalSearchNoSQLite(unittest.TestCase):
         )
 
         # Create mock semantic results with temporal metadata in payloads
+        # NEW FORMAT: chunk_text at root level (not deprecated "content" key)
         semantic_results = [
             {
                 "score": 0.95,
-                "content": "Authentication implementation",
+                "chunk_text": "Authentication implementation",  # NEW FORMAT
                 "payload": {
                     "type": "commit_diff",
                     "file_path": "src/auth.py",
@@ -67,7 +68,7 @@ class TestTemporalSearchNoSQLite(unittest.TestCase):
             },
             {
                 "score": 0.88,
-                "content": "Database connection setup",
+                "chunk_text": "Database connection setup",  # NEW FORMAT
                 "payload": {
                     "type": "commit_diff",
                     "file_path": "src/database.py",
@@ -82,7 +83,7 @@ class TestTemporalSearchNoSQLite(unittest.TestCase):
             },
             {
                 "score": 0.76,
-                "content": "Old API implementation",
+                "chunk_text": "Old API implementation",  # NEW FORMAT
                 "payload": {
                     "type": "commit_diff",
                     "file_path": "src/old_api.py",

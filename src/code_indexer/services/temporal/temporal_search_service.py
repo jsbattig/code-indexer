@@ -554,15 +554,28 @@ class TemporalSearchService:
             if payload.get("reconstruct_from_git"):
                 content = self._reconstruct_temporal_content(payload)
             else:
-                # Story 2 fix: Get content from payload, not from result.content (which may be placeholder)
-                # The actual diff content is stored in payload["content"] by the indexer
-                content = payload.get("content", "")
-                if not content:
-                    # Fallback to result.content only if payload doesn't have content
-                    content = (
-                        result.get("content", "")
-                        if isinstance(result, dict)
-                        else getattr(result, "content", "")
+                # Content is in chunk_text at root level (Bug 1 fix in filesystem_vector_store)
+                # Handle both dict and object formats
+                chunk_text = None
+                if isinstance(result, dict):
+                    chunk_text = result.get("chunk_text", None)
+                elif hasattr(result, "chunk_text") and not callable(getattr(result, "chunk_text")):
+                    # Only use chunk_text if it's actually set (not a Mock auto-attribute)
+                    try:
+                        chunk_text = result.chunk_text
+                    except AttributeError:
+                        chunk_text = None
+
+                if chunk_text is not None:
+                    content = chunk_text
+                else:
+                    # FAIL FAST - optimization contract broken or index corrupted
+                    # No backward compatibility fallbacks (Messi Rule #2)
+                    commit_hash = payload.get("commit_hash", "unknown")
+                    path = payload.get("path", "unknown")
+                    raise RuntimeError(
+                        f"Missing chunk_text for {commit_hash}:{path} - "
+                        f"optimization contract violated or index corrupted"
                     )
 
             # Apply min_score filter if specified

@@ -59,10 +59,11 @@ class TestTemporalSearchSQLiteFree(unittest.TestCase):
         from datetime import datetime
 
         # Create mock semantic results with payloads
+        # NEW FORMAT: chunk_text at root level (not deprecated "content" key)
         semantic_results = [
             {
                 "score": 0.9,
-                "content": "authentication code",
+                "chunk_text": "authentication code",  # NEW FORMAT
                 "payload": {
                     "file_path": "src/auth.py",
                     "chunk_index": 0,
@@ -76,7 +77,7 @@ class TestTemporalSearchSQLiteFree(unittest.TestCase):
             },
             {
                 "score": 0.8,
-                "content": "database connection",
+                "chunk_text": "database connection",  # NEW FORMAT
                 "payload": {
                     "file_path": "src/db.py",
                     "chunk_index": 0,
