@@ -63,21 +63,8 @@ def test_temporal_indexer_uses_temporal_collection_name(tmp_path):
 
     vector_store.upsert_points = spy_upsert_points
 
-    # Create temporal indexer
-    indexer = TemporalIndexer(config_manager, vector_store)
-
     # Run temporal indexing (mock embedding provider to avoid API calls)
     # Patch factory BEFORE creating indexer to ensure consistent dimensions
-    with patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory") as mock_factory_before:
-        # Ensure collection is created with 1024 dimensions
-        mock_factory_before.get_provider_model_info.return_value = {
-            "provider": "voyage-ai",
-            "model": "voyage-code-3",
-            "dimensions": 1024
-        }
-        # Re-create indexer with patched factory to ensure collection uses correct dimensions
-        indexer = TemporalIndexer(config_manager, vector_store)
-
     with patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory") as mock_factory:
         provider_info = {
             "provider": "voyage-ai",
@@ -94,9 +81,23 @@ def test_temporal_indexer_uses_temporal_collection_name(tmp_path):
         mock_factory.create.return_value = mock_provider
         mock_factory.get_provider_model_info.return_value = provider_info
 
+        # Create indexer INSIDE patch context so collection gets created with correct dimensions
+        indexer = TemporalIndexer(config_manager, vector_store)
+
         with patch("src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager") as mock_vcm:
             # Mock VectorCalculationManager to avoid real embedding calls
             mock_manager = Mock()
+
+            # Mock cancellation event (no cancellation)
+            mock_cancellation_event = Mock()
+            mock_cancellation_event.is_set.return_value = False
+            mock_manager.cancellation_event = mock_cancellation_event
+
+            # Mock embedding provider methods for token counting
+            mock_embedding_provider = Mock()
+            mock_embedding_provider._count_tokens_accurately = Mock(return_value=100)
+            mock_embedding_provider._get_model_token_limit = Mock(return_value=120000)
+            mock_manager.embedding_provider = mock_embedding_provider
 
             def mock_submit_batch(texts, metadata):
                 """Return embeddings matching the number of input texts"""
@@ -104,7 +105,7 @@ def test_temporal_indexer_uses_temporal_collection_name(tmp_path):
                 mock_result = Mock()
                 mock_result.error = None
                 # Return one embedding per text chunk submitted
-                mock_result.embeddings = [[0.1] * 1536 for _ in texts]
+                mock_result.embeddings = [[0.1] * 1024 for _ in texts]
                 mock_result.error = None  # No error
                 mock_future.result.return_value = mock_result
                 return mock_future

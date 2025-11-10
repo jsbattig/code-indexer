@@ -178,17 +178,21 @@ class TestTemporalUTF8DecodeBug:
         # UnicodeDecodeError: 'utf-8' codec can't decode byte 0xae in position 96
         # But with errors='replace', it should work
 
-        # First call: get changed files
-        # Second call: git show parent:file - returns content with bad bytes
+        # Mock the single git show call with unified diff format
         # With errors='replace', bad bytes become \ufffd
+        unified_diff = """diff --git a/some_file.txt b/some_file.txt
+deleted file mode 100644
+index abcd1234..00000000
+--- a/some_file.txt
++++ /dev/null
+@@ -1,2 +0,0 @@
+-text before bad byte: \ufffd text after
+"""
+
+        # First call: git show (unified diff)
+        # Second call: git rev-parse for parent commit (only if deleted files exist)
         mock_run.side_effect = [
-            MagicMock(stdout="D\tsome_file.txt\n", stderr="", returncode=0),
-            MagicMock(
-                stdout="text before bad byte: \ufffd text after",
-                stderr="",
-                returncode=0,
-            ),
-            MagicMock(stdout="abcd1234", stderr="", returncode=0),  # blob hash
+            MagicMock(stdout=unified_diff, stderr="", returncode=0),
             MagicMock(stdout="parent123", stderr="", returncode=0),  # parent commit
         ]
 
@@ -206,15 +210,18 @@ class TestTemporalUTF8DecodeBug:
         """
         scanner = TemporalDiffScanner(Path("/tmp/test-repo"))
 
-        mock_run.side_effect = [
-            MagicMock(stdout="M\tsome_file.txt\n", stderr="", returncode=0),
-            MagicMock(
-                stdout="@@ -1,2 +1,2 @@\n-old\n+new with bad byte: \ufffd",
-                stderr="",
-                returncode=0,
-            ),
-            MagicMock(stdout="efgh5678", stderr="", returncode=0),  # blob hash
-        ]
+        # Mock the single git show call with unified diff format for modified file
+        unified_diff = """diff --git a/some_file.txt b/some_file.txt
+index abcd1234..efgh5678 100644
+--- a/some_file.txt
++++ b/some_file.txt
+@@ -1,2 +1,2 @@
+-old
++new with bad byte: \ufffd
+"""
+
+        # Single call: git show (unified diff) - no parent commit needed for modified files
+        mock_run.return_value = MagicMock(stdout=unified_diff, stderr="", returncode=0)
 
         # Should not raise UnicodeDecodeError
         diffs = scanner.get_diffs_for_commit("def456")

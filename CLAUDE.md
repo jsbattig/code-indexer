@@ -90,12 +90,12 @@ CIDX has **three operational modes**. Understanding which mode you're working in
 
 ### Test Suites
 
-- **fast-automation.sh**: 865+ tests, ~2.5min - Run from Claude, MUST stay fast
+- **fast-automation.sh**: 865+ tests, ~6-7min - Run from Claude, MUST stay fast
 - **server-fast-automation.sh**: Server-specific tests
 - **GitHub Actions CI**: ~814 tests, restricted environment
 - **full-automation.sh**: Complete suite, 10+ min - Ask user to run
 
-**Critical**: Use **1200000ms (20 min) timeout** when running automation scripts
+**Critical**: Use **600000ms (10 min) timeout** for fast-automation.sh, **1200000ms (20 min) timeout** for full-automation.sh
 
 **Testing Principles**:
 - Tests don't clean state (performance optimization)

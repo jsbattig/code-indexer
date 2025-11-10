@@ -88,7 +88,7 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
         # Mock components
         config_manager = Mock(spec=ConfigManager)
         config = Mock()
-        config.voyage_ai = Mock(parallel_requests=4)
+        config.voyage_ai = Mock(parallel_requests=4, max_concurrent_batches_per_commit=10)
         config_manager.get_config.return_value = config
 
         vector_store = Mock(spec=FilesystemVectorStore)
@@ -241,7 +241,7 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
         # Mock components with parallel processing
         config_manager = Mock(spec=ConfigManager)
         config = Mock()
-        config.voyage_ai = Mock(parallel_requests=8)  # High parallelism to trigger races
+        config.voyage_ai = Mock(parallel_requests=8, max_concurrent_batches_per_commit=10)  # High parallelism to trigger races
         config_manager.get_config.return_value = config
 
         vector_store = Mock(spec=FilesystemVectorStore)
@@ -370,7 +370,7 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
             # Mock components
             config_manager = Mock(spec=ConfigManager)
             config = Mock()
-            config.voyage_ai = Mock(parallel_requests=8)
+            config.voyage_ai = Mock(parallel_requests=8, max_concurrent_batches_per_commit=10)
             config_manager.get_config.return_value = config
 
             vector_store = Mock(spec=FilesystemVectorStore)

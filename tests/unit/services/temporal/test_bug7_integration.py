@@ -28,7 +28,7 @@ class TestBug7Integration(unittest.TestCase):
         config_manager = MagicMock()
         mock_config = MagicMock()
         mock_config.embedding_provider = "voyage-ai"
-        mock_config.voyage_ai = MagicMock(parallel_requests=1)  # Use 1 thread for simplicity
+        mock_config.voyage_ai = MagicMock(parallel_requests=1, max_concurrent_batches_per_commit=10)  # Use 1 thread for simplicity
         config_manager.get_config.return_value = mock_config
 
         vector_store = MagicMock()
@@ -128,7 +128,7 @@ class TestBug7Integration(unittest.TestCase):
                             ]
 
                             # Call the actual implementation
-                            total_blobs, total_vectors = indexer._process_commits_parallel(
+                            completed_count, total_files_processed, total_vectors = indexer._process_commits_parallel(
                                 commits,
                                 MockFactory.create.return_value,  # embedding_provider
                                 mock_vector_manager,

@@ -19,6 +19,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
         self.config_manager = Mock()
         self.config = Mock()
         self.config.voyage_ai.parallel_requests = 8
+        self.config.voyage_ai.max_concurrent_batches_per_commit = 10
         self.config.embedding_provider = "voyage-ai"  # Set provider
         self.config.voyage_ai.model = "voyage-code-3"
         self.config_manager.get_config.return_value = self.config
@@ -88,6 +89,9 @@ class TestTemporalIndexerParallel(unittest.TestCase):
         # Mock vector manager
         vector_manager = Mock()
 
+
+        vector_manager.cancellation_event = threading.Event()
+
         # Process commits in parallel
         self.indexer._process_commits_parallel(
             commits,
@@ -144,6 +148,8 @@ class TestTemporalIndexerParallel(unittest.TestCase):
 
         # Mock vector manager
         vector_manager = Mock()
+
+        vector_manager.cancellation_event = threading.Event()
         future = Mock(spec=Future)
         future.result.return_value = Mock(embeddings=[[0.1, 0.2, 0.3]], error=None)
         vector_manager.submit_batch_task.return_value = future
@@ -195,6 +201,8 @@ class TestTemporalIndexerParallel(unittest.TestCase):
 
         # Mock vector manager
         vector_manager = Mock()
+
+        vector_manager.cancellation_event = threading.Event()
         future = Mock(spec=Future)
         future.result.return_value = Mock(embeddings=[[0.1, 0.2, 0.3]], error=None)
         vector_manager.submit_batch_task.return_value = future
@@ -259,6 +267,8 @@ class TestTemporalIndexerParallel(unittest.TestCase):
 
         # Mock vector manager
         vector_manager = Mock()
+
+        vector_manager.cancellation_event = threading.Event()
         future = Mock(spec=Future)
         future.result.return_value = Mock(embeddings=[[0.1, 0.2, 0.3]], error=None)
         vector_manager.submit_batch_task.return_value = future
@@ -338,16 +348,19 @@ class TestTemporalIndexerParallel(unittest.TestCase):
             return future
 
         vector_manager = Mock()
+
+
+        vector_manager.cancellation_event = threading.Event()
         vector_manager.submit_batch_task.side_effect = mock_submit
         vector_manager.embedding_provider._get_model_token_limit.return_value = 120000
 
         # Process commits and get return values
-        total_blobs, total_vectors = self.indexer._process_commits_parallel(
+        completed_count, total_files_processed, total_vectors = self.indexer._process_commits_parallel(
             commits, Mock(), vector_manager
         )
 
         # Should return counts
-        self.assertGreater(total_blobs, 0, "Should have processed blobs")
+        self.assertGreater(completed_count, 0, "Should have completed commits")
         self.assertGreater(total_vectors, 0, "Should have created vectors")
 
     def test_parallel_processing_skips_binary_and_renamed(self):
@@ -398,6 +411,8 @@ class TestTemporalIndexerParallel(unittest.TestCase):
 
         # Mock vector manager
         vector_manager = Mock()
+
+        vector_manager.cancellation_event = threading.Event()
         future = Mock(spec=Future)
         future.result.return_value = Mock(embeddings=[[0.1, 0.2, 0.3]], error=None)
         vector_manager.submit_batch_task.return_value = future

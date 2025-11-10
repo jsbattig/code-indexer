@@ -302,6 +302,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
         config_manager = Mock()
         config = Mock()
         config.voyage_ai.parallel_requests = 8
+        config.voyage_ai.max_concurrent_batches_per_commit = 10
         config.embedding_provider = "voyage-ai"
         config.voyage_ai.model = "voyage-code-2"
         config_manager.get_config.return_value = config
@@ -534,6 +535,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
         config_manager = Mock()
         config = Mock()
         config.voyage_ai.parallel_requests = 4
+        config.voyage_ai.max_concurrent_batches_per_commit = 10
         config.embedding_provider = "voyage-ai"
         config.voyage_ai.model = "voyage-code-2"
         config_manager.get_config.return_value = config
@@ -636,11 +638,19 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
                 for i in range(8)  # 8 commits for 4 threads
             ]
 
+            # Create proper vector_manager mock with required attributes
+            vector_manager = Mock()
+            vector_manager.cancellation_event = threading.Event()
+            vector_manager.embedding_provider = Mock()
+            vector_manager.embedding_provider.get_current_model = Mock(return_value="voyage-code-2")
+            vector_manager.embedding_provider._get_model_token_limit = Mock(return_value=120000)
+            vector_manager.submit_batch_task = Mock(return_value=Mock(result=Mock(return_value=[])))
+
             # Run parallel processing
             indexer._process_commits_parallel(
                 commits=commits,
                 embedding_provider=Mock(),
-                vector_manager=Mock(),
+                vector_manager=vector_manager,
                 progress_callback=None
             )
 
@@ -708,6 +718,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
         config_manager = Mock()
         config = Mock()
         config.voyage_ai.parallel_requests = 2
+        config.voyage_ai.max_concurrent_batches_per_commit = 10
         config.embedding_provider = "voyage-ai"
         config.voyage_ai.model = "voyage-code-2"
         config_manager.get_config.return_value = config
@@ -806,11 +817,19 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
                 )
             ]
 
+            # Create proper vector_manager mock with required attributes
+            vector_manager = Mock()
+            vector_manager.cancellation_event = threading.Event()
+            vector_manager.embedding_provider = Mock()
+            vector_manager.embedding_provider.get_current_model = Mock(return_value="voyage-code-2")
+            vector_manager.embedding_provider._get_model_token_limit = Mock(return_value=120000)
+            vector_manager.submit_batch_task = Mock(return_value=Mock(result=Mock(return_value=[])))
+
             # Run parallel processing
             indexer._process_commits_parallel(
                 commits=commits,
                 embedding_provider=Mock(),
-                vector_manager=Mock(),
+                vector_manager=vector_manager,
                 progress_callback=None
             )
 
@@ -891,6 +910,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
         config_manager = Mock()
         config = Mock()
         config.voyage_ai.parallel_requests = 4
+        config.voyage_ai.max_concurrent_batches_per_commit = 10
         config.embedding_provider = "voyage-ai"
         config.voyage_ai.model = "voyage-code-2"
         config_manager.get_config.return_value = config
@@ -956,12 +976,22 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
 
             indexer.diff_scanner.get_diffs_for_commit = Mock(side_effect=track_commits)
 
+            # Create proper vector_manager mock with required attributes
+            vector_manager = Mock()
+            vector_manager.cancellation_event = threading.Event()  # Not set, so workers can run
+            vector_manager.embedding_provider = Mock()
+            vector_manager.embedding_provider.get_current_model = Mock(return_value="voyage-code-2")
+            vector_manager.embedding_provider._get_model_token_limit = Mock(return_value=120000)
+            vector_manager.submit_batch_task = Mock(return_value=Mock(result=Mock(return_value=[])))
+
             # Run parallel processing with ALL commits (including completed)
+            # Pass reconcile=False to enable progressive metadata filtering
             indexer._process_commits_parallel(
                 commits=all_commits,
                 embedding_provider=Mock(),
-                vector_manager=Mock(),
-                progress_callback=None
+                vector_manager=vector_manager,
+                progress_callback=None,
+                reconcile=False  # Enable filtering of completed commits
             )
 
             # CRITICAL ASSERTIONS: Workers should ONLY see unindexed commits
@@ -1009,6 +1039,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
         config_manager = Mock()
         config = Mock()
         config.voyage_ai.parallel_requests = 4
+        config.voyage_ai.max_concurrent_batches_per_commit = 10
         config.embedding_provider = "voyage-ai"
         config.voyage_ai.model = "voyage-code-2"
         config_manager.get_config.return_value = config
@@ -1122,11 +1153,19 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
                 for i in range(8)
             ]
 
+            # Create proper vector_manager mock with required attributes
+            vector_manager = Mock()
+            vector_manager.cancellation_event = threading.Event()
+            vector_manager.embedding_provider = Mock()
+            vector_manager.embedding_provider.get_current_model = Mock(return_value="voyage-code-2")
+            vector_manager.embedding_provider._get_model_token_limit = Mock(return_value=120000)
+            vector_manager.submit_batch_task = Mock(return_value=Mock(result=Mock(return_value=[])))
+
             # Run parallel processing
             indexer._process_commits_parallel(
                 commits=commits,
                 embedding_provider=Mock(),
-                vector_manager=Mock(),
+                vector_manager=vector_manager,
                 progress_callback=None
             )
 
@@ -1213,6 +1252,7 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
         config_manager = Mock()
         config = Mock()
         config.voyage_ai.parallel_requests = 2
+        config.voyage_ai.max_concurrent_batches_per_commit = 10
         config.embedding_provider = "voyage-ai"
         config.voyage_ai.model = "voyage-code-2"
         config_manager.get_config.return_value = config
@@ -1317,11 +1357,19 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
                 )
             ]
 
+            # Create proper vector_manager mock with required attributes
+            vector_manager = Mock()
+            vector_manager.cancellation_event = threading.Event()
+            vector_manager.embedding_provider = Mock()
+            vector_manager.embedding_provider.get_current_model = Mock(return_value="voyage-code-2")
+            vector_manager.embedding_provider._get_model_token_limit = Mock(return_value=120000)
+            vector_manager.submit_batch_task = Mock(return_value=Mock(result=Mock(return_value=[])))
+
             # Run parallel processing
             indexer._process_commits_parallel(
                 commits=commits,
                 embedding_provider=Mock(),
-                vector_manager=Mock(),
+                vector_manager=vector_manager,
                 progress_callback=None
             )
 
@@ -1481,11 +1529,19 @@ class TestTemporalIndexerThreadRampup(unittest.TestCase):
                 for i in range(10)
             ]
 
+            # Create proper vector_manager mock with required attributes
+            vector_manager = Mock()
+            vector_manager.cancellation_event = threading.Event()
+            vector_manager.embedding_provider = Mock()
+            vector_manager.embedding_provider.get_current_model = Mock(return_value="voyage-code-2")
+            vector_manager.embedding_provider._get_model_token_limit = Mock(return_value=120000)
+            vector_manager.submit_batch_task = Mock(return_value=Mock(result=Mock(return_value=[])))
+
             # Run parallel processing with progress callback
             indexer._process_commits_parallel(
                 commits=commits,
                 embedding_provider=Mock(),
-                vector_manager=Mock(),
+                vector_manager=vector_manager,
                 progress_callback=track_progress
             )
 

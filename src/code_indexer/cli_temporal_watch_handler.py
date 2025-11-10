@@ -230,8 +230,8 @@ class TemporalWatchHandler(FileSystemEventHandler):
                 )
 
                 logger.info(
-                    f"Indexed {result.new_blobs_indexed} new blobs "
-                    f"(dedup: {result.deduplication_ratio:.1%})"
+                    f"Indexed ~{result.approximate_vectors_created} vectors "
+                    f"(skip ratio: {result.skip_ratio:.1%})"
                 )
             finally:
                 progress_manager.stop_display()
@@ -401,8 +401,8 @@ class TemporalWatchHandler(FileSystemEventHandler):
                 )
 
                 logger.info(
-                    f"Indexed {result.new_blobs_indexed} new blobs "
-                    f"(dedup: {result.deduplication_ratio:.1%})"
+                    f"Indexed ~{result.approximate_vectors_created} vectors "
+                    f"(skip ratio: {result.skip_ratio:.1%})"
                 )
         finally:
             progress_manager.stop_display()

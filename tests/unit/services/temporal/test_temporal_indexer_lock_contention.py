@@ -58,6 +58,7 @@ class TestTemporalIndexerLockContention:
         mock_config_manager = MagicMock()
         mock_config = MagicMock()
         mock_config.voyage_ai.parallel_requests = 2
+        mock_config.voyage_ai.max_concurrent_batches_per_commit = 10
         mock_config.voyage_ai.model = "voyage-3"
         mock_config.embedding_provider = "voyage-ai"
         mock_config_manager.get_config.return_value = mock_config

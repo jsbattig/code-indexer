@@ -3337,7 +3337,7 @@ def index(
             )
             sys.exit(1)
 
-        # Handle --index-commits flag (early exit path for temporal indexing)
+        # Handle --index-commits flag (standalone mode only - daemon delegates above)
         if index_commits:
             try:
                 # Lazy import temporal indexing components
@@ -3355,23 +3355,22 @@ def index(
                 # Check if --clear flag is set for temporal collection
                 if clear:
                     console.print("🧹 Clearing temporal index...", style="cyan")
+                    collection_name = "code-indexer-temporal"
                     vector_store.clear_collection(
-                        collection_name="code-indexer-temporal",
+                        collection_name=collection_name,
                         remove_projection_matrix=False,
                     )
                     # Also remove temporal metadata so indexing starts fresh
-                    temporal_meta_path = (
-                        config.codebase_dir
-                        / ".code-indexer/index/temporal/temporal_meta.json"
+                    # Use collection path to consolidate all temporal data
+                    collection_path = (
+                        config.codebase_dir / ".code-indexer/index" / collection_name
                     )
+                    temporal_meta_path = collection_path / "temporal_meta.json"
                     if temporal_meta_path.exists():
                         temporal_meta_path.unlink()
 
                     # Also remove progressive tracking file (Bug #8 fix)
-                    temporal_progress_path = (
-                        config.codebase_dir
-                        / ".code-indexer/index/temporal/temporal_progress.json"
-                    )
+                    temporal_progress_path = collection_path / "temporal_progress.json"
                     if temporal_progress_path.exists():
                         temporal_progress_path.unlink()
 
@@ -3539,6 +3538,7 @@ def index(
                     max_commits=max_commits,
                     since_date=since_date,
                     progress_callback=progress_callback,
+                    reconcile=reconcile,
                 )
 
                 # Stop Rich Live display before showing results
@@ -3574,10 +3574,35 @@ def index(
                 sys.exit(0)
 
             except Exception as e:
-                console.print(f"❌ Temporal indexing failed: {e}", style="red")
-                if ctx.obj.get("verbose"):
-                    import traceback
+                # Enhanced error logging for diagnosing Errno 7 and other failures
+                import traceback
 
+                error_details = {
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "stack_trace": traceback.format_exc(),
+                    "errno": getattr(e, "errno", None),
+                    "working_directory": str(Path.cwd()),
+                }
+
+                # Log to file for debugging
+                error_log = (
+                    Path.cwd()
+                    / ".code-indexer"
+                    / f"temporal_error_{int(time.time())}.log"
+                )
+                error_log.parent.mkdir(parents=True, exist_ok=True)
+                with open(error_log, "w") as f:
+                    import json
+
+                    json.dump(error_details, f, indent=2)
+
+                console.print(f"❌ Temporal indexing failed: {e}", style="red")
+                console.print(f"💾 Error details saved to: {error_log}", style="yellow")
+
+                if (
+                    ctx.obj.get("verbose") or True
+                ):  # Always show stack trace for debugging
                     console.print(traceback.format_exc())
                 sys.exit(1)
 
@@ -4364,18 +4389,20 @@ def watch(ctx, debounce: float, batch_size: int, initial_sync: bool, fts: bool):
             )
             from .storage.filesystem_vector_store import FilesystemVectorStore
 
-            temporal_index_dir = (
-                project_root / ".code-indexer/index/code-indexer-temporal"
+            # Initialize vector store with base_path (not collection path)
+            # This allows temporal_indexer to create the correct temporal_dir
+            index_dir = project_root / ".code-indexer" / "index"
+            vector_store = FilesystemVectorStore(
+                base_path=index_dir, project_root=project_root
             )
-
-            # Initialize vector store (FilesystemVectorStore)
-            vector_store = FilesystemVectorStore(temporal_index_dir)
 
             # Create temporal indexer (using new API)
             temporal_indexer = TemporalIndexer(config_manager, vector_store)
 
-            # Create progressive metadata
-            progressive_metadata = TemporalProgressiveMetadata(temporal_index_dir)
+            # Create progressive metadata using temporal_indexer's consolidated dir
+            progressive_metadata = TemporalProgressiveMetadata(
+                temporal_indexer.temporal_dir
+            )
 
             # Create TemporalWatchHandler
             temporal_watch_handler = TemporalWatchHandler(

@@ -28,6 +28,7 @@ def mock_config_manager():
     config.embedding_provider = "voyage-ai"
     config.voyage_ai = Mock()
     config.voyage_ai.parallel_requests = 4
+    config.voyage_ai.max_concurrent_batches_per_commit = 10
     config_manager.get_config.return_value = config
     return config_manager
 
@@ -87,10 +88,10 @@ def test_empty_commits_after_filtering_should_return_early(temporal_indexer):
                 # Current bug: Crashes with IndexError at line 202
                 result = temporal_indexer.index_commits(all_branches=False)
 
-                # Verify correct early return behavior
+                # Verify correct early return behavior with new field names
                 assert result.total_commits == 0
-                assert result.unique_blobs == 0
-                assert result.new_blobs_indexed == 0
-                assert result.deduplication_ratio == 1.0
+                assert result.files_processed == 0
+                assert result.approximate_vectors_created == 0
+                assert result.skip_ratio == 1.0  # All commits skipped
                 assert result.branches_indexed == []
                 assert result.commits_per_branch == {}

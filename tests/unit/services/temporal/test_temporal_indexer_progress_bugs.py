@@ -97,7 +97,7 @@ class TestTemporalIndexerProgressBugs:
         # Mock components
         config_manager = Mock(spec=ConfigManager)
         config = Mock()
-        config.voyage_ai = Mock(parallel_requests=8)  # High parallelism for race conditions
+        config.voyage_ai = Mock(parallel_requests=8, max_concurrent_batches_per_commit=10)  # High parallelism for race conditions
         config_manager.get_config.return_value = config
 
         vector_store = Mock(spec=FilesystemVectorStore)
@@ -243,7 +243,7 @@ class TestTemporalIndexerProgressBugs:
             # Mock components with parallel processing (8 threads like user's scenario)
             config_manager = Mock(spec=ConfigManager)
             config = Mock()
-            config.voyage_ai = Mock(parallel_requests=8)  # Parallel processing like real scenario
+            config.voyage_ai = Mock(parallel_requests=8, max_concurrent_batches_per_commit=10)  # Parallel processing like real scenario
             config_manager.get_config.return_value = config
 
             vector_store = Mock(spec=FilesystemVectorStore)
@@ -386,7 +386,7 @@ class TestTemporalIndexerProgressBugs:
         # Mock components
         config_manager = Mock(spec=ConfigManager)
         config = Mock()
-        config.voyage_ai = Mock(parallel_requests=8)  # High parallelism
+        config.voyage_ai = Mock(parallel_requests=8, max_concurrent_batches_per_commit=10)  # High parallelism
         config_manager.get_config.return_value = config
 
         vector_store = Mock(spec=FilesystemVectorStore)

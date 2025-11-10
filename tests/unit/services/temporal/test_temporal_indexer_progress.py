@@ -17,6 +17,18 @@ class TestTemporalIndexerProgress:
     def test_parallel_processing_reports_real_progress(self, mock_diff_scanner_class, mock_vector_manager_class, mock_factory):
         """Test that progress callback receives real data, not hardcoded mock values."""
         # Setup
+        import tempfile
+        import shutil
+
+        # Create unique temp directory for this test to avoid state pollution
+        test_dir = Path(tempfile.mkdtemp(prefix="test_temporal_"))
+
+        # Cleanup previous test state
+        try:
+            shutil.rmtree(test_dir / ".code-indexer" / "temporal", ignore_errors=True)
+        except:
+            pass
+
         mock_config_manager = MagicMock()
         mock_config = MagicMock()
         mock_config.voyage_ai.parallel_requests = 4
@@ -24,7 +36,7 @@ class TestTemporalIndexerProgress:
         mock_config_manager.get_config.return_value = mock_config
 
         mock_vector_store = MagicMock()
-        mock_vector_store.project_root = Path("/tmp/test_project")
+        mock_vector_store.project_root = test_dir
 
         # Mock EmbeddingProviderFactory
         mock_factory.get_provider_model_info.return_value = {
@@ -74,6 +86,26 @@ class TestTemporalIndexerProgress:
 
         # Mock vector manager
         mock_vector_manager = MagicMock()
+        # Mock cancellation event (no cancellation)
+        mock_cancellation_event = MagicMock()
+        mock_cancellation_event.is_set.return_value = False
+        mock_vector_manager.cancellation_event = mock_cancellation_event
+        
+        # Mock embedding provider methods for token counting
+        mock_embedding_provider = MagicMock()
+        mock_embedding_provider._count_tokens_accurately = MagicMock(return_value=100)
+        mock_embedding_provider._get_model_token_limit = MagicMock(return_value=120000)
+        mock_vector_manager.embedding_provider = mock_embedding_provider
+        
+        # Mock submit_batch_task to return proper embeddings
+        def mock_submit_batch(texts, metadata):
+            future = MagicMock()
+            result = MagicMock()
+            result.embeddings = [[0.1] * 1536 for _ in texts] if texts else []
+            result.error = None
+            future.result.return_value = result
+            return future
+        mock_vector_manager.submit_batch_task.side_effect = mock_submit_batch
         # Mock cancellation event (no cancellation)
         mock_cancellation_event = MagicMock()
         mock_cancellation_event.is_set.return_value = False
@@ -128,18 +160,33 @@ class TestTemporalIndexerProgress:
             assert "|" in info, f"Missing pipe separators in info: {info}"
 
     @patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory')
-    def test_progress_shows_actual_filenames_not_test_py(self, mock_factory):
+    @patch('src.code_indexer.services.vector_calculation_manager.VectorCalculationManager')
+    @patch('src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner')
+    def test_progress_shows_actual_filenames_not_test_py(self, mock_diff_scanner_class, mock_vector_manager_class, mock_factory):
         """Test that progress callback shows actual file paths from diffs, not hardcoded 'test.py'."""
         # Setup
+        import tempfile
+        import shutil
+
+        # Create unique temp directory for this test to avoid state pollution
+        test_dir = Path(tempfile.mkdtemp(prefix="test_temporal_"))
+
+        # Cleanup previous test state
+        try:
+            shutil.rmtree(test_dir / ".code-indexer" / "temporal", ignore_errors=True)
+        except:
+            pass
+
         mock_config_manager = MagicMock()
         mock_config = MagicMock()
         mock_config.voyage_ai.parallel_requests = 4
         mock_config.voyage_ai.model = "voyage-3"
+        mock_config.voyage_ai.max_concurrent_batches_per_commit = 10
         mock_config.embedding_provider = "voyage-ai"
         mock_config_manager.get_config.return_value = mock_config
 
         mock_vector_store = MagicMock()
-        mock_vector_store.project_root = Path("/tmp/test_project")
+        mock_vector_store.project_root = test_dir
 
         # Mock EmbeddingProviderFactory
         mock_factory.get_provider_model_info.return_value = {
@@ -218,6 +265,26 @@ class TestTemporalIndexerProgress:
 
         # Mock vector manager
         mock_vector_manager = MagicMock()
+        # Mock cancellation event (no cancellation)
+        mock_cancellation_event = MagicMock()
+        mock_cancellation_event.is_set.return_value = False
+        mock_vector_manager.cancellation_event = mock_cancellation_event
+        
+        # Mock embedding provider methods for token counting
+        mock_embedding_provider = MagicMock()
+        mock_embedding_provider._count_tokens_accurately = MagicMock(return_value=100)
+        mock_embedding_provider._get_model_token_limit = MagicMock(return_value=120000)
+        mock_vector_manager.embedding_provider = mock_embedding_provider
+        
+        # Mock submit_batch_task to return proper embeddings
+        def mock_submit_batch(texts, metadata):
+            future = MagicMock()
+            result = MagicMock()
+            result.embeddings = [[0.1] * 1536 for _ in texts] if texts else []
+            result.error = None
+            future.result.return_value = result
+            return future
+        mock_vector_manager.submit_batch_task.side_effect = mock_submit_batch
         # Mock cancellation event (no cancellation)
         mock_cancellation_event = MagicMock()
         mock_cancellation_event.is_set.return_value = False

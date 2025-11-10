@@ -29,6 +29,7 @@ TEMPORAL INDEXING BROKEN PATTERN (temporal_indexer.py:391-397):
     )
 """
 
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -55,6 +56,7 @@ class TestTemporalFileSizeDisplay(unittest.TestCase):
         config_manager = Mock()
         config = Mock()
         config.voyage_ai.parallel_requests = 2
+        config.voyage_ai.max_concurrent_batches_per_commit = 10
         config.embedding_provider = "voyage-ai"
         config.voyage_ai.model = "voyage-code-2"
         config_manager.get_config.return_value = config
@@ -110,6 +112,10 @@ class TestTemporalFileSizeDisplay(unittest.TestCase):
 
             # Mock vector manager
             mock_vector_manager = Mock()
+            mock_vector_manager.cancellation_event = threading.Event()  # Required for worker threads
+            mock_vector_manager.embedding_provider = Mock()
+            mock_vector_manager.embedding_provider.get_current_model = Mock(return_value="voyage-code-2")
+            mock_vector_manager.embedding_provider._get_model_token_limit = Mock(return_value=120000)
             mock_future = Mock()
             mock_result = Mock()
             mock_result.embeddings = [[0.1] * 1536]  # One embedding

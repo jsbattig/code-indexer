@@ -389,6 +389,7 @@ class CIDXDaemonService(Service):
             Dict with indexing stats and status
         """
         logger.info(f"exposed_index_blocking: project={project_path} [BLOCKING MODE]")
+        logger.info(f"exposed_index_blocking: kwargs={kwargs}")
 
         try:
             # Invalidate cache BEFORE indexing

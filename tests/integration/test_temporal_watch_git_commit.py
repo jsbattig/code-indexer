@@ -61,8 +61,8 @@ def mock_temporal_indexer():
     """Mock TemporalIndexer for testing."""
     indexer = Mock()
     indexer.index_commits_list.return_value = Mock(
-        new_blobs_indexed=5,
-        deduplication_ratio=0.8,
+        vectors_created=5,
+        skip_ratio=0.2,  # 20% skipped
     )
     return indexer
 

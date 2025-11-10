@@ -32,24 +32,33 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class IndexingResult:
-    """Result of temporal indexing operation."""
+    """Result of temporal indexing operation.
+
+    Fields:
+        total_commits: Number of commits processed
+        files_processed: Number of changed files analyzed across all commits
+        approximate_vectors_created: Approximate number of vectors created (includes diff chunk vectors and commit message vectors)
+        skip_ratio: Ratio of commits skipped (0.0 = none skipped, 1.0 = all skipped)
+        branches_indexed: List of branch names indexed
+        commits_per_branch: Dictionary mapping branch names to commit counts
+    """
 
     total_commits: int
-    unique_blobs: int
-    new_blobs_indexed: int
-    deduplication_ratio: float
+    files_processed: int
+    approximate_vectors_created: int
+    skip_ratio: float
     branches_indexed: List[str]
     commits_per_branch: dict
 
 
 class TemporalIndexer:
-    """Orchestrates git history indexing with blob deduplication.
+    """Orchestrates git history indexing with commit-based change tracking.
 
     This class coordinates the temporal indexing workflow:
-    1. Build blob registry from existing vectors (deduplication)
-    2. Get commit history from git
-    3. For each commit, discover blobs and process only new ones
-    4. Store commit metadata and blob vectors
+    1. Get commit history from git
+    2. Filter already-processed commits using progressive metadata
+    3. For each new commit, extract file diffs and create vectors
+    4. Track processed commits and store vectors with commit metadata
     """
 
     # Temporal collection name - must match TemporalSearchService
@@ -74,8 +83,9 @@ class TemporalIndexer:
         # Initialize FileIdentifier for project_id lookup
         self.file_identifier = FileIdentifier(self.codebase_dir, self.config)
 
-        # Initialize temporal directories relative to project root
-        self.temporal_dir = self.codebase_dir / ".code-indexer/index/temporal"
+        # Initialize temporal directory using collection path to consolidate all data
+        # This ensures metadata and vectors are in the same location
+        self.temporal_dir = self.vector_store.base_path / self.TEMPORAL_COLLECTION_NAME
         self.temporal_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize override filter service if override config exists
@@ -103,7 +113,7 @@ class TemporalIndexer:
         )
         self.chunker = FixedSizeChunker(self.config)
 
-        # Initialize blob registry for deduplication
+        # Initialize blob registry for tracking indexed content
         self.indexed_blobs: set[str] = set()
 
         # Initialize progressive metadata tracker for resume capability
@@ -141,8 +151,31 @@ class TemporalIndexer:
             )
 
     def _count_tokens(self, text: str, vector_manager) -> int:
-        """Count tokens accurately for batching purposes using VoyageAI's tokenizer."""
-        return vector_manager.embedding_provider._count_tokens_accurately(text)
+        """Count tokens using provider-specific token counting.
+
+        For VoyageAI: Use official tokenizer for accurate counting
+        For Ollama/other providers: Estimate based on character count
+        """
+        # Check if we're using VoyageAI provider
+        provider_name = vector_manager.embedding_provider.__class__.__name__
+        is_voyageai_provider = "VoyageAI" in provider_name
+
+        if is_voyageai_provider:
+            # Check if provider has the _count_tokens_accurately method (real provider)
+            if hasattr(vector_manager.embedding_provider, "_count_tokens_accurately"):
+                return int(
+                    vector_manager.embedding_provider._count_tokens_accurately(text)
+                )
+
+            # Fallback: Use VoyageTokenizer directly
+            from ..embedded_voyage_tokenizer import VoyageTokenizer
+
+            model = vector_manager.embedding_provider.get_current_model()
+            return VoyageTokenizer.count_tokens([text], model=model)
+
+        # Fallback: Rough estimate (4 chars ≈ 1 token for English text)
+        # This is conservative and works for batching purposes
+        return len(text) // 4
 
     def index_commits(
         self,
@@ -150,29 +183,71 @@ class TemporalIndexer:
         max_commits: Optional[int] = None,
         since_date: Optional[str] = None,
         progress_callback: Optional[Callable] = None,
+        reconcile: bool = False,
     ) -> IndexingResult:
-        """Index git commit history with blob deduplication.
+        """Index git commit history with commit-based change tracking.
 
         Args:
             all_branches: If True, index all branches; if False, current branch only
             max_commits: Maximum number of commits to index per branch
             since_date: Index commits since this date (YYYY-MM-DD)
             progress_callback: Progress callback function
+            reconcile: If True, reconcile disk state with git history (crash recovery)
 
         Returns:
             IndexingResult with statistics
         """
         # Step 1: Get commit history
-        commits = self._get_commit_history(all_branches, max_commits, since_date)
-        if not commits:
+        commits_from_git = self._get_commit_history(
+            all_branches, max_commits, since_date
+        )
+        if not commits_from_git:
             return IndexingResult(
                 total_commits=0,
-                unique_blobs=0,
-                new_blobs_indexed=0,
-                deduplication_ratio=1.0,
+                files_processed=0,
+                approximate_vectors_created=0,
+                skip_ratio=1.0,  # All commits skipped (none to process)
                 branches_indexed=[],
                 commits_per_branch={},
             )
+
+        # Step 1.5: Reconciliation (if requested) - discover indexed commits from disk
+        if reconcile:
+            from .temporal_reconciliation import reconcile_temporal_index
+
+            logger.info("Reconciling disk state with git history...")
+            missing_commits = reconcile_temporal_index(
+                self.vector_store, commits_from_git, self.TEMPORAL_COLLECTION_NAME
+            )
+
+            # Log reconciliation summary
+            indexed_count = len(commits_from_git) - len(missing_commits)
+            logger.info(
+                f"Reconciliation complete: {indexed_count} indexed, "
+                f"{len(missing_commits)} missing ({indexed_count*100//(len(commits_from_git) or 1)}% complete)"
+            )
+
+            # Replace commits_from_git with only missing commits
+            commits_from_git = missing_commits
+
+            # If all commits indexed, skip to index rebuild
+            if not commits_from_git:
+                logger.info("All commits already indexed, rebuilding indexes only...")
+                # Still rebuild indexes (AC4)
+                self.vector_store.end_indexing(
+                    collection_name=self.TEMPORAL_COLLECTION_NAME
+                )
+                return IndexingResult(
+                    total_commits=0,
+                    files_processed=0,
+                    approximate_vectors_created=0,
+                    skip_ratio=1.0,  # All commits already done
+                    branches_indexed=[],
+                    commits_per_branch={},
+                )
+
+        # Track total commits before filtering for skip_ratio calculation
+        total_commits_before_filter = len(commits_from_git)
 
         # Filtering moved to _process_commits_parallel() for correct architecture
         # (Bug #8, #9 behavior maintained - verified by test_bug8_progressive_resume.py
@@ -184,11 +259,7 @@ class TemporalIndexer:
 
         current_branch = self._get_current_branch()
 
-        # Step 2: Build blob registry from existing vectors
-        # (In a real implementation, this would scan vector store)
-        # For now, we assume empty registry for new temporal indexing
-
-        # Step 3: Process each commit
+        # Step 2: Process commits with parallel workers
         total_blobs_processed = 0
         total_vectors_created = 0
 
@@ -208,9 +279,14 @@ class TemporalIndexer:
             embedding_provider, vector_thread_count
         ) as vector_manager:
             # Use parallel processing instead of sequential loop
-            total_blobs_processed, total_vectors_created = (
+            # Returns: (commits_processed_count, total_blobs_processed, total_vectors_created)
+            commits_processed, total_blobs_processed, total_vectors_created = (
                 self._process_commits_parallel(
-                    commits, embedding_provider, vector_manager, progress_callback
+                    commits_from_git,
+                    embedding_provider,
+                    vector_manager,
+                    progress_callback,
+                    reconcile,
                 )
             )
 
@@ -218,17 +294,18 @@ class TemporalIndexer:
         if total_blobs_processed == 0 and total_vectors_created == 0:
             return IndexingResult(
                 total_commits=0,
-                unique_blobs=0,
-                new_blobs_indexed=0,
-                deduplication_ratio=1.0,
+                files_processed=0,
+                approximate_vectors_created=0,
+                skip_ratio=1.0,  # All commits skipped (already processed)
                 branches_indexed=[],
                 commits_per_branch={},
             )
 
-        # Step 4: Save temporal metadata
-        dedup_ratio = (
-            1.0 - (total_vectors_created / (total_blobs_processed * 3))
-            if total_blobs_processed > 0
+        # Step 4: Calculate skip ratio (commits skipped due to already being processed)
+        commits_skipped = total_commits_before_filter - commits_processed
+        skip_ratio = (
+            commits_skipped / total_commits_before_filter
+            if total_commits_before_filter > 0
             else 1.0
         )
 
@@ -236,19 +313,19 @@ class TemporalIndexer:
         branches_indexed = [current_branch]  # Temporary fix - no SQLite
 
         self._save_temporal_metadata(
-            last_commit=commits[-1].hash,
-            total_commits=len(commits),
-            total_blobs=total_blobs_processed,
-            new_blobs=total_vectors_created // 3,  # Approx
+            last_commit=commits_from_git[-1].hash,
+            total_commits=len(commits_from_git),
+            files_processed=total_blobs_processed,
+            approximate_vectors_created=total_vectors_created // 3,  # Approx
             branch_stats={"branches": branches_indexed, "per_branch_counts": {}},
             indexing_mode="all-branches" if all_branches else "single-branch",
         )
 
         return IndexingResult(
-            total_commits=len(commits),
-            unique_blobs=total_blobs_processed,
-            new_blobs_indexed=total_vectors_created // 3,
-            deduplication_ratio=dedup_ratio,
+            total_commits=commits_processed,
+            files_processed=total_blobs_processed,
+            approximate_vectors_created=total_vectors_created,
+            skip_ratio=skip_ratio,
             branches_indexed=branches_indexed,
             commits_per_branch={},
         )
@@ -338,22 +415,42 @@ class TemporalIndexer:
         return result.stdout.strip() or "HEAD"
 
     def _process_commits_parallel(
-        self, commits, embedding_provider, vector_manager, progress_callback=None
+        self,
+        commits,
+        embedding_provider,
+        vector_manager,
+        progress_callback=None,
+        reconcile=None,
     ):
-        """Process commits in parallel using queue-based architecture."""
+        """Process commits in parallel using queue-based architecture.
+
+        Args:
+            commits: List of commits to process
+            embedding_provider: Embedding provider for vector generation
+            vector_manager: Vector calculation manager
+            progress_callback: Optional progress callback function
+            reconcile: If False, use progressive metadata filtering for resume capability.
+                      If True, skip filtering (disk reconciliation already filtered).
+                      If None (default), skip filtering (no resume/reconciliation requested).
+        """
 
         # Import CleanSlotTracker and related classes
         from ..clean_slot_tracker import CleanSlotTracker, FileStatus, FileData
 
-        # Filter commits upfront using progressive metadata
-        completed_commits = self.progressive_metadata.load_completed()
-        commits = [c for c in commits if c.hash not in completed_commits]
+        # Filter commits upfront using progressive metadata (only when reconcile=False for resume capability)
+        # When reconcile=True, disk-based reconciliation already filtered commits in index_commits()
+        # When reconcile=None (default), no filtering (normal indexing without resume)
+        if reconcile is False:
+            completed_commits = self.progressive_metadata.load_completed()
+            commits = [c for c in commits if c.hash not in completed_commits]
 
         # Load existing point IDs to avoid duplicate processing
         # Create a copy to avoid mutating the store's data structure
-        existing_ids = set(self.vector_store.load_id_index(self.TEMPORAL_COLLECTION_NAME))
+        existing_ids = set(
+            self.vector_store.load_id_index(self.TEMPORAL_COLLECTION_NAME)
+        )
         logger.info(
-            f"Loaded {len(existing_ids)} existing temporal points for deduplication"
+            f"Loaded {len(existing_ids)} existing temporal points to avoid re-indexing"
         )
 
         # Get thread count from config
@@ -390,6 +487,7 @@ class TemporalIndexer:
 
         # Track progress with thread-safe shared state
         completed_count = [0]  # Mutable list for thread-safe updates
+        total_files_processed = [0]  # Track total number of files across all commits
         last_completed_commit = [None]  # Track last completed commit hash
         last_completed_file = [None]  # Track last completed file
         total_bytes_processed = [0]  # Thread-safe accumulator for KB/s calculation
@@ -448,6 +546,9 @@ class TemporalIndexer:
                     # Track last file processed for THIS commit (local to this worker)
                     last_file_for_commit = Path(".")  # Default if no diffs
 
+                    # Track file count for this commit
+                    files_in_this_commit = 0
+
                     # If no diffs, mark complete and continue
                     if not diffs:
                         commit_slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
@@ -458,6 +559,8 @@ class TemporalIndexer:
                         project_id = self.file_identifier._get_project_id()
 
                         # Phase 1: Collect all chunks from all diffs
+                        files_in_this_commit = len(diffs)
+
                         for diff_info in diffs:
                             # Update slot with current file information (no release/reacquire)
                             current_filename = (
@@ -486,7 +589,7 @@ class TemporalIndexer:
                             if diff_info.diff_type in ["binary", "renamed"]:
                                 continue
 
-                            # Skip if blob already indexed (deduplication)
+                            # Skip if blob already indexed (avoid duplicate processing)
                             if (
                                 diff_info.blob_hash
                                 and diff_info.blob_hash in self.indexed_blobs
@@ -507,22 +610,29 @@ class TemporalIndexer:
                                     # Skip if point already exists
                                     if point_id not in existing_ids:
                                         # Collect chunk with all metadata needed for point creation
-                                        all_chunks_data.append({
-                                            'chunk': chunk,
-                                            'chunk_index': j,
-                                            'diff_info': diff_info,
-                                            'point_id': point_id,
-                                        })
+                                        all_chunks_data.append(
+                                            {
+                                                "chunk": chunk,
+                                                "chunk_index": j,
+                                                "diff_info": diff_info,
+                                                "point_id": point_id,
+                                            }
+                                        )
 
                         # Phase 2: Batch all chunks and submit API calls with token-aware batching
                         if all_chunks_data:
+                            # Show initial state with 0% progress
                             commit_slot_tracker.update_slot(
-                                slot_id, FileStatus.VECTORIZING
+                                slot_id,
+                                FileStatus.VECTORIZING,
+                                filename=f"{commit.hash[:8]} - Vectorizing 0% (0/{len(all_chunks_data)} chunks)",
                             )
 
                             # Token-aware batching: split chunks into multiple batches if needed
                             # to respect 120,000 token limit (90% safety margin = 108,000)
-                            model_limit = vector_manager.embedding_provider._get_model_token_limit()
+                            model_limit = (
+                                vector_manager.embedding_provider._get_model_token_limit()
+                            )
                             TOKEN_LIMIT = int(model_limit * 0.9)  # 90% safety margin
 
                             # First, calculate all batch indices (don't submit yet)
@@ -531,11 +641,16 @@ class TemporalIndexer:
                             current_tokens = 0
 
                             for i, chunk_data in enumerate(all_chunks_data):
-                                chunk_text = chunk_data['chunk']['text']
-                                chunk_tokens = self._count_tokens(chunk_text, vector_manager)
+                                chunk_text = chunk_data["chunk"]["text"]
+                                chunk_tokens = self._count_tokens(
+                                    chunk_text, vector_manager
+                                )
 
-                                # If this chunk would exceed limit, save current batch
-                                if current_tokens + chunk_tokens > TOKEN_LIMIT and current_batch_indices:
+                                # If this chunk would exceed TOKEN limit OR ITEM COUNT limit (1000), save current batch
+                                if (
+                                    current_tokens + chunk_tokens > TOKEN_LIMIT
+                                    or len(current_batch_indices) >= 1000
+                                ) and current_batch_indices:
                                     batch_indices_list.append(current_batch_indices)
                                     current_batch_indices = []
                                     current_tokens = 0
@@ -549,37 +664,60 @@ class TemporalIndexer:
                                 batch_indices_list.append(current_batch_indices)
 
                             # Submit and process batches in waves to prevent monopolization
-                            max_concurrent = getattr(self.config.voyage_ai, 'max_concurrent_batches_per_commit', 10)
+                            max_concurrent = getattr(
+                                self.config.voyage_ai,
+                                "max_concurrent_batches_per_commit",
+                                10,
+                            )
                             all_embeddings = []
 
                             with open("/tmp/cidx_debug.log", "a") as f:
-                                f.write(f"Commit {commit.hash[:8]}: Processing {len(batch_indices_list)} batch(es) with {len(all_chunks_data)} total chunks (max {max_concurrent} concurrent)\n")
+                                f.write(
+                                    f"Commit {commit.hash[:8]}: Processing {len(batch_indices_list)} batch(es) with {len(all_chunks_data)} total chunks (max {max_concurrent} concurrent)\n"
+                                )
                                 f.flush()
 
                             # Process batches in waves of max_concurrent
-                            for wave_start in range(0, len(batch_indices_list), max_concurrent):
+                            for wave_start in range(
+                                0, len(batch_indices_list), max_concurrent
+                            ):
                                 # TIMEOUT ARCHITECTURE FIX: Check cancellation between waves
                                 if vector_manager.cancellation_event.is_set():
-                                    logger.warning(f"Commit {commit.hash[:8]}: Cancelled mid-processing - exiting wave loop")
+                                    logger.warning(
+                                        f"Commit {commit.hash[:8]}: Cancelled mid-processing - exiting wave loop"
+                                    )
                                     commit_had_errors = True
                                     break
 
-                                wave_end = min(wave_start + max_concurrent, len(batch_indices_list))
+                                wave_end = min(
+                                    wave_start + max_concurrent, len(batch_indices_list)
+                                )
                                 wave_batches = batch_indices_list[wave_start:wave_end]
 
                                 with open("/tmp/cidx_debug.log", "a") as f:
-                                    f.write(f"Commit {commit.hash[:8]}: Submitting wave {wave_start+1}-{wave_end} of {len(batch_indices_list)}\n")
+                                    f.write(
+                                        f"Commit {commit.hash[:8]}: Submitting wave {wave_start+1}-{wave_end} of {len(batch_indices_list)}\n"
+                                    )
                                     f.flush()
 
                                 # Submit this wave of batches
                                 wave_futures = []
                                 for batch_indices in wave_batches:
-                                    batch_texts = [all_chunks_data[idx]['chunk']['text'] for idx in batch_indices]
-                                    batch_future = vector_manager.submit_batch_task(batch_texts, {})
-                                    wave_futures.append(batch_future)
+                                    batch_texts = [
+                                        all_chunks_data[idx]["chunk"]["text"]
+                                        for idx in batch_indices
+                                    ]
+                                    batch_future = vector_manager.submit_batch_task(
+                                        batch_texts, {}
+                                    )
+                                    # Store (future, batch_indices) tuple for progress tracking
+                                    # Allows calculating percentage completion after each batch
+                                    wave_futures.append((batch_future, batch_indices))
 
                                 # Wait for this wave to complete
-                                for i, batch_future in enumerate(wave_futures, start=wave_start):
+                                batch_num = 0
+                                for batch_future, batch_indices in wave_futures:
+                                    batch_num += 1
                                     try:
                                         # TIMEOUT ARCHITECTURE FIX: Remove timeout - worker waits indefinitely
                                         # Only API calls timeout (handled in VectorCalculationManager)
@@ -588,24 +726,51 @@ class TemporalIndexer:
                                         # TIMEOUT ARCHITECTURE FIX: Check for cancellation/timeout errors
                                         if batch_result.error:
                                             error_lower = batch_result.error.lower()
-                                            if "timeout" in error_lower or "cancelled" in error_lower:
-                                                logger.warning(f"Commit {commit.hash[:8]}: Batch cancelled/timeout - {batch_result.error}")
+                                            if (
+                                                "timeout" in error_lower
+                                                or "cancelled" in error_lower
+                                            ):
+                                                logger.warning(
+                                                    f"Commit {commit.hash[:8]}: Batch cancelled/timeout - {batch_result.error}"
+                                                )
                                                 commit_had_errors = True
                                                 break  # Exit batch processing loop
                                             else:
                                                 # Other error - log and mark commit as failed
-                                                logger.error(f"Commit {commit.hash[:8]}: Batch error - {batch_result.error}")
+                                                logger.error(
+                                                    f"Commit {commit.hash[:8]}: Batch error - {batch_result.error}"
+                                                )
                                                 commit_had_errors = True
                                                 break
 
                                         all_embeddings.extend(batch_result.embeddings)
 
+                                        # DYNAMIC PROGRESS UPDATE: Show percentage and chunk count
+                                        chunks_vectorized = len(all_embeddings)
+                                        total_chunks = len(all_chunks_data)
+                                        progress_pct = (
+                                            (chunks_vectorized * 100) // total_chunks
+                                            if total_chunks > 0
+                                            else 0
+                                        )
+
+                                        # Update slot with dynamic progress (shows movement)
+                                        commit_slot_tracker.update_slot(
+                                            slot_id,
+                                            FileStatus.VECTORIZING,
+                                            filename=f"{commit.hash[:8]} - Vectorizing {progress_pct}% ({chunks_vectorized}/{total_chunks} chunks)",
+                                        )
+
                                         with open("/tmp/cidx_debug.log", "a") as f:
-                                            f.write(f"Commit {commit.hash[:8]}: Wave batch {i+1}/{len(batch_indices_list)} completed - {len(batch_result.embeddings)} embeddings\n")
+                                            f.write(
+                                                f"Commit {commit.hash[:8]}: Wave batch {batch_num}/{len(wave_futures)} completed - {len(batch_result.embeddings)} embeddings\n"
+                                            )
                                             f.flush()
                                     except Exception as e:
                                         with open("/tmp/cidx_debug.log", "a") as f:
-                                            f.write(f"Commit {commit.hash[:8]}: Wave batch {i+1}/{len(batch_indices_list)} FAILED: {type(e).__name__}: {str(e)}\n")
+                                            f.write(
+                                                f"Commit {commit.hash[:8]}: Wave batch {batch_num}/{len(wave_futures)} FAILED: {type(e).__name__}: {str(e)}\n"
+                                            )
                                             f.flush()
                                         commit_had_errors = True
                                         raise
@@ -616,6 +781,7 @@ class TemporalIndexer:
 
                             # Create result object with merged embeddings
                             from types import SimpleNamespace
+
                             result = SimpleNamespace(embeddings=all_embeddings)
 
                             # Validate embedding count matches chunk count
@@ -635,11 +801,13 @@ class TemporalIndexer:
                                 points = []
 
                                 # Map embeddings back to chunks using all_chunks_data
-                                for chunk_data, embedding in zip(all_chunks_data, result.embeddings):
-                                    chunk = chunk_data['chunk']
-                                    chunk_index = chunk_data['chunk_index']
-                                    diff_info = chunk_data['diff_info']
-                                    point_id = chunk_data['point_id']
+                                for chunk_data, embedding in zip(
+                                    all_chunks_data, result.embeddings
+                                ):
+                                    chunk = chunk_data["chunk"]
+                                    chunk_index = chunk_data["chunk_index"]
+                                    diff_info = chunk_data["diff_info"]
+                                    point_id = chunk_data["point_id"]
 
                                     # Convert timestamp to date
                                     from datetime import datetime
@@ -724,8 +892,10 @@ class TemporalIndexer:
                                     # Add blob hashes to registry after successful indexing
                                     # Collect unique blob hashes from all processed diffs
                                     for chunk_data in all_chunks_data:
-                                        if chunk_data['diff_info'].blob_hash:
-                                            self.indexed_blobs.add(chunk_data['diff_info'].blob_hash)
+                                        if chunk_data["diff_info"].blob_hash:
+                                            self.indexed_blobs.add(
+                                                chunk_data["diff_info"].blob_hash
+                                            )
 
                     # Mark complete
                     commit_slot_tracker.update_slot(slot_id, FileStatus.COMPLETE)
@@ -736,7 +906,9 @@ class TemporalIndexer:
                         # Save completed commit to progressive metadata (Bug #8 fix)
                         self.progressive_metadata.save_completed(commit.hash)
                     else:
-                        logger.warning(f"Commit {commit.hash[:8]}: Not saved to progressive metadata (errors or cancellation)")
+                        logger.warning(
+                            f"Commit {commit.hash[:8]}: Not saved to progressive metadata (errors or cancellation)"
+                        )
 
                     # DEADLOCK FIX: Get expensive data BEFORE acquiring lock
                     # This prevents holding progress_lock during:
@@ -753,6 +925,9 @@ class TemporalIndexer:
                     with progress_lock:
                         completed_count[0] += 1
                         current = completed_count[0]
+
+                        # Update file counter
+                        total_files_processed[0] += files_in_this_commit
 
                         # Update shared state with last completed work
                         last_completed_commit[0] = commit.hash
@@ -816,6 +991,12 @@ class TemporalIndexer:
                                 item_type="commits",
                             )
 
+                except Exception as e:
+                    logger.error(
+                        f"CRITICAL: Failed to index commit {commit.hash[:7]}: {e}",
+                        exc_info=True
+                    )
+                    raise
                 finally:
                     # Release slot
                     commit_slot_tracker.release_slot(slot_id)
@@ -851,9 +1032,10 @@ class TemporalIndexer:
             # This prevents atexit handler errors
             raise  # Re-raise to propagate interrupt
 
-        # Return actual totals
+        # Return actual totals: (commits_processed, files_processed, vectors_created)
+        # Use completed_count[0] which tracks commits actually processed (not just passed in)
         total_vectors_created = completed_count[0] * 3  # Approximate vectors per commit
-        return len(commits), total_vectors_created
+        return completed_count[0], total_files_processed[0], total_vectors_created
 
     def _index_commit_message(
         self, commit: CommitInfo, project_id: str, vector_manager
@@ -925,8 +1107,8 @@ class TemporalIndexer:
         self,
         last_commit: str,
         total_commits: int,
-        total_blobs: int,
-        new_blobs: int,
+        files_processed: int,
+        approximate_vectors_created: int,
         branch_stats: dict,
         indexing_mode: str,
     ):
@@ -934,11 +1116,8 @@ class TemporalIndexer:
         metadata = {
             "last_commit": last_commit,
             "total_commits": total_commits,
-            "total_blobs": total_blobs,
-            "new_blobs_indexed": new_blobs,
-            "deduplication_ratio": (
-                1.0 - (new_blobs / total_blobs) if total_blobs > 0 else 1.0
-            ),
+            "files_processed": files_processed,
+            "approximate_vectors_created": approximate_vectors_created,
             "indexed_branches": branch_stats["branches"],
             "indexing_mode": indexing_mode,
             "indexed_at": datetime.now().isoformat(),
@@ -954,4 +1133,4 @@ class TemporalIndexer:
         logger.info("Building HNSW index for temporal collection...")
         self.vector_store.end_indexing(collection_name=self.TEMPORAL_COLLECTION_NAME)
 
-        # No blob registry to close in diff-based indexing
+        # Temporal indexing cleanup complete

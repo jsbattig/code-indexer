@@ -187,3 +187,13 @@ voyage-code-3/
 code-indexer-temporal/
 .test-telemetry/
 /reports/reviews
+
+# FilesystemVectorStore collection
+voyage-code-3/
+
+# FilesystemVectorStore collection
+voyage-code-3/
+
+# FilesystemVectorStore collection
+code-indexer-temporal/
+/reports/manual-tests

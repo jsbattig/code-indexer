@@ -32,7 +32,8 @@ class TestTemporalIndexerThreadSafety:
         config_manager = Mock(spec=ConfigManager)
         config = Mock()
         config.voyage_ai = Mock()
-        config.voyage_ai.parallel_requests = 2  # Use 2 threads for the test
+        config.voyage_ai.parallel_requests = 2
+        config.voyage_ai.max_concurrent_batches_per_commit = 10  # Use 2 threads for the test
         config_manager.get_config.return_value = config
 
         vector_store = Mock(spec=FilesystemVectorStore)

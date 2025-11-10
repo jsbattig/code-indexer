@@ -73,7 +73,7 @@ def test_temporal_watch_handler_nested_branch_commit(
     # Setup: Create handler with mocked dependencies
     indexer = Mock()
     indexer.index_commits_list.return_value = Mock(
-        new_blobs_indexed=5, deduplication_ratio=0.8
+        vectors_created=5, skip_ratio=0.2  # 20% skipped
     )
     metadata = Mock()
     metadata.load_completed.return_value = set()

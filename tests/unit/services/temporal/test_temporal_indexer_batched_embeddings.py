@@ -29,6 +29,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         self.config_manager = Mock()
         self.config = Mock()
         self.config.voyage_ai.parallel_requests = 8
+        self.config.voyage_ai.max_concurrent_batches_per_commit = 10
         self.config.embedding_provider = "voyage-ai"
         self.config.voyage_ai.model = "voyage-code-3"
         self.config_manager.get_config.return_value = self.config
@@ -139,6 +140,11 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         # Mock token limit from provider (120k)
         vector_manager.embedding_provider._get_model_token_limit.return_value = 120000
 
+        # Mock cancellation event (required for worker threads)
+        mock_cancellation_event = Mock()
+        mock_cancellation_event.is_set.return_value = False
+        vector_manager.cancellation_event = mock_cancellation_event
+
         # Process the commit
         self.indexer._process_commits_parallel(
             [commit],
@@ -245,6 +251,11 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         # Mock token limit from provider (120k)
         vector_manager.embedding_provider._get_model_token_limit.return_value = 120000
 
+        # Mock cancellation event (required for worker threads)
+        mock_cancellation_event = Mock()
+        mock_cancellation_event.is_set.return_value = False
+        vector_manager.cancellation_event = mock_cancellation_event
+
         # Process the commit
         self.indexer._process_commits_parallel(
             [commit],
@@ -332,6 +343,11 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         vector_manager.submit_batch_task.side_effect = mock_submit_partial
         vector_manager.embedding_provider._get_model_token_limit.return_value = 120000
 
+        # Mock cancellation event (required for worker threads)
+        mock_cancellation_event = Mock()
+        mock_cancellation_event.is_set.return_value = False
+        vector_manager.cancellation_event = mock_cancellation_event
+
         # After fix: Should raise RuntimeError with clear message
         with self.assertRaises(RuntimeError) as context:
             self.indexer._process_commits_parallel(
@@ -402,6 +418,11 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         vector_manager = Mock()
         vector_manager.submit_batch_task.side_effect = mock_submit_should_not_call
         vector_manager.embedding_provider._get_model_token_limit.return_value = 120000
+
+        # Mock cancellation event (required for worker threads)
+        mock_cancellation_event = Mock()
+        mock_cancellation_event.is_set.return_value = False
+        vector_manager.cancellation_event = mock_cancellation_event
 
         # Process the commit
         self.indexer._process_commits_parallel(

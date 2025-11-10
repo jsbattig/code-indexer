@@ -50,7 +50,7 @@ class TestTemporalAPIOptimization(unittest.TestCase):
         self.config_manager = MagicMock(spec=ConfigManager)
         mock_config = MagicMock()
         mock_config.embedding_provider = "voyage-ai"
-        mock_config.voyage_ai = MagicMock(parallel_requests=4)
+        mock_config.voyage_ai = MagicMock(parallel_requests=4, max_concurrent_batches_per_commit=10)
         self.config_manager.get_config.return_value = mock_config
 
         self.vector_store = MagicMock()

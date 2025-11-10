@@ -23,6 +23,7 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
         config_manager = Mock()
         config = Mock()
         config.voyage_ai.parallel_requests = 8
+        config.voyage_ai.max_concurrent_batches_per_commit = 10
         config.embedding_provider = "voyage-ai"  # Required for initialization
         config.voyage_ai.model = "voyage-code-2"
         config_manager.get_config.return_value = config
@@ -67,6 +68,7 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
         config_manager = Mock()
         config = Mock()
         config.voyage_ai.parallel_requests = 8
+        config.voyage_ai.max_concurrent_batches_per_commit = 10
         config.embedding_provider = "voyage-ai"
         config.voyage_ai.model = "voyage-code-2"
         config_manager.get_config.return_value = config
@@ -134,6 +136,7 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
         config_manager = Mock()
         config = Mock()
         config.voyage_ai.parallel_requests = 8
+        config.voyage_ai.max_concurrent_batches_per_commit = 10
         config.embedding_provider = "voyage-ai"
         config.voyage_ai.model = "voyage-code-2"
         config_manager.get_config.return_value = config
@@ -195,6 +198,7 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
         config_manager = Mock()
         config = Mock()
         config.voyage_ai.parallel_requests = 8
+        config.voyage_ai.max_concurrent_batches_per_commit = 10
         config.embedding_provider = "voyage-ai"
         config.voyage_ai.model = "voyage-code-2"
         config_manager.get_config.return_value = config

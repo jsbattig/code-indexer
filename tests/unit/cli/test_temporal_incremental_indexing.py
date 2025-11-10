@@ -55,8 +55,8 @@ class TestIncrementalTemporalIndexing:
         # Mock temporal_indexer
         handler.temporal_indexer = Mock()
         mock_result = Mock()
-        mock_result.new_blobs_indexed = 5
-        mock_result.deduplication_ratio = 0.75
+        mock_result.approximate_vectors_created = 5
+        mock_result.skip_ratio = 0.25  # 25% skipped (was 75% deduplication)
         handler.temporal_indexer.index_commits_list = Mock(return_value=mock_result)
 
         # Mock RichLiveProgressManager
@@ -161,8 +161,8 @@ class TestIncrementalTemporalIndexing:
         # Mock temporal_indexer
         handler.temporal_indexer = Mock()
         mock_result = Mock()
-        mock_result.new_blobs_indexed = 3
-        mock_result.deduplication_ratio = 0.5
+        mock_result.approximate_vectors_created = 3
+        mock_result.skip_ratio = 0.5  # 50% skipped
         handler.temporal_indexer.index_commits_list = Mock(return_value=mock_result)
 
         # Mock RichLiveProgressManager
@@ -209,8 +209,8 @@ class TestIncrementalTemporalIndexing:
         # Mock temporal_indexer
         handler.temporal_indexer = Mock()
         mock_result = Mock()
-        mock_result.new_blobs_indexed = 3
-        mock_result.deduplication_ratio = 0.5
+        mock_result.approximate_vectors_created = 3
+        mock_result.skip_ratio = 0.5  # 50% skipped
         handler.temporal_indexer.index_commits_list = Mock(return_value=mock_result)
 
         # Mock daemon connection
@@ -266,8 +266,8 @@ class TestIncrementalTemporalIndexing:
         # Mock temporal_indexer
         handler.temporal_indexer = Mock()
         mock_result = Mock()
-        mock_result.new_blobs_indexed = 3
-        mock_result.deduplication_ratio = 0.5
+        mock_result.approximate_vectors_created = 3
+        mock_result.skip_ratio = 0.5  # 50% skipped
         handler.temporal_indexer.index_commits_list = Mock(return_value=mock_result)
 
         # Mock RichLiveProgressManager

@@ -102,9 +102,9 @@ class TestCLIClearTemporalProgress(unittest.TestCase):
                     MockTemporal.return_value = mock_temporal
                     mock_temporal.index_commits.return_value = MagicMock(
                         total_commits=0,
-                        unique_blobs=0,
-                        new_blobs_indexed=0,
-                        deduplication_ratio=1.0,
+                        files_processed=0,
+                        vectors_created=0,
+                        skip_ratio=1.0,
                         branches_indexed=[],
                         commits_per_branch={},
                     )

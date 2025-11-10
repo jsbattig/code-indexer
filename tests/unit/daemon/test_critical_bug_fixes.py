@@ -14,49 +14,41 @@ class TestBug1WatchStopMethodName:
     """Bug #1: Watch stop calls wrong method name (stop() instead of stop_watching())."""
 
     def test_watch_stop_calls_stop_watching_method(self, tmp_path):
-        """Verify exposed_watch_stop calls stop_watching() not stop()."""
+        """Verify exposed_watch_stop delegates to watch_manager.stop_watch()."""
         service = CIDXDaemonService()
 
-        # Create mock watch handler with stop_watching method
-        mock_handler = MagicMock()
-        mock_handler.stop_watching = MagicMock()
-        mock_handler.get_stats = MagicMock(return_value={})
-
-        # Set up watch state
-        service.watch_handler = mock_handler
-        service.watch_thread = MagicMock()
-        service.watch_thread.join = MagicMock()
-        service.watch_project_path = str(tmp_path)
+        # Mock DaemonWatchManager
+        mock_watch_manager = MagicMock()
+        mock_watch_manager.stop_watch.return_value = {
+            "status": "success",
+            "message": "Watch stopped",
+        }
+        service.watch_manager = mock_watch_manager
 
         # Call exposed_watch_stop
         result = service.exposed_watch_stop(str(tmp_path))
 
-        # VERIFY: stop_watching() was called (not stop())
-        mock_handler.stop_watching.assert_called_once()
+        # VERIFY: watch_manager.stop_watch() was called
+        mock_watch_manager.stop_watch.assert_called_once()
         assert result["status"] == "success"
 
     def test_watch_stop_does_not_call_stop_method(self, tmp_path):
-        """Verify exposed_watch_stop does NOT call stop() method."""
+        """Verify exposed_watch_stop delegates to watch_manager.stop_watch()."""
         service = CIDXDaemonService()
 
-        # Create mock watch handler with BOTH methods
-        mock_handler = MagicMock()
-        mock_handler.stop = MagicMock()  # This should NOT be called
-        mock_handler.stop_watching = MagicMock()
-        mock_handler.get_stats = MagicMock(return_value={})
-
-        # Set up watch state
-        service.watch_handler = mock_handler
-        service.watch_thread = MagicMock()
-        service.watch_thread.join = MagicMock()
-        service.watch_project_path = str(tmp_path)
+        # Mock DaemonWatchManager
+        mock_watch_manager = MagicMock()
+        mock_watch_manager.stop_watch.return_value = {
+            "status": "success",
+            "message": "Watch stopped",
+        }
+        service.watch_manager = mock_watch_manager
 
         # Call exposed_watch_stop
         service.exposed_watch_stop(str(tmp_path))
 
-        # VERIFY: stop() was NOT called
-        mock_handler.stop.assert_not_called()
-        mock_handler.stop_watching.assert_called_once()
+        # VERIFY: watch_manager.stop_watch() was called (the correct method)
+        mock_watch_manager.stop_watch.assert_called_once()
 
 
 class TestBug2WatchThreadNotTracked:
@@ -88,17 +80,14 @@ class TestBug2WatchThreadNotTracked:
         """Verify watch_status returns running=True when thread is alive."""
         service = CIDXDaemonService()
 
-        # Create mock watch handler with alive thread
-        mock_handler = MagicMock()
-        mock_thread = MagicMock()
-        mock_thread.is_alive.return_value = True
-        mock_handler.processing_thread = mock_thread
-        mock_handler.get_stats = MagicMock(return_value={"files_processed": 10})
-
-        # Set up watch state
-        service.watch_handler = mock_handler
-        service.watch_thread = mock_thread
-        service.watch_project_path = str(tmp_path)
+        # Mock DaemonWatchManager
+        mock_watch_manager = MagicMock()
+        mock_watch_manager.get_stats.return_value = {
+            "status": "running",
+            "project_path": str(tmp_path),
+            "files_processed": 10,
+        }
+        service.watch_manager = mock_watch_manager
 
         # VERIFY: watch_status returns running=True
         status = service.exposed_watch_status()
@@ -113,16 +102,13 @@ class TestBug3WatchStateNotCheckedProperly:
         """Verify second watch_start call is rejected when watch already running."""
         service = CIDXDaemonService()
 
-        # Create mock watch handler with alive thread
-        mock_handler = MagicMock()
-        mock_thread = MagicMock()
-        mock_thread.is_alive.return_value = True
-        mock_handler.processing_thread = mock_thread
-
-        # Simulate first watch_start succeeded
-        service.watch_handler = mock_handler
-        service.watch_thread = mock_thread
-        service.watch_project_path = str(tmp_path)
+        # Mock DaemonWatchManager to simulate watch already running
+        mock_watch_manager = MagicMock()
+        mock_watch_manager.start_watch.return_value = {
+            "status": "error",
+            "message": "Watch already running",
+        }
+        service.watch_manager = mock_watch_manager
 
         # Second watch_start should be REJECTED
         result = service.exposed_watch_start(str(tmp_path))

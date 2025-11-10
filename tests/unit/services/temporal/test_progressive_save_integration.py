@@ -24,7 +24,7 @@ class TestProgressiveSaveIntegration(unittest.TestCase):
         config_manager = MagicMock()
         mock_config = MagicMock()
         mock_config.embedding_provider = "voyage-ai"
-        mock_config.voyage_ai = MagicMock(parallel_requests=1)
+        mock_config.voyage_ai = MagicMock(parallel_requests=1, max_concurrent_batches_per_commit=10)
         config_manager.get_config.return_value = mock_config
 
         vector_store = MagicMock()
@@ -66,7 +66,7 @@ class TestProgressiveSaveIntegration(unittest.TestCase):
                             # Call save_completed for each commit (simulating worker behavior)
                             for commit in commits:
                                 mock_progressive.save_completed(commit.hash)
-                            return len(commits), 0
+                            return len(commits), 0, 0  # commits_processed, files_processed, vectors_created
 
                         with patch.object(indexer, '_process_commits_parallel') as mock_process:
                             mock_process.side_effect = simulate_processing

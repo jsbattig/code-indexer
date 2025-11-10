@@ -123,8 +123,9 @@ class TestBeginIndexingCall:
             indexer = TemporalIndexer(config_manager, vector_store)
 
             # Mock process_commits to avoid actual processing
+            # Returns: (commits_processed, files_processed, vectors_created)
             with patch.object(indexer, "_process_commits_parallel") as mock_process:
-                mock_process.return_value = (1, 3)
+                mock_process.return_value = (1, 2, 3)
 
                 # Run indexing
                 result = indexer.index_commits()
@@ -197,7 +198,7 @@ class TestPointExistenceFiltering:
 
                 # We need to actually call upsert_points from within the method
                 # to test the filtering logic that should be added
-                def simulate_processing(commits, embedding_provider, vector_manager, progress_callback=None):
+                def simulate_processing(commits, embedding_provider, vector_manager, progress_callback, reconcile):
                     # This simulates what _process_commits_parallel does
                     # Load existing IDs (the fix adds this)
                     existing_ids = indexer.vector_store.load_id_index(indexer.TEMPORAL_COLLECTION_NAME)
@@ -213,7 +214,7 @@ class TestPointExistenceFiltering:
                             indexer.TEMPORAL_COLLECTION_NAME,
                             new_points
                         )
-                    return (4, 12)  # 4 blobs, 12 vectors
+                    return (1, 4, 12)  # 1 commit processed, 4 files, 12 vectors
 
                 mock_process.side_effect = simulate_processing
 

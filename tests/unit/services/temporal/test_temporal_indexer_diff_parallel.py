@@ -40,29 +40,57 @@ class TestTemporalIndexerDiffBasedParallel:
         vector_store_path.mkdir(parents=True)
         vector_store = FilesystemVectorStore(vector_store_path, project_root=repo_path)
 
-        indexer = TemporalIndexer(config_manager, vector_store)
+        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory') as mock_factory:
+            mock_factory.get_provider_model_info.return_value = {"dimensions": 1024}
+            mock_provider = MagicMock()
+            mock_factory.create.return_value = mock_provider
 
-        # Mock the diff scanner
-        with patch.object(indexer.diff_scanner, 'get_diffs_for_commit') as mock_get_diffs:
-            mock_get_diffs.return_value = [
-                DiffInfo(
-                    file_path="test.py",
-                    diff_type="added",
-                    commit_hash="abc123",
-                    diff_content="+def hello():\n+    return 'world'",
-                    old_path=""
-                )
-            ]
+            indexer = TemporalIndexer(config_manager, vector_store)
 
-            # Run indexing
-            result = indexer.index_commits(all_branches=False, max_commits=1)
+            # Mock the diff scanner
+            with patch.object(indexer.diff_scanner, 'get_diffs_for_commit') as mock_get_diffs:
+                mock_get_diffs.return_value = [
+                    DiffInfo(
+                        file_path="test.py",
+                        diff_type="added",
+                        commit_hash="abc123",
+                        diff_content="+def hello():\n+    return 'world'",
+                        old_path=""
+                    )
+                ]
 
-            # Verify diff scanner was called
-            assert mock_get_diffs.called
-            # Should NOT have references to blob_scanner
-            assert not hasattr(indexer, 'blob_scanner')
-            assert not hasattr(indexer, 'blob_registry')
-            assert not hasattr(indexer, 'blob_reader')
+                # Mock VectorCalculationManager
+                import threading
+                with patch('src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager') as mock_vcm:
+                    mock_manager = MagicMock()
+                    mock_manager.cancellation_event = threading.Event()
+                    mock_embedding_provider = MagicMock()
+                    mock_embedding_provider._count_tokens_accurately = MagicMock(return_value=100)
+                    mock_embedding_provider._get_model_token_limit = MagicMock(return_value=120000)
+                    mock_manager.embedding_provider = mock_embedding_provider
+
+                    def mock_submit_batch(texts, metadata):
+                        mock_future = MagicMock()
+                        mock_result = MagicMock()
+                        mock_result.embeddings = [[0.1] * 1024 for _ in texts]
+                        mock_result.error = None
+                        mock_future.result.return_value = mock_result
+                        return mock_future
+
+                    mock_manager.submit_batch_task.side_effect = mock_submit_batch
+                    mock_manager.__enter__ = MagicMock(return_value=mock_manager)
+                    mock_manager.__exit__ = MagicMock(return_value=None)
+                    mock_vcm.return_value = mock_manager
+
+                    # Run indexing
+                    result = indexer.index_commits(all_branches=False, max_commits=1)
+
+                    # Verify diff scanner was called
+                    assert mock_get_diffs.called
+                    # Should NOT have references to blob_scanner
+                    assert not hasattr(indexer, 'blob_scanner')
+                    assert not hasattr(indexer, 'blob_registry')
+                    assert not hasattr(indexer, 'blob_reader')
 
     def test_index_commits_chunks_diffs(self, tmp_path):
         """Test that diff content is properly chunked."""
@@ -90,36 +118,62 @@ class TestTemporalIndexerDiffBasedParallel:
         vector_store_path.mkdir(parents=True)
         vector_store = FilesystemVectorStore(vector_store_path, project_root=repo_path)
 
-        indexer = TemporalIndexer(config_manager, vector_store)
+        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory') as mock_factory:
+            mock_factory.get_provider_model_info.return_value = {"dimensions": 1024}
+            mock_provider = MagicMock()
+            mock_factory.create.return_value = mock_provider
 
-        # Track what gets chunked
-        chunked_texts = []
+            indexer = TemporalIndexer(config_manager, vector_store)
 
-        def capture_chunk_text(text, file_path):
-            chunked_texts.append(text)
-            return [{"text": text, "line_start": 0, "line_end": 2}]  # Fake chunk
+            # Track what gets chunked
+            chunked_texts = []
 
-        # Mock the diff scanner and chunker
-        with patch.object(indexer.diff_scanner, 'get_diffs_for_commit') as mock_get_diffs:
-            mock_get_diffs.return_value = [
-                DiffInfo(
-                    file_path="test.py",
-                    diff_type="added",
-                    commit_hash="abc123",
-                    diff_content="+def hello():\n+    return 'world'",
-                    old_path=""
-                )
-            ]
+            def capture_chunk_text(text, file_path):
+                chunked_texts.append(text)
+                return [{"text": text, "line_start": 0, "line_end": 2}]  # Fake chunk
 
-            with patch.object(indexer.chunker, 'chunk_text', side_effect=capture_chunk_text):
-                # Mock embedding provider to avoid connection errors
-                with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.create'):
-                    # Run indexing
-                    result = indexer.index_commits(all_branches=False, max_commits=1)
+            # Mock the diff scanner and chunker
+            with patch.object(indexer.diff_scanner, 'get_diffs_for_commit') as mock_get_diffs:
+                mock_get_diffs.return_value = [
+                    DiffInfo(
+                        file_path="test.py",
+                        diff_type="added",
+                        commit_hash="abc123",
+                        diff_content="+def hello():\n+    return 'world'",
+                        old_path=""
+                    )
+                ]
 
-                    # Verify diff content was chunked
-                    assert len(chunked_texts) > 0, "Should have chunked diff content"
-                    assert "+def hello()" in chunked_texts[0]
+                with patch.object(indexer.chunker, 'chunk_text', side_effect=capture_chunk_text):
+                    # Mock VectorCalculationManager
+                    import threading
+                    with patch('src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager') as mock_vcm:
+                        mock_manager = MagicMock()
+                        mock_manager.cancellation_event = threading.Event()
+                        mock_embedding_provider = MagicMock()
+                        mock_embedding_provider._count_tokens_accurately = MagicMock(return_value=100)
+                        mock_embedding_provider._get_model_token_limit = MagicMock(return_value=120000)
+                        mock_manager.embedding_provider = mock_embedding_provider
+
+                        def mock_submit_batch(texts, metadata):
+                            mock_future = MagicMock()
+                            mock_result = MagicMock()
+                            mock_result.embeddings = [[0.1] * 1024 for _ in texts]
+                            mock_result.error = None
+                            mock_future.result.return_value = mock_result
+                            return mock_future
+
+                        mock_manager.submit_batch_task.side_effect = mock_submit_batch
+                        mock_manager.__enter__ = MagicMock(return_value=mock_manager)
+                        mock_manager.__exit__ = MagicMock(return_value=None)
+                        mock_vcm.return_value = mock_manager
+
+                        # Run indexing
+                        result = indexer.index_commits(all_branches=False, max_commits=1)
+
+                        # Verify diff content was chunked
+                        assert len(chunked_texts) > 0, "Should have chunked diff content"
+                        assert "+def hello()" in chunked_texts[0]
 
     def test_index_commits_processes_diffs_into_vectors(self, tmp_path):
         """Test that diffs are properly chunked and converted to vectors with correct payload."""
@@ -147,52 +201,73 @@ class TestTemporalIndexerDiffBasedParallel:
         vector_store_path.mkdir(parents=True)
         vector_store = FilesystemVectorStore(vector_store_path, project_root=repo_path)
 
-        indexer = TemporalIndexer(config_manager, vector_store)
+        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory') as mock_factory:
+            mock_factory.get_provider_model_info.return_value = {"dimensions": 1024}
+            mock_provider = MagicMock()
+            mock_factory.create.return_value = mock_provider
 
-        # Mock the diff scanner to return a known diff
-        with patch.object(indexer.diff_scanner, 'get_diffs_for_commit') as mock_get_diffs:
-            mock_get_diffs.return_value = [
-                DiffInfo(
-                    file_path="test.py",
-                    diff_type="added",
-                    commit_hash="abc123",
-                    diff_content="+def hello():\n+    return 'world'",
-                    old_path=""
-                )
-            ]
+            indexer = TemporalIndexer(config_manager, vector_store)
 
-            # Mock the embedding provider to avoid Ollama connection
+            # Mock the diff scanner to return a known diff
+            with patch.object(indexer.diff_scanner, 'get_diffs_for_commit') as mock_get_diffs:
+                mock_get_diffs.return_value = [
+                    DiffInfo(
+                        file_path="test.py",
+                        diff_type="added",
+                        commit_hash="abc123",
+                        diff_content="+def hello():\n+    return 'world'",
+                        old_path=""
+                    )
+                ]
 
-            # Mock the vector store to capture what's being stored
-            stored_points = []
-            original_upsert = vector_store.upsert_points
+                # Mock the vector store to capture what's being stored
+                stored_points = []
+                original_upsert = vector_store.upsert_points
 
-            def capture_upsert(collection_name, points):
-                stored_points.extend(points)
-                return original_upsert(collection_name, points)
-
-            # Also need to mock the embedding creation
-            with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.create') as mock_factory:
-                mock_provider = MagicMock()
-                mock_factory.return_value = mock_provider
+                def capture_upsert(collection_name, points):
+                    stored_points.extend(points)
+                    return original_upsert(collection_name, points)
 
                 with patch.object(vector_store, 'upsert_points', side_effect=capture_upsert):
-                    # Run indexing
-                    result = indexer.index_commits(all_branches=False, max_commits=1)
+                    # Mock VectorCalculationManager
+                    import threading
+                    with patch('src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager') as mock_vcm:
+                        mock_manager = MagicMock()
+                        mock_manager.cancellation_event = threading.Event()
+                        mock_embedding_provider = MagicMock()
+                        mock_embedding_provider._count_tokens_accurately = MagicMock(return_value=100)
+                        mock_embedding_provider._get_model_token_limit = MagicMock(return_value=120000)
+                        mock_manager.embedding_provider = mock_embedding_provider
 
-                # Verify vectors were created
-                assert len(stored_points) > 0, "Should have created vector points"
+                        def mock_submit_batch(texts, metadata):
+                            mock_future = MagicMock()
+                            mock_result = MagicMock()
+                            mock_result.embeddings = [[0.1] * 1024 for _ in texts]
+                            mock_result.error = None
+                            mock_future.result.return_value = mock_result
+                            return mock_future
 
-                # Check payload structure
-                first_point = stored_points[0]
-                payload = first_point['payload']
+                        mock_manager.submit_batch_task.side_effect = mock_submit_batch
+                        mock_manager.__enter__ = MagicMock(return_value=mock_manager)
+                        mock_manager.__exit__ = MagicMock(return_value=None)
+                        mock_vcm.return_value = mock_manager
 
-                # Verify payload has correct diff-based fields (Story 1 requirements)
-                assert payload['type'] == 'commit_diff', "Should be commit_diff type"
-                assert 'commit_hash' in payload
-                assert 'commit_timestamp' in payload
-                assert 'commit_date' in payload
-                assert 'commit_message' in payload
-                assert 'file_path' in payload
-                assert payload['diff_type'] == 'added'
-                assert 'blob_hash' not in payload, "Should NOT have blob_hash"
+                        # Run indexing
+                        result = indexer.index_commits(all_branches=False, max_commits=1)
+
+                    # Verify vectors were created
+                    assert len(stored_points) > 0, "Should have created vector points"
+
+                    # Check payload structure
+                    first_point = stored_points[0]
+                    payload = first_point['payload']
+
+                    # Verify payload has correct diff-based fields (Story 1 requirements)
+                    assert payload['type'] == 'commit_diff', "Should be commit_diff type"
+                    assert 'commit_hash' in payload
+                    assert 'commit_timestamp' in payload
+                    assert 'commit_date' in payload
+                    assert 'commit_message' in payload
+                    assert 'path' in payload  # Note: field is 'path', not 'file_path'
+                    assert payload['diff_type'] == 'added'
+                    assert 'blob_hash' not in payload, "Should NOT have blob_hash"

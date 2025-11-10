@@ -147,16 +147,29 @@ class TestTemporalIndexerPointerPayloads:
                 with patch(
                     "src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
                 ) as mock_vm_class:
+                    import threading
+
                     mock_vm = MagicMock()
+
+                    # Setup context manager properly
+                    mock_vm_class.return_value.__enter__.return_value = mock_vm
+                    mock_vm_class.return_value.__exit__.return_value = False
+
+                    mock_vm.cancellation_event = threading.Event()
+
+                    # Mock embedding provider
+                    mock_embedding_provider = MagicMock()
+                    mock_embedding_provider._get_model_token_limit.return_value = 120000
+                    mock_embedding_provider._count_tokens_accurately = MagicMock(return_value=100)
+                    mock_vm.embedding_provider = mock_embedding_provider
+
+                    # Mock embedding results
                     mock_result = Mock()
                     mock_result.embeddings = [[0.1] * 1024]
                     mock_result.error = None
                     mock_future = Mock()
                     mock_future.result.return_value = mock_result
                     mock_vm.submit_batch_task.return_value = mock_future
-                    mock_vm.__enter__.return_value = mock_vm
-                    mock_vm.__exit__.return_value = False
-                    mock_vm_class.return_value = mock_vm
 
                     # Run indexing
                     result = indexer.index_commits(all_branches=False)

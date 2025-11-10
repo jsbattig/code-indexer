@@ -290,10 +290,15 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
             enable_fts = "--fts" in args
             reconcile = "--reconcile" in args
             detect_deletions = "--detect-deletions" in args
+            # CRITICAL FIX for Bug #474: Parse temporal indexing flags
+            index_commits = "--index-commits" in args
+            all_branches = "--all-branches" in args
 
             # Parse numeric parameters
             batch_size = 50  # default
             files_count = None
+            max_commits = None
+            since_date = None
             i = 0
             while i < len(args):
                 if args[i] == "--batch-size" and i + 1 < len(args):
@@ -301,6 +306,12 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
                     i += 2
                 elif args[i] == "--files-count-to-process" and i + 1 < len(args):
                     files_count = int(args[i + 1])
+                    i += 2
+                elif args[i] == "--max-commits" and i + 1 < len(args):
+                    max_commits = int(args[i + 1])
+                    i += 2
+                elif args[i] == "--since-date" and i + 1 < len(args):
+                    since_date = args[i + 1]
                     i += 2
                 else:
                     i += 1
@@ -321,6 +332,7 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
             conn.close()
 
             # Delegate to index via daemon with all parameters
+            # CRITICAL FIX for Bug #474: Include temporal indexing parameters
             # (mode indicator will be shown inside _index_via_daemon after progress display setup)
             return cli_daemon_delegation._index_via_daemon(
                 force_reindex=force_reindex,
@@ -330,6 +342,10 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
                 reconcile=reconcile,
                 files_count_to_process=files_count,
                 detect_deletions=detect_deletions,
+                index_commits=index_commits,
+                all_branches=all_branches,
+                max_commits=max_commits,
+                since_date=since_date,
             )
 
         elif command == "watch":

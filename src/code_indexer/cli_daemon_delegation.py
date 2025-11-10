@@ -13,10 +13,12 @@ when daemon mode is enabled. It handles:
 import sys
 import time
 import subprocess
+import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
 from rich.console import Console
 
+logger = logging.getLogger(__name__)
 console = Console()
 
 
@@ -778,6 +780,14 @@ def _index_via_daemon(
             # Display mode indicator BEFORE any daemon callbacks
             console.print("🔧 Running in [cyan]daemon mode[/cyan]")
 
+            # Show temporal start message if temporal indexing requested
+            if kwargs.get("index_commits", False):
+                console.print("🕒 Starting temporal git history indexing...", style="cyan")
+                if kwargs.get("all_branches", False):
+                    console.print("   Mode: All branches", style="cyan")
+                else:
+                    console.print("   Mode: Current branch only", style="cyan")
+
             # Create callback that feeds progress manager (IDENTICAL to standalone pattern)
             def progress_callback(current, total, file_path, info="", **kwargs):
                 """
@@ -910,44 +920,79 @@ def _index_via_daemon(
 
             # Display completion status (IDENTICAL to standalone)
             if status == "completed":
+                # Detect temporal vs semantic based on result keys
+                is_temporal = "total_commits" in stats_dict or "approximate_vectors_created" in stats_dict
+
                 cancelled = stats_dict.get("cancelled", False)
                 if cancelled:
                     console.print("🛑 Indexing cancelled!", style="yellow")
-                    console.print(
-                        f"📄 Files processed before cancellation: {stats_dict.get('files_processed', 0)}",
-                        style="yellow",
-                    )
-                    console.print(
-                        f"📦 Chunks indexed before cancellation: {stats_dict.get('chunks_created', 0)}",
-                        style="yellow",
-                    )
+                    if is_temporal:
+                        # Temporal cancellation display
+                        console.print(
+                            f"   Total commits before cancellation: {stats_dict.get('total_commits', 0)}",
+                            style="yellow",
+                        )
+                        console.print(
+                            f"   Files changed: {stats_dict.get('files_processed', 0)}",
+                            style="yellow",
+                        )
+                    else:
+                        # Semantic cancellation display
+                        console.print(
+                            f"📄 Files processed before cancellation: {stats_dict.get('files_processed', 0)}",
+                            style="yellow",
+                        )
+                        console.print(
+                            f"📦 Chunks indexed before cancellation: {stats_dict.get('chunks_created', 0)}",
+                            style="yellow",
+                        )
                     console.print(
                         "💾 Progress saved - you can resume indexing later",
                         style="blue",
                     )
                 else:
-                    console.print("✅ Indexing complete!", style="green")
-                    console.print(
-                        f"📄 Files processed: {stats_dict.get('files_processed', 0)}"
-                    )
-                    console.print(
-                        f"📦 Chunks indexed: {stats_dict.get('chunks_created', 0)}"
-                    )
+                    if is_temporal:
+                        # Temporal completion display (matches standalone format)
+                        console.print("✅ Temporal indexing completed!", style="green bold")
+                        console.print(
+                            f"   Total commits processed: {stats_dict.get('total_commits', 0)}",
+                            style="green",
+                        )
+                        console.print(
+                            f"   Files changed: {stats_dict.get('files_processed', 0)}",
+                            style="green",
+                        )
+                        console.print(
+                            f"   Vectors created (approx): ~{stats_dict.get('approximate_vectors_created', 0)}",
+                            style="green",
+                        )
+                    else:
+                        # Semantic completion display
+                        console.print("✅ Indexing complete!", style="green")
+                        console.print(
+                            f"📄 Files processed: {stats_dict.get('files_processed', 0)}"
+                        )
+                        console.print(
+                            f"📦 Chunks indexed: {stats_dict.get('chunks_created', 0)}"
+                        )
 
-                duration = stats_dict.get("duration_seconds", 0)
-                console.print(f"⏱️  Duration: {duration:.2f}s")
+                # Only show duration/throughput for semantic indexing
+                # Temporal indexing doesn't track duration_seconds yet
+                if not is_temporal:
+                    duration = stats_dict.get("duration_seconds", 0)
+                    console.print(f"⏱️  Duration: {duration:.2f}s")
 
-                # Calculate throughput
-                if duration > 0:
-                    files_per_min = (
-                        stats_dict.get("files_processed", 0) / duration
-                    ) * 60
-                    chunks_per_min = (
-                        stats_dict.get("chunks_created", 0) / duration
-                    ) * 60
-                    console.print(
-                        f"🚀 Throughput: {files_per_min:.1f} files/min, {chunks_per_min:.1f} chunks/min"
-                    )
+                    # Calculate throughput
+                    if duration > 0:
+                        files_per_min = (
+                            stats_dict.get("files_processed", 0) / duration
+                        ) * 60
+                        chunks_per_min = (
+                            stats_dict.get("chunks_created", 0) / duration
+                        ) * 60
+                        console.print(
+                            f"🚀 Throughput: {files_per_min:.1f} files/min, {chunks_per_min:.1f} chunks/min"
+                        )
 
                 if stats_dict.get("failed_files", 0) > 0:
                     console.print(
@@ -1338,3 +1383,160 @@ def _query_temporal_via_daemon(
 
     # Should never reach here
     return 1
+
+
+def start_watch_via_daemon(project_root: Path, **kwargs: Any) -> bool:
+    """Start watch mode via daemon delegation (Story #472).
+
+    This function enables non-blocking watch mode through the daemon,
+    allowing the CLI to return immediately while watch continues in
+    the daemon background.
+
+    Args:
+        project_root: Project root path
+        **kwargs: Additional watch parameters (debounce_seconds, etc.)
+
+    Returns:
+        True if delegation succeeded, False if should fall back to standalone
+    """
+    try:
+        from .config import ConfigManager
+
+        # Check if daemon is configured
+        config_manager = ConfigManager.create_with_backtrack(project_root)
+        config = config_manager.get_config()
+
+        if not getattr(config, "daemon", False):
+            logger.debug("Daemon not configured, using standalone watch")
+            return False
+
+        # Try to connect to daemon using RPyC
+        socket_path = _get_socket_path(config_manager.config_path)
+        daemon_config = {"retry_delays_ms": [100, 200, 500]}
+
+        try:
+            conn = _connect_to_daemon(socket_path, daemon_config)
+
+            # Check if daemon is running
+            ping_result = conn.root.ping()
+            if not ping_result or ping_result.get("status") != "ok":
+                logger.debug("Daemon not responding, falling back to standalone")
+                conn.close()
+                return False
+
+            # Start watch via daemon (non-blocking)
+            console.print("🚀 Starting watch mode via daemon...", style="blue")
+            result = conn.root.watch_start(str(project_root), **kwargs)
+
+            if result.get("status") == "success":
+                console.print(
+                    "✅ Watch started in daemon (non-blocking mode)",
+                    style="green"
+                )
+                console.print(
+                    "   Watch continues running in background",
+                    style="dim"
+                )
+                console.print(
+                    "   Use 'cidx watch-stop' to stop watching",
+                    style="dim"
+                )
+                conn.close()
+                return True
+            else:
+                error = result.get("message", "Unknown error")
+                console.print(
+                    f"⚠️ Daemon watch start failed: {error}",
+                    style="yellow"
+                )
+                console.print(
+                    "   Falling back to standalone mode...",
+                    style="dim"
+                )
+                conn.close()
+                return False
+
+        except Exception as e:
+            logger.debug(f"Failed to connect to daemon: {e}")
+            return False
+
+    except Exception as e:
+        logger.debug(f"Daemon delegation failed: {e}")
+        # Don't print warnings for expected fallback cases
+        return False
+
+
+def stop_watch_via_daemon(project_root: Path) -> Dict[str, Any]:
+    """Stop watch mode via daemon delegation (Story #472).
+
+    Args:
+        project_root: Project root path
+
+    Returns:
+        Result dictionary with status and message
+    """
+    try:
+        from .config import ConfigManager
+
+        config_manager = ConfigManager.create_with_backtrack(project_root)
+        socket_path = _get_socket_path(config_manager.config_path)
+        daemon_config = {"retry_delays_ms": [100, 200, 500]}
+
+        try:
+            conn = _connect_to_daemon(socket_path, daemon_config)
+
+            # Stop watch via daemon
+            result = conn.root.watch_stop(str(project_root))
+            conn.close()
+            return result  # type: ignore[no-any-return]
+
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Failed to connect to daemon: {e}"
+            }
+
+    except Exception as e:
+        logger.error(f"Failed to stop watch via daemon: {e}")
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+
+def get_watch_status_via_daemon(project_root: Path) -> Dict[str, Any]:
+    """Get watch status via daemon (Story #472).
+
+    Args:
+        project_root: Project root path
+
+    Returns:
+        Status dictionary with running state and stats
+    """
+    try:
+        from .config import ConfigManager
+
+        config_manager = ConfigManager.create_with_backtrack(project_root)
+        socket_path = _get_socket_path(config_manager.config_path)
+        daemon_config = {"retry_delays_ms": [100, 200, 500]}
+
+        try:
+            conn = _connect_to_daemon(socket_path, daemon_config)
+
+            # Get watch status via daemon
+            result = conn.root.watch_status()
+            conn.close()
+            return result  # type: ignore[no-any-return]
+
+        except Exception as e:
+            return {
+                "running": False,
+                "message": f"Failed to connect to daemon: {e}"
+            }
+
+    except Exception as e:
+        logger.error(f"Failed to get watch status via daemon: {e}")
+        return {
+            "running": False,
+            "message": str(e)
+        }

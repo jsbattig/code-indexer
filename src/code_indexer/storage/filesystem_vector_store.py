@@ -293,6 +293,15 @@ class FilesystemVectorStore:
 
         id_manager = IDIndexManager()
         with self._id_index_lock:
+            # BUG FIX: Load ID index from disk if not in memory (reconciliation path)
+            # When reconciliation finds all commits indexed and calls end_indexing(),
+            # _id_index is empty because no new vectors were upserted.
+            if (
+                collection_name not in self._id_index
+                or not self._id_index[collection_name]
+            ):
+                self._id_index[collection_name] = self._load_id_index(collection_name)
+
             if collection_name in self._id_index:
                 id_manager.save_index(collection_path, self._id_index[collection_name])
 
@@ -482,7 +491,12 @@ class FilesystemVectorStore:
         blob_hashes = {}
         uncommitted_files = set()
 
-        if repo_root is not None and file_paths:
+        # Skip blob hash lookup for temporal collection (FIX 1: Avoid Errno 7 on large temporal indexes)
+        if (
+            repo_root is not None
+            and file_paths
+            and collection_name != "code-indexer-temporal"
+        ):
             blob_hashes = self._get_blob_hashes_batch(file_paths, repo_root)
             uncommitted_files = self._check_uncommitted_batch(file_paths, repo_root)
 
@@ -1030,7 +1044,7 @@ class FilesystemVectorStore:
     def _get_blob_hashes_batch(
         self, file_paths: List[str], repo_root: Path
     ) -> Dict[str, str]:
-        """Get git blob hashes for multiple files in single git call.
+        """Get git blob hashes for multiple files in batched git calls.
 
         Args:
             file_paths: List of file paths relative to repo root
@@ -1038,31 +1052,39 @@ class FilesystemVectorStore:
 
         Returns:
             Dictionary mapping file_path to blob_hash
+
+        Note:
+            FIX 2: Batches git ls-tree calls to avoid "Argument list too long" error (Errno 7)
+            when processing thousands of files. Each batch processes up to 100 files.
         """
         try:
-            # Single git ls-tree call for all files
-            result = subprocess.run(
-                ["git", "ls-tree", "HEAD"] + file_paths,
-                cwd=repo_root,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-
+            # Batch to avoid "Argument list too long" error (Errno 7)
+            BATCH_SIZE = 100
             blob_hashes = {}
-            if result.returncode == 0 and result.stdout:
-                # Parse output: "mode type hash\tfilename"
-                for line in result.stdout.strip().split("\n"):
-                    if not line:
-                        continue
-                    parts = line.split()
-                    if len(parts) >= 3:
-                        blob_hash = parts[2]
-                        # Filename is after tab
-                        tab_idx = line.find("\t")
-                        if tab_idx >= 0:
-                            filename = line[tab_idx + 1 :]
-                            blob_hashes[filename] = blob_hash
+
+            for i in range(0, len(file_paths), BATCH_SIZE):
+                batch = file_paths[i : i + BATCH_SIZE]
+                result = subprocess.run(
+                    ["git", "ls-tree", "HEAD"] + batch,
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+
+                if result.returncode == 0 and result.stdout:
+                    # Parse output: "mode type hash\tfilename"
+                    for line in result.stdout.strip().split("\n"):
+                        if not line:
+                            continue
+                        parts = line.split()
+                        if len(parts) >= 3:
+                            blob_hash = parts[2]
+                            # Filename is after tab
+                            tab_idx = line.find("\t")
+                            if tab_idx >= 0:
+                                filename = line[tab_idx + 1 :]
+                                blob_hashes[filename] = blob_hash
 
             return blob_hashes
 
@@ -1070,7 +1092,7 @@ class FilesystemVectorStore:
             return {}
 
     def _check_uncommitted_batch(self, file_paths: List[str], repo_root: Path) -> set:
-        """Check which files have uncommitted changes in single git call.
+        """Check which files have uncommitted changes in batched git calls.
 
         Args:
             file_paths: List of file paths to check
@@ -1078,33 +1100,41 @@ class FilesystemVectorStore:
 
         Returns:
             Set of file paths with uncommitted changes
+
+        Note:
+            Batches git status calls to avoid "Argument list too long" error (Errno 7)
+            when processing thousands of files. Each batch processes up to 100 files.
         """
         try:
-            # Single git status call with file arguments
-            result = subprocess.run(
-                ["git", "status", "--porcelain"] + file_paths,
-                cwd=repo_root,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-
+            # Batch to avoid "Argument list too long" error (Errno 7)
+            BATCH_SIZE = 100
             uncommitted = set()
-            if result.returncode == 0:
-                # Parse output format: "XY filename"
-                # When file paths are provided as arguments, format is "XY filename" (status codes + space + filename)
-                # X = index status (position 0), Y = worktree status (position 1), space (position 2), filename (position 3+)
-                # However, when filtering by files, the format drops the leading space for clean index
-                for line in result.stdout.strip().split("\n"):
-                    if not line:
-                        continue
-                    # The status codes are in positions 0-1, space at position 2 (or 1 if no leading space)
-                    # Safe approach: find the first space and take everything after it
-                    space_idx = line.find(" ")
-                    if space_idx >= 0 and space_idx < len(line) - 1:
-                        filename = line[space_idx + 1 :]
-                        if filename:
-                            uncommitted.add(filename)
+
+            for i in range(0, len(file_paths), BATCH_SIZE):
+                batch = file_paths[i : i + BATCH_SIZE]
+                result = subprocess.run(
+                    ["git", "status", "--porcelain"] + batch,
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+
+                if result.returncode == 0:
+                    # Parse output format: "XY filename"
+                    # When file paths are provided as arguments, format is "XY filename" (status codes + space + filename)
+                    # X = index status (position 0), Y = worktree status (position 1), space (position 2), filename (position 3+)
+                    # However, when filtering by files, the format drops the leading space for clean index
+                    for line in result.stdout.strip().split("\n"):
+                        if not line:
+                            continue
+                        # The status codes are in positions 0-1, space at position 2 (or 1 if no leading space)
+                        # Safe approach: find the first space and take everything after it
+                        space_idx = line.find(" ")
+                        if space_idx >= 0 and space_idx < len(line) - 1:
+                            filename = line[space_idx + 1 :]
+                            if filename:
+                                uncommitted.add(filename)
 
             return uncommitted
 
@@ -2490,9 +2520,9 @@ class FilesystemVectorStore:
         hnsw_manager = HNSWIndexManager(vector_dim=vector_size, space="cosine")
 
         # AC3: Detect daemon mode vs standalone mode
-        daemon_mode = hasattr(self, 'cache_entry') and self.cache_entry is not None
+        daemon_mode = hasattr(self, "cache_entry") and self.cache_entry is not None
 
-        if daemon_mode:
+        if daemon_mode and self.cache_entry is not None:
             # === DAEMON MODE: Update cache in-memory with locking ===
             cache_entry = self.cache_entry
 
@@ -2510,6 +2540,7 @@ class FilesystemVectorStore:
                         )
 
                         from .id_index_manager import IDIndexManager
+
                         id_manager = IDIndexManager()
                         cache_entry.id_mapping = id_manager.load_index(collection_path)
 
@@ -2542,7 +2573,12 @@ class FilesystemVectorStore:
                             old_count = len(id_to_label)
                             label, id_to_label, label_to_id, next_label = (
                                 hnsw_manager.add_or_update_vector(
-                                    index, point_id, vector, id_to_label, label_to_id, next_label
+                                    index,
+                                    point_id,
+                                    vector,
+                                    id_to_label,
+                                    label_to_id,
+                                    next_label,
                                 )
                             )
                             new_count = len(id_to_label)
@@ -2609,7 +2645,12 @@ class FilesystemVectorStore:
                     old_count = len(id_to_label)
                     label, id_to_label, label_to_id, next_label = (
                         hnsw_manager.add_or_update_vector(
-                            index, point_id, vector, id_to_label, label_to_id, next_label
+                            index,
+                            point_id,
+                            vector,
+                            id_to_label,
+                            label_to_id,
+                            next_label,
                         )
                     )
                     new_count = len(id_to_label)

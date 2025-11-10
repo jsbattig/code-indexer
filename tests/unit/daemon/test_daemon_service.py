@@ -229,10 +229,13 @@ class TestExposedWatchMethods:
         """exposed_watch_start should reject starting watch when already running."""
         project_path = tmp_path / "project"
 
-        # Set watch as already running
-        service.watch_handler = Mock()
-        service.watch_thread = Mock()
-        service.watch_thread.is_alive.return_value = True
+        # Mock DaemonWatchManager to simulate watch already running
+        mock_watch_manager = Mock()
+        mock_watch_manager.start_watch.return_value = {
+            "status": "error",
+            "message": "Watch already running",
+        }
+        service.watch_manager = mock_watch_manager
 
         result = service.exposed_watch_start(str(project_path))
 
@@ -240,70 +243,41 @@ class TestExposedWatchMethods:
         assert "already running" in result["message"].lower()
 
     def test_exposed_watch_start_creates_watch_handler(self, service, tmp_path):
-        """exposed_watch_start should create watch handler in background thread."""
+        """exposed_watch_start should delegate to watch_manager.start_watch()."""
         project_path = tmp_path / "project"
         project_path.mkdir()
 
-        # Create comprehensive mocks for all dependencies (use module paths for lazy imports)
-        with patch('code_indexer.config.ConfigManager') as MockConfigManager:
-            with patch('code_indexer.backends.backend_factory.BackendFactory') as MockBackendFactory:
-                with patch('code_indexer.services.embedding_factory.EmbeddingProviderFactory') as MockEmbeddingFactory:
-                    with patch('code_indexer.services.smart_indexer.SmartIndexer') as MockSmartIndexer:
-                        with patch('code_indexer.services.git_topology_service.GitTopologyService') as MockGitTopology:
-                            with patch('code_indexer.services.watch_metadata.WatchMetadata') as MockWatchMetadata:
-                                with patch('code_indexer.services.git_aware_watch_handler.GitAwareWatchHandler') as MockHandler:
-                                    # Configure mocks
-                                    mock_config_manager = Mock()
-                                    mock_config = Mock()
-                                    mock_config.codebase_dir = str(project_path)
-                                    mock_config_manager.get_config.return_value = mock_config
-                                    mock_config_path = Mock()
-                                    mock_config_path.parent = tmp_path
-                                    mock_config_manager.config_path = mock_config_path
-                                    MockConfigManager.create_with_backtrack.return_value = mock_config_manager
+        # Mock DaemonWatchManager
+        mock_watch_manager = Mock()
+        mock_watch_manager.start_watch.return_value = {
+            "status": "success",
+            "message": "Watch started",
+        }
+        service.watch_manager = mock_watch_manager
 
-                                    mock_backend = Mock()
-                                    mock_vector_store = Mock()
-                                    mock_backend.get_vector_store_client.return_value = mock_vector_store
-                                    MockBackendFactory.create.return_value = mock_backend
+        # Execute
+        result = service.exposed_watch_start(str(project_path))
 
-                                    mock_embedding_provider = Mock()
-                                    MockEmbeddingFactory.create.return_value = mock_embedding_provider
-
-                                    mock_indexer = Mock()
-                                    MockSmartIndexer.return_value = mock_indexer
-
-                                    mock_git_topology = Mock()
-                                    MockGitTopology.return_value = mock_git_topology
-
-                                    mock_watch_metadata = Mock()
-                                    MockWatchMetadata.load_from_disk.return_value = mock_watch_metadata
-
-                                    mock_handler = Mock()
-                                    MockHandler.return_value = mock_handler
-
-                                    # Execute
-                                    result = service.exposed_watch_start(str(project_path))
-
-                                    # Verify
-                                    assert result["status"] == "success"
-                                    assert service.watch_handler is not None
-                                    mock_handler.start_watching.assert_called_once()
+        # Verify
+        assert result["status"] == "success"
+        mock_watch_manager.start_watch.assert_called_once()
 
     def test_exposed_watch_stop_stops_watch_gracefully(self, service, tmp_path):
-        """exposed_watch_stop should stop watch and return statistics."""
-        # Setup running watch
-        mock_handler = Mock()
-        mock_handler.get_stats.return_value = {"files_processed": 10}
-        service.watch_handler = mock_handler
-        service.watch_thread = Mock()
-        service.watch_thread.is_alive.return_value = False  # Already stopped
+        """exposed_watch_stop should delegate to watch_manager.stop_watch()."""
+        # Mock DaemonWatchManager
+        mock_watch_manager = Mock()
+        mock_watch_manager.stop_watch.return_value = {
+            "status": "success",
+            "message": "Watch stopped",
+            "stats": {"files_processed": 10},
+        }
+        service.watch_manager = mock_watch_manager
 
         result = service.exposed_watch_stop(str(tmp_path))
 
         assert result["status"] == "success"
         assert "stats" in result
-        mock_handler.stop_watching.assert_called_once()  # Fixed: use stop_watching() not stop()
+        mock_watch_manager.stop_watch.assert_called_once()
 
     def test_exposed_watch_status_returns_not_running_when_no_watch(self, service):
         """exposed_watch_status should return not running when no watch active."""
@@ -316,13 +290,14 @@ class TestExposedWatchMethods:
         """exposed_watch_status should return running status when watch active."""
         project_path = tmp_path / "project"
 
-        # Setup running watch
-        mock_handler = Mock()
-        mock_handler.get_stats.return_value = {"files_processed": 5}
-        service.watch_handler = mock_handler
-        service.watch_thread = Mock()
-        service.watch_thread.is_alive.return_value = True
-        service.watch_project_path = str(project_path)
+        # Mock DaemonWatchManager
+        mock_watch_manager = Mock()
+        mock_watch_manager.get_stats.return_value = {
+            "status": "running",
+            "project_path": str(project_path),
+            "files_processed": 5,
+        }
+        service.watch_manager = mock_watch_manager
 
         result = service.exposed_watch_status()
 
@@ -437,19 +412,21 @@ class TestExposedDaemonManagement:
 
     def test_exposed_shutdown_stops_watch_and_eviction(self, service):
         """exposed_shutdown should stop watch and eviction thread."""
-        # Setup watch
-        mock_handler = Mock()
-        service.watch_handler = mock_handler
-        service.watch_thread = Mock()
-        service.watch_thread.is_alive.return_value = False
+        # Mock DaemonWatchManager
+        mock_watch_manager = Mock()
+        mock_watch_manager.stop_watch.return_value = {
+            "status": "success",
+            "message": "Watch stopped",
+        }
+        service.watch_manager = mock_watch_manager
 
         # Mock os.kill to prevent SIGTERM being sent to test process
         with patch('os.kill') as mock_kill, \
              patch('os.getpid', return_value=12345):
             service.exposed_shutdown()
 
-            # Should stop watch - Fixed: use stop_watching() not stop()
-            mock_handler.stop_watching.assert_called_once()
+            # Should stop watch via watch_manager
+            mock_watch_manager.stop_watch.assert_called_once()
 
             # Should stop eviction
             assert service.eviction_thread.running is False

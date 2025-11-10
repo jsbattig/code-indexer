@@ -48,6 +48,7 @@ class TestTemporalFieldNameBug:
         config = MagicMock()
         config.codebase_dir = temp_repo
         config.voyage_ai.parallel_requests = 1
+        config.voyage_ai.max_concurrent_batches_per_commit = 10
         config_manager.get_config.return_value = config
         config_manager.load.return_value = config
 
@@ -81,6 +82,10 @@ class TestTemporalFieldNameBug:
             with patch('src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager') as mock_vcm:
                 mock_manager = MagicMock()
                 mock_vcm.return_value.__enter__.return_value = mock_manager
+
+                # Mock cancellation_event (required by worker function)
+                import threading
+                mock_manager.cancellation_event = threading.Event()
 
                 # Mock embedding provider methods for token counting
                 mock_embedding_provider = MagicMock()

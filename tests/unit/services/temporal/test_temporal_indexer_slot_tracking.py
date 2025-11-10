@@ -21,7 +21,8 @@ class TestTemporalIndexerSlotTracking:
         """Create a mock config manager."""
         config_manager = MagicMock()
         config = MagicMock()
-        config.voyage_ai.parallel_requests = 4  # Test with 4 threads
+        config.voyage_ai.parallel_requests = 4
+        config.voyage_ai.max_concurrent_batches_per_commit = 10  # Test with 4 threads
         config_manager.get_config.return_value = config
         return config_manager
 

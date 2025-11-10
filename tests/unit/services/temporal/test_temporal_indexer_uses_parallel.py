@@ -19,6 +19,7 @@ class TestTemporalIndexerUsesParallel(unittest.TestCase):
         config_manager = Mock()
         config = Mock()
         config.voyage_ai.parallel_requests = 8
+        config.voyage_ai.max_concurrent_batches_per_commit = 10
         config.embedding_provider = "voyage-ai"
         config.voyage_ai.model = "voyage-code-2"
         config_manager.get_config.return_value = config
@@ -61,7 +62,8 @@ class TestTemporalIndexerUsesParallel(unittest.TestCase):
             )
 
             # Mock the parallel processing method
-            indexer._process_commits_parallel = Mock(return_value=(10, 20))
+            # Returns: (commits_processed, files_processed, vectors_created)
+            indexer._process_commits_parallel = Mock(return_value=(10, 15, 20))
 
             # Mock commit history
             with patch.object(indexer, '_get_commit_history') as mock_history:
