@@ -20,8 +20,12 @@ class TestTemporalClearMetadata:
 
         # Initialize git repo
         subprocess.run(["git", "init"], cwd=repo_path, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo_path, check=True)
-        subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"], cwd=repo_path, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"], cwd=repo_path, check=True
+        )
 
         # Create a commit
         (repo_path / "file.txt").write_text("content")
@@ -36,7 +40,7 @@ class TestTemporalClearMetadata:
         metadata = {
             "last_commit": "old_commit_hash",
             "total_commits": 100,
-            "indexed_at": "2025-01-01T00:00:00"
+            "indexed_at": "2025-01-01T00:00:00",
         }
         with open(temporal_meta_path, "w") as f:
             json.dump(metadata, f)
@@ -52,7 +56,9 @@ class TestTemporalClearMetadata:
 
         # Create vector store
         index_dir = repo_path / ".code-indexer/index"
-        vector_store = FilesystemVectorStore(base_path=index_dir, project_root=repo_path)
+        vector_store = FilesystemVectorStore(
+            base_path=index_dir, project_root=repo_path
+        )
 
         # Simulate what CLI does when --clear is used
         # This should clear both the collection AND the metadata
@@ -60,8 +66,7 @@ class TestTemporalClearMetadata:
         if clear:
             # Clear the collection
             vector_store.clear_collection(
-                collection_name="code-indexer-temporal",
-                remove_projection_matrix=False
+                collection_name="code-indexer-temporal", remove_projection_matrix=False
             )
 
             # THIS IS THE FIX WE ADDED: Also remove temporal metadata
@@ -70,7 +75,9 @@ class TestTemporalClearMetadata:
 
         # After clearing, metadata should NOT exist
         # This will FAIL initially because we don't remove the metadata file
-        assert not temporal_meta_path.exists(), "Metadata file should be removed when clearing temporal index"
+        assert (
+            not temporal_meta_path.exists()
+        ), "Metadata file should be removed when clearing temporal index"
 
 
 if __name__ == "__main__":

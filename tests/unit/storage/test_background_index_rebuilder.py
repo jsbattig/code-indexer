@@ -35,9 +35,7 @@ class TestBackgroundIndexRebuilderInit:
         collection_path = tmp_path / "collection"
         collection_path.mkdir()
 
-        BackgroundIndexRebuilder(
-            collection_path, lock_filename=".custom.lock"
-        )
+        BackgroundIndexRebuilder(collection_path, lock_filename=".custom.lock")
 
         lock_file = collection_path / ".custom.lock"
         assert lock_file.exists()

@@ -50,7 +50,7 @@ class TestRegularIndexingFixCollectionName:
                 "vector_count": 26,
                 "embedding_provider": "voyage",
                 "embedding_model": "voyage-code-3",
-                "embedding_dimensions": 1536
+                "embedding_dimensions": 1536,
             }
 
             with open(temporal_collection_dir / "collection_meta.json", "w") as f:
@@ -65,7 +65,7 @@ class TestRegularIndexingFixCollectionName:
                 "vector_count": 0,
                 "embedding_provider": "voyage",
                 "embedding_model": "voyage-code-3",
-                "embedding_dimensions": 1536
+                "embedding_dimensions": 1536,
             }
 
             with open(default_collection_dir / "collection_meta.json", "w") as f:
@@ -73,6 +73,7 @@ class TestRegularIndexingFixCollectionName:
 
             # Create projection matrix for the default collection
             import numpy as np
+
             projection_matrix = np.random.randn(1536, 64).astype(np.float32)
             np.save(default_collection_dir / "projection_matrix.npy", projection_matrix)
 
@@ -83,17 +84,16 @@ class TestRegularIndexingFixCollectionName:
                 "project_id": "test_project",
                 "embedding_provider": "voyage",
                 "embedding_model": "voyage-code-3",
-                "voyage": {
-                    "api_key": "test_key",
-                    "batch_size": 128
-                }
+                "voyage": {"api_key": "test_key", "batch_size": 128},
             }
             with open(config_path, "w") as f:
                 json.dump(config_data, f)
 
             # Test the fix with collection_name in metadata
             config_manager = ConfigManager.create_with_backtrack(test_repo)
-            vector_store = FilesystemVectorStore(base_path=index_dir, project_root=test_repo)
+            vector_store = FilesystemVectorStore(
+                base_path=index_dir, project_root=test_repo
+            )
 
             # Create test chunk
             test_chunk = {
@@ -102,7 +102,7 @@ class TestRegularIndexingFixCollectionName:
                 "total_chunks": 1,
                 "file_extension": "py",
                 "line_start": 1,
-                "line_end": 2
+                "line_end": 2,
             }
 
             # Create metadata WITH collection_name (the fix)
@@ -112,7 +112,7 @@ class TestRegularIndexingFixCollectionName:
                 "git_available": False,
                 "file_mtime": 1234567890,
                 "file_size": 100,
-                "collection_name": "voyage-code-3"  # THE FIX: collection_name is now included
+                "collection_name": "voyage-code-3",  # THE FIX: collection_name is now included
             }
 
             # Create a mock embedding
@@ -129,7 +129,7 @@ class TestRegularIndexingFixCollectionName:
                 vector_store_client=vector_store,
                 thread_count=4,
                 slot_tracker=mock_slot_tracker,
-                codebase_dir=test_repo
+                codebase_dir=test_repo,
             )
 
             # Create the Qdrant point
@@ -140,14 +140,16 @@ class TestRegularIndexingFixCollectionName:
             # WITH THE FIX: upsert_points should work now
             result = vector_store.upsert_points(
                 points=[qdrant_point],
-                collection_name=metadata.get("collection_name")  # This now returns "voyage-code-3"
+                collection_name=metadata.get(
+                    "collection_name"
+                ),  # This now returns "voyage-code-3"
             )
 
             # Check that it succeeded (returns dict with status)
             assert result is not None
             assert isinstance(result, dict)
-            assert result.get('status') == 'ok'
-            assert result.get('count') == 1
+            assert result.get("status") == "ok"
+            assert result.get("count") == 1
 
             # Verify the point was actually written
             collection_path = default_collection_dir

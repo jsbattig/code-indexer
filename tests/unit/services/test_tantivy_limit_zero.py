@@ -52,9 +52,7 @@ class TestTantivyLimitZero:
     def test_limit_zero_does_not_panic(self, populated_index):
         """Test that limit=0 doesn't cause Tantivy panic."""
         # This should NOT raise "Limit must be strictly greater than 0"
-        results = populated_index.search(
-            query_text="Service", limit=0, snippet_lines=5
-        )
+        results = populated_index.search(query_text="Service", limit=0, snippet_lines=5)
 
         # Should return results, not crash
         assert isinstance(results, list)
@@ -106,9 +104,7 @@ class TestTantivyLimitZero:
         results = populated_index.search(query_text="Service", limit=0)
 
         # Should find all 50 documents
-        assert (
-            len(results) >= 50
-        ), f"Expected at least 50 results, got {len(results)}"
+        assert len(results) >= 50, f"Expected at least 50 results, got {len(results)}"
 
     def test_limit_zero_performance_with_large_results(self, temp_index_dir):
         """Test performance with limit=0 on large result sets."""
@@ -166,9 +162,7 @@ class TestTantivyLimitZero:
     def test_limit_zero_vs_high_limit(self, populated_index):
         """Test that limit=0 behaves same as very high limit."""
         # High limit
-        high_limit_results = populated_index.search(
-            query_text="Service", limit=100000
-        )
+        high_limit_results = populated_index.search(query_text="Service", limit=100000)
 
         # Unlimited
         unlimited_results = populated_index.search(query_text="Service", limit=0)

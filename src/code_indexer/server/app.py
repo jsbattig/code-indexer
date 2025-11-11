@@ -1283,6 +1283,15 @@ def create_app() -> FastAPI:
     """
     global jwt_manager, user_manager, refresh_token_manager, golden_repo_manager, background_job_manager, activated_repo_manager, repository_listing_manager, semantic_query_manager, _server_start_time
 
+    # Initialize exception logger EARLY for server mode
+    from ..utils.exception_logger import ExceptionLogger
+
+    exception_logger = ExceptionLogger.initialize(
+        project_root=Path.home(), mode="server"
+    )
+    exception_logger.install_thread_exception_hook()
+    logger.info("ExceptionLogger initialized for server mode")
+
     # Set server start time for health monitoring
     _server_start_time = datetime.now(timezone.utc).isoformat()
 
@@ -5165,4 +5174,5 @@ def create_app() -> FastAPI:
 
 
 # Create app instance
-app = create_app()
+# app = create_app()  # DISABLED: Causes singleton pollution when CLI imports types
+# Server should create app explicitly when starting

@@ -97,9 +97,9 @@ class TestRaceConditionQueryIndexing:
             )
 
         # All queries should succeed
-        assert len(query_results) == 10, (
-            f"Expected 10 successful queries, got {len(query_results)}"
-        )
+        assert (
+            len(query_results) == 10
+        ), f"Expected 10 successful queries, got {len(query_results)}"
 
         # Wait for indexing to complete
         if service.indexing_thread:

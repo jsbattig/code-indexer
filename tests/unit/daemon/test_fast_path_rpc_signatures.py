@@ -10,6 +10,7 @@ The daemon service expects:
 
 The fast path must call these with keyword arguments, not positional.
 """
+
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch

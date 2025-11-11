@@ -20,7 +20,11 @@ from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch, call
 from concurrent.futures import ThreadPoolExecutor
 
-from code_indexer.services.clean_slot_tracker import CleanSlotTracker, FileData, FileStatus
+from code_indexer.services.clean_slot_tracker import (
+    CleanSlotTracker,
+    FileData,
+    FileStatus,
+)
 from code_indexer.progress.multi_threaded_display import MultiThreadedProgressManager
 from code_indexer.services.temporal.temporal_indexer import TemporalIndexer
 
@@ -44,8 +48,7 @@ class TestIssue1ThreadSlotMismatch:
         # Create progress manager as CLI does
         console = Mock()
         progress_manager = MultiThreadedProgressManager(
-            console=console,
-            max_slots=max_slots_cli
+            console=console, max_slots=max_slots_cli
         )
 
         # Verify CLI creates 10 slots (WRONG - should be 8)
@@ -56,9 +59,10 @@ class TestIssue1ThreadSlotMismatch:
 
         # ASSERTION: This shows the mismatch - CLI expects 10, tracker has 8
         # This is the BUG we're reproducing
-        assert progress_manager.max_slots != tracker.max_slots, \
-            f"MISMATCH: CLI expects {progress_manager.max_slots} slots, " \
+        assert progress_manager.max_slots != tracker.max_slots, (
+            f"MISMATCH: CLI expects {progress_manager.max_slots} slots, "
             f"tracker has {tracker.max_slots} slots"
+        )
 
     def test_temporal_indexer_tracker_slot_count_from_code(self):
         """PASSING TEST: TemporalIndexer code uses thread_count for CleanSlotTracker."""
@@ -84,7 +88,9 @@ class TestIssue1ThreadSlotMismatch:
 
         # This is the mismatch
         assert progress_manager_slots == 10, "CLI creates 10 slots (BUG)"
-        assert tracker_slots != progress_manager_slots, "Mismatch between tracker and display"
+        assert (
+            tracker_slots != progress_manager_slots
+        ), "Mismatch between tracker and display"
 
     def test_display_slot_count_matches_tracker_slot_count(self):
         """PASSING TEST (after fix): Display slots should match tracker slots."""
@@ -97,17 +103,17 @@ class TestIssue1ThreadSlotMismatch:
         # Create progress manager with correct slot count
         console = Mock()
         progress_manager = MultiThreadedProgressManager(
-            console=console,
-            max_slots=max_slots_cli
+            console=console, max_slots=max_slots_cli
         )
 
         # Create tracker with same slot count
         tracker = CleanSlotTracker(max_slots=parallel_threads)
 
         # ASSERTION: Slots should match
-        assert progress_manager.max_slots == tracker.max_slots == 8, \
-            f"Slots should match: display={progress_manager.max_slots}, " \
+        assert progress_manager.max_slots == tracker.max_slots == 8, (
+            f"Slots should match: display={progress_manager.max_slots}, "
             f"tracker={tracker.max_slots}"
+        )
 
 
 class TestIssue2ZeroRatesDisplay:
@@ -142,7 +148,9 @@ class TestIssue2ZeroRatesDisplay:
     def test_cli_parser_expects_files_per_sec(self):
         """FAILING TEST: CLI parser expects 'files/s' and fails on 'commits/s'."""
         # Simulate CLI progress callback parser (line 3461-3469 in cli.py)
-        info = "50/100 commits (50%) | 5.0 commits/s | 8 threads | 📝 abc12345 - test.py"
+        info = (
+            "50/100 commits (50%) | 5.0 commits/s | 8 threads | 📝 abc12345 - test.py"
+        )
 
         # CLI parser tries to extract files_per_second
         try:
@@ -156,13 +164,16 @@ class TestIssue2ZeroRatesDisplay:
             files_per_second = 0.0
 
         # ASSERTION: Parser fails and defaults to 0.0
-        assert files_per_second == 0.0, \
-            f"Parser should fail on 'commits/s', got {files_per_second}"
+        assert (
+            files_per_second == 0.0
+        ), f"Parser should fail on 'commits/s', got {files_per_second}"
 
     def test_cli_parser_works_with_correct_format(self):
         """PASSING TEST (after fix): CLI parser should handle commits/s OR files/s."""
         # AFTER FIX: Parser should recognize both "commits/s" and "files/s"
-        info = "50/100 commits (50%) | 5.0 commits/s | 8 threads | 📝 abc12345 - test.py"
+        info = (
+            "50/100 commits (50%) | 5.0 commits/s | 8 threads | 📝 abc12345 - test.py"
+        )
 
         # Fixed parser handles both formats
         try:
@@ -216,7 +227,9 @@ class TestIssue3KeyboardInterruptCleanup:
             cleanup_errors.append("ThreadPoolExecutor exit without cleanup")
 
         # ASSERTION: We caught the interrupt but didn't cleanup
-        assert len(cleanup_errors) > 0, "Should have cleanup errors without proper handling"
+        assert (
+            len(cleanup_errors) > 0
+        ), "Should have cleanup errors without proper handling"
 
     def test_executor_with_proper_cleanup(self):
         """PASSING TEST (after fix): Executor should cleanup on KeyboardInterrupt."""
@@ -272,8 +285,9 @@ class TestIssue3KeyboardInterruptCleanup:
                 tracker.release_slot(slot2)
 
         # ASSERTION: All slots should be available after cleanup
-        assert tracker.get_available_slot_count() == 4, \
-            "All slots should be available after cleanup"
+        assert (
+            tracker.get_available_slot_count() == 4
+        ), "All slots should be available after cleanup"
 
 
 class TestIntegratedTemporalDisplayFixes:
@@ -287,8 +301,7 @@ class TestIntegratedTemporalDisplayFixes:
 
         console = Mock()
         progress_manager = MultiThreadedProgressManager(
-            console=console,
-            max_slots=max_slots
+            console=console, max_slots=max_slots
         )
         tracker = CleanSlotTracker(max_slots=parallel_threads)
 
@@ -296,7 +309,9 @@ class TestIntegratedTemporalDisplayFixes:
         assert progress_manager.max_slots == tracker.max_slots == 8
 
         # Issue 2 Fix: Parse commits/s correctly
-        info = "50/100 commits (50%) | 5.0 commits/s | 8 threads | 📝 abc12345 - test.py"
+        info = (
+            "50/100 commits (50%) | 5.0 commits/s | 8 threads | 📝 abc12345 - test.py"
+        )
         parts = info.split(" | ")
         rate_str = parts[1].strip()
         rate_value = float(rate_str.split()[0])

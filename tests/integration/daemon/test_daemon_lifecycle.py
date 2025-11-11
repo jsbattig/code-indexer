@@ -26,10 +26,7 @@ class TestDaemonStartup:
 
         # Create minimal config.json
         config_file = config_dir / "config.json"
-        config = {
-            "embedding_provider": "voyageai",
-            "api_key": "test-key"
-        }
+        config = {"embedding_provider": "voyageai", "api_key": "test-key"}
         config_file.write_text(json.dumps(config))
 
         return config_file
@@ -96,7 +93,9 @@ class TestDaemonStartup:
             # Second daemon should exit with error
             stdout, stderr = proc2.communicate(timeout=5)
             assert proc2.returncode != 0, "Second daemon should fail to start"
-            assert b"already running" in stderr.lower(), "Should indicate daemon already running"
+            assert (
+                b"already running" in stderr.lower()
+            ), "Should indicate daemon already running"
 
         finally:
             # Cleanup
@@ -157,10 +156,7 @@ class TestClientConnections:
         config_dir.mkdir()
 
         config_file = config_dir / "config.json"
-        config = {
-            "embedding_provider": "voyageai",
-            "api_key": "test-key"
-        }
+        config = {"embedding_provider": "voyageai", "api_key": "test-key"}
         config_file.write_text(json.dumps(config))
 
         socket_path = config_dir / "daemon.sock"
@@ -256,10 +252,7 @@ class TestDaemonShutdown:
         config_dir.mkdir()
 
         config_file = config_dir / "config.json"
-        config = {
-            "embedding_provider": "voyageai",
-            "api_key": "test-key"
-        }
+        config = {"embedding_provider": "voyageai", "api_key": "test-key"}
         config_file.write_text(json.dumps(config))
 
         return config_file

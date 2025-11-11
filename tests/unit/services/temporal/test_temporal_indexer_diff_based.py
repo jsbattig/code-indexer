@@ -18,7 +18,7 @@ class TestTemporalIndexerDiffBased:
         mock = Mock(spec=ConfigManager)
         mock.get_config.return_value = Mock(
             embedding_provider="voyage-ai",
-            voyage_ai=Mock(parallel_requests=4, model="voyage-code-3")
+            voyage_ai=Mock(parallel_requests=4, model="voyage-code-3"),
         )
         return mock
 
@@ -31,14 +31,16 @@ class TestTemporalIndexerDiffBased:
         mock.collection_exists.return_value = True
         return mock
 
-    @patch('pathlib.Path.mkdir')
-    def test_temporal_indexer_uses_diff_scanner(self, mock_mkdir, mock_config_manager, mock_vector_store):
+    @patch("pathlib.Path.mkdir")
+    def test_temporal_indexer_uses_diff_scanner(
+        self, mock_mkdir, mock_config_manager, mock_vector_store
+    ):
         """Test that TemporalIndexer uses TemporalDiffScanner, not blob scanner."""
         # This test should fail initially because temporal_indexer still imports blob_scanner
         indexer = TemporalIndexer(mock_config_manager, mock_vector_store)
 
         # Should have diff_scanner attribute, not blob_scanner
-        assert hasattr(indexer, 'diff_scanner')
-        assert not hasattr(indexer, 'blob_scanner')
-        assert not hasattr(indexer, 'blob_reader')
-        assert not hasattr(indexer, 'blob_registry')
+        assert hasattr(indexer, "diff_scanner")
+        assert not hasattr(indexer, "blob_scanner")
+        assert not hasattr(indexer, "blob_reader")
+        assert not hasattr(indexer, "blob_registry")

@@ -30,10 +30,19 @@ def test_temporal_payload_file_extension_format_matches_regular_indexing():
 
         # Initialize git repo with proper commits
         subprocess.run(["git", "init"], cwd=repo_path, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Test"], cwd=repo_path, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo_path, check=True)
+        subprocess.run(
+            ["git", "config", "user.name", "Test"], cwd=repo_path, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"], cwd=repo_path, check=True
+        )
         subprocess.run(["git", "add", "."], cwd=repo_path, check=True)
-        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=repo_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Initial commit"],
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
+        )
 
         # Set up config mock
         config_manager = MagicMock()
@@ -62,7 +71,9 @@ def test_temporal_payload_file_extension_format_matches_regular_indexing():
         vector_store.upsert_points = capture_upsert
 
         # Mock embedding service factory to return embeddings
-        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory') as mock_factory:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+        ) as mock_factory:
             mock_factory.get_provider_model_info.return_value = {"dimensions": 1536}
             embedding_service = MagicMock()
             embedding_service.embed_batch.return_value = [[0.1] * 1536]
@@ -70,8 +81,7 @@ def test_temporal_payload_file_extension_format_matches_regular_indexing():
 
             # Create temporal indexer
             indexer = TemporalIndexer(
-                config_manager=config_manager,
-                vector_store=vector_store
+                config_manager=config_manager, vector_store=vector_store
             )
 
             # Process a single commit directly using the internal method
@@ -84,7 +94,7 @@ def test_temporal_payload_file_extension_format_matches_regular_indexing():
                 cwd=repo_path,
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
             )
             commit_hash = result.stdout.strip()
 
@@ -95,12 +105,14 @@ def test_temporal_payload_file_extension_format_matches_regular_indexing():
                 author_name="Test",
                 author_email="test@test.com",
                 message="Initial commit",
-                parent_hashes=""
+                parent_hashes="",
             )
 
             # Mock the diff scanner to return our test diff
-            with patch.object(indexer, 'diff_scanner') as mock_diff_scanner:
-                from src.code_indexer.services.temporal.temporal_diff_scanner import DiffInfo
+            with patch.object(indexer, "diff_scanner") as mock_diff_scanner:
+                from src.code_indexer.services.temporal.temporal_diff_scanner import (
+                    DiffInfo,
+                )
 
                 mock_diff_scanner.get_diffs_for_commit.return_value = [
                     DiffInfo(
@@ -108,12 +120,14 @@ def test_temporal_payload_file_extension_format_matches_regular_indexing():
                         diff_type="modified",
                         commit_hash=commit_hash,
                         diff_content="+def hello():\n+    print('hello')\n",
-                        old_path=""
+                        old_path="",
                     )
                 ]
 
                 # Use a simpler vector manager mock
-                with patch('src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager'):
+                with patch(
+                    "src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
+                ):
                     # Directly call the worker function
                     from concurrent.futures import Future
 
@@ -130,7 +144,7 @@ def test_temporal_payload_file_extension_format_matches_regular_indexing():
                         [commit],
                         embedding_service,
                         mock_vector_manager,
-                        progress_callback=None
+                        progress_callback=None,
                     )
 
         # Check that we captured points
@@ -150,6 +164,4 @@ def test_temporal_payload_file_extension_format_matches_regular_indexing():
         )
 
         # Also verify language field
-        assert language == "py", (
-            f"language should be 'py', got '{language}'"
-        )
+        assert language == "py", f"language should be 'py', got '{language}'"

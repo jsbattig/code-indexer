@@ -66,10 +66,11 @@ class TestTemporalQueryStory2E2E(unittest.TestCase):
         )
 
         # Verify NO SQLite database created
-        commits_db = self.repo_path / ".code-indexer" / "index" / "temporal" / "commits.db"
+        commits_db = (
+            self.repo_path / ".code-indexer" / "index" / "temporal" / "commits.db"
+        )
         self.assertFalse(
-            commits_db.exists(),
-            "commits.db should not exist with diff-based indexing"
+            commits_db.exists(), "commits.db should not exist with diff-based indexing"
         )
 
         # Query for Nov 1 changes

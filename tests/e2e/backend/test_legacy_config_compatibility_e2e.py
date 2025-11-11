@@ -25,6 +25,7 @@ class TestLegacyConfigCompatibilityE2E(unittest.TestCase):
         """Clean up test environment."""
         os.chdir(self.original_dir)
         import shutil
+
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_legacy_config_uses_qdrant_backend(self):
@@ -37,13 +38,8 @@ class TestLegacyConfigCompatibilityE2E(unittest.TestCase):
             "index_patterns": ["**/*.py"],
             "exclude_patterns": ["__pycache__/**", ".git/**"],
             "embedding_provider": "voyage-ai",
-            "voyage": {
-                "model": "voyage-code-3",
-                "api_key_source": "env"
-            },
-            "qdrant": {
-                "collection": "test_legacy"
-            }
+            "voyage": {"model": "voyage-code-3", "api_key_source": "env"},
+            "qdrant": {"collection": "test_legacy"},
             # Note: No vector_store field (legacy config)
         }
 
@@ -60,7 +56,7 @@ class TestLegacyConfigCompatibilityE2E(unittest.TestCase):
         result = subprocess.run(
             ["python3", "-m", "code_indexer.cli", "index"],
             capture_output=True,
-            text=True
+            text=True,
         )
 
         # Should succeed (or fail with port registry error if not set up, but not fail on missing vector_store)
@@ -73,8 +69,11 @@ class TestLegacyConfigCompatibilityE2E(unittest.TestCase):
             self.assertIn("index", result.stdout.lower() or result.stderr.lower())
         else:
             # If it failed, check it's not because of missing vector_store field
-            self.assertNotIn("vector_store", result.stderr.lower(),
-                            "Legacy config should not fail on missing vector_store field")
+            self.assertNotIn(
+                "vector_store",
+                result.stderr.lower(),
+                "Legacy config should not fail on missing vector_store field",
+            )
             # Could be port registry or other expected errors for Qdrant
             # The important thing is it tried to use Qdrant, not fail on config
 

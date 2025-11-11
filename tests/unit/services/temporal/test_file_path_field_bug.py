@@ -30,7 +30,7 @@ class TestFilePathFieldBug:
             project_root=project_root,
             vector_store_client=None,
             embedding_provider=None,
-            collection_name="test"
+            collection_name="test",
         )
 
         # Create semantic results with 'path' field (as temporal indexer provides)
@@ -48,8 +48,8 @@ class TestFilePathFieldBug:
                     "commit_date": "2024-11-01",
                     "commit_message": "Add authentication",
                     "author_name": "Test User",
-                    "diff_type": "added"
-                }
+                    "diff_type": "added",
+                },
             }
         ]
 
@@ -58,7 +58,7 @@ class TestFilePathFieldBug:
             semantic_results=semantic_results,
             start_date="2024-10-01",
             end_date="2024-12-01",
-            min_score=None
+            min_score=None,
         )
 
         # Assert - now this should pass with the fix
@@ -79,7 +79,7 @@ class TestFilePathFieldBug:
             project_root=project_root,
             vector_store_client=None,
             embedding_provider=None,
-            collection_name="test"
+            collection_name="test",
         )
 
         # Create semantic results with 'file_path' field (for backward compatibility)
@@ -96,8 +96,8 @@ class TestFilePathFieldBug:
                     "commit_date": "2024-11-01",
                     "commit_message": "Legacy code",
                     "author_name": "Test User",
-                    "diff_type": "modified"
-                }
+                    "diff_type": "modified",
+                },
             }
         ]
 
@@ -106,7 +106,7 @@ class TestFilePathFieldBug:
             semantic_results=semantic_results,
             start_date="2024-10-01",
             end_date="2024-12-01",
-            min_score=None
+            min_score=None,
         )
 
         # Assert - this should work with our fix

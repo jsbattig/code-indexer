@@ -26,7 +26,9 @@ def test_temporal_indexer_uses_temporal_collection_name(tmp_path):
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
     test_file = tmp_path / "test.py"
     test_file.write_text("def test_function():\n    return True\n")
-    subprocess.run(["git", "add", "test.py"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "add", "test.py"], cwd=tmp_path, check=True, capture_output=True
+    )
     subprocess.run(
         ["git", "commit", "-m", "Initial commit"],
         cwd=tmp_path,
@@ -46,8 +48,7 @@ def test_temporal_indexer_uses_temporal_collection_name(tmp_path):
 
     # Create vector store with spy to track upsert_points calls
     vector_store = FilesystemVectorStore(
-        base_path=tmp_path / ".code-indexer/index",
-        project_root=tmp_path
+        base_path=tmp_path / ".code-indexer/index", project_root=tmp_path
     )
 
     # Track collection_name passed to upsert_points
@@ -55,27 +56,30 @@ def test_temporal_indexer_uses_temporal_collection_name(tmp_path):
     original_upsert = vector_store.upsert_points
 
     def spy_upsert_points(collection_name, points, **kwargs):
-        upsert_calls.append({
-            "collection_name": collection_name,
-            "num_points": len(points)
-        })
+        upsert_calls.append(
+            {"collection_name": collection_name, "num_points": len(points)}
+        )
         return original_upsert(collection_name, points, **kwargs)
 
     vector_store.upsert_points = spy_upsert_points
 
     # Run temporal indexing (mock embedding provider to avoid API calls)
     # Patch factory BEFORE creating indexer to ensure consistent dimensions
-    with patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory") as mock_factory:
+    with patch(
+        "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+    ) as mock_factory:
         provider_info = {
             "provider": "voyage-ai",
             "model": "voyage-code-3",
-            "dimensions": 1024
+            "dimensions": 1024,
         }
 
         mock_provider = Mock()
+
         # Make get_embeddings return embeddings for any number of texts
         def mock_get_embeddings(texts):
             return [[0.1] * 1024 for _ in texts]
+
         mock_provider.get_embeddings.side_effect = mock_get_embeddings
         mock_provider.get_current_model.return_value = "voyage-code-3"
         mock_factory.create.return_value = mock_provider
@@ -84,7 +88,9 @@ def test_temporal_indexer_uses_temporal_collection_name(tmp_path):
         # Create indexer INSIDE patch context so collection gets created with correct dimensions
         indexer = TemporalIndexer(config_manager, vector_store)
 
-        with patch("src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager") as mock_vcm:
+        with patch(
+            "src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
+        ) as mock_vcm:
             # Mock VectorCalculationManager to avoid real embedding calls
             mock_manager = Mock()
 

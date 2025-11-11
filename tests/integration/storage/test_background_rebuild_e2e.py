@@ -123,14 +123,16 @@ class TestBackgroundRebuildE2EScenarios:
         assert rebuild_complete.is_set(), "Rebuild should complete"
 
         # All queries should succeed
-        assert all(isinstance(r, int) and r == 10 for r in query_results), \
-            f"All queries should return 10 results, got: {query_results}"
+        assert all(
+            isinstance(r, int) and r == 10 for r in query_results
+        ), f"All queries should return 10 results, got: {query_results}"
 
         # Query performance should not degrade significantly
         # (queries use old index, so rebuild doesn't slow them down)
         avg_query_time = sum(query_times) / len(query_times)
-        assert avg_query_time < 50, \
-            f"Query time during rebuild: {avg_query_time:.2f}ms (should be <50ms)"
+        assert (
+            avg_query_time < 50
+        ), f"Query time during rebuild: {avg_query_time:.2f}ms (should be <50ms)"
 
         # Verify no temp file left behind
         temp_file = tmp_path / "hnsw_index.bin.tmp"
@@ -179,8 +181,7 @@ class TestBackgroundRebuildE2EScenarios:
         elapsed_ms = (time.perf_counter() - start_time) * 1000
 
         # Validate <2ms requirement
-        assert elapsed_ms < 2.0, \
-            f"Atomic swap took {elapsed_ms:.3f}ms, expected <2ms"
+        assert elapsed_ms < 2.0, f"Atomic swap took {elapsed_ms:.3f}ms, expected <2ms"
 
     def test_concurrent_rebuilds_serialize_via_lock(self, tmp_path: Path):
         """E2E test: Concurrent rebuilds are serialized by file lock.
@@ -263,8 +264,9 @@ class TestBackgroundRebuildE2EScenarios:
         idx_r2_complete = rebuild_order.index("rebuild2_complete")
 
         # Rebuild1 must complete before rebuild2 completes
-        assert idx_r1_complete < idx_r2_complete, \
-            f"Lock serialization failed: {rebuild_order}"
+        assert (
+            idx_r1_complete < idx_r2_complete
+        ), f"Lock serialization failed: {rebuild_order}"
 
     def test_cleanup_orphaned_temp_files(self, tmp_path: Path):
         """E2E test: Cleanup of orphaned .tmp files after crashes.
@@ -282,12 +284,15 @@ class TestBackgroundRebuildE2EScenarios:
         # Make them old (2 hours ago)
         two_hours_ago = time.time() - (2 * 3600)
         import os
+
         os.utime(old_hnsw_temp, (two_hours_ago, two_hours_ago))
         os.utime(old_id_temp, (two_hours_ago, two_hours_ago))
 
         # Run cleanup
         rebuilder = BackgroundIndexRebuilder(tmp_path)
-        removed_count = rebuilder.cleanup_orphaned_temp_files(age_threshold_seconds=3600)
+        removed_count = rebuilder.cleanup_orphaned_temp_files(
+            age_threshold_seconds=3600
+        )
 
         # Validate cleanup
         assert removed_count == 2
@@ -361,13 +366,15 @@ class TestBackgroundRebuildE2EScenarios:
         assert rebuild_complete.is_set()
 
         # All loads should succeed
-        assert all(isinstance(r, int) for r in load_results), \
-            f"All loads should succeed, got: {load_results}"
+        assert all(
+            isinstance(r, int) for r in load_results
+        ), f"All loads should succeed, got: {load_results}"
 
         # Some loads will see old index (30), some new (100)
         # This proves stale reads are working
-        assert any(r == num_initial for r in load_results), \
-            "Should see old index during rebuild (stale reads)"
+        assert any(
+            r == num_initial for r in load_results
+        ), "Should see old index during rebuild (stale reads)"
 
         # Final load should see new index
         final_index = manager.load_index(tmp_path)
@@ -429,6 +436,7 @@ class TestBackgroundRebuildE2EScenarios:
         orphaned_temp.write_text("crash debris")
         old_time = time.time() - 7200  # 2 hours ago
         import os
+
         os.utime(orphaned_temp, (old_time, old_time))
 
         removed = rebuilder.cleanup_orphaned_temp_files(age_threshold_seconds=3600)
@@ -442,7 +450,9 @@ class TestBackgroundRebuildE2EScenarios:
         print("✓ AC3: FTS compatible with same pattern (architecture documented)")
         print("✓ AC4: Stale reads during rebuild (validated in dedicated tests)")
         print(f"✓ AC5: Atomic swap <2ms (measured: {elapsed_ms:.3f}ms)")
-        print("✓ AC6: Exclusive lock for entire rebuild (validated in serialization tests)")
+        print(
+            "✓ AC6: Exclusive lock for entire rebuild (validated in serialization tests)"
+        )
         print("✓ AC7: Cross-process file locking (tested via threading)")
         print("✓ AC8: No race conditions (validated in serialization tests)")
         print("✓ AC9: Orphaned temp file cleanup (1 file removed)")

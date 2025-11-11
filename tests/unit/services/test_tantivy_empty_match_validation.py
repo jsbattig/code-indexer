@@ -110,7 +110,8 @@ class TestTantivyEmptyMatchValidation:
             if empty_matches:
                 # If empty matches are included, should have warning logged
                 assert any(
-                    "empty" in record.message.lower() or "zero-length" in record.message.lower()
+                    "empty" in record.message.lower()
+                    or "zero-length" in record.message.lower()
                     for record in caplog.records
                 ), "Should log warning for empty matches"
 
@@ -218,12 +219,12 @@ class TestTantivyEmptyMatchValidation:
         # All matches should be non-empty
         for result in results:
             match_text = result.get("match_text", "")
-            assert len(match_text) > 0, (
-                f"'def' pattern should produce non-empty matches, got: '{match_text}'"
-            )
-            assert match_text == "def", (
-                f"Expected match_text to be 'def', got: '{match_text}'"
-            )
+            assert (
+                len(match_text) > 0
+            ), f"'def' pattern should produce non-empty matches, got: '{match_text}'"
+            assert (
+                match_text == "def"
+            ), f"Expected match_text to be 'def', got: '{match_text}'"
 
     def test_empty_match_provides_clear_error_or_warning(self, indexed_manager, caplog):
         """
@@ -279,7 +280,9 @@ class TestTantivyEmptyMatchValidation:
         if results:
             # Count empty vs non-empty matches
             empty_count = sum(1 for r in results if len(r.get("match_text", "x")) == 0)
-            non_empty_count = sum(1 for r in results if len(r.get("match_text", "")) > 0)
+            non_empty_count = sum(
+                1 for r in results if len(r.get("match_text", "")) > 0
+            )
 
             print(
                 f"Pattern 'x*': {non_empty_count} non-empty matches, {empty_count} empty matches"
@@ -288,9 +291,9 @@ class TestTantivyEmptyMatchValidation:
             # Ideally should prioritize non-empty matches
             if non_empty_count > 0:
                 # If we found non-empty matches, they should dominate results
-                assert non_empty_count >= empty_count, (
-                    "Should prioritize non-empty matches over empty ones"
-                )
+                assert (
+                    non_empty_count >= empty_count
+                ), "Should prioritize non-empty matches over empty ones"
 
     def test_zero_width_lookahead_assertion(self, indexed_manager):
         """
@@ -330,8 +333,12 @@ class TestTantivyEmptyMatchValidation:
                 column = result.get("column", 0)
 
                 # Position should be valid (positive integers)
-                assert line > 0, f"Empty match should have valid line number, got {line}"
-                assert column > 0, f"Empty match should have valid column number, got {column}"
+                assert (
+                    line > 0
+                ), f"Empty match should have valid line number, got {line}"
+                assert (
+                    column > 0
+                ), f"Empty match should have valid column number, got {column}"
 
                 print(f"Empty match at line {line}, column {column}")
 

@@ -85,7 +85,9 @@ def test_empty_commits_after_filtering_should_return_early(temporal_indexer):
     # Mock git operations and embedding provider
     with patch.object(temporal_indexer, "_get_commit_history", return_value=commits):
         with patch.object(temporal_indexer, "_get_current_branch", return_value="main"):
-            with patch("code_indexer.services.embedding_factory.EmbeddingProviderFactory.create"):
+            with patch(
+                "code_indexer.services.embedding_factory.EmbeddingProviderFactory.create"
+            ):
                 # Expected behavior: Should return early with zero results
                 # Current bug: Crashes with IndexError at line 202
                 result = temporal_indexer.index_commits(all_branches=False)

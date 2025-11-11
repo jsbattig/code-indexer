@@ -53,7 +53,9 @@ class TestDaemonFTSSnippetLinesZero:
             }
         ]
 
-        with patch.object(service, '_execute_fts_search', return_value=mock_results) as mock_execute:
+        with patch.object(
+            service, "_execute_fts_search", return_value=mock_results
+        ) as mock_execute:
             # Call exposed_query_fts (the RPC-exposed method) with snippet_lines=0
             result = service.exposed_query_fts(
                 str(test_project),
@@ -62,7 +64,7 @@ class TestDaemonFTSSnippetLinesZero:
                 limit=2,
                 case_sensitive=False,
                 edit_distance=0,
-                use_regex=False
+                use_regex=False,
             )
 
             # Verify _execute_fts_search was called with snippet_lines=0
@@ -73,7 +75,7 @@ class TestDaemonFTSSnippetLinesZero:
                 limit=2,
                 case_sensitive=False,
                 edit_distance=0,
-                use_regex=False
+                use_regex=False,
             )
 
             # Verify result structure
@@ -129,11 +131,15 @@ Line 5"""
         fts_response_dict = {
             "results": [{"path": "file.py", "snippet": ""}],
             "query": "test",
-            "total": 1
+            "total": 1,
         }
 
         # Our fix: Extract results from dict
-        result = fts_response_dict.get("results", []) if isinstance(fts_response_dict, dict) else fts_response_dict
+        result = (
+            fts_response_dict.get("results", [])
+            if isinstance(fts_response_dict, dict)
+            else fts_response_dict
+        )
         assert isinstance(result, list)
         assert len(result) == 1
         assert result[0]["path"] == "file.py"
@@ -141,7 +147,11 @@ Line 5"""
         # Test case 2: Response is already a list (backward compatibility)
         fts_response_list = [{"path": "file2.py", "snippet": ""}]
 
-        result = fts_response_list if not isinstance(fts_response_list, dict) else fts_response_list.get("results", [])
+        result = (
+            fts_response_list
+            if not isinstance(fts_response_list, dict)
+            else fts_response_list.get("results", [])
+        )
         assert isinstance(result, list)
         assert len(result) == 1
         assert result[0]["path"] == "file2.py"

@@ -88,7 +88,11 @@ class TestRaceConditionDuplicateIndexing:
 
         # Verify only ONE indexing thread exists
         with service.indexing_lock_internal:
-            thread_count = 1 if (service.indexing_thread and service.indexing_thread.is_alive()) else 0
+            thread_count = (
+                1
+                if (service.indexing_thread and service.indexing_thread.is_alive())
+                else 0
+            )
 
         assert thread_count == 1, (
             f"Expected exactly 1 indexing thread, got {thread_count}. "
@@ -186,13 +190,16 @@ class TestRaceConditionDuplicateIndexing:
             f"Race condition detected! Expected 1 'started' status, got {started_count}. "
             f"Multiple indexing threads may have started!"
         )
-        assert already_running_count == 9, (
-            f"Expected 9 'already_running' statuses, got {already_running_count}."
-        )
+        assert (
+            already_running_count == 9
+        ), f"Expected 9 'already_running' statuses, got {already_running_count}."
 
         # Verify only ONE indexing thread exists
         with service.indexing_lock_internal:
-            thread_exists = service.indexing_thread is not None and service.indexing_thread.is_alive()
+            thread_exists = (
+                service.indexing_thread is not None
+                and service.indexing_thread.is_alive()
+            )
 
         assert thread_exists, "One indexing thread should be running"
 
@@ -230,14 +237,18 @@ class TestRaceConditionDuplicateIndexing:
         # Verify state is cleaned up
         with service.indexing_lock_internal:
             assert service.indexing_thread is None, "indexing_thread should be None"
-            assert service.indexing_project_path is None, "indexing_project_path should be None"
+            assert (
+                service.indexing_project_path is None
+            ), "indexing_project_path should be None"
 
         # Verify new indexing can start
         response2 = service.exposed_index(
             project_path=str(project_path),
             callback=None,
         )
-        assert response2["status"] == "started", "New indexing should be allowed after cleanup"
+        assert (
+            response2["status"] == "started"
+        ), "New indexing should be allowed after cleanup"
 
         # Wait for second indexing to complete
         if service.indexing_thread:

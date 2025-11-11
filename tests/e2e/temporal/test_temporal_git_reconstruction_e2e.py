@@ -17,7 +17,9 @@ class TestTemporalGitReconstructionE2E:
             TemporalSearchService,
         )
         from src.code_indexer.config import ConfigManager
-        from src.code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
+        from src.code_indexer.storage.filesystem_vector_store import (
+            FilesystemVectorStore,
+        )
 
         # Setup: Create git repo with added and deleted files
         repo_dir = tmp_path / "test_repo"
@@ -42,7 +44,9 @@ class TestTemporalGitReconstructionE2E:
         test_file = repo_dir / "example.py"
         original_content = "def greet(name):\n    return f'Hello, {name}!'\n"
         test_file.write_text(original_content)
-        subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "add", "."], cwd=repo_dir, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "commit", "-m", "Add example.py"],
             cwd=repo_dir,
@@ -70,7 +74,9 @@ class TestTemporalGitReconstructionE2E:
 
         # Commit 2: Delete file
         test_file.unlink()
-        subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "add", "."], cwd=repo_dir, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "commit", "-m", "Delete example.py"],
             cwd=repo_dir,
@@ -105,7 +111,9 @@ class TestTemporalGitReconstructionE2E:
 
         mock_embedding_provider = Mock()
         mock_embedding_provider.get_embedding.return_value = [0.1] * embedding_dim
-        mock_embedding_provider.get_embeddings_batch.return_value = [[0.1] * embedding_dim]
+        mock_embedding_provider.get_embeddings_batch.return_value = [
+            [0.1] * embedding_dim
+        ]
 
         # Index temporal data with mocked VectorCalculationManager
         indexer = TemporalIndexer(config_manager, vector_store)
@@ -151,23 +159,33 @@ class TestTemporalGitReconstructionE2E:
         assert len(results.results) > 0, "Should find temporal results"
 
         # Find added file result
-        added_results = [r for r in results.results if r.metadata.get("diff_type") == "added"]
+        added_results = [
+            r for r in results.results if r.metadata.get("diff_type") == "added"
+        ]
         assert len(added_results) > 0, "Should find added file"
 
         added_result = added_results[0]
         # Verify content was reconstructed from git
         assert added_result.content, "Added file content should not be empty"
-        assert "def greet" in added_result.content, "Should contain original function definition"
-        assert original_content.strip() in added_result.content, "Should match original content"
+        assert (
+            "def greet" in added_result.content
+        ), "Should contain original function definition"
+        assert (
+            original_content.strip() in added_result.content
+        ), "Should match original content"
 
         # Find deleted file result
-        deleted_results = [r for r in results.results if r.metadata.get("diff_type") == "deleted"]
+        deleted_results = [
+            r for r in results.results if r.metadata.get("diff_type") == "deleted"
+        ]
         assert len(deleted_results) > 0, "Should find deleted file"
 
         deleted_result = deleted_results[0]
         # Verify content was reconstructed from parent commit
         assert deleted_result.content, "Deleted file content should not be empty"
-        assert "def greet" in deleted_result.content, "Should contain original function definition"
+        assert (
+            "def greet" in deleted_result.content
+        ), "Should contain original function definition"
         assert (
             original_content.strip() in deleted_result.content
         ), "Should match content from parent commit"

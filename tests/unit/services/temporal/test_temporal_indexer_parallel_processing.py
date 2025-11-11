@@ -31,31 +31,37 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
-        vector_store.load_id_index.return_value = set()  # Return empty set for len() call
+        vector_store.load_id_index.return_value = (
+            set()
+        )  # Return empty set for len() call
 
-        with patch("src.code_indexer.services.file_identifier.FileIdentifier"), \
-             patch("src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner"), \
-             patch("src.code_indexer.indexing.fixed_size_chunker.FixedSizeChunker"), \
-             patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info") as mock_provider_info:
+        with (
+            patch("src.code_indexer.services.file_identifier.FileIdentifier"),
+            patch(
+                "src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner"
+            ),
+            patch("src.code_indexer.indexing.fixed_size_chunker.FixedSizeChunker"),
+            patch(
+                "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+            ) as mock_provider_info,
+        ):
 
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-2",
-                "model_info": {"dimension": 1536}
+                "model_info": {"dimension": 1536},
             }
 
             indexer = TemporalIndexer(
-                config_manager=config_manager,
-                vector_store=vector_store
+                config_manager=config_manager, vector_store=vector_store
             )
 
             # The indexer should have a method for parallel processing
             self.assertTrue(
-                hasattr(indexer, '_process_commits_parallel'),
-                "TemporalIndexer should have _process_commits_parallel method"
+                hasattr(indexer, "_process_commits_parallel"),
+                "TemporalIndexer should have _process_commits_parallel method",
             )
-
 
     def test_parallel_processing_uses_queue(self):
         """Test that the parallel processing method uses Queue."""
@@ -76,19 +82,29 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
-        vector_store.load_id_index.return_value = set()  # Return empty set for len() call
+        vector_store.load_id_index.return_value = (
+            set()
+        )  # Return empty set for len() call
 
-        with patch("src.code_indexer.services.file_identifier.FileIdentifier"), \
-             patch("src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner"), \
-             patch("src.code_indexer.indexing.fixed_size_chunker.FixedSizeChunker"), \
-             patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info") as mock_provider_info, \
-             patch("src.code_indexer.services.temporal.temporal_indexer.Queue") as mock_queue_class:
+        with (
+            patch("src.code_indexer.services.file_identifier.FileIdentifier"),
+            patch(
+                "src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner"
+            ),
+            patch("src.code_indexer.indexing.fixed_size_chunker.FixedSizeChunker"),
+            patch(
+                "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+            ) as mock_provider_info,
+            patch(
+                "src.code_indexer.services.temporal.temporal_indexer.Queue"
+            ) as mock_queue_class,
+        ):
 
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-2",
-                "model_info": {"dimension": 1536}
+                "model_info": {"dimension": 1536},
             }
 
             # Create a mock queue instance that simulates empty after 10 items
@@ -103,8 +119,7 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
             mock_queue_class.return_value = mock_queue
 
             indexer = TemporalIndexer(
-                config_manager=config_manager,
-                vector_store=vector_store
+                config_manager=config_manager, vector_store=vector_store
             )
 
             # Mock the diff scanner to avoid subprocess calls
@@ -114,9 +129,7 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
             # Call the method with test data
             commits = [Mock(hash=f"commit{i}") for i in range(10)]
             indexer._process_commits_parallel(
-                commits=commits,
-                embedding_provider=Mock(),
-                vector_manager=Mock()
+                commits=commits, embedding_provider=Mock(), vector_manager=Mock()
             )
 
             # Verify Queue was created
@@ -144,19 +157,27 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
-        vector_store.load_id_index.return_value = set()  # Return empty set for len() call
+        vector_store.load_id_index.return_value = (
+            set()
+        )  # Return empty set for len() call
 
-        with patch("src.code_indexer.services.file_identifier.FileIdentifier"), \
-             patch("src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner") as mock_diff_scanner, \
-             patch("src.code_indexer.indexing.fixed_size_chunker.FixedSizeChunker"), \
-             patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info") as mock_provider_info, \
-             patch("concurrent.futures.ThreadPoolExecutor") as mock_executor_class:
+        with (
+            patch("src.code_indexer.services.file_identifier.FileIdentifier"),
+            patch(
+                "src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner"
+            ) as mock_diff_scanner,
+            patch("src.code_indexer.indexing.fixed_size_chunker.FixedSizeChunker"),
+            patch(
+                "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+            ) as mock_provider_info,
+            patch("concurrent.futures.ThreadPoolExecutor") as mock_executor_class,
+        ):
 
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-2",
-                "model_info": {"dimension": 1536}
+                "model_info": {"dimension": 1536},
             }
 
             # Mock diff scanner
@@ -169,8 +190,7 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
             mock_executor_class.return_value = mock_executor
 
             indexer = TemporalIndexer(
-                config_manager=config_manager,
-                vector_store=vector_store
+                config_manager=config_manager, vector_store=vector_store
             )
 
             # Mock the diff scanner to avoid subprocess calls
@@ -180,9 +200,7 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
             # Call the method with test data
             commits = [Mock(hash=f"commit{i}") for i in range(10)]
             indexer._process_commits_parallel(
-                commits=commits,
-                embedding_provider=Mock(),
-                vector_manager=Mock()
+                commits=commits, embedding_provider=Mock(), vector_manager=Mock()
             )
 
             # Verify ThreadPoolExecutor was created
@@ -206,33 +224,38 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
         # Mock FilesystemVectorStore
         vector_store = Mock()
         vector_store.project_root = test_dir
-        vector_store.load_id_index.return_value = set()  # Return empty set for len() call
+        vector_store.load_id_index.return_value = (
+            set()
+        )  # Return empty set for len() call
 
-        with patch("src.code_indexer.services.file_identifier.FileIdentifier"), \
-             patch("src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner") as mock_diff_scanner_class, \
-             patch("src.code_indexer.indexing.fixed_size_chunker.FixedSizeChunker"), \
-             patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info") as mock_provider_info:
+        with (
+            patch("src.code_indexer.services.file_identifier.FileIdentifier"),
+            patch(
+                "src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner"
+            ) as mock_diff_scanner_class,
+            patch("src.code_indexer.indexing.fixed_size_chunker.FixedSizeChunker"),
+            patch(
+                "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+            ) as mock_provider_info,
+        ):
 
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-2",
-                "model_info": {"dimension": 1536}
+                "model_info": {"dimension": 1536},
             }
 
             # Mock diff scanner to return test diffs
             mock_diff_scanner = Mock()
             mock_diff_scanner.get_diffs_for_commit.return_value = [
                 Mock(
-                    file_path="test.py",
-                    diff_content="test diff",
-                    diff_type="modified"
+                    file_path="test.py", diff_content="test diff", diff_type="modified"
                 )
             ]
 
             indexer = TemporalIndexer(
-                config_manager=config_manager,
-                vector_store=vector_store
+                config_manager=config_manager, vector_store=vector_store
             )
 
             # Replace the diff_scanner with our mock
@@ -240,15 +263,13 @@ class TestTemporalIndexerParallelProcessing(unittest.TestCase):
 
             # Create test commits
             commits = [
-                Mock(hash=f"commit{i}", timestamp=1000+i, message=f"Message {i}")
+                Mock(hash=f"commit{i}", timestamp=1000 + i, message=f"Message {i}")
                 for i in range(3)
             ]
 
             # Call the method
             result = indexer._process_commits_parallel(
-                commits=commits,
-                embedding_provider=Mock(),
-                vector_manager=Mock()
+                commits=commits, embedding_provider=Mock(), vector_manager=Mock()
             )
 
             # Verify diff scanner was called for each commit

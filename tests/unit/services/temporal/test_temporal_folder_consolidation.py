@@ -65,7 +65,9 @@ def test_temporal_directory_consolidation(temp_git_repo):
     index_dir = temp_git_repo / ".code-indexer" / "index"
     index_dir.mkdir(parents=True, exist_ok=True)
 
-    vector_store = FilesystemVectorStore(base_path=index_dir, project_root=temp_git_repo)
+    vector_store = FilesystemVectorStore(
+        base_path=index_dir, project_root=temp_git_repo
+    )
     config_manager = ConfigManager.create_with_backtrack(temp_git_repo)
 
     # Create temporal indexer
@@ -132,7 +134,9 @@ def test_watch_command_vector_store_initialization(temp_git_repo):
     )
 
     # NOW TEST THE CORRECT WAY (what cli.py should do after fix)
-    new_vector_store = FilesystemVectorStore(base_path=index_dir, project_root=project_root)
+    new_vector_store = FilesystemVectorStore(
+        base_path=index_dir, project_root=project_root
+    )
     new_temporal_indexer = TemporalIndexer(config_manager, new_vector_store)
 
     # With the new way, temporal_dir should be correct
@@ -176,9 +180,9 @@ def test_reconciliation_uses_collection_path(temp_git_repo):
 
     # Verify the old wrong path doesn't exist
     wrong_temporal_dir = index_dir / "temporal"
-    assert not wrong_temporal_dir.exists(), (
-        f"Old temporal directory should not exist: {wrong_temporal_dir}"
-    )
+    assert (
+        not wrong_temporal_dir.exists()
+    ), f"Old temporal directory should not exist: {wrong_temporal_dir}"
 
 
 def test_clear_command_metadata_paths(temp_git_repo):
@@ -195,12 +199,8 @@ def test_clear_command_metadata_paths(temp_git_repo):
     collection_name = TemporalIndexer.TEMPORAL_COLLECTION_NAME
 
     # The CORRECT paths (what clear command should use after fix)
-    correct_meta_path = (
-        index_dir / collection_name / "temporal_meta.json"
-    )
-    correct_progress_path = (
-        index_dir / collection_name / "temporal_progress.json"
-    )
+    correct_meta_path = index_dir / collection_name / "temporal_meta.json"
+    correct_progress_path = index_dir / collection_name / "temporal_progress.json"
 
     # The WRONG paths (what clear command used before fix)
     wrong_meta_path = index_dir / "temporal" / "temporal_meta.json"

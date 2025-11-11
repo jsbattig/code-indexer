@@ -25,6 +25,7 @@ class TestFilesystemPortRegistryIsolationE2E(unittest.TestCase):
         """Clean up test environment."""
         os.chdir(self.original_dir)
         import shutil
+
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_filesystem_init_no_port_registry_access(self):
@@ -35,7 +36,8 @@ class TestFilesystemPortRegistryIsolationE2E(unittest.TestCase):
         # Patch GlobalPortRegistry.__init__ to check for the environment variable
         # We need to create a wrapper script that patches and then runs cidx
         wrapper_script = Path(self.test_dir) / "test_wrapper.py"
-        wrapper_script.write_text("""
+        wrapper_script.write_text(
+            """
 import os
 import sys
 import importlib.util
@@ -55,19 +57,25 @@ if os.getenv("CIDX_FAIL_ON_PORT_REGISTRY") == "1":
 # Now run the actual CLI
 from code_indexer.cli import cli
 cli()
-""")
+"""
+        )
 
         # Run cidx init with filesystem backend through wrapper
         result = subprocess.run(
             [
-                "python3", str(wrapper_script), "init",
-                "--vector-store", "filesystem",
-                "--embedding-provider", "voyage-ai",
-                "--voyage-model", "voyage-code-3"
+                "python3",
+                str(wrapper_script),
+                "init",
+                "--vector-store",
+                "filesystem",
+                "--embedding-provider",
+                "voyage-ai",
+                "--voyage-model",
+                "voyage-code-3",
             ],
             env=env,
             capture_output=True,
-            text=True
+            text=True,
         )
 
         # Should succeed without accessing port registry
@@ -80,6 +88,7 @@ cli()
         self.assertTrue(config_file.exists())
 
         import json
+
         with open(config_file) as f:
             config = json.load(f)
         self.assertEqual(config["vector_store"]["provider"], "filesystem")
@@ -89,13 +98,19 @@ cli()
         # First create a filesystem config
         subprocess.run(
             [
-                "python3", "-m", "code_indexer.cli", "init",
-                "--vector-store", "filesystem",
-                "--embedding-provider", "voyage-ai",
-                "--voyage-model", "voyage-code-3"
+                "python3",
+                "-m",
+                "code_indexer.cli",
+                "init",
+                "--vector-store",
+                "filesystem",
+                "--embedding-provider",
+                "voyage-ai",
+                "--voyage-model",
+                "voyage-code-3",
             ],
             capture_output=True,
-            check=True
+            check=True,
         )
 
         # Create a test file to index
@@ -106,7 +121,8 @@ cli()
         env = {**os.environ, "CIDX_FAIL_ON_PORT_REGISTRY": "1"}
 
         wrapper_script = Path(self.test_dir) / "test_index_wrapper.py"
-        wrapper_script.write_text("""
+        wrapper_script.write_text(
+            """
 import os
 import sys
 
@@ -123,14 +139,15 @@ if os.getenv("CIDX_FAIL_ON_PORT_REGISTRY") == "1":
 # Now run the actual CLI
 from code_indexer.cli import cli
 cli()
-""")
+"""
+        )
 
         # Run cidx index through wrapper
         result = subprocess.run(
             ["python3", str(wrapper_script), "index"],
             env=env,
             capture_output=True,
-            text=True
+            text=True,
         )
 
         # Should succeed without accessing port registry
@@ -143,13 +160,19 @@ cli()
         # First create a filesystem config and index
         subprocess.run(
             [
-                "python3", "-m", "code_indexer.cli", "init",
-                "--vector-store", "filesystem",
-                "--embedding-provider", "voyage-ai",
-                "--voyage-model", "voyage-code-3"
+                "python3",
+                "-m",
+                "code_indexer.cli",
+                "init",
+                "--vector-store",
+                "filesystem",
+                "--embedding-provider",
+                "voyage-ai",
+                "--voyage-model",
+                "voyage-code-3",
             ],
             capture_output=True,
-            check=True
+            check=True,
         )
 
         # Create and index a test file
@@ -159,14 +182,15 @@ cli()
         subprocess.run(
             ["python3", "-m", "code_indexer.cli", "index"],
             capture_output=True,
-            check=True
+            check=True,
         )
 
         # Now test querying with port registry detection
         env = {**os.environ, "CIDX_FAIL_ON_PORT_REGISTRY": "1"}
 
         wrapper_script = Path(self.test_dir) / "test_query_wrapper.py"
-        wrapper_script.write_text("""
+        wrapper_script.write_text(
+            """
 import os
 import sys
 
@@ -183,14 +207,15 @@ if os.getenv("CIDX_FAIL_ON_PORT_REGISTRY") == "1":
 # Now run the actual CLI
 from code_indexer.cli import cli
 cli()
-""")
+"""
+        )
 
         # Run cidx query through wrapper
         result = subprocess.run(
             ["python3", str(wrapper_script), "query", "hello", "--quiet"],
             env=env,
             capture_output=True,
-            text=True
+            text=True,
         )
 
         # Should succeed without accessing port registry

@@ -29,14 +29,18 @@ class TestTemporalIndexerParallel(unittest.TestCase):
         self.vector_store = Mock()
         self.vector_store.project_root = Path(self.temp_dir)
         self.vector_store.collection_exists.return_value = True
-        self.vector_store.load_id_index.return_value = set()  # Return empty set for len() call
+        self.vector_store.load_id_index.return_value = (
+            set()
+        )  # Return empty set for len() call
 
         # Mock EmbeddingProviderFactory to avoid real provider creation
-        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info') as mock_get_info:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+        ) as mock_get_info:
             mock_get_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-3",
-                "dimensions": 1024
+                "dimensions": 1024,
             }
             self.indexer = TemporalIndexer(self.config_manager, self.vector_store)
 
@@ -53,6 +57,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
     def tearDown(self):
         """Clean up test fixtures."""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_parallel_processing_uses_multiple_threads(self):
@@ -65,7 +70,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
                 author_name="Test Author",
                 author_email="test@example.com",
                 message=f"Test commit {i}",
-                parent_hashes=""
+                parent_hashes="",
             )
             for i in range(10)
         ]
@@ -89,21 +94,20 @@ class TestTemporalIndexerParallel(unittest.TestCase):
         # Mock vector manager
         vector_manager = Mock()
 
-
         vector_manager.cancellation_event = threading.Event()
 
         # Process commits in parallel
         self.indexer._process_commits_parallel(
-            commits,
-            Mock(),  # embedding_provider
-            vector_manager
+            commits, Mock(), vector_manager  # embedding_provider
         )
 
         # Should have processed all commits
         self.assertEqual(processed[0], 10)
 
         # Should have used multiple threads (not just 1)
-        self.assertGreater(len(thread_ids), 1, "Should use multiple threads for parallel processing")
+        self.assertGreater(
+            len(thread_ids), 1, "Should use multiple threads for parallel processing"
+        )
 
         # Should have called get_diffs_for_commit for each commit
         self.assertEqual(self.indexer.diff_scanner.get_diffs_for_commit.call_count, 10)
@@ -120,7 +124,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
                 author_name="Test Author",
                 author_email="test@example.com",
                 message="Large change",
-                parent_hashes=""
+                parent_hashes="",
             )
         ]
 
@@ -132,12 +136,13 @@ class TestTemporalIndexerParallel(unittest.TestCase):
                 file_path="large_file.py",
                 diff_type="added",
                 commit_hash="large_commit",
-                diff_content=large_diff_content
+                diff_content=large_diff_content,
             )
         ]
 
         # Mock chunker to verify it receives the full content
         chunks_received = []
+
         def capture_chunks(text, path):
             # Capture the text passed to chunker
             chunks_received.append(text)
@@ -157,9 +162,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
 
         # Process the large commit
         self.indexer._process_commits_parallel(
-            commits,
-            Mock(),  # embedding_provider
-            vector_manager
+            commits, Mock(), vector_manager  # embedding_provider
         )
 
         # Should have processed the large diff
@@ -168,7 +171,11 @@ class TestTemporalIndexerParallel(unittest.TestCase):
         # Verify the full content was passed to chunker (no truncation)
         self.assertEqual(len(chunks_received), 1, "Should have chunked once")
         lines_in_chunk = len(chunks_received[0].split("\n"))
-        self.assertEqual(lines_in_chunk, 600, "Should pass full 600 lines to chunker without truncation")
+        self.assertEqual(
+            lines_in_chunk,
+            600,
+            "Should pass full 600 lines to chunker without truncation",
+        )
 
     def test_parallel_processing_creates_correct_payloads(self):
         """Test that parallel processing creates correct payload structure."""
@@ -182,7 +189,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
                 author_name="Test Author",
                 author_email="test@example.com",
                 message="Test commit message",
-                parent_hashes=""
+                parent_hashes="",
             )
         ]
 
@@ -191,7 +198,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
                 file_path="test.py",
                 diff_type="modified",
                 commit_hash="test_commit_hash",
-                diff_content="+added line\n-removed line"
+                diff_content="+added line\n-removed line",
             )
         ]
 
@@ -210,7 +217,9 @@ class TestTemporalIndexerParallel(unittest.TestCase):
 
         # Capture the points that would be stored
         stored_points = []
-        self.indexer.vector_store.upsert_points.side_effect = lambda collection_name, points: stored_points.extend(points)
+        self.indexer.vector_store.upsert_points.side_effect = (
+            lambda collection_name, points: stored_points.extend(points)
+        )
 
         # Process commits
         self.indexer._process_commits_parallel(commits, Mock(), vector_manager)
@@ -229,7 +238,9 @@ class TestTemporalIndexerParallel(unittest.TestCase):
         self.assertIn("commit_date", payload)  # Human-readable date
         self.assertIn("commit_message", payload)
         self.assertEqual(payload["author_name"], "Test Author")
-        self.assertEqual(payload["path"], "test.py")  # Changed from file_path to path (Story 2)
+        self.assertEqual(
+            payload["path"], "test.py"
+        )  # Changed from file_path to path (Story 2)
         self.assertNotIn("blob_hash", payload)  # Should NOT have blob_hash
 
     def test_parallel_processing_with_progress_callback(self):
@@ -245,7 +256,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
                 author_name="Test Author",
                 author_email="test@example.com",
                 message=f"Test commit {i}",
-                parent_hashes=""
+                parent_hashes="",
             )
             for i in range(5)
         ]
@@ -256,7 +267,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
                 file_path="test.py",
                 diff_type="modified",
                 commit_hash="commit1",
-                diff_content="+line1\n-line2"
+                diff_content="+line1\n-line2",
             )
         ]
 
@@ -276,21 +287,24 @@ class TestTemporalIndexerParallel(unittest.TestCase):
 
         # Track progress callbacks
         progress_calls = []
+
         def progress_callback(current, total, file_path, info="", **kwargs):
             """Accept new kwargs for slot-based tracking (concurrent_files, slot_tracker, item_type)."""
-            progress_calls.append({
-                "current": current,
-                "total": total,
-                "file_path": str(file_path),
-                "info": info
-            })
+            progress_calls.append(
+                {
+                    "current": current,
+                    "total": total,
+                    "file_path": str(file_path),
+                    "info": info,
+                }
+            )
 
         # Process commits with progress callback
         self.indexer._process_commits_parallel(
             commits,
             Mock(),  # embedding_provider
             vector_manager,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
         )
 
         # Should have received progress updates
@@ -314,7 +328,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
                 author_name="Test Author",
                 author_email="test@example.com",
                 message="Test commit",
-                parent_hashes=""
+                parent_hashes="",
             )
         ]
 
@@ -323,14 +337,14 @@ class TestTemporalIndexerParallel(unittest.TestCase):
                 file_path="file1.py",
                 diff_type="modified",
                 commit_hash="test_commit",
-                diff_content="+line1"
+                diff_content="+line1",
             ),
             DiffInfo(
                 file_path="file2.py",
                 diff_type="added",
                 commit_hash="test_commit",
-                diff_content="+line2"
-            )
+                diff_content="+line2",
+            ),
         ]
 
         self.indexer.chunker.chunk_text.return_value = [
@@ -349,14 +363,13 @@ class TestTemporalIndexerParallel(unittest.TestCase):
 
         vector_manager = Mock()
 
-
         vector_manager.cancellation_event = threading.Event()
         vector_manager.submit_batch_task.side_effect = mock_submit
         vector_manager.embedding_provider._get_model_token_limit.return_value = 120000
 
         # Process commits and get return values
-        completed_count, total_files_processed, total_vectors = self.indexer._process_commits_parallel(
-            commits, Mock(), vector_manager
+        completed_count, total_files_processed, total_vectors = (
+            self.indexer._process_commits_parallel(commits, Mock(), vector_manager)
         )
 
         # Should return counts
@@ -375,7 +388,7 @@ class TestTemporalIndexerParallel(unittest.TestCase):
                 author_name="Test Author",
                 author_email="test@example.com",
                 message="Test commit",
-                parent_hashes=""
+                parent_hashes="",
             )
         ]
 
@@ -384,25 +397,26 @@ class TestTemporalIndexerParallel(unittest.TestCase):
                 file_path="binary.jpg",
                 diff_type="binary",
                 commit_hash="test_commit",
-                diff_content="Binary file added: binary.jpg"
+                diff_content="Binary file added: binary.jpg",
             ),
             DiffInfo(
                 file_path="renamed.py",
                 diff_type="renamed",
                 commit_hash="test_commit",
                 diff_content="File renamed from old.py to renamed.py",
-                old_path="old.py"
+                old_path="old.py",
             ),
             DiffInfo(
                 file_path="normal.py",
                 diff_type="modified",
                 commit_hash="test_commit",
-                diff_content="+normal change"
-            )
+                diff_content="+normal change",
+            ),
         ]
 
         # Track which files get chunked
         chunked_files = []
+
         def track_chunks(text, path):
             chunked_files.append(str(path))
             return [{"text": "chunk", "char_start": 0, "char_end": 5}]

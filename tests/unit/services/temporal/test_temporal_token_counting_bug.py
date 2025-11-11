@@ -38,7 +38,9 @@ class TestTemporalTokenCountingBug:
         mock_vector_store.collection_exists.return_value = True
 
         # Patch the factory to avoid real initialization
-        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory') as MockFactory:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+        ) as MockFactory:
             MockFactory.get_provider_model_info.return_value = {"dimensions": 1024}
             MockFactory.create.return_value = Mock()
 
@@ -74,4 +76,6 @@ class TestTemporalTokenCountingBug:
         )
 
         # Verify accurate tokenizer was called
-        mock_embedding_provider._count_tokens_accurately.assert_called_once_with(test_text)
+        mock_embedding_provider._count_tokens_accurately.assert_called_once_with(
+            test_text
+        )

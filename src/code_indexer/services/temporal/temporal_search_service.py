@@ -559,7 +559,9 @@ class TemporalSearchService:
                 chunk_text = None
                 if isinstance(result, dict):
                     chunk_text = result.get("chunk_text", None)
-                elif hasattr(result, "chunk_text") and not callable(getattr(result, "chunk_text")):
+                elif hasattr(result, "chunk_text") and not callable(
+                    getattr(result, "chunk_text")
+                ):
                     # Only use chunk_text if it's actually set (not a Mock auto-attribute)
                     try:
                         chunk_text = result.chunk_text

@@ -38,8 +38,12 @@ class TestTemporalReconcileE2E:
         # Create 10 commits (enough to test partial indexing)
         for i in range(1, 11):
             file_path = repo_path / f"file{i}.py"
-            file_path.write_text(f"# Python file {i}\ndef function_{i}():\n    return {i}\n")
-            subprocess.run(["git", "add", "."], cwd=repo_path, check=True, capture_output=True)
+            file_path.write_text(
+                f"# Python file {i}\ndef function_{i}():\n    return {i}\n"
+            )
+            subprocess.run(
+                ["git", "add", "."], cwd=repo_path, check=True, capture_output=True
+            )
             subprocess.run(
                 ["git", "commit", "-m", f"Add function {i}"],
                 cwd=repo_path,
@@ -51,14 +55,20 @@ class TestTemporalReconcileE2E:
         cidx_dir = repo_path / ".code-indexer"
         cidx_dir.mkdir(parents=True, exist_ok=True)
         config_file = cidx_dir / "config.json"
-        config_file.write_text(json.dumps({
-            "embedding_provider": "voyage-ai",
-            "voyage_ai": {
-                "api_key": os.environ.get("VOYAGE_API_KEY", "test_key_will_fail"),
-                "model": "voyage-code-3",
-                "parallel_requests": 1
-            }
-        }))
+        config_file.write_text(
+            json.dumps(
+                {
+                    "embedding_provider": "voyage-ai",
+                    "voyage_ai": {
+                        "api_key": os.environ.get(
+                            "VOYAGE_API_KEY", "test_key_will_fail"
+                        ),
+                        "model": "voyage-code-3",
+                        "parallel_requests": 1,
+                    },
+                }
+            )
+        )
 
         return repo_path
 
@@ -93,25 +103,33 @@ class TestTemporalReconcileE2E:
                 "payload": {
                     "commit_hash": commit_hash,
                     "file_path": f"file{i+1}.py",
-                    "chunk_index": 0
-                }
+                    "chunk_index": 0,
+                },
             }
             vector_file.write_text(json.dumps(vector_data))
 
         # Create collection metadata (no indexes, simulating crash before index build)
         meta_file = collection_path / "collection_meta.json"
-        meta_file.write_text(json.dumps({
-            "dimension": 1024,
-            "vector_count": 5,
-            "created_at": time.time()
-        }))
+        meta_file.write_text(
+            json.dumps(
+                {"dimension": 1024, "vector_count": 5, "created_at": time.time()}
+            )
+        )
 
         vectors_before = len(list(collection_path.glob("vector_*.json")))
         assert vectors_before == 5
 
         # Act: Run reconciliation (will fail on embedding API but should discover state)
         result = subprocess.run(
-            ["python3", "-m", "src.code_indexer.cli", "index", "--index-commits", "--reconcile", "--quiet"],
+            [
+                "python3",
+                "-m",
+                "src.code_indexer.cli",
+                "index",
+                "--index-commits",
+                "--reconcile",
+                "--quiet",
+            ],
             cwd=temp_test_repo,
             capture_output=True,
             text=True,
@@ -119,7 +137,10 @@ class TestTemporalReconcileE2E:
 
         # Assert: Reconciliation should have been attempted
         # Check that reconciliation discovered existing commits
-        assert result.returncode in [0, 1]  # May fail on embedding but reconciliation ran
+        assert result.returncode in [
+            0,
+            1,
+        ]  # May fail on embedding but reconciliation ran
 
         # Check that discovery happened (logs should show discovered commits)
         output = result.stdout + result.stderr
@@ -155,10 +176,7 @@ class TestTemporalReconcileE2E:
             vector_data = {
                 "id": f"test_repo:diff:{commit_hash}:file{i+1}.py:0",
                 "vector": [0.1] * 1024,
-                "payload": {
-                    "commit_hash": commit_hash,
-                    "file_path": f"file{i+1}.py"
-                }
+                "payload": {"commit_hash": commit_hash, "file_path": f"file{i+1}.py"},
             }
             vector_file.write_text(json.dumps(vector_data))
 
@@ -168,7 +186,15 @@ class TestTemporalReconcileE2E:
         # Act: Run reconciliation twice
         for run in range(2):
             result = subprocess.run(
-                ["python3", "-m", "src.code_indexer.cli", "index", "--index-commits", "--reconcile", "--quiet"],
+                [
+                    "python3",
+                    "-m",
+                    "src.code_indexer.cli",
+                    "index",
+                    "--index-commits",
+                    "--reconcile",
+                    "--quiet",
+                ],
                 cwd=temp_test_repo,
                 capture_output=True,
                 text=True,
@@ -209,20 +235,17 @@ class TestTemporalReconcileE2E:
             vector_data = {
                 "id": f"test_repo:diff:{commit_hash}:file{i+1}.py:0",
                 "vector": [0.1] * 1024,
-                "payload": {
-                    "commit_hash": commit_hash,
-                    "file_path": f"file{i+1}.py"
-                }
+                "payload": {"commit_hash": commit_hash, "file_path": f"file{i+1}.py"},
             }
             vector_file.write_text(json.dumps(vector_data))
 
         # Create metadata but NO indexes
         meta_file = collection_path / "collection_meta.json"
-        meta_file.write_text(json.dumps({
-            "dimension": 1024,
-            "vector_count": 10,
-            "created_at": time.time()
-        }))
+        meta_file.write_text(
+            json.dumps(
+                {"dimension": 1024, "vector_count": 10, "created_at": time.time()}
+            )
+        )
 
         # Verify no indexes exist
         hnsw_index = collection_path / "hnsw_index.bin"
@@ -232,7 +255,15 @@ class TestTemporalReconcileE2E:
 
         # Act: Run reconciliation (should rebuild indexes from existing vectors)
         result = subprocess.run(
-            ["python3", "-m", "src.code_indexer.cli", "index", "--index-commits", "--reconcile", "--quiet"],
+            [
+                "python3",
+                "-m",
+                "src.code_indexer.cli",
+                "index",
+                "--index-commits",
+                "--reconcile",
+                "--quiet",
+            ],
             cwd=temp_test_repo,
             capture_output=True,
             text=True,
@@ -241,7 +272,9 @@ class TestTemporalReconcileE2E:
 
         # Assert: Indexes should be rebuilt
         # Note: This depends on end_indexing being called even when no new commits
-        assert hnsw_index.exists() or result.returncode != 0, "HNSW index should be rebuilt"
+        assert (
+            hnsw_index.exists() or result.returncode != 0
+        ), "HNSW index should be rebuilt"
         assert id_index.exists() or result.returncode != 0, "ID index should be rebuilt"
 
         # Vector count should remain the same
@@ -254,11 +287,20 @@ class TestTemporalReconcileE2E:
         index_dir = temp_test_repo / ".code-indexer" / "index"
         if index_dir.exists():
             import shutil
+
             shutil.rmtree(index_dir)
 
         # Act: Run reconciliation on empty state
         result = subprocess.run(
-            ["python3", "-m", "src.code_indexer.cli", "index", "--index-commits", "--reconcile", "--quiet"],
+            [
+                "python3",
+                "-m",
+                "src.code_indexer.cli",
+                "index",
+                "--index-commits",
+                "--reconcile",
+                "--quiet",
+            ],
             cwd=temp_test_repo,
             capture_output=True,
             text=True,
@@ -298,7 +340,7 @@ class TestTemporalReconcileE2E:
             vector_data = {
                 "id": f"test_repo:diff:{commit_hashes[i]}:file{i+1}.py:0",
                 "vector": [0.1] * 1024,
-                "payload": {"commit_hash": commit_hashes[i]}
+                "payload": {"commit_hash": commit_hashes[i]},
             }
             vector_file.write_text(json.dumps(vector_data))
 
@@ -309,7 +351,15 @@ class TestTemporalReconcileE2E:
 
         # Act: Run reconciliation
         result = subprocess.run(
-            ["python3", "-m", "src.code_indexer.cli", "index", "--index-commits", "--reconcile", "--quiet"],
+            [
+                "python3",
+                "-m",
+                "src.code_indexer.cli",
+                "index",
+                "--index-commits",
+                "--reconcile",
+                "--quiet",
+            ],
             cwd=temp_test_repo,
             capture_output=True,
             text=True,

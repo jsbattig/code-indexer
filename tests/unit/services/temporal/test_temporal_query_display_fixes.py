@@ -45,7 +45,7 @@ class TestTemporalQuerySorting:
                 "commit_timestamp": 1672574400,  # 2023-01-01 12:00 (Oldest)
                 "commit_date": "2023-01-01",
                 "author_name": "User",
-                "diff_type": "modified"
+                "diff_type": "modified",
             },
             "score": 0.9,
         }
@@ -57,7 +57,7 @@ class TestTemporalQuerySorting:
                 "commit_timestamp": 1672747200,  # 2023-01-03 12:00 (Newest)
                 "commit_date": "2023-01-03",
                 "author_name": "User",
-                "diff_type": "added"
+                "diff_type": "added",
             },
             "score": 0.95,
         }
@@ -69,14 +69,18 @@ class TestTemporalQuerySorting:
                 "commit_timestamp": 1672660800,  # 2023-01-02 12:00 (Middle)
                 "commit_date": "2023-01-02",
                 "author_name": "User",
-                "diff_type": "deleted"
+                "diff_type": "deleted",
             },
             "score": 0.85,
         }
 
         # Mock vector store to return results in random order
         # For non-FilesystemVectorStore path (QdrantClient behavior)
-        vector_store.search.return_value = [result1, result2, result3]  # Just list, not tuple
+        vector_store.search.return_value = [
+            result1,
+            result2,
+            result3,
+        ]  # Just list, not tuple
         vector_store.collection_exists.return_value = True
         embedding_provider.get_embedding.return_value = [0.1] * 1536
 
@@ -89,14 +93,20 @@ class TestTemporalQuerySorting:
 
         # Verify: Results should be reverse chronological (newest first)
         assert len(results.results) == 3
-        assert results.results[0].temporal_context["commit_timestamp"] == 1672747200  # Newest (2023-01-03 12:00)
-        assert results.results[1].temporal_context["commit_timestamp"] == 1672660800  # Middle (2023-01-02 12:00)
-        assert results.results[2].temporal_context["commit_timestamp"] == 1672574400  # Oldest (2023-01-01 12:00)
+        assert (
+            results.results[0].temporal_context["commit_timestamp"] == 1672747200
+        )  # Newest (2023-01-03 12:00)
+        assert (
+            results.results[1].temporal_context["commit_timestamp"] == 1672660800
+        )  # Middle (2023-01-02 12:00)
+        assert (
+            results.results[2].temporal_context["commit_timestamp"] == 1672574400
+        )  # Oldest (2023-01-01 12:00)
 
         # Verify they're NOT sorted by score
         assert results.results[0].score == 0.95  # Newest (not highest score)
         assert results.results[1].score == 0.85  # Middle (lowest score!)
-        assert results.results[2].score == 0.9   # Oldest
+        assert results.results[2].score == 0.9  # Oldest
 
 
 class TestTemporalDisplayLineNumbers:
@@ -147,11 +157,14 @@ class TestTemporalDisplayLineNumbers:
 
         # Strip ANSI escape codes for reliable testing
         import re
-        ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
-        clean_output = ansi_escape.sub('', display_output)
+
+        ansi_escape = re.compile(r"\x1b\[[0-9;]*m")
+        clean_output = ansi_escape.sub("", display_output)
 
         # Verify: Should NOT contain :0-0 (the key requirement)
-        assert ":0-0" not in clean_output, f"Output should not contain ':0-0', but got: {clean_output}"
+        assert (
+            ":0-0" not in clean_output
+        ), f"Output should not contain ':0-0', but got: {clean_output}"
         # Verify: Should contain the file path
         assert "src/file.py" in clean_output
         # Verify: Should contain MODIFIED marker

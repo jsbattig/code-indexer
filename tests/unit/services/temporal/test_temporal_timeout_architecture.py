@@ -62,8 +62,7 @@ class TestAPITimeoutArchitecture:
             # VERIFY: Result contains error message about timeout
             assert result.error is not None, "Result should contain error"
             assert (
-                "timeout" in result.error.lower()
-                or "cancelled" in result.error.lower()
+                "timeout" in result.error.lower() or "cancelled" in result.error.lower()
             ), f"Error should mention timeout or cancellation: {result.error}"
 
         finally:
@@ -91,9 +90,7 @@ class TestAPITimeoutArchitecture:
             # All futures should complete with error (not exception)
             for future in futures:
                 result = future.result(timeout=5)
-                assert (
-                    result.error is not None
-                ), "Should return error result, not crash"
+                assert result.error is not None, "Should return error result, not crash"
 
             # VERIFY: Worker threads are still alive (no crash)
             stats = vector_manager.get_stats()
@@ -180,8 +177,10 @@ class TestWorkerCancellationHandling:
                 mock_progressive_metadata.load_completed.return_value = set()
 
                 # This should exit gracefully without processing
-                completed_count, total_files_processed, total_vectors = indexer._process_commits_parallel(
-                    commits, mock_provider, vector_manager, progress_callback=None
+                completed_count, total_files_processed, total_vectors = (
+                    indexer._process_commits_parallel(
+                        commits, mock_provider, vector_manager, progress_callback=None
+                    )
                 )
 
                 # VERIFY: No commits were saved (cancellation prevented processing)
@@ -300,8 +299,13 @@ class TestProgressiveMetadataErrorHandling:
 
                 # This should NOT crash, but handle errors gracefully
                 try:
-                    completed_count, total_files_processed, total_vectors = indexer._process_commits_parallel(
-                        commits, mock_provider, vector_manager, progress_callback=None
+                    completed_count, total_files_processed, total_vectors = (
+                        indexer._process_commits_parallel(
+                            commits,
+                            mock_provider,
+                            vector_manager,
+                            progress_callback=None,
+                        )
                     )
                 except Exception:
                     # Some errors may propagate, but metadata should not be saved
@@ -389,8 +393,10 @@ class TestProgressiveMetadataErrorHandling:
             ) as mock_progressive_metadata:
                 mock_progressive_metadata.load_completed.return_value = set()
 
-                completed_count, total_files_processed, total_vectors = indexer._process_commits_parallel(
-                    commits, mock_provider, vector_manager, progress_callback=None
+                completed_count, total_files_processed, total_vectors = (
+                    indexer._process_commits_parallel(
+                        commits, mock_provider, vector_manager, progress_callback=None
+                    )
                 )
 
                 # VERIFY: Successful commits WERE saved
@@ -488,8 +494,13 @@ class TestWaveBasedCancellation:
                 mock_progressive_metadata.load_completed.return_value = set()
 
                 try:
-                    completed_count, total_files_processed, total_vectors = indexer._process_commits_parallel(
-                        commits, mock_provider, vector_manager, progress_callback=None
+                    completed_count, total_files_processed, total_vectors = (
+                        indexer._process_commits_parallel(
+                            commits,
+                            mock_provider,
+                            vector_manager,
+                            progress_callback=None,
+                        )
                     )
                 except Exception:
                     # Cancellation may cause exception, which is acceptable
@@ -497,7 +508,9 @@ class TestWaveBasedCancellation:
 
                 # VERIFY: Cancellation was triggered
                 # Note: call_count[0] indicates how many times mock_batch_with_cancellation was called
-                print(f"DEBUG: call_count[0] = {call_count[0]}, cancellation_event.is_set() = {vector_manager.cancellation_event.is_set()}")
+                print(
+                    f"DEBUG: call_count[0] = {call_count[0]}, cancellation_event.is_set() = {vector_manager.cancellation_event.is_set()}"
+                )
 
                 # If mock was never called, test setup is wrong
                 if call_count[0] == 0:
@@ -505,7 +518,9 @@ class TestWaveBasedCancellation:
 
                 # Only verify cancellation if we made at least 2 calls (second call should trigger it)
                 if call_count[0] >= 2:
-                    assert vector_manager.cancellation_event.is_set(), f"Should be cancelled after {call_count[0]} calls"
+                    assert (
+                        vector_manager.cancellation_event.is_set()
+                    ), f"Should be cancelled after {call_count[0]} calls"
 
                 # VERIFY: Not all batches were processed (stopped mid-processing)
                 # With 50 files, we'd expect many batches, but cancellation should limit this

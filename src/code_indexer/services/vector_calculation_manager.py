@@ -496,7 +496,9 @@ class VectorCalculationManager:
 
             # DEBUG: Log batch processing start
             with open("/tmp/cidx_vectorcalc_debug.log", "a") as f:
-                f.write(f"VectorCalc: Processing batch {task.task_id} with {len(chunk_texts_list)} chunks - STARTING API call\n")
+                f.write(
+                    f"VectorCalc: Processing batch {task.task_id} with {len(chunk_texts_list)} chunks - STARTING API call\n"
+                )
                 f.flush()
 
             embeddings_list = self.embedding_provider.get_embeddings_batch(
@@ -507,7 +509,9 @@ class VectorCalculationManager:
 
             # DEBUG: Log batch processing complete
             with open("/tmp/cidx_vectorcalc_debug.log", "a") as f:
-                f.write(f"VectorCalc: Batch {task.task_id} COMPLETED in {processing_time:.2f}s - returned {len(embeddings_list)} embeddings\n")
+                f.write(
+                    f"VectorCalc: Batch {task.task_id} COMPLETED in {processing_time:.2f}s - returned {len(embeddings_list)} embeddings\n"
+                )
                 f.flush()
 
             # Convert embeddings to immutable tuple format
@@ -549,8 +553,13 @@ class VectorCalculationManager:
             # TIMEOUT ARCHITECTURE FIX: Check for API timeout and trigger global cancellation
             # Import httpx for timeout detection
             import httpx
-            if isinstance(e, (httpx.TimeoutException, httpx.ReadTimeout, httpx.ConnectTimeout)):
-                logger.error(f"VoyageAI API timeout for batch {task.task_id} - triggering global cancellation")
+
+            if isinstance(
+                e, (httpx.TimeoutException, httpx.ReadTimeout, httpx.ConnectTimeout)
+            ):
+                logger.error(
+                    f"VoyageAI API timeout for batch {task.task_id} - triggering global cancellation"
+                )
                 # Signal global cancellation to all workers
                 self.request_cancellation()
                 error_msg = f"VoyageAI API timeout - cancelling all work: {error_msg}"

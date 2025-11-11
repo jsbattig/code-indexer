@@ -37,6 +37,7 @@ class TestTemporalSearchSQLiteFree(unittest.TestCase):
 
         # Check module source doesn't contain sqlite3 import
         import inspect
+
         source = inspect.getsource(module)
         self.assertNotIn("import sqlite3", source)
         self.assertNotIn("from sqlite3", source)
@@ -48,7 +49,9 @@ class TestTemporalSearchSQLiteFree(unittest.TestCase):
 
         # Check if method exists
         if hasattr(module.TemporalSearchService, "_generate_chunk_diff"):
-            source = inspect.getsource(module.TemporalSearchService._generate_chunk_diff)
+            source = inspect.getsource(
+                module.TemporalSearchService._generate_chunk_diff
+            )
             # Should not contain any SQLite references
             self.assertNotIn("sqlite3.connect", source)
             self.assertNotIn("commits_db_path", source)

@@ -23,6 +23,7 @@ class TestQdrantPortRegistryCompatibility(unittest.TestCase):
     def tearDown(self):
         """Clean up test environment."""
         import shutil
+
         if self.temp_dir.exists():
             shutil.rmtree(self.temp_dir)
 

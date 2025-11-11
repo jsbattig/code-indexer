@@ -6,7 +6,6 @@ which goes to default collection, but TemporalSearchService searches
 """
 
 
-
 def test_temporal_indexer_collection_name_hardcoded():
     """Verify TemporalIndexer uses hardcoded temporal collection name.
 
@@ -39,9 +38,9 @@ def test_temporal_indexer_collection_name_hardcoded():
     )
 
     # ASSERTION 3: Must contain 'temporal' to distinguish from HEAD collection
-    assert "temporal" in indexer_collection.lower(), (
-        f"Collection name must contain 'temporal', got: {indexer_collection}"
-    )
+    assert (
+        "temporal" in indexer_collection.lower()
+    ), f"Collection name must contain 'temporal', got: {indexer_collection}"
 
 
 def test_temporal_search_service_collection_name():

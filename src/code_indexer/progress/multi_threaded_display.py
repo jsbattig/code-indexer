@@ -164,7 +164,7 @@ class MultiThreadedProgressManager:
 
         # Temporal status strings contain commit hashes and progress info with slashes
         # Don't treat them as file paths (Path.name would truncate at the slash)
-        if re.match(r'^[0-9a-f]{8} - ', file_data.filename):
+        if re.match(r"^[0-9a-f]{8} - ", file_data.filename):
             # Temporal status string - preserve full string
             file_name = file_data.filename
         else:
@@ -335,7 +335,9 @@ class MultiThreadedProgressManager:
                 if file_info:
                     filename = file_info.get("file_path", "unknown")
                     # Temporal status strings contain commit hashes - don't truncate them
-                    if isinstance(filename, str) and re.match(r'^[0-9a-f]{8} - ', filename):
+                    if isinstance(filename, str) and re.match(
+                        r"^[0-9a-f]{8} - ", filename
+                    ):
                         # Temporal status string - preserve full string
                         pass  # Keep filename as-is
                     elif isinstance(filename, Path):

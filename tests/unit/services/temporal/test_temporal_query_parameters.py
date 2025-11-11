@@ -85,7 +85,7 @@ def sample_search_results():
                 "author_email": "alice@example.com",
                 "commit_timestamp": base_timestamp,
                 "diff_type": "added",
-            }
+            },
         },
         {
             "score": 0.88,
@@ -100,7 +100,7 @@ def sample_search_results():
                 "author_email": "bob@example.com",
                 "commit_timestamp": base_timestamp + 86400,
                 "diff_type": "modified",
-            }
+            },
         },
         {
             "score": 0.82,
@@ -115,7 +115,7 @@ def sample_search_results():
                 "author_email": "alice@example.com",
                 "commit_timestamp": base_timestamp + 86400 * 2,
                 "diff_type": "deleted",
-            }
+            },
         },
     ]
 
@@ -132,12 +132,13 @@ class TestIncludeRemovedRemoval:
         EXPECTED FAILURE: This test will fail until include_removed is removed from signature.
         """
         import inspect
+
         sig = inspect.signature(temporal_service.query_temporal)
 
         # Verify include_removed is NOT in parameters
-        assert "include_removed" not in sig.parameters, (
-            "include_removed parameter should be removed from query_temporal signature"
-        )
+        assert (
+            "include_removed" not in sig.parameters
+        ), "include_removed parameter should be removed from query_temporal signature"
 
     def test_filter_by_time_range_signature_no_include_removed(self, temporal_service):
         """Test that _filter_by_time_range signature doesn't have include_removed parameter.
@@ -145,12 +146,13 @@ class TestIncludeRemovedRemoval:
         EXPECTED FAILURE: This test will fail until include_removed is removed from signature.
         """
         import inspect
+
         sig = inspect.signature(temporal_service._filter_by_time_range)
 
         # Verify include_removed is NOT in parameters
-        assert "include_removed" not in sig.parameters, (
-            "include_removed parameter should be removed from _filter_by_time_range signature"
-        )
+        assert (
+            "include_removed" not in sig.parameters
+        ), "include_removed parameter should be removed from _filter_by_time_range signature"
 
     def test_query_temporal_calls_filter_without_include_removed(
         self, temporal_service, mock_vector_store
@@ -177,15 +179,14 @@ class TestIncludeRemovedRemoval:
                     "author_name": "Test Author",
                     "commit_timestamp": int(datetime(2025, 11, 1).timestamp()),
                     "diff_type": "added",
-                }
+                },
             }
         ]
         mock_vector_store.search.return_value = (sample_results, {})
 
         # Patch _filter_by_time_range to verify it's called without include_removed
         with patch.object(
-            temporal_service, '_filter_by_time_range',
-            return_value=([], 0.0)
+            temporal_service, "_filter_by_time_range", return_value=([], 0.0)
         ) as mock_filter:
             temporal_service.query_temporal(
                 query="test query",
@@ -198,9 +199,9 @@ class TestIncludeRemovedRemoval:
 
             # Verify include_removed was NOT passed as an argument
             call_args = mock_filter.call_args
-            assert 'include_removed' not in call_args.kwargs, (
-                "include_removed should not be passed to _filter_by_time_range"
-            )
+            assert (
+                "include_removed" not in call_args.kwargs
+            ), "include_removed should not be passed to _filter_by_time_range"
 
     def test_cli_query_command_no_include_removed_parameter(self):
         """Test that CLI query command doesn't have --include-removed option.
@@ -211,12 +212,12 @@ class TestIncludeRemovedRemoval:
         from src.code_indexer.cli import query
 
         runner = CliRunner()
-        result = runner.invoke(query, ['--help'])
+        result = runner.invoke(query, ["--help"])
 
         # Verify --include-removed is NOT in help output
-        assert '--include-removed' not in result.output, (
-            "--include-removed option should be removed from CLI query command"
-        )
+        assert (
+            "--include-removed" not in result.output
+        ), "--include-removed option should be removed from CLI query command"
 
     def test_cli_code_does_not_reference_include_removed(self):
         """Test that CLI code doesn't reference include_removed variable.
@@ -225,14 +226,19 @@ class TestIncludeRemovedRemoval:
         """
         from pathlib import Path
 
-        cli_path = Path(__file__).parent.parent.parent.parent.parent / "src" / "code_indexer" / "cli.py"
+        cli_path = (
+            Path(__file__).parent.parent.parent.parent.parent
+            / "src"
+            / "code_indexer"
+            / "cli.py"
+        )
         cli_content = cli_path.read_text()
 
         # Check that include_removed is not referenced in the query command code
         # We need to ensure no variable references remain (validation, usage in calls, etc.)
-        assert 'include_removed' not in cli_content, (
-            "include_removed variable should be completely removed from CLI code"
-        )
+        assert (
+            "include_removed" not in cli_content
+        ), "include_removed variable should be completely removed from CLI code"
 
 
 # ==================== TEST 2: ADD --diff-type ====================
@@ -249,12 +255,13 @@ class TestDiffTypeParameter:
         EXPECTED FAILURE: This test will fail until diff_types parameter is added.
         """
         import inspect
+
         sig = inspect.signature(temporal_service.query_temporal)
 
         # Verify diff_types IS in parameters
-        assert "diff_types" in sig.parameters, (
-            "diff_types parameter should be added to query_temporal signature"
-        )
+        assert (
+            "diff_types" in sig.parameters
+        ), "diff_types parameter should be added to query_temporal signature"
 
     def test_filter_by_single_diff_type(
         self, temporal_service, mock_vector_store, sample_search_results
@@ -276,7 +283,9 @@ class TestDiffTypeParameter:
         )
 
         # Verify only "added" results are returned
-        assert len(results.results) == 1, f"Expected 1 result, got {len(results.results)}"
+        assert (
+            len(results.results) == 1
+        ), f"Expected 1 result, got {len(results.results)}"
         assert results.results[0].metadata["diff_type"] == "added"
         assert results.results[0].metadata["file_path"] == "src/feature.py"
 
@@ -299,7 +308,9 @@ class TestDiffTypeParameter:
         )
 
         # Verify both "added" and "modified" results are returned (but not "deleted")
-        assert len(results.results) == 2, f"Expected 2 results, got {len(results.results)}"
+        assert (
+            len(results.results) == 2
+        ), f"Expected 2 results, got {len(results.results)}"
         diff_types = [r.metadata["diff_type"] for r in results.results]
         assert "added" in diff_types
         assert "modified" in diff_types
@@ -324,7 +335,9 @@ class TestDiffTypeParameter:
         )
 
         # Verify all 3 results are returned (added, modified, deleted)
-        assert len(results.results) == 3, f"Expected 3 results, got {len(results.results)}"
+        assert (
+            len(results.results) == 3
+        ), f"Expected 3 results, got {len(results.results)}"
         diff_types = [r.metadata["diff_type"] for r in results.results]
         assert "added" in diff_types
         assert "modified" in diff_types
@@ -349,7 +362,9 @@ class TestDiffTypeParameter:
         )
 
         # Verify all 3 results are returned (added, modified, deleted)
-        assert len(results.results) == 3, f"Expected 3 results, got {len(results.results)}"
+        assert (
+            len(results.results) == 3
+        ), f"Expected 3 results, got {len(results.results)}"
         diff_types = [r.metadata["diff_type"] for r in results.results]
         assert "added" in diff_types
         assert "modified" in diff_types
@@ -364,12 +379,12 @@ class TestDiffTypeParameter:
         from src.code_indexer.cli import query
 
         runner = CliRunner()
-        result = runner.invoke(query, ['--help'])
+        result = runner.invoke(query, ["--help"])
 
         # Verify --diff-type IS in help output
-        assert '--diff-type' in result.output, (
-            "--diff-type option should be added to CLI query command"
-        )
+        assert (
+            "--diff-type" in result.output
+        ), "--diff-type option should be added to CLI query command"
 
 
 # ==================== TEST 3: ADD --author ====================
@@ -386,12 +401,13 @@ class TestAuthorParameter:
         EXPECTED FAILURE: This test will fail until author parameter is added.
         """
         import inspect
+
         sig = inspect.signature(temporal_service.query_temporal)
 
         # Verify author IS in parameters
-        assert "author" in sig.parameters, (
-            "author parameter should be added to query_temporal signature"
-        )
+        assert (
+            "author" in sig.parameters
+        ), "author parameter should be added to query_temporal signature"
 
     def test_filter_by_author_name(
         self, temporal_service, mock_vector_store, sample_search_results
@@ -412,6 +428,8 @@ class TestAuthorParameter:
         )
 
         # Verify only Alice's results are returned (2 results: added and deleted)
-        assert len(results.results) == 2, f"Expected 2 results, got {len(results.results)}"
+        assert (
+            len(results.results) == 2
+        ), f"Expected 2 results, got {len(results.results)}"
         for result in results.results:
             assert "alice" in result.metadata["author_name"].lower()

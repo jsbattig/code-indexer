@@ -33,11 +33,13 @@ def sample_points():
     vectors = np.random.randn(10, 128).astype(np.float32)
     points = []
     for i in range(10):
-        points.append({
-            "id": f"file_{i}.py",
-            "vector": vectors[i].tolist(),
-            "payload": {"path": f"file_{i}.py", "content": f"Content {i}"}
-        })
+        points.append(
+            {
+                "id": f"file_{i}.py",
+                "vector": vectors[i].tolist(),
+                "payload": {"path": f"file_{i}.py", "content": f"Content {i}"},
+            }
+        )
     return points
 
 
@@ -69,7 +71,9 @@ class TestDaemonModeDetection:
         from code_indexer.storage.id_index_manager import IDIndexManager
 
         hnsw_manager = HNSWIndexManager(vector_dim=128, space="cosine")
-        cache_entry.hnsw_index = hnsw_manager.load_index(collection_path, max_elements=100000)
+        cache_entry.hnsw_index = hnsw_manager.load_index(
+            collection_path, max_elements=100000
+        )
 
         id_manager = IDIndexManager()
         cache_entry.id_mapping = id_manager.load_index(collection_path)
@@ -79,7 +83,9 @@ class TestDaemonModeDetection:
         temp_store.upsert_points(collection_name, new_point, watch_mode=True)
 
         # Verify: cache_entry.hnsw_index should be updated (not None)
-        assert cache_entry.hnsw_index is not None, "Cache HNSW index should remain loaded"
+        assert (
+            cache_entry.hnsw_index is not None
+        ), "Cache HNSW index should remain loaded"
 
         # Verify: should NOT have called invalidate() (index still exists)
         # If invalidate was called, hnsw_index would be None
@@ -102,7 +108,7 @@ class TestDaemonModeDetection:
         temp_store.end_indexing(collection_name)
 
         # No cache_entry set - should use standalone mode
-        assert not hasattr(temp_store, 'cache_entry') or temp_store.cache_entry is None
+        assert not hasattr(temp_store, "cache_entry") or temp_store.cache_entry is None
 
         # Watch mode update without cache_entry
         new_point = [sample_points[5]]
@@ -139,8 +145,12 @@ class TestDaemonCacheInMemoryUpdates:
         from code_indexer.storage.id_index_manager import IDIndexManager
 
         hnsw_manager = HNSWIndexManager(vector_dim=128, space="cosine")
-        cache_entry.hnsw_index = hnsw_manager.load_index(collection_path, max_elements=100000)
-        cache_entry.id_mapping = id_manager = IDIndexManager().load_index(collection_path)
+        cache_entry.hnsw_index = hnsw_manager.load_index(
+            collection_path, max_elements=100000
+        )
+        cache_entry.id_mapping = id_manager = IDIndexManager().load_index(
+            collection_path
+        )
 
         # Get initial vector count
         initial_count = cache_entry.hnsw_index.get_current_count()
@@ -178,7 +188,9 @@ class TestDaemonCacheInMemoryUpdates:
         from code_indexer.storage.id_index_manager import IDIndexManager
 
         hnsw_manager = HNSWIndexManager(vector_dim=128, space="cosine")
-        cache_entry.hnsw_index = hnsw_manager.load_index(collection_path, max_elements=100000)
+        cache_entry.hnsw_index = hnsw_manager.load_index(
+            collection_path, max_elements=100000
+        )
         cache_entry.id_mapping = IDIndexManager().load_index(collection_path)
 
         # Track invalidate() calls
@@ -199,7 +211,9 @@ class TestDaemonCacheInMemoryUpdates:
         temp_store.upsert_points(collection_name, new_point, watch_mode=True)
 
         # Verify: invalidate() should NOT have been called
-        assert len(invalidate_called) == 0, "Cache should not be invalidated during watch update"
+        assert (
+            len(invalidate_called) == 0
+        ), "Cache should not be invalidated during watch update"
 
         # Verify: cache still has index loaded (warm cache)
         assert cache_entry.hnsw_index is not None, "Cache should remain warm"
@@ -230,7 +244,9 @@ class TestConcurrentQuerySupport:
         from code_indexer.storage.id_index_manager import IDIndexManager
 
         hnsw_manager = HNSWIndexManager(vector_dim=128, space="cosine")
-        cache_entry.hnsw_index = hnsw_manager.load_index(collection_path, max_elements=100000)
+        cache_entry.hnsw_index = hnsw_manager.load_index(
+            collection_path, max_elements=100000
+        )
         cache_entry.id_mapping = IDIndexManager().load_index(collection_path)
 
         temp_store.cache_entry = cache_entry
@@ -241,7 +257,9 @@ class TestConcurrentQuerySupport:
 
         # Verify: cache was updated (functional verification)
         assert cache_entry.hnsw_index is not None, "Cache should remain loaded"
-        assert cache_entry.hnsw_index.get_current_count() == 6, "Cache should have 6 vectors"
+        assert (
+            cache_entry.hnsw_index.get_current_count() == 6
+        ), "Cache should have 6 vectors"
 
     def test_query_waits_for_write_completion(
         self, temp_store: FilesystemVectorStore, cache_entry: CacheEntry, sample_points
@@ -265,7 +283,9 @@ class TestConcurrentQuerySupport:
         from code_indexer.storage.id_index_manager import IDIndexManager
 
         hnsw_manager = HNSWIndexManager(vector_dim=128, space="cosine")
-        cache_entry.hnsw_index = hnsw_manager.load_index(collection_path, max_elements=100000)
+        cache_entry.hnsw_index = hnsw_manager.load_index(
+            collection_path, max_elements=100000
+        )
         cache_entry.id_mapping = IDIndexManager().load_index(collection_path)
 
         temp_store.cache_entry = cache_entry
@@ -279,6 +299,7 @@ class TestConcurrentQuerySupport:
             """Simulate slow HNSW update"""
             update_started.set()
             import time
+
             time.sleep(0.1)  # Simulate work
             new_point = [sample_points[5]]
             temp_store.upsert_points(collection_name, new_point, watch_mode=True)

@@ -83,6 +83,7 @@ class GitAwareWatchHandler(FileSystemEventHandler):
 
         # Create and start Observer for file system events
         from watchdog.observers import Observer
+
         self.observer = Observer()
         self.observer.schedule(self, str(self.config.codebase_dir), recursive=True)
         self.observer.start()
@@ -409,8 +410,10 @@ class GitAwareWatchHandler(FileSystemEventHandler):
         return {
             "files_processed": self.files_processed_count,
             "indexing_cycles": self.indexing_cycles_count,
-            "current_branch": self.git_monitor.current_branch if self.git_monitor else None,
-            "pending_changes": len(self.pending_changes)
+            "current_branch": (
+                self.git_monitor.current_branch if self.git_monitor else None
+            ),
+            "pending_changes": len(self.pending_changes),
         }
 
     def get_statistics(self) -> Dict[str, Any]:

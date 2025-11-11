@@ -3,6 +3,7 @@
 This test verifies that temporal indexing uses the correct field name ("path")
 for git-aware storage optimization in FilesystemVectorStore.
 """
+
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -21,15 +22,24 @@ def temp_repo():
 
         # Initialize git repo
         import subprocess
+
         subprocess.run(["git", "init"], cwd=repo_path, check=True)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True)
-        subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=repo_path,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"], cwd=repo_path, check=True
+        )
 
         # Create and commit a file
         test_file = repo_path / "test.py"
         test_file.write_text("print('hello')\n")
         subprocess.run(["git", "add", "test.py"], cwd=repo_path, check=True)
-        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=repo_path, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Initial commit"], cwd=repo_path, check=True
+        )
 
         yield repo_path
 
@@ -54,10 +64,14 @@ class TestTemporalFieldNameBug:
 
         # Create real FilesystemVectorStore
         index_dir = temp_repo / ".code-indexer" / "index"
-        vector_store = FilesystemVectorStore(base_path=index_dir, project_root=temp_repo)
+        vector_store = FilesystemVectorStore(
+            base_path=index_dir, project_root=temp_repo
+        )
 
         # Mock embedding provider
-        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory') as mock_factory:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+        ) as mock_factory:
             # Mock provider info
             mock_factory.get_provider_model_info.return_value = {"dimensions": 1024}
 
@@ -79,18 +93,25 @@ class TestTemporalFieldNameBug:
             vector_store.upsert_points = capture_upsert
 
             # Mock VectorCalculationManager
-            with patch('src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager') as mock_vcm:
+            with patch(
+                "src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
+            ) as mock_vcm:
                 mock_manager = MagicMock()
                 mock_vcm.return_value.__enter__.return_value = mock_manager
 
                 # Mock cancellation_event (required by worker function)
                 import threading
+
                 mock_manager.cancellation_event = threading.Event()
 
                 # Mock embedding provider methods for token counting
                 mock_embedding_provider = MagicMock()
-                mock_embedding_provider._count_tokens_accurately = MagicMock(return_value=100)
-                mock_embedding_provider._get_model_token_limit = MagicMock(return_value=120000)
+                mock_embedding_provider._count_tokens_accurately = MagicMock(
+                    return_value=100
+                )
+                mock_embedding_provider._get_model_token_limit = MagicMock(
+                    return_value=120000
+                )
                 mock_manager.embedding_provider = mock_embedding_provider
 
                 # Mock embedding result
@@ -116,6 +137,11 @@ class TestTemporalFieldNameBug:
 
                     # This assertion will FAIL with current code (proving bug exists)
                     # and will PASS after fix
-                    assert "path" in payload, f"Payload missing 'path' field: {payload.keys()}"
-                    assert "file_path" not in payload or payload.get("path") == payload.get("file_path"), \
-                        "Payload should use 'path' not 'file_path' for git-aware storage"
+                    assert (
+                        "path" in payload
+                    ), f"Payload missing 'path' field: {payload.keys()}"
+                    assert "file_path" not in payload or payload.get(
+                        "path"
+                    ) == payload.get(
+                        "file_path"
+                    ), "Payload should use 'path' not 'file_path' for git-aware storage"

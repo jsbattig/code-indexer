@@ -100,8 +100,7 @@ class TestFTSBackgroundRebuild:
 
             # Background rebuild (should not block queries)
             rebuild_thread = manager.rebuild_from_documents_background(
-                collection_path=collection_path,
-                documents=slow_documents
+                collection_path=collection_path, documents=slow_documents
             )
 
             # Wait for rebuild to complete
@@ -143,9 +142,9 @@ class TestFTSBackgroundRebuild:
         t2.join(timeout=3.0)
 
         # Verify query succeeded during rebuild (AC3)
-        assert query_during_rebuild_succeeded.is_set(), (
-            "Query must succeed during rebuild without blocking (AC3)"
-        )
+        assert (
+            query_during_rebuild_succeeded.is_set()
+        ), "Query must succeed during rebuild without blocking (AC3)"
 
     def test_fts_rebuild_uses_atomic_swap(
         self, tmp_path: Path, sample_documents: List[Dict[str, Any]]
@@ -169,8 +168,7 @@ class TestFTSBackgroundRebuild:
 
         # Trigger background rebuild
         rebuild_thread = manager.rebuild_from_documents_background(
-            collection_path=collection_path,
-            documents=sample_documents
+            collection_path=collection_path, documents=sample_documents
         )
 
         # Wait for rebuild
@@ -178,9 +176,9 @@ class TestFTSBackgroundRebuild:
 
         # Verify .tmp file was created and swapped (should not exist after swap)
         temp_fts_dir = collection_path / "tantivy_fts.tmp"
-        assert not temp_fts_dir.exists(), (
-            "Temp directory should not exist after atomic swap"
-        )
+        assert (
+            not temp_fts_dir.exists()
+        ), "Temp directory should not exist after atomic swap"
 
         # Verify final index exists
         assert fts_dir.exists()
@@ -208,12 +206,15 @@ class TestOrphanedTempFileCleanup:
 
         # Make them old (2 hours ago)
         import os
+
         two_hours_ago = time.time() - (2 * 3600)
         os.utime(orphaned_tmp1, (two_hours_ago, two_hours_ago))
         os.utime(orphaned_tmp2, (two_hours_ago, two_hours_ago))
 
         # Trigger rebuild (should cleanup orphaned files first)
-        from code_indexer.storage.background_index_rebuilder import BackgroundIndexRebuilder
+        from code_indexer.storage.background_index_rebuilder import (
+            BackgroundIndexRebuilder,
+        )
 
         rebuilder = BackgroundIndexRebuilder(collection_path)
 
@@ -226,12 +227,12 @@ class TestOrphanedTempFileCleanup:
         rebuilder.rebuild_with_lock(simple_build, target_file)
 
         # Verify orphaned files were cleaned up (AC9)
-        assert not orphaned_tmp1.exists(), (
-            "Orphaned tantivy_fts.tmp should be cleaned up before rebuild (AC9)"
-        )
-        assert not orphaned_tmp2.exists(), (
-            "Orphaned hnsw_index.bin.tmp should be cleaned up before rebuild (AC9)"
-        )
+        assert (
+            not orphaned_tmp1.exists()
+        ), "Orphaned tantivy_fts.tmp should be cleaned up before rebuild (AC9)"
+        assert (
+            not orphaned_tmp2.exists()
+        ), "Orphaned hnsw_index.bin.tmp should be cleaned up before rebuild (AC9)"
 
     def test_cleanup_preserves_recent_temp_files(self, tmp_path: Path):
         """Test that cleanup preserves recent .tmp files (active rebuilds)."""
@@ -243,6 +244,7 @@ class TestOrphanedTempFileCleanup:
         recent_tmp.write_text("active rebuild in progress")
 
         import os
+
         ten_seconds_ago = time.time() - 10
         os.utime(recent_tmp, (ten_seconds_ago, ten_seconds_ago))
 
@@ -253,7 +255,9 @@ class TestOrphanedTempFileCleanup:
         os.utime(old_tmp, (two_hours_ago, two_hours_ago))
 
         # Trigger rebuild (cleanup with default 1 hour threshold)
-        from code_indexer.storage.background_index_rebuilder import BackgroundIndexRebuilder
+        from code_indexer.storage.background_index_rebuilder import (
+            BackgroundIndexRebuilder,
+        )
 
         rebuilder = BackgroundIndexRebuilder(collection_path)
 

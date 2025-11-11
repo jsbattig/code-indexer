@@ -3,6 +3,7 @@
 This test verifies that the fast path delegation works correctly in real scenarios
 and achieves the performance targets (<200ms for daemon mode queries).
 """
+
 import subprocess
 import time
 import pytest
@@ -163,7 +164,15 @@ def authenticate_user(username, password):
 
             # Execute hybrid query
             result = subprocess.run(
-                ["cidx", "query", "authenticate", "--fts", "--semantic", "--limit", "3"],
+                [
+                    "cidx",
+                    "query",
+                    "authenticate",
+                    "--fts",
+                    "--semantic",
+                    "--limit",
+                    "3",
+                ],
                 cwd=test_project,
                 capture_output=True,
                 text=True,

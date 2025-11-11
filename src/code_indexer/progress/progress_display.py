@@ -100,7 +100,9 @@ class RichLiveProgressManager:
         if self._progress_queue is not None:
             self._progress_queue.put(None)  # Shutdown signal
         if self._progress_worker is not None:
-            self._progress_worker.join(timeout=2.0)  # Increased from 1.0s to prevent thread leaks
+            self._progress_worker.join(
+                timeout=2.0
+            )  # Increased from 1.0s to prevent thread leaks
 
             # Warn if thread didn't terminate (potential thread leak)
             if self._progress_worker.is_alive():

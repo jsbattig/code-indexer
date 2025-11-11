@@ -21,8 +21,11 @@ class TestTemporalSearchNoSQLite(unittest.TestCase):
         import src.code_indexer.services.temporal.temporal_search_service as tss_module
 
         # sqlite3 should NOT be in the module's namespace
-        self.assertNotIn('sqlite3', dir(tss_module),
-                        "sqlite3 should not be imported in temporal_search_service")
+        self.assertNotIn(
+            "sqlite3",
+            dir(tss_module),
+            "sqlite3 should not be imported in temporal_search_service",
+        )
 
     def test_no_commits_db_path_attribute(self):
         """Verify commits_db_path is not initialized in the service."""
@@ -35,8 +38,10 @@ class TestTemporalSearchNoSQLite(unittest.TestCase):
         )
 
         # commits_db_path should NOT exist
-        self.assertFalse(hasattr(service, 'commits_db_path'),
-                        "commits_db_path should not exist (SQLite removed)")
+        self.assertFalse(
+            hasattr(service, "commits_db_path"),
+            "commits_db_path should not exist (SQLite removed)",
+        )
 
     def test_filter_by_time_range_uses_payloads_only(self):
         """Verify _filter_by_time_range uses JSON payloads, not SQLite."""
@@ -64,7 +69,7 @@ class TestTemporalSearchNoSQLite(unittest.TestCase):
                     "author_name": "Test User",
                     "diff_type": "added",
                     "chunk_index": 0,
-                }
+                },
             },
             {
                 "score": 0.88,
@@ -79,7 +84,7 @@ class TestTemporalSearchNoSQLite(unittest.TestCase):
                     "author_name": "Another User",
                     "diff_type": "modified",
                     "chunk_index": 1,
-                }
+                },
             },
             {
                 "score": 0.76,
@@ -94,8 +99,8 @@ class TestTemporalSearchNoSQLite(unittest.TestCase):
                     "author_name": "Old User",
                     "diff_type": "deleted",
                     "chunk_index": 0,
-                }
-            }
+                },
+            },
         ]
 
         # Call _filter_by_time_range - should work without SQLite
@@ -103,7 +108,7 @@ class TestTemporalSearchNoSQLite(unittest.TestCase):
             semantic_results=semantic_results,
             start_date="2025-11-01",
             end_date="2025-11-02",
-            min_score=None
+            min_score=None,
         )
 
         # Verify results filtered by payload timestamps
@@ -160,19 +165,24 @@ class TestTemporalSearchNoSQLite(unittest.TestCase):
 
         # These methods should either not exist or return empty/stub values
         # _is_new_file - should not exist (unused)
-        self.assertFalse(hasattr(service, '_is_new_file'),
-                        "_is_new_file should be removed (unused)")
+        self.assertFalse(
+            hasattr(service, "_is_new_file"), "_is_new_file should be removed (unused)"
+        )
 
         # _generate_chunk_diff - should not exist (unused)
-        self.assertFalse(hasattr(service, '_generate_chunk_diff'),
-                        "_generate_chunk_diff should be removed (unused)")
+        self.assertFalse(
+            hasattr(service, "_generate_chunk_diff"),
+            "_generate_chunk_diff should be removed (unused)",
+        )
 
         # _get_head_file_blobs - should not exist (blob-based, unused)
-        self.assertFalse(hasattr(service, '_get_head_file_blobs'),
-                        "_get_head_file_blobs should be removed (blob-based)")
+        self.assertFalse(
+            hasattr(service, "_get_head_file_blobs"),
+            "_get_head_file_blobs should be removed (blob-based)",
+        )
 
         # _fetch_commit_file_changes - used by CLI but should return empty
-        if hasattr(service, '_fetch_commit_file_changes'):
+        if hasattr(service, "_fetch_commit_file_changes"):
             result = service._fetch_commit_file_changes("dummy")
             self.assertEqual(result, [], "Should return empty list")
 

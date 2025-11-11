@@ -52,7 +52,9 @@ class TestTantivyRegexDFASafety:
         Document with long repetitive text designed to trigger catastrophic backtracking.
         """
         # Create content with many repeated 'a' characters followed by non-matching char
-        long_repeated_text = "a" * 30 + "X"  # 30 'a's then 'X' (won't match patterns ending in 'b')
+        long_repeated_text = (
+            "a" * 30 + "X"
+        )  # 30 'a's then 'X' (won't match patterns ending in 'b')
 
         return {
             "path": "test/vulnerable.txt",
@@ -98,7 +100,9 @@ Final line: {long_repeated_text}""",
         - No timeout or error (DFA doesn't backtrack)
         - Returns empty or valid results depending on pattern match
         """
-        pattern = r"(a+)+"  # Nested quantifiers = exponential time in backtracking engines
+        pattern = (
+            r"(a+)+"  # Nested quantifiers = exponential time in backtracking engines
+        )
 
         start_time = time.time()
 
@@ -112,9 +116,9 @@ Final line: {long_repeated_text}""",
         elapsed_time = time.time() - start_time
 
         # CRITICAL: DFA must complete in linear time (well under 100ms)
-        assert elapsed_time < 0.1, (
-            f"DFA-based regex should complete instantly, took {elapsed_time:.2f}s"
-        )
+        assert (
+            elapsed_time < 0.1
+        ), f"DFA-based regex should complete instantly, took {elapsed_time:.2f}s"
 
         # Results are valid (may be empty if pattern doesn't match - that's OK)
         # The key is that it completed quickly without catastrophic backtracking
@@ -145,9 +149,9 @@ Final line: {long_repeated_text}""",
         elapsed_time = time.time() - start_time
 
         # Must complete quickly (DFA is linear time)
-        assert elapsed_time < 0.1, (
-            f"DFA should complete instantly, took {elapsed_time:.2f}s"
-        )
+        assert (
+            elapsed_time < 0.1
+        ), f"DFA should complete instantly, took {elapsed_time:.2f}s"
         assert isinstance(results, list)
 
     def test_dfa_handles_nested_groups_instantly(
@@ -199,9 +203,9 @@ Final line: {long_repeated_text}""",
         elapsed_time = time.time() - start_time
 
         # Should complete quickly (DFA is linear time)
-        assert elapsed_time < 0.1, (
-            f"Safe regex should complete instantly, took {elapsed_time:.2f}s"
-        )
+        assert (
+            elapsed_time < 0.1
+        ), f"Safe regex should complete instantly, took {elapsed_time:.2f}s"
 
         # Results should be valid (may be empty or contain matches)
         assert isinstance(results, list)
@@ -232,9 +236,9 @@ Final line: {long_repeated_text}""",
         elapsed_time = time.time() - start_time
 
         # DFA completes quickly
-        assert elapsed_time < 0.1, (
-            f"DFA should complete instantly, took {elapsed_time:.2f}s"
-        )
+        assert (
+            elapsed_time < 0.1
+        ), f"DFA should complete instantly, took {elapsed_time:.2f}s"
 
         # Results are valid
         assert isinstance(results, list)
@@ -265,9 +269,9 @@ Final line: {long_repeated_text}""",
             elapsed_time = time.time() - start_time
 
             # Each search should complete quickly with DFA
-            assert elapsed_time < 0.1, (
-                f"Search {i+1} took too long: {elapsed_time:.2f}s"
-            )
+            assert (
+                elapsed_time < 0.1
+            ), f"Search {i+1} took too long: {elapsed_time:.2f}s"
 
             assert isinstance(results, list)
 
@@ -325,7 +329,7 @@ Final line: {long_repeated_text}""",
         )
 
         elapsed_time = time.time() - start_time
-        assert elapsed_time < 0.1, (
-            f"Pattern '{pattern}' took too long: {elapsed_time:.2f}s"
-        )
+        assert (
+            elapsed_time < 0.1
+        ), f"Pattern '{pattern}' took too long: {elapsed_time:.2f}s"
         assert isinstance(results, list)

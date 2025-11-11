@@ -25,16 +25,13 @@ class TestFilesystemCompleteIsolation:
                 ["cidx", "init", "--vector-store", "filesystem"],
                 cwd=project_dir,
                 capture_output=True,
-                text=True
+                text=True,
             )
             assert result.returncode == 0, f"Init failed: {result.stderr}"
 
             # Index to create some data
             result = subprocess.run(
-                ["cidx", "index"],
-                cwd=project_dir,
-                capture_output=True,
-                text=True
+                ["cidx", "index"], cwd=project_dir, capture_output=True, text=True
             )
             assert result.returncode == 0, f"Index failed: {result.stderr}"
 
@@ -49,17 +46,20 @@ class TestFilesystemCompleteIsolation:
                 cwd=project_dir,
                 capture_output=True,
                 text=True,
-                env=env
+                env=env,
             )
 
             # Should succeed without port registry
             assert result.returncode == 0, f"Clean-data failed: {result.stderr}"
-            assert "Filesystem backend" in result.stdout or "no containers to clean" in result.stdout.lower(), \
-                f"Expected filesystem message in output: {result.stdout}"
+            assert (
+                "Filesystem backend" in result.stdout
+                or "no containers to clean" in result.stdout.lower()
+            ), f"Expected filesystem message in output: {result.stdout}"
 
             # Verify no port registry file was created
-            assert not Path("/tmp/SHOULD_NOT_EXIST").exists(), \
-                "Port registry was accessed despite filesystem backend"
+            assert not Path(
+                "/tmp/SHOULD_NOT_EXIST"
+            ).exists(), "Port registry was accessed despite filesystem backend"
 
     def test_uninstall_command_no_port_registry_access(self):
         """Test that uninstall command with filesystem backend never touches port registry."""
@@ -76,7 +76,7 @@ class TestFilesystemCompleteIsolation:
                 ["cidx", "init", "--vector-store", "filesystem"],
                 cwd=project_dir,
                 capture_output=True,
-                text=True
+                text=True,
             )
             assert result.returncode == 0, f"Init failed: {result.stderr}"
 
@@ -91,7 +91,7 @@ class TestFilesystemCompleteIsolation:
                 cwd=project_dir,
                 capture_output=True,
                 text=True,
-                env=env
+                env=env,
             )
 
             # Should succeed without port registry
@@ -99,13 +99,16 @@ class TestFilesystemCompleteIsolation:
 
             # Should mention filesystem or no containers
             output_lower = result.stdout.lower()
-            assert "filesystem" in output_lower or "no containers" in output_lower or \
-                   "skipping container" in output_lower, \
-                f"Expected filesystem/container message in output: {result.stdout}"
+            assert (
+                "filesystem" in output_lower
+                or "no containers" in output_lower
+                or "skipping container" in output_lower
+            ), f"Expected filesystem/container message in output: {result.stdout}"
 
             # Verify no port registry file was created
-            assert not Path("/tmp/SHOULD_NOT_EXIST_UNINSTALL").exists(), \
-                "Port registry was accessed despite filesystem backend"
+            assert not Path(
+                "/tmp/SHOULD_NOT_EXIST_UNINSTALL"
+            ).exists(), "Port registry was accessed despite filesystem backend"
 
     def test_clean_command_no_port_registry_access(self):
         """Verify cidx clean with filesystem backend doesn't access port registry."""
@@ -122,16 +125,13 @@ class TestFilesystemCompleteIsolation:
                 ["cidx", "init", "--vector-store", "filesystem"],
                 cwd=project_dir,
                 capture_output=True,
-                text=True
+                text=True,
             )
             assert result.returncode == 0, f"Init failed: {result.stderr}"
 
             # Index to create some data
             result = subprocess.run(
-                ["cidx", "index"],
-                cwd=project_dir,
-                capture_output=True,
-                text=True
+                ["cidx", "index"], cwd=project_dir, capture_output=True, text=True
             )
             assert result.returncode == 0, f"Index failed: {result.stderr}"
 
@@ -146,7 +146,7 @@ class TestFilesystemCompleteIsolation:
                 cwd=project_dir,
                 capture_output=True,
                 text=True,
-                env=env
+                env=env,
             )
 
             # Should succeed without port registry
@@ -154,13 +154,16 @@ class TestFilesystemCompleteIsolation:
 
             # Should mention successful cleaning
             output_lower = result.stdout.lower()
-            assert "cleaned successfully" in output_lower or "storage reclaimed" in output_lower or \
-                   "nothing to clean" in output_lower, \
-                f"Expected clean success message in output: {result.stdout}"
+            assert (
+                "cleaned successfully" in output_lower
+                or "storage reclaimed" in output_lower
+                or "nothing to clean" in output_lower
+            ), f"Expected clean success message in output: {result.stdout}"
 
             # Verify no port registry file was created
-            assert not Path("/tmp/SHOULD_NOT_EXIST_CLEANUP").exists(), \
-                "Port registry was accessed despite filesystem backend"
+            assert not Path(
+                "/tmp/SHOULD_NOT_EXIST_CLEANUP"
+            ).exists(), "Port registry was accessed despite filesystem backend"
 
     def test_uninstall_wipe_all_no_port_registry_access(self):
         """Verify cidx uninstall --wipe-all with filesystem backend doesn't access port registry."""
@@ -177,7 +180,7 @@ class TestFilesystemCompleteIsolation:
                 ["cidx", "init", "--vector-store", "filesystem"],
                 cwd=project_dir,
                 capture_output=True,
-                text=True
+                text=True,
             )
             assert result.returncode == 0, f"Init failed: {result.stderr}"
 
@@ -192,22 +195,28 @@ class TestFilesystemCompleteIsolation:
                 cwd=project_dir,
                 capture_output=True,
                 text=True,
-                env=env
+                env=env,
             )
 
             # Should succeed without port registry
-            assert result.returncode == 0, f"Uninstall --wipe-all failed: {result.stderr}"
+            assert (
+                result.returncode == 0
+            ), f"Uninstall --wipe-all failed: {result.stderr}"
 
             # Should mention filesystem or no containers
             output_lower = result.stdout.lower()
-            assert "filesystem" in output_lower or "no containers" in output_lower or \
-                   "skipping container" in output_lower or "wipe" in output_lower or \
-                   "uninstall complete" in output_lower, \
-                f"Expected filesystem/wipe message in output: {result.stdout}"
+            assert (
+                "filesystem" in output_lower
+                or "no containers" in output_lower
+                or "skipping container" in output_lower
+                or "wipe" in output_lower
+                or "uninstall complete" in output_lower
+            ), f"Expected filesystem/wipe message in output: {result.stdout}"
 
             # Verify no port registry file was created
-            assert not Path("/tmp/SHOULD_NOT_EXIST_WIPE_ALL").exists(), \
-                "Port registry was accessed despite filesystem backend"
+            assert not Path(
+                "/tmp/SHOULD_NOT_EXIST_WIPE_ALL"
+            ).exists(), "Port registry was accessed despite filesystem backend"
 
 
 if __name__ == "__main__":

@@ -63,6 +63,7 @@ class TestLazyPortRegistryIsolation(unittest.TestCase):
         ) as mock_registry_class:
             # Mock the GlobalPortRegistry instance
             from unittest.mock import MagicMock
+
             mock_registry_instance = MagicMock()
             mock_registry_class.return_value = mock_registry_instance
 

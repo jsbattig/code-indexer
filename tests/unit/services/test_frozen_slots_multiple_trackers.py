@@ -48,7 +48,7 @@ class TestFrozenSlotsMultipleTrackers:
             "concurrent_files": [  # But daemon also sends FRESH serialized data
                 {"slot_id": 0, "file_path": "/active/file1.py"},
                 {"slot_id": 1, "file_path": "/active/file2.py"},
-            ]
+            ],
         }
 
         # BUGGY BEHAVIOR: Client calls slot_tracker.get_concurrent_files_data()
@@ -59,13 +59,17 @@ class TestFrozenSlotsMultipleTrackers:
             buggy_concurrent_files = kwargs_from_daemon.get("concurrent_files", [])
 
         # BUG DEMONSTRATED: Client gets EMPTY data from wrong tracker
-        assert len(buggy_concurrent_files) == 0, "Buggy code gets stale data from wrong tracker"
+        assert (
+            len(buggy_concurrent_files) == 0
+        ), "Buggy code gets stale data from wrong tracker"
 
         # CORRECT BEHAVIOR: Client uses concurrent_files from kwargs directly
         correct_concurrent_files = kwargs_from_daemon.get("concurrent_files", [])
 
         # FIX VERIFIED: Client gets FRESH data from kwargs
-        assert len(correct_concurrent_files) == 2, "Fixed code gets fresh data from kwargs"
+        assert (
+            len(correct_concurrent_files) == 2
+        ), "Fixed code gets fresh data from kwargs"
         assert correct_concurrent_files[0]["file_path"] == "/active/file1.py"
         assert correct_concurrent_files[1]["file_path"] == "/active/file2.py"
 
@@ -78,7 +82,7 @@ class TestFrozenSlotsMultipleTrackers:
             "slot_tracker": None,
             "concurrent_files": [
                 {"slot_id": 0, "file_path": "/fallback/file.py"},
-            ]
+            ],
         }
 
         # When slot_tracker is None, must use concurrent_files from kwargs
@@ -102,11 +106,13 @@ class TestFrozenSlotsMultipleTrackers:
         """
         # Simulate RPyC proxy that raises exception
         broken_tracker = Mock()
-        broken_tracker.get_concurrent_files_data.side_effect = Exception("RPyC connection lost")
+        broken_tracker.get_concurrent_files_data.side_effect = Exception(
+            "RPyC connection lost"
+        )
 
         kwargs_from_daemon = {
             "slot_tracker": broken_tracker,
-            "concurrent_files": [{"slot_id": 0, "file_path": "/valid/file.py"}]
+            "concurrent_files": [{"slot_id": 0, "file_path": "/valid/file.py"}],
         }
 
         # BUGGY BEHAVIOR: Try calling broken tracker, catch exception
@@ -144,7 +150,7 @@ class TestFrozenSlotsMultipleTrackers:
 
         kwargs_from_daemon = {
             "slot_tracker": Mock(),  # Tracker reference (potentially wrong one)
-            "concurrent_files": fresh_data  # FRESH serialized data
+            "concurrent_files": fresh_data,  # FRESH serialized data
         }
 
         # Client should ALWAYS use this data

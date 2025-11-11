@@ -239,9 +239,7 @@ résumé = "document"  # Common Unicode
             assert column > 0, f"Column should be positive, got {column}"
 
             # Japanese text found
-            print(
-                f"Japanese match '{match_text}' at column {column}"
-            )
+            print(f"Japanese match '{match_text}' at column {column}")
 
     def test_unicode_at_line_start_has_column_1(self, indexed_manager_unicode):
         """
@@ -270,9 +268,9 @@ résumé = "document"  # Common Unicode
             column = result.get("column", 0)
 
             # Column should be 1 (or very close) for identifier at line start
-            assert column <= 3, (
-                f"Unicode identifier at line start should be at column 1-3, got {column}"
-            )
+            assert (
+                column <= 3
+            ), f"Unicode identifier at line start should be at column 1-3, got {column}"
 
     def test_unicode_in_middle_of_line_correct_column(self, indexed_manager_unicode):
         """
@@ -303,9 +301,7 @@ résumé = "document"  # Common Unicode
             assert column > 0, f"Column should be positive, got {column}"
 
             # Debugging: show position calculation
-            print(
-                f"Match after Unicode: column {column}, snippet: {snippet[:50]}"
-            )
+            print(f"Match after Unicode: column {column}, snippet: {snippet[:50]}")
 
     def test_multiple_unicode_chars_accumulate_correctly(self, indexed_manager_unicode):
         """
@@ -377,7 +373,9 @@ flag = "🇺🇸 USA"
             column = result.get("column", 0)
 
             # Verify column is calculated (should handle emoji correctly)
-            assert column > 0, f"Column should be positive even with emoji, got {column}"
+            assert (
+                column > 0
+            ), f"Column should be positive even with emoji, got {column}"
 
     def test_unicode_bom_doesnt_affect_column_calculation(
         self, indexed_manager_unicode
@@ -404,9 +402,7 @@ flag = "🇺🇸 USA"
                 # Columns should be reasonable
                 assert column > 0, "Column calculation should work with any encoding"
 
-    def test_unicode_normalization_doesnt_break_columns(
-        self, indexed_manager_unicode
-    ):
+    def test_unicode_normalization_doesnt_break_columns(self, indexed_manager_unicode):
         """
         GIVEN Unicode with different normalization forms (NFD vs NFC)
         WHEN calculating columns
@@ -451,9 +447,9 @@ flag = "🇺🇸 USA"
 
         # Column should be calculated using character positions
         # "café " is 5 characters (not 6 bytes), so 'p' is at column 6
-        assert column == 6, (
-            f"Expected column 6 for 'python' after 'café ', got column {column}"
-        )
+        assert (
+            column == 6
+        ), f"Expected column 6 for 'python' after 'café ', got column {column}"
 
         assert line == 1, f"Expected line 1, got {line}"
 

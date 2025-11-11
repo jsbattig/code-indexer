@@ -1,4 +1,5 @@
 """Tests for temporal models."""
+
 import pytest
 from code_indexer.services.temporal.models import BlobInfo, CommitInfo
 
@@ -12,7 +13,7 @@ class TestBlobInfo:
             blob_hash="abc123def456",
             file_path="src/module.py",
             commit_hash="commit789",
-            size=1234
+            size=1234,
         )
 
         assert blob.blob_hash == "abc123def456"
@@ -23,16 +24,10 @@ class TestBlobInfo:
     def test_blob_info_equality(self):
         """Test BlobInfo instances with same values are equal."""
         blob1 = BlobInfo(
-            blob_hash="abc123",
-            file_path="test.py",
-            commit_hash="commit1",
-            size=100
+            blob_hash="abc123", file_path="test.py", commit_hash="commit1", size=100
         )
         blob2 = BlobInfo(
-            blob_hash="abc123",
-            file_path="test.py",
-            commit_hash="commit1",
-            size=100
+            blob_hash="abc123", file_path="test.py", commit_hash="commit1", size=100
         )
 
         assert blob1 == blob2
@@ -40,10 +35,7 @@ class TestBlobInfo:
     def test_blob_info_immutability(self):
         """Test BlobInfo is immutable (frozen dataclass)."""
         blob = BlobInfo(
-            blob_hash="abc123",
-            file_path="test.py",
-            commit_hash="commit1",
-            size=100
+            blob_hash="abc123", file_path="test.py", commit_hash="commit1", size=100
         )
 
         with pytest.raises(AttributeError):
@@ -55,7 +47,7 @@ class TestBlobInfo:
             blob_hash="abc123def456",
             file_path="src/module.py",
             commit_hash="commit789",
-            size=1234
+            size=1234,
         )
 
         repr_str = repr(blob)
@@ -75,7 +67,7 @@ class TestCommitInfo:
             author_name="John Doe",
             author_email="john@example.com",
             message="Test commit",
-            parent_hashes="parent1 parent2"
+            parent_hashes="parent1 parent2",
         )
 
         assert commit.hash == "abc123"
@@ -93,7 +85,7 @@ class TestCommitInfo:
             author_name="John Doe",
             author_email="john@example.com",
             message="Test",
-            parent_hashes="parent1"
+            parent_hashes="parent1",
         )
         commit2 = CommitInfo(
             hash="abc123",
@@ -101,7 +93,7 @@ class TestCommitInfo:
             author_name="John Doe",
             author_email="john@example.com",
             message="Test",
-            parent_hashes="parent1"
+            parent_hashes="parent1",
         )
 
         assert commit1 == commit2
@@ -114,7 +106,7 @@ class TestCommitInfo:
             author_name="John Doe",
             author_email="john@example.com",
             message="Test",
-            parent_hashes="parent1"
+            parent_hashes="parent1",
         )
 
         with pytest.raises(AttributeError):

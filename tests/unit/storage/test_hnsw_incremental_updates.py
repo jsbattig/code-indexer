@@ -16,11 +16,12 @@ def temp_collection_path(tmp_path):
 
     # Create collection metadata
     import json
+
     meta_file = collection_path / "collection_meta.json"
     metadata = {
         "name": "test_collection",
         "vector_size": 128,
-        "created_at": "2025-01-01T00:00:00"
+        "created_at": "2025-01-01T00:00:00",
     }
     with open(meta_file, "w") as f:
         json.dump(metadata, f)
@@ -46,10 +47,12 @@ def sample_vectors():
 class TestHNSWIncrementalMethods:
     """Test HNSW incremental update methods (Story HNSW-001 & HNSW-002)."""
 
-    def test_load_for_incremental_update_nonexistent_index(self, hnsw_manager, temp_collection_path):
+    def test_load_for_incremental_update_nonexistent_index(
+        self, hnsw_manager, temp_collection_path
+    ):
         """Test loading index for incremental update when index doesn't exist."""
-        index, id_to_label, label_to_id, next_label = hnsw_manager.load_for_incremental_update(
-            temp_collection_path
+        index, id_to_label, label_to_id, next_label = (
+            hnsw_manager.load_for_incremental_update(temp_collection_path)
         )
 
         # Should return None and empty mappings
@@ -66,14 +69,12 @@ class TestHNSWIncrementalMethods:
 
         # Build initial index
         hnsw_manager.build_index(
-            collection_path=temp_collection_path,
-            vectors=vectors,
-            ids=ids
+            collection_path=temp_collection_path, vectors=vectors, ids=ids
         )
 
         # Load for incremental update
-        index, id_to_label, label_to_id, next_label = hnsw_manager.load_for_incremental_update(
-            temp_collection_path
+        index, id_to_label, label_to_id, next_label = (
+            hnsw_manager.load_for_incremental_update(temp_collection_path)
         )
 
         # Verify index loaded
@@ -86,32 +87,34 @@ class TestHNSWIncrementalMethods:
         for point_id, label in id_to_label.items():
             assert label_to_id[label] == point_id
 
-    def test_add_or_update_vector_new_point(self, hnsw_manager, temp_collection_path, sample_vectors):
+    def test_add_or_update_vector_new_point(
+        self, hnsw_manager, temp_collection_path, sample_vectors
+    ):
         """Test adding new vector to HNSW index."""
         vectors, ids = sample_vectors
 
         # Build initial index
         hnsw_manager.build_index(
-            collection_path=temp_collection_path,
-            vectors=vectors[:5],
-            ids=ids[:5]
+            collection_path=temp_collection_path, vectors=vectors[:5], ids=ids[:5]
         )
 
         # Load index for incremental update
-        index, id_to_label, label_to_id, next_label = hnsw_manager.load_for_incremental_update(
-            temp_collection_path
+        index, id_to_label, label_to_id, next_label = (
+            hnsw_manager.load_for_incremental_update(temp_collection_path)
         )
 
         # Add new vector
         new_vector = vectors[5]
         new_id = ids[5]
-        label, updated_id_to_label, updated_label_to_id, updated_next_label = hnsw_manager.add_or_update_vector(
-            index=index,
-            point_id=new_id,
-            vector=new_vector,
-            id_to_label=id_to_label,
-            label_to_id=label_to_id,
-            next_label=next_label
+        label, updated_id_to_label, updated_label_to_id, updated_next_label = (
+            hnsw_manager.add_or_update_vector(
+                index=index,
+                point_id=new_id,
+                vector=new_vector,
+                id_to_label=id_to_label,
+                label_to_id=label_to_id,
+                next_label=next_label,
+            )
         )
 
         # Verify new label assigned
@@ -121,20 +124,20 @@ class TestHNSWIncrementalMethods:
         assert updated_label_to_id[label] == new_id
         assert updated_next_label == next_label + 1
 
-    def test_add_or_update_vector_existing_point(self, hnsw_manager, temp_collection_path, sample_vectors):
+    def test_add_or_update_vector_existing_point(
+        self, hnsw_manager, temp_collection_path, sample_vectors
+    ):
         """Test updating existing vector in HNSW index."""
         vectors, ids = sample_vectors
 
         # Build initial index
         hnsw_manager.build_index(
-            collection_path=temp_collection_path,
-            vectors=vectors[:5],
-            ids=ids[:5]
+            collection_path=temp_collection_path, vectors=vectors[:5], ids=ids[:5]
         )
 
         # Load index for incremental update
-        index, id_to_label, label_to_id, next_label = hnsw_manager.load_for_incremental_update(
-            temp_collection_path
+        index, id_to_label, label_to_id, next_label = (
+            hnsw_manager.load_for_incremental_update(temp_collection_path)
         )
 
         # Update existing vector
@@ -142,13 +145,15 @@ class TestHNSWIncrementalMethods:
         existing_id = ids[0]
         old_label = id_to_label[existing_id]
 
-        label, updated_id_to_label, updated_label_to_id, updated_next_label = hnsw_manager.add_or_update_vector(
-            index=index,
-            point_id=existing_id,
-            vector=updated_vector,
-            id_to_label=id_to_label,
-            label_to_id=label_to_id,
-            next_label=next_label
+        label, updated_id_to_label, updated_label_to_id, updated_next_label = (
+            hnsw_manager.add_or_update_vector(
+                index=index,
+                point_id=existing_id,
+                vector=updated_vector,
+                id_to_label=id_to_label,
+                label_to_id=label_to_id,
+                next_label=next_label,
+            )
         )
 
         # Verify label reused (not incremented)
@@ -157,28 +162,26 @@ class TestHNSWIncrementalMethods:
         assert existing_id in updated_id_to_label
         assert updated_id_to_label[existing_id] == old_label
 
-    def test_remove_vector_soft_delete(self, hnsw_manager, temp_collection_path, sample_vectors):
+    def test_remove_vector_soft_delete(
+        self, hnsw_manager, temp_collection_path, sample_vectors
+    ):
         """Test soft delete of vector from HNSW index."""
         vectors, ids = sample_vectors
 
         # Build initial index
         hnsw_manager.build_index(
-            collection_path=temp_collection_path,
-            vectors=vectors[:5],
-            ids=ids[:5]
+            collection_path=temp_collection_path, vectors=vectors[:5], ids=ids[:5]
         )
 
         # Load index for incremental update
-        index, id_to_label, label_to_id, next_label = hnsw_manager.load_for_incremental_update(
-            temp_collection_path
+        index, id_to_label, label_to_id, next_label = (
+            hnsw_manager.load_for_incremental_update(temp_collection_path)
         )
 
         # Soft delete a vector
         delete_id = ids[0]
         hnsw_manager.remove_vector(
-            index=index,
-            point_id=delete_id,
-            id_to_label=id_to_label
+            index=index, point_id=delete_id, id_to_label=id_to_label
         )
 
         # Query should not return deleted vector
@@ -187,7 +190,7 @@ class TestHNSWIncrementalMethods:
             index=index,
             query_vector=query_vector,
             collection_path=temp_collection_path,
-            k=3  # Request fewer than available to avoid HNSW errors
+            k=3,  # Request fewer than available to avoid HNSW errors
         )
 
         # Deleted vector should not appear in results
@@ -195,20 +198,20 @@ class TestHNSWIncrementalMethods:
         # Should return other vectors (at least 1, since we have 4 remaining after delete)
         assert len(result_ids) >= 1
 
-    def test_save_incremental_update(self, hnsw_manager, temp_collection_path, sample_vectors):
+    def test_save_incremental_update(
+        self, hnsw_manager, temp_collection_path, sample_vectors
+    ):
         """Test saving HNSW index after incremental updates."""
         vectors, ids = sample_vectors
 
         # Build initial index
         hnsw_manager.build_index(
-            collection_path=temp_collection_path,
-            vectors=vectors[:5],
-            ids=ids[:5]
+            collection_path=temp_collection_path, vectors=vectors[:5], ids=ids[:5]
         )
 
         # Load index for incremental update
-        index, id_to_label, label_to_id, next_label = hnsw_manager.load_for_incremental_update(
-            temp_collection_path
+        index, id_to_label, label_to_id, next_label = (
+            hnsw_manager.load_for_incremental_update(temp_collection_path)
         )
 
         # Add new vector
@@ -220,7 +223,7 @@ class TestHNSWIncrementalMethods:
             vector=new_vector,
             id_to_label=id_to_label,
             label_to_id=label_to_id,
-            next_label=next_label
+            next_label=next_label,
         )
 
         # Save incremental update
@@ -229,12 +232,12 @@ class TestHNSWIncrementalMethods:
             collection_path=temp_collection_path,
             id_to_label=id_to_label,
             label_to_id=label_to_id,
-            vector_count=6
+            vector_count=6,
         )
 
         # Reload and verify
-        reloaded_index, reloaded_id_to_label, reloaded_label_to_id, _ = hnsw_manager.load_for_incremental_update(
-            temp_collection_path
+        reloaded_index, reloaded_id_to_label, reloaded_label_to_id, _ = (
+            hnsw_manager.load_for_incremental_update(temp_collection_path)
         )
 
         assert reloaded_index is not None
@@ -249,9 +252,7 @@ class TestHNSWIncrementalMethods:
 
         # Build initial index
         hnsw_manager.build_index(
-            collection_path=temp_collection_path,
-            vectors=vectors[:5],
-            ids=ids[:5]
+            collection_path=temp_collection_path, vectors=vectors[:5], ids=ids[:5]
         )
 
         # Query before incremental update
@@ -261,7 +262,7 @@ class TestHNSWIncrementalMethods:
             index=index_before,
             query_vector=query_vector,
             collection_path=temp_collection_path,
-            k=3
+            k=3,
         )
 
         # This test will fail until incremental methods are implemented
@@ -273,7 +274,9 @@ class TestHNSWIncrementalMethods:
 class TestHNSWLabelManagement:
     """Test label management and ID mapping consistency."""
 
-    def test_label_counter_increments_correctly(self, hnsw_manager, temp_collection_path):
+    def test_label_counter_increments_correctly(
+        self, hnsw_manager, temp_collection_path
+    ):
         """Test that _next_label counter increments correctly."""
         # RED: Label management methods don't exist yet
         # This will fail when we try to use them
@@ -293,7 +296,9 @@ class TestHNSWLabelManagement:
 class TestHNSWPerformance:
     """Test performance characteristics of incremental updates."""
 
-    def test_incremental_update_faster_than_rebuild(self, hnsw_manager, temp_collection_path):
+    def test_incremental_update_faster_than_rebuild(
+        self, hnsw_manager, temp_collection_path
+    ):
         """Test that incremental update is faster than full rebuild."""
         import time
 
@@ -304,16 +309,12 @@ class TestHNSWPerformance:
 
         # Build initial index
         hnsw_manager.build_index(
-            collection_path=temp_collection_path,
-            vectors=vectors,
-            ids=ids
+            collection_path=temp_collection_path, vectors=vectors, ids=ids
         )
 
         # Measure full rebuild time
         rebuild_start = time.time()
-        hnsw_manager.rebuild_from_vectors(
-            collection_path=temp_collection_path
-        )
+        hnsw_manager.rebuild_from_vectors(collection_path=temp_collection_path)
         rebuild_time = time.time() - rebuild_start
 
         # RED: Incremental methods don't exist yet

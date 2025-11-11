@@ -74,6 +74,6 @@ def test_chunk_text_preserved_from_point_root(temp_storage):
     )
 
     # Verify payload does NOT have content field (optimization path)
-    assert "content" not in retrieved.get("payload", {}), (
-        "content should NOT be in payload when chunk_text is at root level"
-    )
+    assert "content" not in retrieved.get(
+        "payload", {}
+    ), "content should NOT be in payload when chunk_text is at root level"

@@ -4,7 +4,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from src.code_indexer.services.temporal.temporal_search_service import TemporalSearchService
+from src.code_indexer.services.temporal.temporal_search_service import (
+    TemporalSearchService,
+)
 
 
 class TestTemporalSearchServiceNoBlobReader(unittest.TestCase):
@@ -24,7 +26,7 @@ class TestTemporalSearchServiceNoBlobReader(unittest.TestCase):
             config_manager=config_manager,
             project_root=project_root,
             vector_store_client=Mock(),
-            embedding_provider=Mock()
+            embedding_provider=Mock(),
         )
 
         self.assertIsNotNone(service)

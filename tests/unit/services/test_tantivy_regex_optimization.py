@@ -176,9 +176,7 @@ class Manager_{i}:
         print(f"Average time: {avg_time:.3f}s, Max deviation: {max_deviation:.3f}s")
 
         # All runs should complete quickly
-        assert all(t < 2.0 for t in times), (
-            f"Some searches took too long: {times}"
-        )
+        assert all(t < 2.0 for t in times), f"Some searches took too long: {times}"
 
     def test_case_sensitive_regex_also_optimized(self, indexed_manager_many_docs):
         """
@@ -202,9 +200,9 @@ class Manager_{i}:
         # Should find some matches (if there are any with capital A)
         # Or zero matches if all are lowercase 'auth'
         # Either way, search should complete quickly
-        assert elapsed_time < 2.0, (
-            f"Case-sensitive search took too long: {elapsed_time:.3f}s"
-        )
+        assert (
+            elapsed_time < 2.0
+        ), f"Case-sensitive search took too long: {elapsed_time:.3f}s"
 
     def test_case_insensitive_regex_optimized(self, indexed_manager_many_docs):
         """
@@ -233,9 +231,9 @@ class Manager_{i}:
         assert len(results) >= 20, f"Expected 20+ results, got {len(results)}"
 
         # Should complete quickly even with flag
-        assert elapsed_time < 2.0, (
-            f"Case-insensitive search took too long: {elapsed_time:.3f}s"
-        )
+        assert (
+            elapsed_time < 2.0
+        ), f"Case-insensitive search took too long: {elapsed_time:.3f}s"
 
     def test_complex_regex_pattern_benefits_from_optimization(
         self, indexed_manager_many_docs
@@ -261,7 +259,9 @@ class Manager_{i}:
         elapsed_time = time.time() - start_time
 
         # Should find matches
-        assert len(results) > 0, f"Should find matches for complex pattern, got {len(results)}"
+        assert (
+            len(results) > 0
+        ), f"Should find matches for complex pattern, got {len(results)}"
 
         # Even complex patterns should complete quickly with optimization
         assert elapsed_time < 2.0, (
@@ -384,19 +384,19 @@ class Manager_{i}:
             match_text = result.get("match_text", "")
 
             # Match text should be actual matched text, not pattern
-            assert match_text != r"auth\w+", (
-                f"match_text should not be pattern, got: {match_text}"
-            )
+            assert (
+                match_text != r"auth\w+"
+            ), f"match_text should not be pattern, got: {match_text}"
 
             # Should start with 'auth'
-            assert match_text.lower().startswith("auth"), (
-                f"match_text should start with 'auth', got: {match_text}"
-            )
+            assert match_text.lower().startswith(
+                "auth"
+            ), f"match_text should start with 'auth', got: {match_text}"
 
             # Should be more than just 'auth' (the \w+ should match something)
-            assert len(match_text) > 4, (
-                f"match_text should include characters after 'auth', got: {match_text}"
-            )
+            assert (
+                len(match_text) > 4
+            ), f"match_text should include characters after 'auth', got: {match_text}"
 
     def test_performance_benchmark_uncompiled_vs_compiled(self):
         """
@@ -435,6 +435,6 @@ class Manager_{i}:
         )
 
         # Optimized should be significantly faster (at least 10x for 100 iterations)
-        assert speedup > 5.0, (
-            f"Expected significant speedup from optimization, got {speedup:.1f}x"
-        )
+        assert (
+            speedup > 5.0
+        ), f"Expected significant speedup from optimization, got {speedup:.1f}x"

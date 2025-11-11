@@ -28,7 +28,9 @@ class TestTemporalAPIOptimizationSimple(unittest.TestCase):
         config_manager = MagicMock()
         mock_config = MagicMock()
         mock_config.embedding_provider = "voyage-ai"
-        mock_config.voyage_ai = MagicMock(parallel_requests=4, max_concurrent_batches_per_commit=10)
+        mock_config.voyage_ai = MagicMock(
+            parallel_requests=4, max_concurrent_batches_per_commit=10
+        )
         config_manager.get_config.return_value = mock_config
 
         vector_store = MagicMock()
@@ -42,7 +44,9 @@ class TestTemporalAPIOptimizationSimple(unittest.TestCase):
         }
         vector_store.load_id_index.return_value = existing_point_ids
 
-        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory') as MockFactory:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+        ) as MockFactory:
             MockFactory.get_provider_model_info.return_value = {"dimensions": 1024}
             MockFactory.create.return_value = MagicMock()
 
@@ -50,7 +54,7 @@ class TestTemporalAPIOptimizationSimple(unittest.TestCase):
             indexer = TemporalIndexer(config_manager, vector_store)
 
             # Mock the chunker to return predictable chunks
-            with patch.object(indexer.chunker, 'chunk_text') as mock_chunk:
+            with patch.object(indexer.chunker, "chunk_text") as mock_chunk:
                 # Return 3 chunks - 2 existing, 1 new
                 mock_chunk.return_value = [
                     {"text": "chunk0", "char_start": 0, "char_end": 100},
@@ -59,7 +63,9 @@ class TestTemporalAPIOptimizationSimple(unittest.TestCase):
                 ]
 
                 # Mock file identifier
-                with patch.object(indexer.file_identifier, '_get_project_id') as mock_project_id:
+                with patch.object(
+                    indexer.file_identifier, "_get_project_id"
+                ) as mock_project_id:
                     mock_project_id.return_value = "code-indexer"
 
                     # Create a mock commit and diff
@@ -69,7 +75,7 @@ class TestTemporalAPIOptimizationSimple(unittest.TestCase):
                         author_name="Test",
                         author_email="test@test.com",
                         message="Test commit",
-                        parent_hashes=""
+                        parent_hashes="",
                     )
 
                     diff_info = DiffInfo(
@@ -77,18 +83,24 @@ class TestTemporalAPIOptimizationSimple(unittest.TestCase):
                         diff_type="modified",
                         commit_hash="commit1",
                         diff_content="+test content",
-                        blob_hash=""
+                        blob_hash="",
                     )
 
                     # Mock the vector manager
-                    with patch('src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager') as MockVectorManager:
+                    with patch(
+                        "src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
+                    ) as MockVectorManager:
                         mock_vector_manager = MagicMock()
                         # Mock cancellation event (no cancellation)
                         mock_cancellation_event = MagicMock()
                         mock_cancellation_event.is_set.return_value = False
                         mock_vector_manager.cancellation_event = mock_cancellation_event
-                        MockVectorManager.return_value.__enter__ = MagicMock(return_value=mock_vector_manager)
-                        MockVectorManager.return_value.__exit__ = MagicMock(return_value=None)
+                        MockVectorManager.return_value.__enter__ = MagicMock(
+                            return_value=mock_vector_manager
+                        )
+                        MockVectorManager.return_value.__exit__ = MagicMock(
+                            return_value=None
+                        )
 
                         # Track API calls
                         api_call_texts = []
@@ -103,18 +115,24 @@ class TestTemporalAPIOptimizationSimple(unittest.TestCase):
                             future.result.return_value = result
                             return future
 
-                        mock_vector_manager.submit_batch_task.side_effect = capture_api_call
+                        mock_vector_manager.submit_batch_task.side_effect = (
+                            capture_api_call
+                        )
 
                         # Call the worker logic directly (simplified from parallel version)
                         # This simulates what happens inside the worker thread
-                        from src.code_indexer.services.clean_slot_tracker import CleanSlotTracker, FileData, FileStatus
+                        from src.code_indexer.services.clean_slot_tracker import (
+                            CleanSlotTracker,
+                            FileData,
+                            FileStatus,
+                        )
 
                         slot_tracker = CleanSlotTracker(max_slots=4)
-                        slot_id = slot_tracker.acquire_slot(FileData(
-                            filename="test",
-                            file_size=0,
-                            status=FileStatus.CHUNKING
-                        ))
+                        slot_id = slot_tracker.acquire_slot(
+                            FileData(
+                                filename="test", file_size=0, status=FileStatus.CHUNKING
+                            )
+                        )
 
                         # Get diffs for the commit
                         diffs = [diff_info]
@@ -123,8 +141,7 @@ class TestTemporalAPIOptimizationSimple(unittest.TestCase):
                         for diff in diffs:
                             # Get chunks
                             chunks = indexer.chunker.chunk_text(
-                                diff.diff_content,
-                                Path(diff.file_path)
+                                diff.diff_content, Path(diff.file_path)
                             )
 
                             if chunks:
@@ -146,23 +163,37 @@ class TestTemporalAPIOptimizationSimple(unittest.TestCase):
                                 # Only make API call for NEW chunks
                                 if chunks_to_process:
                                     chunk_texts = [c["text"] for c in chunks_to_process]
-                                    mock_vector_manager.submit_batch_task(chunk_texts, {})
+                                    mock_vector_manager.submit_batch_task(
+                                        chunk_texts, {}
+                                    )
 
                         # ASSERTIONS
                         # With Bug #7 fix: Only 1 API call for the new chunk (chunk2)
-                        self.assertEqual(len(api_call_texts), 1,
+                        self.assertEqual(
+                            len(api_call_texts),
+                            1,
                             f"Expected 1 API call for new chunk only, got {len(api_call_texts)} calls. "
-                            f"API was called for: {api_call_texts}")
+                            f"API was called for: {api_call_texts}",
+                        )
 
                         # Verify the API call was only for the new chunk
-                        self.assertIn("chunk2_new", api_call_texts[0],
-                            "API call should only be for the new chunk (chunk2_new)")
+                        self.assertIn(
+                            "chunk2_new",
+                            api_call_texts[0],
+                            "API call should only be for the new chunk (chunk2_new)",
+                        )
 
                         # Verify existing chunks were NOT in the API call
-                        self.assertNotIn("chunk0", " ".join(api_call_texts),
-                            "Existing chunk0 should NOT trigger API call")
-                        self.assertNotIn("chunk1", " ".join(api_call_texts),
-                            "Existing chunk1 should NOT trigger API call")
+                        self.assertNotIn(
+                            "chunk0",
+                            " ".join(api_call_texts),
+                            "Existing chunk0 should NOT trigger API call",
+                        )
+                        self.assertNotIn(
+                            "chunk1",
+                            " ".join(api_call_texts),
+                            "Existing chunk1 should NOT trigger API call",
+                        )
 
 
 if __name__ == "__main__":

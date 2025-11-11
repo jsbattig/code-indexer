@@ -50,6 +50,7 @@ def test_reads_content_from_chunk_text_at_root_not_fallback(temporal_search_serv
     # Arrange: Simulate what _filter_by_time_range receives
     # After Bug 1 fix, results have chunk_text at root level
     import time
+
     current_timestamp = int(time.time())  # Current time, within 2020-2025 range
 
     semantic_results = [
@@ -96,6 +97,7 @@ def test_missing_chunk_text_raises_runtime_error_no_fallback(temporal_search_ser
     """
     # Arrange: Result with missing chunk_text (None) and no reconstruct_from_git
     import time
+
     current_timestamp = int(time.time())
 
     semantic_results = [

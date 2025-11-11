@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 from src.code_indexer.services.temporal.temporal_progressive_metadata import (
-    TemporalProgressiveMetadata
+    TemporalProgressiveMetadata,
 )
 
 
@@ -26,6 +26,7 @@ class TestTemporalProgressiveMetadata(unittest.TestCase):
     def tearDown(self):
         """Clean up temporary directory."""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_save_and_load_completed_commits(self):

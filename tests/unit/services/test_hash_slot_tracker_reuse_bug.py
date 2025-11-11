@@ -13,8 +13,11 @@ EXPECTED: Hash phase should ALWAYS create new CleanSlotTracker(max_slots=vector_
 ACTUAL: Hash phase reuses 10-slot tracker, causing stale slot data (slots 8-9 frozen)
 """
 
-
-from code_indexer.services.clean_slot_tracker import CleanSlotTracker, FileData, FileStatus
+from code_indexer.services.clean_slot_tracker import (
+    CleanSlotTracker,
+    FileData,
+    FileStatus,
+)
 
 
 class TestHashSlotTrackerReuseBug:
@@ -44,13 +47,15 @@ class TestHashSlotTrackerReuseBug:
 
         # Simulate the OLD BUGGY code pattern (what it WAS before fix)
         slot_tracker = chunking_tracker  # This is passed as parameter
-        buggy_hash_slot_tracker = slot_tracker or CleanSlotTracker(max_slots=vector_thread_count)
+        buggy_hash_slot_tracker = slot_tracker or CleanSlotTracker(
+            max_slots=vector_thread_count
+        )
 
         # DOCUMENT THE BUG: This shows what WOULD happen with buggy pattern
         # With old buggy code: hash_slot_tracker IS the same 10-slot tracker
-        assert buggy_hash_slot_tracker is chunking_tracker, (
-            "BUGGY PATTERN: This demonstrates the bug - tracker gets reused"
-        )
+        assert (
+            buggy_hash_slot_tracker is chunking_tracker
+        ), "BUGGY PATTERN: This demonstrates the bug - tracker gets reused"
 
         assert buggy_hash_slot_tracker.max_slots == 10, (
             f"BUGGY PATTERN: Tracker has wrong slot count {buggy_hash_slot_tracker.max_slots} "
@@ -75,12 +80,14 @@ class TestHashSlotTrackerReuseBug:
         chunking_tracker = CleanSlotTracker(max_slots=10)
 
         # Simulate the CORRECT code pattern (what fix should be)
-        hash_slot_tracker = CleanSlotTracker(max_slots=vector_thread_count)  # ALWAYS create new
+        hash_slot_tracker = CleanSlotTracker(
+            max_slots=vector_thread_count
+        )  # ALWAYS create new
 
         # ASSERTIONS: These should PASS after fix
-        assert hash_slot_tracker is not chunking_tracker, (
-            "Hash tracker should be NEW instance, not reused chunking tracker"
-        )
+        assert (
+            hash_slot_tracker is not chunking_tracker
+        ), "Hash tracker should be NEW instance, not reused chunking tracker"
 
         assert hash_slot_tracker.max_slots == vector_thread_count, (
             f"Hash tracker should have exactly {vector_thread_count} slots, "
@@ -88,9 +95,9 @@ class TestHashSlotTrackerReuseBug:
         )
 
         # Verify chunking tracker remains unchanged
-        assert chunking_tracker.max_slots == 10, (
-            "Chunking tracker should still have 10 slots (not affected by hash phase)"
-        )
+        assert (
+            chunking_tracker.max_slots == 10
+        ), "Chunking tracker should still have 10 slots (not affected by hash phase)"
 
     def test_buggy_reuse_causes_wrong_slot_count(self):
         """
@@ -115,7 +122,9 @@ class TestHashSlotTrackerReuseBug:
 
         # Simulate OLD BUGGY code: reuse chunking tracker for hash phase
         slot_tracker = chunking_tracker
-        buggy_hash_slot_tracker = slot_tracker or CleanSlotTracker(max_slots=hashing_thread_count)
+        buggy_hash_slot_tracker = slot_tracker or CleanSlotTracker(
+            max_slots=hashing_thread_count
+        )
 
         # DOCUMENT THE BUG: These show what WOULD happen with buggy pattern
         assert buggy_hash_slot_tracker.max_slots == vector_thread_count + 2, (
@@ -123,9 +132,9 @@ class TestHashSlotTrackerReuseBug:
             f"(reused from chunking), should be {hashing_thread_count}"
         )
 
-        assert buggy_hash_slot_tracker is chunking_tracker, (
-            "BUGGY PATTERN: Hash tracker IS the chunking tracker (wrong - should be independent)"
-        )
+        assert (
+            buggy_hash_slot_tracker is chunking_tracker
+        ), "BUGGY PATTERN: Hash tracker IS the chunking tracker (wrong - should be independent)"
 
     def test_fix_prevents_frozen_slots(self):
         """
@@ -149,9 +158,7 @@ class TestHashSlotTrackerReuseBug:
         acquired_slots = []
         for i in range(vector_thread_count):
             file_data = FileData(
-                filename=f"file{i}.py",
-                file_size=1000,
-                status=FileStatus.PROCESSING
+                filename=f"file{i}.py", file_size=1000, status=FileStatus.PROCESSING
             )
             slot = hash_slot_tracker.acquire_slot(file_data)
             acquired_slots.append(slot)
@@ -167,9 +174,9 @@ class TestHashSlotTrackerReuseBug:
             f"got {max(acquired_slots)}"
         )
 
-        assert min(acquired_slots) == 0, (
-            f"Min slot should be 0, got {min(acquired_slots)}"
-        )
+        assert (
+            min(acquired_slots) == 0
+        ), f"Min slot should be 0, got {min(acquired_slots)}"
 
         # Verify no slots beyond thread count
         assert all(0 <= slot < vector_thread_count for slot in acquired_slots), (

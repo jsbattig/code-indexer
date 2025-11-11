@@ -43,11 +43,13 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         self.vector_store.load_id_index.return_value = set()
 
         # Mock EmbeddingProviderFactory
-        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info') as mock_get_info:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+        ) as mock_get_info:
             mock_get_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-3",
-                "dimensions": 1024
+                "dimensions": 1024,
             }
             self.indexer = TemporalIndexer(self.config_manager, self.vector_store)
 
@@ -64,6 +66,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
     def tearDown(self):
         """Clean up test fixtures."""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_batches_all_diffs_in_commit(self):
@@ -86,7 +89,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
             author_name="Test Author",
             author_email="test@example.com",
             message="Test commit with multiple diffs",
-            parent_hashes="parent-hash"
+            parent_hashes="parent-hash",
         )
 
         # Create 10 diffs, each will produce 5 chunks
@@ -96,9 +99,10 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
                 file_path=f"src/file_{i}.py",
                 diff_type="modified",
                 commit_hash="test-commit-123",
-                diff_content=f"def function_{i}():\n    # File {i} content\n    pass\n" * 20,  # Enough content for 5 chunks
+                diff_content=f"def function_{i}():\n    # File {i} content\n    pass\n"
+                * 20,  # Enough content for 5 chunks
                 blob_hash=f"blob-hash-{i}",
-                parent_commit_hash="parent-hash"
+                parent_commit_hash="parent-hash",
             )
             diffs.append(diff)
 
@@ -110,7 +114,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
                 {
                     "text": f"chunk {j} content from {path}",
                     "char_start": j * 100,
-                    "char_end": (j + 1) * 100
+                    "char_end": (j + 1) * 100,
                 }
                 for j in range(5)
             ]
@@ -129,7 +133,9 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
             # Create mock future with embeddings
             future = Future()
             mock_result = Mock()
-            mock_result.embeddings = [[0.1] * 1024 for _ in chunk_texts]  # Mock embeddings
+            mock_result.embeddings = [
+                [0.1] * 1024 for _ in chunk_texts
+            ]  # Mock embeddings
             mock_result.error = None  # No error
             future.set_result(mock_result)
             return future
@@ -148,9 +154,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
 
         # Process the commit
         self.indexer._process_commits_parallel(
-            [commit],
-            Mock(),  # embedding_provider
-            vector_manager
+            [commit], Mock(), vector_manager  # embedding_provider
         )
 
         # ASSERTIONS
@@ -171,7 +175,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         self.assertLessEqual(
             api_call_count[0],
             3,
-            f"Expected 1-3 batched API calls, got {api_call_count[0]} sequential calls"
+            f"Expected 1-3 batched API calls, got {api_call_count[0]} sequential calls",
         )
 
         # Verify all chunks were processed
@@ -201,7 +205,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
             author_name="Test Author",
             author_email="test@example.com",
             message="Large commit exceeding token limit",
-            parent_hashes="parent-hash"
+            parent_hashes="parent-hash",
         )
 
         # Create 1 diff with very large content (simulating 200k tokens)
@@ -213,7 +217,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
             commit_hash="large-commit-456",
             diff_content=large_content * 50,  # Large enough for 50 chunks
             blob_hash="large-blob-hash",
-            parent_commit_hash="parent-hash"
+            parent_commit_hash="parent-hash",
         )
 
         self.indexer.diff_scanner.get_diffs_for_commit.return_value = [diff]
@@ -224,7 +228,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
                 {
                     "text": large_content,  # ~4000 tokens each
                     "char_start": j * 16000,
-                    "char_end": (j + 1) * 16000
+                    "char_end": (j + 1) * 16000,
                 }
                 for j in range(50)
             ]
@@ -258,11 +262,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         vector_manager.cancellation_event = mock_cancellation_event
 
         # Process the commit
-        self.indexer._process_commits_parallel(
-            [commit],
-            Mock(),
-            vector_manager
-        )
+        self.indexer._process_commits_parallel([commit], Mock(), vector_manager)
 
         # ASSERTIONS
         print(f"\n=== Token Limit Test ===")
@@ -274,12 +274,14 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         self.assertGreaterEqual(
             len(submitted_batches),
             2,
-            f"Expected 2+ batches for 200k tokens, got {len(submitted_batches)} batch(es)"
+            f"Expected 2+ batches for 200k tokens, got {len(submitted_batches)} batch(es)",
         )
 
         # Verify all chunks were processed
         total_chunks = sum(submitted_batches)
-        self.assertEqual(total_chunks, 50, "Should process all 50 chunks across batches")
+        self.assertEqual(
+            total_chunks, 50, "Should process all 50 chunks across batches"
+        )
 
     def test_embedding_count_validation(self):
         """Test that mismatched embedding counts raise clear errors.
@@ -302,7 +304,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
             author_name="Test Author",
             author_email="test@example.com",
             message="Commit with partial API results",
-            parent_hashes="parent-hash"
+            parent_hashes="parent-hash",
         )
 
         # Create diff that will produce 10 chunks
@@ -312,7 +314,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
             commit_hash="partial-result-789",
             diff_content="def function():\n    pass\n" * 50,
             blob_hash="test-blob",
-            parent_commit_hash="parent-hash"
+            parent_commit_hash="parent-hash",
         )
 
         self.indexer.diff_scanner.get_diffs_for_commit.return_value = [diff]
@@ -323,7 +325,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
                 {
                     "text": f"chunk {j} content",
                     "char_start": j * 100,
-                    "char_end": (j + 1) * 100
+                    "char_end": (j + 1) * 100,
                 }
                 for j in range(10)
             ]
@@ -351,11 +353,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
 
         # After fix: Should raise RuntimeError with clear message
         with self.assertRaises(RuntimeError) as context:
-            self.indexer._process_commits_parallel(
-                [commit],
-                Mock(),
-                vector_manager
-            )
+            self.indexer._process_commits_parallel([commit], Mock(), vector_manager)
 
         # Verify error message is clear
         error_msg = str(context.exception)
@@ -384,7 +382,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
             author_name="Test Author",
             author_email="test@example.com",
             message="Commit with only binary/renamed files",
-            parent_hashes="parent-hash"
+            parent_hashes="parent-hash",
         )
 
         # Create diffs that will be skipped (binary + renamed)
@@ -395,7 +393,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
                 commit_hash="empty-commit-abc",
                 diff_content="",
                 blob_hash="binary-blob",
-                parent_commit_hash="parent-hash"
+                parent_commit_hash="parent-hash",
             ),
             DiffInfo(
                 file_path="old_name.py",
@@ -403,7 +401,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
                 commit_hash="empty-commit-abc",
                 diff_content="",
                 blob_hash="renamed-blob",
-                parent_commit_hash="parent-hash"
+                parent_commit_hash="parent-hash",
             ),
         ]
 
@@ -426,11 +424,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         vector_manager.cancellation_event = mock_cancellation_event
 
         # Process the commit
-        self.indexer._process_commits_parallel(
-            [commit],
-            Mock(),
-            vector_manager
-        )
+        self.indexer._process_commits_parallel([commit], Mock(), vector_manager)
 
         # ASSERTIONS
         print(f"\n=== Empty Chunks Test ===")
@@ -439,14 +433,12 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
 
         # After fix: No API calls
         self.assertEqual(
-            api_call_count[0],
-            0,
-            "Should not call API when all chunks are skipped"
+            api_call_count[0], 0, "Should not call API when all chunks are skipped"
         )
 
         # After fix: Verify slot was marked COMPLETE
         # (This will be validated by checking that the method doesn't hang/error)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -32,7 +32,9 @@ class TestTemporalIndexerPointerPayloads:
         # Commit 1: Add file
         test_file = repo_dir / "test.py"
         test_file.write_text("def hello():\n    return 'world'\n")
-        subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "add", "."], cwd=repo_dir, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "commit", "-m", "Add test.py"],
             cwd=repo_dir,
@@ -50,7 +52,9 @@ class TestTemporalIndexerPointerPayloads:
 
         # Commit 2: Modify file
         test_file.write_text("def hello():\n    return 'universe'\n")
-        subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "add", "."], cwd=repo_dir, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "commit", "-m", "Modify test.py"],
             cwd=repo_dir,
@@ -68,7 +72,9 @@ class TestTemporalIndexerPointerPayloads:
 
         # Commit 3: Delete file
         test_file.unlink()
-        subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "add", "."], cwd=repo_dir, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "commit", "-m", "Delete test.py"],
             cwd=repo_dir,
@@ -95,7 +101,9 @@ class TestTemporalIndexerPointerPayloads:
         """Test that indexing an added file creates reconstruct_from_git payload."""
         from src.code_indexer.services.temporal.temporal_indexer import TemporalIndexer
         from src.code_indexer.config import ConfigManager
-        from src.code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
+        from src.code_indexer.storage.filesystem_vector_store import (
+            FilesystemVectorStore,
+        )
 
         repo_dir = temp_git_repo["repo_dir"]
         add_commit = temp_git_repo["add_commit"]
@@ -160,7 +168,9 @@ class TestTemporalIndexerPointerPayloads:
                     # Mock embedding provider
                     mock_embedding_provider = MagicMock()
                     mock_embedding_provider._get_model_token_limit.return_value = 120000
-                    mock_embedding_provider._count_tokens_accurately = MagicMock(return_value=100)
+                    mock_embedding_provider._count_tokens_accurately = MagicMock(
+                        return_value=100
+                    )
                     mock_vm.embedding_provider = mock_embedding_provider
 
                     # Mock embedding results
@@ -179,9 +189,7 @@ class TestTemporalIndexerPointerPayloads:
 
         # Find points for the added file
         added_points = [
-            p
-            for p in upserted_points
-            if p["payload"].get("diff_type") == "added"
+            p for p in upserted_points if p["payload"].get("diff_type") == "added"
         ]
 
         assert len(added_points) > 0, "Should have points for added file"

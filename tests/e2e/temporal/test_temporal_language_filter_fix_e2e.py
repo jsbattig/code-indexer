@@ -27,7 +27,8 @@ def test_temporal_query_with_language_filter_returns_correct_results():
 
         # Create test files
         py_file = repo_path / "example.py"
-        py_file.write_text("""
+        py_file.write_text(
+            """
 def calculate_sum(a, b):
     \"\"\"Calculate the sum of two numbers.\"\"\"
     return a + b
@@ -35,10 +36,12 @@ def calculate_sum(a, b):
 def calculate_product(a, b):
     \"\"\"Calculate the product of two numbers.\"\"\"
     return a * b
-""")
+"""
+        )
 
         js_file = repo_path / "example.js"
-        js_file.write_text("""
+        js_file.write_text(
+            """
 function calculateSum(a, b) {
     // Calculate the sum of two numbers
     return a + b;
@@ -48,24 +51,40 @@ function calculateProduct(a, b) {
     // Calculate the product of two numbers
     return a * b;
 }
-""")
+"""
+        )
 
         txt_file = repo_path / "notes.txt"
         txt_file.write_text("Some notes about calculations and math operations.")
 
         # Initialize git repo
         subprocess.run(["git", "init"], cwd=repo_path, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo_path, check=True)
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"], cwd=repo_path, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"], cwd=repo_path, check=True
+        )
         subprocess.run(["git", "add", "."], cwd=repo_path, check=True)
-        subprocess.run(["git", "commit", "-m", "Add calculation functions"],
-                      cwd=repo_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Add calculation functions"],
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
+        )
 
         # Modify files to create more commits
-        py_file.write_text(py_file.read_text() + "\n\ndef calculate_average(numbers):\n    return sum(numbers) / len(numbers)\n")
+        py_file.write_text(
+            py_file.read_text()
+            + "\n\ndef calculate_average(numbers):\n    return sum(numbers) / len(numbers)\n"
+        )
         subprocess.run(["git", "add", "."], cwd=repo_path, check=True)
-        subprocess.run(["git", "commit", "-m", "Add average calculation"],
-                      cwd=repo_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Add average calculation"],
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
+        )
 
         # Initialize cidx
         result = subprocess.run(
@@ -73,16 +92,13 @@ function calculateProduct(a, b) {
             cwd=repo_path,
             capture_output=True,
             text=True,
-            env={**subprocess.os.environ, "VOYAGE_API_KEY": "test-key-12345"}
+            env={**subprocess.os.environ, "VOYAGE_API_KEY": "test-key-12345"},
         )
         assert result.returncode == 0, f"Init failed: {result.stderr}"
 
         # Start services (mocked)
         result = subprocess.run(
-            ["cidx", "start", "--mock"],
-            cwd=repo_path,
-            capture_output=True,
-            text=True
+            ["cidx", "start", "--mock"], cwd=repo_path, capture_output=True, text=True
         )
         # Allow mock mode to fail gracefully
 
@@ -92,7 +108,7 @@ function calculateProduct(a, b) {
             cwd=repo_path,
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
 
         # For this test, we'll verify the fix at the unit level
@@ -100,13 +116,14 @@ function calculateProduct(a, b) {
 
         # Instead, let's verify the metadata is correct using internal APIs
         from src.code_indexer.config import ConfigManager
-        from src.code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
+        from src.code_indexer.storage.filesystem_vector_store import (
+            FilesystemVectorStore,
+        )
 
         config_manager = ConfigManager.create_with_backtrack(repo_path)
         index_path = repo_path / ".code-indexer/index"
         vector_store = FilesystemVectorStore(
-            base_path=index_path,
-            project_root=repo_path
+            base_path=index_path, project_root=repo_path
         )
 
         # Check if temporal collection exists
@@ -118,16 +135,17 @@ function calculateProduct(a, b) {
             points_found = False
             for root, dirs, files in collection_path.walk():
                 for file in files:
-                    if file.endswith('.json') and not file == 'collection_meta.json':
+                    if file.endswith(".json") and not file == "collection_meta.json":
                         with open(root / file) as f:
                             point = json.load(f)
-                            if 'payload' in point:
-                                payload = point['payload']
-                                if 'file_extension' in payload:
+                            if "payload" in point:
+                                payload = point["payload"]
+                                if "file_extension" in payload:
                                     # Verify file_extension doesn't have a dot
-                                    ext = payload['file_extension']
-                                    assert not ext.startswith('.'), \
-                                        f"file_extension should not start with dot, got: {ext}"
+                                    ext = payload["file_extension"]
+                                    assert not ext.startswith(
+                                        "."
+                                    ), f"file_extension should not start with dot, got: {ext}"
                                     points_found = True
                                     break
                 if points_found:

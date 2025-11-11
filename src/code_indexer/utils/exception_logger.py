@@ -37,17 +37,26 @@ class ExceptionLogger:
 
     @classmethod
     def initialize(cls, project_root: Path, mode: str = "cli") -> "ExceptionLogger":
-        """Initialize the global exception logger.
+        """Initialize the global exception logger (idempotent singleton).
 
         Creates log file with timestamp and PID in the filename for uniqueness.
 
+        WARNING: This is a singleton. If already initialized, returns the existing
+        instance rather than creating a new one. Tests should manually reset
+        cls._instance = None if they need fresh instances.
+
         Args:
             project_root: Root directory of the project
+                         Note: Ignored in server mode (always uses ~/.cidx-server/logs)
             mode: Operating mode - "cli", "daemon", or "server"
 
         Returns:
-            Initialized ExceptionLogger instance
+            Initialized ExceptionLogger instance (singleton)
         """
+        # If already initialized, return existing instance (idempotent)
+        if cls._instance is not None:
+            return cls._instance
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         pid = os.getpid()
 

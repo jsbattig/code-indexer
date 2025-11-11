@@ -65,11 +65,7 @@ def test_search_enhancement_adds_chunk_text_at_root_level(vector_store, temp_dir
         json.dump(vector_data, f)
 
     # Mock the HNSW search to return our test vector
-    with patch.object(
-        vector_store,
-        "search",
-        wraps=vector_store.search
-    ):
+    with patch.object(vector_store, "search", wraps=vector_store.search):
         # We need to bypass the full search() and test just the enhancement logic
         # Create a result that mimics what HNSW search returns (before enhancement)
         pre_enhancement_result = {
@@ -82,7 +78,9 @@ def test_search_enhancement_adds_chunk_text_at_root_level(vector_store, temp_dir
         # Act: Apply the enhancement logic from lines 1677-1688
         # This is what the production code does
         extracted_vector_data = pre_enhancement_result["_vector_data"]
-        content, staleness = vector_store._get_chunk_content_with_staleness(extracted_vector_data)
+        content, staleness = vector_store._get_chunk_content_with_staleness(
+            extracted_vector_data
+        )
 
         # Verify production code behavior: it should add chunk_text to root level
         # Check what the actual production code does at lines 1683-1687

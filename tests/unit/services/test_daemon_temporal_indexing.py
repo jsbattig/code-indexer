@@ -73,9 +73,7 @@ class TestDaemonTemporalIndexing(TestCase):
             mock_fcm.return_value = mock_chunking_manager
 
             # Call without index_commits flag (default behavior)
-            service._perform_indexing(
-                self.project_path, callback, force_reindex=False
-            )
+            service._perform_indexing(self.project_path, callback, force_reindex=False)
 
             # Verify FileChunkingManager was instantiated
             mock_fcm.assert_called_once()
@@ -97,13 +95,17 @@ class TestDaemonTemporalIndexing(TestCase):
         callback = MagicMock()
 
         # Patch TemporalIndexer and FilesystemVectorStore at their actual import paths
-        with patch(
-            "src.code_indexer.services.temporal.temporal_indexer.TemporalIndexer"
-        ) as mock_temporal, patch(
-            "src.code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
-        ) as mock_vector_store, patch(
-            "src.code_indexer.services.file_chunking_manager.FileChunkingManager"
-        ) as mock_fcm:
+        with (
+            patch(
+                "src.code_indexer.services.temporal.temporal_indexer.TemporalIndexer"
+            ) as mock_temporal,
+            patch(
+                "src.code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
+            ) as mock_vector_store,
+            patch(
+                "src.code_indexer.services.file_chunking_manager.FileChunkingManager"
+            ) as mock_fcm,
+        ):
 
             mock_indexer = MagicMock()
             mock_temporal.return_value = mock_indexer
@@ -151,10 +153,13 @@ class TestDaemonTemporalIndexing(TestCase):
         service = CIDXDaemonService()
         callback = MagicMock()
 
-        with patch(
-            "src.code_indexer.services.temporal.temporal_indexer.TemporalIndexer"
-        ) as mock_temporal, patch(
-            "src.code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
+        with (
+            patch(
+                "src.code_indexer.services.temporal.temporal_indexer.TemporalIndexer"
+            ) as mock_temporal,
+            patch(
+                "src.code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
+            ),
         ):
 
             mock_indexer = MagicMock()
@@ -189,10 +194,13 @@ class TestDaemonTemporalIndexing(TestCase):
         service = CIDXDaemonService()
         callback = MagicMock()
 
-        with patch(
-            "src.code_indexer.services.temporal.temporal_indexer.TemporalIndexer"
-        ) as mock_temporal, patch(
-            "src.code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
+        with (
+            patch(
+                "src.code_indexer.services.temporal.temporal_indexer.TemporalIndexer"
+            ) as mock_temporal,
+            patch(
+                "src.code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
+            ),
         ):
 
             mock_indexer = MagicMock()

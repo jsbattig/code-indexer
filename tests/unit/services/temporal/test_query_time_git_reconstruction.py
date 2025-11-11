@@ -38,7 +38,9 @@ class TestQueryTimeGitReconstruction:
         test_file = repo_dir / "test.py"
         test_content = "def hello():\n    return 'world'\n"
         test_file.write_text(test_content)
-        subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "add", "."], cwd=repo_dir, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "commit", "-m", "Add test.py"],
             cwd=repo_dir,
@@ -106,7 +108,9 @@ class TestQueryTimeGitReconstruction:
                     "diff_type": "added",
                     "commit_hash": add_commit,
                     "commit_timestamp": add_timestamp,
-                    "commit_date": datetime.fromtimestamp(add_timestamp).strftime("%Y-%m-%d"),
+                    "commit_date": datetime.fromtimestamp(add_timestamp).strftime(
+                        "%Y-%m-%d"
+                    ),
                     "commit_message": "Add test.py",
                     "author_name": "Test User",
                     "author_email": "test@example.com",
@@ -167,7 +171,9 @@ class TestQueryTimeGitReconstruction:
         # Delete the file to create a deletion commit
         test_file = repo_dir / "test.py"
         test_file.unlink()
-        subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "add", "."], cwd=repo_dir, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "commit", "-m", "Delete test.py"],
             cwd=repo_dir,
@@ -214,7 +220,9 @@ class TestQueryTimeGitReconstruction:
                     "commit_hash": delete_commit,
                     "parent_commit_hash": add_commit,  # Parent commit for reconstruction
                     "commit_timestamp": delete_timestamp,
-                    "commit_date": datetime.fromtimestamp(delete_timestamp).strftime("%Y-%m-%d"),
+                    "commit_date": datetime.fromtimestamp(delete_timestamp).strftime(
+                        "%Y-%m-%d"
+                    ),
                     "commit_message": "Delete test.py",
                     "author_name": "Test User",
                     "author_email": "test@example.com",
@@ -238,7 +246,9 @@ class TestQueryTimeGitReconstruction:
         )
 
         # Query temporal index
-        start_date = datetime.fromtimestamp(delete_timestamp - 86400).strftime("%Y-%m-%d")
+        start_date = datetime.fromtimestamp(delete_timestamp - 86400).strftime(
+            "%Y-%m-%d"
+        )
         end_date = datetime.fromtimestamp(delete_timestamp + 86400).strftime("%Y-%m-%d")
 
         results = search_service.query_temporal(

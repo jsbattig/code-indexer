@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 
-
 class TestCacheEntryInitialization:
     """Test CacheEntry initialization and basic attributes."""
 

@@ -28,7 +28,10 @@ class TestGitRetryLogic:
         # Initialize real git repo
         subprocess.run(["git", "init"], cwd=repo_dir, check=True, capture_output=True)
         subprocess.run(
-            ["git", "config", "user.name", "Test"], cwd=repo_dir, check=True, capture_output=True
+            ["git", "config", "user.name", "Test"],
+            cwd=repo_dir,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
             ["git", "config", "user.email", "test@test.com"],
@@ -47,7 +50,11 @@ class TestGitRetryLogic:
             mock_run.return_value = mock_result
 
             result = run_git_command_with_retry(
-                ["git", "status"], cwd=repo_dir, check=True, capture_output=True, text=True
+                ["git", "status"],
+                cwd=repo_dir,
+                check=True,
+                capture_output=True,
+                text=True,
             )
 
             # Should only be called once (no retry needed)
@@ -87,7 +94,11 @@ class TestGitRetryLogic:
         with patch("subprocess.run", side_effect=mock_subprocess_run):
             with patch("time.sleep") as mock_sleep:
                 result = run_git_command_with_retry(
-                    ["git", "add", "."], cwd=repo_dir, check=True, capture_output=True, text=True
+                    ["git", "add", "."],
+                    cwd=repo_dir,
+                    check=True,
+                    capture_output=True,
+                    text=True,
                 )
 
                 # Should be called twice (initial + 1 retry)
@@ -125,7 +136,11 @@ class TestGitRetryLogic:
             with patch("time.sleep") as mock_sleep:
                 with pytest.raises(subprocess.CalledProcessError) as exc_info:
                     run_git_command_with_retry(
-                        ["git", "log"], cwd=repo_dir, check=True, capture_output=True, text=True
+                        ["git", "log"],
+                        cwd=repo_dir,
+                        check=True,
+                        capture_output=True,
+                        text=True,
                     )
 
                 # Should be called twice (initial + 1 retry)
@@ -257,7 +272,11 @@ class TestGitRetryLogic:
         with patch("subprocess.run", side_effect=mock_subprocess_run):
             with patch("time.sleep") as mock_sleep:
                 run_git_command_with_retry(
-                    ["git", "status"], cwd=repo_dir, check=True, capture_output=True, text=True
+                    ["git", "status"],
+                    cwd=repo_dir,
+                    check=True,
+                    capture_output=True,
+                    text=True,
                 )
 
                 # Verify sleep was called with exactly 1 second
@@ -283,7 +302,11 @@ class TestGitRetryLogic:
             with patch("time.sleep"):
                 with pytest.raises(subprocess.CalledProcessError):
                     run_git_command_with_retry(
-                        ["git", "status"], cwd=repo_dir, check=True, capture_output=True, text=True
+                        ["git", "status"],
+                        cwd=repo_dir,
+                        check=True,
+                        capture_output=True,
+                        text=True,
                     )
 
                 # Should only retry once (2 total attempts)

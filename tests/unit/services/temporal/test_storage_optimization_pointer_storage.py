@@ -41,7 +41,9 @@ class TestPointerBasedStorage:
     def mock_temporal_indexer_components(self):
         """Create mock components for temporal indexer testing."""
         from src.code_indexer.config import ConfigManager
-        from src.code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
+        from src.code_indexer.storage.filesystem_vector_store import (
+            FilesystemVectorStore,
+        )
 
         # Create minimal mock config
         mock_config = Mock()
@@ -74,16 +76,22 @@ class TestPointerBasedStorage:
         mock_config_manager, mock_vector_store = mock_temporal_indexer_components
 
         # Mock embedding provider info
-        with patch("src.code_indexer.services.file_identifier.FileIdentifier"), \
-             patch("src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner"), \
-             patch("src.code_indexer.indexing.fixed_size_chunker.FixedSizeChunker"), \
-             patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info") as mock_provider_info:
+        with (
+            patch("src.code_indexer.services.file_identifier.FileIdentifier"),
+            patch(
+                "src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner"
+            ),
+            patch("src.code_indexer.indexing.fixed_size_chunker.FixedSizeChunker"),
+            patch(
+                "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+            ) as mock_provider_info,
+        ):
 
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-2",
                 "dimensions": 1536,
-                "model_info": {"dimension": 1536}
+                "model_info": {"dimension": 1536},
             }
 
             # Create indexer

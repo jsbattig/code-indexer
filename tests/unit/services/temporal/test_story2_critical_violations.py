@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 from src.code_indexer.services.temporal.temporal_search_service import (
-    TemporalSearchService
+    TemporalSearchService,
 )
 
 
@@ -19,28 +19,26 @@ class TestMethodDeletions:
         # Create service instance
         mock_config_manager = Mock()
         service = TemporalSearchService(
-            config_manager=mock_config_manager,
-            project_root=Path("/test/repo")
+            config_manager=mock_config_manager, project_root=Path("/test/repo")
         )
 
         # Verify method doesn't exist
-        assert not hasattr(service, "_fetch_commit_file_changes"), (
-            "_fetch_commit_file_changes() should be deleted per spec line 166"
-        )
+        assert not hasattr(
+            service, "_fetch_commit_file_changes"
+        ), "_fetch_commit_file_changes() should be deleted per spec line 166"
 
     def test_fetch_blob_content_deleted(self):
         """Verify _fetch_blob_content method no longer exists."""
         # Create service instance
         mock_config_manager = Mock()
         service = TemporalSearchService(
-            config_manager=mock_config_manager,
-            project_root=Path("/test/repo")
+            config_manager=mock_config_manager, project_root=Path("/test/repo")
         )
 
         # Verify method doesn't exist
-        assert not hasattr(service, "_fetch_blob_content"), (
-            "_fetch_blob_content() should be deleted - all blob-based helpers removed"
-        )
+        assert not hasattr(
+            service, "_fetch_blob_content"
+        ), "_fetch_blob_content() should be deleted - all blob-based helpers removed"
 
 
 class TestFetchMatchContent:
@@ -52,17 +50,16 @@ class TestFetchMatchContent:
 
         mock_config_manager = Mock()
         service = TemporalSearchService(
-            config_manager=mock_config_manager,
-            project_root=Path("/test/repo")
+            config_manager=mock_config_manager, project_root=Path("/test/repo")
         )
 
         # Get the source code of _fetch_match_content
         source = inspect.getsource(service._fetch_match_content)
 
         # Check for blob_hash references (should be removed per spec line 320)
-        assert "blob_hash" not in source, (
-            "_fetch_match_content should not reference blob_hash per spec line 320"
-        )
+        assert (
+            "blob_hash" not in source
+        ), "_fetch_match_content should not reference blob_hash per spec line 320"
 
 
 class TestContentDisplay:
@@ -72,8 +69,7 @@ class TestContentDisplay:
         """Verify _filter_by_time_range uses content from payload."""
         mock_config_manager = Mock()
         service = TemporalSearchService(
-            config_manager=mock_config_manager,
-            project_root=Path("/test/repo")
+            config_manager=mock_config_manager, project_root=Path("/test/repo")
         )
 
         # Create mock semantic results with chunk_text at root level
@@ -91,9 +87,9 @@ class TestContentDisplay:
                     "author_name": "Test User",
                     "file_path": "src/auth.py",
                     "chunk_index": 0,
-                    "diff_type": "added"
+                    "diff_type": "added",
                 },
-                score=0.95
+                score=0.95,
             )
         ]
 
@@ -110,6 +106,6 @@ class TestContentDisplay:
 
         # Verify result uses actual content from payload, not placeholder
         assert len(results) == 1
-        assert results[0].content == actual_content, (
-            "Should use payload['content'], not result.content placeholder"
-        )
+        assert (
+            results[0].content == actual_content
+        ), "Should use payload['content'], not result.content placeholder"

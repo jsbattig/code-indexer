@@ -39,26 +39,37 @@ class TestDaemonDisplayTimingFix(unittest.TestCase):
         match = re.search(
             r'def _index_via_daemon\(.*?\):\s*""".*?"""(.*?)^def ',
             source_code,
-            re.DOTALL | re.MULTILINE
+            re.DOTALL | re.MULTILINE,
         )
         self.assertIsNotNone(match, "_index_via_daemon function not found")
 
         function_body = match.group(1)
 
         # Find positions of key calls
-        start_display_pos = function_body.find('rich_live_manager.start_bottom_display()')
-        daemon_call_pos = function_body.find('conn.root.exposed_index_blocking(')
+        start_display_pos = function_body.find(
+            "rich_live_manager.start_bottom_display()"
+        )
+        daemon_call_pos = function_body.find("conn.root.exposed_index_blocking(")
 
         # VERIFY: Both calls exist
-        self.assertGreater(start_display_pos, 0,
-                          "start_bottom_display() call not found in _index_via_daemon")
-        self.assertGreater(daemon_call_pos, 0,
-                          "exposed_index_blocking() call not found in _index_via_daemon")
+        self.assertGreater(
+            start_display_pos,
+            0,
+            "start_bottom_display() call not found in _index_via_daemon",
+        )
+        self.assertGreater(
+            daemon_call_pos,
+            0,
+            "exposed_index_blocking() call not found in _index_via_daemon",
+        )
 
         # VERIFY: start_display comes BEFORE daemon_call
-        self.assertLess(start_display_pos, daemon_call_pos,
-                       "CRITICAL: start_bottom_display() must be called BEFORE exposed_index_blocking() "
-                       "to enable setup message scrolling at top")
+        self.assertLess(
+            start_display_pos,
+            daemon_call_pos,
+            "CRITICAL: start_bottom_display() must be called BEFORE exposed_index_blocking() "
+            "to enable setup message scrolling at top",
+        )
 
     def test_no_display_initialized_variable_exists(self):
         """
@@ -76,15 +87,18 @@ class TestDaemonDisplayTimingFix(unittest.TestCase):
         match = re.search(
             r'def _index_via_daemon\(.*?\):\s*""".*?"""(.*?)^def ',
             source_code,
-            re.DOTALL | re.MULTILINE
+            re.DOTALL | re.MULTILINE,
         )
         self.assertIsNotNone(match, "_index_via_daemon function not found")
 
         function_body = match.group(1)
 
         # VERIFY: display_initialized variable is NOT in function
-        self.assertNotIn('display_initialized', function_body,
-                        "display_initialized variable should be removed after early display initialization")
+        self.assertNotIn(
+            "display_initialized",
+            function_body,
+            "display_initialized variable should be removed after early display initialization",
+        )
 
     def test_setup_messages_handler_in_callback(self):
         """
@@ -102,18 +116,23 @@ class TestDaemonDisplayTimingFix(unittest.TestCase):
         match = re.search(
             r'def progress_callback\(.*?\):\s*""".*?"""(.*?)(?=\n        # Map parameters|$)',
             source_code,
-            re.DOTALL
+            re.DOTALL,
         )
         self.assertIsNotNone(match, "progress_callback not found")
 
         callback_body = match.group(1)
 
         # VERIFY: Setup message handling exists
-        self.assertIn('if total == 0:', callback_body,
-                     "Callback must check for setup messages (total=0)")
-        self.assertIn('handle_setup_message', callback_body,
-                     "Callback must call handle_setup_message for setup messages")
-
+        self.assertIn(
+            "if total == 0:",
+            callback_body,
+            "Callback must check for setup messages (total=0)",
+        )
+        self.assertIn(
+            "handle_setup_message",
+            callback_body,
+            "Callback must call handle_setup_message for setup messages",
+        )
 
     def test_concurrent_files_limitation_documented(self):
         """
@@ -131,21 +150,31 @@ class TestDaemonDisplayTimingFix(unittest.TestCase):
         source_code = source_file.read_text()
 
         # VERIFY: TODO comment exists documenting limitation
-        self.assertIn("TODO: Daemon mode doesn't provide concurrent file list", source_code,
-                     "Concurrent file limitation must be documented")
+        self.assertIn(
+            "TODO: Daemon mode doesn't provide concurrent file list",
+            source_code,
+            "Concurrent file limitation must be documented",
+        )
 
         # VERIFY: Comment explains the complexity
-        self.assertIn("streaming slot tracker data", source_code,
-                     "Comment should explain why concurrent files aren't available")
+        self.assertIn(
+            "streaming slot tracker data",
+            source_code,
+            "Comment should explain why concurrent files aren't available",
+        )
 
         # VERIFY: concurrent_files=[] is explicitly set
-        self.assertIn("concurrent_files=[],", source_code,
-                     "Empty concurrent files list must be explicit")
+        self.assertIn(
+            "concurrent_files=[],",
+            source_code,
+            "Empty concurrent files list must be explicit",
+        )
 
         # VERIFY: slot_tracker=None is explicitly set
-        self.assertIn("slot_tracker=None,", source_code,
-                     "None slot tracker must be explicit")
+        self.assertIn(
+            "slot_tracker=None,", source_code, "None slot tracker must be explicit"
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

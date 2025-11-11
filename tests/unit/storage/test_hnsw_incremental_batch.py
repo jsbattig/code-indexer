@@ -18,23 +18,27 @@ from src.code_indexer.storage.filesystem_vector_store import FilesystemVectorSto
 class TestHNSWIncrementalBatch:
     """Test suite for HNSW incremental batch updates."""
 
-    def create_test_points(self, num_points: int, start_id: int = 0) -> List[Dict[str, Any]]:
+    def create_test_points(
+        self, num_points: int, start_id: int = 0
+    ) -> List[Dict[str, Any]]:
         """Create test points with vectors."""
         points = []
         for i in range(num_points):
             point_id = f"test_point_{start_id + i}"
             vector = np.random.rand(1536).tolist()
-            points.append({
-                "id": point_id,
-                "vector": vector,
-                "payload": {
-                    "path": f"test_file_{start_id + i}.py",
-                    "language": "python",
-                    "type": "content",
-                    "start_line": 1,
-                    "end_line": 100,
+            points.append(
+                {
+                    "id": point_id,
+                    "vector": vector,
+                    "payload": {
+                        "path": f"test_file_{start_id + i}.py",
+                        "language": "python",
+                        "type": "content",
+                        "start_line": 1,
+                        "end_line": 100,
+                    },
                 }
-            })
+            )
         return points
 
     # === AC1: Track Changed Vectors During Indexing Session ===
@@ -157,15 +161,18 @@ class TestHNSWIncrementalBatch:
         store.begin_indexing(collection_name)
 
         # Add temporal points
-        temporal_points = [{
-            "id": f"temporal_vec_{i}",
-            "vector": np.random.rand(1536).tolist(),
-            "payload": {
-                "commit_hash": f"abc123{i}",
-                "timestamp": 1234567890 + i,
-                "file_path": f"file_{i}.py",
+        temporal_points = [
+            {
+                "id": f"temporal_vec_{i}",
+                "vector": np.random.rand(1536).tolist(),
+                "payload": {
+                    "commit_hash": f"abc123{i}",
+                    "timestamp": 1234567890 + i,
+                    "file_path": f"file_{i}.py",
+                },
             }
-        } for i in range(10)]
+            for i in range(10)
+        ]
 
         store.upsert_points(collection_name, temporal_points)
 
@@ -212,8 +219,9 @@ class TestHNSWIncrementalBatch:
 
         # Incremental should be notably faster (at least 2x)
         # Note: In real scenarios with 10K vectors, this would be 5-10x
-        assert incremental_time < full_rebuild_time / 2, \
-            f"Incremental ({incremental_time:.2f}s) should be faster than full rebuild ({full_rebuild_time:.2f}s)"
+        assert (
+            incremental_time < full_rebuild_time / 2
+        ), f"Incremental ({incremental_time:.2f}s) should be faster than full rebuild ({full_rebuild_time:.2f}s)"
 
         # Verify incremental mode was used
         assert result.get("hnsw_update") == "incremental"
@@ -226,15 +234,18 @@ class TestHNSWIncrementalBatch:
         store.create_collection(collection_name, vector_size=1536)
 
         # Initial temporal index (1000 vectors simulating historical commits)
-        initial_points = [{
-            "id": f"temporal_commit_{i}",
-            "vector": np.random.rand(1536).tolist(),
-            "payload": {
-                "commit_hash": f"initial_{i}",
-                "timestamp": 1000000000 + i * 100,
-                "file_path": f"file_{i % 100}.py",
+        initial_points = [
+            {
+                "id": f"temporal_commit_{i}",
+                "vector": np.random.rand(1536).tolist(),
+                "payload": {
+                    "commit_hash": f"initial_{i}",
+                    "timestamp": 1000000000 + i * 100,
+                    "file_path": f"file_{i % 100}.py",
+                },
             }
-        } for i in range(1000)]
+            for i in range(1000)
+        ]
 
         store.begin_indexing(collection_name)
         store.upsert_points(collection_name, initial_points)
@@ -242,15 +253,18 @@ class TestHNSWIncrementalBatch:
 
         # Incremental temporal index (10 new commits)
         store.begin_indexing(collection_name)
-        new_points = [{
-            "id": f"temporal_commit_{i}",
-            "vector": np.random.rand(1536).tolist(),
-            "payload": {
-                "commit_hash": f"new_{i}",
-                "timestamp": 2000000000 + i * 100,
-                "file_path": f"new_file_{i}.py",
+        new_points = [
+            {
+                "id": f"temporal_commit_{i}",
+                "vector": np.random.rand(1536).tolist(),
+                "payload": {
+                    "commit_hash": f"new_{i}",
+                    "timestamp": 2000000000 + i * 100,
+                    "file_path": f"new_file_{i}.py",
+                },
             }
-        } for i in range(1000, 1010)]
+            for i in range(1000, 1010)
+        ]
 
         store.upsert_points(collection_name, new_points)
 
@@ -262,7 +276,9 @@ class TestHNSWIncrementalBatch:
         assert result["status"] == "ok"
         assert result.get("hnsw_update") == "incremental"
         # Should be fast for 10 new vectors out of 1000
-        assert incremental_time < 3.0, f"Temporal incremental update took {incremental_time:.2f}s, expected < 3s"
+        assert (
+            incremental_time < 3.0
+        ), f"Temporal incremental update took {incremental_time:.2f}s, expected < 3s"
 
     # === AC4: Auto-Detection of Incremental vs Full Rebuild ===
 
@@ -361,7 +377,9 @@ class TestHNSWIncrementalBatch:
         # Verify deleted points are not returned in searches
         # (Would need to test via search functionality)
         # For now, verify the changes were tracked correctly
-        assert collection_name not in store._indexing_session_changes  # Cleared after end
+        assert (
+            collection_name not in store._indexing_session_changes
+        )  # Cleared after end
 
     def test_mixed_operations_tracking(self, tmp_path):
         """Test tracking of mixed add/update/delete operations in single session."""

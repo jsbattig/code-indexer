@@ -21,9 +21,9 @@ from concurrent.futures import ThreadPoolExecutor
 try:
     import rpyc
 except ImportError:
-    sys.modules['rpyc'] = MagicMock()
-    sys.modules['rpyc.utils.server'] = MagicMock()
-    rpyc = sys.modules['rpyc']
+    sys.modules["rpyc"] = MagicMock()
+    sys.modules["rpyc.utils.server"] = MagicMock()
+    rpyc = sys.modules["rpyc"]
 
 
 class TestRPyCDaemon(TestCase):
@@ -42,17 +42,22 @@ class TestRPyCDaemon(TestCase):
         # Create mock config
         config_path = self.project_path / ".code-indexer" / "config.json"
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(json.dumps({
-            "daemon": {
-                "enabled": True,
-                "ttl_minutes": 10,
-                "auto_shutdown_on_idle": False
-            }
-        }))
+        config_path.write_text(
+            json.dumps(
+                {
+                    "daemon": {
+                        "enabled": True,
+                        "ttl_minutes": 10,
+                        "auto_shutdown_on_idle": False,
+                    }
+                }
+            )
+        )
 
     def tearDown(self):
         """Clean up test fixtures."""
         import shutil
+
         if Path(self.temp_dir).exists():
             shutil.rmtree(self.temp_dir)
 
@@ -70,16 +75,21 @@ class TestRPyCDaemon(TestCase):
         ]
 
         # First query - should load indexes (cache miss)
-        with patch.object(service, '_load_indexes') as mock_load:
-            with patch.object(service, '_execute_search_optimized', return_value=mock_query_results):
+        with patch.object(service, "_load_indexes") as mock_load:
+            with patch.object(
+                service, "_execute_search_optimized", return_value=mock_query_results
+            ):
                 # Configure mock to simulate loaded indexes
                 def set_indexes(entry):
                     entry.hnsw_index = mock_hnsw_index
                     entry.id_mapping = mock_id_mapping
+
                 mock_load.side_effect = set_indexes
 
                 # First query (cache miss)
-                result1 = service.exposed_query(str(self.project_path), "test query", limit=10)
+                result1 = service.exposed_query(
+                    str(self.project_path), "test query", limit=10
+                )
                 self.assertEqual(len(result1), 1)
 
                 # Verify indexes were loaded
@@ -96,7 +106,7 @@ class TestRPyCDaemon(TestCase):
                 self.assertLess(
                     cache_hit_time,
                     0.1,  # 100ms
-                    f"Cache hit took {cache_hit_time*1000:.1f}ms, requirement is <100ms"
+                    f"Cache hit took {cache_hit_time*1000:.1f}ms, requirement is <100ms",
                 )
 
                 # Verify indexes were NOT reloaded (cache hit)
@@ -106,14 +116,16 @@ class TestRPyCDaemon(TestCase):
                 times = []
                 for i in range(100):
                     start = time.perf_counter()
-                    service.exposed_query(str(self.project_path), f"query {i}", limit=10)
+                    service.exposed_query(
+                        str(self.project_path), f"query {i}", limit=10
+                    )
                     times.append(time.perf_counter() - start)
 
                 avg_time = sum(times) / len(times)
                 self.assertLess(
                     avg_time,
                     0.05,  # Target 50ms average for cache hits
-                    f"Average cache hit time {avg_time*1000:.1f}ms exceeds target of 50ms"
+                    f"Average cache hit time {avg_time*1000:.1f}ms exceeds target of 50ms",
                 )
 
     def test_daemon_shutdown_properly_exits_process(self):
@@ -130,10 +142,10 @@ class TestRPyCDaemon(TestCase):
         # Test different shutdown mechanisms
 
         # Option A: Signal-based shutdown
-        with patch('os.kill') as mock_kill:
-            with patch('os.getpid', return_value=12345):
+        with patch("os.kill") as mock_kill:
+            with patch("os.getpid", return_value=12345):
                 # Implement signal-based shutdown
-                service._shutdown_method = 'signal'
+                service._shutdown_method = "signal"
                 result = service.exposed_shutdown()
 
                 # Verify proper signal sent to own process
@@ -141,8 +153,8 @@ class TestRPyCDaemon(TestCase):
                 self.assertEqual(result["status"], "shutting_down")
 
         # Option B: Server stop method (requires server reference)
-        with patch.object(service, '_server', create=True) as mock_server:
-            service._shutdown_method = 'server_stop'
+        with patch.object(service, "_server", create=True) as mock_server:
+            service._shutdown_method = "server_stop"
             result = service.exposed_shutdown()
 
             # Verify server close was called
@@ -150,9 +162,9 @@ class TestRPyCDaemon(TestCase):
             self.assertEqual(result["status"], "shutting_down")
 
         # Option C: Delayed forceful exit (fallback)
-        with patch('os._exit'):
-            with patch('threading.Thread') as mock_thread:
-                service._shutdown_method = 'delayed_exit'
+        with patch("os._exit"):
+            with patch("threading.Thread") as mock_thread:
+                service._shutdown_method = "delayed_exit"
                 result = service.exposed_shutdown()
 
                 # Verify thread was started for delayed exit
@@ -161,17 +173,19 @@ class TestRPyCDaemon(TestCase):
                 thread_instance.start.assert_called_once()
 
                 # Simulate thread execution
-                delayed_fn = mock_thread.call_args[1]['target']
-                with patch('time.sleep'):  # Skip the delay
-                    with patch('os.kill') as mock_kill2:
-                        with patch('os.getpid', return_value=12345):
+                delayed_fn = mock_thread.call_args[1]["target"]
+                with patch("time.sleep"):  # Skip the delay
+                    with patch("os.kill") as mock_kill2:
+                        with patch("os.getpid", return_value=12345):
                             delayed_fn()
                             # SIGKILL = 9 for forceful termination
                             mock_kill2.assert_called_once_with(12345, 9)
 
         # Verify socket cleanup happens
         if socket_path.exists():
-            self.assertTrue(socket_path.exists(), "Socket file should exist before cleanup")
+            self.assertTrue(
+                socket_path.exists(), "Socket file should exist before cleanup"
+            )
             # In real implementation, socket cleanup happens in signal handler
 
     def test_socket_cleanup_on_shutdown(self):
@@ -201,8 +215,8 @@ class TestRPyCDaemon(TestCase):
         service.watch_handler = mock_watch
         service.watch_thread = MagicMock()
 
-        with patch('os.kill'):
-            with patch('os.getpid', return_value=12345):
+        with patch("os.kill"):
+            with patch("os.getpid", return_value=12345):
                 service.exposed_shutdown()
 
         # Verify watch was stopped
@@ -221,8 +235,10 @@ class TestRPyCDaemon(TestCase):
             time.sleep(0.01)  # 10ms per search
             return [{"file": "test.py", "score": 0.9}]
 
-        with patch.object(service, '_load_indexes'):
-            with patch.object(service, '_execute_search_optimized', side_effect=slow_search):
+        with patch.object(service, "_load_indexes"):
+            with patch.object(
+                service, "_execute_search_optimized", side_effect=slow_search
+            ):
 
                 # Run 10 concurrent queries
                 with ThreadPoolExecutor(max_workers=10) as executor:
@@ -233,7 +249,7 @@ class TestRPyCDaemon(TestCase):
                             service.exposed_query,
                             str(self.project_path),
                             f"query {i}",
-                            limit=10
+                            limit=10,
                         )
                         futures.append(future)
 
@@ -261,15 +277,13 @@ class TestRPyCDaemon(TestCase):
             write_order.append(threading.current_thread().name)
             time.sleep(0.01)  # Simulate indexing work
 
-        with patch.object(service, '_perform_indexing', side_effect=mock_indexing):
+        with patch.object(service, "_perform_indexing", side_effect=mock_indexing):
             # Run 5 concurrent indexing operations
             with ThreadPoolExecutor(max_workers=5) as executor:
                 futures = []
                 for i in range(5):
                     future = executor.submit(
-                        service.exposed_index,
-                        str(self.project_path),
-                        None
+                        service.exposed_index, str(self.project_path), None
                     )
                     futures.append(future)
 
@@ -286,13 +300,16 @@ class TestRPyCDaemon(TestCase):
 
     def test_ttl_eviction_after_10_minutes(self):
         """Test TTL-based cache eviction after 10 minutes."""
-        from src.code_indexer.services.rpyc_daemon import CIDXDaemonService, CacheEvictionThread
+        from src.code_indexer.services.rpyc_daemon import (
+            CIDXDaemonService,
+            CacheEvictionThread,
+        )
 
         service = CIDXDaemonService()
 
         # Load cache
-        with patch.object(service, '_load_indexes'):
-            with patch.object(service, '_execute_search_optimized', return_value=[]):
+        with patch.object(service, "_load_indexes"):
+            with patch.object(service, "_execute_search_optimized", return_value=[]):
                 service.exposed_query(str(self.project_path), "test", limit=10)
 
         self.assertIsNotNone(service.cache_entry)
@@ -314,8 +331,8 @@ class TestRPyCDaemon(TestCase):
         service = CIDXDaemonService()
 
         # Load cache
-        with patch.object(service, '_load_indexes'):
-            with patch.object(service, '_execute_search_optimized', return_value=[]):
+        with patch.object(service, "_load_indexes"):
+            with patch.object(service, "_execute_search_optimized", return_value=[]):
                 service.exposed_query(str(self.project_path), "test", limit=10)
 
         self.assertIsNotNone(service.cache_entry)
@@ -329,6 +346,7 @@ class TestRPyCDaemon(TestCase):
 
         # Inject the mock into the daemon module
         import src.code_indexer.services.rpyc_daemon
+
         src.code_indexer.services.rpyc_daemon.CleanupService = mock_cleanup_class
 
         result = service.exposed_clean(str(self.project_path))
@@ -337,8 +355,8 @@ class TestRPyCDaemon(TestCase):
         self.assertTrue(result["cache_invalidated"])
 
         # Load cache again
-        with patch.object(service, '_load_indexes'):
-            with patch.object(service, '_execute_search_optimized', return_value=[]):
+        with patch.object(service, "_load_indexes"):
+            with patch.object(service, "_execute_search_optimized", return_value=[]):
                 service.exposed_query(str(self.project_path), "test", limit=10)
 
         self.assertIsNotNone(service.cache_entry)
@@ -369,8 +387,10 @@ class TestRPyCDaemon(TestCase):
         mock_searcher = MagicMock()
         mock_index.searcher.return_value = mock_searcher
 
-        with patch('tantivy.Index.open', return_value=mock_index):
-            with patch.object(service, '_execute_fts_search', return_value={"results": []}):
+        with patch("tantivy.Index.open", return_value=mock_index):
+            with patch.object(
+                service, "_execute_fts_search", return_value={"results": []}
+            ):
                 # First FTS query - loads index
                 service.exposed_query_fts(str(self.project_path), "test")
 
@@ -379,7 +399,7 @@ class TestRPyCDaemon(TestCase):
                 self.assertTrue(service.cache_entry.fts_available)
 
                 # Second FTS query - uses cache
-                with patch('tantivy.Index.open') as mock_open:
+                with patch("tantivy.Index.open") as mock_open:
                     service.exposed_query_fts(str(self.project_path), "test2")
 
                     # Should NOT reload index
@@ -400,11 +420,15 @@ class TestRPyCDaemon(TestCase):
             time.sleep(0.05)  # 50ms
             return {"fts": True, "results": []}
 
-        with patch.object(service, 'exposed_query', side_effect=slow_semantic):
-            with patch.object(service, 'exposed_query_fts', side_effect=slow_fts):
-                with patch.object(service, '_merge_hybrid_results', return_value={"merged": True}):
+        with patch.object(service, "exposed_query", side_effect=slow_semantic):
+            with patch.object(service, "exposed_query_fts", side_effect=slow_fts):
+                with patch.object(
+                    service, "_merge_hybrid_results", return_value={"merged": True}
+                ):
                     start = time.perf_counter()
-                    result = service.exposed_query_hybrid(str(self.project_path), "test")
+                    result = service.exposed_query_hybrid(
+                        str(self.project_path), "test"
+                    )
                     duration = time.perf_counter() - start
 
         # Should run in parallel, not sequential
@@ -419,7 +443,7 @@ class TestRPyCDaemon(TestCase):
         socket_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Mock ThreadedServer
-        with patch('rpyc.utils.server.ThreadedServer') as mock_server_class:
+        with patch("rpyc.utils.server.ThreadedServer") as mock_server_class:
             # First daemon succeeds
             mock_server1 = MagicMock()
             mock_server_class.return_value = mock_server1
@@ -430,7 +454,7 @@ class TestRPyCDaemon(TestCase):
             # Second daemon fails with OSError
             mock_server_class.side_effect = OSError("Address already in use")
 
-            with patch('sys.exit'):
+            with patch("sys.exit"):
                 try:
                     # This simulates attempting to start duplicate daemon
                     mock_server_class(MagicMock(), socket_path=str(socket_path))
@@ -451,14 +475,15 @@ class TestRPyCDaemon(TestCase):
         self.assertTrue(status["cache_empty"])
 
         # Load cache and check status
-        with patch.object(service, '_load_indexes') as mock_load:
+        with patch.object(service, "_load_indexes") as mock_load:
             # Mock the load to set the indexes
             def set_indexes(entry):
                 entry.hnsw_index = MagicMock()
                 entry.id_mapping = {}
+
             mock_load.side_effect = set_indexes
 
-            with patch.object(service, '_execute_search_optimized', return_value=[]):
+            with patch.object(service, "_execute_search_optimized", return_value=[]):
                 service.exposed_query(str(self.project_path), "test", limit=10)
 
         status = service.exposed_get_status()
@@ -469,7 +494,7 @@ class TestRPyCDaemon(TestCase):
         self.assertEqual(status["ttl_minutes"], 10)
 
         # Multiple queries update access count
-        with patch.object(service, '_execute_search_optimized', return_value=[]):
+        with patch.object(service, "_execute_search_optimized", return_value=[]):
             service.exposed_query(str(self.project_path), "test2", limit=10)
             service.exposed_query(str(self.project_path), "test3", limit=10)
 
@@ -485,8 +510,13 @@ class TestRPyCDaemon(TestCase):
         mock_handler = MagicMock()
         mock_indexer = MagicMock()
 
-        with patch('src.code_indexer.services.git_aware_watch_handler.GitAwareWatchHandler', return_value=mock_handler):
-            with patch.object(service, '_get_or_create_indexer', return_value=mock_indexer):
+        with patch(
+            "src.code_indexer.services.git_aware_watch_handler.GitAwareWatchHandler",
+            return_value=mock_handler,
+        ):
+            with patch.object(
+                service, "_get_or_create_indexer", return_value=mock_indexer
+            ):
                 # Start watch
                 result = service.exposed_watch_start(str(self.project_path))
 
@@ -507,4 +537,5 @@ class TestRPyCDaemon(TestCase):
 
 if __name__ == "__main__":
     import unittest
+
     unittest.main()

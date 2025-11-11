@@ -1,6 +1,5 @@
 """Tests for FilesystemVectorStore.load_id_index method."""
 
-
 import pytest
 
 from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
@@ -33,7 +32,11 @@ class TestLoadIdIndex:
 
         # Verify it returns a set of the IDs
         assert isinstance(existing_ids, set), "Should return a set"
-        assert existing_ids == {"point1", "point2", "point3"}, "Should return all point IDs"
+        assert existing_ids == {
+            "point1",
+            "point2",
+            "point3",
+        }, "Should return all point IDs"
 
         # Verify empty collection returns empty set
         empty_collection = "empty_collection"

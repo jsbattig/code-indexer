@@ -361,4 +361,3 @@ class TemporalDiffScanner:
 
         ext = Path(file_path).suffix.lower()
         return ext in binary_extensions
-

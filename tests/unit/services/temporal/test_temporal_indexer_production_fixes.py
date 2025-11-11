@@ -24,8 +24,12 @@ class TestIncrementalCommitDetection:
 
         # Initialize git repo
         subprocess.run(["git", "init"], cwd=repo_path, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo_path, check=True)
-        subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"], cwd=repo_path, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"], cwd=repo_path, check=True
+        )
 
         # Create temporal metadata with last_commit
         temporal_dir = repo_path / ".code-indexer/index/code-indexer-temporal"
@@ -33,7 +37,7 @@ class TestIncrementalCommitDetection:
         metadata = {
             "last_commit": "abc123def456",
             "total_commits": 10,
-            "indexed_at": "2025-01-01T00:00:00"
+            "indexed_at": "2025-01-01T00:00:00",
         }
         with open(temporal_dir / "temporal_meta.json", "w") as f:
             json.dump(metadata, f)
@@ -43,10 +47,8 @@ class TestIncrementalCommitDetection:
         config_manager.get_config.return_value = MagicMock(
             embedding_provider="voyage-ai",
             voyage_ai=MagicMock(
-                parallel_requests=4,
-                api_key="test_key",
-                model="voyage-code-3"
-            )
+                parallel_requests=4, api_key="test_key", model="voyage-code-3"
+            ),
         )
 
         vector_store = MagicMock(spec=FilesystemVectorStore)
@@ -55,24 +57,25 @@ class TestIncrementalCommitDetection:
         vector_store.collection_exists.return_value = True
 
         # Mock the embedding provider factory
-        with patch("code_indexer.services.embedding_factory.EmbeddingProviderFactory") as mock_factory:
+        with patch(
+            "code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+        ) as mock_factory:
             mock_factory.get_provider_model_info.return_value = {
                 "dimensions": 1024,
                 "provider": "voyage-ai",
-                "model": "voyage-code-3"
+                "model": "voyage-code-3",
             }
 
             indexer = TemporalIndexer(config_manager, vector_store)
 
             # Mock git log to verify correct command is used
             with patch("subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(
-                    stdout="",
-                    returncode=0
-                )
+                mock_run.return_value = MagicMock(stdout="", returncode=0)
 
                 # Call _get_commit_history
-                commits = indexer._get_commit_history(all_branches=False, max_commits=None, since_date=None)
+                commits = indexer._get_commit_history(
+                    all_branches=False, max_commits=None, since_date=None
+                )
 
                 # Verify git log was called with range from last commit
                 mock_run.assert_called_once()
@@ -81,7 +84,9 @@ class TestIncrementalCommitDetection:
                 # CURRENT BEHAVIOR: No range check - this will FAIL initially
                 # Expected: ["git", "log", "abc123def456..HEAD", ...]
                 # Actual: ["git", "log", ...]
-                assert "abc123def456..HEAD" in args, "Should use last_commit..HEAD range for incremental indexing"
+                assert (
+                    "abc123def456..HEAD" in args
+                ), "Should use last_commit..HEAD range for incremental indexing"
 
 
 class TestBeginIndexingCall:
@@ -94,8 +99,12 @@ class TestBeginIndexingCall:
         repo_path.mkdir()
 
         subprocess.run(["git", "init"], cwd=repo_path, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo_path, check=True)
-        subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"], cwd=repo_path, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"], cwd=repo_path, check=True
+        )
 
         # Create a commit
         (repo_path / "file.txt").write_text("content")
@@ -106,7 +115,9 @@ class TestBeginIndexingCall:
         config_manager = MagicMock()
         config_manager.get_config.return_value = MagicMock(
             embedding_provider="voyage-ai",
-            voyage_ai=MagicMock(parallel_requests=4, api_key="test_key", model="voyage-code-3")
+            voyage_ai=MagicMock(
+                parallel_requests=4, api_key="test_key", model="voyage-code-3"
+            ),
         )
 
         vector_store = MagicMock(spec=FilesystemVectorStore)
@@ -114,11 +125,13 @@ class TestBeginIndexingCall:
         vector_store.base_path = repo_path / ".code-indexer" / "index"
         vector_store.collection_exists.return_value = True
 
-        with patch("code_indexer.services.embedding_factory.EmbeddingProviderFactory") as mock_factory:
+        with patch(
+            "code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+        ) as mock_factory:
             mock_factory.get_provider_model_info.return_value = {
                 "dimensions": 1024,
                 "provider": "voyage-ai",
-                "model": "voyage-code-3"
+                "model": "voyage-code-3",
             }
             mock_factory.create.return_value = MagicMock()
 
@@ -148,8 +161,12 @@ class TestPointExistenceFiltering:
         repo_path.mkdir()
 
         subprocess.run(["git", "init"], cwd=repo_path, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo_path, check=True)
-        subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"], cwd=repo_path, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"], cwd=repo_path, check=True
+        )
 
         # Create a commit
         (repo_path / "file.txt").write_text("content")
@@ -159,7 +176,9 @@ class TestPointExistenceFiltering:
         config_manager = MagicMock()
         config_manager.get_config.return_value = MagicMock(
             embedding_provider="voyage-ai",
-            voyage_ai=MagicMock(parallel_requests=4, api_key="test_key", model="voyage-code-3")
+            voyage_ai=MagicMock(
+                parallel_requests=4, api_key="test_key", model="voyage-code-3"
+            ),
         )
 
         # Create mock vector store with existing points
@@ -174,16 +193,19 @@ class TestPointExistenceFiltering:
 
         # Track what gets upserted
         upserted_points = []
+
         def track_upsert(collection_name, points):
             upserted_points.extend(points)
 
         vector_store.upsert_points.side_effect = track_upsert
 
-        with patch("code_indexer.services.embedding_factory.EmbeddingProviderFactory") as mock_factory:
+        with patch(
+            "code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+        ) as mock_factory:
             mock_factory.get_provider_model_info.return_value = {
                 "dimensions": 1024,
                 "provider": "voyage-ai",
-                "model": "voyage-code-3"
+                "model": "voyage-code-3",
             }
 
             indexer = TemporalIndexer(config_manager, vector_store)
@@ -193,29 +215,53 @@ class TestPointExistenceFiltering:
                 # Simulate creating points in _process_commits_parallel
                 # Some with existing IDs, some new
                 test_points = [
-                    {"id": "existing_point_1", "vector": [0.1] * 1024, "payload": {}},  # Should be filtered
-                    {"id": "new_point_1", "vector": [0.2] * 1024, "payload": {}},      # Should be kept
-                    {"id": "existing_point_2", "vector": [0.3] * 1024, "payload": {}},  # Should be filtered
-                    {"id": "new_point_2", "vector": [0.4] * 1024, "payload": {}},      # Should be kept
+                    {
+                        "id": "existing_point_1",
+                        "vector": [0.1] * 1024,
+                        "payload": {},
+                    },  # Should be filtered
+                    {
+                        "id": "new_point_1",
+                        "vector": [0.2] * 1024,
+                        "payload": {},
+                    },  # Should be kept
+                    {
+                        "id": "existing_point_2",
+                        "vector": [0.3] * 1024,
+                        "payload": {},
+                    },  # Should be filtered
+                    {
+                        "id": "new_point_2",
+                        "vector": [0.4] * 1024,
+                        "payload": {},
+                    },  # Should be kept
                 ]
 
                 # We need to actually call upsert_points from within the method
                 # to test the filtering logic that should be added
-                def simulate_processing(commits, embedding_provider, vector_manager, progress_callback, reconcile):
+                def simulate_processing(
+                    commits,
+                    embedding_provider,
+                    vector_manager,
+                    progress_callback,
+                    reconcile,
+                ):
                     # This simulates what _process_commits_parallel does
                     # Load existing IDs (the fix adds this)
-                    existing_ids = indexer.vector_store.load_id_index(indexer.TEMPORAL_COLLECTION_NAME)
+                    existing_ids = indexer.vector_store.load_id_index(
+                        indexer.TEMPORAL_COLLECTION_NAME
+                    )
 
                     # Filter and upsert only new points (the fix adds this logic)
                     new_points = [
-                        point for point in test_points
+                        point
+                        for point in test_points
                         if point["id"] not in existing_ids
                     ]
 
                     if new_points:
                         indexer.vector_store.upsert_points(
-                            indexer.TEMPORAL_COLLECTION_NAME,
-                            new_points
+                            indexer.TEMPORAL_COLLECTION_NAME, new_points
                         )
                     return (1, 4, 12)  # 1 commit processed, 4 files, 12 vectors
 
@@ -226,8 +272,12 @@ class TestPointExistenceFiltering:
                 # Verify that only NEW points were upserted
                 # This will FAIL initially because no filtering is done
                 upserted_ids = [p["id"] for p in upserted_points]
-                assert "existing_point_1" not in upserted_ids, "Existing points should be filtered"
-                assert "existing_point_2" not in upserted_ids, "Existing points should be filtered"
+                assert (
+                    "existing_point_1" not in upserted_ids
+                ), "Existing points should be filtered"
+                assert (
+                    "existing_point_2" not in upserted_ids
+                ), "Existing points should be filtered"
                 assert "new_point_1" in upserted_ids, "New points should be upserted"
                 assert "new_point_2" in upserted_ids, "New points should be upserted"
 
@@ -245,8 +295,12 @@ class TestClearFlagSupport:
         repo_path.mkdir()
 
         subprocess.run(["git", "init"], cwd=repo_path, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo_path, check=True)
-        subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"], cwd=repo_path, check=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"], cwd=repo_path, check=True
+        )
         (repo_path / "file.txt").write_text("content")
         subprocess.run(["git", "add", "."], cwd=repo_path, check=True)
         subprocess.run(["git", "commit", "-m", "Test"], cwd=repo_path, check=True)
@@ -270,7 +324,9 @@ class TestClearFlagSupport:
         config_manager = MagicMock()
         config_manager.get_config.return_value = MagicMock(
             embedding_provider="voyage-ai",
-            voyage_ai=MagicMock(parallel_requests=4, api_key="test_key", model="voyage-code-3")
+            voyage_ai=MagicMock(
+                parallel_requests=4, api_key="test_key", model="voyage-code-3"
+            ),
         )
 
         # Simulate what the CLI does when --clear is passed with --index-commits
@@ -280,13 +336,14 @@ class TestClearFlagSupport:
         if clear:
             # This is what we implemented in cli.py lines 3344-3350
             vector_store_mock.clear_collection(
-                collection_name="code-indexer-temporal",
-                remove_projection_matrix=False
+                collection_name="code-indexer-temporal", remove_projection_matrix=False
             )
 
         # Verify clear_collection was called for temporal collection
-        assert "code-indexer-temporal" in clear_calls, "clear_collection should be called for temporal collection"
+        assert (
+            "code-indexer-temporal" in clear_calls
+        ), "clear_collection should be called for temporal collection"
 
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v"])# Test comment for incremental indexing
+    pytest.main([__file__, "-v"])  # Test comment for incremental indexing

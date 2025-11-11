@@ -18,7 +18,7 @@ from code_indexer.config import Config, VectorStoreConfig
 class TestDockerManagerOptionalPortRegistry:
     """Test DockerManager with optional port registry parameter."""
 
-    @patch('code_indexer.services.docker_manager.GlobalPortRegistry')
+    @patch("code_indexer.services.docker_manager.GlobalPortRegistry")
     def test_init_without_port_registry_does_not_create_it(self, mock_registry_class):
         """DockerManager should NOT create GlobalPortRegistry when port_registry=None.
 
@@ -32,8 +32,10 @@ class TestDockerManagerOptionalPortRegistry:
         # THEN: GlobalPortRegistry should NOT be instantiated in __init__
         mock_registry_class.assert_not_called()
 
-    @patch('code_indexer.services.docker_manager.GlobalPortRegistry')
-    def test_lazy_port_registry_property_creates_on_first_access(self, mock_registry_class):
+    @patch("code_indexer.services.docker_manager.GlobalPortRegistry")
+    def test_lazy_port_registry_property_creates_on_first_access(
+        self, mock_registry_class
+    ):
         """port_registry property should create GlobalPortRegistry lazily when not provided.
 
         This test validates that when port_registry is accessed (not during __init__),
@@ -54,7 +56,7 @@ class TestDockerManagerOptionalPortRegistry:
         mock_registry_class.assert_called_once()
         assert registry is mock_instance
 
-    @patch('code_indexer.services.docker_manager.GlobalPortRegistry')
+    @patch("code_indexer.services.docker_manager.GlobalPortRegistry")
     def test_backward_compatibility_default_behavior(self, mock_registry_class):
         """DockerManager without port_registry parameter should work (backward compatibility).
 
@@ -103,8 +105,7 @@ class TestCLIBackendTypeChecking:
         from code_indexer.cli import _needs_docker_manager
 
         config = Config(
-            codebase_dir=tmp_path,
-            vector_store=VectorStoreConfig(provider="filesystem")
+            codebase_dir=tmp_path, vector_store=VectorStoreConfig(provider="filesystem")
         )
 
         # WHEN: Checking if DockerManager is needed
@@ -119,8 +120,7 @@ class TestCLIBackendTypeChecking:
         from code_indexer.cli import _needs_docker_manager
 
         config = Config(
-            codebase_dir=tmp_path,
-            vector_store=VectorStoreConfig(provider="qdrant")
+            codebase_dir=tmp_path, vector_store=VectorStoreConfig(provider="qdrant")
         )
 
         # WHEN: Checking if DockerManager is needed
@@ -133,8 +133,10 @@ class TestCLIBackendTypeChecking:
 class TestFilesystemBackendNoPortRegistryE2E:
     """E2E tests verifying filesystem backend never accesses port registry."""
 
-    @patch('code_indexer.services.global_port_registry.GlobalPortRegistry')
-    def test_filesystem_backend_never_touches_port_registry(self, mock_pr_class, tmp_path):
+    @patch("code_indexer.services.global_port_registry.GlobalPortRegistry")
+    def test_filesystem_backend_never_touches_port_registry(
+        self, mock_pr_class, tmp_path
+    ):
         """Complete filesystem backend workflow should never access GlobalPortRegistry.
 
         This E2E test validates that using filesystem backend from config creation
@@ -153,4 +155,4 @@ class TestFilesystemBackendNoPortRegistryE2E:
 
         # THEN: GlobalPortRegistry should never be instantiated
         mock_pr_class.assert_not_called()
-        assert status['provider'] == 'filesystem'
+        assert status["provider"] == "filesystem"

@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 
-
 TEST_REPO_PATH = Path("/tmp/cidx-test-repo")
 
 
@@ -70,8 +69,7 @@ class TestRepositoryStructure:
             assert len(content) > 0, f"File is empty: {py_file}"
             # Basic check for Python syntax (has def or class or import)
             has_code = any(
-                keyword in content
-                for keyword in ["def ", "class ", "import ", "from "]
+                keyword in content for keyword in ["def ", "class ", "import ", "from "]
             )
             assert has_code, f"File lacks realistic Python content: {py_file}"
 
@@ -95,11 +93,13 @@ class TestCommitHistory:
             if not line:
                 continue
             hash_val, date_str, message = line.split("|", 2)
-            commits.append({
-                "hash": hash_val,
-                "date": date_str,
-                "message": message,
-            })
+            commits.append(
+                {
+                    "hash": hash_val,
+                    "date": date_str,
+                    "message": message,
+                }
+            )
 
         return list(reversed(commits))  # Return in chronological order
 
@@ -112,10 +112,18 @@ class TestCommitHistory:
         """AC 6: Commit dates match specification (Nov 1-4, 2025)."""
         commits = self.get_commits()
         expected_dates = [
-            "2025-11-01 10:00:00", "2025-11-01 14:00:00", "2025-11-01 18:00:00",
-            "2025-11-02 10:00:00", "2025-11-02 14:00:00", "2025-11-02 18:00:00",
-            "2025-11-03 10:00:00", "2025-11-03 14:00:00", "2025-11-03 16:00:00",
-            "2025-11-03 18:00:00", "2025-11-04 10:00:00", "2025-11-04 14:00:00",
+            "2025-11-01 10:00:00",
+            "2025-11-01 14:00:00",
+            "2025-11-01 18:00:00",
+            "2025-11-02 10:00:00",
+            "2025-11-02 14:00:00",
+            "2025-11-02 18:00:00",
+            "2025-11-03 10:00:00",
+            "2025-11-03 14:00:00",
+            "2025-11-03 16:00:00",
+            "2025-11-03 18:00:00",
+            "2025-11-04 10:00:00",
+            "2025-11-04 14:00:00",
         ]
         for i, (commit, expected_date) in enumerate(zip(commits, expected_dates)):
             commit_date = commit["date"][:19]
@@ -125,10 +133,18 @@ class TestCommitHistory:
         """AC 7: Commit messages are descriptive."""
         commits = self.get_commits()
         expected_messages = [
-            "Initial project setup", "Add API endpoints", "Add configuration system",
-            "Add utility functions", "Add test suite", "Refactor authentication",
-            "Add API tests", "Delete old database code", "Rename db_new to database",
-            "Add documentation", "Binary file addition", "Large refactoring",
+            "Initial project setup",
+            "Add API endpoints",
+            "Add configuration system",
+            "Add utility functions",
+            "Add test suite",
+            "Refactor authentication",
+            "Add API tests",
+            "Delete old database code",
+            "Rename db_new to database",
+            "Add documentation",
+            "Binary file addition",
+            "Large refactoring",
         ]
         for i, (commit, expected_msg) in enumerate(zip(commits, expected_messages)):
             assert commit["message"] == expected_msg, f"Commit {i+1} message mismatch"
@@ -138,13 +154,18 @@ class TestFileChanges:
     """Test suite for file changes validation (AC 9-14)."""
 
     @staticmethod
-    def get_commit_changes(commit_index: int) -> Tuple[List[str], List[str], List[str], List[Tuple[str, str]]]:
+    def get_commit_changes(
+        commit_index: int,
+    ) -> Tuple[List[str], List[str], List[str], List[Tuple[str, str]]]:
         """Get file changes for a specific commit (1-indexed)."""
         commits = TestCommitHistory.get_commits()
         commit_hash = commits[commit_index - 1]["hash"]
         result = subprocess.run(
             ["git", "show", "--name-status", "--format=", commit_hash],
-            cwd=TEST_REPO_PATH, capture_output=True, text=True, check=True,
+            cwd=TEST_REPO_PATH,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         added, modified, deleted, renamed = [], [], [], []
         for line in result.stdout.strip().split("\n"):
@@ -184,7 +205,10 @@ class TestFileChanges:
         commits = TestCommitHistory.get_commits()
         result = subprocess.run(
             ["git", "show", "--format=", "--numstat", commits[11]["hash"]],
-            cwd=TEST_REPO_PATH, capture_output=True, text=True, check=True,
+            cwd=TEST_REPO_PATH,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         changes = {}
         for line in result.stdout.strip().split("\n"):
@@ -193,5 +217,9 @@ class TestFileChanges:
             parts = line.split("\t")
             if len(parts) == 3 and parts[0] != "-":
                 changes[parts[2]] = int(parts[0]) + int(parts[1])
-        assert changes.get("src/api.py", 0) >= 200, "api.py should have 200+ line changes"
-        assert changes.get("src/auth.py", 0) >= 150, "auth.py should have 150+ line changes"
+        assert (
+            changes.get("src/api.py", 0) >= 200
+        ), "api.py should have 200+ line changes"
+        assert (
+            changes.get("src/auth.py", 0) >= 150
+        ), "auth.py should have 150+ line changes"

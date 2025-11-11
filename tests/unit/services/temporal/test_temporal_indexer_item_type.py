@@ -15,7 +15,7 @@ from src.code_indexer.services.temporal.models import CommitInfo
 class TestTemporalIndexerItemType:
     """Test item_type parameter for commit-specific progress display."""
 
-    @patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory')
+    @patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory")
     def test_progress_displays_commits_not_files(self, mock_factory):
         """Test that temporal indexing progress displays 'commits' not 'files'."""
         # Setup
@@ -29,18 +29,19 @@ class TestTemporalIndexerItemType:
 
         mock_vector_store = MagicMock()
         mock_vector_store.project_root = Path("/tmp/test_project")
-        mock_vector_store.base_path = Path("/tmp/test_project") / ".code-indexer" / "index"
+        mock_vector_store.base_path = (
+            Path("/tmp/test_project") / ".code-indexer" / "index"
+        )
 
         # Mock EmbeddingProviderFactory
         mock_factory.get_provider_model_info.return_value = {
-            'provider': 'voyage-ai',
-            'model': 'voyage-3',
-            'dimensions': 1536
+            "provider": "voyage-ai",
+            "model": "voyage-3",
+            "dimensions": 1536,
         }
 
         indexer = TemporalIndexer(
-            config_manager=mock_config_manager,
-            vector_store=mock_vector_store
+            config_manager=mock_config_manager, vector_store=mock_vector_store
         )
 
         # Mock the diff scanner
@@ -55,7 +56,7 @@ class TestTemporalIndexerItemType:
                 author_name="Test Author",
                 author_email="test@example.com",
                 message=f"Commit {i}",
-                parent_hashes=""
+                parent_hashes="",
             )
             for i in range(10)
         ]
@@ -81,10 +82,10 @@ class TestTemporalIndexerItemType:
             """Track progress calls with all possible parameters."""
             with progress_lock:
                 call_data = {
-                    'current': current,
-                    'total': total,
-                    'path': str(path),
-                    'info': info,
+                    "current": current,
+                    "total": total,
+                    "path": str(path),
+                    "info": info,
                 }
                 # Capture additional kwargs for item_type
                 call_data.update(kwargs)
@@ -95,7 +96,7 @@ class TestTemporalIndexerItemType:
             commits=test_commits,
             embedding_provider=mock_embedding_provider,
             vector_manager=mock_vector_manager,
-            progress_callback=track_progress
+            progress_callback=track_progress,
         )
 
         # Verify progress was reported
@@ -104,7 +105,7 @@ class TestTemporalIndexerItemType:
         # CRITICAL ASSERTION: Progress display should show "commits" not "files"
         # This is the core requirement - temporal indexing is about commits, not files
         for call in progress_calls:
-            info = call.get('info', '')
+            info = call.get("info", "")
 
             # Check that info contains "commits" not "files"
             # Format should be: "X/Y commits" not "X/Y files"
@@ -115,6 +116,8 @@ class TestTemporalIndexerItemType:
             # but should NOT appear in the "X/Y files" format
             # We check this by looking for the pattern "N/N files"
             import re
-            files_count_pattern = re.search(r'\d+/\d+\s+files', info)
-            assert files_count_pattern is None, \
-                f"Progress should show 'commits' not 'files' in count: {info}"
+
+            files_count_pattern = re.search(r"\d+/\d+\s+files", info)
+            assert (
+                files_count_pattern is None
+            ), f"Progress should show 'commits' not 'files' in count: {info}"

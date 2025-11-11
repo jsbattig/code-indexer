@@ -79,7 +79,9 @@ class TestDaemonWatchManager:
             mock.start_watching = MagicMock()  # Non-blocking
             return mock
 
-        with patch.object(manager, "_create_watch_handler", side_effect=slow_handler_creation):
+        with patch.object(
+            manager, "_create_watch_handler", side_effect=slow_handler_creation
+        ):
             # Act
             start_time = time.time()
             result = manager.start_watch(project_path, config)
@@ -170,10 +172,9 @@ class TestDaemonWatchManager:
 
         with patch.object(manager, "_create_watch_handler") as mock_create:
             mock_handler = MagicMock()
-            mock_handler.get_stats = MagicMock(return_value={
-                "files_processed": 25,
-                "indexing_cycles": 5
-            })
+            mock_handler.get_stats = MagicMock(
+                return_value={"files_processed": 25, "indexing_cycles": 5}
+            )
             mock_handler.start_watching = MagicMock()  # Non-blocking
             mock_create.return_value = mock_handler
 
@@ -229,7 +230,11 @@ class TestDaemonWatchManager:
             # First test concurrent starts only
             for i in range(5):
                 # All try to start the SAME project path to test thread safety
-                threads.append(threading.Thread(target=try_start, args=("/test/project", MagicMock())))
+                threads.append(
+                    threading.Thread(
+                        target=try_start, args=("/test/project", MagicMock())
+                    )
+                )
 
             for t in threads:
                 t.start()
@@ -241,13 +246,22 @@ class TestDaemonWatchManager:
             assert len(errors) == 0, f"Thread safety errors: {errors}"
 
             # Debug output to understand what's happening
-            start_results = [r for r in results if "message" in r and ("started" in r["message"] or "already" in r["message"])]
+            start_results = [
+                r
+                for r in results
+                if "message" in r
+                and ("started" in r["message"] or "already" in r["message"])
+            ]
             success_starts = [r for r in start_results if r.get("status") == "success"]
             error_starts = [r for r in start_results if r.get("status") == "error"]
 
             # Only one start should succeed, rest should fail with "already running"
-            assert len(success_starts) <= 1, f"Too many successful starts: {success_starts}"
-            assert len(success_starts) + len(error_starts) == 5, f"Expected 5 start attempts, got {len(start_results)}"
+            assert (
+                len(success_starts) <= 1
+            ), f"Too many successful starts: {success_starts}"
+            assert (
+                len(success_starts) + len(error_starts) == 5
+            ), f"Expected 5 start attempts, got {len(start_results)}"
 
             if len(success_starts) == 1:
                 # If one succeeded, others should have failed with "already running"

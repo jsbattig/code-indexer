@@ -58,18 +58,10 @@ class {prefix.capitalize()}Class{i}:
         self.git_commit("Initial files")
 
         # Initial index
-        result = subprocess.run(
-            ["cidx", "init"],
-            capture_output=True,
-            text=True
-        )
+        result = subprocess.run(["cidx", "init"], capture_output=True, text=True)
         assert result.returncode == 0
 
-        result = subprocess.run(
-            ["cidx", "index"],
-            capture_output=True,
-            text=True
-        )
+        result = subprocess.run(["cidx", "index"], capture_output=True, text=True)
         assert result.returncode == 0
 
         # Add more files
@@ -82,7 +74,7 @@ class {prefix.capitalize()}Class{i}:
             ["cidx", "index"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True
+            text=True,
         )
         incremental_time = time.time() - start_time
         assert result.returncode == 0
@@ -90,21 +82,25 @@ class {prefix.capitalize()}Class{i}:
         # Check for incremental HNSW update in logs
         # The FilesystemVectorStore logs this when using incremental
         output = result.stdout
-        if "ENTERING INCREMENTAL HNSW UPDATE PATH" in output or \
-           "Applying incremental HNSW update" in output:
+        if (
+            "ENTERING INCREMENTAL HNSW UPDATE PATH" in output
+            or "Applying incremental HNSW update" in output
+        ):
             assert True  # Incremental path was used
 
         # Verify query works and includes new files
         result = subprocess.run(
             ["cidx", "query", "new_function", "--limit", "5"],
             capture_output=True,
-            text=True
+            text=True,
         )
         assert result.returncode == 0
         assert "new_file" in result.stdout
 
         # Incremental should be relatively fast (adjusted for CI environment)
-        assert incremental_time < 15, f"Incremental indexing took {incremental_time:.2f}s"
+        assert (
+            incremental_time < 15
+        ), f"Incremental indexing took {incremental_time:.2f}s"
 
     def test_cidx_index_first_run_uses_full_rebuild(self, tmpdir):
         """Test cidx index on fresh repo uses full rebuild."""
@@ -115,18 +111,14 @@ class {prefix.capitalize()}Class{i}:
         self.git_commit("Initial files")
 
         # Initialize and index
-        result = subprocess.run(
-            ["cidx", "init"],
-            capture_output=True,
-            text=True
-        )
+        result = subprocess.run(["cidx", "init"], capture_output=True, text=True)
         assert result.returncode == 0
 
         result = subprocess.run(
             ["cidx", "index"],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True
+            text=True,
         )
         assert result.returncode == 0
 
@@ -158,18 +150,14 @@ class {prefix.capitalize()}Class{i}:
         self.git_commit("Delete some files")
 
         # Re-index with deletions
-        result = subprocess.run(
-            ["cidx", "index"],
-            capture_output=True,
-            text=True
-        )
+        result = subprocess.run(["cidx", "index"], capture_output=True, text=True)
         assert result.returncode == 0
 
         # Verify deleted files don't appear in search results
         result = subprocess.run(
             ["cidx", "query", "test_function_5", "--limit", "5"],
             capture_output=True,
-            text=True
+            text=True,
         )
         assert result.returncode == 0
         assert "test_file_5.py" not in result.stdout
@@ -198,7 +186,7 @@ class {prefix.capitalize()}Class{i}:
             ["cidx", "temporal", "index", "--all"],
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
         )
         assert result.returncode == 0
 
@@ -216,7 +204,7 @@ class {prefix.capitalize()}Class{i}:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            timeout=30
+            timeout=30,
         )
         incremental_time = time.time() - start_time
         assert result.returncode == 0
@@ -224,13 +212,15 @@ class {prefix.capitalize()}Class{i}:
         # Check for incremental update in output
         output = result.stdout
         # Should be fast for incremental temporal (adjusted for CI)
-        assert incremental_time < 15, f"Incremental temporal index took {incremental_time:.2f}s"
+        assert (
+            incremental_time < 15
+        ), f"Incremental temporal index took {incremental_time:.2f}s"
 
         # Verify temporal query returns recent commits
         result = subprocess.run(
             ["cidx", "temporal", "query", "recent_func", "--limit", "5"],
             capture_output=True,
-            text=True
+            text=True,
         )
         assert result.returncode == 0
         assert "recent" in result.stdout.lower()
@@ -245,7 +235,7 @@ class {prefix.capitalize()}Class{i}:
         # Create commit history
         for i in range(10):
             file_path = tmpdir / f"file_{i}.py"
-            content = f'def func_{i}(): return {i}'
+            content = f"def func_{i}(): return {i}"
             file_path.write_text(content)
             self.git_commit(f"Commit {i}")
 
@@ -258,7 +248,7 @@ class {prefix.capitalize()}Class{i}:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            timeout=30
+            timeout=30,
         )
         assert result.returncode == 0
 
@@ -303,7 +293,7 @@ class Module{i}Handler{j}:
             ["cidx", "temporal", "index", "--all"],
             capture_output=True,
             text=True,
-            timeout=120
+            timeout=120,
         )
         assert result.returncode == 0
 
@@ -322,7 +312,7 @@ class Module{i}Handler{j}:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            timeout=30
+            timeout=30,
         )
         incremental_time = time.time() - start_time
         assert result.returncode == 0
@@ -336,7 +326,7 @@ class Module{i}Handler{j}:
         result = subprocess.run(
             ["cidx", "temporal", "query", "new_feature_52", "--limit", "3"],
             capture_output=True,
-            text=True
+            text=True,
         )
         assert result.returncode == 0
         assert "new_module" in result.stdout
@@ -355,11 +345,7 @@ class Module{i}Handler{j}:
 
         # First index (full rebuild)
         start_time = time.time()
-        result = subprocess.run(
-            ["cidx", "index"],
-            capture_output=True,
-            text=True
-        )
+        result = subprocess.run(["cidx", "index"], capture_output=True, text=True)
         full_index_time = time.time() - start_time
         assert result.returncode == 0
 
@@ -369,11 +355,7 @@ class Module{i}Handler{j}:
 
         # Incremental index
         start_time = time.time()
-        result = subprocess.run(
-            ["cidx", "index"],
-            capture_output=True,
-            text=True
-        )
+        result = subprocess.run(["cidx", "index"], capture_output=True, text=True)
         incremental_time = time.time() - start_time
         assert result.returncode == 0
 
@@ -386,4 +368,6 @@ class Module{i}Handler{j}:
         # For small test cases with API overhead, incremental might not be faster
         # The real benefit comes with larger codebases (1000+ files)
         # Just verify both complete successfully
-        assert result.returncode == 0, "Incremental indexing should complete successfully"
+        assert (
+            result.returncode == 0
+        ), "Incremental indexing should complete successfully"

@@ -43,12 +43,10 @@ class TestVoyageAIPartialResponse:
 
         # Mock API to return only 7 embeddings instead of 10
         mock_response = {
-            "data": [
-                {"embedding": [0.1] * 1536} for _ in range(7)  # Only 7 embeddings
-            ]
+            "data": [{"embedding": [0.1] * 1536} for _ in range(7)]  # Only 7 embeddings
         }
 
-        with patch.object(service, '_make_sync_request', return_value=mock_response):
+        with patch.object(service, "_make_sync_request", return_value=mock_response):
             # Execute & Verify
             with pytest.raises(RuntimeError) as exc_info:
                 service.get_embeddings_batch(texts)
@@ -73,11 +71,12 @@ class TestVoyageAIPartialResponse:
         # Mock API to return correct number of embeddings
         mock_response = {
             "data": [
-                {"embedding": [0.1 * i] * 1536} for i in range(10)  # Exactly 10 embeddings
+                {"embedding": [0.1 * i] * 1536}
+                for i in range(10)  # Exactly 10 embeddings
             ]
         }
 
-        with patch.object(service, '_make_sync_request', return_value=mock_response):
+        with patch.object(service, "_make_sync_request", return_value=mock_response):
             # Execute
             embeddings = service.get_embeddings_batch(texts)
 

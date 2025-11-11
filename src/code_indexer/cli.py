@@ -25,6 +25,7 @@ from .utils.enhanced_messaging import (
     get_conflicting_flags_message,
     get_service_unavailable_message,
 )
+from .utils.exception_logger import ExceptionLogger
 from .mode_detection.command_mode_detector import CommandModeDetector, find_project_root
 from .disabled_commands import require_mode
 from . import __version__
@@ -1792,6 +1793,10 @@ def cli(
     """
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
+
+    # Initialize ExceptionLogger VERY EARLY for error tracking
+    exception_logger = ExceptionLogger.initialize(project_root=Path.cwd(), mode="cli")
+    exception_logger.install_thread_exception_hook()
 
     # TEMPORARY: Enable DEBUG logging for manual testing
     logging.basicConfig(
@@ -4903,7 +4908,7 @@ def query(
                             limit=limit,
                             languages=languages,
                             exclude_languages=exclude_languages,
-                            path_filter=str(path_filter[0]) if path_filter else None,
+                            path_filter=path_filter,
                             exclude_path=exclude_paths,
                             min_score=min_score,
                             accuracy=accuracy,

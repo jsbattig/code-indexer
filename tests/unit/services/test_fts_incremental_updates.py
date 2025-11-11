@@ -32,17 +32,23 @@ class TestFTSIncrementalUpdates:
     def test_first_index_logs_full_build(self, fts_manager, caplog):
         """Test that first index creation logs FULL FTS INDEX BUILD."""
         import logging
+
         caplog.set_level(logging.INFO)
 
         # First initialization should log full build
         fts_manager.initialize_index(create_new=True)
 
         # Verify log contains full build marker
-        assert any("FULL FTS INDEX BUILD" in record.message for record in caplog.records)
+        assert any(
+            "FULL FTS INDEX BUILD" in record.message for record in caplog.records
+        )
 
-    def test_existing_index_detects_incremental_mode(self, fts_manager, temp_index_dir, caplog):
+    def test_existing_index_detects_incremental_mode(
+        self, fts_manager, temp_index_dir, caplog
+    ):
         """Test that existing index is detected and opens in incremental mode."""
         import logging
+
         caplog.set_level(logging.INFO)
 
         # Create initial index
@@ -57,12 +63,18 @@ class TestFTSIncrementalUpdates:
         fts_manager2.initialize_index(create_new=False)
 
         # Verify it opened existing index (NOT full build)
-        assert any("Opened existing Tantivy index" in record.message for record in caplog.records)
-        assert not any("FULL FTS INDEX BUILD" in record.message for record in caplog.records)
+        assert any(
+            "Opened existing Tantivy index" in record.message
+            for record in caplog.records
+        )
+        assert not any(
+            "FULL FTS INDEX BUILD" in record.message for record in caplog.records
+        )
 
     def test_incremental_update_logs_incremental_marker(self, fts_manager, caplog):
         """Test that incremental updates log INCREMENTAL FTS UPDATE marker."""
         import logging
+
         caplog.set_level(logging.INFO)
 
         # Initialize index
@@ -84,8 +96,12 @@ class TestFTSIncrementalUpdates:
         fts_manager.update_document("test_file.py", doc)
 
         # Verify incremental update marker is logged
-        assert any("⚡ INCREMENTAL FTS UPDATE" in record.message for record in caplog.records)
-        assert not any("FULL FTS INDEX BUILD" in record.message for record in caplog.records)
+        assert any(
+            "⚡ INCREMENTAL FTS UPDATE" in record.message for record in caplog.records
+        )
+        assert not any(
+            "FULL FTS INDEX BUILD" in record.message for record in caplog.records
+        )
 
     def test_incremental_update_only_processes_changed_file(self, fts_manager):
         """Test that incremental updates only process the specific changed file."""
@@ -146,9 +162,12 @@ class TestFTSIncrementalUpdates:
         file1_result = [r for r in results_old if r["path"] == "file1.py"][0]
         assert "func1_updated" in file1_result["snippet"]
 
-    def test_smart_indexer_uses_incremental_mode_on_second_run(self, temp_index_dir, caplog):
+    def test_smart_indexer_uses_incremental_mode_on_second_run(
+        self, temp_index_dir, caplog
+    ):
         """Test that SmartIndexer detects existing FTS index and uses incremental mode."""
         import logging
+
         caplog.set_level(logging.INFO)
 
         # Create initial index by calling initialize_index(create_new=True)
@@ -158,7 +177,9 @@ class TestFTSIncrementalUpdates:
             pytest.skip("Tantivy library not installed")
 
         fts_manager1.initialize_index(create_new=True)
-        assert any("FULL FTS INDEX BUILD" in record.message for record in caplog.records)
+        assert any(
+            "FULL FTS INDEX BUILD" in record.message for record in caplog.records
+        )
         fts_manager1.close()
 
         # Clear log records
@@ -178,9 +199,16 @@ class TestFTSIncrementalUpdates:
         if index_exists:
             fts_manager2.initialize_index(create_new=False)
             # Should log "Opened existing" NOT "FULL FTS INDEX BUILD"
-            assert any("Opened existing Tantivy index" in record.message for record in caplog.records)
-            assert not any("FULL FTS INDEX BUILD" in record.message for record in caplog.records)
+            assert any(
+                "Opened existing Tantivy index" in record.message
+                for record in caplog.records
+            )
+            assert not any(
+                "FULL FTS INDEX BUILD" in record.message for record in caplog.records
+            )
         else:
             # If index doesn't exist, should create new
             fts_manager2.initialize_index(create_new=True)
-            assert any("FULL FTS INDEX BUILD" in record.message for record in caplog.records)
+            assert any(
+                "FULL FTS INDEX BUILD" in record.message for record in caplog.records
+            )

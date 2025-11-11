@@ -10,6 +10,7 @@ BUG CONTEXT:
 
 Expected behavior: Both modes should produce identical output (no snippets).
 """
+
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch, Mock
@@ -33,6 +34,7 @@ class TestFTSSnippetLinesZeroDaemon:
 
         # Create cache entry with mock tantivy index
         from code_indexer.services.rpyc_daemon import CacheEntry
+
         daemon.cache_entry = CacheEntry(project_path)
 
         # Mock tantivy searcher
@@ -41,7 +43,9 @@ class TestFTSSnippetLinesZeroDaemon:
         daemon.cache_entry.tantivy_index = Mock()
 
         # Mock TantivyIndexManager inside _execute_fts_search
-        with patch("code_indexer.services.tantivy_index_manager.TantivyIndexManager") as mock_manager_class:
+        with patch(
+            "code_indexer.services.tantivy_index_manager.TantivyIndexManager"
+        ) as mock_manager_class:
             mock_manager = Mock()
             mock_manager_class.return_value = mock_manager
 
@@ -51,6 +55,7 @@ class TestFTSSnippetLinesZeroDaemon:
 
             # Mock search method to capture parameters
             captured_kwargs = {}
+
             def capture_search_params(**kwargs):
                 captured_kwargs.update(kwargs)
                 # Return mock results with snippets
@@ -62,7 +67,7 @@ class TestFTSSnippetLinesZeroDaemon:
                         "match_text": "voyage",
                         "snippet": "this should be empty",  # Will be empty after fix
                         "snippet_start_line": 9,
-                        "language": "python"
+                        "language": "python",
                     }
                 ]
 
@@ -73,18 +78,20 @@ class TestFTSSnippetLinesZeroDaemon:
                 mock_searcher,
                 "voyage",
                 snippet_lines=0,  # CRITICAL: Pass snippet_lines=0
-                limit=2
+                limit=2,
             )
 
             # Verify search was called
             mock_manager.search.assert_called_once()
 
             # FAILING ASSERTION: Verify snippet_lines was passed
-            assert "snippet_lines" in captured_kwargs, \
-                "snippet_lines parameter not passed to TantivyIndexManager.search()"
+            assert (
+                "snippet_lines" in captured_kwargs
+            ), "snippet_lines parameter not passed to TantivyIndexManager.search()"
 
-            assert captured_kwargs["snippet_lines"] == 0, \
-                f"Expected snippet_lines=0, got {captured_kwargs.get('snippet_lines')}"
+            assert (
+                captured_kwargs["snippet_lines"] == 0
+            ), f"Expected snippet_lines=0, got {captured_kwargs.get('snippet_lines')}"
 
     def test_daemon_fts_query_snippet_lines_zero_returns_empty_snippets(self, tmp_path):
         """Test that daemon FTS query with snippet_lines=0 returns empty snippets (end-to-end).
@@ -103,13 +110,16 @@ class TestFTSSnippetLinesZeroDaemon:
 
         # Create cache entry with mock tantivy index
         from code_indexer.services.rpyc_daemon import CacheEntry
+
         daemon.cache_entry = CacheEntry(project_path)
         daemon.cache_entry.tantivy_index = Mock()
         daemon.cache_entry.tantivy_searcher = Mock()
         daemon.cache_entry.fts_available = True
 
         # Mock TantivyIndexManager
-        with patch("code_indexer.services.tantivy_index_manager.TantivyIndexManager") as mock_manager_class:
+        with patch(
+            "code_indexer.services.tantivy_index_manager.TantivyIndexManager"
+        ) as mock_manager_class:
             mock_manager = Mock()
             mock_manager_class.return_value = mock_manager
             mock_manager._index = daemon.cache_entry.tantivy_index
@@ -124,7 +134,7 @@ class TestFTSSnippetLinesZeroDaemon:
                     "match_text": "voyage",
                     "snippet": "",  # This should be empty with snippet_lines=0
                     "snippet_start_line": 9,
-                    "language": "python"
+                    "language": "python",
                 }
             ]
 
@@ -133,7 +143,7 @@ class TestFTSSnippetLinesZeroDaemon:
                 project_path=str(project_path),
                 query="voyage",
                 snippet_lines=0,  # CRITICAL: Request no snippets
-                limit=2
+                limit=2,
             )
 
             # Verify search was called with snippet_lines=0
@@ -141,11 +151,13 @@ class TestFTSSnippetLinesZeroDaemon:
             call_kwargs = mock_manager.search.call_args.kwargs
 
             # CRITICAL ASSERTION: Verify snippet_lines was passed
-            assert "snippet_lines" in call_kwargs, \
-                "snippet_lines parameter not passed to TantivyIndexManager.search()"
+            assert (
+                "snippet_lines" in call_kwargs
+            ), "snippet_lines parameter not passed to TantivyIndexManager.search()"
 
-            assert call_kwargs["snippet_lines"] == 0, \
-                f"Expected snippet_lines=0, got {call_kwargs.get('snippet_lines')}"
+            assert (
+                call_kwargs["snippet_lines"] == 0
+            ), f"Expected snippet_lines=0, got {call_kwargs.get('snippet_lines')}"
 
     def test_daemon_fts_rpc_call_includes_snippet_lines_parameter(self, tmp_path):
         """Test that RPC call from client to daemon includes snippet_lines parameter.
@@ -161,6 +173,7 @@ class TestFTSSnippetLinesZeroDaemon:
 
         # Setup cache entry with FTS available
         from code_indexer.services.rpyc_daemon import CacheEntry
+
         daemon.cache_entry = CacheEntry(project_path)
         daemon.cache_entry.fts_available = True  # Enable FTS
         daemon.cache_entry.tantivy_searcher = Mock()  # Mock searcher
@@ -174,7 +187,7 @@ class TestFTSSnippetLinesZeroDaemon:
                 project_path=str(project_path),
                 query="test",
                 snippet_lines=0,  # Pass as keyword argument
-                limit=5
+                limit=5,
             )
 
             # Verify _execute_fts_search was called with snippet_lines
@@ -182,8 +195,10 @@ class TestFTSSnippetLinesZeroDaemon:
             call_args = mock_search.call_args
 
             # Check if snippet_lines is in kwargs passed to _execute_fts_search
-            assert "snippet_lines" in call_args.kwargs or "snippet_lines" in call_args.args[1:], \
-                "snippet_lines parameter not forwarded to _execute_fts_search"
+            assert (
+                "snippet_lines" in call_args.kwargs
+                or "snippet_lines" in call_args.args[1:]
+            ), "snippet_lines parameter not forwarded to _execute_fts_search"
 
     def test_client_delegation_passes_snippet_lines_to_daemon(self):
         """Test that client delegation correctly passes snippet_lines to daemon RPC.
@@ -193,8 +208,12 @@ class TestFTSSnippetLinesZeroDaemon:
         from code_indexer.cli_daemon_delegation import _query_via_daemon
 
         # Mock daemon connection
-        with patch("code_indexer.cli_daemon_delegation._find_config_file") as mock_find, \
-             patch("code_indexer.cli_daemon_delegation._connect_to_daemon") as mock_connect:
+        with (
+            patch("code_indexer.cli_daemon_delegation._find_config_file") as mock_find,
+            patch(
+                "code_indexer.cli_daemon_delegation._connect_to_daemon"
+            ) as mock_connect,
+        ):
 
             # Setup mocks
             mock_config_path = Path("/tmp/test/.code-indexer/config.json")
@@ -207,7 +226,7 @@ class TestFTSSnippetLinesZeroDaemon:
             mock_conn.root.exposed_query_fts.return_value = {
                 "results": [],
                 "query": "test",
-                "total": 0
+                "total": 0,
             }
 
             # Call delegation function with snippet_lines=0
@@ -227,11 +246,13 @@ class TestFTSSnippetLinesZeroDaemon:
             call_kwargs = mock_conn.root.exposed_query_fts.call_args.kwargs
 
             # FAILING ASSERTION: snippet_lines should be in RPC call
-            assert "snippet_lines" in call_kwargs, \
-                "snippet_lines parameter not included in RPC call to daemon"
+            assert (
+                "snippet_lines" in call_kwargs
+            ), "snippet_lines parameter not included in RPC call to daemon"
 
-            assert call_kwargs["snippet_lines"] == 0, \
-                f"Expected snippet_lines=0 in RPC call, got {call_kwargs.get('snippet_lines')}"
+            assert (
+                call_kwargs["snippet_lines"] == 0
+            ), f"Expected snippet_lines=0 in RPC call, got {call_kwargs.get('snippet_lines')}"
 
             assert exit_code == 0, "Query should succeed"
 
@@ -262,12 +283,13 @@ class TestFTSSnippetLinesZeroDaemon:
             content=test_content,
             match_start=match_start,
             match_len=match_len,
-            snippet_lines=0  # Request no context
+            snippet_lines=0,  # Request no context
         )
 
         # PASSING ASSERTION: This should already work (verifying existing behavior)
-        assert snippet == "", \
-            f"Expected empty snippet with snippet_lines=0, got: '{snippet}'"
+        assert (
+            snippet == ""
+        ), f"Expected empty snippet with snippet_lines=0, got: '{snippet}'"
 
         # Line/column should still be calculated
         assert line_num == 2, f"Expected line 2, got {line_num}"

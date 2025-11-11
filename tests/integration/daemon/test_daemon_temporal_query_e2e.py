@@ -29,22 +29,38 @@ class TestDaemonTemporalQueryE2E:
         # Initialize git repo
         os.chdir(self.project_path)
         subprocess.run(["git", "init"], check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Test User"], check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            check=True,
+            capture_output=True,
+        )
 
         # Create initial file and commit
         test_file = self.project_path / "example.py"
         test_file.write_text("def hello():\n    print('Hello World')\n")
         subprocess.run(["git", "add", "example.py"], check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "Initial commit"], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Initial commit"], check=True, capture_output=True
+        )
 
         # Create second commit
-        test_file.write_text("def hello():\n    print('Hello World')\n\ndef goodbye():\n    print('Goodbye')\n")
+        test_file.write_text(
+            "def hello():\n    print('Hello World')\n\ndef goodbye():\n    print('Goodbye')\n"
+        )
         subprocess.run(["git", "add", "example.py"], check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "Add goodbye function"], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Add goodbye function"],
+            check=True,
+            capture_output=True,
+        )
 
         # Initialize CIDX
-        subprocess.run(["cidx", "init"], cwd=self.project_path, check=True, capture_output=True)
+        subprocess.run(
+            ["cidx", "init"], cwd=self.project_path, check=True, capture_output=True
+        )
 
         yield
 
@@ -55,7 +71,9 @@ class TestDaemonTemporalQueryE2E:
 
         # Stop daemon if running
         try:
-            subprocess.run(["cidx", "stop"], cwd=self.project_path, timeout=5, capture_output=True)
+            subprocess.run(
+                ["cidx", "stop"], cwd=self.project_path, timeout=5, capture_output=True
+            )
         except:
             pass
 
@@ -67,7 +85,7 @@ class TestDaemonTemporalQueryE2E:
                 cwd=self.project_path,
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
             )
             return "running" in result.stdout.lower() or result.returncode == 0
         except:
@@ -75,7 +93,9 @@ class TestDaemonTemporalQueryE2E:
 
     def _start_daemon(self) -> None:
         """Start daemon and wait for it to be ready."""
-        subprocess.run(["cidx", "start"], cwd=self.project_path, check=True, capture_output=True)
+        subprocess.run(
+            ["cidx", "start"], cwd=self.project_path, check=True, capture_output=True
+        )
 
         # Wait for daemon to be ready (max 10 seconds)
         for _ in range(20):
@@ -89,7 +109,13 @@ class TestDaemonTemporalQueryE2E:
     def _stop_daemon(self) -> None:
         """Stop daemon gracefully."""
         try:
-            subprocess.run(["cidx", "stop"], cwd=self.project_path, timeout=5, check=True, capture_output=True)
+            subprocess.run(
+                ["cidx", "stop"],
+                cwd=self.project_path,
+                timeout=5,
+                check=True,
+                capture_output=True,
+            )
             # Wait for daemon to stop
             for _ in range(10):
                 if not self._is_daemon_running():
@@ -108,7 +134,7 @@ class TestDaemonTemporalQueryE2E:
             cwd=self.project_path,
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
         )
         assert result.returncode == 0, f"Indexing failed: {result.stderr}"
 
@@ -123,7 +149,7 @@ class TestDaemonTemporalQueryE2E:
             ["cidx", "config", "--daemon"],
             cwd=self.project_path,
             check=True,
-            capture_output=True
+            capture_output=True,
         )
 
         # Start daemon
@@ -138,7 +164,7 @@ class TestDaemonTemporalQueryE2E:
                 cwd=self.project_path,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
             assert result.returncode == 0, f"Query failed: {result.stderr}"
 
@@ -160,7 +186,7 @@ class TestDaemonTemporalQueryE2E:
             cwd=self.project_path,
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
         )
         assert result.returncode == 0, f"Standalone indexing failed: {result.stderr}"
 
@@ -171,9 +197,11 @@ class TestDaemonTemporalQueryE2E:
             cwd=self.project_path,
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
-        assert result_standalone.returncode == 0, f"Standalone query failed: {result_standalone.stderr}"
+        assert (
+            result_standalone.returncode == 0
+        ), f"Standalone query failed: {result_standalone.stderr}"
         standalone_output = result_standalone.stdout
 
         # Enable daemon mode
@@ -181,7 +209,7 @@ class TestDaemonTemporalQueryE2E:
             ["cidx", "config", "--daemon"],
             cwd=self.project_path,
             check=True,
-            capture_output=True
+            capture_output=True,
         )
 
         # Start daemon
@@ -195,13 +223,17 @@ class TestDaemonTemporalQueryE2E:
                 cwd=self.project_path,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
-            assert result_daemon.returncode == 0, f"Daemon query failed: {result_daemon.stderr}"
+            assert (
+                result_daemon.returncode == 0
+            ), f"Daemon query failed: {result_daemon.stderr}"
             daemon_output = result_daemon.stdout
 
             # Verify both outputs contain 'hello' (content parity)
-            assert "hello" in standalone_output.lower(), "Standalone results missing 'hello'"
+            assert (
+                "hello" in standalone_output.lower()
+            ), "Standalone results missing 'hello'"
             assert "hello" in daemon_output.lower(), "Daemon results missing 'hello'"
 
             # Note: Exact output match not required due to timing variations,
@@ -221,7 +253,7 @@ class TestDaemonTemporalQueryE2E:
             cwd=self.project_path,
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
         )
         assert result.returncode == 0, f"Indexing failed: {result.stderr}"
 
@@ -230,7 +262,7 @@ class TestDaemonTemporalQueryE2E:
             ["cidx", "config", "--daemon"],
             cwd=self.project_path,
             check=True,
-            capture_output=True
+            capture_output=True,
         )
 
         # Start daemon
@@ -245,7 +277,7 @@ class TestDaemonTemporalQueryE2E:
                 cwd=self.project_path,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
             first_query_time = time.time() - start_time
             assert result.returncode == 0, f"First query failed: {result.stderr}"
@@ -258,7 +290,7 @@ class TestDaemonTemporalQueryE2E:
                 cwd=self.project_path,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
             second_query_time = time.time() - start_time
             assert result.returncode == 0, f"Second query failed: {result.stderr}"
@@ -266,8 +298,9 @@ class TestDaemonTemporalQueryE2E:
             # Verify second query is faster (or similar, accounting for CLI overhead)
             # CLI overhead dominates (100-200ms), so we can't verify <5ms cache hit
             # directly, but we can verify it's not slower
-            assert second_query_time <= first_query_time * 1.5, \
-                f"Second query ({second_query_time:.3f}s) not faster than first ({first_query_time:.3f}s)"
+            assert (
+                second_query_time <= first_query_time * 1.5
+            ), f"Second query ({second_query_time:.3f}s) not faster than first ({first_query_time:.3f}s)"
 
             # Note: The <5ms cache hit target is achieved internally (HNSW mmap),
             # but CLI overhead (process spawn, arg parsing) dominates end-to-end timing

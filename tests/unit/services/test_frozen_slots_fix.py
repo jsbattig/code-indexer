@@ -85,6 +85,7 @@ def test_display_always_gets_fresh_slot_data():
 
     # Render table to string to check contents
     from rich.console import Console as RenderConsole
+
     render_buffer = StringIO()
     render_console = RenderConsole(file=render_buffer, force_terminal=True, width=120)
     render_console.print(display1)
@@ -126,9 +127,12 @@ def test_display_always_gets_fresh_slot_data():
     # ASSERTION: Display should now show NEW files
     # Before fix: Would show old files (frozen slots)
     # After fix: Shows new files (fresh data from slot_tracker)
-    assert "new_file1.py" in display2_text or "new_file2.py" in display2_text or \
-           "new_file3.py" in display2_text or "new_file4.py" in display2_text, \
-           f"Display should show NEW files from slot_tracker, not cached old files. Got: {display2_text}"
+    assert (
+        "new_file1.py" in display2_text
+        or "new_file2.py" in display2_text
+        or "new_file3.py" in display2_text
+        or "new_file4.py" in display2_text
+    ), f"Display should show NEW files from slot_tracker, not cached old files. Got: {display2_text}"
 
     # Also verify we're NOT showing the old files that were replaced
     # (Some old files like file3.py, file5.py may still be there - only check replaced ones)
@@ -148,8 +152,18 @@ def test_display_uses_cached_when_no_slot_tracker():
 
     # Scenario: Hash phase (no slot_tracker)
     concurrent_files = [
-        {"slot_id": 0, "file_path": "hash1.py", "file_size": 1024, "status": "processing"},
-        {"slot_id": 1, "file_path": "hash2.py", "file_size": 2048, "status": "processing"},
+        {
+            "slot_id": 0,
+            "file_path": "hash1.py",
+            "file_size": 1024,
+            "status": "processing",
+        },
+        {
+            "slot_id": 1,
+            "file_path": "hash2.py",
+            "file_size": 2048,
+            "status": "processing",
+        },
     ]
 
     # Update with concurrent_files but NO slot_tracker (hash phase)
@@ -168,6 +182,7 @@ def test_display_uses_cached_when_no_slot_tracker():
 
     # Render to string
     from rich.console import Console as RenderConsole
+
     render_buffer = StringIO()
     render_console = RenderConsole(file=render_buffer, force_terminal=True, width=120)
     render_console.print(display)
@@ -218,11 +233,15 @@ def test_multiple_display_refreshes_stay_fresh():
 
         # Render to string
         from rich.console import Console as RenderConsole
+
         render_buffer = StringIO()
-        render_console = RenderConsole(file=render_buffer, force_terminal=True, width=120)
+        render_console = RenderConsole(
+            file=render_buffer, force_terminal=True, width=120
+        )
         render_console.print(display)
         display_text = render_buffer.getvalue()
 
         # CRITICAL: Display should show the LATEST file for this round
-        assert f"updated_round_{refresh_round}.py" in display_text, \
-            f"Round {refresh_round}: Display should show updated file, not cached old file. Got: {display_text}"
+        assert (
+            f"updated_round_{refresh_round}.py" in display_text
+        ), f"Round {refresh_round}: Display should show updated file, not cached old file. Got: {display_text}"

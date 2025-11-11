@@ -24,18 +24,20 @@ class TestTemporalIndexerProgressBugs:
         self.repo_path = Path(self.temp_dir.name)
 
         # Create git repository structure
-        subprocess.run(["git", "init"], cwd=self.repo_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "init"], cwd=self.repo_path, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "config", "user.name", "Test User"],
             cwd=self.repo_path,
             check=True,
-            capture_output=True
+            capture_output=True,
         )
         subprocess.run(
             ["git", "config", "user.email", "test@example.com"],
             cwd=self.repo_path,
             check=True,
-            capture_output=True
+            capture_output=True,
         )
 
     def teardown_method(self):
@@ -62,7 +64,7 @@ class TestTemporalIndexerProgressBugs:
             "test_start_stop_e2e.py",
             "new_start_services.py",
             "Epic_FilesystemVectorStore.md",
-            "test_yaml_matrix_format.py"
+            "test_yaml_matrix_format.py",
         ]
 
         # Create many commits to trigger parallel processing race conditions
@@ -71,11 +73,13 @@ class TestTemporalIndexerProgressBugs:
             filename = test_files[i % len(test_files)]
             file_path = self.repo_path / filename
             file_path.write_text(f"Content {i} modified")
-            subprocess.run(["git", "add", str(file_path)], cwd=self.repo_path, capture_output=True)
+            subprocess.run(
+                ["git", "add", str(file_path)], cwd=self.repo_path, capture_output=True
+            )
             subprocess.run(
                 ["git", "commit", "-m", f"Commit {i}: {filename}"],
                 cwd=self.repo_path,
-                capture_output=True
+                capture_output=True,
             )
 
         # Track progress callbacks to detect mismatches
@@ -86,18 +90,22 @@ class TestTemporalIndexerProgressBugs:
         def progress_callback(current, total, path, info=""):
             """Capture progress calls for analysis."""
             with progress_lock:
-                progress_calls.append({
-                    "current": current,
-                    "total": total,
-                    "path": str(path) if path else None,
-                    "info": info,
-                    "thread_id": threading.current_thread().ident
-                })
+                progress_calls.append(
+                    {
+                        "current": current,
+                        "total": total,
+                        "path": str(path) if path else None,
+                        "info": info,
+                        "thread_id": threading.current_thread().ident,
+                    }
+                )
 
         # Mock components
         config_manager = Mock(spec=ConfigManager)
         config = Mock()
-        config.voyage_ai = Mock(parallel_requests=8, max_concurrent_batches_per_commit=10)  # High parallelism for race conditions
+        config.voyage_ai = Mock(
+            parallel_requests=8, max_concurrent_batches_per_commit=10
+        )  # High parallelism for race conditions
         config_manager.get_config.return_value = config
 
         vector_store = Mock(spec=FilesystemVectorStore)
@@ -105,7 +113,9 @@ class TestTemporalIndexerProgressBugs:
         vector_store.collection_exists.return_value = False
         vector_store.create_collection = Mock()
         vector_store.upsert_points = Mock()
-        vector_store.load_id_index.return_value = set()  # Return empty set for len() call
+        vector_store.load_id_index.return_value = (
+            set()
+        )  # Return empty set for len() call
 
         # Mock the diff scanner to return test diffs
         from src.code_indexer.services.temporal.temporal_diff_scanner import DiffInfo
@@ -115,6 +125,7 @@ class TestTemporalIndexerProgressBugs:
             # Simulate getting the right file for each commit based on hash
             # Use modulo to map hash to file index
             import hashlib
+
             hash_int = int(hashlib.md5(commit_hash.encode()).hexdigest()[:8], 16)
             file_idx = hash_int % len(test_files)
             filename = test_files[file_idx]
@@ -125,19 +136,25 @@ class TestTemporalIndexerProgressBugs:
             # Add delay to simulate real processing and trigger race conditions
             time.sleep(0.002)
 
-            return [DiffInfo(
-                file_path=filename,
-                diff_type="modified",
-                commit_hash=commit_hash,
-                diff_content=f"+Modified content in {filename}\n"
-            )]
+            return [
+                DiffInfo(
+                    file_path=filename,
+                    diff_type="modified",
+                    commit_hash=commit_hash,
+                    diff_content=f"+Modified content in {filename}\n",
+                )
+            ]
 
-        with patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory") as factory_mock:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+        ) as factory_mock:
             factory_mock.get_provider_model_info.return_value = {"dimensions": 1024}
             provider = Mock()
             factory_mock.create.return_value = provider
 
-            with patch("src.code_indexer.services.vector_calculation_manager.VectorCalculationManager") as vcm_mock:
+            with patch(
+                "src.code_indexer.services.vector_calculation_manager.VectorCalculationManager"
+            ) as vcm_mock:
                 manager = Mock()
                 manager.__enter__ = Mock(return_value=manager)
                 manager.__exit__ = Mock(return_value=None)
@@ -148,21 +165,27 @@ class TestTemporalIndexerProgressBugs:
                     result = Mock()
                     result.embeddings = [[0.1] * 1024]
                     result.error = None
+
                     # Add delay to simulate real embedding calculation
                     def delayed_result(*args, **kwargs):
                         time.sleep(0.001)
                         return result
+
                     future.result = delayed_result
                     return future
 
-                manager.submit_batch_task = Mock(side_effect=lambda *args, **kwargs: create_future_result())
+                manager.submit_batch_task = Mock(
+                    side_effect=lambda *args, **kwargs: create_future_result()
+                )
                 vcm_mock.return_value = manager
 
                 # Create indexer
                 indexer = TemporalIndexer(config_manager, vector_store)
 
                 # Patch the diff scanner on the indexer instance
-                indexer.diff_scanner.get_diffs_for_commit = Mock(side_effect=mock_get_diffs)
+                indexer.diff_scanner.get_diffs_for_commit = Mock(
+                    side_effect=mock_get_diffs
+                )
 
                 # Run indexing with progress callback
                 result = indexer.index_commits(progress_callback=progress_callback)
@@ -186,7 +209,10 @@ class TestTemporalIndexerProgressBugs:
                                 # Check if this commit-file pair is correct
                                 if displayed_hash in commit_hash_to_file:
                                     expected_file = commit_hash_to_file[displayed_hash]
-                                    if displayed_file != expected_file and displayed_file != "initializing":
+                                    if (
+                                        displayed_file != expected_file
+                                        and displayed_file != "initializing"
+                                    ):
                                         mismatches.append(
                                             f"Progress shows commit {displayed_hash} with file '{displayed_file}' "
                                             f"but should be '{expected_file}'"
@@ -194,7 +220,9 @@ class TestTemporalIndexerProgressBugs:
 
                 # The bug would cause mismatches - for now we expect none with our mock
                 # But the actual code has the bug where commit variable is used from wrong context
-                assert len(mismatches) == 0, f"Found commit-file mismatches (race condition bug): {mismatches}"
+                assert (
+                    len(mismatches) == 0
+                ), f"Found commit-file mismatches (race condition bug): {mismatches}"
 
     def test_bug2_list_index_out_of_range(self):
         """Test BUG 2: List index out of range at end of processing.
@@ -207,14 +235,20 @@ class TestTemporalIndexerProgressBugs:
 
         # Create initial commit
         (self.repo_path / "test.txt").write_text("Initial")
-        subprocess.run(["git", "add", "test.txt"], cwd=self.repo_path, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "Commit 0"], cwd=self.repo_path, capture_output=True)
+        subprocess.run(
+            ["git", "add", "test.txt"], cwd=self.repo_path, capture_output=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "Commit 0"], cwd=self.repo_path, capture_output=True
+        )
 
         # Instead of creating real commits (too slow), mock git log output
         mock_commits = []
         for i in range(num_commits):
             # Format: hash|timestamp|author_name|author_email|message|parent_hashes
-            mock_commits.append(f"hash{i:03d}|{1609459200 + i}|Author|author@example.com|Commit {i}|parent")
+            mock_commits.append(
+                f"hash{i:03d}|{1609459200 + i}|Author|author@example.com|Commit {i}|parent"
+            )
 
         # Mock subprocess to return our fake git log
         with patch("subprocess.run") as mock_run:
@@ -243,29 +277,38 @@ class TestTemporalIndexerProgressBugs:
             # Mock components with parallel processing (8 threads like user's scenario)
             config_manager = Mock(spec=ConfigManager)
             config = Mock()
-            config.voyage_ai = Mock(parallel_requests=8, max_concurrent_batches_per_commit=10)  # Parallel processing like real scenario
+            config.voyage_ai = Mock(
+                parallel_requests=8, max_concurrent_batches_per_commit=10
+            )  # Parallel processing like real scenario
             config_manager.get_config.return_value = config
 
             vector_store = Mock(spec=FilesystemVectorStore)
             vector_store.project_root = self.repo_path
             vector_store.collection_exists.return_value = True
             vector_store.upsert_points = Mock()
-            vector_store.load_id_index.return_value = set()  # Return empty set for len() call
+            vector_store.load_id_index.return_value = (
+                set()
+            )  # Return empty set for len() call
 
             # Track progress to see if we hit the 361/365 mark
             progress_calls = []
+
             def progress_callback(current, total, path, info=""):
                 progress_calls.append({"current": current, "total": total})
                 # Check if we're near the error point
                 if current == 361 and total == 365:
                     print(f"Reached critical point: {current}/{total}")
 
-            with patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory") as factory_mock:
+            with patch(
+                "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+            ) as factory_mock:
                 factory_mock.get_provider_model_info.return_value = {"dimensions": 1024}
                 provider = Mock()
                 factory_mock.create.return_value = provider
 
-                with patch("src.code_indexer.services.vector_calculation_manager.VectorCalculationManager") as vcm_mock:
+                with patch(
+                    "src.code_indexer.services.vector_calculation_manager.VectorCalculationManager"
+                ) as vcm_mock:
                     manager = Mock()
                     manager.__enter__ = Mock(return_value=manager)
                     manager.__exit__ = Mock(return_value=None)
@@ -292,8 +335,9 @@ class TestTemporalIndexerProgressBugs:
                         # Check we processed all commits
                         if progress_calls:
                             last_progress = progress_calls[-1]
-                            assert last_progress["current"] == num_commits, \
-                                f"Expected {num_commits} commits processed, got {last_progress['current']}"
+                            assert (
+                                last_progress["current"] == num_commits
+                            ), f"Expected {num_commits} commits processed, got {last_progress['current']}"
                     except IndexError as e:
                         pytest.fail(f"IndexError occurred at commit processing: {e}")
 
@@ -308,12 +352,15 @@ class TestTemporalIndexerProgressBugs:
 
         # Mock console.print to capture output
         with patch("src.code_indexer.cli.console") as mock_console:
+
             def capture_print(*args, **kwargs):
                 """Capture console.print calls."""
-                console_outputs.append({
-                    "text": str(args[0]) if args else "",
-                    "end": kwargs.get("end", "\n")
-                })
+                console_outputs.append(
+                    {
+                        "text": str(args[0]) if args else "",
+                        "end": kwargs.get("end", "\n"),
+                    }
+                )
 
             mock_console.print.side_effect = capture_print
 
@@ -334,7 +381,8 @@ class TestTemporalIndexerProgressBugs:
                 # Medium info - still OK
                 "50/100 commits (50%) | 2.3 commits/s | 8 threads | Processing...",
                 # Long info - might wrap (over 120 chars)
-                "99/100 commits (99%) | 3.7 commits/s | 8 threads | Processing..." + "x" * 100,
+                "99/100 commits (99%) | 3.7 commits/s | 8 threads | Processing..."
+                + "x" * 100,
             ]
 
             for i, info in enumerate(test_cases, 1):
@@ -343,18 +391,25 @@ class TestTemporalIndexerProgressBugs:
         # Verify all progress updates used end="\r"
         for output in console_outputs:
             if "Processing commits:" in output["text"]:
-                assert output["end"] == "\r", f"Progress update missing end='\\r': {output}"
+                assert (
+                    output["end"] == "\r"
+                ), f"Progress update missing end='\\r': {output}"
 
         # Check for reasonable line lengths (terminal typically 80-120 chars)
         MAX_TERMINAL_WIDTH = 120
         for output in console_outputs:
             if len(output["text"]) > MAX_TERMINAL_WIDTH:
                 # Long lines should be truncated or handled appropriately
-                print(f"Warning: Line exceeds terminal width ({len(output['text'])} chars): {output['text'][:50]}...")
+                print(
+                    f"Warning: Line exceeds terminal width ({len(output['text'])} chars): {output['text'][:50]}..."
+                )
 
         # All outputs should use \r for same-line update
-        assert all(o["end"] == "\r" for o in console_outputs if "Processing commits:" in o["text"]), \
-            "Not all progress updates use end='\\r'"
+        assert all(
+            o["end"] == "\r"
+            for o in console_outputs
+            if "Processing commits:" in o["text"]
+        ), "Not all progress updates use end='\\r'"
 
     def test_all_bugs_fixed_comprehensive(self):
         """Comprehensive test proving all three bugs are fixed.
@@ -368,39 +423,55 @@ class TestTemporalIndexerProgressBugs:
         for i in range(num_commits):
             file_path = self.repo_path / f"file{i}.py"
             file_path.write_text(f"Content {i}")
-            subprocess.run(["git", "add", str(file_path)], cwd=self.repo_path, capture_output=True)
-            subprocess.run(["git", "commit", "-m", f"Commit {i}"], cwd=self.repo_path, capture_output=True)
+            subprocess.run(
+                ["git", "add", str(file_path)], cwd=self.repo_path, capture_output=True
+            )
+            subprocess.run(
+                ["git", "commit", "-m", f"Commit {i}"],
+                cwd=self.repo_path,
+                capture_output=True,
+            )
 
         # Track all progress callbacks
         progress_calls = []
 
         def progress_callback(current, total, path, info=""):
             """Capture all progress updates."""
-            progress_calls.append({
-                "current": current,
-                "total": total,
-                "path": str(path) if path else None,
-                "info": info
-            })
+            progress_calls.append(
+                {
+                    "current": current,
+                    "total": total,
+                    "path": str(path) if path else None,
+                    "info": info,
+                }
+            )
 
         # Mock components
         config_manager = Mock(spec=ConfigManager)
         config = Mock()
-        config.voyage_ai = Mock(parallel_requests=8, max_concurrent_batches_per_commit=10)  # High parallelism
+        config.voyage_ai = Mock(
+            parallel_requests=8, max_concurrent_batches_per_commit=10
+        )  # High parallelism
         config_manager.get_config.return_value = config
 
         vector_store = Mock(spec=FilesystemVectorStore)
         vector_store.project_root = self.repo_path
         vector_store.collection_exists.return_value = True
         vector_store.upsert_points = Mock()
-        vector_store.load_id_index.return_value = set()  # Return empty set for len() call
+        vector_store.load_id_index.return_value = (
+            set()
+        )  # Return empty set for len() call
 
-        with patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory") as factory_mock:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+        ) as factory_mock:
             factory_mock.get_provider_model_info.return_value = {"dimensions": 1024}
             provider = Mock()
             factory_mock.create.return_value = provider
 
-            with patch("src.code_indexer.services.vector_calculation_manager.VectorCalculationManager") as vcm_mock:
+            with patch(
+                "src.code_indexer.services.vector_calculation_manager.VectorCalculationManager"
+            ) as vcm_mock:
                 manager = Mock()
                 manager.__enter__ = Mock(return_value=manager)
                 manager.__exit__ = Mock(return_value=None)
@@ -418,15 +489,20 @@ class TestTemporalIndexerProgressBugs:
                 indexer = TemporalIndexer(config_manager, vector_store)
 
                 # Mock diff scanner
-                from src.code_indexer.services.temporal.temporal_diff_scanner import DiffInfo
-                indexer.diff_scanner.get_diffs_for_commit = Mock(return_value=[
-                    DiffInfo(
-                        file_path="test.py",
-                        diff_type="modified",
-                        commit_hash="abc123",
-                        diff_content="+test content\n"
-                    )
-                ])
+                from src.code_indexer.services.temporal.temporal_diff_scanner import (
+                    DiffInfo,
+                )
+
+                indexer.diff_scanner.get_diffs_for_commit = Mock(
+                    return_value=[
+                        DiffInfo(
+                            file_path="test.py",
+                            diff_type="modified",
+                            commit_hash="abc123",
+                            diff_content="+test content\n",
+                        )
+                    ]
+                )
 
                 # Run indexing
                 result = indexer.index_commits(progress_callback=progress_callback)
@@ -440,17 +516,29 @@ class TestTemporalIndexerProgressBugs:
                         if len(parts) == 2:
                             filename = parts[1].strip()
                             # Check for corruption patterns
-                            if ".py.py" in filename or ".pyd.py" in filename or "pyre_" in filename:
-                                pytest.fail(f"Bug 1 not fixed: Filename corruption detected: {filename}")
+                            if (
+                                ".py.py" in filename
+                                or ".pyd.py" in filename
+                                or "pyre_" in filename
+                            ):
+                                pytest.fail(
+                                    f"Bug 1 not fixed: Filename corruption detected: {filename}"
+                                )
                             # Good - has file info but no corruption
-                    elif call["info"] and call["total"] > 0 and "📝" not in call["info"]:
+                    elif (
+                        call["info"] and call["total"] > 0 and "📝" not in call["info"]
+                    ):
                         # Missing required Story 1 element
-                        pytest.fail(f"Story 1 violation: Missing 📝 emoji and file info: {call['info']}")
+                        pytest.fail(
+                            f"Story 1 violation: Missing 📝 emoji and file info: {call['info']}"
+                        )
 
                 # Verify Bug 2 fix: Processed all commits without IndexError
                 assert len(progress_calls) > 0, "No progress callbacks received"
                 last_call = progress_calls[-1]
-                assert last_call["current"] == num_commits, f"Did not process all commits: {last_call}"
+                assert (
+                    last_call["current"] == num_commits
+                ), f"Did not process all commits: {last_call}"
 
                 # Verify Bug 3 fix: Progress info is reasonably short
                 MAX_SAFE_LENGTH = 100  # Safe length that won't wrap
@@ -458,5 +546,6 @@ class TestTemporalIndexerProgressBugs:
                     if call["info"]:
                         # The new format should be much shorter without filename
                         info_len = len(call["info"])
-                        assert info_len < MAX_SAFE_LENGTH, \
-                            f"Bug 3 not fixed: Progress line too long ({info_len} chars): {call['info']}"
+                        assert (
+                            info_len < MAX_SAFE_LENGTH
+                        ), f"Bug 3 not fixed: Progress line too long ({info_len} chars): {call['info']}"

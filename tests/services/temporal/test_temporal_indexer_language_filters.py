@@ -1,4 +1,5 @@
 """Test temporal indexer language and path filter support."""
+
 from unittest.mock import Mock, patch
 import pytest
 
@@ -14,8 +15,11 @@ class TestTemporalIndexerLanguageFilters:
         """Test that temporal indexer adds language and file_extension to payload for filter support."""
         # Initialize tmp_path as a git repository
         import subprocess
+
         subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"], cwd=tmp_path
+        )
         subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path)
 
         # Setup
@@ -39,30 +43,38 @@ class TestTemporalIndexerLanguageFilters:
         vector_store.collection_exists.return_value = True  # Skip collection creation
 
         # Patch the embedding factory to avoid its initialization
-        with patch('code_indexer.services.embedding_factory.EmbeddingProviderFactory') as mock_factory:
+        with patch(
+            "code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+        ) as mock_factory:
             mock_factory.get_provider_model_info.return_value = {"dimensions": 1536}
 
             indexer = TemporalIndexer(
-                config_manager=config_manager,
-                vector_store=vector_store
+                config_manager=config_manager, vector_store=vector_store
             )
 
         # We'll test by mocking git history and checking what gets passed to vector_store.upsert_points
         # Mock the dependencies
-        with patch.object(indexer, '_get_commit_history') as mock_get_history, \
-             patch.object(indexer.diff_scanner, 'get_diffs_for_commit') as mock_get_diffs, \
-             patch.object(indexer.chunker, 'chunk_text') as mock_chunk, \
-             patch('code_indexer.services.temporal.temporal_indexer.VectorCalculationManager') as mock_vcm_class:
+        with (
+            patch.object(indexer, "_get_commit_history") as mock_get_history,
+            patch.object(
+                indexer.diff_scanner, "get_diffs_for_commit"
+            ) as mock_get_diffs,
+            patch.object(indexer.chunker, "chunk_text") as mock_chunk,
+            patch(
+                "code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
+            ) as mock_vcm_class,
+        ):
 
             # Create commit info
             from code_indexer.services.temporal.models import CommitInfo
+
             commit = CommitInfo(
                 hash="abc123",
                 timestamp=1730764800,
                 author_name="Test Author",
                 author_email="test@example.com",
                 message="Add authentication",
-                parent_hashes=""
+                parent_hashes="",
             )
             mock_get_history.return_value = [commit]
 
@@ -81,7 +93,7 @@ class TestTemporalIndexerLanguageFilters:
                     "chunk_index": 0,
                     "char_start": 0,
                     "char_end": 30,
-                    "file_extension": "py"  # This is returned by chunker
+                    "file_extension": "py",  # This is returned by chunker
                 }
             ]
 
@@ -99,36 +111,47 @@ class TestTemporalIndexerLanguageFilters:
 
             # Capture what gets stored
             stored_points = []
+
             def capture_points(collection_name, points):
                 stored_points.extend(points)
+
             vector_store.upsert_points.side_effect = capture_points
 
             # Call index_commits
             indexer.index_commits(
-                all_branches=False,
-                max_commits=1,
-                progress_callback=None
+                all_branches=False, max_commits=1, progress_callback=None
             )
 
             # Verify a point was created
-            assert len(stored_points) == 1, f"Should have created one point, got {len(stored_points)}"
+            assert (
+                len(stored_points) == 1
+            ), f"Should have created one point, got {len(stored_points)}"
             payload = stored_points[0]["payload"]
 
             # Check that language and file_extension are present
             assert "language" in payload, "Payload should include 'language' field"
-            assert "file_extension" in payload, "Payload should include 'file_extension' field"
+            assert (
+                "file_extension" in payload
+            ), "Payload should include 'file_extension' field"
 
             # Check values are correct for Python file
             # FIXED: Both language and file_extension should NOT have dots to match regular indexing
-            assert payload["language"] == "py", f"Expected language 'py' but got {payload.get('language')}"
-            assert payload["file_extension"] == "py", f"Expected extension 'py' (without dot) but got {payload.get('file_extension')}"
+            assert (
+                payload["language"] == "py"
+            ), f"Expected language 'py' but got {payload.get('language')}"
+            assert (
+                payload["file_extension"] == "py"
+            ), f"Expected extension 'py' (without dot) but got {payload.get('file_extension')}"
 
     def test_temporal_payload_language_for_various_files(self, tmp_path):
         """Test language detection for various file types."""
         # Initialize tmp_path as a git repository
         import subprocess
+
         subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"], cwd=tmp_path
+        )
         subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path)
 
         # Setup
@@ -152,12 +175,13 @@ class TestTemporalIndexerLanguageFilters:
         vector_store.collection_exists.return_value = True
 
         # Patch the embedding factory
-        with patch('code_indexer.services.embedding_factory.EmbeddingProviderFactory') as mock_factory:
+        with patch(
+            "code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+        ) as mock_factory:
             mock_factory.get_provider_model_info.return_value = {"dimensions": 1536}
 
             indexer = TemporalIndexer(
-                config_manager=config_manager,
-                vector_store=vector_store
+                config_manager=config_manager, vector_store=vector_store
             )
 
         test_cases = [
@@ -171,20 +195,27 @@ class TestTemporalIndexerLanguageFilters:
 
         for file_path, expected_lang, expected_ext in test_cases:
             # Mock the dependencies
-            with patch.object(indexer, '_get_commit_history') as mock_get_history, \
-                 patch.object(indexer.diff_scanner, 'get_diffs_for_commit') as mock_get_diffs, \
-                 patch.object(indexer.chunker, 'chunk_text') as mock_chunk, \
-                 patch('code_indexer.services.temporal.temporal_indexer.VectorCalculationManager') as mock_vcm_class:
+            with (
+                patch.object(indexer, "_get_commit_history") as mock_get_history,
+                patch.object(
+                    indexer.diff_scanner, "get_diffs_for_commit"
+                ) as mock_get_diffs,
+                patch.object(indexer.chunker, "chunk_text") as mock_chunk,
+                patch(
+                    "code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
+                ) as mock_vcm_class,
+            ):
 
                 # Create commit info
                 from code_indexer.services.temporal.models import CommitInfo
+
                 commit = CommitInfo(
                     hash=f"hash_{file_path}",
                     timestamp=1730764800,
                     author_name="Test Author",
                     author_email="test@example.com",
                     message=f"Test commit for {file_path}",
-                    parent_hashes=""
+                    parent_hashes="",
                 )
                 mock_get_history.return_value = [commit]
 
@@ -203,7 +234,7 @@ class TestTemporalIndexerLanguageFilters:
                         "chunk_index": 0,
                         "char_start": 0,
                         "char_end": 12,
-                        "file_extension": expected_lang  # Chunker returns without dot
+                        "file_extension": expected_lang,  # Chunker returns without dot
                     }
                 ]
 
@@ -221,27 +252,29 @@ class TestTemporalIndexerLanguageFilters:
 
                 # Capture what gets stored
                 stored_points = []
+
                 def capture_points(collection_name, points):
                     stored_points.extend(points)
+
                 vector_store.upsert_points.side_effect = capture_points
 
                 # Call index_commits
                 indexer.index_commits(
-                    all_branches=False,
-                    max_commits=1,
-                    progress_callback=None
+                    all_branches=False, max_commits=1, progress_callback=None
                 )
 
                 # Verify the payload includes correct language and extension
-                assert len(stored_points) > 0, f"Should have created points for {file_path}"
+                assert (
+                    len(stored_points) > 0
+                ), f"Should have created points for {file_path}"
                 payload = stored_points[-1]["payload"]  # Get the last point
 
-                assert payload["language"] == expected_lang, (
-                    f"For {file_path}: expected language '{expected_lang}' but got '{payload.get('language')}'"
-                )
-                assert payload["file_extension"] == expected_ext, (
-                    f"For {file_path}: expected extension '{expected_ext}' but got '{payload.get('file_extension')}'"
-                )
+                assert (
+                    payload["language"] == expected_lang
+                ), f"For {file_path}: expected language '{expected_lang}' but got '{payload.get('language')}'"
+                assert (
+                    payload["file_extension"] == expected_ext
+                ), f"For {file_path}: expected extension '{expected_ext}' but got '{payload.get('file_extension')}'"
 
 
 if __name__ == "__main__":

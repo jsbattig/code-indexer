@@ -67,7 +67,7 @@ class TestGitAwareWatchHandlerInterfaceCompliance:
             smart_indexer=smart_indexer,
             git_topology_service=git_topology_service,
             watch_metadata=watch_metadata,
-            debounce_seconds=0.1  # Short for testing
+            debounce_seconds=0.1,  # Short for testing
         )
 
         return handler
@@ -75,7 +75,7 @@ class TestGitAwareWatchHandlerInterfaceCompliance:
     def test_is_watching_method_exists(self, watch_handler):
         """Test that is_watching() method exists and works correctly."""
         # Should return False before starting
-        assert hasattr(watch_handler, 'is_watching'), "is_watching method missing"
+        assert hasattr(watch_handler, "is_watching"), "is_watching method missing"
         assert not watch_handler.is_watching()
 
         # Start watching
@@ -93,7 +93,7 @@ class TestGitAwareWatchHandlerInterfaceCompliance:
     def test_get_stats_method_exists(self, watch_handler):
         """Test that get_stats() method exists and returns expected structure."""
         # Method should exist
-        assert hasattr(watch_handler, 'get_stats'), "get_stats method missing"
+        assert hasattr(watch_handler, "get_stats"), "get_stats method missing"
 
         # Get stats before starting
         stats = watch_handler.get_stats()
@@ -120,13 +120,13 @@ class TestGitAwareWatchHandlerInterfaceCompliance:
     def test_observer_lifecycle_management(self, watch_handler):
         """Test that Observer is properly created and cleaned up."""
         # Before start, no observer should exist
-        assert not hasattr(watch_handler, 'observer') or watch_handler.observer is None
+        assert not hasattr(watch_handler, "observer") or watch_handler.observer is None
 
         # Start watching
         watch_handler.start_watching()
 
         # Observer should be created and running
-        assert hasattr(watch_handler, 'observer'), "Observer not created"
+        assert hasattr(watch_handler, "observer"), "Observer not created"
         assert watch_handler.observer is not None
 
         # Give observer time to start
@@ -137,7 +137,7 @@ class TestGitAwareWatchHandlerInterfaceCompliance:
 
         # Observer should be stopped (but may still exist)
         # The key is that it's been stopped properly
-        if hasattr(watch_handler, 'observer') and watch_handler.observer:
+        if hasattr(watch_handler, "observer") and watch_handler.observer:
             assert not watch_handler.observer.is_alive()
 
 
@@ -159,8 +159,8 @@ class TestDaemonWatchManagerRaceConditions:
         manager.watch_handler = WATCH_STARTING
 
         # Verify it has expected methods
-        assert hasattr(manager.watch_handler, 'is_watching')
-        assert hasattr(manager.watch_handler, 'get_stats')
+        assert hasattr(manager.watch_handler, "is_watching")
+        assert hasattr(manager.watch_handler, "get_stats")
 
         # Verify methods return expected values
         assert not manager.watch_handler.is_watching()
@@ -179,8 +179,8 @@ class TestDaemonWatchManagerRaceConditions:
         manager.watch_handler = error_handler
 
         # Verify it has expected methods
-        assert hasattr(error_handler, 'is_watching')
-        assert hasattr(error_handler, 'get_stats')
+        assert hasattr(error_handler, "is_watching")
+        assert hasattr(error_handler, "get_stats")
 
         # Verify methods return expected values
         assert not error_handler.is_watching()
@@ -207,7 +207,7 @@ class TestDaemonWatchManagerRaceConditions:
         max_iterations = 0
         while not stop_event.wait(timeout=0.3) and max_iterations < 3:
             max_iterations += 1
-            if hasattr(mock_handler, 'is_watching') and not mock_handler.is_watching():
+            if hasattr(mock_handler, "is_watching") and not mock_handler.is_watching():
                 break
 
         wait_duration = time.time() - wait_start
@@ -229,6 +229,7 @@ class TestRealIntegrationWithoutMocks:
 
         # Initialize git repo
         import subprocess
+
         subprocess.run(["git", "init"], cwd=project_path, capture_output=True)
 
         # Create .code-indexer directory
@@ -254,7 +255,7 @@ class TestRealIntegrationWithoutMocks:
         subprocess.run(
             ["git", "commit", "-m", "Initial commit"],
             cwd=project_path,
-            capture_output=True
+            capture_output=True,
         )
 
         yield project_path
@@ -284,15 +285,15 @@ class TestRealIntegrationWithoutMocks:
         # Verify handler has required methods
         assert manager.watch_handler is not None
         assert manager.watch_handler != "starting"  # Should be real handler now
-        assert hasattr(manager.watch_handler, 'is_watching')
-        assert hasattr(manager.watch_handler, 'get_stats')
+        assert hasattr(manager.watch_handler, "is_watching")
+        assert hasattr(manager.watch_handler, "get_stats")
 
         # Verify methods work
-        if hasattr(manager.watch_handler, 'is_watching'):
+        if hasattr(manager.watch_handler, "is_watching"):
             is_watching = manager.watch_handler.is_watching()
             assert isinstance(is_watching, bool)
 
-        if hasattr(manager.watch_handler, 'get_stats'):
+        if hasattr(manager.watch_handler, "get_stats"):
             stats = manager.watch_handler.get_stats()
             assert isinstance(stats, dict)
             assert "files_processed" in stats

@@ -56,7 +56,9 @@ class TestAsyncProgressCallback:
             time.sleep(0.2)
 
             # Verify updates were actually processed
-            assert update_count == 10, f"Expected 10 updates processed, got {update_count}"
+            assert (
+                update_count == 10
+            ), f"Expected 10 updates processed, got {update_count}"
 
         finally:
             manager.stop_display()
@@ -144,7 +146,9 @@ class TestAsyncProgressCallback:
         progress_worker_alive = any(
             "progress_worker" in t.name for t in threading.enumerate()
         )
-        assert not progress_worker_alive, "Async progress worker should terminate after stop_display()"
+        assert (
+            not progress_worker_alive
+        ), "Async progress worker should terminate after stop_display()"
 
     def test_queue_overflow_drops_updates_gracefully(self):
         """Queue overflow should drop updates gracefully without raising queue.Full.
@@ -217,9 +221,9 @@ class TestAsyncProgressCallback:
 
         # Verify timeout is 2.0s (not 1.0s)
         assert join_timeout is not None, "join() was not called with timeout"
-        assert join_timeout >= 2.0, (
-            f"Thread join timeout is {join_timeout}s - should be >= 2.0s to prevent thread leaks"
-        )
+        assert (
+            join_timeout >= 2.0
+        ), f"Thread join timeout is {join_timeout}s - should be >= 2.0s to prevent thread leaks"
 
     def test_stop_display_warns_if_thread_doesnt_terminate(self):
         """stop_display should log warning if worker thread doesn't terminate.
@@ -255,12 +259,14 @@ class TestAsyncProgressCallback:
 
             # Verify warning was logged
             warning_calls = [
-                call for call in mock_logging.warning.call_args_list
-                if "progress worker" in str(call).lower() and "terminate" in str(call).lower()
+                call
+                for call in mock_logging.warning.call_args_list
+                if "progress worker" in str(call).lower()
+                and "terminate" in str(call).lower()
             ]
-            assert len(warning_calls) > 0, (
-                "Expected warning log when progress worker thread fails to terminate"
-            )
+            assert (
+                len(warning_calls) > 0
+            ), "Expected warning log when progress worker thread fails to terminate"
 
     def test_worker_thread_handles_update_exceptions(self):
         """Worker thread should handle exceptions during live_component.update().

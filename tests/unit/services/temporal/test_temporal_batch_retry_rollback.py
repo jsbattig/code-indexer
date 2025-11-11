@@ -56,29 +56,47 @@ class TestBatchRetryLogic:
 
         # Initialize git repo
         import subprocess
-        subprocess.run(["git", "init"], cwd=project_root, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Test"], cwd=project_root, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=project_root, check=True, capture_output=True)
+
+        subprocess.run(
+            ["git", "init"], cwd=project_root, check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=project_root,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=project_root,
+            check=True,
+            capture_output=True,
+        )
 
         vector_store = FilesystemVectorStore(
-            base_path=tmp_path / "index",
-            project_root=project_root
+            base_path=tmp_path / "index", project_root=project_root
         )
 
         # Create indexer with mocked embedding provider
-        with patch('code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info') as mock_get_info:
-            with patch('code_indexer.services.embedding_factory.EmbeddingProviderFactory.create') as mock_create:
+        with patch(
+            "code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+        ) as mock_get_info:
+            with patch(
+                "code_indexer.services.embedding_factory.EmbeddingProviderFactory.create"
+            ) as mock_create:
                 mock_get_info.return_value = {
                     "provider": "voyage-ai",
                     "model": "voyage-code-3",
-                    "dimensions": 1024
+                    "dimensions": 1024,
                 }
 
                 # Mock embedding provider
                 mock_provider = Mock()
                 mock_provider.get_current_model.return_value = "voyage-code-3"
                 mock_provider.get_embeddings_batch.return_value = []
-                mock_provider._get_model_token_limit.return_value = 120000  # VoyageAI token limit
+                mock_provider._get_model_token_limit.return_value = (
+                    120000  # VoyageAI token limit
+                )
                 mock_create.return_value = mock_provider
 
                 indexer = TemporalIndexer(config_manager, vector_store)
@@ -89,27 +107,29 @@ class TestBatchRetryLogic:
                 def mock_submit_batch(texts, metadata):
                     """Simulate timeout on first 2 attempts, success on 3rd."""
                     from concurrent.futures import Future
+
                     future = Future()
                     attempt_count[0] += 1
 
                     if attempt_count[0] <= 2:
                         # Return error result (transient timeout)
                         result = SimpleNamespace(
-                            embeddings=[],
-                            error="Request timeout after 120s"
+                            embeddings=[], error="Request timeout after 120s"
                         )
                     else:
                         # Success on 3rd attempt
                         result = SimpleNamespace(
                             embeddings=[np.random.rand(1024).tolist() for _ in texts],
-                            error=None
+                            error=None,
                         )
 
                     future.set_result(result)
                     return future
 
                 # Mock diff scanner
-                from code_indexer.services.temporal.temporal_diff_scanner import DiffInfo
+                from code_indexer.services.temporal.temporal_diff_scanner import (
+                    DiffInfo,
+                )
 
                 mock_diffs = [
                     DiffInfo(
@@ -118,16 +138,26 @@ class TestBatchRetryLogic:
                         commit_hash="abc123",
                         diff_content="test content",
                         blob_hash="blob1",
-                        parent_commit_hash="parent1"
+                        parent_commit_hash="parent1",
                     )
                 ]
 
-                indexer.diff_scanner.get_diffs_for_commit = Mock(return_value=mock_diffs)
+                indexer.diff_scanner.get_diffs_for_commit = Mock(
+                    return_value=mock_diffs
+                )
 
                 # Mock chunker
-                indexer.chunker.chunk_text = Mock(return_value=[
-                    {"text": "chunk1", "start_line": 1, "end_line": 5, "char_start": 0, "char_end": 100}
-                ])
+                indexer.chunker.chunk_text = Mock(
+                    return_value=[
+                        {
+                            "text": "chunk1",
+                            "start_line": 1,
+                            "end_line": 5,
+                            "char_start": 0,
+                            "char_end": 100,
+                        }
+                    ]
+                )
 
                 # Create commit
                 commit = CommitInfo(
@@ -136,7 +166,7 @@ class TestBatchRetryLogic:
                     timestamp=int(time.time()),
                     author_name="Test",
                     author_email="test@test.com",
-                    parent_hashes=""
+                    parent_hashes="",
                 )
 
                 # Create mock VectorCalculationManager
@@ -151,14 +181,18 @@ class TestBatchRetryLogic:
                     result = indexer._process_commits_parallel(
                         commits=[commit],
                         embedding_provider=mock_provider,
-                        vector_manager=mock_vcm_instance
+                        vector_manager=mock_vcm_instance,
                     )
                 except Exception as e:
                     # Currently expected to fail because retry logic doesn't exist
-                    pytest.fail(f"Test failed with expected error (retry logic not implemented): {e}")
+                    pytest.fail(
+                        f"Test failed with expected error (retry logic not implemented): {e}"
+                    )
 
                 # VERIFY: Batch was attempted 3 times (with retry logic)
-                assert attempt_count[0] == 3, f"Should retry twice and succeed on 3rd attempt, got {attempt_count[0]} attempts"
+                assert (
+                    attempt_count[0] == 3
+                ), f"Should retry twice and succeed on 3rd attempt, got {attempt_count[0]} attempts"
 
                 # VERIFY: Final embeddings were stored (no partial data)
                 point_count = vector_store.count_points("code-indexer-temporal")

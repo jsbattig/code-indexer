@@ -28,7 +28,9 @@ def temp_repo():
         # Initialize git repo
         subprocess.run(["git", "init"], cwd=repo_path, check=True)
         subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_path)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"], cwd=repo_path
+        )
 
         # Create some files and commits
         for i in range(3):
@@ -65,16 +67,20 @@ class TestCliTemporalDaemonDelegation:
                 "enabled": True,
                 "ttl_minutes": 60,
                 "auto_start": True,
-                "auto_shutdown_on_idle": False
+                "auto_shutdown_on_idle": False,
             }
             config_path.write_text(json.dumps(config))
 
             # Mock the daemon delegation to track if it's called
-            with patch("src.code_indexer.cli_daemon_delegation._index_via_daemon") as mock_daemon:
+            with patch(
+                "src.code_indexer.cli_daemon_delegation._index_via_daemon"
+            ) as mock_daemon:
                 mock_daemon.return_value = 0
 
                 # Run temporal indexing with daemon enabled
-                result = runner.invoke(cli, ["index", "--index-commits", "--all-branches"])
+                result = runner.invoke(
+                    cli, ["index", "--index-commits", "--all-branches"]
+                )
 
                 # BUG: Before fix, daemon is NOT called due to early exit
                 # After fix, daemon SHOULD be called
@@ -107,13 +113,19 @@ class TestCliTemporalDaemonDelegation:
                 "enabled": True,
                 "ttl_minutes": 60,
                 "auto_start": True,
-                "auto_shutdown_on_idle": False
+                "auto_shutdown_on_idle": False,
             }
             config_path.write_text(json.dumps(config))
 
             # Mock both delegation paths
-            with patch("src.code_indexer.cli_daemon_delegation._index_via_daemon") as mock_daemon, \
-                 patch("src.code_indexer.services.smart_indexer.SmartIndexer") as mock_indexer:
+            with (
+                patch(
+                    "src.code_indexer.cli_daemon_delegation._index_via_daemon"
+                ) as mock_daemon,
+                patch(
+                    "src.code_indexer.services.smart_indexer.SmartIndexer"
+                ) as mock_indexer,
+            ):
 
                 mock_daemon.return_value = 0
 
@@ -135,7 +147,9 @@ class TestCliTemporalDaemonDelegation:
                 mock_indexer.reset_mock()
 
                 # Test 2: Temporal with --all-branches and --clear
-                result = runner.invoke(cli, ["index", "--index-commits", "--all-branches", "--clear"])
+                result = runner.invoke(
+                    cli, ["index", "--index-commits", "--all-branches", "--clear"]
+                )
 
                 # Daemon should be called with all flags
                 mock_daemon.assert_called_once()
@@ -163,12 +177,18 @@ class TestCliTemporalDaemonDelegation:
                 "enabled": False,
                 "ttl_minutes": 60,
                 "auto_start": False,
-                "auto_shutdown_on_idle": False
+                "auto_shutdown_on_idle": False,
             }
             config_path.write_text(json.dumps(config))
 
-            with patch("src.code_indexer.cli_daemon_delegation._index_via_daemon") as mock_daemon, \
-                 patch("src.code_indexer.services.temporal.temporal_indexer.TemporalIndexer") as mock_temporal:
+            with (
+                patch(
+                    "src.code_indexer.cli_daemon_delegation._index_via_daemon"
+                ) as mock_daemon,
+                patch(
+                    "src.code_indexer.services.temporal.temporal_indexer.TemporalIndexer"
+                ) as mock_temporal,
+            ):
 
                 mock_temporal_instance = MagicMock()
                 mock_temporal.return_value = mock_temporal_instance
@@ -203,11 +223,13 @@ class TestCliTemporalDaemonDelegation:
                 "enabled": True,
                 "ttl_minutes": 60,
                 "auto_start": True,
-                "auto_shutdown_on_idle": False
+                "auto_shutdown_on_idle": False,
             }
             config_path.write_text(json.dumps(config))
 
-            with patch("src.code_indexer.cli_daemon_delegation._index_via_daemon") as mock_daemon:
+            with patch(
+                "src.code_indexer.cli_daemon_delegation._index_via_daemon"
+            ) as mock_daemon:
                 mock_daemon.return_value = 0
 
                 # Run regular semantic indexing (no --index-commits)
@@ -248,26 +270,49 @@ class TestCliTemporalDaemonDelegation:
                 "enabled": True,
                 "ttl_minutes": 60,
                 "auto_start": True,
-                "auto_shutdown_on_idle": False
+                "auto_shutdown_on_idle": False,
             }
             config_path.write_text(json.dumps(config))
 
-            with patch("src.code_indexer.cli_daemon_delegation._index_via_daemon") as mock_daemon:
+            with patch(
+                "src.code_indexer.cli_daemon_delegation._index_via_daemon"
+            ) as mock_daemon:
                 mock_daemon.return_value = 0
 
                 # Test all temporal flag combinations
                 test_cases = [
-                    (["index", "--index-commits"],
-                     {"index_commits": True, "all_branches": False, "force_reindex": False}),
-
-                    (["index", "--index-commits", "--all-branches"],
-                     {"index_commits": True, "all_branches": True, "force_reindex": False}),
-
-                    (["index", "--index-commits", "--clear"],
-                     {"index_commits": True, "all_branches": False, "force_reindex": True}),
-
-                    (["index", "--index-commits", "--all-branches", "--clear"],
-                     {"index_commits": True, "all_branches": True, "force_reindex": True}),
+                    (
+                        ["index", "--index-commits"],
+                        {
+                            "index_commits": True,
+                            "all_branches": False,
+                            "force_reindex": False,
+                        },
+                    ),
+                    (
+                        ["index", "--index-commits", "--all-branches"],
+                        {
+                            "index_commits": True,
+                            "all_branches": True,
+                            "force_reindex": False,
+                        },
+                    ),
+                    (
+                        ["index", "--index-commits", "--clear"],
+                        {
+                            "index_commits": True,
+                            "all_branches": False,
+                            "force_reindex": True,
+                        },
+                    ),
+                    (
+                        ["index", "--index-commits", "--all-branches", "--clear"],
+                        {
+                            "index_commits": True,
+                            "all_branches": True,
+                            "force_reindex": True,
+                        },
+                    ),
                 ]
 
                 for args, expected_kwargs in test_cases:
@@ -278,8 +323,9 @@ class TestCliTemporalDaemonDelegation:
                     mock_daemon.assert_called_once()
                     call_kwargs = mock_daemon.call_args.kwargs
                     for key, expected_value in expected_kwargs.items():
-                        assert call_kwargs.get(key) == expected_value, \
-                            f"Flag {key} mismatch for args {args}: got {call_kwargs.get(key)}, expected {expected_value}"
+                        assert (
+                            call_kwargs.get(key) == expected_value
+                        ), f"Flag {key} mismatch for args {args}: got {call_kwargs.get(key)}, expected {expected_value}"
 
 
 class TestManualVerification:
@@ -316,16 +362,20 @@ class TestManualVerification:
             output = result.output
 
             # After fix: Should see temporal messages
-            assert "temporal" in output.lower() or "commit" in output.lower(), \
-                "Expected temporal indexing messages"
+            assert (
+                "temporal" in output.lower() or "commit" in output.lower()
+            ), "Expected temporal indexing messages"
 
             # After fix: Should NOT see semantic indexing messages
-            assert "🔍 Hashing" not in output, \
-                "BUG: Hashing phase shown during temporal indexing!"
-            assert "📁 Found" not in output or "files for indexing" not in output, \
-                "BUG: File discovery shown during temporal indexing!"
-            assert "🔍 Discovering files" not in output, \
-                "BUG: File discovery shown during temporal indexing!"
+            assert (
+                "🔍 Hashing" not in output
+            ), "BUG: Hashing phase shown during temporal indexing!"
+            assert (
+                "📁 Found" not in output or "files for indexing" not in output
+            ), "BUG: File discovery shown during temporal indexing!"
+            assert (
+                "🔍 Discovering files" not in output
+            ), "BUG: File discovery shown during temporal indexing!"
 
     def test_temporal_only_no_semantic(self, temp_repo):
         """
@@ -341,8 +391,14 @@ class TestManualVerification:
             assert result.exit_code == 0
 
             # Mock to track what gets called
-            with patch("src.code_indexer.services.smart_indexer.SmartIndexer") as mock_smart, \
-                 patch("src.code_indexer.services.temporal.temporal_indexer.TemporalIndexer") as mock_temporal:
+            with (
+                patch(
+                    "src.code_indexer.services.smart_indexer.SmartIndexer"
+                ) as mock_smart,
+                patch(
+                    "src.code_indexer.services.temporal.temporal_indexer.TemporalIndexer"
+                ) as mock_temporal,
+            ):
 
                 mock_temporal_instance = MagicMock()
                 mock_temporal.return_value = mock_temporal_instance
@@ -351,8 +407,9 @@ class TestManualVerification:
                 result = runner.invoke(cli, ["index", "--index-commits"])
 
                 # Should call temporal indexer
-                assert mock_temporal.called or "--index-commits" in str(result.output), \
-                    "Temporal indexer should be invoked"
+                assert mock_temporal.called or "--index-commits" in str(
+                    result.output
+                ), "Temporal indexer should be invoked"
 
                 # Should NOT call smart indexer for semantic indexing
                 mock_smart.assert_not_called()
@@ -383,11 +440,7 @@ class TestTemporalDaemonE2E:
         """
         # Step 1: Initialize the repository
         result = subprocess.run(
-            ["cidx", "init"],
-            cwd=temp_repo,
-            capture_output=True,
-            text=True,
-            timeout=30
+            ["cidx", "init"], cwd=temp_repo, capture_output=True, text=True, timeout=30
         )
         assert result.returncode == 0, f"Init failed: {result.stderr}"
 
@@ -397,17 +450,13 @@ class TestTemporalDaemonE2E:
             cwd=temp_repo,
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
         assert result.returncode == 0, f"Daemon config failed: {result.stderr}"
 
         # Step 3: Start daemon explicitly
         result = subprocess.run(
-            ["cidx", "start"],
-            cwd=temp_repo,
-            capture_output=True,
-            text=True,
-            timeout=30
+            ["cidx", "start"], cwd=temp_repo, capture_output=True, text=True, timeout=30
         )
         assert result.returncode == 0, f"Daemon start failed: {result.stderr}"
 
@@ -421,32 +470,38 @@ class TestTemporalDaemonE2E:
                 cwd=temp_repo,
                 capture_output=True,
                 text=True,
-                timeout=120
+                timeout=120,
             )
 
             # Combine stdout and stderr for analysis
             output = result.stdout + result.stderr
 
             # CRITICAL ASSERTIONS - Verify NO semantic indexing messages
-            assert "🔍 Hashing" not in output, \
-                f"BUG: Semantic hashing appeared during temporal indexing!\n{output}"
+            assert (
+                "🔍 Hashing" not in output
+            ), f"BUG: Semantic hashing appeared during temporal indexing!\n{output}"
 
-            assert "🔍 Discovering files" not in output, \
-                f"BUG: File discovery appeared during temporal indexing!\n{output}"
+            assert (
+                "🔍 Discovering files" not in output
+            ), f"BUG: File discovery appeared during temporal indexing!\n{output}"
 
             # More specific check for the file count message
             if "📁 Found" in output and "files for indexing" in output:
-                pytest.fail(f"BUG: File discovery count appeared during temporal indexing!\n{output}")
+                pytest.fail(
+                    f"BUG: File discovery count appeared during temporal indexing!\n{output}"
+                )
 
             # POSITIVE ASSERTIONS - Verify indexing happened
             # NOTE: The key bug fix is that semantic file discovery is SKIPPED.
             # The actual temporal vs semantic behavior is determined by the daemon service.
             # We just need to verify completion without errors.
-            assert result.returncode == 0, \
-                f"Indexing failed with exit code {result.returncode}\n{output}"
+            assert (
+                result.returncode == 0
+            ), f"Indexing failed with exit code {result.returncode}\n{output}"
 
-            assert "✅" in output or "complete" in output.lower(), \
-                f"Expected completion message not found!\n{output}"
+            assert (
+                "✅" in output or "complete" in output.lower()
+            ), f"Expected completion message not found!\n{output}"
 
         finally:
             # Step 5: Stop daemon
@@ -455,7 +510,7 @@ class TestTemporalDaemonE2E:
                 cwd=temp_repo,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
             )
 
     def test_daemon_temporal_vs_standalone_temporal_output_e2e(self, temp_repo):
@@ -472,13 +527,20 @@ class TestTemporalDaemonE2E:
             cwd=temp_repo,
             capture_output=True,
             text=True,
-            timeout=120
+            timeout=120,
         )
         standalone_output = result_standalone.stdout + result_standalone.stderr
 
         # Test 2: Daemon-based temporal
-        subprocess.run(["cidx", "config", "--daemon"], cwd=temp_repo, check=True, capture_output=True)
-        subprocess.run(["cidx", "start"], cwd=temp_repo, check=True, capture_output=True)
+        subprocess.run(
+            ["cidx", "config", "--daemon"],
+            cwd=temp_repo,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["cidx", "start"], cwd=temp_repo, check=True, capture_output=True
+        )
         time.sleep(2)
 
         try:
@@ -487,24 +549,35 @@ class TestTemporalDaemonE2E:
                 cwd=temp_repo,
                 capture_output=True,
                 text=True,
-                timeout=120
+                timeout=120,
             )
             daemon_output = result_daemon.stdout + result_daemon.stderr
 
             # Both should NOT show semantic indexing messages
-            for output, mode in [(standalone_output, "standalone"), (daemon_output, "daemon")]:
-                assert "🔍 Hashing" not in output, \
-                    f"BUG ({mode}): Hashing appeared during temporal indexing!"
-                assert "🔍 Discovering files" not in output, \
-                    f"BUG ({mode}): File discovery appeared during temporal indexing!"
+            for output, mode in [
+                (standalone_output, "standalone"),
+                (daemon_output, "daemon"),
+            ]:
+                assert (
+                    "🔍 Hashing" not in output
+                ), f"BUG ({mode}): Hashing appeared during temporal indexing!"
+                assert (
+                    "🔍 Discovering files" not in output
+                ), f"BUG ({mode}): File discovery appeared during temporal indexing!"
 
             # Both should show temporal messages
-            for output, mode in [(standalone_output, "standalone"), (daemon_output, "daemon")]:
-                assert "🕒" in output or "temporal" in output.lower(), \
-                    f"Expected temporal messages in {mode} mode!"
+            for output, mode in [
+                (standalone_output, "standalone"),
+                (daemon_output, "daemon"),
+            ]:
+                assert (
+                    "🕒" in output or "temporal" in output.lower()
+                ), f"Expected temporal messages in {mode} mode!"
 
         finally:
-            subprocess.run(["cidx", "stop"], cwd=temp_repo, capture_output=True, timeout=30)
+            subprocess.run(
+                ["cidx", "stop"], cwd=temp_repo, capture_output=True, timeout=30
+            )
 
 
 if __name__ == "__main__":

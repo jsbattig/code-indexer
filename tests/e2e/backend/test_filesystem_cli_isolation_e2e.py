@@ -58,7 +58,14 @@ class TestFilesystemCLIIsolation:
 
             # Run actual CLI command via subprocess
             result = subprocess.run(
-                ["python3", "-m", "code_indexer.cli", "init", "--vector-store", "filesystem"],
+                [
+                    "python3",
+                    "-m",
+                    "code_indexer.cli",
+                    "init",
+                    "--vector-store",
+                    "filesystem",
+                ],
                 cwd=temp_project,
                 capture_output=True,
                 text=True,
@@ -80,7 +87,14 @@ class TestFilesystemCLIIsolation:
         """
         # First initialize with filesystem backend
         subprocess.run(
-            ["python3", "-m", "code_indexer.cli", "init", "--vector-store", "filesystem"],
+            [
+                "python3",
+                "-m",
+                "code_indexer.cli",
+                "init",
+                "--vector-store",
+                "filesystem",
+            ],
             cwd=temp_project,
             capture_output=True,
             check=True,
@@ -117,7 +131,14 @@ class TestFilesystemCLIIsolation:
         """
         # Initialize and index with filesystem backend
         subprocess.run(
-            ["python3", "-m", "code_indexer.cli", "init", "--vector-store", "filesystem"],
+            [
+                "python3",
+                "-m",
+                "code_indexer.cli",
+                "init",
+                "--vector-store",
+                "filesystem",
+            ],
             cwd=temp_project,
             capture_output=True,
             check=True,
@@ -139,7 +160,14 @@ class TestFilesystemCLIIsolation:
 
             # Run query command
             result = subprocess.run(
-                ["python3", "-m", "code_indexer.cli", "query", "authentication", "--quiet"],
+                [
+                    "python3",
+                    "-m",
+                    "code_indexer.cli",
+                    "query",
+                    "authentication",
+                    "--quiet",
+                ],
                 cwd=temp_project,
                 capture_output=True,
                 text=True,
@@ -160,7 +188,14 @@ class TestFilesystemCLIIsolation:
         """
         # Initialize and index with filesystem backend
         subprocess.run(
-            ["python3", "-m", "code_indexer.cli", "init", "--vector-store", "filesystem"],
+            [
+                "python3",
+                "-m",
+                "code_indexer.cli",
+                "init",
+                "--vector-store",
+                "filesystem",
+            ],
             cwd=temp_project,
             capture_output=True,
             check=True,
@@ -173,11 +208,12 @@ class TestFilesystemCLIIsolation:
         )
 
         # Make both DockerManager and GlobalPortRegistry fail if accessed
-        with patch(
-            "code_indexer.services.docker_manager.DockerManager"
-        ) as mock_docker, patch(
-            "code_indexer.services.global_port_registry.GlobalPortRegistry"
-        ) as mock_registry:
+        with (
+            patch("code_indexer.services.docker_manager.DockerManager") as mock_docker,
+            patch(
+                "code_indexer.services.global_port_registry.GlobalPortRegistry"
+            ) as mock_registry,
+        ):
             mock_docker.side_effect = RuntimeError(
                 "CRITICAL: DockerManager accessed during filesystem clean!"
             )
@@ -199,4 +235,3 @@ class TestFilesystemCLIIsolation:
             # Verify neither DockerManager nor port registry were accessed
             mock_docker.assert_not_called()
             mock_registry.assert_not_called()
-

@@ -48,7 +48,9 @@ class TestBranchSwitchDetection:
         handler._catch_up_temporal_index.assert_not_called()
 
     @patch("code_indexer.cli_temporal_watch_handler.subprocess.run")
-    def test_handle_branch_switch_different_branch_triggers_catchup(self, mock_run, tmp_path):
+    def test_handle_branch_switch_different_branch_triggers_catchup(
+        self, mock_run, tmp_path
+    ):
         """Test that switching to different branch triggers catch-up indexing."""
         # Arrange
         project_root = tmp_path / "test_project"
@@ -154,7 +156,7 @@ class TestCatchUpTemporalIndex:
         handler = TemporalWatchHandler(
             project_root,
             temporal_indexer=mock_temporal_indexer,
-            progressive_metadata=mock_progressive_metadata
+            progressive_metadata=mock_progressive_metadata,
         )
         handler.completed_commits_set = {"commit1", "commit2"}
 
@@ -194,14 +196,18 @@ class TestCatchUpTemporalIndex:
 
         # Mock dependencies
         mock_progressive_metadata = Mock()
-        mock_progressive_metadata.load_completed.return_value = {"commit1", "commit2", "commit3"}
+        mock_progressive_metadata.load_completed.return_value = {
+            "commit1",
+            "commit2",
+            "commit3",
+        }
 
         mock_temporal_indexer = Mock()
 
         handler = TemporalWatchHandler(
             project_root,
             temporal_indexer=mock_temporal_indexer,
-            progressive_metadata=mock_progressive_metadata
+            progressive_metadata=mock_progressive_metadata,
         )
         handler.completed_commits_set = {"commit1", "commit2", "commit3"}
 
@@ -247,7 +253,7 @@ class TestCatchUpTemporalIndex:
         handler = TemporalWatchHandler(
             project_root,
             temporal_indexer=mock_temporal_indexer,
-            progressive_metadata=mock_progressive_metadata
+            progressive_metadata=mock_progressive_metadata,
         )
         handler.completed_commits_set = {"commit1"}
 
@@ -295,12 +301,15 @@ class TestInMemorySetPerformance:
 
         # Mock progressive_metadata.load_completed()
         mock_progressive_metadata = Mock()
-        mock_progressive_metadata.load_completed.return_value = {"commit1", "commit2", "commit3"}
+        mock_progressive_metadata.load_completed.return_value = {
+            "commit1",
+            "commit2",
+            "commit3",
+        }
 
         # Act
         handler = TemporalWatchHandler(
-            project_root,
-            progressive_metadata=mock_progressive_metadata
+            project_root, progressive_metadata=mock_progressive_metadata
         )
 
         # Assert
@@ -332,8 +341,7 @@ class TestInMemorySetPerformance:
         mock_progressive_metadata.load_completed.return_value = completed_commits
 
         handler = TemporalWatchHandler(
-            project_root,
-            progressive_metadata=mock_progressive_metadata
+            project_root, progressive_metadata=mock_progressive_metadata
         )
 
         # Mock git rev-list with 1100 commits (1000 old + 100 new)
@@ -348,6 +356,7 @@ class TestInMemorySetPerformance:
 
         # Act
         import time
+
         start = time.time()
         handler._catch_up_temporal_index()
         elapsed = time.time() - start
@@ -384,8 +393,7 @@ class TestInMemorySetPerformance:
         mock_progressive_metadata.load_completed.return_value = {"commit1"}
 
         handler = TemporalWatchHandler(
-            project_root,
-            progressive_metadata=mock_progressive_metadata
+            project_root, progressive_metadata=mock_progressive_metadata
         )
 
         # Verify initial state
@@ -439,7 +447,7 @@ class TestProgressReporting:
         handler = TemporalWatchHandler(
             project_root,
             temporal_indexer=mock_temporal_indexer,
-            progressive_metadata=mock_progressive_metadata
+            progressive_metadata=mock_progressive_metadata,
         )
         handler.completed_commits_set = set()
 
@@ -456,7 +464,9 @@ class TestProgressReporting:
         handler._catch_up_temporal_index()
 
         # Assert - _index_commits_incremental should be called with commits
-        handler._index_commits_incremental.assert_called_once_with(["commit1", "commit2"])
+        handler._index_commits_incremental.assert_called_once_with(
+            ["commit1", "commit2"]
+        )
 
     @patch("code_indexer.cli_temporal_watch_handler.subprocess.run")
     def test_index_commits_incremental_exists(self, mock_run, tmp_path):

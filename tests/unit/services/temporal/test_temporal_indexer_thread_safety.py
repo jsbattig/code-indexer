@@ -33,20 +33,36 @@ class TestTemporalIndexerThreadSafety:
         config = Mock()
         config.voyage_ai = Mock()
         config.voyage_ai.parallel_requests = 2
-        config.voyage_ai.max_concurrent_batches_per_commit = 10  # Use 2 threads for the test
+        config.voyage_ai.max_concurrent_batches_per_commit = (
+            10  # Use 2 threads for the test
+        )
         config_manager.get_config.return_value = config
 
         vector_store = Mock(spec=FilesystemVectorStore)
         vector_store.project_root = repo_path
-        vector_store.load_id_index.return_value = set()  # Return empty set for len() call
+        vector_store.load_id_index.return_value = (
+            set()
+        )  # Return empty set for len() call
 
         # Create indexer with mocked dependencies
-        with patch("src.code_indexer.services.temporal.temporal_indexer.TemporalDiffScanner") as mock_scanner, \
-             patch("src.code_indexer.services.temporal.temporal_indexer.FileIdentifier") as mock_file_id, \
-             patch("src.code_indexer.services.temporal.temporal_indexer.FixedSizeChunker") as mock_chunker, \
-             patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory") as mock_embed_factory, \
-             patch("src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager") as mock_vector_mgr, \
-             patch("subprocess.run") as mock_subprocess:
+        with (
+            patch(
+                "src.code_indexer.services.temporal.temporal_indexer.TemporalDiffScanner"
+            ) as mock_scanner,
+            patch(
+                "src.code_indexer.services.temporal.temporal_indexer.FileIdentifier"
+            ) as mock_file_id,
+            patch(
+                "src.code_indexer.services.temporal.temporal_indexer.FixedSizeChunker"
+            ) as mock_chunker,
+            patch(
+                "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+            ) as mock_embed_factory,
+            patch(
+                "src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
+            ) as mock_vector_mgr,
+            patch("subprocess.run") as mock_subprocess,
+        ):
 
             # Setup mock scanner to return different files for different commits
             mock_scanner_instance = MagicMock()
@@ -56,14 +72,16 @@ class TestTemporalIndexerThreadSafety:
             commits = []
             for i in range(10):  # More commits for better race detection
                 # Use longer unique hashes that remain unique when truncated to 8 chars
-                commits.append(CommitInfo(
-                    hash=f"{i:08x}{'a' * 32}",  # e.g., "00000000aaaa...", "00000001aaaa..."
-                    author_name=f"author{i}",
-                    author_email=f"author{i}@test.com",
-                    timestamp=int(datetime(2024, 1, 1, 10+i, 0, 0).timestamp()),
-                    message=f"Commit {i}",
-                    parent_hashes=""
-                ))
+                commits.append(
+                    CommitInfo(
+                        hash=f"{i:08x}{'a' * 32}",  # e.g., "00000000aaaa...", "00000001aaaa..."
+                        author_name=f"author{i}",
+                        author_email=f"author{i}@test.com",
+                        timestamp=int(datetime(2024, 1, 1, 10 + i, 0, 0).timestamp()),
+                        message=f"Commit {i}",
+                        parent_hashes="",
+                    )
+                )
 
             # Map commits to their unique files
             commit_files = {}
@@ -75,15 +93,15 @@ class TestTemporalIndexerThreadSafety:
                         diff_type="added",
                         commit_hash=commit.hash,
                         diff_content=f"+code for file {i} a",
-                        old_path=""
+                        old_path="",
                     ),
                     DiffInfo(
                         file_path=f"file_{i}_b.py",
                         diff_type="added",
                         commit_hash=commit.hash,
                         diff_content=f"+code for file {i} b",
-                        old_path=""
-                    )
+                        old_path="",
+                    ),
                 ]
 
             def get_diffs_side_effect(commit_hash):
@@ -92,22 +110,26 @@ class TestTemporalIndexerThreadSafety:
                 return commit_files.get(commit_hash, [])
 
             mock_scanner_instance.get_commits.return_value = commits
-            mock_scanner_instance.get_diffs_for_commit.side_effect = get_diffs_side_effect
+            mock_scanner_instance.get_diffs_for_commit.side_effect = (
+                get_diffs_side_effect
+            )
 
             # Mock subprocess for git commands
             def subprocess_side_effect(*args, **kwargs):
-                cmd = args[0] if args else kwargs.get('args', [])
-                if cmd and cmd[0] == 'git':
-                    if 'log' in cmd:
+                cmd = args[0] if args else kwargs.get("args", [])
+                if cmd and cmd[0] == "git":
+                    if "log" in cmd:
                         # Return commit info for git log
                         result = Mock()
                         lines = []
                         for commit in commits:
-                            lines.append(f"{commit.hash}|{commit.timestamp}|{commit.author_name}|{commit.author_email}|{commit.message}|")
+                            lines.append(
+                                f"{commit.hash}|{commit.timestamp}|{commit.author_name}|{commit.author_email}|{commit.message}|"
+                            )
                         result.stdout = "\n".join(lines)
                         result.returncode = 0
                         return result
-                    elif 'rev-parse' in cmd:
+                    elif "rev-parse" in cmd:
                         # Return branch name
                         result = Mock()
                         result.stdout = "main\n"
@@ -155,8 +177,7 @@ class TestTemporalIndexerThreadSafety:
 
             # Create indexer
             indexer = TemporalIndexer(
-                config_manager=config_manager,
-                vector_store=vector_store
+                config_manager=config_manager, vector_store=vector_store
             )
 
             # Track progress reports
@@ -177,32 +198,37 @@ class TestTemporalIndexerThreadSafety:
                         if " - " in parts:
                             commit_hash = parts.split(" - ")[0].strip()
                             filename = parts.split(" - ")[1].strip()
-                            progress_reports.append({
-                                'commit_hash': commit_hash,
-                                'filename': filename,
-                                'file_path': str(file_path)
-                            })
+                            progress_reports.append(
+                                {
+                                    "commit_hash": commit_hash,
+                                    "filename": filename,
+                                    "file_path": str(file_path),
+                                }
+                            )
 
             # Index with multiple threads
             indexer.index_commits(
-                all_branches=False,
-                progress_callback=progress_callback
+                all_branches=False, progress_callback=progress_callback
             )
 
             # Verify no cross-contamination between threads
             # Each commit should only show its own files in progress
             for i, commit in enumerate(commits):
-                commit_reports = [r for r in progress_reports if r['commit_hash'] == commit.hash[:8]]
+                commit_reports = [
+                    r for r in progress_reports if r["commit_hash"] == commit.hash[:8]
+                ]
                 expected_files = [f"file_{i}_a.py", f"file_{i}_b.py", "initializing"]
 
                 # Check this commit only shows its own files
                 for report in commit_reports:
-                    assert report['filename'] in expected_files, \
-                        f"Commit {commit.hash} showed wrong file: {report['filename']}, expected one of {expected_files}"
+                    assert (
+                        report["filename"] in expected_files
+                    ), f"Commit {commit.hash} showed wrong file: {report['filename']}, expected one of {expected_files}"
 
                     # Should never show other commits' files
                     for j, other_commit in enumerate(commits):
                         if i != j:
                             forbidden_files = [f"file_{j}_a.py", f"file_{j}_b.py"]
-                            assert report['filename'] not in forbidden_files, \
-                                f"Race condition detected: Commit {i} ({commit.hash}) showed file from commit {j}: {report['filename']}"
+                            assert (
+                                report["filename"] not in forbidden_files
+                            ), f"Race condition detected: Commit {i} ({commit.hash}) showed file from commit {j}: {report['filename']}"

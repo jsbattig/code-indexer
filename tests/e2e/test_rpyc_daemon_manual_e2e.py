@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 try:
     import rpyc
+
     RPYC_AVAILABLE = True
 except ImportError:
     print("ERROR: RPyC not installed. Install with: pip install rpyc")
@@ -48,7 +49,8 @@ class DaemonE2ETester:
         self.project_path = Path(self.temp_dir)
 
         # Create sample Python files
-        (self.project_path / "auth.py").write_text("""
+        (self.project_path / "auth.py").write_text(
+            """
 def authenticate_user(username, password):
     '''Authenticate user with credentials.'''
     return username == 'admin' and password == 'secret'
@@ -56,9 +58,11 @@ def authenticate_user(username, password):
 def login_handler(request):
     '''Handle login requests.'''
     return authenticate_user(request['username'], request['password'])
-""")
+"""
+        )
 
-        (self.project_path / "database.py").write_text("""
+        (self.project_path / "database.py").write_text(
+            """
 class DatabaseManager:
     '''Manage database connections.'''
 
@@ -69,23 +73,26 @@ class DatabaseManager:
     def query(self, sql):
         '''Execute SQL query.'''
         return []
-""")
+"""
+        )
 
         # Create config
         config_dir = self.project_path / ".code-indexer"
         config_dir.mkdir(parents=True)
         config_path = config_dir / "config.json"
-        config_path.write_text(json.dumps({
-            "daemon": {
-                "enabled": True,
-                "ttl_minutes": 10,
-                "auto_shutdown_on_idle": False
-            },
-            "embedding_provider": "voyage",
-            "qdrant": {
-                "mode": "filesystem"
-            }
-        }))
+        config_path.write_text(
+            json.dumps(
+                {
+                    "daemon": {
+                        "enabled": True,
+                        "ttl_minutes": 10,
+                        "auto_shutdown_on_idle": False,
+                    },
+                    "embedding_provider": "voyage",
+                    "qdrant": {"mode": "filesystem"},
+                }
+            )
+        )
 
         self.socket_path = config_dir / "daemon.sock"
         print(f"✓ Created test project at: {self.project_path}")
@@ -97,15 +104,16 @@ class DatabaseManager:
 
         cmd = [
             sys.executable,
-            "-m", "src.code_indexer.services.rpyc_daemon",
-            str(self.project_path / ".code-indexer" / "config.json")
+            "-m",
+            "src.code_indexer.services.rpyc_daemon",
+            str(self.project_path / ".code-indexer" / "config.json"),
         ]
 
         self.daemon_process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            cwd=str(Path(__file__).parent.parent.parent)
+            cwd=str(Path(__file__).parent.parent.parent),
         )
 
         # Wait for daemon to start
@@ -132,7 +140,7 @@ class DatabaseManager:
 
         # Try to connect
         try:
-            conn = rpyc.connect(str(self.socket_path), config={'allow_all_attrs': True})
+            conn = rpyc.connect(str(self.socket_path), config={"allow_all_attrs": True})
             conn.root.get_status()
             conn.close()
             print(f"✓ Connected to daemon via socket: {self.socket_path}")
@@ -148,12 +156,17 @@ class DatabaseManager:
         # Try to start second daemon
         cmd = [
             sys.executable,
-            "-m", "src.code_indexer.services.rpyc_daemon",
-            str(self.project_path / ".code-indexer" / "config.json")
+            "-m",
+            "src.code_indexer.services.rpyc_daemon",
+            str(self.project_path / ".code-indexer" / "config.json"),
         ]
 
-        proc2 = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                  cwd=str(Path(__file__).parent.parent.parent))
+        proc2 = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(Path(__file__).parent.parent.parent),
+        )
         time.sleep(2)
 
         # Second daemon should exit gracefully
@@ -169,7 +182,7 @@ class DatabaseManager:
         """AC3-4: Indexes cached in memory, cache hit returns results in <100ms."""
         print("\n[AC3-4] Testing cache performance...")
 
-        conn = rpyc.connect(str(self.socket_path), config={'allow_all_attrs': True})
+        conn = rpyc.connect(str(self.socket_path), config={"allow_all_attrs": True})
 
         # Create index first
         print("  Creating index...")
@@ -218,7 +231,7 @@ class DatabaseManager:
         """AC5-7: TTL eviction, eviction check, auto-shutdown."""
         print("\n[AC5-7] Testing TTL eviction (simulated)...")
 
-        conn = rpyc.connect(str(self.socket_path), config={'allow_all_attrs': True})
+        conn = rpyc.connect(str(self.socket_path), config={"allow_all_attrs": True})
 
         # Load cache
         conn.root.query(str(self.project_path), "test", limit=5)
@@ -236,7 +249,7 @@ class DatabaseManager:
 
         conn.close()
 
-        if not status1.get('cache_empty', True) and status2.get('cache_empty', False):
+        if not status1.get("cache_empty", True) and status2.get("cache_empty", False):
             print("✓ Cache eviction mechanism works")
             return True
         else:
@@ -250,13 +263,16 @@ class DatabaseManager:
         # Connect multiple clients
         clients = []
         for i in range(3):
-            conn = rpyc.connect(str(self.socket_path), config={'allow_all_attrs': True})
+            conn = rpyc.connect(str(self.socket_path), config={"allow_all_attrs": True})
             clients.append(conn)
 
         # Concurrent reads
         import concurrent.futures
+
         def read_query(client_idx):
-            return clients[client_idx].root.query(str(self.project_path), f"query {client_idx}", limit=5)
+            return clients[client_idx].root.query(
+                str(self.project_path), f"query {client_idx}", limit=5
+            )
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             futures = [executor.submit(read_query, i) for i in range(3)]
@@ -277,7 +293,7 @@ class DatabaseManager:
         """AC10-11: Status and clear cache endpoints."""
         print("\n[AC10-11] Testing status and clear cache...")
 
-        conn = rpyc.connect(str(self.socket_path), config={'allow_all_attrs': True})
+        conn = rpyc.connect(str(self.socket_path), config={"allow_all_attrs": True})
 
         # Get status
         status = conn.root.get_status()
@@ -289,7 +305,7 @@ class DatabaseManager:
 
         conn.close()
 
-        if status.get('running', False) and result.get('status') == 'cache cleared':
+        if status.get("running", False) and result.get("status") == "cache cleared":
             print("✓ Status and clear cache endpoints work")
             return True
         else:
@@ -300,7 +316,7 @@ class DatabaseManager:
         """AC13-20: Watch mode functionality."""
         print("\n[AC13-20] Testing watch mode...")
 
-        conn = rpyc.connect(str(self.socket_path), config={'allow_all_attrs': True})
+        conn = rpyc.connect(str(self.socket_path), config={"allow_all_attrs": True})
 
         # Start watch
         result = conn.root.watch_start(str(self.project_path))
@@ -316,9 +332,11 @@ class DatabaseManager:
 
         conn.close()
 
-        if (result.get('status') == 'started' and
-            status.get('watching', False) and
-            stop_result.get('status') == 'stopped'):
+        if (
+            result.get("status") == "started"
+            and status.get("watching", False)
+            and stop_result.get("status") == "stopped"
+        ):
             print("✓ Watch mode functionality works")
             return True
         else:
@@ -329,7 +347,7 @@ class DatabaseManager:
         """AC21-24: Storage operations with cache coherence."""
         print("\n[AC21-24] Testing storage operations...")
 
-        conn = rpyc.connect(str(self.socket_path), config={'allow_all_attrs': True})
+        conn = rpyc.connect(str(self.socket_path), config={"allow_all_attrs": True})
 
         # Load cache first
         conn.root.query(str(self.project_path), "test", limit=5)
@@ -343,7 +361,7 @@ class DatabaseManager:
 
         conn.close()
 
-        if status.get('mode') == 'daemon':
+        if status.get("mode") == "daemon":
             print("✓ Storage operations integration works")
             return True
         else:
@@ -354,7 +372,7 @@ class DatabaseManager:
         """AC16: Daemon shutdown with socket cleanup."""
         print("\n[AC16] Testing daemon shutdown...")
 
-        conn = rpyc.connect(str(self.socket_path), config={'allow_all_attrs': True})
+        conn = rpyc.connect(str(self.socket_path), config={"allow_all_attrs": True})
 
         # Trigger shutdown
         result = conn.root.shutdown()
@@ -401,9 +419,9 @@ class DatabaseManager:
 
     def run_all_tests(self):
         """Run all acceptance criteria tests."""
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("RPyC DAEMON STORY 2.1 - MANUAL E2E TESTING")
-        print("="*60)
+        print("=" * 60)
 
         try:
             # Setup
@@ -445,9 +463,9 @@ class DatabaseManager:
                     failed += 1
 
             # Print summary
-            print("\n" + "="*60)
+            print("\n" + "=" * 60)
             print("TEST RESULTS SUMMARY")
-            print("="*60)
+            print("=" * 60)
 
             for name, result in self.results.items():
                 status = "✓" if result == "PASSED" else "✗"

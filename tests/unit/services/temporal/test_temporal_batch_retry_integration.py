@@ -40,27 +40,42 @@ def test_retry_exhaustion_triggers_rollback_integration(tmp_path):
 
     # Initialize git repo
     subprocess.run(["git", "init"], cwd=project_root, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=project_root, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=project_root, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.name", "Test"],
+        cwd=project_root,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@test.com"],
+        cwd=project_root,
+        check=True,
+        capture_output=True,
+    )
 
     vector_store = FilesystemVectorStore(
-        base_path=tmp_path / "index",
-        project_root=project_root
+        base_path=tmp_path / "index", project_root=project_root
     )
 
     # Create indexer with mocked embedding provider
-    with patch('code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info') as mock_get_info:
-        with patch('code_indexer.services.embedding_factory.EmbeddingProviderFactory.create') as mock_create:
+    with patch(
+        "code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+    ) as mock_get_info:
+        with patch(
+            "code_indexer.services.embedding_factory.EmbeddingProviderFactory.create"
+        ) as mock_create:
             mock_get_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-3",
-                "dimensions": 1024
+                "dimensions": 1024,
             }
 
             mock_provider = Mock()
             mock_provider.get_current_model.return_value = "voyage-code-3"
             mock_provider.get_embeddings_batch.return_value = []
-            mock_provider._get_model_token_limit.return_value = 120000  # VoyageAI token limit
+            mock_provider._get_model_token_limit.return_value = (
+                120000  # VoyageAI token limit
+            )
             mock_create.return_value = mock_provider
 
             indexer = TemporalIndexer(config_manager, vector_store)
@@ -72,14 +87,14 @@ def test_retry_exhaustion_triggers_rollback_integration(tmp_path):
                 message="Test commit",
                 author_name="Test Author",
                 author_email="test@example.com",
-                parent_hashes=""
+                parent_hashes="",
             )
 
             # Mock git show to return content
-            with patch('subprocess.run') as mock_run:
+            with patch("subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock(
                     stdout="test content line 1\ntest content line 2\ntest content line 3",
-                    returncode=0
+                    returncode=0,
                 )
 
                 # Mock diff scanner to return diffs
@@ -89,22 +104,22 @@ def test_retry_exhaustion_triggers_rollback_integration(tmp_path):
                     commit_hash="abc123def456",
                     diff_content="test content",
                     blob_hash="blob123",
-                    parent_commit_hash="parent123"
+                    parent_commit_hash="parent123",
                 )
 
                 with patch.object(
                     indexer.diff_scanner,
-                    'get_diffs_for_commit',
-                    return_value=[diff_info]
+                    "get_diffs_for_commit",
+                    return_value=[diff_info],
                 ):
                     # Mock chunker to return chunks
                     with patch.object(
                         indexer.chunker,
-                        'chunk_text',
+                        "chunk_text",
                         return_value=[
                             {"text": "chunk 1", "char_start": 0, "char_end": 10},
-                            {"text": "chunk 2", "char_start": 11, "char_end": 20}
-                        ]
+                            {"text": "chunk 2", "char_start": 11, "char_end": 20},
+                        ],
                     ):
                         # Mock batch submission - all batches fail with transient errors
                         # This will test retry exhaustion and rollback
@@ -117,7 +132,7 @@ def test_retry_exhaustion_triggers_rollback_integration(tmp_path):
                             # All batches fail immediately (simulating rate limit)
                             result = SimpleNamespace(
                                 embeddings=[],
-                                error="Rate limit exceeded: 429 Too Many Requests"
+                                error="Rate limit exceeded: 429 Too Many Requests",
                             )
 
                             future = MagicMock()
@@ -149,27 +164,35 @@ def test_retry_exhaustion_triggers_rollback_integration(tmp_path):
                         indexer.vector_store.delete_points = mock_delete
 
                         # Mock time.sleep to avoid delays
-                        with patch('time.sleep'):
+                        with patch("time.sleep"):
                             # Execute: Process commit should fail after retry exhaustion
                             with pytest.raises(RuntimeError) as exc_info:
                                 indexer._process_commits_parallel(
                                     commits=[commit],
                                     embedding_provider=mock_provider,
-                                    vector_manager=mock_vcm_instance
+                                    vector_manager=mock_vcm_instance,
                                 )
 
                             # Verify error message contains "retry exhaustion" or similar failure message
                             error_msg = str(exc_info.value).lower()
-                            assert "retry exhaustion" in error_msg or "processing failed" in error_msg, \
-                                f"Expected retry exhaustion error, got: {exc_info.value}"
+                            assert (
+                                "retry exhaustion" in error_msg
+                                or "processing failed" in error_msg
+                            ), f"Expected retry exhaustion error, got: {exc_info.value}"
                             assert commit.hash[:8] in str(exc_info.value)
 
                             # Verify retry attempts were made (MAX_RETRIES = 5)
                             # Each batch should be attempted 5 times before giving up
-                            assert batch_call_count >= 5, f"Expected at least 5 retry attempts, got {batch_call_count}"
+                            assert (
+                                batch_call_count >= 5
+                            ), f"Expected at least 5 retry attempts, got {batch_call_count}"
 
                             # Since all batches failed, no points should be upserted
-                            assert len(upserted_point_ids) == 0, "No points should be upserted when all batches fail"
+                            assert (
+                                len(upserted_point_ids) == 0
+                            ), "No points should be upserted when all batches fail"
 
                             # No rollback needed since nothing was upserted
-                            assert len(deleted_point_ids) == 0, "No deletions needed when no points were upserted"
+                            assert (
+                                len(deleted_point_ids) == 0
+                            ), "No deletions needed when no points were upserted"

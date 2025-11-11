@@ -476,6 +476,9 @@ class FilesystemVectorStore:
         # Load projection matrix (singleton-cached in ProjectionMatrixManager)
         projection_matrix = self.matrix_manager.load_matrix(collection_path)
 
+        # Get expected vector dimensions from projection matrix
+        expected_dims = projection_matrix.shape[0]
+
         # Load quantization range for locality-preserving quantization
         min_val, max_val = self._load_quantization_range(collection_name)
 
@@ -517,6 +520,19 @@ class FilesystemVectorStore:
                 payload = point.get("payload", {})
                 chunk_text = point.get("chunk_text")  # Extract chunk_text from root
                 file_path = payload.get("path", "")
+
+                # LAYER 2 VALIDATION: Validate vector is numeric, not object array
+                if vector.dtype == object or vector.dtype == np.dtype("O"):
+                    raise ValueError(
+                        f"Point {point_id} has invalid vector with dtype={vector.dtype}. "
+                        f"Vector contains non-numeric values. First 5 values: {point['vector'][:5]}"
+                    )
+
+                # Validate vector dimension matches expected
+                if vector.shape[0] != expected_dims:
+                    raise ValueError(
+                        f"Point {point_id} has vector dimension {vector.shape[0]}, expected {expected_dims}"
+                    )
 
                 # Progress reporting
                 if progress_callback:

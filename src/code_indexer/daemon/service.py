@@ -41,6 +41,15 @@ class CIDXDaemonService(Service):
         """Initialize daemon service with cache and eviction thread."""
         super().__init__()
 
+        # Initialize exception logger EARLY for daemon mode
+        from ..utils.exception_logger import ExceptionLogger
+
+        exception_logger = ExceptionLogger.initialize(
+            project_root=Path.cwd(), mode="daemon"
+        )
+        exception_logger.install_thread_exception_hook()
+        logger.info("ExceptionLogger initialized for daemon mode")
+
         # Cache state
         self.cache_entry: Optional[CacheEntry] = None
         # FIX Race Condition #1: Use RLock (reentrant lock) to allow nested locking
@@ -108,6 +117,76 @@ class CIDXDaemonService(Service):
             results, timing_info = self._execute_semantic_search(
                 project_path, query, limit, **kwargs
             )
+
+            # Apply staleness detection to results (like standalone mode)
+            if results:
+                try:
+                    from code_indexer.remote.staleness_detector import StalenessDetector
+                    from code_indexer.api_clients.remote_query_client import (
+                        QueryResultItem,
+                    )
+                    from datetime import datetime
+
+                    # Convert results to QueryResultItem format
+                    query_result_items = []
+                    for result in results:
+                        payload = result.get("payload", {})
+
+                        # Extract timestamps
+                        file_last_modified = payload.get("file_last_modified")
+                        indexed_at = payload.get("indexed_at")
+
+                        # Convert indexed_at to timestamp if it's ISO format
+                        indexed_timestamp = None
+                        if indexed_at:
+                            try:
+                                if isinstance(indexed_at, str):
+                                    dt = datetime.fromisoformat(indexed_at.rstrip("Z"))
+                                    indexed_timestamp = dt.timestamp()
+                                else:
+                                    indexed_timestamp = indexed_at
+                            except (ValueError, AttributeError):
+                                indexed_timestamp = indexed_at
+
+                        query_item = QueryResultItem(
+                            similarity_score=result.get("score", 0.0),
+                            file_path=payload.get("path", "unknown"),
+                            line_number=payload.get("line_start", 1),
+                            code_snippet=payload.get("content", ""),
+                            repository_alias=Path(project_path).name,
+                            file_last_modified=file_last_modified,
+                            indexed_timestamp=indexed_timestamp,
+                        )
+                        query_result_items.append(query_item)
+
+                    # Apply staleness detection
+                    detector = StalenessDetector()
+                    enhanced_items = detector.apply_staleness_detection(
+                        query_result_items, Path(project_path), mode="local"
+                    )
+
+                    # Create staleness lookup map by file path
+                    # CRITICAL: apply_staleness_detection() sorts results, so we cannot
+                    # assign staleness metadata by index position. We must match by file path.
+                    staleness_map = {
+                        enhanced.file_path: {
+                            "is_stale": enhanced.is_stale,
+                            "staleness_indicator": enhanced.staleness_indicator,
+                            "staleness_delta_seconds": enhanced.staleness_delta_seconds,
+                        }
+                        for enhanced in enhanced_items
+                    }
+
+                    # Add staleness metadata to results by matching file path
+                    for result in results:
+                        file_path = result.get("payload", {}).get("path")
+                        if file_path and file_path in staleness_map:
+                            result["staleness"] = staleness_map[file_path]
+
+                except Exception as e:
+                    # Graceful fallback - log but continue with results without staleness
+                    logger.debug(f"Staleness detection failed in daemon mode: {e}")
+                    # Results returned without staleness metadata
 
         # Convert to plain dict for RPyC serialization (avoid netref issues)
         return dict(
@@ -181,8 +260,8 @@ class CIDXDaemonService(Service):
         limit: int = 10,
         languages: Optional[List[str]] = None,
         exclude_languages: Optional[List[str]] = None,
-        path_filter: Optional[str] = None,
-        exclude_path: Optional[str] = None,
+        path_filter: Optional[List[str]] = None,
+        exclude_path: Optional[List[str]] = None,
         min_score: float = 0.0,
         accuracy: str = "balanced",
         correlation_id: Optional[str] = None,
@@ -194,10 +273,10 @@ class CIDXDaemonService(Service):
             query: Semantic search query text
             time_range: Time range filter (e.g., "2024-01-01..2024-12-31", "last-30-days")
             limit: Maximum number of results
-            languages: Language filters (include)
-            exclude_languages: Language filters (exclude)
-            path_filter: Path pattern filter (include)
-            exclude_path: Path pattern filter (exclude)
+            languages: Language filters (include) - list of language names
+            exclude_languages: Language filters (exclude) - list of language names
+            path_filter: Path pattern filters (include) - list of path patterns
+            exclude_path: Path pattern filters (exclude) - list of path patterns
             min_score: Minimum similarity score
             accuracy: Accuracy mode (fast/balanced/high)
             correlation_id: Correlation ID for progress tracking
@@ -437,9 +516,11 @@ class CIDXDaemonService(Service):
                     concurrent_files = cb_kwargs.get("concurrent_files", [])
                     concurrent_files_json = json.dumps(concurrent_files)
 
+                    # Bug #475 fix: Preserve item_type from temporal indexer
                     filtered_kwargs = {
                         "concurrent_files_json": concurrent_files_json,
                         "correlation_id": correlation_id,
+                        "item_type": cb_kwargs.get("item_type", "files"),
                     }
 
                     if callback:
@@ -1365,9 +1446,103 @@ class CIDXDaemonService(Service):
                 config, embedding_provider
             )
 
-            # Extract search parameters
-            filter_conditions = kwargs.get("filter_conditions")
-            score_threshold = kwargs.get("score_threshold")
+            # Build filter conditions from raw parameters (same logic as local mode)
+            # Extract raw filter parameters from kwargs
+            languages = kwargs.get("languages")
+            exclude_languages = kwargs.get("exclude_languages")
+            path_filter = kwargs.get("path_filter")
+            exclude_paths = kwargs.get("exclude_paths")
+            # Extract min_score from kwargs (correct parameter name from public API)
+            min_score = kwargs.get("min_score")
+            # Map to score_threshold for vector_store compatibility
+            score_threshold = min_score
+
+            # Build filter_conditions dict
+            filter_conditions: Dict[str, Any] = {}
+
+            # Build language inclusion filters
+            if languages:
+                from code_indexer.services.language_validator import LanguageValidator
+                from code_indexer.services.language_mapper import LanguageMapper
+
+                language_validator = LanguageValidator()
+                language_mapper = LanguageMapper()
+                must_conditions = []
+
+                for lang in languages:
+                    # Validate each language
+                    validation_result = language_validator.validate_language(lang)
+
+                    if not validation_result.is_valid:
+                        logger.warning(f"Invalid language filter: {lang}")
+                        continue
+
+                    # Build language filter
+                    language_filter = language_mapper.build_language_filter(lang)
+                    must_conditions.append(language_filter)
+
+                if must_conditions:
+                    filter_conditions["must"] = must_conditions
+
+            # Build path inclusion filters
+            if path_filter:
+                for pf in path_filter:
+                    filter_conditions.setdefault("must", []).append(
+                        {"key": "path", "match": {"text": pf}}
+                    )
+
+            # Build language exclusion filters (must_not conditions)
+            if exclude_languages:
+                from code_indexer.services.language_validator import LanguageValidator
+                from code_indexer.services.language_mapper import LanguageMapper
+
+                language_validator = LanguageValidator()
+                language_mapper = LanguageMapper()
+                must_not_conditions = []
+
+                for exclude_lang in exclude_languages:
+                    # Validate each exclusion language
+                    validation_result = language_validator.validate_language(
+                        exclude_lang
+                    )
+
+                    if not validation_result.is_valid:
+                        logger.warning(f"Invalid exclusion language: {exclude_lang}")
+                        continue
+
+                    # Get all extensions for this language
+                    extensions = language_mapper.get_extensions(exclude_lang)
+
+                    # Add must_not condition for each extension
+                    for ext in extensions:
+                        must_not_conditions.append(
+                            {"key": "language", "match": {"value": ext}}
+                        )
+
+                if must_not_conditions:
+                    filter_conditions["must_not"] = must_not_conditions
+
+            # Build path exclusion filters (must_not conditions for paths)
+            if exclude_paths:
+                from code_indexer.services.path_filter_builder import PathFilterBuilder
+
+                path_filter_builder = PathFilterBuilder()
+
+                # Build path exclusion filters
+                path_exclusion_filters = path_filter_builder.build_exclusion_filter(
+                    list(exclude_paths)
+                )
+
+                # Add to existing must_not conditions
+                if path_exclusion_filters.get("must_not"):
+                    if "must_not" in filter_conditions:
+                        filter_conditions["must_not"].extend(
+                            path_exclusion_filters["must_not"]
+                        )
+                    else:
+                        filter_conditions["must_not"] = path_exclusion_filters[
+                            "must_not"
+                        ]
 
             # Execute search using FilesystemVectorStore.search() with timing
             # This uses HNSW index for fast approximate nearest neighbor search

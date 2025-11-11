@@ -25,10 +25,7 @@ class TestCacheInvalidation:
         config_dir.mkdir()
 
         config_file = config_dir / "config.json"
-        config = {
-            "embedding_provider": "voyageai",
-            "api_key": "test-key"
-        }
+        config = {"embedding_provider": "voyageai", "api_key": "test-key"}
         config_file.write_text(json.dumps(config))
 
         index_dir = config_dir / "index"
@@ -160,10 +157,7 @@ class TestStatusReporting:
         config_dir.mkdir()
 
         config_file = config_dir / "config.json"
-        config = {
-            "embedding_provider": "voyageai",
-            "api_key": "test-key"
-        }
+        config = {"embedding_provider": "voyageai", "api_key": "test-key"}
         config_file.write_text(json.dumps(config))
 
         index_dir = config_dir / "index"

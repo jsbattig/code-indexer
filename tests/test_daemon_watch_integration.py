@@ -156,7 +156,6 @@ class TestDaemonWatchIntegration:
         # Verify watch was stopped
         assert not daemon_service.watch_manager.is_running()
 
-
     def test_watch_manager_thread_lifecycle(self, daemon_service, temp_project):
         """Test watch manager thread lifecycle and cleanup."""
         # Start watch

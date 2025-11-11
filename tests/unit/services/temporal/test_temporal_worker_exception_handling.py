@@ -72,6 +72,7 @@ class TestWorkerExceptionHandling:
     def teardown_method(self):
         """Clean up test fixtures."""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_worker_logs_upsert_failure_at_error_level(self):
@@ -110,9 +111,7 @@ class TestWorkerExceptionHandling:
         # Mock vector manager to return embeddings
         mock_vector_manager = Mock()
         mock_future = Mock()
-        mock_future.result.return_value = Mock(
-            embeddings=[[0.1] * 1024], error=None
-        )
+        mock_future.result.return_value = Mock(embeddings=[[0.1] * 1024], error=None)
         mock_vector_manager.submit_batch_task.return_value = mock_future
         mock_vector_manager.cancellation_event.is_set.return_value = False
         mock_vector_manager.embedding_provider._get_model_token_limit.return_value = (
@@ -128,7 +127,9 @@ class TestWorkerExceptionHandling:
         self.indexer.progressive_metadata = Mock()
 
         # Mock logger to capture calls
-        with patch("src.code_indexer.services.temporal.temporal_indexer.logger") as mock_logger:
+        with patch(
+            "src.code_indexer.services.temporal.temporal_indexer.logger"
+        ) as mock_logger:
             # Mock _count_tokens to avoid import
             self.indexer._count_tokens = Mock(return_value=100)
 
@@ -196,9 +197,7 @@ class TestWorkerExceptionHandling:
         # Mock vector manager to return embeddings
         mock_vector_manager = Mock()
         mock_future = Mock()
-        mock_future.result.return_value = Mock(
-            embeddings=[[0.1] * 1024], error=None
-        )
+        mock_future.result.return_value = Mock(embeddings=[[0.1] * 1024], error=None)
         mock_vector_manager.submit_batch_task.return_value = mock_future
         mock_vector_manager.cancellation_event.is_set.return_value = False
         mock_vector_manager.embedding_provider._get_model_token_limit.return_value = (
@@ -259,9 +258,7 @@ class TestWorkerExceptionHandling:
         # Mock vector manager to return embeddings
         mock_vector_manager = Mock()
         mock_future = Mock()
-        mock_future.result.return_value = Mock(
-            embeddings=[[0.1] * 1024], error=None
-        )
+        mock_future.result.return_value = Mock(embeddings=[[0.1] * 1024], error=None)
         mock_vector_manager.submit_batch_task.return_value = mock_future
         mock_vector_manager.cancellation_event.is_set.return_value = False
         mock_vector_manager.embedding_provider._get_model_token_limit.return_value = (
@@ -293,7 +290,10 @@ class TestWorkerExceptionHandling:
 
         # Patch CleanSlotTracker constructor to return our mock
         # It's imported inside _process_commits_parallel from ..clean_slot_tracker
-        with patch("src.code_indexer.services.clean_slot_tracker.CleanSlotTracker", return_value=mock_slot_tracker):
+        with patch(
+            "src.code_indexer.services.clean_slot_tracker.CleanSlotTracker",
+            return_value=mock_slot_tracker,
+        ):
             # Call _process_commits_parallel - should raise but still release slot
             with pytest.raises(RuntimeError, match="test failure"):
                 self.indexer._process_commits_parallel(
@@ -304,7 +304,9 @@ class TestWorkerExceptionHandling:
                 )
 
         # Verify slot was acquired
-        assert mock_slot_tracker.acquire_slot.called, "Expected acquire_slot to be called"
+        assert (
+            mock_slot_tracker.acquire_slot.called
+        ), "Expected acquire_slot to be called"
 
         # Verify slot was released exactly once (in finally block)
         assert (
@@ -350,9 +352,7 @@ class TestWorkerExceptionHandling:
         # Mock vector manager to return embeddings
         mock_vector_manager = Mock()
         mock_future = Mock()
-        mock_future.result.return_value = Mock(
-            embeddings=[[0.1] * 1024], error=None
-        )
+        mock_future.result.return_value = Mock(embeddings=[[0.1] * 1024], error=None)
         mock_vector_manager.submit_batch_task.return_value = mock_future
         mock_vector_manager.cancellation_event.is_set.return_value = False
         mock_vector_manager.embedding_provider._get_model_token_limit.return_value = (
@@ -369,7 +369,9 @@ class TestWorkerExceptionHandling:
         self.indexer._count_tokens = Mock(return_value=100)
 
         # Mock logger to capture error message
-        with patch("src.code_indexer.services.temporal.temporal_indexer.logger") as mock_logger:
+        with patch(
+            "src.code_indexer.services.temporal.temporal_indexer.logger"
+        ) as mock_logger:
             # Call _process_commits_parallel - should propagate exception
             with pytest.raises(RuntimeError, match="storage failure"):
                 self.indexer._process_commits_parallel(

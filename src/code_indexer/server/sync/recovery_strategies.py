@@ -750,7 +750,9 @@ class CheckpointRecoveryStrategy(RecoveryStrategy):
             )
             attempts.append(attempt)
 
-            self.logger.error(f"Checkpoint recovery failed: {checkpoint_exception}")
+            self.logger.error(
+                f"Checkpoint recovery failed: {checkpoint_exception}", exc_info=True
+            )
 
             return RecoveryResult(
                 success=False,

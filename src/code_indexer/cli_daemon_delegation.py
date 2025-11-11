@@ -782,7 +782,9 @@ def _index_via_daemon(
 
             # Show temporal start message if temporal indexing requested
             if kwargs.get("index_commits", False):
-                console.print("🕒 Starting temporal git history indexing...", style="cyan")
+                console.print(
+                    "🕒 Starting temporal git history indexing...", style="cyan"
+                )
                 if kwargs.get("all_branches", False):
                     console.print("   Mode: All branches", style="cyan")
                 else:
@@ -823,12 +825,19 @@ def _index_via_daemon(
                 concurrent_files = json.loads(concurrent_files_json)
                 slot_tracker = kwargs.get("slot_tracker", None)
 
+                # Bug #475 fix: Extract item_type from kwargs
+                item_type = kwargs.get("item_type", "files")
+
                 # Parse progress info for metrics
                 try:
                     parts = info.split(" | ")
                     if len(parts) >= 4:
-                        files_per_second = float(parts[1].replace(" files/s", ""))
-                        kb_per_second = float(parts[2].replace(" KB/s", ""))
+                        # Bug #475 fix: Extract numeric value only (works for both "files/s" AND "commits/s")
+                        rate_str = parts[1].strip().split()[0]
+                        files_per_second = float(rate_str)
+
+                        kb_str = parts[2].strip().split()[0]
+                        kb_per_second = float(kb_str)
                         threads_text = parts[3]
                         active_threads = (
                             int(threads_text.split()[0]) if threads_text.split() else 12
@@ -854,11 +863,14 @@ def _index_via_daemon(
                     concurrent_files=concurrent_files,  # Now extracted from kwargs
                     slot_tracker=slot_tracker,  # Now extracted from kwargs
                     info=info,
+                    item_type=item_type,  # Bug #475 fix: Pass item_type to show "commits" instead of "files"
                 )
 
                 # Get integrated display and update bottom area
                 rich_table = progress_manager.get_integrated_display()
-                rich_live_manager.async_handle_progress_update(rich_table)  # Bug #470 fix - async queue
+                rich_live_manager.async_handle_progress_update(
+                    rich_table
+                )  # Bug #470 fix - async queue
 
             # BUG FIX: Add reset_progress_timers method to progress_callback
             # This method is called by HighThroughputProcessor during phase transitions
@@ -921,7 +933,10 @@ def _index_via_daemon(
             # Display completion status (IDENTICAL to standalone)
             if status == "completed":
                 # Detect temporal vs semantic based on result keys
-                is_temporal = "total_commits" in stats_dict or "approximate_vectors_created" in stats_dict
+                is_temporal = (
+                    "total_commits" in stats_dict
+                    or "approximate_vectors_created" in stats_dict
+                )
 
                 cancelled = stats_dict.get("cancelled", False)
                 if cancelled:
@@ -953,7 +968,9 @@ def _index_via_daemon(
                 else:
                     if is_temporal:
                         # Temporal completion display (matches standalone format)
-                        console.print("✅ Temporal indexing completed!", style="green bold")
+                        console.print(
+                            "✅ Temporal indexing completed!", style="green bold"
+                        )
                         console.print(
                             f"   Total commits processed: {stats_dict.get('total_commits', 0)}",
                             style="green",
@@ -1268,7 +1285,7 @@ def _query_temporal_via_daemon(
     limit: int = 10,
     languages: Optional[tuple] = None,
     exclude_languages: Optional[tuple] = None,
-    path_filter: Optional[str] = None,
+    path_filter: Optional[tuple] = None,
     exclude_path: Optional[tuple] = None,
     min_score: Optional[float] = None,
     accuracy: str = "balanced",
@@ -1285,10 +1302,10 @@ def _query_temporal_via_daemon(
         daemon_config: Daemon configuration
         project_root: Project root directory
         limit: Result limit
-        languages: Language filters (include)
-        exclude_languages: Language filters (exclude)
-        path_filter: Path pattern filter (include)
-        exclude_path: Path pattern filters (exclude)
+        languages: Language filters (include) as tuple
+        exclude_languages: Language filters (exclude) as tuple
+        path_filter: Path pattern filters (include) as tuple
+        exclude_path: Path pattern filters (exclude) as tuple
         min_score: Minimum similarity score
         accuracy: Accuracy mode (fast/balanced/high)
         quiet: Suppress non-essential output
@@ -1320,8 +1337,8 @@ def _query_temporal_via_daemon(
                 exclude_languages=(
                     list(exclude_languages) if exclude_languages else None
                 ),
-                path_filter=path_filter,
-                exclude_path=list(exclude_path)[0] if exclude_path else None,
+                path_filter=list(path_filter) if path_filter else None,
+                exclude_path=list(exclude_path) if exclude_path else None,
                 min_score=min_score or 0.0,
                 accuracy=accuracy,
             )
@@ -1430,29 +1447,16 @@ def start_watch_via_daemon(project_root: Path, **kwargs: Any) -> bool:
 
             if result.get("status") == "success":
                 console.print(
-                    "✅ Watch started in daemon (non-blocking mode)",
-                    style="green"
+                    "✅ Watch started in daemon (non-blocking mode)", style="green"
                 )
-                console.print(
-                    "   Watch continues running in background",
-                    style="dim"
-                )
-                console.print(
-                    "   Use 'cidx watch-stop' to stop watching",
-                    style="dim"
-                )
+                console.print("   Watch continues running in background", style="dim")
+                console.print("   Use 'cidx watch-stop' to stop watching", style="dim")
                 conn.close()
                 return True
             else:
                 error = result.get("message", "Unknown error")
-                console.print(
-                    f"⚠️ Daemon watch start failed: {error}",
-                    style="yellow"
-                )
-                console.print(
-                    "   Falling back to standalone mode...",
-                    style="dim"
-                )
+                console.print(f"⚠️ Daemon watch start failed: {error}", style="yellow")
+                console.print("   Falling back to standalone mode...", style="dim")
                 conn.close()
                 return False
 
@@ -1491,17 +1495,11 @@ def stop_watch_via_daemon(project_root: Path) -> Dict[str, Any]:
             return result  # type: ignore[no-any-return]
 
         except Exception as e:
-            return {
-                "status": "error",
-                "message": f"Failed to connect to daemon: {e}"
-            }
+            return {"status": "error", "message": f"Failed to connect to daemon: {e}"}
 
     except Exception as e:
         logger.error(f"Failed to stop watch via daemon: {e}")
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+        return {"status": "error", "message": str(e)}
 
 
 def get_watch_status_via_daemon(project_root: Path) -> Dict[str, Any]:
@@ -1529,14 +1527,8 @@ def get_watch_status_via_daemon(project_root: Path) -> Dict[str, Any]:
             return result  # type: ignore[no-any-return]
 
         except Exception as e:
-            return {
-                "running": False,
-                "message": f"Failed to connect to daemon: {e}"
-            }
+            return {"running": False, "message": f"Failed to connect to daemon: {e}"}
 
     except Exception as e:
         logger.error(f"Failed to get watch status via daemon: {e}")
-        return {
-            "running": False,
-            "message": str(e)
-        }
+        return {"running": False, "message": str(e)}

@@ -38,15 +38,16 @@ class TestErrorClassification(unittest.TestCase):
         mock_vector_store.load_id_index.return_value = set()
 
         # Mock EmbeddingProviderFactory
-        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info') as mock_get_info:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+        ) as mock_get_info:
             mock_get_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-3",
-                "dimensions": 1024
+                "dimensions": 1024,
             }
             indexer = TemporalIndexer(
-                config_manager=mock_config_manager,
-                vector_store=mock_vector_store
+                config_manager=mock_config_manager, vector_store=mock_vector_store
             )
 
         # Test single timeout error classification
@@ -73,15 +74,16 @@ class TestErrorClassification(unittest.TestCase):
         mock_vector_store.collection_exists.return_value = True
         mock_vector_store.load_id_index.return_value = set()
 
-        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info') as mock_get_info:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+        ) as mock_get_info:
             mock_get_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-3",
-                "dimensions": 1024
+                "dimensions": 1024,
             }
             indexer = TemporalIndexer(
-                config_manager=mock_config_manager,
-                vector_store=mock_vector_store
+                config_manager=mock_config_manager, vector_store=mock_vector_store
             )
 
         # Test rate limit error classification
@@ -108,15 +110,16 @@ class TestErrorClassification(unittest.TestCase):
         mock_vector_store.collection_exists.return_value = True
         mock_vector_store.load_id_index.return_value = set()
 
-        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info') as mock_get_info:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+        ) as mock_get_info:
             mock_get_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-3",
-                "dimensions": 1024
+                "dimensions": 1024,
             }
             indexer = TemporalIndexer(
-                config_manager=mock_config_manager,
-                vector_store=mock_vector_store
+                config_manager=mock_config_manager, vector_store=mock_vector_store
             )
 
         # Test permanent error classification
@@ -142,15 +145,16 @@ class TestErrorClassification(unittest.TestCase):
         mock_vector_store.collection_exists.return_value = True
         mock_vector_store.load_id_index.return_value = set()
 
-        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info') as mock_get_info:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+        ) as mock_get_info:
             mock_get_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-3",
-                "dimensions": 1024
+                "dimensions": 1024,
             }
             indexer = TemporalIndexer(
-                config_manager=mock_config_manager,
-                vector_store=mock_vector_store
+                config_manager=mock_config_manager, vector_store=mock_vector_store
             )
 
         result = indexer._classify_batch_error("503 Service Unavailable")
@@ -173,15 +177,16 @@ class TestErrorClassification(unittest.TestCase):
         mock_vector_store.collection_exists.return_value = True
         mock_vector_store.load_id_index.return_value = set()
 
-        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info') as mock_get_info:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+        ) as mock_get_info:
             mock_get_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-3",
-                "dimensions": 1024
+                "dimensions": 1024,
             }
             indexer = TemporalIndexer(
-                config_manager=mock_config_manager,
-                vector_store=mock_vector_store
+                config_manager=mock_config_manager, vector_store=mock_vector_store
             )
 
         result = indexer._classify_batch_error("500 Internal Server Error")
@@ -204,15 +209,16 @@ class TestErrorClassification(unittest.TestCase):
         mock_vector_store.collection_exists.return_value = True
         mock_vector_store.load_id_index.return_value = set()
 
-        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info') as mock_get_info:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+        ) as mock_get_info:
             mock_get_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-3",
-                "dimensions": 1024
+                "dimensions": 1024,
             }
             indexer = TemporalIndexer(
-                config_manager=mock_config_manager,
-                vector_store=mock_vector_store
+                config_manager=mock_config_manager, vector_store=mock_vector_store
             )
 
         result = indexer._classify_batch_error("Connection reset by peer")
@@ -227,7 +233,7 @@ class TestRetryConstants(unittest.TestCase):
         from src.code_indexer.services.temporal.temporal_indexer import TemporalIndexer
 
         # Should have MAX_RETRIES class constant
-        self.assertTrue(hasattr(TemporalIndexer, 'MAX_RETRIES'))
+        self.assertTrue(hasattr(TemporalIndexer, "MAX_RETRIES"))
         self.assertEqual(TemporalIndexer.MAX_RETRIES, 5)
 
     def test_retry_delays_constant_exists(self):
@@ -235,7 +241,7 @@ class TestRetryConstants(unittest.TestCase):
         from src.code_indexer.services.temporal.temporal_indexer import TemporalIndexer
 
         # Should have RETRY_DELAYS class constant
-        self.assertTrue(hasattr(TemporalIndexer, 'RETRY_DELAYS'))
+        self.assertTrue(hasattr(TemporalIndexer, "RETRY_DELAYS"))
         expected_delays = [2, 5, 10, 30, 60]
         self.assertEqual(TemporalIndexer.RETRY_DELAYS, expected_delays)
 
@@ -268,15 +274,16 @@ class TestBatchRetryLogic(unittest.TestCase):
         mock_vector_store.collection_exists.return_value = True
         mock_vector_store.load_id_index.return_value = set()
 
-        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info') as mock_get_info:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+        ) as mock_get_info:
             mock_get_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-3",
-                "dimensions": 1024
+                "dimensions": 1024,
             }
             indexer = TemporalIndexer(
-                config_manager=mock_config_manager,
-                vector_store=mock_vector_store
+                config_manager=mock_config_manager, vector_store=mock_vector_store
             )
 
         # Spy on _classify_batch_error to verify it's called
@@ -318,21 +325,24 @@ class TestBatchRetryIntegration(unittest.TestCase):
         mock_vector_store.load_id_index.return_value = set()
         mock_vector_store.upsert_points = Mock()
 
-        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info') as mock_get_info:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+        ) as mock_get_info:
             mock_get_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-3",
-                "dimensions": 1024
+                "dimensions": 1024,
             }
             indexer = TemporalIndexer(
-                config_manager=mock_config_manager,
-                vector_store=mock_vector_store
+                config_manager=mock_config_manager, vector_store=mock_vector_store
             )
 
         return indexer, mock_vector_store
 
     @patch("src.code_indexer.services.temporal.temporal_indexer.time.sleep")
-    @patch("src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager")
+    @patch(
+        "src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
+    )
     def test_transient_error_retries_and_succeeds(self, mock_vcm_class, mock_sleep):
         """Transient error -> retry with delays -> eventual success."""
         indexer, mock_vector_store = self._create_test_indexer()
@@ -343,14 +353,16 @@ class TestBatchRetryIntegration(unittest.TestCase):
         # First call fails with transient error, second succeeds
         mock_vcm.submit_batch_task.side_effect = [
             {"error": "503 Service Unavailable"},
-            {"embeddings": [[0.1] * 1024]}
+            {"embeddings": [[0.1] * 1024]},
         ]
 
         error_type = indexer._classify_batch_error("503 Service Unavailable")
         self.assertEqual(error_type, "transient")
 
     @patch("src.code_indexer.services.temporal.temporal_indexer.time.sleep")
-    @patch("src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager")
+    @patch(
+        "src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
+    )
     def test_retry_exhaustion_raises_runtime_error(self, mock_vcm_class, mock_sleep):
         """All 5 retries fail -> RuntimeError -> no upsert."""
         indexer, mock_vector_store = self._create_test_indexer()
@@ -371,7 +383,9 @@ class TestBatchRetryIntegration(unittest.TestCase):
         error_type = indexer._classify_batch_error("429 Too Many Requests")
         self.assertEqual(error_type, "rate_limit")
 
-    @patch("src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager")
+    @patch(
+        "src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
+    )
     def test_permanent_error_no_retry(self, mock_vcm_class):
         """401 unauthorized -> immediate exit, no retry."""
         indexer, mock_vector_store = self._create_test_indexer()
@@ -379,7 +393,9 @@ class TestBatchRetryIntegration(unittest.TestCase):
         error_type = indexer._classify_batch_error("401 Unauthorized - Invalid API key")
         self.assertEqual(error_type, "permanent")
 
-    @patch("src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager")
+    @patch(
+        "src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
+    )
     def test_all_batches_succeed_normal_flow(self, mock_vcm_class):
         """All batches succeed -> no retry -> normal completion."""
         indexer, mock_vector_store = self._create_test_indexer()

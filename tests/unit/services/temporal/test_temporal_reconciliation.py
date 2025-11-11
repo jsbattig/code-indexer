@@ -29,12 +29,14 @@ class TestDiscoverIndexedCommitsFromDisk:
         vector_data = {
             "id": "test-project:diff:abc123def456:src/main.py:0",
             "vector": [0.1, 0.2, 0.3],
-            "payload": {}
+            "payload": {},
         }
         vector_file.write_text(json.dumps(vector_data))
 
         # Act
-        indexed_commits, skipped_count = discover_indexed_commits_from_disk(collection_path)
+        indexed_commits, skipped_count = discover_indexed_commits_from_disk(
+            collection_path
+        )
 
         # Assert
         assert "abc123def456" in indexed_commits
@@ -61,12 +63,14 @@ class TestDiscoverIndexedCommitsFromDisk:
             vector_data = {
                 "id": f"project:diff:{commit_hash}:file.py:0",
                 "vector": [0.1],
-                "payload": {}
+                "payload": {},
             }
             vector_file.write_text(json.dumps(vector_data))
 
         # Act
-        indexed_commits, skipped_count = discover_indexed_commits_from_disk(collection_path)
+        indexed_commits, skipped_count = discover_indexed_commits_from_disk(
+            collection_path
+        )
 
         # Assert
         assert len(indexed_commits) == 3  # Unique commits
@@ -85,11 +89,15 @@ class TestDiscoverIndexedCommitsFromDisk:
 
         # Valid file
         valid_file = collection_path / "vector_001.json"
-        valid_file.write_text(json.dumps({
-            "id": "project:diff:valid_commit:file.py:0",
-            "vector": [0.1],
-            "payload": {}
-        }))
+        valid_file.write_text(
+            json.dumps(
+                {
+                    "id": "project:diff:valid_commit:file.py:0",
+                    "vector": [0.1],
+                    "payload": {},
+                }
+            )
+        )
 
         # Corrupted files
         (collection_path / "vector_002.json").write_text("CORRUPTED JSON{{{")
@@ -97,7 +105,9 @@ class TestDiscoverIndexedCommitsFromDisk:
         (collection_path / "vector_004.json").write_text("null")  # Invalid structure
 
         # Act
-        indexed_commits, skipped_count = discover_indexed_commits_from_disk(collection_path)
+        indexed_commits, skipped_count = discover_indexed_commits_from_disk(
+            collection_path
+        )
 
         # Assert
         assert len(indexed_commits) == 1
@@ -121,15 +131,13 @@ class TestDiscoverIndexedCommitsFromDisk:
 
         for filename, point_id in test_cases:
             vector_file = collection_path / filename
-            vector_data = {
-                "id": point_id,
-                "vector": [0.1],
-                "payload": {}
-            }
+            vector_data = {"id": point_id, "vector": [0.1], "payload": {}}
             vector_file.write_text(json.dumps(vector_data))
 
         # Act
-        indexed_commits, skipped_count = discover_indexed_commits_from_disk(collection_path)
+        indexed_commits, skipped_count = discover_indexed_commits_from_disk(
+            collection_path
+        )
 
         # Assert
         assert len(indexed_commits) == 1
@@ -145,7 +153,9 @@ class TestDiscoverIndexedCommitsFromDisk:
         collection_path.mkdir(parents=True)
 
         # Act
-        indexed_commits, skipped_count = discover_indexed_commits_from_disk(collection_path)
+        indexed_commits, skipped_count = discover_indexed_commits_from_disk(
+            collection_path
+        )
 
         # Assert
         assert len(indexed_commits) == 0
@@ -157,7 +167,9 @@ class TestDiscoverIndexedCommitsFromDisk:
         collection_path = tmp_path / "nonexistent"
 
         # Act
-        indexed_commits, skipped_count = discover_indexed_commits_from_disk(collection_path)
+        indexed_commits, skipped_count = discover_indexed_commits_from_disk(
+            collection_path
+        )
 
         # Assert
         assert len(indexed_commits) == 0
@@ -178,15 +190,13 @@ class TestDiscoverIndexedCommitsFromDisk:
 
         for filename, point_id in test_cases:
             vector_file = collection_path / filename
-            vector_data = {
-                "id": point_id,
-                "vector": [0.1],
-                "payload": {}
-            }
+            vector_data = {"id": point_id, "vector": [0.1], "payload": {}}
             vector_file.write_text(json.dumps(vector_data))
 
         # Act
-        indexed_commits, skipped_count = discover_indexed_commits_from_disk(collection_path)
+        indexed_commits, skipped_count = discover_indexed_commits_from_disk(
+            collection_path
+        )
 
         # Assert
         # Only diff vectors should be counted
@@ -213,7 +223,7 @@ class TestReconcileTemporalIndex:
             vector_data = {
                 "id": f"project:diff:{commit_hash}:file.py:0",
                 "vector": [0.1],
-                "payload": {}
+                "payload": {},
             }
             vector_file.write_text(json.dumps(vector_data))
 
@@ -254,7 +264,7 @@ class TestReconcileTemporalIndex:
         vector_data = {
             "id": "project:diff:commit3:file.py:0",
             "vector": [0.1],
-            "payload": {}
+            "payload": {},
         }
         vector_file.write_text(json.dumps(vector_data))
 
@@ -276,7 +286,12 @@ class TestReconcileTemporalIndex:
 
         # Assert: Order preserved
         assert len(missing_commits) == 4
-        assert [c.hash for c in missing_commits] == ["commit1", "commit2", "commit4", "commit5"]
+        assert [c.hash for c in missing_commits] == [
+            "commit1",
+            "commit2",
+            "commit4",
+            "commit5",
+        ]
 
     def test_handles_all_commits_indexed(self, tmp_path):
         """Test edge case where all commits are already indexed."""
@@ -293,7 +308,7 @@ class TestReconcileTemporalIndex:
             vector_data = {
                 "id": f"project:diff:{commit_hash}:file.py:0",
                 "vector": [0.1],
-                "payload": {}
+                "payload": {},
             }
             vector_file.write_text(json.dumps(vector_data))
 
@@ -376,7 +391,9 @@ class TestReconcileTemporalIndex:
         ]
 
         # Act: Reconcile (should delete only metadata_files_to_delete)
-        with patch('src.code_indexer.services.temporal.temporal_reconciliation.logger') as mock_logger:
+        with patch(
+            "src.code_indexer.services.temporal.temporal_reconciliation.logger"
+        ) as mock_logger:
             missing_commits = reconcile_temporal_index(
                 vector_store, all_commits, "code-indexer-temporal"
             )
@@ -390,7 +407,9 @@ class TestReconcileTemporalIndex:
             assert meta_file.exists(), f"{meta_file.name} should have been preserved"
 
         # Assert: Logger called with deletion count (4 files deleted)
-        mock_logger.info.assert_any_call("Reconciliation: Deleted 4 stale metadata files")
+        mock_logger.info.assert_any_call(
+            "Reconciliation: Deleted 4 stale metadata files"
+        )
 
     def test_handles_missing_metadata_files_gracefully(self, tmp_path):
         """Test that reconciliation handles missing metadata files without crashing."""
@@ -420,7 +439,9 @@ class TestReconcileTemporalIndex:
         ]
 
         # Act: Should not crash despite missing files
-        with patch('src.code_indexer.services.temporal.temporal_reconciliation.logger') as mock_logger:
+        with patch(
+            "src.code_indexer.services.temporal.temporal_reconciliation.logger"
+        ) as mock_logger:
             missing_commits = reconcile_temporal_index(
                 vector_store, all_commits, "code-indexer-temporal"
             )
@@ -431,7 +452,9 @@ class TestReconcileTemporalIndex:
 
         # Assert: No deletion log message (0 files deleted)
         info_calls = [call[0][0] for call in mock_logger.info.call_args_list]
-        deletion_logs = [msg for msg in info_calls if "Deleted" in msg and "metadata" in msg]
+        deletion_logs = [
+            msg for msg in info_calls if "Deleted" in msg and "metadata" in msg
+        ]
         assert len(deletion_logs) == 0, "Should not log deletion when no files deleted"
 
     def test_continues_reconciliation_after_metadata_deletion(self, tmp_path):
@@ -468,7 +491,7 @@ class TestReconcileTemporalIndex:
             vector_data = {
                 "id": f"project:diff:{commit_hash}:file.py:0",
                 "vector": [0.1, 0.2, 0.3],
-                "payload": {}
+                "payload": {},
             }
             vector_file.write_text(json.dumps(vector_data))
 
@@ -480,7 +503,9 @@ class TestReconcileTemporalIndex:
         ]
 
         # Act
-        with patch('src.code_indexer.services.temporal.temporal_reconciliation.logger') as mock_logger:
+        with patch(
+            "src.code_indexer.services.temporal.temporal_reconciliation.logger"
+        ) as mock_logger:
             missing_commits = reconcile_temporal_index(
                 vector_store, all_commits, "code-indexer-temporal"
             )
@@ -504,7 +529,9 @@ class TestReconcileTemporalIndex:
         deletion_log = [msg for msg in info_calls if "Deleted 4 stale metadata" in msg]
         assert len(deletion_log) == 1
 
-        reconciliation_log = [msg for msg in info_calls if "Reconciliation: 2 indexed" in msg]
+        reconciliation_log = [
+            msg for msg in info_calls if "Reconciliation: 2 indexed" in msg
+        ]
         assert len(reconciliation_log) == 1
 
     def test_logs_deletion_count_correctly(self, tmp_path):
@@ -542,7 +569,9 @@ class TestReconcileTemporalIndex:
         ]
 
         # Act
-        with patch('src.code_indexer.services.temporal.temporal_reconciliation.logger') as mock_logger:
+        with patch(
+            "src.code_indexer.services.temporal.temporal_reconciliation.logger"
+        ) as mock_logger:
             missing_commits = reconcile_temporal_index(
                 vector_store, all_commits, "code-indexer-temporal"
             )
@@ -556,7 +585,9 @@ class TestReconcileTemporalIndex:
             assert meta_file.exists()
 
         # Assert: Logger reports exactly 2 files deleted
-        mock_logger.info.assert_any_call("Reconciliation: Deleted 2 stale metadata files")
+        mock_logger.info.assert_any_call(
+            "Reconciliation: Deleted 2 stale metadata files"
+        )
 
         # Assert: Reconciliation completed
         assert len(missing_commits) == 1

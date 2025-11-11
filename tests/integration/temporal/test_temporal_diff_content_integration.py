@@ -12,7 +12,9 @@ import json
 
 
 from src.code_indexer.services.temporal.temporal_indexer import TemporalIndexer
-from src.code_indexer.services.temporal.temporal_search_service import TemporalSearchService
+from src.code_indexer.services.temporal.temporal_search_service import (
+    TemporalSearchService,
+)
 from src.code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 from src.code_indexer.config import ConfigManager
 
@@ -118,12 +120,16 @@ class TestTemporalDiffContentIntegration:
                         # Found diff content!
                         chunk_text = data["chunk_text"]
                         # Temporal diffs should have + or - prefixes
-                        if chunk_text and (chunk_text.startswith("+") or chunk_text.startswith("-")):
+                        if chunk_text and (
+                            chunk_text.startswith("+") or chunk_text.startswith("-")
+                        ):
                             found_diff_content = True
                             # Verify it's actual code diff, not empty
-                            assert "def" in chunk_text or "pass" in chunk_text or "return" in chunk_text, (
-                                f"Chunk text doesn't look like code diff: {chunk_text}"
-                            )
+                            assert (
+                                "def" in chunk_text
+                                or "pass" in chunk_text
+                                or "return" in chunk_text
+                            ), f"Chunk text doesn't look like code diff: {chunk_text}"
                             break
 
             assert found_diff_content, (
@@ -154,9 +160,9 @@ class TestTemporalDiffContentIntegration:
                 if "login" in content.lower():
                     found_login_diff = True
                     # Should be a diff with + prefix
-                    assert "+" in content or "-" in content, (
-                        f"Result doesn't look like a diff: {content}"
-                    )
+                    assert (
+                        "+" in content or "-" in content
+                    ), f"Result doesn't look like a diff: {content}"
                     break
 
             assert found_login_diff, (

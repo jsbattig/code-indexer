@@ -72,7 +72,9 @@ class TestGitErrorHandlingE2E:
         assert "git_command" in log1["context"]
         assert "add" in log1["context"]["git_command"]
         assert "nonexistent_file.txt" in log1["context"]["git_command"]
-        assert log1["context"]["returncode"] != 0  # Non-zero return code (may be 1 or 128)
+        assert (
+            log1["context"]["returncode"] != 0
+        )  # Non-zero return code (may be 1 or 128)
         assert "attempt" in log1["context"]
         assert "1/2" in log1["context"]["attempt"]
 
@@ -237,7 +239,9 @@ class TestGitErrorHandlingE2E:
         # Create a file and commit it
         test_file = repo_dir / "test.txt"
         test_file.write_text("test content")
-        subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "add", "."], cwd=repo_dir, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "commit", "-m", "initial"],
             cwd=repo_dir,
@@ -265,7 +269,9 @@ class TestGitErrorHandlingE2E:
         with open(logger.log_file_path) as f:
             content = f.read()
 
-        assert "not a git repository" in content.lower() or "not a git" in content.lower()
+        assert (
+            "not a git repository" in content.lower() or "not a git" in content.lower()
+        )
 
         # Should have 2 log entries
         entries = [e for e in content.split("\n---\n") if e.strip()]

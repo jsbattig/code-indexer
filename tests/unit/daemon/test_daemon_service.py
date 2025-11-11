@@ -20,7 +20,7 @@ class TestCIDXDaemonServiceInitialization:
         service = CIDXDaemonService()
         assert service.cache_entry is None
         assert service.cache_lock is not None
-        assert hasattr(service.cache_lock, 'acquire')  # It's a Lock
+        assert hasattr(service.cache_lock, "acquire")  # It's a Lock
 
     def test_service_starts_eviction_thread(self):
         """Service should start TTL eviction thread on initialization."""
@@ -79,8 +79,10 @@ class TestExposedQueryMethods:
     def test_exposed_query_loads_cache_on_first_call(self, service, mock_project_path):
         """exposed_query should load cache on first call."""
         # Mock the cache loading
-        with patch.object(service, '_ensure_cache_loaded') as mock_ensure:
-            with patch.object(service, '_execute_semantic_search', return_value=([], {})):
+        with patch.object(service, "_ensure_cache_loaded") as mock_ensure:
+            with patch.object(
+                service, "_execute_semantic_search", return_value=([], {})
+            ):
                 service.exposed_query(str(mock_project_path), "test query")
                 mock_ensure.assert_called_once_with(str(mock_project_path))
 
@@ -90,7 +92,7 @@ class TestExposedQueryMethods:
         service.cache_entry = CacheEntry(mock_project_path)
         initial_count = service.cache_entry.access_count
 
-        with patch.object(service, '_execute_semantic_search', return_value=([], {})):
+        with patch.object(service, "_execute_semantic_search", return_value=([], {})):
             service.exposed_query(str(mock_project_path), "test query")
 
         assert service.cache_entry.access_count == initial_count + 1
@@ -103,16 +105,24 @@ class TestExposedQueryMethods:
         ]
         mock_timing = {"query_time_ms": 50, "total_time_ms": 100}
 
-        with patch.object(service, '_execute_semantic_search', return_value=(mock_results, mock_timing)):
-            result = service.exposed_query(str(mock_project_path), "test query", limit=10)
+        with patch.object(
+            service,
+            "_execute_semantic_search",
+            return_value=(mock_results, mock_timing),
+        ):
+            result = service.exposed_query(
+                str(mock_project_path), "test query", limit=10
+            )
 
         assert result["results"] == mock_results
         assert result["timing"] == mock_timing
 
-    def test_exposed_query_fts_loads_cache_on_first_call(self, service, mock_project_path):
+    def test_exposed_query_fts_loads_cache_on_first_call(
+        self, service, mock_project_path
+    ):
         """exposed_query_fts should load cache on first call."""
-        with patch.object(service, '_ensure_cache_loaded') as mock_ensure:
-            with patch.object(service, '_execute_fts_search', return_value=[]):
+        with patch.object(service, "_ensure_cache_loaded") as mock_ensure:
+            with patch.object(service, "_execute_fts_search", return_value=[]):
                 service.exposed_query_fts(str(mock_project_path), "test query")
                 mock_ensure.assert_called_once_with(str(mock_project_path))
 
@@ -122,18 +132,20 @@ class TestExposedQueryMethods:
             {"path": "file1.py", "snippet": "test query"},
         ]
 
-        with patch.object(service, '_execute_fts_search', return_value=mock_results):
+        with patch.object(service, "_execute_fts_search", return_value=mock_results):
             results = service.exposed_query_fts(str(mock_project_path), "test query")
 
         assert results == mock_results
 
-    def test_exposed_query_hybrid_executes_both_searches(self, service, mock_project_path):
+    def test_exposed_query_hybrid_executes_both_searches(
+        self, service, mock_project_path
+    ):
         """exposed_query_hybrid should execute both semantic and FTS searches."""
         semantic_results = [{"path": "file1.py", "score": 0.95}]
         fts_results = [{"path": "file2.py", "snippet": "query"}]
 
-        with patch.object(service, 'exposed_query', return_value=semantic_results):
-            with patch.object(service, 'exposed_query_fts', return_value=fts_results):
+        with patch.object(service, "exposed_query", return_value=semantic_results):
+            with patch.object(service, "exposed_query_fts", return_value=fts_results):
                 results = service.exposed_query_hybrid(str(mock_project_path), "test")
 
         # Should contain results from both searches
@@ -165,8 +177,8 @@ class TestExposedIndexingMethods:
         service.cache_entry = CacheEntry(project_path)
         service.cache_entry.hnsw_index = Mock()
 
-        with patch('code_indexer.services.smart_indexer.SmartIndexer'):
-            with patch('code_indexer.config.ConfigManager'):
+        with patch("code_indexer.services.smart_indexer.SmartIndexer"):
+            with patch("code_indexer.config.ConfigManager"):
                 service.exposed_index(str(project_path))
 
         # Cache should be invalidated
@@ -178,10 +190,16 @@ class TestExposedIndexingMethods:
         project_path.mkdir()
 
         # Create comprehensive mocks for all dependencies (use module paths for lazy imports)
-        with patch('code_indexer.config.ConfigManager') as MockConfigManager:
-            with patch('code_indexer.backends.backend_factory.BackendFactory') as MockBackendFactory:
-                with patch('code_indexer.services.embedding_factory.EmbeddingProviderFactory') as MockEmbeddingFactory:
-                    with patch('code_indexer.services.smart_indexer.SmartIndexer') as MockSmartIndexer:
+        with patch("code_indexer.config.ConfigManager") as MockConfigManager:
+            with patch(
+                "code_indexer.backends.backend_factory.BackendFactory"
+            ) as MockBackendFactory:
+                with patch(
+                    "code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+                ) as MockEmbeddingFactory:
+                    with patch(
+                        "code_indexer.services.smart_indexer.SmartIndexer"
+                    ) as MockSmartIndexer:
                         # Configure mocks
                         mock_config_manager = Mock()
                         mock_config = Mock()
@@ -189,15 +207,21 @@ class TestExposedIndexingMethods:
                         mock_config_path = Mock()
                         mock_config_path.parent = tmp_path
                         mock_config_manager.config_path = mock_config_path
-                        MockConfigManager.create_with_backtrack.return_value = mock_config_manager
+                        MockConfigManager.create_with_backtrack.return_value = (
+                            mock_config_manager
+                        )
 
                         mock_backend = Mock()
                         mock_vector_store = Mock()
-                        mock_backend.get_vector_store_client.return_value = mock_vector_store
+                        mock_backend.get_vector_store_client.return_value = (
+                            mock_vector_store
+                        )
                         MockBackendFactory.create.return_value = mock_backend
 
                         mock_embedding_provider = Mock()
-                        MockEmbeddingFactory.create.return_value = mock_embedding_provider
+                        MockEmbeddingFactory.create.return_value = (
+                            mock_embedding_provider
+                        )
 
                         mock_indexer = Mock()
                         MockSmartIndexer.return_value = mock_indexer
@@ -329,7 +353,9 @@ class TestExposedStorageOperations:
         service.cache_entry = CacheEntry(project_path)
         service.cache_entry.hnsw_index = Mock()
 
-        with patch('code_indexer.storage.filesystem_vector_store.FilesystemVectorStore') as MockStore:
+        with patch(
+            "code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
+        ) as MockStore:
             mock_instance = Mock()
             MockStore.return_value = mock_instance
             service.exposed_clean(str(project_path))
@@ -337,14 +363,18 @@ class TestExposedStorageOperations:
         # Cache should be invalidated
         assert service.cache_entry is None
 
-    def test_exposed_clean_data_invalidates_cache_before_clearing(self, service, tmp_path):
+    def test_exposed_clean_data_invalidates_cache_before_clearing(
+        self, service, tmp_path
+    ):
         """exposed_clean_data should invalidate cache before clearing data."""
         project_path = tmp_path / "project"
 
         # Setup cache
         service.cache_entry = CacheEntry(project_path)
 
-        with patch('code_indexer.storage.filesystem_vector_store.FilesystemVectorStore') as MockStore:
+        with patch(
+            "code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
+        ) as MockStore:
             mock_instance = Mock()
             MockStore.return_value = mock_instance
             service.exposed_clean_data(str(project_path))
@@ -359,7 +389,9 @@ class TestExposedStorageOperations:
         # Setup cache
         service.cache_entry = CacheEntry(project_path)
 
-        with patch('code_indexer.storage.filesystem_vector_store.FilesystemVectorStore') as MockStore:
+        with patch(
+            "code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
+        ) as MockStore:
             mock_instance = Mock()
             mock_instance.get_status.return_value = {"vectors": 100}
             MockStore.return_value = mock_instance
@@ -421,8 +453,7 @@ class TestExposedDaemonManagement:
         service.watch_manager = mock_watch_manager
 
         # Mock os.kill to prevent SIGTERM being sent to test process
-        with patch('os.kill') as mock_kill, \
-             patch('os.getpid', return_value=12345):
+        with patch("os.kill") as mock_kill, patch("os.getpid", return_value=12345):
             service.exposed_shutdown()
 
             # Should stop watch via watch_manager
@@ -433,6 +464,7 @@ class TestExposedDaemonManagement:
 
             # Verify SIGTERM was sent
             import signal
+
             mock_kill.assert_called_once_with(12345, signal.SIGTERM)
 
     def test_exposed_ping_returns_success(self, service):
@@ -462,8 +494,8 @@ class TestCacheLoading:
         project_path = tmp_path / "project"
         project_path.mkdir()
 
-        with patch.object(service, '_load_semantic_indexes'):
-            with patch.object(service, '_load_fts_indexes'):
+        with patch.object(service, "_load_semantic_indexes"):
+            with patch.object(service, "_load_fts_indexes"):
                 service._ensure_cache_loaded(str(project_path))
 
         assert service.cache_entry is not None
@@ -477,14 +509,16 @@ class TestCacheLoading:
         service.cache_entry = CacheEntry(project_path)
         initial_entry = service.cache_entry
 
-        with patch.object(service, '_load_semantic_indexes'):
-            with patch.object(service, '_load_fts_indexes'):
+        with patch.object(service, "_load_semantic_indexes"):
+            with patch.object(service, "_load_fts_indexes"):
                 service._ensure_cache_loaded(str(project_path))
 
         # Should reuse same entry
         assert service.cache_entry is initial_entry
 
-    def test_ensure_cache_loaded_replaces_entry_for_different_project(self, service, tmp_path):
+    def test_ensure_cache_loaded_replaces_entry_for_different_project(
+        self, service, tmp_path
+    ):
         """_ensure_cache_loaded should replace cache entry for different project."""
         project1 = tmp_path / "project1"
         project2 = tmp_path / "project2"
@@ -493,8 +527,8 @@ class TestCacheLoading:
         # Create cache for project1
         service.cache_entry = CacheEntry(project1)
 
-        with patch.object(service, '_load_semantic_indexes'):
-            with patch.object(service, '_load_fts_indexes'):
+        with patch.object(service, "_load_semantic_indexes"):
+            with patch.object(service, "_load_fts_indexes"):
                 service._ensure_cache_loaded(str(project2))
 
         # Should have new entry for project2
@@ -527,7 +561,9 @@ class TestConcurrency:
         results = []
 
         def query():
-            with patch.object(service, '_execute_semantic_search', return_value=([], {})):
+            with patch.object(
+                service, "_execute_semantic_search", return_value=([], {})
+            ):
                 result = service.exposed_query(str(project_path), "test")
                 results.append(result)
 

@@ -29,24 +29,41 @@ def test_worker_exception_is_logged_and_propagated(tmp_path, caplog):
     # Setup
     config_dir = tmp_path / ".code-indexer"
     config_dir.mkdir()
-    (config_dir / "config.json").write_text('{"vectorStore": {"backend": "filesystem"}}')
+    (config_dir / "config.json").write_text(
+        '{"vectorStore": {"backend": "filesystem"}}'
+    )
 
     repo_path = tmp_path / "repo"
     repo_path.mkdir()
 
     # Create a mock TemporalIndexer
-    with patch("code_indexer.services.temporal.temporal_indexer.ConfigManager") as mock_config_mgr, \
-         patch("code_indexer.services.temporal.temporal_indexer.VectorCalculationManager") as mock_vcm, \
-         patch("code_indexer.services.temporal.temporal_indexer.FilesystemVectorStore") as mock_store_cls, \
-         patch("code_indexer.services.temporal.temporal_indexer.FileIdentifier") as mock_file_id:
+    with (
+        patch(
+            "code_indexer.services.temporal.temporal_indexer.ConfigManager"
+        ) as mock_config_mgr,
+        patch(
+            "code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
+        ) as mock_vcm,
+        patch(
+            "code_indexer.services.temporal.temporal_indexer.FilesystemVectorStore"
+        ) as mock_store_cls,
+        patch(
+            "code_indexer.services.temporal.temporal_indexer.FileIdentifier"
+        ) as mock_file_id,
+    ):
 
         # Setup mocks
         mock_config = Mock()
         mock_config.get_vector_store_config.return_value = {"backend": "filesystem"}
-        mock_config.get_model_config.return_value = {"name": "voyage-code-3", "dimensions": 1024}
+        mock_config.get_model_config.return_value = {
+            "name": "voyage-code-3",
+            "dimensions": 1024,
+        }
         mock_config.get_model_name.return_value = "voyage-code-3"
         mock_config.get_model_dimensions.return_value = 1024
-        mock_config.get_temporal_worker_threads.return_value = 1  # Single thread for predictable testing
+        mock_config.get_temporal_worker_threads.return_value = (
+            1  # Single thread for predictable testing
+        )
         mock_config_mgr.return_value = mock_config
 
         # Properly configure VectorCalculationManager as a context manager
@@ -56,6 +73,7 @@ def test_worker_exception_is_logged_and_propagated(tmp_path, caplog):
 
         # Add cancellation_event (required by worker function)
         import threading
+
         mock_vcm_instance.cancellation_event = threading.Event()
 
         # Mock embedding provider for token counting (required by batching logic)
@@ -75,7 +93,9 @@ def test_worker_exception_is_logged_and_propagated(tmp_path, caplog):
         mock_store_cls.return_value = mock_store
 
         # Mock the upsert_points to raise an exception
-        test_exception = ValueError("Simulated upsert failure: missing projection_matrix.npy")
+        test_exception = ValueError(
+            "Simulated upsert failure: missing projection_matrix.npy"
+        )
         mock_store.upsert_points.side_effect = test_exception
 
         # Create indexer using correct constructor signature
@@ -86,11 +106,12 @@ def test_worker_exception_is_logged_and_propagated(tmp_path, caplog):
         mock_voyage_ai_config.max_concurrent_batches_per_commit = 10
 
         mock_config_mgr_instance.get_config.return_value = Mock(
-            embedding_provider="voyage-ai",
-            voyage_ai=mock_voyage_ai_config
+            embedding_provider="voyage-ai", voyage_ai=mock_voyage_ai_config
         )
 
-        with patch('code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info') as mock_info:
+        with patch(
+            "code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+        ) as mock_info:
             mock_info.return_value = {"dimensions": 1024}
             indexer = TemporalIndexer(
                 config_manager=mock_config_mgr_instance,
@@ -121,11 +142,7 @@ def test_worker_exception_is_logged_and_propagated(tmp_path, caplog):
         # Mock chunker to return a single chunk
         indexer.chunker = Mock()
         indexer.chunker.chunk_text.return_value = [
-            {
-                "text": "test content chunk",
-                "char_start": 0,
-                "char_end": 18
-            }
+            {"text": "test content chunk", "char_start": 0, "char_end": 18}
         ]
 
         # Mock embedding generation - submit_batch_task returns a Future
@@ -136,8 +153,7 @@ def test_worker_exception_is_logged_and_propagated(tmp_path, caplog):
             future = Future()
             # Create a result with embeddings
             result = SimpleNamespace(
-                embeddings=[[0.1] * 1024 for _ in texts],
-                error=None
+                embeddings=[[0.1] * 1024 for _ in texts], error=None
             )
             future.set_result(result)
             return future
@@ -155,16 +171,20 @@ def test_worker_exception_is_logged_and_propagated(tmp_path, caplog):
             author_email="test@example.com",
             timestamp=1234567890,
             message="Test commit message",
-            parent_hashes=""
+            parent_hashes="",
         )
 
         # Capture logs at ERROR level
         caplog.set_level(logging.ERROR)
 
         # Mock git operations to return our test commit
-        with patch.object(indexer, '_get_commit_history', return_value=[test_commit]), \
-             patch.object(indexer, '_get_current_branch', return_value='main'), \
-             patch('code_indexer.services.embedding_factory.EmbeddingProviderFactory.create') as mock_create:
+        with (
+            patch.object(indexer, "_get_commit_history", return_value=[test_commit]),
+            patch.object(indexer, "_get_current_branch", return_value="main"),
+            patch(
+                "code_indexer.services.embedding_factory.EmbeddingProviderFactory.create"
+            ) as mock_create,
+        ):
 
             # Mock embedding provider
             mock_embedding = Mock()
@@ -177,14 +197,17 @@ def test_worker_exception_is_logged_and_propagated(tmp_path, caplog):
 
         # Verify: Check that the exception was logged at ERROR level
         assert any(
-            record.levelname == "ERROR" and
-            "abc123d" in record.message and  # Commit hash prefix (first 7 chars)
-            "Failed to index commit" in record.message
+            record.levelname == "ERROR"
+            and "abc123d" in record.message  # Commit hash prefix (first 7 chars)
+            and "Failed to index commit" in record.message
             for record in caplog.records
         ), f"Expected ERROR log with commit hash not found. Logs: {[r.message for r in caplog.records]}"
 
         # Verify: Check that the log includes exception info
         error_logs = [r for r in caplog.records if r.levelname == "ERROR"]
         assert len(error_logs) > 0, "No ERROR logs found"
-        assert any("Simulated upsert failure" in str(r.exc_info) for r in error_logs if r.exc_info), \
-            "Exception info not included in ERROR log"
+        assert any(
+            "Simulated upsert failure" in str(r.exc_info)
+            for r in error_logs
+            if r.exc_info
+        ), "Exception info not included in ERROR log"

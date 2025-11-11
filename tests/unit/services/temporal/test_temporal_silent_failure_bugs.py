@@ -32,14 +32,19 @@ class TestBug1FalseVectorCount:
         This test verifies that the approximate nature is maintained.
         """
         # Verify CLI message includes approximation indicators
-        cli_file = Path(__file__).parent.parent.parent.parent.parent / "src" / "code_indexer" / "cli.py"
-        with open(cli_file, 'r') as f:
+        cli_file = (
+            Path(__file__).parent.parent.parent.parent.parent
+            / "src"
+            / "code_indexer"
+            / "cli.py"
+        )
+        with open(cli_file, "r") as f:
             cli_code = f.read()
 
         # Verify "(approx)" and "~" are used in the output message
-        assert "(approx)" in cli_code and "approximate_vectors_created" in cli_code, (
-            "CLI should clearly label vector count as approximate"
-        )
+        assert (
+            "(approx)" in cli_code and "approximate_vectors_created" in cli_code
+        ), "CLI should clearly label vector count as approximate"
 
         # This is acceptable - the estimate is clearly communicated
         # Real bugs are #2 (no exception handling), #3 (no deduplication logging), #4 (broad exception catching)
@@ -59,8 +64,15 @@ class TestBug2NoExceptionHandling:
         2. Re-raises the exception to propagate to main thread
         """
         # Read the source code to verify the bug
-        source_file = Path(__file__).parent.parent.parent.parent.parent / "src" / "code_indexer" / "services" / "temporal" / "temporal_indexer.py"
-        with open(source_file, 'r') as f:
+        source_file = (
+            Path(__file__).parent.parent.parent.parent.parent
+            / "src"
+            / "code_indexer"
+            / "services"
+            / "temporal"
+            / "temporal_indexer.py"
+        )
+        with open(source_file, "r") as f:
             source_lines = f.readlines()
 
         # Find the worker function (around line 529)
@@ -69,12 +81,18 @@ class TestBug2NoExceptionHandling:
             # More flexible search - look for def worker() near expected location
             if "def worker():" in line and i > 500 and i < 600:
                 # Verify next few lines have worker-related content
-                next_lines = ''.join(source_lines[i:i+10])
-                if "Worker function" in next_lines or "commit_queue" in next_lines or "nonlocal" in next_lines:
+                next_lines = "".join(source_lines[i : i + 10])
+                if (
+                    "Worker function" in next_lines
+                    or "commit_queue" in next_lines
+                    or "nonlocal" in next_lines
+                ):
                     worker_start_line = i
                     break
 
-        assert worker_start_line is not None, "Could not find worker() function (expected around line 529)"
+        assert (
+            worker_start_line is not None
+        ), "Could not find worker() function (expected around line 529)"
 
         # Look for the main try/except/finally block in worker
         # The worker has a try block starting around line 551 with except at 1063 and finally at 1069
@@ -82,13 +100,21 @@ class TestBug2NoExceptionHandling:
         except_block_found = False
         finally_block_found = False
 
-        for i in range(worker_start_line, min(worker_start_line + 600, len(source_lines))):
+        for i in range(
+            worker_start_line, min(worker_start_line + 600, len(source_lines))
+        ):
             line = source_lines[i].strip()
             if line.startswith("try:") and not try_block_found:
                 try_block_found = True
-            elif line.startswith("except") and try_block_found and not except_block_found:
+            elif (
+                line.startswith("except") and try_block_found and not except_block_found
+            ):
                 except_block_found = True
-            elif line.startswith("finally:") and try_block_found and not finally_block_found:
+            elif (
+                line.startswith("finally:")
+                and try_block_found
+                and not finally_block_found
+            ):
                 finally_block_found = True
 
         # VERIFY: Worker should have try/except/finally structure (now implemented at lines 551/1063/1069)

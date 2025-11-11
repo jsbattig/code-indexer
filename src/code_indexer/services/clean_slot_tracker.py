@@ -83,7 +83,13 @@ class CleanSlotTracker:
 
         return slot_id
 
-    def update_slot(self, slot_id: int, status: FileStatus, filename: Optional[str] = None, file_size: Optional[int] = None):
+    def update_slot(
+        self,
+        slot_id: int,
+        status: FileStatus,
+        filename: Optional[str] = None,
+        file_size: Optional[int] = None,
+    ):
         """Update slot status and optionally filename/file_size by direct integer access.
 
         Args:

@@ -116,8 +116,12 @@ def test_temporal_diff_scanner_respects_add_exclude_dirs(git_repo_with_excluded_
     diff_files = {diff.file_path for diff in diffs}
 
     # ASSERTION: Excluded files should NOT appear in diffs
-    assert "help/large_help.html" not in diff_files, "help/ files should be excluded by add_exclude_dirs"
-    assert "help/README.md" not in diff_files, "help/ files should be excluded by add_exclude_dirs"
+    assert (
+        "help/large_help.html" not in diff_files
+    ), "help/ files should be excluded by add_exclude_dirs"
+    assert (
+        "help/README.md" not in diff_files
+    ), "help/ files should be excluded by add_exclude_dirs"
 
     # Included files SHOULD appear
     assert "src/main.py" in diff_files, "src/ files should be included"
@@ -190,8 +194,12 @@ def test_temporal_indexer_respects_override_config(git_repo_with_excluded_dir):
         diff_files = {diff.file_path for diff in diffs}
 
         # Verify excluded files are NOT in diffs
-        assert "help/large_help.html" not in diff_files, "help/ files should be excluded via TemporalIndexer integration"
-        assert "help/README.md" not in diff_files, "help/ files should be excluded via TemporalIndexer integration"
+        assert (
+            "help/large_help.html" not in diff_files
+        ), "help/ files should be excluded via TemporalIndexer integration"
+        assert (
+            "help/README.md" not in diff_files
+        ), "help/ files should be excluded via TemporalIndexer integration"
 
         # Verify included files ARE in diffs
         assert "src/main.py" in diff_files, "src/ files should be included"

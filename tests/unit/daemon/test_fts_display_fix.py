@@ -9,6 +9,7 @@ Bug Context:
 - FTS results have different structure (match_text, snippet) vs semantic (payload)
 - Fix: Detect result type and call appropriate display function
 """
+
 from unittest.mock import Mock, patch
 from io import StringIO
 
@@ -34,7 +35,7 @@ class TestFTSDisplayFix:
             "match_text": "authenticate",
             "language": "python",
             "snippet": "def authenticate(user):",
-            "snippet_start_line": 10
+            "snippet_start_line": 10,
         }
 
         # Semantic result structure
@@ -44,8 +45,8 @@ class TestFTSDisplayFix:
                 "path": "src/config.py",
                 "content": "config = load_config()",
                 "line_start": 5,
-                "line_end": 6
-            }
+                "line_end": 6,
+            },
         }
 
         # FTS result should have match_text and no payload
@@ -56,12 +57,10 @@ class TestFTSDisplayFix:
         assert "payload" in semantic_result
         assert "match_text" not in semantic_result
 
-    @patch('code_indexer.cli._display_fts_results')
-    @patch('code_indexer.cli._display_semantic_results')
+    @patch("code_indexer.cli._display_fts_results")
+    @patch("code_indexer.cli._display_semantic_results")
     def test_display_results_calls_fts_display_for_fts_results(
-        self,
-        mock_semantic_display,
-        mock_fts_display
+        self, mock_semantic_display, mock_fts_display
     ):
         """Test that _display_results() calls _display_fts_results() for FTS results.
 
@@ -76,7 +75,7 @@ class TestFTSDisplayFix:
                 "match_text": "authenticate",
                 "language": "python",
                 "snippet": "def authenticate(user):",
-                "snippet_start_line": 10
+                "snippet_start_line": 10,
             },
             {
                 "path": "src/login.py",
@@ -85,8 +84,8 @@ class TestFTSDisplayFix:
                 "match_text": "login",
                 "language": "python",
                 "snippet": "def login(username, password):",
-                "snippet_start_line": 5
-            }
+                "snippet_start_line": 5,
+            },
         ]
         console = Mock()
 
@@ -99,16 +98,14 @@ class TestFTSDisplayFix:
 
         # Verify arguments passed to FTS display
         call_args = mock_fts_display.call_args
-        assert call_args[1]['results'] == fts_results
-        assert call_args[1]['console'] == console
-        assert call_args[1]['quiet'] is False
+        assert call_args[1]["results"] == fts_results
+        assert call_args[1]["console"] == console
+        assert call_args[1]["quiet"] is False
 
-    @patch('code_indexer.cli._display_fts_results')
-    @patch('code_indexer.cli._display_semantic_results')
+    @patch("code_indexer.cli._display_fts_results")
+    @patch("code_indexer.cli._display_semantic_results")
     def test_display_results_calls_semantic_display_for_semantic_results(
-        self,
-        mock_semantic_display,
-        mock_fts_display
+        self, mock_semantic_display, mock_fts_display
     ):
         """Test that _display_results() calls _display_semantic_results() for semantic results.
 
@@ -123,8 +120,8 @@ class TestFTSDisplayFix:
                     "content": "config = load_config()",
                     "line_start": 5,
                     "line_end": 6,
-                    "language": "python"
-                }
+                    "language": "python",
+                },
             },
             {
                 "score": 0.78,
@@ -133,9 +130,9 @@ class TestFTSDisplayFix:
                     "content": "settings = Settings()",
                     "line_start": 10,
                     "line_end": 11,
-                    "language": "python"
-                }
-            }
+                    "language": "python",
+                },
+            },
         ]
         console = Mock()
         timing_info = {"total": 0.5, "query": 0.1}
@@ -149,17 +146,15 @@ class TestFTSDisplayFix:
 
         # Verify arguments passed to semantic display
         call_args = mock_semantic_display.call_args
-        assert call_args[1]['results'] == semantic_results
-        assert call_args[1]['console'] == console
-        assert call_args[1]['quiet'] is False
-        assert call_args[1]['timing_info'] == timing_info
+        assert call_args[1]["results"] == semantic_results
+        assert call_args[1]["console"] == console
+        assert call_args[1]["quiet"] is False
+        assert call_args[1]["timing_info"] == timing_info
 
-    @patch('code_indexer.cli._display_fts_results')
-    @patch('code_indexer.cli._display_semantic_results')
+    @patch("code_indexer.cli._display_fts_results")
+    @patch("code_indexer.cli._display_semantic_results")
     def test_display_results_handles_empty_results(
-        self,
-        mock_semantic_display,
-        mock_fts_display
+        self, mock_semantic_display, mock_fts_display
     ):
         """Test that _display_results() handles empty result lists gracefully.
 
@@ -176,12 +171,10 @@ class TestFTSDisplayFix:
         mock_semantic_display.assert_called_once()
         mock_fts_display.assert_not_called()
 
-    @patch('code_indexer.cli._display_fts_results')
-    @patch('code_indexer.cli._display_semantic_results')
+    @patch("code_indexer.cli._display_fts_results")
+    @patch("code_indexer.cli._display_semantic_results")
     def test_display_results_detects_fts_by_match_text_key(
-        self,
-        mock_semantic_display,
-        mock_fts_display
+        self, mock_semantic_display, mock_fts_display
     ):
         """Test that _display_results() detects FTS results by match_text key presence.
 
@@ -194,7 +187,7 @@ class TestFTSDisplayFix:
                 "line": 1,
                 "column": 1,
                 "match_text": "test",  # Key indicator of FTS format
-                "snippet": "test code"
+                "snippet": "test code",
             }
         ]
         console = Mock()
@@ -206,12 +199,10 @@ class TestFTSDisplayFix:
         mock_fts_display.assert_called_once()
         mock_semantic_display.assert_not_called()
 
-    @patch('code_indexer.cli._display_fts_results')
-    @patch('code_indexer.cli._display_semantic_results')
+    @patch("code_indexer.cli._display_fts_results")
+    @patch("code_indexer.cli._display_semantic_results")
     def test_display_results_detects_semantic_by_payload_key(
-        self,
-        mock_semantic_display,
-        mock_fts_display
+        self, mock_semantic_display, mock_fts_display
     ):
         """Test that _display_results() detects semantic results by payload key presence.
 
@@ -223,8 +214,8 @@ class TestFTSDisplayFix:
                 "score": 0.9,
                 "payload": {  # Key indicator of semantic format
                     "path": "test.py",
-                    "content": "test content"
-                }
+                    "content": "test content",
+                },
             }
         ]
         console = Mock()
@@ -236,7 +227,7 @@ class TestFTSDisplayFix:
         mock_semantic_display.assert_called_once()
         mock_fts_display.assert_not_called()
 
-    @patch('code_indexer.cli._display_fts_results')
+    @patch("code_indexer.cli._display_fts_results")
     def test_display_results_no_crash_on_fts_results(self, mock_fts_display):
         """Test that FTS results don't cause KeyError: 'payload' crash.
 
@@ -265,12 +256,10 @@ class TestFTSDisplayFix:
         # Verify correct display function was called
         mock_fts_display.assert_called_once()
 
-    @patch('code_indexer.cli._display_fts_results')
-    @patch('code_indexer.cli._display_semantic_results')
+    @patch("code_indexer.cli._display_fts_results")
+    @patch("code_indexer.cli._display_semantic_results")
     def test_display_results_timing_info_passed_to_semantic_only(
-        self,
-        mock_semantic_display,
-        mock_fts_display
+        self, mock_semantic_display, mock_fts_display
     ):
         """Test that timing_info is passed to semantic display but not FTS display.
 
@@ -278,10 +267,7 @@ class TestFTSDisplayFix:
         """
         # Test semantic with timing
         semantic_results = [
-            {
-                "score": 0.85,
-                "payload": {"path": "test.py", "content": "test"}
-            }
+            {"score": 0.85, "payload": {"path": "test.py", "content": "test"}}
         ]
         console = Mock()
         timing_info = {"total": 0.5, "query": 0.1}
@@ -290,7 +276,7 @@ class TestFTSDisplayFix:
 
         # Assert: timing_info passed to semantic display
         call_args = mock_semantic_display.call_args
-        assert call_args[1]['timing_info'] == timing_info
+        assert call_args[1]["timing_info"] == timing_info
 
         # Reset mocks
         mock_semantic_display.reset_mock()
@@ -298,19 +284,14 @@ class TestFTSDisplayFix:
 
         # Test FTS without timing
         fts_results = [
-            {
-                "path": "test.py",
-                "line": 1,
-                "column": 1,
-                "match_text": "test"
-            }
+            {"path": "test.py", "line": 1, "column": 1, "match_text": "test"}
         ]
 
         _display_results(fts_results, console, timing_info=timing_info)
 
         # Assert: FTS display doesn't receive timing_info (not in signature)
         call_args = mock_fts_display.call_args
-        assert 'timing_info' not in call_args[1]
+        assert "timing_info" not in call_args[1]
 
 
 class TestIntegrationWithRealDisplayFunctions:
@@ -334,7 +315,7 @@ class TestIntegrationWithRealDisplayFunctions:
                 "match_text": "authenticate",
                 "language": "python",
                 "snippet": "def authenticate(user, password):\n    return check_credentials(user, password)",
-                "snippet_start_line": 10
+                "snippet_start_line": 10,
             }
         ]
 
@@ -367,18 +348,15 @@ class TestIntegrationWithRealDisplayFunctions:
                     "content": "config = load_config()",
                     "line_start": 5,
                     "line_end": 6,
-                    "language": "python"
-                }
+                    "language": "python",
+                },
             }
         ]
 
         # Act: Capture console output
         console = Console(file=StringIO(), force_terminal=True)
         _display_semantic_results(
-            semantic_results,
-            console,
-            quiet=False,
-            timing_info=None
+            semantic_results, console, quiet=False, timing_info=None
         )
 
         # Assert: No crash, output generated
@@ -390,12 +368,10 @@ class TestIntegrationWithRealDisplayFunctions:
 class TestEdgeCases:
     """Test edge cases and error conditions."""
 
-    @patch('code_indexer.cli._display_fts_results')
-    @patch('code_indexer.cli._display_semantic_results')
+    @patch("code_indexer.cli._display_fts_results")
+    @patch("code_indexer.cli._display_semantic_results")
     def test_results_with_mixed_formats_defaults_to_first_result_type(
-        self,
-        mock_semantic_display,
-        mock_fts_display
+        self, mock_semantic_display, mock_fts_display
     ):
         """Test that mixed result formats use first result to determine type.
 
@@ -407,12 +383,9 @@ class TestEdgeCases:
                 "match_text": "test",  # FTS format
                 "path": "test1.py",
                 "line": 1,
-                "column": 1
+                "column": 1,
             },
-            {
-                "score": 0.8,  # Semantic format
-                "payload": {"path": "test2.py"}
-            }
+            {"score": 0.8, "payload": {"path": "test2.py"}},  # Semantic format
         ]
         console = Mock()
 
@@ -423,7 +396,7 @@ class TestEdgeCases:
         mock_fts_display.assert_called_once()
         mock_semantic_display.assert_not_called()
 
-    @patch('code_indexer.cli._display_fts_results')
+    @patch("code_indexer.cli._display_fts_results")
     def test_fts_results_with_minimal_keys(self, mock_fts_display):
         """Test FTS results with minimal required keys still work.
 
@@ -435,7 +408,7 @@ class TestEdgeCases:
                 "path": "test.py",
                 "line": 1,
                 "column": 1,
-                "match_text": "test"
+                "match_text": "test",
                 # No language, snippet, etc.
             }
         ]

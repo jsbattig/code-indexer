@@ -52,7 +52,7 @@ class TestRegularIndexingWithTemporalCollection:
                 "vector_count": 26,
                 "embedding_provider": "voyage",
                 "embedding_model": "voyage-code-3",
-                "embedding_dimensions": 1536
+                "embedding_dimensions": 1536,
             }
 
             with open(temporal_collection_dir / "collection_meta.json", "w") as f:
@@ -67,7 +67,7 @@ class TestRegularIndexingWithTemporalCollection:
                 "vector_count": 100,
                 "embedding_provider": "voyage",
                 "embedding_model": "voyage-code-3",
-                "embedding_dimensions": 1536
+                "embedding_dimensions": 1536,
             }
 
             with open(old_collection_dir / "collection_meta.json", "w") as f:
@@ -80,10 +80,7 @@ class TestRegularIndexingWithTemporalCollection:
                 "project_id": "test_project",
                 "embedding_provider": "voyage",
                 "embedding_model": "voyage-code-3",
-                "voyage": {
-                    "api_key": "test_key",
-                    "batch_size": 128
-                }
+                "voyage": {"api_key": "test_key", "batch_size": 128},
             }
             with open(config_path, "w") as f:
                 json.dump(config_data, f)
@@ -91,7 +88,9 @@ class TestRegularIndexingWithTemporalCollection:
             # Test the actual code path - using FileChunkingManager inside HighThroughputProcessor
             # Set up mocks for the actual flow
             config_manager = ConfigManager.create_with_backtrack(test_repo)
-            vector_store = FilesystemVectorStore(base_path=index_dir, project_root=test_repo)
+            vector_store = FilesystemVectorStore(
+                base_path=index_dir, project_root=test_repo
+            )
 
             # Create a simple test chunk
             test_chunk = {
@@ -100,7 +99,7 @@ class TestRegularIndexingWithTemporalCollection:
                 "total_chunks": 1,
                 "file_extension": "py",
                 "line_start": 1,
-                "line_end": 2
+                "line_end": 2,
             }
 
             # Create metadata without collection_name (this is the bug)
@@ -109,14 +108,16 @@ class TestRegularIndexingWithTemporalCollection:
                 "file_hash": "abc123",
                 "git_available": False,
                 "file_mtime": 1234567890,
-                "file_size": 100
+                "file_size": 100,
             }
 
             # Create a mock embedding
             embedding = [0.1] * 1536
 
             # Create a mock qdrant point
-            from src.code_indexer.services.file_chunking_manager import FileChunkingManager
+            from src.code_indexer.services.file_chunking_manager import (
+                FileChunkingManager,
+            )
 
             # Mock dependencies
             mock_vector_manager = Mock()
@@ -129,7 +130,7 @@ class TestRegularIndexingWithTemporalCollection:
                 vector_store_client=vector_store,
                 thread_count=4,
                 slot_tracker=mock_slot_tracker,
-                codebase_dir=test_repo
+                codebase_dir=test_repo,
             )
 
             # Create the Qdrant point as the manager would
@@ -142,10 +143,14 @@ class TestRegularIndexingWithTemporalCollection:
             with pytest.raises(ValueError) as exc_info:
                 vector_store.upsert_points(
                     points=[qdrant_point],
-                    collection_name=metadata.get("collection_name")  # This returns None - the bug!
+                    collection_name=metadata.get(
+                        "collection_name"
+                    ),  # This returns None - the bug!
                 )
 
             # Verify the exact error message we expect
-            assert "collection_name is required when multiple collections exist" in str(exc_info.value)
+            assert "collection_name is required when multiple collections exist" in str(
+                exc_info.value
+            )
             assert "code-indexer-temporal" in str(exc_info.value)
             assert "voyage-code-3" in str(exc_info.value)

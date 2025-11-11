@@ -10,7 +10,6 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 
-
 class TestTTLEvictionThreadInitialization:
     """Test TTL eviction thread initialization."""
 

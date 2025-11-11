@@ -33,7 +33,9 @@ class TestPathFilterTemporalBug:
         # MUST PASS: Main collection format with 'path' field
         assert filter_func(payload) is True
 
-    def test_parse_qdrant_filter_now_works_with_file_path_field_temporal_collection(self):
+    def test_parse_qdrant_filter_now_works_with_file_path_field_temporal_collection(
+        self,
+    ):
         """Test that path filter NOW WORKS with 'file_path' field (temporal collection format).
 
         FIXED BUG: temporal payloads use 'file_path' but filters checked 'path',
@@ -109,7 +111,9 @@ class TestPathFilterTemporalBug:
             "must": [
                 {
                     "key": "path",
-                    "match": {"text": "tests/e2e/temporal/test_temporal_indexing_e2e.py"},
+                    "match": {
+                        "text": "tests/e2e/temporal/test_temporal_indexing_e2e.py"
+                    },
                 }
             ]
         }
@@ -131,12 +135,16 @@ class TestPathFilterTemporalBug:
         }
 
         # Wildcard path filter
-        filter_conditions = {"must": [{"key": "path", "match": {"text": "tests/**/*.py"}}]}
+        filter_conditions = {
+            "must": [{"key": "path", "match": {"text": "tests/**/*.py"}}]
+        }
 
         filter_func = store._parse_qdrant_filter(filter_conditions)
 
         # FIXED: Wildcard path now matches file_path field
-        assert filter_func(payload) is True, "Wildcard path should match file_path field"
+        assert (
+            filter_func(payload) is True
+        ), "Wildcard path should match file_path field"
 
     def test_path_filter_with_language_filter_temporal(self):
         """Test combined path + language filter for temporal collection."""
@@ -161,7 +169,9 @@ class TestPathFilterTemporalBug:
         filter_func = store._parse_qdrant_filter(filter_conditions)
 
         # FIXED: Combined filter now works with file_path field
-        assert filter_func(payload) is True, "Combined filter should work with file_path"
+        assert (
+            filter_func(payload) is True
+        ), "Combined filter should work with file_path"
 
 
 class TestPathFilterFix:
@@ -205,7 +215,9 @@ class TestPathFilterFix:
             "type": "content",
         }
 
-        filter_conditions = {"must": [{"key": "path", "match": {"text": "correct/*.py"}}]}
+        filter_conditions = {
+            "must": [{"key": "path", "match": {"text": "correct/*.py"}}]
+        }
 
         filter_func = store._parse_qdrant_filter(filter_conditions)
 
@@ -226,7 +238,9 @@ class TestPathFilterFix:
         }
 
         # Exclusion filter (must_not)
-        filter_conditions = {"must_not": [{"key": "path", "match": {"text": "tests/*"}}]}
+        filter_conditions = {
+            "must_not": [{"key": "path", "match": {"text": "tests/*"}}]
+        }
 
         filter_func = store._parse_qdrant_filter(filter_conditions)
 

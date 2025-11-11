@@ -133,14 +133,54 @@ def test_display_receives_stale_concurrent_files():
 
     # Initial concurrent_files (all slots occupied)
     initial_concurrent_files = [
-        {"slot_id": 0, "file_path": "lint.sh", "file_size": 1024, "status": "processing"},
-        {"slot_id": 1, "file_path": "checklist.md", "file_size": 2048, "status": "processing"},
-        {"slot_id": 2, "file_path": "setup.sh", "file_size": 512, "status": "processing"},
-        {"slot_id": 3, "file_path": "feat.md", "file_size": 1536, "status": "processing"},
-        {"slot_id": 4, "file_path": "automation.sh", "file_size": 768, "status": "processing"},
-        {"slot_id": 5, "file_path": "test1.py", "file_size": 256, "status": "processing"},
-        {"slot_id": 6, "file_path": "test2.py", "file_size": 384, "status": "processing"},
-        {"slot_id": 7, "file_path": "test3.py", "file_size": 192, "status": "processing"},
+        {
+            "slot_id": 0,
+            "file_path": "lint.sh",
+            "file_size": 1024,
+            "status": "processing",
+        },
+        {
+            "slot_id": 1,
+            "file_path": "checklist.md",
+            "file_size": 2048,
+            "status": "processing",
+        },
+        {
+            "slot_id": 2,
+            "file_path": "setup.sh",
+            "file_size": 512,
+            "status": "processing",
+        },
+        {
+            "slot_id": 3,
+            "file_path": "feat.md",
+            "file_size": 1536,
+            "status": "processing",
+        },
+        {
+            "slot_id": 4,
+            "file_path": "automation.sh",
+            "file_size": 768,
+            "status": "processing",
+        },
+        {
+            "slot_id": 5,
+            "file_path": "test1.py",
+            "file_size": 256,
+            "status": "processing",
+        },
+        {
+            "slot_id": 6,
+            "file_path": "test2.py",
+            "file_size": 384,
+            "status": "processing",
+        },
+        {
+            "slot_id": 7,
+            "file_path": "test3.py",
+            "file_size": 192,
+            "status": "processing",
+        },
     ]
 
     # First update: Set initial state
@@ -161,14 +201,54 @@ def test_display_receives_stale_concurrent_files():
 
     # Simulated stale update: Only slots 2, 5, 6, 7 updated, others STALE
     stale_concurrent_files = [
-        {"slot_id": 0, "file_path": "lint.sh", "file_size": 1024, "status": "processing"},  # STALE
-        {"slot_id": 1, "file_path": "checklist.md", "file_size": 2048, "status": "processing"},  # STALE
-        {"slot_id": 2, "file_path": "RELEASE_NOTES.md", "file_size": 4096, "status": "processing"},  # FRESH
-        {"slot_id": 3, "file_path": "feat.md", "file_size": 1536, "status": "processing"},  # STALE
-        {"slot_id": 4, "file_path": "automation.sh", "file_size": 768, "status": "processing"},  # STALE
-        {"slot_id": 5, "file_path": "new1.py", "file_size": 512, "status": "processing"},  # FRESH
-        {"slot_id": 6, "file_path": "new2.py", "file_size": 1024, "status": "processing"},  # FRESH
-        {"slot_id": 7, "file_path": "new3.py", "file_size": 256, "status": "processing"},  # FRESH
+        {
+            "slot_id": 0,
+            "file_path": "lint.sh",
+            "file_size": 1024,
+            "status": "processing",
+        },  # STALE
+        {
+            "slot_id": 1,
+            "file_path": "checklist.md",
+            "file_size": 2048,
+            "status": "processing",
+        },  # STALE
+        {
+            "slot_id": 2,
+            "file_path": "RELEASE_NOTES.md",
+            "file_size": 4096,
+            "status": "processing",
+        },  # FRESH
+        {
+            "slot_id": 3,
+            "file_path": "feat.md",
+            "file_size": 1536,
+            "status": "processing",
+        },  # STALE
+        {
+            "slot_id": 4,
+            "file_path": "automation.sh",
+            "file_size": 768,
+            "status": "processing",
+        },  # STALE
+        {
+            "slot_id": 5,
+            "file_path": "new1.py",
+            "file_size": 512,
+            "status": "processing",
+        },  # FRESH
+        {
+            "slot_id": 6,
+            "file_path": "new2.py",
+            "file_size": 1024,
+            "status": "processing",
+        },  # FRESH
+        {
+            "slot_id": 7,
+            "file_path": "new3.py",
+            "file_size": 256,
+            "status": "processing",
+        },  # FRESH
     ]
 
     # Second update: Stale data overwrites fresh data
@@ -184,14 +264,18 @@ def test_display_receives_stale_concurrent_files():
 
     # BUG ASSERTION: This proves the bug exists
     # Slots 0, 1, 3, 4 are now FROZEN showing stale data
-    assert progress_manager._concurrent_files[0]["file_path"] == "lint.sh", \
-        "Slot 0 FROZEN with stale data"
-    assert progress_manager._concurrent_files[1]["file_path"] == "checklist.md", \
-        "Slot 1 FROZEN with stale data"
-    assert progress_manager._concurrent_files[3]["file_path"] == "feat.md", \
-        "Slot 3 FROZEN with stale data"
-    assert progress_manager._concurrent_files[4]["file_path"] == "automation.sh", \
-        "Slot 4 FROZEN with stale data"
+    assert (
+        progress_manager._concurrent_files[0]["file_path"] == "lint.sh"
+    ), "Slot 0 FROZEN with stale data"
+    assert (
+        progress_manager._concurrent_files[1]["file_path"] == "checklist.md"
+    ), "Slot 1 FROZEN with stale data"
+    assert (
+        progress_manager._concurrent_files[3]["file_path"] == "feat.md"
+    ), "Slot 3 FROZEN with stale data"
+    assert (
+        progress_manager._concurrent_files[4]["file_path"] == "automation.sh"
+    ), "Slot 4 FROZEN with stale data"
 
     # Only slots 2, 5, 6, 7 show fresh data
     assert progress_manager._concurrent_files[2]["file_path"] == "RELEASE_NOTES.md"

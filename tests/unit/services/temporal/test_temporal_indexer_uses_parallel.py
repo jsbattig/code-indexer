@@ -29,18 +29,28 @@ class TestTemporalIndexerUsesParallel(unittest.TestCase):
         vector_store.project_root = test_dir
         vector_store.base_path = test_dir / ".code-indexer" / "index"
 
-        with patch("src.code_indexer.services.file_identifier.FileIdentifier"), \
-             patch("src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner"), \
-             patch("src.code_indexer.indexing.fixed_size_chunker.FixedSizeChunker"), \
-             patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info") as mock_provider_info, \
-             patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.create") as mock_create, \
-             patch("src.code_indexer.services.vector_calculation_manager.VectorCalculationManager") as mock_vector_manager_class:
+        with (
+            patch("src.code_indexer.services.file_identifier.FileIdentifier"),
+            patch(
+                "src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner"
+            ),
+            patch("src.code_indexer.indexing.fixed_size_chunker.FixedSizeChunker"),
+            patch(
+                "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+            ) as mock_provider_info,
+            patch(
+                "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.create"
+            ) as mock_create,
+            patch(
+                "src.code_indexer.services.vector_calculation_manager.VectorCalculationManager"
+            ) as mock_vector_manager_class,
+        ):
 
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-2",
-                "model_info": {"dimension": 1536}
+                "model_info": {"dimension": 1536},
             }
 
             # Mock embedding provider
@@ -58,8 +68,7 @@ class TestTemporalIndexerUsesParallel(unittest.TestCase):
             mock_vector_manager_class.return_value = mock_vector_manager
 
             indexer = TemporalIndexer(
-                config_manager=config_manager,
-                vector_store=vector_store
+                config_manager=config_manager, vector_store=vector_store
             )
 
             # Mock the parallel processing method
@@ -67,10 +76,10 @@ class TestTemporalIndexerUsesParallel(unittest.TestCase):
             indexer._process_commits_parallel = Mock(return_value=(10, 15, 20))
 
             # Mock commit history
-            with patch.object(indexer, '_get_commit_history') as mock_history:
+            with patch.object(indexer, "_get_commit_history") as mock_history:
                 mock_history.return_value = [
                     Mock(hash="commit1", timestamp=1000, message="Test commit 1"),
-                    Mock(hash="commit2", timestamp=2000, message="Test commit 2")
+                    Mock(hash="commit2", timestamp=2000, message="Test commit 2"),
                 ]
 
                 # Call index_commits
@@ -82,7 +91,9 @@ class TestTemporalIndexerUsesParallel(unittest.TestCase):
                 # Verify it was called with the right arguments
                 call_args = indexer._process_commits_parallel.call_args
                 self.assertEqual(len(call_args[0][0]), 2)  # 2 commits
-                self.assertEqual(call_args[0][1], mock_embedding_provider)  # embedding provider
+                self.assertEqual(
+                    call_args[0][1], mock_embedding_provider
+                )  # embedding provider
                 self.assertIsNotNone(call_args[0][2])  # vector manager passed
 
 

@@ -23,6 +23,7 @@ class TestTemporalSearchFilePathBug(unittest.TestCase):
         self.mock_embedding = Mock()
 
         from pathlib import Path
+
         self.project_root = Path("/test/repo")
 
         self.service = TemporalSearchService(

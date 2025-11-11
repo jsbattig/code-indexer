@@ -1,4 +1,5 @@
 """Test that temporal indexer skips already-indexed blobs."""
+
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -18,15 +19,24 @@ class TestBlobDeduplicationLogic:
 
             # Initialize git repo
             import subprocess
+
             subprocess.run(["git", "init"], cwd=repo_path, check=True)
-            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True)
-            subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_path, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.com"],
+                cwd=repo_path,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Test User"], cwd=repo_path, check=True
+            )
 
             # Create a file and commit
             test_file = repo_path / "test.py"
             test_file.write_text("print('hello')\n")
             subprocess.run(["git", "add", "test.py"], cwd=repo_path, check=True)
-            subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=repo_path, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "Initial commit"], cwd=repo_path, check=True
+            )
 
             # Setup
             config_manager = MagicMock()
@@ -37,9 +47,13 @@ class TestBlobDeduplicationLogic:
             config_manager.get_config.return_value = config
 
             index_dir = repo_path / ".code-indexer" / "index"
-            vector_store = FilesystemVectorStore(base_path=index_dir, project_root=repo_path)
+            vector_store = FilesystemVectorStore(
+                base_path=index_dir, project_root=repo_path
+            )
 
-            with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory') as mock_factory:
+            with patch(
+                "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+            ) as mock_factory:
                 mock_factory.get_provider_model_info.return_value = {"dimensions": 1024}
                 mock_provider = MagicMock()
                 mock_factory.create.return_value = mock_provider
@@ -51,8 +65,12 @@ class TestBlobDeduplicationLogic:
                 temporal_indexer.indexed_blobs.add(test_blob_hash)
 
                 # Mock the diff scanner to return a diff with that blob hash
-                with patch.object(temporal_indexer.diff_scanner, 'get_diffs_for_commit') as mock_get_diffs:
-                    from src.code_indexer.services.temporal.temporal_diff_scanner import DiffInfo
+                with patch.object(
+                    temporal_indexer.diff_scanner, "get_diffs_for_commit"
+                ) as mock_get_diffs:
+                    from src.code_indexer.services.temporal.temporal_diff_scanner import (
+                        DiffInfo,
+                    )
 
                     # Return a diff with the known blob hash
                     mock_get_diffs.return_value = [
@@ -61,25 +79,32 @@ class TestBlobDeduplicationLogic:
                             diff_type="added",
                             commit_hash="commit123",
                             diff_content="+print('hello')",
-                            blob_hash=test_blob_hash  # This blob is already in the registry
+                            blob_hash=test_blob_hash,  # This blob is already in the registry
                         )
                     ]
 
                     # Track vectorization calls
                     vectorization_called = False
 
-                    with patch('src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager') as mock_vcm:
+                    with patch(
+                        "src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
+                    ) as mock_vcm:
                         mock_manager = MagicMock()
                         mock_vcm.return_value.__enter__.return_value = mock_manager
 
                         # Mock cancellation_event (required by worker function)
                         import threading
+
                         mock_manager.cancellation_event = threading.Event()
 
                         # Mock embedding provider methods for token counting
                         mock_embedding_provider = MagicMock()
-                        mock_embedding_provider._count_tokens_accurately = MagicMock(return_value=100)
-                        mock_embedding_provider._get_model_token_limit = MagicMock(return_value=120000)
+                        mock_embedding_provider._count_tokens_accurately = MagicMock(
+                            return_value=100
+                        )
+                        mock_embedding_provider._get_model_token_limit = MagicMock(
+                            return_value=120000
+                        )
                         mock_manager.embedding_provider = mock_embedding_provider
 
                         def track_vectorization(chunk_texts, metadata):
@@ -104,5 +129,6 @@ class TestBlobDeduplicationLogic:
 
                         # Verify: Since the blob is already in the registry,
                         # vectorization should NOT be called
-                        assert not vectorization_called, \
-                            "Vectorization should not be called for blobs already in the registry"
+                        assert (
+                            not vectorization_called
+                        ), "Vectorization should not be called for blobs already in the registry"

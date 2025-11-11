@@ -35,18 +35,20 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
         self.repo_path = Path(self.temp_dir.name)
 
         # Create git repository structure
-        subprocess.run(["git", "init"], cwd=self.repo_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "init"], cwd=self.repo_path, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "config", "user.name", "Test User"],
             cwd=self.repo_path,
             check=True,
-            capture_output=True
+            capture_output=True,
         )
         subprocess.run(
             ["git", "config", "user.email", "test@example.com"],
             cwd=self.repo_path,
             check=True,
-            capture_output=True
+            capture_output=True,
         )
 
     def teardown_method(self):
@@ -66,11 +68,13 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
         for i, filename in enumerate(test_files):
             file_path = self.repo_path / filename
             file_path.write_text(f"Content {i}")
-            subprocess.run(["git", "add", str(file_path)], cwd=self.repo_path, capture_output=True)
+            subprocess.run(
+                ["git", "add", str(file_path)], cwd=self.repo_path, capture_output=True
+            )
             subprocess.run(
                 ["git", "commit", "-m", f"Commit {i}: {filename}"],
                 cwd=self.repo_path,
-                capture_output=True
+                capture_output=True,
             )
 
         # Track progress callbacks
@@ -78,24 +82,30 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
 
         def progress_callback(current, total, path, info=""):
             """Capture progress calls for validation."""
-            progress_calls.append({
-                "current": current,
-                "total": total,
-                "path": str(path) if path else None,
-                "info": info
-            })
+            progress_calls.append(
+                {
+                    "current": current,
+                    "total": total,
+                    "path": str(path) if path else None,
+                    "info": info,
+                }
+            )
 
         # Mock components
         config_manager = Mock(spec=ConfigManager)
         config = Mock()
-        config.voyage_ai = Mock(parallel_requests=4, max_concurrent_batches_per_commit=10)
+        config.voyage_ai = Mock(
+            parallel_requests=4, max_concurrent_batches_per_commit=10
+        )
         config_manager.get_config.return_value = config
 
         vector_store = Mock(spec=FilesystemVectorStore)
         vector_store.project_root = self.repo_path
         vector_store.collection_exists.return_value = True
         vector_store.upsert_points = Mock()
-        vector_store.load_id_index.return_value = set()  # Return empty set for len() call
+        vector_store.load_id_index.return_value = (
+            set()
+        )  # Return empty set for len() call
 
         # Mock diff scanner to return test diffs
         from src.code_indexer.services.temporal.temporal_diff_scanner import DiffInfo
@@ -104,19 +114,25 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
             """Return a diff with proper file."""
             # Use hash to determine which file
             file_idx = int(commit_hash[:1], 16) % len(test_files)
-            return [DiffInfo(
-                file_path=test_files[file_idx],
-                diff_type="modified",
-                commit_hash=commit_hash,
-                diff_content=f"+Modified {test_files[file_idx]}\n"
-            )]
+            return [
+                DiffInfo(
+                    file_path=test_files[file_idx],
+                    diff_type="modified",
+                    commit_hash=commit_hash,
+                    diff_content=f"+Modified {test_files[file_idx]}\n",
+                )
+            ]
 
-        with patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory") as factory_mock:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+        ) as factory_mock:
             factory_mock.get_provider_model_info.return_value = {"dimensions": 1024}
             provider = Mock()
             factory_mock.create.return_value = provider
 
-            with patch("src.code_indexer.services.vector_calculation_manager.VectorCalculationManager") as vcm_mock:
+            with patch(
+                "src.code_indexer.services.vector_calculation_manager.VectorCalculationManager"
+            ) as vcm_mock:
                 manager = Mock()
                 manager.__enter__ = Mock(return_value=manager)
                 manager.__exit__ = Mock(return_value=None)
@@ -132,7 +148,9 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
 
                 # Create indexer
                 indexer = TemporalIndexer(config_manager, vector_store)
-                indexer.diff_scanner.get_diffs_for_commit = Mock(side_effect=mock_get_diffs)
+                indexer.diff_scanner.get_diffs_for_commit = Mock(
+                    side_effect=mock_get_diffs
+                )
 
                 # Run indexing
                 result = indexer.index_commits(progress_callback=progress_callback)
@@ -159,7 +177,9 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
                         assert "threads" in info, f"Missing thread count: {info}"
 
                         # 5. 📝 emoji (CRITICAL - Story 1 requirement)
-                        assert "📝" in info, f"Missing 📝 emoji (Story 1 AC violation): {info}"
+                        assert (
+                            "📝" in info
+                        ), f"Missing 📝 emoji (Story 1 AC violation): {info}"
 
                         # 6 & 7. Commit hash and filename
                         if "📝" in info:
@@ -167,8 +187,9 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
                             if len(parts) > 1:
                                 commit_file_part = parts[1].strip()
                                 # Should have format: "hash - filename"
-                                assert " - " in commit_file_part, \
-                                    f"Missing 'hash - file' format after 📝: {info}"
+                                assert (
+                                    " - " in commit_file_part
+                                ), f"Missing 'hash - file' format after 📝: {info}"
 
                                 hash_file = commit_file_part.split(" - ")
                                 if len(hash_file) == 2:
@@ -176,29 +197,40 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
                                     filename = hash_file[1].strip()
 
                                     # Hash should be 8 chars (or placeholder)
-                                    assert len(commit_hash) >= 8, \
-                                        f"Commit hash too short: {commit_hash} in {info}"
+                                    assert (
+                                        len(commit_hash) >= 8
+                                    ), f"Commit hash too short: {commit_hash} in {info}"
 
                                     # Filename should be present (not "Processing...")
-                                    assert filename not in ["Processing...", ""], \
-                                        f"Missing actual filename (Story 1 violation): {info}"
+                                    assert filename not in [
+                                        "Processing...",
+                                        "",
+                                    ], f"Missing actual filename (Story 1 violation): {info}"
 
     def test_thread_safe_progress_no_corruption(self):
         """Test that shared state approach fixes race conditions and filename corruption."""
 
         # Create many commits to trigger parallel processing
         num_commits = 50
-        test_files = ["chunker.py", "indexer.py", "test_start_stop_e2e.py", "pascal_parser.py", "README.md"]
+        test_files = [
+            "chunker.py",
+            "indexer.py",
+            "test_start_stop_e2e.py",
+            "pascal_parser.py",
+            "README.md",
+        ]
 
         for i in range(num_commits):
             filename = test_files[i % len(test_files)]
             file_path = self.repo_path / filename
             file_path.write_text(f"Content iteration {i}")
-            subprocess.run(["git", "add", str(file_path)], cwd=self.repo_path, capture_output=True)
+            subprocess.run(
+                ["git", "add", str(file_path)], cwd=self.repo_path, capture_output=True
+            )
             subprocess.run(
                 ["git", "commit", "-m", f"Commit {i}"],
                 cwd=self.repo_path,
-                capture_output=True
+                capture_output=True,
             )
 
         # Track progress to verify thread safety
@@ -209,12 +241,14 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
 
         def progress_callback(current, total, path, info=""):
             """Track progress and detect corruption."""
-            progress_calls.append({
-                "current": current,
-                "total": total,
-                "info": info,
-                "thread_id": threading.current_thread().ident
-            })
+            progress_calls.append(
+                {
+                    "current": current,
+                    "total": total,
+                    "info": info,
+                    "thread_id": threading.current_thread().ident,
+                }
+            )
 
             # Extract hash and file from info
             if "📝" in info:
@@ -232,7 +266,7 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
                         "pyre_",
                         "walking",
                         ".pyalking",
-                        ".pyypy"
+                        ".pyypy",
                     ]
                     for pattern in corruption_patterns:
                         if pattern in file_val:
@@ -241,14 +275,18 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
         # Mock components with parallel processing
         config_manager = Mock(spec=ConfigManager)
         config = Mock()
-        config.voyage_ai = Mock(parallel_requests=8, max_concurrent_batches_per_commit=10)  # High parallelism to trigger races
+        config.voyage_ai = Mock(
+            parallel_requests=8, max_concurrent_batches_per_commit=10
+        )  # High parallelism to trigger races
         config_manager.get_config.return_value = config
 
         vector_store = Mock(spec=FilesystemVectorStore)
         vector_store.project_root = self.repo_path
         vector_store.collection_exists.return_value = True
         vector_store.upsert_points = Mock()
-        vector_store.load_id_index.return_value = set()  # Return empty set for len() call
+        vector_store.load_id_index.return_value = (
+            set()
+        )  # Return empty set for len() call
 
         # Mock diff scanner with delays to simulate real processing
         from src.code_indexer.services.temporal.temporal_diff_scanner import DiffInfo
@@ -257,19 +295,25 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
             """Return diff with delay to simulate processing."""
             time.sleep(0.002)  # Small delay to trigger race conditions
             file_idx = abs(hash(commit_hash)) % len(test_files)
-            return [DiffInfo(
-                file_path=test_files[file_idx],
-                diff_type="modified",
-                commit_hash=commit_hash,
-                diff_content="+Modified line\n"
-            )]
+            return [
+                DiffInfo(
+                    file_path=test_files[file_idx],
+                    diff_type="modified",
+                    commit_hash=commit_hash,
+                    diff_content="+Modified line\n",
+                )
+            ]
 
-        with patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory") as factory_mock:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+        ) as factory_mock:
             factory_mock.get_provider_model_info.return_value = {"dimensions": 1024}
             provider = Mock()
             factory_mock.create.return_value = provider
 
-            with patch("src.code_indexer.services.vector_calculation_manager.VectorCalculationManager") as vcm_mock:
+            with patch(
+                "src.code_indexer.services.vector_calculation_manager.VectorCalculationManager"
+            ) as vcm_mock:
                 manager = Mock()
                 manager.__enter__ = Mock(return_value=manager)
                 manager.__exit__ = Mock(return_value=None)
@@ -280,24 +324,32 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
                     result = Mock()
                     result.embeddings = [[0.1] * 1024]
                     result.error = None
+
                     def delayed_result(*args, **kwargs):
                         time.sleep(0.001)
                         return result
+
                     future.result = delayed_result
                     return future
 
-                manager.submit_batch_task = Mock(side_effect=lambda *args, **kwargs: create_future())
+                manager.submit_batch_task = Mock(
+                    side_effect=lambda *args, **kwargs: create_future()
+                )
                 vcm_mock.return_value = manager
 
                 # Create indexer
                 indexer = TemporalIndexer(config_manager, vector_store)
-                indexer.diff_scanner.get_diffs_for_commit = Mock(side_effect=mock_get_diffs)
+                indexer.diff_scanner.get_diffs_for_commit = Mock(
+                    side_effect=mock_get_diffs
+                )
 
                 # Run indexing
                 result = indexer.index_commits(progress_callback=progress_callback)
 
                 # Verify no corruption
-                assert len(corruption_detected) == 0, f"Filename corruption detected: {corruption_detected}"
+                assert (
+                    len(corruption_detected) == 0
+                ), f"Filename corruption detected: {corruption_detected}"
 
                 # Verify thread safety - saw multiple different values
                 assert len(seen_hashes) > 1, f"Only saw hash: {seen_hashes}"
@@ -351,11 +403,9 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
             def progress_callback(current, total, path, info=""):
                 """Track progress and catch errors."""
                 try:
-                    progress_calls.append({
-                        "current": current,
-                        "total": total,
-                        "info": info
-                    })
+                    progress_calls.append(
+                        {"current": current, "total": total, "info": info}
+                    )
 
                     # Capture info at the critical 361/365 point where bug occurred
                     if current == 361 and total == 365:
@@ -370,21 +420,29 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
             # Mock components
             config_manager = Mock(spec=ConfigManager)
             config = Mock()
-            config.voyage_ai = Mock(parallel_requests=8, max_concurrent_batches_per_commit=10)
+            config.voyage_ai = Mock(
+                parallel_requests=8, max_concurrent_batches_per_commit=10
+            )
             config_manager.get_config.return_value = config
 
             vector_store = Mock(spec=FilesystemVectorStore)
             vector_store.project_root = self.repo_path
             vector_store.collection_exists.return_value = True
             vector_store.upsert_points = Mock()
-            vector_store.load_id_index.return_value = set()  # Return empty set for len() call
+            vector_store.load_id_index.return_value = (
+                set()
+            )  # Return empty set for len() call
 
-            with patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory") as factory_mock:
+            with patch(
+                "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+            ) as factory_mock:
                 factory_mock.get_provider_model_info.return_value = {"dimensions": 1024}
                 provider = Mock()
                 factory_mock.create.return_value = provider
 
-                with patch("src.code_indexer.services.vector_calculation_manager.VectorCalculationManager") as vcm_mock:
+                with patch(
+                    "src.code_indexer.services.vector_calculation_manager.VectorCalculationManager"
+                ) as vcm_mock:
                     manager = Mock()
                     manager.__enter__ = Mock(return_value=manager)
                     manager.__exit__ = Mock(return_value=None)
@@ -402,15 +460,20 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
                     indexer = TemporalIndexer(config_manager, vector_store)
 
                     # Mock diff scanner
-                    from src.code_indexer.services.temporal.temporal_diff_scanner import DiffInfo
-                    indexer.diff_scanner.get_diffs_for_commit = Mock(return_value=[
-                        DiffInfo(
-                            file_path="test.py",
-                            diff_type="modified",
-                            commit_hash="abc123",
-                            diff_content="+test\n"
-                        )
-                    ])
+                    from src.code_indexer.services.temporal.temporal_diff_scanner import (
+                        DiffInfo,
+                    )
+
+                    indexer.diff_scanner.get_diffs_for_commit = Mock(
+                        return_value=[
+                            DiffInfo(
+                                file_path="test.py",
+                                diff_type="modified",
+                                commit_hash="abc123",
+                                diff_content="+test\n",
+                            )
+                        ]
+                    )
 
                     # Run indexing - should NOT raise IndexError
                     result = indexer.index_commits(progress_callback=progress_callback)
@@ -421,19 +484,24 @@ class TestTemporalIndexerStory1AcceptanceCriteria:
 
                     # Check we processed all commits
                     last_call = progress_calls[-1]
-                    assert last_call["current"] == num_commits, \
-                        f"Did not process all {num_commits} commits: {last_call}"
+                    assert (
+                        last_call["current"] == num_commits
+                    ), f"Did not process all {num_commits} commits: {last_call}"
 
                     # Verify Story 1 elements present even at critical 361/365 point
                     if critical_point_info:
-                        assert "📝" in critical_point_info, \
-                            f"Missing emoji at critical point 361/365: {critical_point_info}"
-                        assert "361/365" in critical_point_info, \
-                            f"Wrong count at critical point: {critical_point_info}"
+                        assert (
+                            "📝" in critical_point_info
+                        ), f"Missing emoji at critical point 361/365: {critical_point_info}"
+                        assert (
+                            "361/365" in critical_point_info
+                        ), f"Wrong count at critical point: {critical_point_info}"
 
                     # Verify final progress has all elements
                     if last_call["info"]:
-                        assert "📝" in last_call["info"], \
-                            "Final progress missing required emoji"
-                        assert f"{num_commits}/{num_commits}" in last_call["info"], \
-                            f"Final count wrong: {last_call['info']}"
+                        assert (
+                            "📝" in last_call["info"]
+                        ), "Final progress missing required emoji"
+                        assert (
+                            f"{num_commits}/{num_commits}" in last_call["info"]
+                        ), f"Final count wrong: {last_call['info']}"

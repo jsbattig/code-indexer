@@ -127,8 +127,8 @@ class TestAC12VersionTracking:
         hnsw_manager.build_index(collection_path, vectors, ids)
 
         # Load for incremental update
-        index, id_to_label, label_to_id, next_label = hnsw_manager.load_for_incremental_update(
-            collection_path
+        index, id_to_label, label_to_id, next_label = (
+            hnsw_manager.load_for_incremental_update(collection_path)
         )
 
         # Add new vector
@@ -287,8 +287,8 @@ class TestAC11CacheInvalidation:
 
         # Call _ensure_cache_loaded - should detect staleness and invalidate
         # This will FAIL until AC11 is implemented
-        with patch.object(service, '_load_semantic_indexes') as mock_load_semantic:
-            with patch.object(service, '_load_fts_indexes'):
+        with patch.object(service, "_load_semantic_indexes") as mock_load_semantic:
+            with patch.object(service, "_load_fts_indexes"):
                 service._ensure_cache_loaded(str(project_path))
 
         # After staleness detection, cache should be reloaded (new CacheEntry)
@@ -323,8 +323,8 @@ class TestAC11CacheInvalidation:
         original_entry = service.cache_entry
 
         # Call _ensure_cache_loaded - should NOT invalidate
-        with patch.object(service, '_load_semantic_indexes'):
-            with patch.object(service, '_load_fts_indexes'):
+        with patch.object(service, "_load_semantic_indexes"):
+            with patch.object(service, "_load_fts_indexes"):
                 service._ensure_cache_loaded(str(project_path))
 
         # Cache entry should be same object (not replaced)
@@ -435,9 +435,7 @@ class TestAC13MmapSafety:
             """Build new index to temp file."""
             import hnswlib
 
-            vectors_new = np.array(
-                [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=np.float32
-            )
+            vectors_new = np.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=np.float32)
             index_new = hnswlib.Index(space="cosine", dim=3)
             index_new.init_index(max_elements=2, M=16, ef_construction=200)
             labels = np.arange(2)
@@ -503,9 +501,7 @@ class TestAC13MmapSafety:
             time.sleep(0.05)  # Let query start first
 
             # Rebuild with new data
-            vectors_new = np.array(
-                [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=np.float32
-            )
+            vectors_new = np.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=np.float32)
             ids_new = ["vec_old", "vec_new"]
             hnsw_manager.build_index(collection_path, vectors_new, ids_new)
 
@@ -538,7 +534,7 @@ class TestAC13MmapSafety:
 
         # After query completes, next _ensure_cache_loaded should detect staleness
         # and reload fresh index with 2 vectors
-        with patch.object(service, '_load_semantic_indexes') as mock_load:
+        with patch.object(service, "_load_semantic_indexes") as mock_load:
             service._ensure_cache_loaded(str(project_path))
             # Should reload because version changed
             mock_load.assert_called()

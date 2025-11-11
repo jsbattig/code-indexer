@@ -170,7 +170,12 @@ class TestFilesystemVectorStoreLifecycle:
             mock_hnsw_class.return_value = mock_hnsw_instance
 
             # Mock load_for_incremental_update to return None (triggers full rebuild path)
-            mock_hnsw_instance.load_for_incremental_update.return_value = (None, {}, {}, 0)
+            mock_hnsw_instance.load_for_incremental_update.return_value = (
+                None,
+                {},
+                {},
+                0,
+            )
 
             # Track rebuild calls
             def track_rebuild(*args, **kwargs):
@@ -572,7 +577,12 @@ class TestFilesystemVectorStoreWatchModeOptimization:
             mock_hnsw_class.return_value = mock_hnsw_instance
 
             # Mock load_for_incremental_update to return None (triggers full rebuild path)
-            mock_hnsw_instance.load_for_incremental_update.return_value = (None, {}, {}, 0)
+            mock_hnsw_instance.load_for_incremental_update.return_value = (
+                None,
+                {},
+                {},
+                0,
+            )
 
             def track_rebuild(*args, **kwargs):
                 nonlocal rebuild_called
@@ -633,7 +643,12 @@ class TestFilesystemVectorStoreWatchModeOptimization:
             mock_hnsw_class.return_value = mock_hnsw_instance
 
             # Mock load_for_incremental_update to return None (triggers full rebuild path)
-            mock_hnsw_instance.load_for_incremental_update.return_value = (None, {}, {}, 0)
+            mock_hnsw_instance.load_for_incremental_update.return_value = (
+                None,
+                {},
+                {},
+                0,
+            )
 
             def track_rebuild(*args, **kwargs):
                 nonlocal rebuild_called

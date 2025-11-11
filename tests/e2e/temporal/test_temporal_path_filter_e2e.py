@@ -150,7 +150,9 @@ class TestTemporalPathFilterE2E:
         output = result.stdout
         # If results found, should be Python source files
         if "Found 0" not in output:
-            assert "src/" in output or ".py" in output, f"Expected Python src files: {output}"
+            assert (
+                "src/" in output or ".py" in output
+            ), f"Expected Python src files: {output}"
 
     def test_temporal_query_without_path_filter_returns_all(self):
         """E2E: Temporal query without path filter returns results from all paths."""
@@ -173,6 +175,6 @@ class TestTemporalPathFilterE2E:
         # We check stdout for results instead of exit code
         output = result.stdout
         # Should find results from various paths
-        assert (
-            "Found" in output and ("results" in output or "Found 5" in output)
+        assert "Found" in output and (
+            "results" in output or "Found 5" in output
         ), f"Expected results in output: {output}"

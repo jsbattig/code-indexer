@@ -94,10 +94,12 @@ class DaemonWatchManager:
         with self._lock:
             # Check if already running
             if self._is_running_unsafe():
-                logger.warning(f"Watch already running for project: {self.project_path}")
+                logger.warning(
+                    f"Watch already running for project: {self.project_path}"
+                )
                 return {
                     "status": "error",
-                    "message": f"Watch already running for {self.project_path}"
+                    "message": f"Watch already running for {self.project_path}",
                 }
 
             # Reset stop event
@@ -118,16 +120,13 @@ class DaemonWatchManager:
                 args=(project_path, config),
                 kwargs=kwargs,
                 name="DaemonWatchThread",
-                daemon=True  # Daemon thread will exit when main process exits
+                daemon=True,  # Daemon thread will exit when main process exits
             )
 
             self.watch_thread.start()
 
             logger.info(f"Watch started in background for project: {project_path}")
-            return {
-                "status": "success",
-                "message": "Watch started in background"
-            }
+            return {"status": "success", "message": "Watch started in background"}
 
     def stop_watch(self) -> Dict[str, Any]:
         """Stop watch mode gracefully.
@@ -139,10 +138,7 @@ class DaemonWatchManager:
             # Check if running
             if not self.watch_handler and not self.watch_thread:
                 logger.warning("No watch running to stop")
-                return {
-                    "status": "error",
-                    "message": "Watch not running"
-                }
+                return {"status": "error", "message": "Watch not running"}
 
             stats = {}
 
@@ -161,7 +157,9 @@ class DaemonWatchManager:
             self._stop_event.set()
 
             # Stop the watch handler
-            if self.watch_handler and not isinstance(self.watch_handler, _WatchStarting):
+            if self.watch_handler and not isinstance(
+                self.watch_handler, _WatchStarting
+            ):
                 try:
                     self.watch_handler.stop_watching()
                 except Exception as e:
@@ -182,11 +180,7 @@ class DaemonWatchManager:
             self.start_time = None
 
             logger.info(f"Watch stopped for project: {project}")
-            return {
-                "status": "success",
-                "message": "Watch stopped",
-                "stats": stats
-            }
+            return {"status": "success", "message": "Watch stopped", "stats": stats}
 
     def get_stats(self) -> Dict[str, Any]:
         """Get current watch statistics.
@@ -200,7 +194,7 @@ class DaemonWatchManager:
                     "status": "idle",
                     "project_path": None,
                     "uptime_seconds": 0,
-                    "files_processed": 0
+                    "files_processed": 0,
                 }
 
             uptime = time.time() - self.start_time if self.start_time else 0
@@ -223,7 +217,7 @@ class DaemonWatchManager:
                 "uptime_seconds": uptime,
                 "files_processed": handler_stats.get("files_processed", 0),
                 "indexing_cycles": handler_stats.get("indexing_cycles", 0),
-                **handler_stats  # Include all handler stats
+                **handler_stats,  # Include all handler stats
             }
 
     def _watch_thread_worker(self, project_path: str, config: Any, **kwargs):
@@ -322,7 +316,9 @@ class DaemonWatchManager:
             git_topology_service = GitTopologyService(config.codebase_dir)
 
             # Initialize watch metadata
-            watch_metadata_path = config_manager.config_path.parent / "watch_metadata.json"
+            watch_metadata_path = (
+                config_manager.config_path.parent / "watch_metadata.json"
+            )
             watch_metadata = WatchMetadata.load_from_disk(watch_metadata_path)
 
             # Create watch handler

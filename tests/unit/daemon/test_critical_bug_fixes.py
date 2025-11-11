@@ -119,8 +119,8 @@ class TestBug3WatchStateNotCheckedProperly:
 class TestBug4ShutdownSocketCleanupBypassed:
     """Bug #4: Shutdown uses os._exit() bypassing finally block cleanup."""
 
-    @patch('os.kill')
-    @patch('os.getpid')
+    @patch("os.kill")
+    @patch("os.getpid")
     def test_shutdown_uses_sigterm_not_os_exit(self, mock_getpid, mock_kill):
         """Verify exposed_shutdown uses SIGTERM instead of os._exit()."""
         import signal
@@ -150,18 +150,28 @@ class TestBug5SemanticIndexesFailToLoad:
 
         # Create collection metadata
         import json
+
         metadata = {"vector_size": 1536, "vector_count": 100}
-        with open(collection_path / "collection_meta.json", 'w') as f:
+        with open(collection_path / "collection_meta.json", "w") as f:
             json.dump(metadata, f)
 
         # Create cache entry
         from code_indexer.daemon.cache import CacheEntry
+
         entry = CacheEntry(tmp_path, ttl_minutes=10)
 
         # Mock HNSWIndexManager and IDIndexManager
-        with patch('code_indexer.storage.hnsw_index_manager.HNSWIndexManager') as mock_hnsw_cls, \
-             patch('code_indexer.storage.id_index_manager.IDIndexManager') as mock_id_cls, \
-             patch('code_indexer.storage.filesystem_vector_store.FilesystemVectorStore') as mock_vector_store_cls:
+        with (
+            patch(
+                "code_indexer.storage.hnsw_index_manager.HNSWIndexManager"
+            ) as mock_hnsw_cls,
+            patch(
+                "code_indexer.storage.id_index_manager.IDIndexManager"
+            ) as mock_id_cls,
+            patch(
+                "code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
+            ) as mock_vector_store_cls,
+        ):
 
             mock_vector_store = MagicMock()
             mock_vector_store.list_collections.return_value = ["test_collection"]
@@ -194,18 +204,28 @@ class TestBug5SemanticIndexesFailToLoad:
 
         # Create collection metadata
         import json
+
         metadata = {"vector_size": 1536, "vector_count": 100}
-        with open(collection_path / "collection_meta.json", 'w') as f:
+        with open(collection_path / "collection_meta.json", "w") as f:
             json.dump(metadata, f)
 
         # Create cache entry
         from code_indexer.daemon.cache import CacheEntry
+
         entry = CacheEntry(tmp_path, ttl_minutes=10)
 
         # Mock successful load
-        with patch('code_indexer.storage.hnsw_index_manager.HNSWIndexManager') as mock_hnsw_cls, \
-             patch('code_indexer.storage.id_index_manager.IDIndexManager') as mock_id_cls, \
-             patch('code_indexer.storage.filesystem_vector_store.FilesystemVectorStore') as mock_vector_store_cls:
+        with (
+            patch(
+                "code_indexer.storage.hnsw_index_manager.HNSWIndexManager"
+            ) as mock_hnsw_cls,
+            patch(
+                "code_indexer.storage.id_index_manager.IDIndexManager"
+            ) as mock_id_cls,
+            patch(
+                "code_indexer.storage.filesystem_vector_store.FilesystemVectorStore"
+            ) as mock_vector_store_cls,
+        ):
 
             mock_vector_store = MagicMock()
             mock_vector_store.list_collections.return_value = ["test_collection"]
@@ -242,10 +262,10 @@ class TestBug6ServiceInstancePerConnection:
         shared_service = CIDXDaemonService()
 
         # Verify service has shared state attributes
-        assert hasattr(shared_service, 'cache_entry')
-        assert hasattr(shared_service, 'cache_lock')
-        assert hasattr(shared_service, 'watch_handler')
-        assert hasattr(shared_service, 'watch_thread')
+        assert hasattr(shared_service, "cache_entry")
+        assert hasattr(shared_service, "cache_lock")
+        assert hasattr(shared_service, "watch_handler")
+        assert hasattr(shared_service, "watch_thread")
 
         # Verify cache_lock is threading.RLock (reentrant, thread-safe)
         assert isinstance(shared_service.cache_lock, type(threading.RLock()))
@@ -256,6 +276,7 @@ class TestBug6ServiceInstancePerConnection:
 
         # Manually create a cache entry
         from code_indexer.daemon.cache import CacheEntry
+
         first_entry = CacheEntry(tmp_path, ttl_minutes=10)
 
         # Set cache entry manually

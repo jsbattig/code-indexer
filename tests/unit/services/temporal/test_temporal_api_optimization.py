@@ -30,11 +30,11 @@ class TestTemporalAPIOptimization(unittest.TestCase):
         subprocess.run(["git", "init"], cwd=self.repo_path, check=True)
         subprocess.run(
             ["git", "config", "user.email", "test@test.com"],
-            cwd=self.repo_path, check=True
+            cwd=self.repo_path,
+            check=True,
         )
         subprocess.run(
-            ["git", "config", "user.name", "Test User"],
-            cwd=self.repo_path, check=True
+            ["git", "config", "user.name", "Test User"], cwd=self.repo_path, check=True
         )
 
         # Create initial commit
@@ -42,22 +42,23 @@ class TestTemporalAPIOptimization(unittest.TestCase):
         test_file.write_text("def test():\n    pass\n")
         subprocess.run(["git", "add", "."], cwd=self.repo_path, check=True)
         subprocess.run(
-            ["git", "commit", "-m", "Initial commit"],
-            cwd=self.repo_path, check=True
+            ["git", "commit", "-m", "Initial commit"], cwd=self.repo_path, check=True
         )
 
         # Set up mocks
         self.config_manager = MagicMock(spec=ConfigManager)
         mock_config = MagicMock()
         mock_config.embedding_provider = "voyage-ai"
-        mock_config.voyage_ai = MagicMock(parallel_requests=4, max_concurrent_batches_per_commit=10)
+        mock_config.voyage_ai = MagicMock(
+            parallel_requests=4, max_concurrent_batches_per_commit=10
+        )
         self.config_manager.get_config.return_value = mock_config
 
         self.vector_store = MagicMock()
         self.vector_store.project_root = self.repo_path
         self.vector_store.collection_exists.return_value = True
 
-    @patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory')
+    @patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory")
     def test_bug7_optimization_skips_existing_points(self, MockEmbedFactory):
         """
         Bug #7: Verify that existing points are checked BEFORE API calls.
@@ -95,7 +96,7 @@ class TestTemporalAPIOptimization(unittest.TestCase):
                 author_name="Test User",
                 author_email="test@test.com",
                 message="First commit",
-                parent_hashes=""
+                parent_hashes="",
             ),
             CommitInfo(
                 hash="def456",
@@ -103,7 +104,7 @@ class TestTemporalAPIOptimization(unittest.TestCase):
                 author_name="Test User",
                 author_email="test@test.com",
                 message="Second commit",
-                parent_hashes="abc123"
+                parent_hashes="abc123",
             ),
             CommitInfo(
                 hash="ghi789",  # NEW commit not in existing_point_ids
@@ -111,58 +112,78 @@ class TestTemporalAPIOptimization(unittest.TestCase):
                 author_name="Test User",
                 author_email="test@test.com",
                 message="Third commit",
-                parent_hashes="def456"
-            )
+                parent_hashes="def456",
+            ),
         ]
 
         # Debug: Check what the real diff scanner returns for our test repo
-        from src.code_indexer.services.temporal.temporal_diff_scanner import TemporalDiffScanner
+        from src.code_indexer.services.temporal.temporal_diff_scanner import (
+            TemporalDiffScanner,
+        )
+
         real_scanner = TemporalDiffScanner(self.repo_path)
 
         # Get the actual commit from the test repo
         import subprocess
+
         actual_commit_result = subprocess.run(
             ["git", "log", "--format=%H", "-n", "1"],
-            cwd=self.repo_path, capture_output=True, text=True
+            cwd=self.repo_path,
+            capture_output=True,
+            text=True,
         )
         actual_commit_hash = actual_commit_result.stdout.strip()
         print(f"DEBUG: Actual test repo commit: {actual_commit_hash}")
 
         # Mock all three together: commit history, diff scanner, and vector manager
-        with patch.object(indexer, '_get_commit_history') as mock_get_history, \
-             patch.object(indexer.diff_scanner, 'get_diffs_for_commit') as mock_get_diffs, \
-             patch('src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager') as MockVectorManager:
+        with (
+            patch.object(indexer, "_get_commit_history") as mock_get_history,
+            patch.object(
+                indexer.diff_scanner, "get_diffs_for_commit"
+            ) as mock_get_diffs,
+            patch(
+                "src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
+            ) as MockVectorManager,
+        ):
 
             mock_get_history.return_value = commits
 
             mock_get_diffs.side_effect = [
                 # abc123 - already indexed
-                [DiffInfo(
-                    file_path="test.py",
-                    diff_type="modified",
-                    commit_hash="abc123",
-                    diff_content="+def new_func():\n+    return True\n",
-                    blob_hash="blob1"
-                )],
+                [
+                    DiffInfo(
+                        file_path="test.py",
+                        diff_type="modified",
+                        commit_hash="abc123",
+                        diff_content="+def new_func():\n+    return True\n",
+                        blob_hash="blob1",
+                    )
+                ],
                 # def456 - already indexed
-                [DiffInfo(
-                    file_path="main.py",
-                    diff_type="added",
-                    commit_hash="def456",
-                    diff_content="+import sys\n+print('hello')\n",
-                    blob_hash="blob2"
-                )],
+                [
+                    DiffInfo(
+                        file_path="main.py",
+                        diff_type="added",
+                        commit_hash="def456",
+                        diff_content="+import sys\n+print('hello')\n",
+                        blob_hash="blob2",
+                    )
+                ],
                 # ghi789 - NEW, should be processed
-                [DiffInfo(
-                    file_path="new_file.py",
-                    diff_type="added",
-                    commit_hash="ghi789",
-                    diff_content="+class NewClass:\n+    pass\n",
-                    blob_hash="blob3"
-                )]
+                [
+                    DiffInfo(
+                        file_path="new_file.py",
+                        diff_type="added",
+                        commit_hash="ghi789",
+                        diff_content="+class NewClass:\n+    pass\n",
+                        blob_hash="blob3",
+                    )
+                ],
             ]
             mock_vector_manager = MagicMock()
-            MockVectorManager.return_value.__enter__ = MagicMock(return_value=mock_vector_manager)
+            MockVectorManager.return_value.__enter__ = MagicMock(
+                return_value=mock_vector_manager
+            )
             MockVectorManager.return_value.__exit__ = MagicMock(return_value=None)
 
             # Mock cancellation event (no cancellation)
@@ -171,9 +192,13 @@ class TestTemporalAPIOptimization(unittest.TestCase):
             mock_vector_manager.cancellation_event = mock_cancellation_event
 
             # Mock token limit
-            mock_vector_manager.embedding_provider._get_model_token_limit.return_value = 120000
+            mock_vector_manager.embedding_provider._get_model_token_limit.return_value = (
+                120000
+            )
             # Mock token counting
-            mock_vector_manager.embedding_provider._count_tokens_accurately.return_value = 100
+            mock_vector_manager.embedding_provider._count_tokens_accurately.return_value = (
+                100
+            )
 
             # Mock submit_batch_task to return embeddings matching input count
             def mock_submit(chunk_texts, metadata):
@@ -192,13 +217,17 @@ class TestTemporalAPIOptimization(unittest.TestCase):
                 all_branches=False,
                 max_commits=None,
                 since_date=None,
-                progress_callback=None
+                progress_callback=None,
             )
 
             # Debug: Check how many times get_diffs_for_commit was called
-            print(f"DEBUG: get_diffs_for_commit called {mock_get_diffs.call_count} times")
+            print(
+                f"DEBUG: get_diffs_for_commit called {mock_get_diffs.call_count} times"
+            )
             print(f"DEBUG: Commits processed: {[c.hash for c in commits]}")
-            print(f"DEBUG: API calls made: {mock_vector_manager.submit_batch_task.call_count}")
+            print(
+                f"DEBUG: API calls made: {mock_vector_manager.submit_batch_task.call_count}"
+            )
 
             # Check if mock_get_diffs was properly set up
             for i, call in enumerate(mock_get_diffs.call_args_list):
@@ -212,9 +241,12 @@ class TestTemporalAPIOptimization(unittest.TestCase):
             # - Bug #7: Skip existing point IDs (deduplication)
             # - Batching: Batch all new chunks across commits into single call
             # Expected: 1 API call for all new chunks (not 3 separate calls)
-            self.assertEqual(api_calls, 1,
+            self.assertEqual(
+                api_calls,
+                1,
                 f"Expected 1 batched API call for all new chunks, got {api_calls}. "
-                f"Batching optimization should combine all commits into single call.")
+                f"Batching optimization should combine all commits into single call.",
+            )
 
             # Verify existing points were detected and logged
             self.vector_store.load_id_index.assert_called_once_with(
@@ -227,14 +259,17 @@ class TestTemporalAPIOptimization(unittest.TestCase):
                 # Get all point IDs that were upserted
                 upserted_ids = []
                 for call in upsert_calls:
-                    points = call[1]['points']
-                    upserted_ids.extend([p['id'] for p in points])
+                    points = call[1]["points"]
+                    upserted_ids.extend([p["id"] for p in points])
 
                 # None of the existing IDs should be in upserted points
                 for existing_id in existing_point_ids:
-                    self.assertNotIn(existing_id, upserted_ids,
+                    self.assertNotIn(
+                        existing_id,
+                        upserted_ids,
                         f"Existing point {existing_id} was re-upserted! "
-                        f"Bug #7 not fixed - duplicate disk writes occurring")
+                        f"Bug #7 not fixed - duplicate disk writes occurring",
+                    )
 
 
 if __name__ == "__main__":

@@ -43,15 +43,35 @@ def test_prefers_serialized_concurrent_files_over_rpyc_proxy():
 
     # Mock returns STALE data (simulating RPyC latency/caching)
     stale_data = [
-        {"slot_id": 0, "file_path": "stale_file1.py", "file_size": 1024, "status": "processing"},
-        {"slot_id": 1, "file_path": "stale_file2.py", "file_size": 1024, "status": "processing"},
+        {
+            "slot_id": 0,
+            "file_path": "stale_file1.py",
+            "file_size": 1024,
+            "status": "processing",
+        },
+        {
+            "slot_id": 1,
+            "file_path": "stale_file2.py",
+            "file_size": 1024,
+            "status": "processing",
+        },
     ]
     mock_slot_tracker.get_concurrent_files_data = Mock(return_value=stale_data)
 
     # Fresh serialized data passed in kwargs (this is what daemon sends)
     fresh_concurrent_files = [
-        {"slot_id": 0, "file_path": "fresh_file1.py", "file_size": 2048, "status": "processing"},
-        {"slot_id": 1, "file_path": "fresh_file2.py", "file_size": 2048, "status": "processing"},
+        {
+            "slot_id": 0,
+            "file_path": "fresh_file1.py",
+            "file_size": 2048,
+            "status": "processing",
+        },
+        {
+            "slot_id": 1,
+            "file_path": "fresh_file2.py",
+            "file_size": 2048,
+            "status": "processing",
+        },
     ]
 
     # Update progress manager with BOTH slot_tracker (RPyC proxy) AND concurrent_files (fresh data)
@@ -70,18 +90,21 @@ def test_prefers_serialized_concurrent_files_over_rpyc_proxy():
 
     # Render to string
     from rich.console import Console as RenderConsole
+
     render_buffer = StringIO()
     render_console = RenderConsole(file=render_buffer, force_terminal=True, width=120)
     render_console.print(display)
     display_text = render_buffer.getvalue()
 
     # ASSERTION 1: Display should show FRESH files (from serialized concurrent_files)
-    assert "fresh_file1.py" in display_text or "fresh_file2.py" in display_text, \
-        f"Display should show FRESH serialized files, not stale RPyC data. Got: {display_text}"
+    assert (
+        "fresh_file1.py" in display_text or "fresh_file2.py" in display_text
+    ), f"Display should show FRESH serialized files, not stale RPyC data. Got: {display_text}"
 
     # ASSERTION 2: Display should NOT show stale files (from RPyC proxy)
-    assert "stale_file1.py" not in display_text and "stale_file2.py" not in display_text, \
-        f"Display should NOT show stale RPyC proxy files. Got: {display_text}"
+    assert (
+        "stale_file1.py" not in display_text and "stale_file2.py" not in display_text
+    ), f"Display should NOT show stale RPyC proxy files. Got: {display_text}"
 
     # ASSERTION 3: RPyC proxy method should NOT be called (we prefer serialized data)
     # This is the key fix - we should use concurrent_files, not call the proxy
@@ -104,7 +127,12 @@ def test_no_fallback_when_concurrent_files_empty():
     # Create mock RPyC proxy slot_tracker
     mock_slot_tracker = Mock(spec=CleanSlotTracker)
     proxy_data = [
-        {"slot_id": 0, "file_path": "proxy_file1.py", "file_size": 1024, "status": "processing"},
+        {
+            "slot_id": 0,
+            "file_path": "proxy_file1.py",
+            "file_size": 1024,
+            "status": "processing",
+        },
     ]
     mock_slot_tracker.get_concurrent_files_data = Mock(return_value=proxy_data)
 
@@ -124,14 +152,16 @@ def test_no_fallback_when_concurrent_files_empty():
 
     # Render to string
     from rich.console import Console as RenderConsole
+
     render_buffer = StringIO()
     render_console = RenderConsole(file=render_buffer, force_terminal=True, width=120)
     render_console.print(display)
     display_text = render_buffer.getvalue()
 
     # CRITICAL: Display should NOT show proxy data (no fallback)
-    assert "proxy_file1.py" not in display_text, \
-        f"Display must NOT fallback to RPyC proxy. Got: {display_text}"
+    assert (
+        "proxy_file1.py" not in display_text
+    ), f"Display must NOT fallback to RPyC proxy. Got: {display_text}"
 
     # CRITICAL: RPyC proxy method should NOT be called (no fallback)
     mock_slot_tracker.get_concurrent_files_data.assert_not_called()
@@ -182,11 +212,13 @@ def test_real_slot_tracker_still_works_for_direct_mode():
 
     # Render to string
     from rich.console import Console as RenderConsole
+
     render_buffer = StringIO()
     render_console = RenderConsole(file=render_buffer, force_terminal=True, width=120)
     render_console.print(display)
     display_text = render_buffer.getvalue()
 
     # Verify slot tracker data appears (via set_slot_tracker mechanism)
-    assert "direct_file0.py" in display_text or "direct_file1.py" in display_text, \
-        f"Display should work with CleanSlotTracker in standalone mode. Got: {display_text}"
+    assert (
+        "direct_file0.py" in display_text or "direct_file1.py" in display_text
+    ), f"Display should work with CleanSlotTracker in standalone mode. Got: {display_text}"

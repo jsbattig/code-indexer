@@ -98,9 +98,7 @@ def initialized_repo_with_temporal(git_test_repo):
     # Verify both indexes exist
     index_base = git_test_repo / ".code-indexer/index"
     assert (index_base / "code-indexer-HEAD").exists(), "Semantic index not found"
-    assert (
-        index_base / "code-indexer-temporal"
-    ).exists(), "Temporal index not found"
+    assert (index_base / "code-indexer-temporal").exists(), "Temporal index not found"
 
     yield git_test_repo
 
@@ -264,7 +262,8 @@ class TestWatchModeGitCommitDetection:
 
         # Verify initial state - 1 commit indexed
         progress_file = (
-            repo_path / ".code-indexer/index/code-indexer-temporal/temporal_progress.json"
+            repo_path
+            / ".code-indexer/index/code-indexer-temporal/temporal_progress.json"
         )
         assert progress_file.exists(), "temporal_progress.json should exist"
 

@@ -44,7 +44,9 @@ class TestTemporalReconciliationIntegration:
         for i in range(1, 6):
             file_path = repo_path / f"file{i}.txt"
             file_path.write_text(f"Content {i}")
-            subprocess.run(["git", "add", "."], cwd=repo_path, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "add", "."], cwd=repo_path, check=True, capture_output=True
+            )
             subprocess.run(
                 ["git", "commit", "-m", f"Commit {i}"],
                 cwd=repo_path,
@@ -61,15 +63,19 @@ class TestTemporalReconciliationIntegration:
         config_dir = temp_git_repo / ".code-indexer"
         config_dir.mkdir(parents=True, exist_ok=True)
         config_file = config_dir / "config.json"
-        config_file.write_text(json.dumps({
-            "embedding_provider": "voyage-ai",
-            "voyage_ai": {
-                "api_key": "test_key",
-                "model": "voyage-code-3",
-                "parallel_requests": 1
-            },
-            "codebase_dir": str(temp_git_repo)
-        }))
+        config_file.write_text(
+            json.dumps(
+                {
+                    "embedding_provider": "voyage-ai",
+                    "voyage_ai": {
+                        "api_key": "test_key",
+                        "model": "voyage-code-3",
+                        "parallel_requests": 1,
+                    },
+                    "codebase_dir": str(temp_git_repo),
+                }
+            )
+        )
 
         # ConfigManager expects the config file path, not the directory
         config_manager = ConfigManager(config_file)
@@ -79,9 +85,7 @@ class TestTemporalReconciliationIntegration:
     def vector_store(self, temp_git_repo):
         """Create a REAL FilesystemVectorStore for the test repo."""
         index_dir = temp_git_repo / ".code-indexer" / "index"
-        return FilesystemVectorStore(
-            base_path=index_dir, project_root=temp_git_repo
-        )
+        return FilesystemVectorStore(base_path=index_dir, project_root=temp_git_repo)
 
     def test_ac3_resume_indexing_only_missing_commits(
         self, temp_git_repo, config_manager, vector_store
@@ -110,11 +114,13 @@ class TestTemporalReconciliationIntegration:
         points = []
         for i, commit_hash in enumerate(commit_hashes[:2]):
             point_id = f"test_project:diff:{commit_hash}:file.txt:0"
-            points.append({
-                "id": point_id,
-                "vector": [0.1] * 1024,
-                "payload": {"commit_hash": commit_hash}
-            })
+            points.append(
+                {
+                    "id": point_id,
+                    "vector": [0.1] * 1024,
+                    "payload": {"commit_hash": commit_hash},
+                }
+            )
         vector_store.upsert_points("code-indexer-temporal", points)
         vector_store.end_indexing("code-indexer-temporal")
 
@@ -122,11 +128,20 @@ class TestTemporalReconciliationIntegration:
         all_commits = []
         for i, commit_hash in enumerate(commit_hashes):
             all_commits.append(
-                CommitInfo(commit_hash, 1000 + i * 1000, "Test User", "test@test.com", f"Commit {i+1}", "")
+                CommitInfo(
+                    commit_hash,
+                    1000 + i * 1000,
+                    "Test User",
+                    "test@test.com",
+                    f"Commit {i+1}",
+                    "",
+                )
             )
 
         # Perform reconciliation
-        from src.code_indexer.services.temporal.temporal_reconciliation import reconcile_temporal_index
+        from src.code_indexer.services.temporal.temporal_reconciliation import (
+            reconcile_temporal_index,
+        )
 
         missing_commits = reconcile_temporal_index(
             vector_store, all_commits, "code-indexer-temporal"
@@ -154,11 +169,9 @@ class TestTemporalReconciliationIntegration:
         points = []
         for i in range(3):
             point_id = f"project:diff:hash{i}:file.txt:0"
-            points.append({
-                "id": point_id,
-                "vector": [0.1] * 1024,
-                "payload": {"index": i}
-            })
+            points.append(
+                {"id": point_id, "vector": [0.1] * 1024, "payload": {"index": i}}
+            )
         vector_store.upsert_points("code-indexer-temporal", points)
 
         # Act: Call end_indexing to rebuild indexes
@@ -209,11 +222,13 @@ class TestTemporalReconciliationIntegration:
         points = []
         for i, commit_hash in enumerate(commit_hashes):
             point_id = f"project:diff:{commit_hash}:file.txt:0"
-            points.append({
-                "id": point_id,
-                "vector": [0.1] * 1024,
-                "payload": {"commit_hash": commit_hash}
-            })
+            points.append(
+                {
+                    "id": point_id,
+                    "vector": [0.1] * 1024,
+                    "payload": {"commit_hash": commit_hash},
+                }
+            )
         vector_store.upsert_points("code-indexer-temporal", points)
         vector_store.end_indexing("code-indexer-temporal")
 
@@ -223,10 +238,19 @@ class TestTemporalReconciliationIntegration:
         all_commits = []
         for i, commit_hash in enumerate(commit_hashes):
             all_commits.append(
-                CommitInfo(commit_hash, 1000 + i * 1000, "Test User", "test@test.com", f"Commit {i+1}", "")
+                CommitInfo(
+                    commit_hash,
+                    1000 + i * 1000,
+                    "Test User",
+                    "test@test.com",
+                    f"Commit {i+1}",
+                    "",
+                )
             )
 
-        from src.code_indexer.services.temporal.temporal_reconciliation import reconcile_temporal_index
+        from src.code_indexer.services.temporal.temporal_reconciliation import (
+            reconcile_temporal_index,
+        )
 
         missing_commits = reconcile_temporal_index(
             vector_store, all_commits, "code-indexer-temporal"
@@ -271,10 +295,19 @@ class TestTemporalReconciliationIntegration:
         all_commits = []
         for i, commit_hash in enumerate(commit_hashes):
             all_commits.append(
-                CommitInfo(commit_hash, 1000 + i * 1000, "Test User", "test@test.com", f"Commit {i+1}", "")
+                CommitInfo(
+                    commit_hash,
+                    1000 + i * 1000,
+                    "Test User",
+                    "test@test.com",
+                    f"Commit {i+1}",
+                    "",
+                )
             )
 
-        from src.code_indexer.services.temporal.temporal_reconciliation import reconcile_temporal_index
+        from src.code_indexer.services.temporal.temporal_reconciliation import (
+            reconcile_temporal_index,
+        )
 
         missing_commits = reconcile_temporal_index(
             vector_store, all_commits, "code-indexer-temporal"
@@ -312,11 +345,13 @@ class TestTemporalReconciliationIntegration:
         points = []
         for i, commit_hash in enumerate(commit_hashes[:2]):
             point_id = f"test_project:diff:{commit_hash}:file{i}.txt:0"
-            points.append({
-                "id": point_id,
-                "vector": [0.1] * 1024,
-                "payload": {"commit_hash": commit_hash, "file": f"file{i}.txt"}
-            })
+            points.append(
+                {
+                    "id": point_id,
+                    "vector": [0.1] * 1024,
+                    "payload": {"commit_hash": commit_hash, "file": f"file{i}.txt"},
+                }
+            )
         vector_store.upsert_points("code-indexer-temporal", points)
         vector_store.end_indexing("code-indexer-temporal")
 
@@ -355,7 +390,9 @@ class TestTemporalReconciliationIntegration:
         hnsw_index_path = collection_path / "hnsw_index.bin"
         id_index_path = collection_path / "id_index.bin"
 
-        assert hnsw_index_path.exists(), "HNSW index should be built after reconciliation"
+        assert (
+            hnsw_index_path.exists()
+        ), "HNSW index should be built after reconciliation"
         assert id_index_path.exists(), "ID index should be built after reconciliation"
 
         # Metadata should be updated

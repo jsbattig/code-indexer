@@ -47,7 +47,7 @@ def discover_indexed_commits_from_disk(collection_path: Path) -> Tuple[Set[str],
 
     for vector_file in vector_files:
         try:
-            with open(vector_file, 'r') as f:
+            with open(vector_file, "r") as f:
                 data = json.load(f)
 
             # Validate data is a dictionary
@@ -73,7 +73,9 @@ def discover_indexed_commits_from_disk(collection_path: Path) -> Tuple[Set[str],
 
     # Log summary
     if skipped_files > 0:
-        logger.warning(f"Skipped {skipped_files} corrupted vector files during discovery")
+        logger.warning(
+            f"Skipped {skipped_files} corrupted vector files during discovery"
+        )
 
     logger.info(
         f"Discovered {len(indexed_commits)} indexed commits "
@@ -86,7 +88,7 @@ def discover_indexed_commits_from_disk(collection_path: Path) -> Tuple[Set[str],
 def reconcile_temporal_index(
     vector_store,
     all_commits: List[CommitInfo],
-    temporal_collection: str = "code-indexer-temporal"
+    temporal_collection: str = "code-indexer-temporal",
 ) -> List[CommitInfo]:
     """Reconcile git history with indexed commits to find missing commits.
 
@@ -147,8 +149,7 @@ def reconcile_temporal_index(
 
     # Filter out already-indexed commits, preserving order
     missing_commits = [
-        commit for commit in all_commits
-        if commit.hash not in indexed_commits
+        commit for commit in all_commits if commit.hash not in indexed_commits
     ]
 
     # Log reconciliation summary

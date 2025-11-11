@@ -35,7 +35,7 @@ class TestDaemonE2EIntegration:
                     "enabled": True,
                     "ttl_minutes": 10,
                     "auto_start": True,
-                    "retry_delays_ms": [100, 200, 400]
+                    "retry_delays_ms": [100, 200, 400],
                 },
                 "exclude_dirs": ["node_modules", "venv"],
                 "file_extensions": ["py", "js", "ts"],
@@ -71,9 +71,7 @@ class TestDaemonE2EIntegration:
         """Count number of daemon processes running."""
         try:
             result = subprocess.run(
-                ["pgrep", "-f", "code_indexer.daemon"],
-                capture_output=True,
-                text=True
+                ["pgrep", "-f", "code_indexer.daemon"], capture_output=True, text=True
             )
             if result.returncode == 0:
                 pids = result.stdout.strip().split("\n")
@@ -94,11 +92,19 @@ class TestDaemonE2EIntegration:
 
         # Run query command with daemon enabled
         result = subprocess.run(
-            [sys.executable, "-m", "code_indexer.cli", "query", "hello", "--limit", "5"],
+            [
+                sys.executable,
+                "-m",
+                "code_indexer.cli",
+                "query",
+                "hello",
+                "--limit",
+                "5",
+            ],
             cwd=str(test_project),
             capture_output=True,
             text=True,
-            timeout=10  # Should complete quickly, not hang
+            timeout=10,  # Should complete quickly, not hang
         )
 
         # Check that command completed (not hanging)
@@ -110,7 +116,9 @@ class TestDaemonE2EIntegration:
 
         # Check output doesn't show repeated restart attempts
         restart_count = result.stderr.count("attempting restart")
-        assert restart_count <= 2, f"Should have max 2 restart attempts, found {restart_count}"
+        assert (
+            restart_count <= 2
+        ), f"Should have max 2 restart attempts, found {restart_count}"
 
     def test_daemon_crash_recovery_fallback(self, test_project):
         """Test crash recovery with proper fallback to standalone."""
@@ -128,7 +136,7 @@ class TestDaemonE2EIntegration:
             cwd=str(test_project),
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
         )
 
         # Should eventually succeed (either via daemon or fallback)
@@ -136,7 +144,9 @@ class TestDaemonE2EIntegration:
 
         # Verify no excessive daemon spawning
         daemon_count = self._count_daemon_processes()
-        assert daemon_count <= 1, f"Should have max 1 daemon after recovery, found {daemon_count}"
+        assert (
+            daemon_count <= 1
+        ), f"Should have max 1 daemon after recovery, found {daemon_count}"
 
     def test_daemon_start_stop_lifecycle(self, test_project):
         """Test daemon start/stop commands work properly."""
@@ -151,7 +161,7 @@ class TestDaemonE2EIntegration:
             cwd=str(test_project),
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=5,
         )
 
         # Give daemon time to start
@@ -168,16 +178,20 @@ class TestDaemonE2EIntegration:
             cwd=str(test_project),
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=5,
         )
 
         # Give daemon time to stop
         time.sleep(1)
 
         # Verify daemon stopped
-        assert not self._is_socket_active(socket_path), "Daemon socket should be inactive"
+        assert not self._is_socket_active(
+            socket_path
+        ), "Daemon socket should be inactive"
         daemon_count = self._count_daemon_processes()
-        assert daemon_count == 0, f"Should have 0 daemons after stop, found {daemon_count}"
+        assert (
+            daemon_count == 0
+        ), f"Should have 0 daemons after stop, found {daemon_count}"
 
     def test_multiple_queries_single_daemon(self, test_project):
         """Test that multiple queries reuse same daemon, not spawn new ones."""
@@ -190,7 +204,7 @@ class TestDaemonE2EIntegration:
             cwd=str(test_project),
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
         )
 
         time.sleep(0.5)
@@ -202,7 +216,7 @@ class TestDaemonE2EIntegration:
             cwd=str(test_project),
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
         )
 
         time.sleep(0.5)
@@ -214,7 +228,7 @@ class TestDaemonE2EIntegration:
             cwd=str(test_project),
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
         )
 
         daemon_count_3 = self._count_daemon_processes()
@@ -243,7 +257,7 @@ class TestDaemonE2EIntegration:
             cwd=str(test_project),
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
         )
 
         # Should complete without hanging
@@ -269,7 +283,7 @@ class TestDaemonE2EIntegration:
             cwd=str(test_project),
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
         )
 
         # Should complete without hanging

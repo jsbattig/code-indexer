@@ -28,7 +28,9 @@ class TestBug7PointIDMapping(unittest.TestCase):
         config_manager = MagicMock()
         mock_config = MagicMock()
         mock_config.embedding_provider = "voyage-ai"
-        mock_config.voyage_ai = MagicMock(parallel_requests=4, max_concurrent_batches_per_commit=10)
+        mock_config.voyage_ai = MagicMock(
+            parallel_requests=4, max_concurrent_batches_per_commit=10
+        )
         config_manager.get_config.return_value = mock_config
 
         vector_store = MagicMock()
@@ -45,11 +47,15 @@ class TestBug7PointIDMapping(unittest.TestCase):
 
         # Track what gets upserted
         upserted_points = []
+
         def capture_upsert(collection_name, points):
             upserted_points.extend(points)
+
         vector_store.upsert_points.side_effect = capture_upsert
 
-        with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory') as MockFactory:
+        with patch(
+            "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory"
+        ) as MockFactory:
             MockFactory.get_provider_model_info.return_value = {"dimensions": 1024}
             MockFactory.create.return_value = MagicMock()
 
@@ -57,7 +63,7 @@ class TestBug7PointIDMapping(unittest.TestCase):
             indexer = TemporalIndexer(config_manager, vector_store)
 
             # Mock the chunker to return 3 chunks
-            with patch.object(indexer.chunker, 'chunk_text') as mock_chunk:
+            with patch.object(indexer.chunker, "chunk_text") as mock_chunk:
                 mock_chunk.return_value = [
                     {"text": "chunk0", "char_start": 0, "char_end": 100},
                     {"text": "chunk1", "char_start": 100, "char_end": 200},
@@ -65,7 +71,9 @@ class TestBug7PointIDMapping(unittest.TestCase):
                 ]
 
                 # Mock file identifier
-                with patch.object(indexer.file_identifier, '_get_project_id') as mock_project_id:
+                with patch.object(
+                    indexer.file_identifier, "_get_project_id"
+                ) as mock_project_id:
                     mock_project_id.return_value = "test-project"
 
                     # Create test data
@@ -75,7 +83,7 @@ class TestBug7PointIDMapping(unittest.TestCase):
                         author_name="Test",
                         author_email="test@test.com",
                         message="Test",
-                        parent_hashes=""
+                        parent_hashes="",
                     )
 
                     diff_info = DiffInfo(
@@ -83,18 +91,24 @@ class TestBug7PointIDMapping(unittest.TestCase):
                         diff_type="modified",
                         commit_hash="commit1",
                         diff_content="+test",
-                        blob_hash=""
+                        blob_hash="",
                     )
 
                     # Simulate the worker logic with the fix
-                    with patch('src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager') as MockVectorManager:
+                    with patch(
+                        "src.code_indexer.services.temporal.temporal_indexer.VectorCalculationManager"
+                    ) as MockVectorManager:
                         mock_vector_manager = MagicMock()
                         # Mock cancellation event (no cancellation)
                         mock_cancellation_event = MagicMock()
                         mock_cancellation_event.is_set.return_value = False
                         mock_vector_manager.cancellation_event = mock_cancellation_event
-                        MockVectorManager.return_value.__enter__ = MagicMock(return_value=mock_vector_manager)
-                        MockVectorManager.return_value.__exit__ = MagicMock(return_value=None)
+                        MockVectorManager.return_value.__enter__ = MagicMock(
+                            return_value=mock_vector_manager
+                        )
+                        MockVectorManager.return_value.__exit__ = MagicMock(
+                            return_value=None
+                        )
 
                         # Mock API response
                         def mock_api_call(texts, metadata):
@@ -106,26 +120,31 @@ class TestBug7PointIDMapping(unittest.TestCase):
                             future.result.return_value = result
                             return future
 
-                        mock_vector_manager.submit_batch_task.side_effect = mock_api_call
+                        mock_vector_manager.submit_batch_task.side_effect = (
+                            mock_api_call
+                        )
 
                         # Import necessary classes
-                        from src.code_indexer.services.clean_slot_tracker import CleanSlotTracker, FileData, FileStatus
+                        from src.code_indexer.services.clean_slot_tracker import (
+                            CleanSlotTracker,
+                            FileData,
+                            FileStatus,
+                        )
 
                         # Create slot tracker
                         slot_tracker = CleanSlotTracker(max_slots=4)
-                        slot_id = slot_tracker.acquire_slot(FileData(
-                            filename="test",
-                            file_size=0,
-                            status=FileStatus.CHUNKING
-                        ))
+                        slot_id = slot_tracker.acquire_slot(
+                            FileData(
+                                filename="test", file_size=0, status=FileStatus.CHUNKING
+                            )
+                        )
 
                         # SIMULATE THE ACTUAL CODE PATH
                         # This is what happens inside _process_commits_parallel worker
 
                         # Get chunks
                         chunks = indexer.chunker.chunk_text(
-                            diff_info.diff_content,
-                            Path(diff_info.file_path)
+                            diff_info.diff_content, Path(diff_info.file_path)
                         )
 
                         if chunks:
@@ -144,7 +163,9 @@ class TestBug7PointIDMapping(unittest.TestCase):
                             if chunks_to_process:
                                 # Make API call
                                 chunk_texts = [c["text"] for c in chunks_to_process]
-                                future = mock_vector_manager.submit_batch_task(chunk_texts, {})
+                                future = mock_vector_manager.submit_batch_task(
+                                    chunk_texts, {}
+                                )
                                 result = future.result()
 
                                 if result.embeddings:
@@ -156,11 +177,18 @@ class TestBug7PointIDMapping(unittest.TestCase):
                                     #     point_id = f"{project_id}:diff:{commit.hash}:{diff_info.file_path}:{j}"
 
                                     # CORRECT WAY (uses original indices):
-                                    for chunk, embedding, original_index in zip(chunks_to_process, result.embeddings, chunk_indices_to_process):
+                                    for chunk, embedding, original_index in zip(
+                                        chunks_to_process,
+                                        result.embeddings,
+                                        chunk_indices_to_process,
+                                    ):
                                         point_id = f"{project_id}:diff:{commit.hash}:{diff_info.file_path}:{original_index}"
 
                                         from datetime import datetime
-                                        commit_date = datetime.fromtimestamp(commit.timestamp).strftime("%Y-%m-%d")
+
+                                        commit_date = datetime.fromtimestamp(
+                                            commit.timestamp
+                                        ).strftime("%Y-%m-%d")
 
                                         payload = {
                                             "type": "commit_diff",
@@ -174,35 +202,51 @@ class TestBug7PointIDMapping(unittest.TestCase):
                                             "char_end": chunk.get("char_end", 0),
                                             "project_id": project_id,
                                             "content": chunk.get("text", ""),
-                                            "language": Path(diff_info.file_path).suffix.lstrip(".") or "txt",
-                                            "file_extension": Path(diff_info.file_path).suffix.lstrip(".") or "txt"
+                                            "language": Path(
+                                                diff_info.file_path
+                                            ).suffix.lstrip(".")
+                                            or "txt",
+                                            "file_extension": Path(
+                                                diff_info.file_path
+                                            ).suffix.lstrip(".")
+                                            or "txt",
                                         }
 
-                                        points.append({
-                                            "id": point_id,
-                                            "vector": list(embedding),
-                                            "payload": payload
-                                        })
+                                        points.append(
+                                            {
+                                                "id": point_id,
+                                                "vector": list(embedding),
+                                                "payload": payload,
+                                            }
+                                        )
 
                                     # Upsert points
                                     vector_store.upsert_points(
                                         collection_name="code-indexer-temporal",
-                                        points=points
+                                        points=points,
                                     )
 
                         # ASSERTIONS
                         # Should create exactly 1 point (for chunk2)
-                        self.assertEqual(len(upserted_points), 1,
-                            f"Should create 1 new point, but created {len(upserted_points)}")
+                        self.assertEqual(
+                            len(upserted_points),
+                            1,
+                            f"Should create 1 new point, but created {len(upserted_points)}",
+                        )
 
                         # The point ID should end with :2 (the original chunk index)
                         created_point_id = upserted_points[0]["id"]
-                        self.assertTrue(created_point_id.endswith(":2"),
-                            f"Point ID should end with :2 (original chunk index), got {created_point_id}")
+                        self.assertTrue(
+                            created_point_id.endswith(":2"),
+                            f"Point ID should end with :2 (original chunk index), got {created_point_id}",
+                        )
 
                         # Verify the chunk_index in payload is also 2
-                        self.assertEqual(upserted_points[0]["payload"]["chunk_index"], 2,
-                            f"Payload chunk_index should be 2, got {upserted_points[0]['payload']['chunk_index']}")
+                        self.assertEqual(
+                            upserted_points[0]["payload"]["chunk_index"],
+                            2,
+                            f"Payload chunk_index should be 2, got {upserted_points[0]['payload']['chunk_index']}",
+                        )
 
 
 if __name__ == "__main__":

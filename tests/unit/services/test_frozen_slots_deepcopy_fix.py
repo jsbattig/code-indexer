@@ -9,7 +9,11 @@ frozen/stale display in daemon mode.
 import copy
 
 
-from code_indexer.services.clean_slot_tracker import CleanSlotTracker, FileData, FileStatus
+from code_indexer.services.clean_slot_tracker import (
+    CleanSlotTracker,
+    FileData,
+    FileStatus,
+)
 
 
 class TestFrozenSlotsDeepCopyFix:
@@ -21,16 +25,12 @@ class TestFrozenSlotsDeepCopyFix:
         tracker = CleanSlotTracker(max_slots=3)
 
         # Acquire some slots to simulate active files
-        slot1 = tracker.acquire_slot(FileData(
-            filename="file1.py",
-            file_size=1000,
-            status=FileStatus.PROCESSING
-        ))
-        tracker.acquire_slot(FileData(
-            filename="file2.py",
-            file_size=2000,
-            status=FileStatus.PROCESSING
-        ))
+        slot1 = tracker.acquire_slot(
+            FileData(filename="file1.py", file_size=1000, status=FileStatus.PROCESSING)
+        )
+        tracker.acquire_slot(
+            FileData(filename="file2.py", file_size=2000, status=FileStatus.PROCESSING)
+        )
 
         # Get concurrent files data - this is what the hash phase reads
         original_data = tracker.get_concurrent_files_data()
@@ -51,7 +51,9 @@ class TestFrozenSlotsDeepCopyFix:
         new_original_data = tracker.get_concurrent_files_data()
 
         # Verify new original data has updated status
-        updated_slot = next(item for item in new_original_data if item["slot_id"] == slot1)
+        updated_slot = next(
+            item for item in new_original_data if item["slot_id"] == slot1
+        )
         assert updated_slot["status"] == "complete"
 
         # Copied data remains unchanged (frozen snapshot with old status)
@@ -70,16 +72,12 @@ class TestFrozenSlotsDeepCopyFix:
         tracker = CleanSlotTracker(max_slots=3)
 
         # Acquire some slots to simulate active files
-        tracker.acquire_slot(FileData(
-            filename="file_a.py",
-            file_size=500,
-            status=FileStatus.PROCESSING
-        ))
-        slot2 = tracker.acquire_slot(FileData(
-            filename="file_b.py",
-            file_size=1500,
-            status=FileStatus.PROCESSING
-        ))
+        tracker.acquire_slot(
+            FileData(filename="file_a.py", file_size=500, status=FileStatus.PROCESSING)
+        )
+        slot2 = tracker.acquire_slot(
+            FileData(filename="file_b.py", file_size=1500, status=FileStatus.PROCESSING)
+        )
 
         # Get concurrent files data - this is what the indexing phase reads
         original_data = tracker.get_concurrent_files_data()
@@ -100,7 +98,9 @@ class TestFrozenSlotsDeepCopyFix:
         new_original_data = tracker.get_concurrent_files_data()
 
         # Verify new original data has updated status
-        updated_slot = next(item for item in new_original_data if item["slot_id"] == slot2)
+        updated_slot = next(
+            item for item in new_original_data if item["slot_id"] == slot2
+        )
         assert updated_slot["status"] == "complete"
 
         # Copied data remains unchanged (frozen snapshot with old status)
@@ -120,11 +120,13 @@ class TestFrozenSlotsDeepCopyFix:
         # Fill tracker with files
         slots = []
         for i in range(5):
-            slot = tracker.acquire_slot(FileData(
-                filename=f"test_{i}.py",
-                file_size=1000 * (i + 1),
-                status=FileStatus.PROCESSING
-            ))
+            slot = tracker.acquire_slot(
+                FileData(
+                    filename=f"test_{i}.py",
+                    file_size=1000 * (i + 1),
+                    status=FileStatus.PROCESSING,
+                )
+            )
             slots.append(slot)
 
         # Take snapshot with deepcopy (simulates what fix does before callback)
@@ -142,11 +144,13 @@ class TestFrozenSlotsDeepCopyFix:
 
         new_slots = []
         for i in range(5):
-            new_slot = tracker.acquire_slot(FileData(
-                filename=f"new_{i}.py",
-                file_size=500 * (i + 1),
-                status=FileStatus.PROCESSING
-            ))
+            new_slot = tracker.acquire_slot(
+                FileData(
+                    filename=f"new_{i}.py",
+                    file_size=500 * (i + 1),
+                    status=FileStatus.PROCESSING,
+                )
+            )
             new_slots.append(new_slot)
 
         # Check current tracker state (should have new files)
@@ -170,27 +174,25 @@ class TestFrozenSlotsDeepCopyFix:
         tracker = CleanSlotTracker(max_slots=3)
 
         # Add initial files
-        slot1 = tracker.acquire_slot(FileData(
-            filename="initial1.py",
-            file_size=1000,
-            status=FileStatus.PROCESSING
-        ))
-        slot2 = tracker.acquire_slot(FileData(
-            filename="initial2.py",
-            file_size=2000,
-            status=FileStatus.PROCESSING
-        ))
+        slot1 = tracker.acquire_slot(
+            FileData(
+                filename="initial1.py", file_size=1000, status=FileStatus.PROCESSING
+            )
+        )
+        slot2 = tracker.acquire_slot(
+            FileData(
+                filename="initial2.py", file_size=2000, status=FileStatus.PROCESSING
+            )
+        )
 
         # Take snapshot with deepcopy
         snapshot1 = copy.deepcopy(tracker.get_concurrent_files_data())
 
         # Modify tracker (release one, add new one)
         tracker.release_slot(slot1)
-        slot3 = tracker.acquire_slot(FileData(
-            filename="new3.py",
-            file_size=3000,
-            status=FileStatus.PROCESSING
-        ))
+        slot3 = tracker.acquire_slot(
+            FileData(filename="new3.py", file_size=3000, status=FileStatus.PROCESSING)
+        )
 
         # Take another snapshot
         snapshot2 = copy.deepcopy(tracker.get_concurrent_files_data())
@@ -223,11 +225,11 @@ class TestFrozenSlotsDeepCopyFix:
         tracker = CleanSlotTracker(max_slots=2)
 
         # Add file with all fields
-        slot = tracker.acquire_slot(FileData(
-            filename="test_file.py",
-            file_size=12345,
-            status=FileStatus.PROCESSING
-        ))
+        slot = tracker.acquire_slot(
+            FileData(
+                filename="test_file.py", file_size=12345, status=FileStatus.PROCESSING
+            )
+        )
 
         # Get data and deepcopy
         original = tracker.get_concurrent_files_data()

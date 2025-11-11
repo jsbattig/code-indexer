@@ -24,7 +24,12 @@ class TestIssue1IncompleteMigration:
 
         from pathlib import Path
 
-        cli_path = Path(__file__).parent.parent.parent.parent / "src" / "code_indexer" / "cli.py"
+        cli_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "src"
+            / "code_indexer"
+            / "cli.py"
+        )
         source = cli_path.read_text()
 
         # Search for handle_progress_update calls (synchronous - BAD)
@@ -55,7 +60,12 @@ class TestIssue1IncompleteMigration:
         """
         from pathlib import Path
 
-        daemon_path = Path(__file__).parent.parent.parent.parent / "src" / "code_indexer" / "cli_daemon_delegation.py"
+        daemon_path = (
+            Path(__file__).parent.parent.parent.parent
+            / "src"
+            / "code_indexer"
+            / "cli_daemon_delegation.py"
+        )
         source = daemon_path.read_text()
 
         # Search for handle_progress_update calls (synchronous - BAD)

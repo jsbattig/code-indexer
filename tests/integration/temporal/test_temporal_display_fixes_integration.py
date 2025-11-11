@@ -13,7 +13,11 @@ from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 from concurrent.futures import ThreadPoolExecutor
 
-from code_indexer.services.clean_slot_tracker import CleanSlotTracker, FileData, FileStatus
+from code_indexer.services.clean_slot_tracker import (
+    CleanSlotTracker,
+    FileData,
+    FileStatus,
+)
 from code_indexer.progress.multi_threaded_display import MultiThreadedProgressManager
 from code_indexer.progress.progress_display import RichLiveProgressManager
 
@@ -66,7 +70,9 @@ class TestTemporalDisplayIntegration:
     def test_rate_parsing_with_commits_per_second(self):
         """Verify rate parser handles 'commits/s' format correctly."""
         # Simulate temporal indexer progress info
-        info = "50/100 commits (50%) | 5.3 commits/s | 8 threads | 📝 abc12345 - test.py"
+        info = (
+            "50/100 commits (50%) | 5.3 commits/s | 8 threads | 📝 abc12345 - test.py"
+        )
 
         # Parse rate as CLI does (fixed version)
         try:
@@ -163,7 +169,9 @@ class TestTemporalDisplayIntegration:
         rate_value = float(rate_str.split()[0])
 
         # Acquire some slots
-        slot1 = tracker.acquire_slot(FileData("commit1.py", 1000, FileStatus.VECTORIZING))
+        slot1 = tracker.acquire_slot(
+            FileData("commit1.py", 1000, FileStatus.VECTORIZING)
+        )
         slot2 = tracker.acquire_slot(FileData("commit2.py", 2000, FileStatus.CHUNKING))
 
         # Get concurrent files

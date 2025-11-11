@@ -36,7 +36,11 @@ from unittest.mock import Mock, patch
 
 from src.code_indexer.services.temporal.temporal_indexer import TemporalIndexer
 from src.code_indexer.services.temporal.models import CommitInfo
-from src.code_indexer.services.clean_slot_tracker import CleanSlotTracker, FileStatus, FileData
+from src.code_indexer.services.clean_slot_tracker import (
+    CleanSlotTracker,
+    FileStatus,
+    FileData,
+)
 
 
 class TestTemporalFileSizeDisplay(unittest.TestCase):
@@ -67,23 +71,28 @@ class TestTemporalFileSizeDisplay(unittest.TestCase):
         vector_store.base_path = test_dir / ".code-indexer" / "index"
         vector_store.load_id_index.return_value = set()  # No existing points
 
-        with patch("src.code_indexer.services.file_identifier.FileIdentifier"), \
-             patch("src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner"), \
-             patch("src.code_indexer.indexing.fixed_size_chunker.FixedSizeChunker"), \
-             patch("src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info") as mock_provider_info:
+        with (
+            patch("src.code_indexer.services.file_identifier.FileIdentifier"),
+            patch(
+                "src.code_indexer.services.temporal.temporal_diff_scanner.TemporalDiffScanner"
+            ),
+            patch("src.code_indexer.indexing.fixed_size_chunker.FixedSizeChunker"),
+            patch(
+                "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.get_provider_model_info"
+            ) as mock_provider_info,
+        ):
 
             # Mock the embedding provider info
             mock_provider_info.return_value = {
                 "provider": "voyage-ai",
                 "model": "voyage-code-2",
                 "dimensions": 1536,
-                "model_info": {"dimension": 1536}
+                "model_info": {"dimension": 1536},
             }
 
             # Create indexer
             indexer = TemporalIndexer(
-                config_manager=config_manager,
-                vector_store=vector_store
+                config_manager=config_manager, vector_store=vector_store
             )
 
             # Mock progressive metadata to return empty set (no completed commits)
@@ -94,16 +103,20 @@ class TestTemporalFileSizeDisplay(unittest.TestCase):
             # Mock diff scanner to return test diff with known size
             diff_content = "A" * 2560  # 2.5 KB of content
             indexer.diff_scanner = Mock()
+
             def get_diffs_side_effect(commit_hash):
                 return [
                     Mock(
                         file_path="src/authentication.py",
                         diff_content=diff_content,  # 2560 bytes = 2.5 KB
                         diff_type="modified",
-                        blob_hash=None
+                        blob_hash=None,
                     ),
                 ]
-            indexer.diff_scanner.get_diffs_for_commit = Mock(side_effect=get_diffs_side_effect)
+
+            indexer.diff_scanner.get_diffs_for_commit = Mock(
+                side_effect=get_diffs_side_effect
+            )
 
             # Mock chunker to return chunks (so processing happens)
             indexer.chunker = Mock()
@@ -113,10 +126,16 @@ class TestTemporalFileSizeDisplay(unittest.TestCase):
 
             # Mock vector manager
             mock_vector_manager = Mock()
-            mock_vector_manager.cancellation_event = threading.Event()  # Required for worker threads
+            mock_vector_manager.cancellation_event = (
+                threading.Event()
+            )  # Required for worker threads
             mock_vector_manager.embedding_provider = Mock()
-            mock_vector_manager.embedding_provider.get_current_model = Mock(return_value="voyage-code-2")
-            mock_vector_manager.embedding_provider._get_model_token_limit = Mock(return_value=120000)
+            mock_vector_manager.embedding_provider.get_current_model = Mock(
+                return_value="voyage-code-2"
+            )
+            mock_vector_manager.embedding_provider._get_model_token_limit = Mock(
+                return_value=120000
+            )
             mock_future = Mock()
             mock_result = Mock()
             mock_result.embeddings = [[0.1] * 1536]  # One embedding
@@ -134,18 +153,22 @@ class TestTemporalFileSizeDisplay(unittest.TestCase):
             def capture_update(self, slot_id, status, filename=None, file_size=None):
                 """Capture slot updates with file_size."""
                 # Call original first
-                result = original_update(self, slot_id, status, filename=filename, file_size=file_size)
+                result = original_update(
+                    self, slot_id, status, filename=filename, file_size=file_size
+                )
 
                 # Capture state AFTER update
                 with self._lock:
                     file_data = self.status_array[slot_id]
                     if file_data:
-                        captured_updates.append({
-                            "slot_id": slot_id,
-                            "filename": file_data.filename,
-                            "file_size": file_data.file_size,
-                            "status": file_data.status
-                        })
+                        captured_updates.append(
+                            {
+                                "slot_id": slot_id,
+                                "filename": file_data.filename,
+                                "file_size": file_data.file_size,
+                                "status": file_data.status,
+                            }
+                        )
 
                 return result
 
@@ -158,7 +181,7 @@ class TestTemporalFileSizeDisplay(unittest.TestCase):
                         author_name="Test Author",
                         author_email="test@example.com",
                         message="Test commit",
-                        parent_hashes=""
+                        parent_hashes="",
                     )
                 ]
 
@@ -167,27 +190,24 @@ class TestTemporalFileSizeDisplay(unittest.TestCase):
                     commits=commits,
                     embedding_provider=Mock(),
                     vector_manager=mock_vector_manager,
-                    progress_callback=None
+                    progress_callback=None,
                 )
 
             # CRITICAL ASSERTIONS: Verify file_size was updated during processing
 
             self.assertGreater(
-                len(captured_updates),
-                0,
-                "Expected at least one slot update"
+                len(captured_updates), 0, "Expected at least one slot update"
             )
 
             # Find updates with actual filename (not "starting")
             updates_with_filename = [
-                u for u in captured_updates
-                if "authentication.py" in u["filename"]
+                u for u in captured_updates if "authentication.py" in u["filename"]
             ]
 
             self.assertGreater(
                 len(updates_with_filename),
                 0,
-                f"Expected updates with actual filename. Got: {captured_updates}"
+                f"Expected updates with actual filename. Got: {captured_updates}",
             )
 
             # Verify file_size is NOT zero
@@ -196,7 +216,7 @@ class TestTemporalFileSizeDisplay(unittest.TestCase):
                 self.assertGreater(
                     file_size,
                     0,
-                    f"File size should be > 0, got {file_size}. Update: {update}"
+                    f"File size should be > 0, got {file_size}. Update: {update}",
                 )
 
                 # Verify file_size matches diff_content length
@@ -204,7 +224,7 @@ class TestTemporalFileSizeDisplay(unittest.TestCase):
                 self.assertEqual(
                     file_size,
                     expected_size,
-                    f"File size should be {expected_size} bytes, got {file_size}"
+                    f"File size should be {expected_size} bytes, got {file_size}",
                 )
 
 

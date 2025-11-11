@@ -148,8 +148,14 @@ class TemporalIndexer:
 
         # Transient errors (server/network - retryable)
         transient_patterns = [
-            "timeout", "503", "502", "500",
-            "connection reset", "connection refused", "network", "timed out"
+            "timeout",
+            "503",
+            "502",
+            "500",
+            "connection reset",
+            "connection refused",
+            "network",
+            "timed out",
         ]
         if any(pattern in error_lower for pattern in transient_patterns):
             return "transient"
@@ -585,6 +591,9 @@ class TemporalIndexer:
                         # Then batch them into minimal API calls
                         all_chunks_data = []
                         project_id = self.file_identifier._get_project_id()
+                        total_commit_size = (
+                            0  # Accumulate total size of all diffs in commit
+                        )
 
                         # Phase 1: Collect all chunks from all diffs
                         files_in_this_commit = len(diffs)
@@ -598,6 +607,9 @@ class TemporalIndexer:
                                 len(diff_info.diff_content)
                                 if diff_info.diff_content
                                 else 0
+                            )
+                            total_commit_size += (
+                                diff_size  # Accumulate total size for this commit
                             )
 
                             # Accumulate bytes for KB/s calculation (thread-safe)
@@ -654,6 +666,7 @@ class TemporalIndexer:
                                 slot_id,
                                 FileStatus.VECTORIZING,
                                 filename=f"{commit.hash[:8]} - Vectorizing 0% (0/{len(all_chunks_data)} chunks)",
+                                file_size=total_commit_size,  # Show total size of all diffs in commit
                             )
 
                             # Token-aware batching: split chunks into multiple batches if needed
@@ -746,32 +759,34 @@ class TemporalIndexer:
                                 batch_num = 0
                                 for batch_future, batch_indices in wave_futures:
                                     batch_num += 1
-                                    
+
                                     # Retry loop for this batch
                                     attempt = 0
                                     success = False
                                     last_error = None
-                                    
+
                                     while attempt < self.MAX_RETRIES and not success:
                                         try:
                                             batch_result = batch_future.result()
-                                            
+
                                             if batch_result.error:
                                                 last_error = batch_result.error
-                                                error_type = self._classify_batch_error(batch_result.error)
-                                                
+                                                error_type = self._classify_batch_error(
+                                                    batch_result.error
+                                                )
+
                                                 if error_type == "permanent":
                                                     logger.error(
                                                         f"Commit {commit.hash[:8]}: Permanent error, no retry: {batch_result.error}"
                                                     )
                                                     break  # Exit retry loop
-                                                
+
                                                 if attempt >= self.MAX_RETRIES - 1:
                                                     logger.error(
                                                         f"Commit {commit.hash[:8]}: Retry exhausted after {self.MAX_RETRIES} attempts"
                                                     )
                                                     break
-                                                
+
                                                 # Determine delay
                                                 if error_type == "rate_limit":
                                                     delay = 60
@@ -784,24 +799,36 @@ class TemporalIndexer:
                                                         f"Commit {commit.hash[:8]}: Batch {batch_num} retry {attempt+1}/{self.MAX_RETRIES} "
                                                         f"in {delay}s: {batch_result.error}"
                                                     )
-                                                
+
                                                 time.sleep(delay)
                                                 attempt += 1
-                                                
+
                                                 # Resubmit batch
-                                                batch_texts = [all_chunks_data[idx]["chunk"]["text"] for idx in batch_indices]
-                                                batch_future = vector_manager.submit_batch_task(batch_texts, {})
+                                                batch_texts = [
+                                                    all_chunks_data[idx]["chunk"][
+                                                        "text"
+                                                    ]
+                                                    for idx in batch_indices
+                                                ]
+                                                batch_future = (
+                                                    vector_manager.submit_batch_task(
+                                                        batch_texts, {}
+                                                    )
+                                                )
                                                 continue
                                             else:
                                                 # Success
                                                 success = True
-                                                all_embeddings.extend(batch_result.embeddings)
-                                                
+                                                all_embeddings.extend(
+                                                    batch_result.embeddings
+                                                )
+
                                                 # DYNAMIC PROGRESS UPDATE: Show percentage and chunk count
                                                 chunks_vectorized = len(all_embeddings)
                                                 total_chunks = len(all_chunks_data)
                                                 progress_pct = (
-                                                    (chunks_vectorized * 100) // total_chunks
+                                                    (chunks_vectorized * 100)
+                                                    // total_chunks
                                                     if total_chunks > 0
                                                     else 0
                                                 )
@@ -811,19 +838,25 @@ class TemporalIndexer:
                                                     slot_id,
                                                     FileStatus.VECTORIZING,
                                                     filename=f"{commit.hash[:8]} - Vectorizing {progress_pct}% ({chunks_vectorized}/{total_chunks} chunks)",
+                                                    file_size=total_commit_size,  # Keep total size consistent
                                                 )
 
-                                                with open("/tmp/cidx_debug.log", "a") as f:
+                                                with open(
+                                                    "/tmp/cidx_debug.log", "a"
+                                                ) as f:
                                                     f.write(
                                                         f"Commit {commit.hash[:8]}: Wave batch {batch_num}/{len(wave_futures)} completed - {len(batch_result.embeddings)} embeddings\n"
                                                     )
                                                     f.flush()
-                                                
+
                                         except Exception as e:
-                                            logger.error(f"Commit {commit.hash[:8]}: Batch exception: {e}")
+                                            logger.error(
+                                                f"Commit {commit.hash[:8]}: Batch exception: {e}",
+                                                exc_info=True,
+                                            )
                                             last_error = str(e)
                                             break
-                                    
+
                                     if not success:
                                         # Batch failed after retries
                                         logger.error(
@@ -934,7 +967,9 @@ class TemporalIndexer:
                                         "id": point_id,
                                         "vector": list(embedding),
                                         "payload": payload,
-                                        "chunk_text": chunk.get("text", ""),  # Content at root from start (no create-then-delete)
+                                        "chunk_text": chunk.get(
+                                            "text", ""
+                                        ),  # Content at root from start (no create-then-delete)
                                     }
                                     points.append(point)
 
@@ -951,10 +986,12 @@ class TemporalIndexer:
                                         collection_name=self.TEMPORAL_COLLECTION_NAME,
                                         points=new_points,
                                     )
-                                    
+
                                     # Track point IDs for potential rollback
-                                    commit_point_ids.extend([p["id"] for p in new_points])
-                                    
+                                    commit_point_ids.extend(
+                                        [p["id"] for p in new_points]
+                                    )
+
                                     # Add new points to existing_ids to avoid duplicates within this run
                                     for point in new_points:
                                         existing_ids.add(point["id"])
@@ -1064,7 +1101,7 @@ class TemporalIndexer:
                 except Exception as e:
                     logger.error(
                         f"CRITICAL: Failed to index commit {commit.hash[:7]}: {e}",
-                        exc_info=True
+                        exc_info=True,
                     )
                     raise
                 finally:

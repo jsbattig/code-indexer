@@ -73,10 +73,12 @@ class TestHashPhaseSlotCount:
         hash_slot_tracker = CleanSlotTracker(max_slots=vector_thread_count)
 
         # CRITICAL ASSERTION: Max slots equals thread count (no +2 bonus)
-        assert hash_slot_tracker.max_slots == vector_thread_count, \
-            f"Hash tracker max_slots ({hash_slot_tracker.max_slots}) MUST equal thread count ({vector_thread_count})"
-        assert hash_slot_tracker.max_slots != vector_thread_count + 2, \
-            f"Hash tracker MUST NOT use +2 bonus (found {hash_slot_tracker.max_slots}, expected {vector_thread_count})"
+        assert (
+            hash_slot_tracker.max_slots == vector_thread_count
+        ), f"Hash tracker max_slots ({hash_slot_tracker.max_slots}) MUST equal thread count ({vector_thread_count})"
+        assert (
+            hash_slot_tracker.max_slots != vector_thread_count + 2
+        ), f"Hash tracker MUST NOT use +2 bonus (found {hash_slot_tracker.max_slots}, expected {vector_thread_count})"
 
     def test_chunking_slot_tracker_has_plus_two_bonus(self):
         """
@@ -90,8 +92,9 @@ class TestHashPhaseSlotCount:
         chunking_slot_tracker = CleanSlotTracker(max_slots=vector_thread_count + 2)
 
         # CRITICAL ASSERTION: Chunking phase DOES use +2 bonus
-        assert chunking_slot_tracker.max_slots == vector_thread_count + 2, \
-            f"Chunking tracker MUST use +2 bonus: found {chunking_slot_tracker.max_slots}, expected {vector_thread_count + 2}"
+        assert (
+            chunking_slot_tracker.max_slots == vector_thread_count + 2
+        ), f"Chunking tracker MUST use +2 bonus: found {chunking_slot_tracker.max_slots}, expected {vector_thread_count + 2}"
 
 
 class TestHashWorkerParameterNaming:
@@ -109,7 +112,13 @@ class TestHashWorkerParameterNaming:
         This is a code inspection test to prevent regression.
         """
         # Read the source code
-        source_file = Path(__file__).parent.parent.parent.parent / "src" / "code_indexer" / "services" / "high_throughput_processor.py"
+        source_file = (
+            Path(__file__).parent.parent.parent.parent
+            / "src"
+            / "code_indexer"
+            / "services"
+            / "high_throughput_processor.py"
+        )
         source_code = source_file.read_text()
 
         # Find hash_worker function definition
@@ -118,16 +127,18 @@ class TestHashWorkerParameterNaming:
 
         # Extract function signature (until first colon after def)
         sig_end = source_code.find("):", hash_worker_start)
-        signature = source_code[hash_worker_start:sig_end + 1]
+        signature = source_code[hash_worker_start : sig_end + 1]
 
         # CRITICAL ASSERTION: Parameter should be worker_slot_tracker, NOT slot_tracker
-        assert "worker_slot_tracker: CleanSlotTracker" in signature, \
-            f"hash_worker MUST use 'worker_slot_tracker' parameter to avoid shadowing. Found: {signature}"
+        assert (
+            "worker_slot_tracker: CleanSlotTracker" in signature
+        ), f"hash_worker MUST use 'worker_slot_tracker' parameter to avoid shadowing. Found: {signature}"
 
         # Verify it's NOT using the old shadowing name
         # Check for exact parameter pattern: ", slot_tracker: CleanSlotTracker"
-        assert ", slot_tracker: CleanSlotTracker" not in signature, \
-            f"hash_worker MUST NOT use 'slot_tracker' parameter (causes shadowing). Found: {signature}"
+        assert (
+            ", slot_tracker: CleanSlotTracker" not in signature
+        ), f"hash_worker MUST NOT use 'slot_tracker' parameter (causes shadowing). Found: {signature}"
 
     def test_hash_worker_uses_worker_slot_tracker_internally(self):
         """
@@ -135,7 +146,13 @@ class TestHashWorkerParameterNaming:
 
         This ensures the fix is complete - not just the parameter name but all usage.
         """
-        source_file = Path(__file__).parent.parent.parent.parent / "src" / "code_indexer" / "services" / "high_throughput_processor.py"
+        source_file = (
+            Path(__file__).parent.parent.parent.parent
+            / "src"
+            / "code_indexer"
+            / "services"
+            / "high_throughput_processor.py"
+        )
         source_code = source_file.read_text()
 
         # Find hash_worker function body
@@ -150,12 +167,15 @@ class TestHashWorkerParameterNaming:
         hash_worker_body = source_code[hash_worker_start:next_def]
 
         # CRITICAL ASSERTION: Function uses worker_slot_tracker
-        assert "worker_slot_tracker.acquire_slot" in hash_worker_body, \
-            "hash_worker MUST call worker_slot_tracker.acquire_slot()"
-        assert "worker_slot_tracker.update_slot" in hash_worker_body, \
-            "hash_worker MUST call worker_slot_tracker.update_slot()"
-        assert "worker_slot_tracker.release_slot" in hash_worker_body, \
-            "hash_worker MUST call worker_slot_tracker.release_slot()"
+        assert (
+            "worker_slot_tracker.acquire_slot" in hash_worker_body
+        ), "hash_worker MUST call worker_slot_tracker.acquire_slot()"
+        assert (
+            "worker_slot_tracker.update_slot" in hash_worker_body
+        ), "hash_worker MUST call worker_slot_tracker.update_slot()"
+        assert (
+            "worker_slot_tracker.release_slot" in hash_worker_body
+        ), "hash_worker MUST call worker_slot_tracker.release_slot()"
 
 
 class TestSlotTrackerConsistency:
@@ -167,7 +187,13 @@ class TestSlotTrackerConsistency:
 
         This validates that the SAME tracker used by workers is passed to display.
         """
-        source_file = Path(__file__).parent.parent.parent.parent / "src" / "code_indexer" / "services" / "high_throughput_processor.py"
+        source_file = (
+            Path(__file__).parent.parent.parent.parent
+            / "src"
+            / "code_indexer"
+            / "services"
+            / "high_throughput_processor.py"
+        )
         source_code = source_file.read_text()
 
         # Find hash_worker function
@@ -178,8 +204,9 @@ class TestSlotTrackerConsistency:
         hash_worker_section = source_code[hash_worker_start:hash_worker_end]
 
         # CRITICAL ASSERTION: Progress callback receives hash_slot_tracker (not worker_slot_tracker)
-        assert "slot_tracker=hash_slot_tracker" in hash_worker_section, \
-            "Progress callback MUST receive hash_slot_tracker (the outer variable shared by all workers)"
+        assert (
+            "slot_tracker=hash_slot_tracker" in hash_worker_section
+        ), "Progress callback MUST receive hash_slot_tracker (the outer variable shared by all workers)"
 
     def test_hash_slot_tracker_passed_to_worker(self):
         """
@@ -187,16 +214,24 @@ class TestSlotTrackerConsistency:
 
         This completes the validation that the SAME tracker flows through the system.
         """
-        source_file = Path(__file__).parent.parent.parent.parent / "src" / "code_indexer" / "services" / "high_throughput_processor.py"
+        source_file = (
+            Path(__file__).parent.parent.parent.parent
+            / "src"
+            / "code_indexer"
+            / "services"
+            / "high_throughput_processor.py"
+        )
         source_code = source_file.read_text()
 
         # Verify hash_slot_tracker variable exists (created and passed to workers)
-        assert "hash_slot_tracker" in source_code, \
-            "hash_slot_tracker must exist and be passed to worker threads"
+        assert (
+            "hash_slot_tracker" in source_code
+        ), "hash_slot_tracker must exist and be passed to worker threads"
 
         # Verify workers receive it as worker_slot_tracker parameter
-        assert "worker_slot_tracker: CleanSlotTracker" in source_code, \
-            "Workers must receive tracker as worker_slot_tracker parameter"
+        assert (
+            "worker_slot_tracker: CleanSlotTracker" in source_code
+        ), "Workers must receive tracker as worker_slot_tracker parameter"
 
 
 class TestHashPhaseCorrectness:
@@ -215,15 +250,15 @@ class TestHashPhaseCorrectness:
 
         # Simulate file processing
         file_data = FileData(
-            filename="test.py",
-            file_size=1000,
-            status=FileStatus.PROCESSING
+            filename="test.py", file_size=1000, status=FileStatus.PROCESSING
         )
 
         # Acquire slot
         slot_id = tracker.acquire_slot(file_data)
         assert slot_id is not None, "Should be able to acquire slot"
-        assert 0 <= slot_id < vector_thread_count, f"Slot ID should be in range 0-{vector_thread_count-1}"
+        assert (
+            0 <= slot_id < vector_thread_count
+        ), f"Slot ID should be in range 0-{vector_thread_count-1}"
 
         # Update slot
         tracker.update_slot(slot_id, FileStatus.COMPLETE)
@@ -233,13 +268,13 @@ class TestHashPhaseCorrectness:
 
         # Verify we can acquire another slot (released slot is now available)
         file_data_2 = FileData(
-            filename="test2.py",
-            file_size=2000,
-            status=FileStatus.PROCESSING
+            filename="test2.py", file_size=2000, status=FileStatus.PROCESSING
         )
         slot_id_2 = tracker.acquire_slot(file_data_2)
         assert slot_id_2 is not None, "Should be able to acquire slot after release"
-        assert 0 <= slot_id_2 < vector_thread_count, "Second slot should also be in valid range"
+        assert (
+            0 <= slot_id_2 < vector_thread_count
+        ), "Second slot should also be in valid range"
 
         # Release second slot
         tracker.release_slot(slot_id_2)
@@ -260,17 +295,16 @@ class TestHashPhaseCorrectness:
         # Acquire all slots
         for i in range(vector_thread_count):
             file_data = FileData(
-                filename=f"test_{i}.py",
-                file_size=1000,
-                status=FileStatus.PROCESSING
+                filename=f"test_{i}.py", file_size=1000, status=FileStatus.PROCESSING
             )
             slot_id = tracker.acquire_slot(file_data)
             assert slot_id is not None, f"Should acquire slot {i}"
             acquired_slots.append(slot_id)
 
         # Verify all slots are unique
-        assert len(set(acquired_slots)) == vector_thread_count, \
-            f"All {vector_thread_count} slots should be unique"
+        assert (
+            len(set(acquired_slots)) == vector_thread_count
+        ), f"All {vector_thread_count} slots should be unique"
 
         # Release all slots
         for slot_id in acquired_slots:
@@ -286,7 +320,13 @@ class TestParameterShadowingPrevention:
 
         This prevents the original bug from being reintroduced.
         """
-        source_file = Path(__file__).parent.parent.parent.parent / "src" / "code_indexer" / "services" / "high_throughput_processor.py"
+        source_file = (
+            Path(__file__).parent.parent.parent.parent
+            / "src"
+            / "code_indexer"
+            / "services"
+            / "high_throughput_processor.py"
+        )
         source_code = source_file.read_text()
 
         # Find hash_worker function
@@ -295,8 +335,9 @@ class TestParameterShadowingPrevention:
         signature = source_code[hash_worker_start:hash_worker_sig_end]
 
         # REGRESSION TEST: slot_tracker parameter would cause shadowing
-        assert "slot_tracker:" not in signature or "worker_slot_tracker:" in signature, \
-            "hash_worker MUST NOT have 'slot_tracker' parameter (causes shadowing bug)"
+        assert (
+            "slot_tracker:" not in signature or "worker_slot_tracker:" in signature
+        ), "hash_worker MUST NOT have 'slot_tracker' parameter (causes shadowing bug)"
 
     def test_hash_slot_tracker_variable_exists(self):
         """
@@ -307,7 +348,13 @@ class TestParameterShadowingPrevention:
         UPDATED after fix: The CORRECT pattern is to ALWAYS create fresh tracker,
         never reuse the slot_tracker parameter.
         """
-        source_file = Path(__file__).parent.parent.parent.parent / "src" / "code_indexer" / "services" / "high_throughput_processor.py"
+        source_file = (
+            Path(__file__).parent.parent.parent.parent
+            / "src"
+            / "code_indexer"
+            / "services"
+            / "high_throughput_processor.py"
+        )
         source_code = source_file.read_text()
 
         # Look for hash_slot_tracker assignment with CORRECT pattern (after fix)
@@ -315,21 +362,26 @@ class TestParameterShadowingPrevention:
         #                             max_slots=vector_thread_count
         #                         )
         # NOT: hash_slot_tracker = slot_tracker or CleanSlotTracker(...)
-        assert "hash_slot_tracker = CleanSlotTracker(" in source_code, \
-            "hash_slot_tracker variable must exist and create fresh tracker"
+        assert (
+            "hash_slot_tracker = CleanSlotTracker(" in source_code
+        ), "hash_slot_tracker variable must exist and create fresh tracker"
 
         # CRITICAL: Verify the OLD BUGGY pattern no longer exists
-        assert "hash_slot_tracker = slot_tracker or CleanSlotTracker(" not in source_code, \
-            "BUGGY PATTERN DETECTED: hash_slot_tracker should NOT reuse slot_tracker parameter"
+        assert (
+            "hash_slot_tracker = slot_tracker or CleanSlotTracker(" not in source_code
+        ), "BUGGY PATTERN DETECTED: hash_slot_tracker should NOT reuse slot_tracker parameter"
 
         # Verify the CleanSlotTracker creation uses exact vector_thread_count
         # Look for the pattern after hash_slot_tracker assignment
         hash_tracker_start = source_code.find("hash_slot_tracker = CleanSlotTracker(")
         assert hash_tracker_start != -1, "hash_slot_tracker assignment not found"
-        hash_tracker_section = source_code[hash_tracker_start:hash_tracker_start + 200]
+        hash_tracker_section = source_code[
+            hash_tracker_start : hash_tracker_start + 200
+        ]
 
-        assert "max_slots=vector_thread_count" in hash_tracker_section, \
-            "hash_slot_tracker MUST use exact vector_thread_count (no +2)"
+        assert (
+            "max_slots=vector_thread_count" in hash_tracker_section
+        ), "hash_slot_tracker MUST use exact vector_thread_count (no +2)"
 
 
 if __name__ == "__main__":

@@ -37,7 +37,7 @@ class TestTemporalIndexerSlotTracking:
     @pytest.fixture
     def indexer(self, mock_config_manager, mock_vector_store):
         """Create a temporal indexer instance."""
-        with patch.object(TemporalIndexer, '_ensure_temporal_collection'):
+        with patch.object(TemporalIndexer, "_ensure_temporal_collection"):
             indexer = TemporalIndexer(mock_config_manager, mock_vector_store)
             return indexer
 
@@ -51,7 +51,7 @@ class TestTemporalIndexerSlotTracking:
                 author_name="Test Author",
                 author_email="test@example.com",
                 message="Test commit",
-                parent_hashes=""
+                parent_hashes="",
             )
         ]
 
@@ -77,9 +77,9 @@ class TestTemporalIndexerSlotTracking:
         assert progress_callback.called
         # Check for initialization call
         init_call = progress_callback.call_args_list[0]
-        assert 'slot_tracker' in init_call.kwargs
-        assert isinstance(init_call.kwargs['slot_tracker'], CleanSlotTracker)
-        assert init_call.kwargs['slot_tracker'].max_slots == 4  # thread_count
+        assert "slot_tracker" in init_call.kwargs
+        assert isinstance(init_call.kwargs["slot_tracker"], CleanSlotTracker)
+        assert init_call.kwargs["slot_tracker"].max_slots == 4  # thread_count
 
     def test_slot_tracker_filename_format(self, indexer):
         """Test that FileData.filename follows the correct format: '{commit_hash[:8]} - {filename}'."""
@@ -90,7 +90,7 @@ class TestTemporalIndexerSlotTracking:
                 author_name="Test Author",
                 author_email="test@example.com",
                 message="Test commit",
-                parent_hashes=""
+                parent_hashes="",
             )
         ]
 
@@ -107,26 +107,27 @@ class TestTemporalIndexerSlotTracking:
 
         # Create a custom mock for diff scanner
         from src.code_indexer.services.temporal.temporal_diff_scanner import DiffInfo
+
         diffs = [
             DiffInfo(
                 file_path="src/auth.py",
                 diff_type="modified",
                 commit_hash="abc1234567890def",
-                diff_content="+ added line\n- removed line"
+                diff_content="+ added line\n- removed line",
             ),
             DiffInfo(
                 file_path="tests/test_auth.py",
                 diff_type="modified",
                 commit_hash="abc1234567890def",
-                diff_content="+ test added"
-            )
+                diff_content="+ test added",
+            ),
         ]
         indexer.diff_scanner.get_diffs_for_commit = MagicMock(return_value=diffs)
 
         # Mock chunker to return chunks
-        indexer.chunker.chunk_text = MagicMock(return_value=[
-            {"text": "chunk1", "char_start": 0, "char_end": 10}
-        ])
+        indexer.chunker.chunk_text = MagicMock(
+            return_value=[{"text": "chunk1", "char_start": 0, "char_end": 10}]
+        )
 
         # Mock vector manager
         future = MagicMock()
@@ -138,26 +139,35 @@ class TestTemporalIndexerSlotTracking:
         original_update = CleanSlotTracker.update_slot
 
         def track_acquire(self, file_data):
-            slot_operations.append(('acquire', file_data.filename, file_data.status))
+            slot_operations.append(("acquire", file_data.filename, file_data.status))
             return original_acquire(self, file_data)
 
         def track_update(self, slot_id, status):
             # Also track filename updates
-            if hasattr(self, 'status_array') and self.status_array[slot_id]:
-                slot_operations.append(('update', self.status_array[slot_id].filename, status))
+            if hasattr(self, "status_array") and self.status_array[slot_id]:
+                slot_operations.append(
+                    ("update", self.status_array[slot_id].filename, status)
+                )
             return original_update(self, slot_id, status)
 
-        with patch.object(CleanSlotTracker, 'acquire_slot', track_acquire):
-            with patch.object(CleanSlotTracker, 'update_slot', track_update):
+        with patch.object(CleanSlotTracker, "acquire_slot", track_acquire):
+            with patch.object(CleanSlotTracker, "update_slot", track_update):
                 progress_callback = MagicMock()
 
                 indexer._process_commits_parallel(
-                    commits, mock_embedding_provider, mock_vector_manager, progress_callback
+                    commits,
+                    mock_embedding_provider,
+                    mock_vector_manager,
+                    progress_callback,
                 )
 
         # Verify filename formats in slot operations
         # Should see "abc12345 - auth.py" at start
-        assert any("abc12345 - auth.py" in op[1] for op in slot_operations if op[0] == 'acquire')
+        assert any(
+            "abc12345 - auth.py" in op[1]
+            for op in slot_operations
+            if op[0] == "acquire"
+        )
 
         # Should see file-specific names during processing
         assert any("abc12345 - auth.py" in op[1] for op in slot_operations)
@@ -173,7 +183,7 @@ class TestTemporalIndexerSlotTracking:
                 author_name="Test Author",
                 author_email="test@example.com",
                 message="Test commit",
-                parent_hashes=""
+                parent_hashes="",
             )
         ]
 
@@ -187,20 +197,21 @@ class TestTemporalIndexerSlotTracking:
 
         # Mock diffs
         from src.code_indexer.services.temporal.temporal_diff_scanner import DiffInfo
+
         diffs = [
             DiffInfo(
                 file_path="src/module.py",
                 diff_type="modified",
                 commit_hash="test123456789abc",
-                diff_content="+ changes"
+                diff_content="+ changes",
             )
         ]
         indexer.diff_scanner.get_diffs_for_commit = MagicMock(return_value=diffs)
 
         # Mock chunker and vector manager
-        indexer.chunker.chunk_text = MagicMock(return_value=[
-            {"text": "chunk", "char_start": 0, "char_end": 5}
-        ])
+        indexer.chunker.chunk_text = MagicMock(
+            return_value=[{"text": "chunk", "char_start": 0, "char_end": 5}]
+        )
         future = MagicMock()
         future.result.return_value = MagicMock(embeddings=[[0.1] * 1024])
         mock_vector_manager.submit_batch_task.return_value = future
@@ -213,23 +224,24 @@ class TestTemporalIndexerSlotTracking:
 
         # Find progress calls with concurrent_files
         progress_calls_with_concurrent = [
-            call for call in progress_callback.call_args_list
-            if 'concurrent_files' in call.kwargs
+            call
+            for call in progress_callback.call_args_list
+            if "concurrent_files" in call.kwargs
         ]
 
         assert len(progress_calls_with_concurrent) > 0
 
         # Verify concurrent_files is a deep copy (list of dicts)
         for call in progress_calls_with_concurrent:
-            concurrent_files = call.kwargs['concurrent_files']
+            concurrent_files = call.kwargs["concurrent_files"]
             assert isinstance(concurrent_files, list)
             if concurrent_files:  # If not empty
                 assert all(isinstance(item, dict) for item in concurrent_files)
                 # Check expected keys
                 for item in concurrent_files:
-                    assert 'slot_id' in item
-                    assert 'file_path' in item
-                    assert 'status' in item
+                    assert "slot_id" in item
+                    assert "file_path" in item
+                    assert "status" in item
 
     def test_slot_release_on_completion(self, indexer):
         """Test that slots are properly released after commit processing."""
@@ -240,7 +252,7 @@ class TestTemporalIndexerSlotTracking:
                 author_name="Test Author",
                 author_email="test@example.com",
                 message="Test release",
-                parent_hashes=""
+                parent_hashes="",
             )
         ]
 
@@ -258,20 +270,21 @@ class TestTemporalIndexerSlotTracking:
 
         # Mock diffs
         from src.code_indexer.services.temporal.temporal_diff_scanner import DiffInfo
+
         diffs = [
             DiffInfo(
                 file_path="test.py",
                 diff_type="modified",
                 commit_hash="release123456789",
-                diff_content="+ test"
+                diff_content="+ test",
             )
         ]
         indexer.diff_scanner.get_diffs_for_commit = MagicMock(return_value=diffs)
 
         # Mock chunker and vector manager
-        indexer.chunker.chunk_text = MagicMock(return_value=[
-            {"text": "chunk", "char_start": 0, "char_end": 5}
-        ])
+        indexer.chunker.chunk_text = MagicMock(
+            return_value=[{"text": "chunk", "char_start": 0, "char_end": 5}]
+        )
         future = MagicMock()
         future.result.return_value = MagicMock(embeddings=[[0.1] * 1024])
         mock_vector_manager.submit_batch_task.return_value = future
@@ -289,12 +302,15 @@ class TestTemporalIndexerSlotTracking:
             slot_releases.append(slot_id)
             return original_release(self, slot_id)
 
-        with patch.object(CleanSlotTracker, 'acquire_slot', track_acquire):
-            with patch.object(CleanSlotTracker, 'release_slot', track_release):
+        with patch.object(CleanSlotTracker, "acquire_slot", track_acquire):
+            with patch.object(CleanSlotTracker, "release_slot", track_release):
                 progress_callback = MagicMock()
 
                 indexer._process_commits_parallel(
-                    commits, mock_embedding_provider, mock_vector_manager, progress_callback
+                    commits,
+                    mock_embedding_provider,
+                    mock_vector_manager,
+                    progress_callback,
                 )
 
         # Verify slots were acquired and released

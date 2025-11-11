@@ -35,9 +35,7 @@ class TestTemporalStatusStringHandling:
         # Create FileData with temporal status string
         temporal_status = "abc12345 - Vectorizing 50% (4/8 chunks)"
         file_data = FileData(
-            filename=temporal_status,
-            file_size=1024 * 50,  # 50 KB
-            status="vectorizing"
+            filename=temporal_status, file_size=1024 * 50, status="vectorizing"  # 50 KB
         )
 
         # Format the line
@@ -69,17 +67,15 @@ class TestTemporalStatusStringHandling:
 
         for file_path, expected_basename in test_cases:
             file_data = FileData(
-                filename=file_path,
-                file_size=1024,
-                status="processing"
+                filename=file_path, file_size=1024, status="processing"
             )
 
             result = self.manager._format_file_line_from_data(file_data)
 
             # Must contain ONLY the basename, not full path
-            assert expected_basename in result, (
-                f"Expected basename '{expected_basename}' in result. Got: {result}"
-            )
+            assert (
+                expected_basename in result
+            ), f"Expected basename '{expected_basename}' in result. Got: {result}"
 
             # Must NOT contain the full path (except for the basename part)
             # Check that parent directories are not in the result
@@ -111,7 +107,7 @@ class TestTemporalStatusStringHandling:
             {
                 "file_path": temporal_status,
                 "file_size": 51200,  # 50 KB
-                "status": "processing"
+                "status": "processing",
             }
         ]
 
@@ -124,7 +120,7 @@ class TestTemporalStatusStringHandling:
             active_threads=4,
             concurrent_files=concurrent_files,
             slot_tracker=None,
-            info="🚀 Indexing"
+            info="🚀 Indexing",
         )
 
         # Get integrated display
@@ -162,11 +158,7 @@ class TestTemporalStatusStringHandling:
         expected_basename = "indexer.py"
 
         concurrent_files = [
-            {
-                "file_path": file_path,
-                "file_size": 2048,
-                "status": "processing"
-            }
+            {"file_path": file_path, "file_size": 2048, "status": "processing"}
         ]
 
         self.manager.update_complete_state(
@@ -177,7 +169,7 @@ class TestTemporalStatusStringHandling:
             active_threads=2,
             concurrent_files=concurrent_files,
             slot_tracker=None,
-            info="🚀 Indexing"
+            info="🚀 Indexing",
         )
 
         display_table = self.manager.get_integrated_display()
@@ -191,9 +183,9 @@ class TestTemporalStatusStringHandling:
         rendered_output = buffer.getvalue()
 
         # MUST contain only basename
-        assert expected_basename in rendered_output, (
-            f"Expected basename '{expected_basename}' in output. Got:\n{rendered_output}"
-        )
+        assert (
+            expected_basename in rendered_output
+        ), f"Expected basename '{expected_basename}' in output. Got:\n{rendered_output}"
 
         # MUST NOT contain parent directories
         assert "src/services/" not in rendered_output, (
@@ -208,11 +200,7 @@ class TestTemporalStatusStringHandling:
         expected_basename = "helpers.py"
 
         concurrent_files = [
-            {
-                "file_path": file_path,
-                "file_size": 1024,
-                "status": "complete"
-            }
+            {"file_path": file_path, "file_size": 1024, "status": "complete"}
         ]
 
         self.manager.update_complete_state(
@@ -223,7 +211,7 @@ class TestTemporalStatusStringHandling:
             active_threads=1,
             concurrent_files=concurrent_files,
             slot_tracker=None,
-            info="🚀 Indexing"
+            info="🚀 Indexing",
         )
 
         display_table = self.manager.get_integrated_display()
@@ -237,9 +225,9 @@ class TestTemporalStatusStringHandling:
         rendered_output = buffer.getvalue()
 
         # MUST contain only basename
-        assert expected_basename in rendered_output, (
-            f"Expected basename '{expected_basename}' for Path object. Got:\n{rendered_output}"
-        )
+        assert (
+            expected_basename in rendered_output
+        ), f"Expected basename '{expected_basename}' for Path object. Got:\n{rendered_output}"
 
         # MUST NOT contain parent directory
         assert "src/utils/" not in rendered_output, (

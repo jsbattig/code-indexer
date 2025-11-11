@@ -40,6 +40,7 @@ class TestExposedQueryTemporal(TestCase):
     def tearDown(self):
         """Clean up test fixtures."""
         import shutil
+
         if Path(self.temp_dir).exists():
             shutil.rmtree(self.temp_dir)
 
@@ -52,12 +53,18 @@ class TestExposedQueryTemporal(TestCase):
         assert hasattr(service, "exposed_query_temporal")
         assert callable(service.exposed_query_temporal)
 
-    @patch("code_indexer.services.temporal.temporal_search_service.TemporalSearchService")
+    @patch(
+        "code_indexer.services.temporal.temporal_search_service.TemporalSearchService"
+    )
     @patch("code_indexer.config.ConfigManager")
     @patch("code_indexer.backends.backend_factory.BackendFactory")
     @patch("code_indexer.services.embedding_factory.EmbeddingProviderFactory")
     def test_exposed_query_temporal_loads_cache_on_first_call(
-        self, mock_embedding_factory, mock_backend_factory, mock_config_manager, mock_temporal_search
+        self,
+        mock_embedding_factory,
+        mock_backend_factory,
+        mock_config_manager,
+        mock_temporal_search,
     ):
         """exposed_query_temporal() should load temporal cache on first call."""
         # Acceptance Criterion 6: Temporal cache loading and management
@@ -112,18 +119,24 @@ class TestExposedQueryTemporal(TestCase):
                 project_path=str(self.project_path),
                 query="test query",
                 time_range="last-7-days",
-                limit=10
+                limit=10,
             )
 
             # Verify load_temporal_indexes was called
             mock_cache_entry.load_temporal_indexes.assert_called_once()
 
-    @patch("code_indexer.services.temporal.temporal_search_service.TemporalSearchService")
+    @patch(
+        "code_indexer.services.temporal.temporal_search_service.TemporalSearchService"
+    )
     @patch("code_indexer.config.ConfigManager")
     @patch("code_indexer.backends.backend_factory.BackendFactory")
     @patch("code_indexer.services.embedding_factory.EmbeddingProviderFactory")
     def test_exposed_query_temporal_returns_error_if_index_missing(
-        self, mock_embedding_factory, mock_backend_factory, mock_config_manager, mock_temporal_search
+        self,
+        mock_embedding_factory,
+        mock_backend_factory,
+        mock_config_manager,
+        mock_temporal_search,
     ):
         """exposed_query_temporal() should return error if temporal index doesn't exist."""
         # Acceptance Criterion 5: Error handling
@@ -147,6 +160,7 @@ class TestExposedQueryTemporal(TestCase):
         # Temporal collection doesn't exist (delete it)
         if self.temporal_collection_path.exists():
             import shutil
+
             shutil.rmtree(self.temporal_collection_path)
 
         # Call exposed_query_temporal
@@ -154,7 +168,7 @@ class TestExposedQueryTemporal(TestCase):
             project_path=str(self.project_path),
             query="test query",
             time_range="last-7-days",
-            limit=10
+            limit=10,
         )
 
         # Should return error
@@ -162,12 +176,18 @@ class TestExposedQueryTemporal(TestCase):
         assert "Temporal index not found" in result["error"]
         assert result["results"] == []
 
-    @patch("code_indexer.services.temporal.temporal_search_service.TemporalSearchService")
+    @patch(
+        "code_indexer.services.temporal.temporal_search_service.TemporalSearchService"
+    )
     @patch("code_indexer.config.ConfigManager")
     @patch("code_indexer.backends.backend_factory.BackendFactory")
     @patch("code_indexer.services.embedding_factory.EmbeddingProviderFactory")
     def test_exposed_query_temporal_integrates_with_temporal_search_service(
-        self, mock_embedding_factory, mock_backend_factory, mock_config_manager, mock_temporal_search
+        self,
+        mock_embedding_factory,
+        mock_backend_factory,
+        mock_config_manager,
+        mock_temporal_search,
     ):
         """exposed_query_temporal() should use TemporalSearchService for queries."""
         # Acceptance Criterion 7: Time-range filtering integration
@@ -211,7 +231,9 @@ class TestExposedQueryTemporal(TestCase):
             with patch.object(service, "_ensure_cache_loaded"):
                 with patch.object(service, "cache_entry") as mock_cache_entry:
                     mock_cache_entry.temporal_hnsw_index = MagicMock()
-                    mock_cache_entry.is_temporal_stale_after_rebuild.return_value = False
+                    mock_cache_entry.is_temporal_stale_after_rebuild.return_value = (
+                        False
+                    )
 
                     # Call exposed_query_temporal
                     result = service.exposed_query_temporal(
@@ -220,7 +242,7 @@ class TestExposedQueryTemporal(TestCase):
                         time_range="last-7-days",
                         limit=10,
                         languages=["python"],
-                        min_score=0.7
+                        min_score=0.7,
                     )
 
                     # Verify TemporalSearchService.query_temporal was called
@@ -234,15 +256,23 @@ class TestExposedQueryTemporal(TestCase):
                     assert len(call_kwargs["time_range"][0]) == 10  # YYYY-MM-DD
                     assert len(call_kwargs["time_range"][1]) == 10  # YYYY-MM-DD
                     assert call_kwargs["limit"] == 10
-                    assert call_kwargs["language"] == ["python"]  # Parameter name is 'language' not 'languages'
+                    assert call_kwargs["language"] == [
+                        "python"
+                    ]  # Parameter name is 'language' not 'languages'
                     assert call_kwargs["min_score"] == 0.7
 
-    @patch("code_indexer.services.temporal.temporal_search_service.TemporalSearchService")
+    @patch(
+        "code_indexer.services.temporal.temporal_search_service.TemporalSearchService"
+    )
     @patch("code_indexer.config.ConfigManager")
     @patch("code_indexer.backends.backend_factory.BackendFactory")
     @patch("code_indexer.services.embedding_factory.EmbeddingProviderFactory")
     def test_exposed_query_temporal_reloads_cache_if_stale(
-        self, mock_embedding_factory, mock_backend_factory, mock_config_manager, mock_temporal_search
+        self,
+        mock_embedding_factory,
+        mock_backend_factory,
+        mock_config_manager,
+        mock_temporal_search,
     ):
         """exposed_query_temporal() should reload cache if rebuild detected."""
         # Acceptance Criterion 4: temporal_index_version tracking
@@ -285,7 +315,9 @@ class TestExposedQueryTemporal(TestCase):
         mock_cache_entry = MagicMock()
         mock_cache_entry.project_path = self.project_path
         mock_cache_entry.temporal_hnsw_index = MagicMock()  # Already loaded
-        mock_cache_entry.is_temporal_stale_after_rebuild.return_value = True  # But stale
+        mock_cache_entry.is_temporal_stale_after_rebuild.return_value = (
+            True  # But stale
+        )
 
         # Patch _ensure_cache_loaded to set up our mock
         with patch.object(service, "_ensure_cache_loaded"):
@@ -297,7 +329,7 @@ class TestExposedQueryTemporal(TestCase):
                 project_path=str(self.project_path),
                 query="test query",
                 time_range="last-7-days",
-                limit=10
+                limit=10,
             )
 
             # Verify invalidate_temporal and load_temporal_indexes were called

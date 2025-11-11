@@ -24,9 +24,11 @@ class TestChunkTextOptimization:
         by checking the actual code structure in temporal_indexer.py.
         """
         # Read the temporal_indexer.py file
-        indexer_file = Path("/home/jsbattig/Dev/code-indexer/src/code_indexer/services/temporal/temporal_indexer.py")
+        indexer_file = Path(
+            "/home/jsbattig/Dev/code-indexer/src/code_indexer/services/temporal/temporal_indexer.py"
+        )
         content = indexer_file.read_text()
-        lines = content.split('\n')
+        lines = content.split("\n")
 
         # Find the point creation logic (around line 868)
         point_creation_found = False
@@ -35,24 +37,26 @@ class TestChunkTextOptimization:
 
         for i, line in enumerate(lines):
             # Look for point = { structure
-            if 'point = {' in line and i > 920 and i < 945:
+            if "point = {" in line and i > 920 and i < 945:
                 point_creation_found = True
                 # Check next 10 lines for structure
-                point_block = '\n'.join(lines[i:i+15])
+                point_block = "\n".join(lines[i : i + 15])
 
                 # Optimized: chunk_text should be at root level
                 if '"chunk_text":' in point_block or "'chunk_text':" in point_block:
                     chunk_text_at_root = True
 
                 # Wasteful pattern: content should NOT be in payload creation (around line 848)
-                payload_block = '\n'.join(lines[i-30:i])
-                if '"content":' in payload_block and 'chunk.get' in payload_block:
+                payload_block = "\n".join(lines[i - 30 : i])
+                if '"content":' in payload_block and "chunk.get" in payload_block:
                     content_in_payload = True
 
                 break
 
         # Assertions
-        assert point_creation_found, "Could not find point creation logic in temporal_indexer.py"
+        assert (
+            point_creation_found
+        ), "Could not find point creation logic in temporal_indexer.py"
 
         # CRITICAL: This test FAILS until optimization is implemented
         assert chunk_text_at_root, (
