@@ -63,3 +63,39 @@
 - Instead of: `find . -name "*.py" -exec grep "def.*auth" {} +` → `cidx query "def.*auth" --fts --regex --language python --quiet`
 
 **Fallback**: Use grep/find only when CIDX unavailable or for single-file searches.
+
+## GIT HISTORY SEARCH - TEMPORAL QUERIES
+
+**WHEN TO USE**: Finding when code was introduced, searching commit messages semantically, tracking feature evolution, bug history research.
+
+**Indexing**: Required before temporal queries: `cidx index --index-commits` (indexes git history once)
+
+**Time Range Flags**: `--time-range-all` (all history) | `--time-range YYYY-MM-DD..YYYY-MM-DD` (specific period)
+
+**Chunk Type Filtering**: `--chunk-type commit_message` (search only commit messages) | `--chunk-type commit_diff` (search only code diffs) | (default: both)
+
+**Additional Filters**: `--author EMAIL` (filter by commit author) | All language/path filters work with temporal
+
+**Common Use Cases**:
+1. **Code Archaeology**: `cidx query "authentication logic" --time-range-all --quiet` (find when code was introduced)
+2. **Bug History**: `cidx query "database connection bug" --time-range-all --chunk-type commit_message --quiet` (search commit messages for bug fixes)
+3. **Author Analysis**: `cidx query "authentication" --time-range-all --author "dev@company.com" --quiet` (find specific developer's work)
+4. **Feature Evolution**: `cidx query "API endpoint" --time-range 2023-01-01..2024-12-31 --language python --quiet` (track changes over time)
+5. **Refactoring History**: `cidx query "refactor" --time-range-all --chunk-type commit_message --limit 20 --quiet` (find refactoring commits)
+
+**Indexing Options** (optional flags for `cidx index --index-commits`):
+- `--all-branches` (index all branches, not just current)
+- `--max-commits N` (limit to recent N commits per branch)
+- `--since-date YYYY-MM-DD` (index only commits after date)
+
+**Examples** (ALWAYS use `--quiet` for conciseness):
+- When was auth added? `cidx query "JWT authentication" --time-range-all --quiet`
+- Recent bug fixes: `cidx query "bug fix" --time-range 2024-01-01..2024-12-31 --chunk-type commit_message --quiet`
+- Code changes only: `cidx query "function implementation" --time-range-all --chunk-type commit_diff --language python --quiet`
+- Exclude test commits: `cidx query "config" --time-range-all --exclude-path "*/tests/*" --quiet`
+
+**Decision Rule**:
+- "When was X added" → Temporal with `--time-range-all`
+- "Who wrote X" → Temporal with `--author`
+- "Search old code" → Temporal with specific date range
+- "Current code only" → Regular query (no temporal flags)

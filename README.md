@@ -4,7 +4,7 @@ AI-powered semantic code search for your codebase. Find code by meaning, not jus
 
 ## Version 7.2.1
 
-**New in 7.2.1**: Fixed critical bug where temporal indexer only stored first line of commit messages. Now stores and searches full multi-paragraph commit messages. Also fixed match number display consistency across all query modes.
+**New in 7.2.1**: **Git History Search** - Semantically search your entire git commit history! Find when code was introduced, search commit messages by meaning, track feature evolution over time. Use `cidx index --index-commits` to enable, then query with `--time-range-all`. See [Git History Search](#git-history-search) for details. Also includes fix for temporal indexer commit message truncation and match number display consistency.
 
 **Version 7.2.0**: Incremental HNSW and FTS indexing for 3.6x-60x performance improvements - see [Performance Improvements](#performance-improvements-72) below.
 
@@ -31,9 +31,10 @@ FastAPI web service for team environments:
 
 ### Semantic Search Engine
 - **Vector embeddings** - Find code by meaning using fixed-size chunking
+- **Git history search** - Search commit history semantically with time-range filtering
 - **Multiple providers** - Local (Ollama) or cloud (VoyageAI) embeddings
 - **Smart indexing** - Parallel file processing, incremental HNSW/FTS updates (3.6x faster), git-aware
-- **Advanced filtering** - Language, file paths, extensions, similarity scores
+- **Advanced filtering** - Language, file paths, extensions, similarity scores, time ranges, authors
 - **Multi-language** - Python, JavaScript, TypeScript, Java, C#, Go, Kotlin, and more
 
 ### Parallel Processing Architecture
@@ -1004,6 +1005,162 @@ cidx optimize                   # Optimize vector database
 cidx force-flush                # Force flush to disk (deprecated)
 cidx force-flush --collection mycoll  # Flush specific collection
 ```
+
+## Git History Search
+
+CIDX can index and semantically search your entire git commit history, enabling powerful time-based code archaeology:
+
+- **Find when code was introduced** - Search across all historical commits
+- **Search commit messages semantically** - Find commits by meaning, not exact text
+- **Track feature evolution** - See how code changed over time
+- **Filter by time ranges** - Search specific periods or branches
+- **Author filtering** - Find commits by specific developers
+
+### Indexing Git History
+
+```bash
+# Index git history for temporal search
+cidx index --index-commits
+
+# Index all branches (not just current)
+cidx index --index-commits --all-branches
+
+# Limit to recent commits
+cidx index --index-commits --max-commits 1000
+
+# Index commits since specific date
+cidx index --index-commits --since-date 2024-01-01
+
+# Combine options
+cidx index --index-commits --all-branches --since-date 2024-01-01
+```
+
+**What Gets Indexed:**
+- Commit messages (full text, not truncated)
+- Code diffs for each commit
+- Commit metadata (author, date, hash)
+- Branch information
+
+### Querying Git History
+
+```bash
+# Search entire git history
+cidx query "authentication logic" --time-range-all --quiet
+
+# Search specific time period
+cidx query "bug fix" --time-range 2024-01-01..2024-12-31 --quiet
+
+# Search only commit messages
+cidx query "refactor database" --time-range-all --chunk-type commit_message --quiet
+
+# Search only code diffs
+cidx query "function implementation" --time-range-all --chunk-type commit_diff --quiet
+
+# Filter by author
+cidx query "login" --time-range-all --author "john@example.com" --quiet
+
+# Combine with language filters
+cidx query "api endpoint" --time-range-all --language python --quiet
+
+# Exclude paths from historical search
+cidx query "config" --time-range-all --exclude-path "*/tests/*" --quiet
+```
+
+### Chunk Types
+
+When querying git history with `--chunk-type`:
+
+- **`commit_message`** - Search only commit messages
+  - Returns: Commit descriptions, not code
+  - Metadata: Hash, date, author, files changed count
+  - Use for: Finding when features were added, bug fix history
+
+- **`commit_diff`** - Search only code changes
+  - Returns: Actual code diffs from commits
+  - Metadata: File path, diff type (added/modified/deleted), language
+  - Use for: Finding specific code changes, implementation history
+
+- **(default)** - Search both messages and diffs
+  - Returns: Mixed results ranked by semantic relevance
+  - Use for: General historical code search
+
+### Time Range Formats
+
+```bash
+# All history (1970 to 2100)
+--time-range-all
+
+# Specific date range
+--time-range 2024-01-01..2024-12-31
+
+# Recent timeframe
+--time-range 2024-06-01..2024-12-31
+
+# Single year
+--time-range 2024-01-01..2024-12-31
+```
+
+### Use Cases
+
+**1. Code Archaeology - When Was This Added?**
+```bash
+# Find when JWT authentication was introduced
+cidx query "JWT token authentication" --time-range-all --quiet
+
+# Output shows commit where it was added:
+# 1. [Commit abc123] (2024-03-15) John Doe
+#    feat: add JWT authentication middleware
+```
+
+**2. Bug History Research**
+```bash
+# Find all bug fixes related to database connections
+cidx query "database connection bug" --time-range-all --chunk-type commit_message --quiet
+```
+
+**3. Author Code Analysis**
+```bash
+# Find all authentication-related work by specific developer
+cidx query "authentication" --time-range-all --author "sarah@company.com" --quiet
+```
+
+**4. Feature Evolution Tracking**
+```bash
+# See how API endpoints changed over time
+cidx query "API endpoint" --time-range 2023-01-01..2024-12-31 --language python --quiet
+```
+
+**5. Refactoring History**
+```bash
+# Find all refactoring work
+cidx query "refactor" --time-range-all --chunk-type commit_message --limit 20 --quiet
+```
+
+### Server Mode - Golden Repositories with Temporal Indexing
+
+When registering golden repositories via the API server, enable temporal indexing:
+
+```bash
+curl -X POST http://localhost:8090/api/admin/golden-repos \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo_url": "https://github.com/your-org/backend.git",
+    "alias": "backend",
+    "enable_temporal": true,
+    "temporal_options": {
+      "max_commits": 1000,
+      "since_date": "2024-01-01"
+    }
+  }'
+```
+
+**Temporal Options:**
+- `max_commits` (optional): Maximum commits to index per branch (default: unlimited)
+- `since_date` (optional): Index only commits after this date (YYYY-MM-DD format)
+- `diff_context` (optional): Context lines in diffs (default: 3)
+
+This enables API users to query the repository's git history, not just current code.
 
 ### Configuration Commands
 
