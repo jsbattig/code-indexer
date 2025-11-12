@@ -7,8 +7,6 @@ When users call with min_score=0.8, daemon extracts score_threshold → gets Non
 These tests verify daemon correctly extracts min_score (not score_threshold) from kwargs.
 """
 
-import pytest
-from pathlib import Path
 from unittest.mock import Mock, patch
 from code_indexer.daemon.service import CIDXDaemonService
 

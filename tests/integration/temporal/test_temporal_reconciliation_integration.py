@@ -8,11 +8,9 @@ ANTI-MOCK COMPLIANCE: All tests use real FilesystemVectorStore instances.
 import json
 import pytest
 import subprocess
-from pathlib import Path
 
 from src.code_indexer.config import ConfigManager
 from src.code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
-from src.code_indexer.services.temporal.temporal_indexer import TemporalIndexer
 from src.code_indexer.services.temporal.models import CommitInfo
 
 

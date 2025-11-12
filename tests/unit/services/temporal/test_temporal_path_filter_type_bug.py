@@ -15,7 +15,6 @@ Correct behavior:
     list(exclude_path) → ["*.md"]  # Preserves pattern
 """
 
-import pytest
 
 
 def test_string_causes_character_array_explosion():

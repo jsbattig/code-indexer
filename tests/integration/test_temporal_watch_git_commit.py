@@ -13,7 +13,7 @@ import logging
 import subprocess
 import time
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 from watchdog.observers import Observer

@@ -5,9 +5,7 @@ the error log file in .code-indexer/ directory.
 """
 
 import subprocess
-from pathlib import Path
 
-import pytest
 
 
 class TestCLIModeExceptionLogger:

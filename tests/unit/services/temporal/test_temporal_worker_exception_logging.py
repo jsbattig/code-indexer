@@ -9,7 +9,6 @@ and the exception was never logged, making debugging impossible.
 """
 
 import logging
-from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 import pytest
 

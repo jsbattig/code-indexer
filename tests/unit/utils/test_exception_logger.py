@@ -12,10 +12,19 @@ import os
 import threading
 import time
 from datetime import datetime
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def reset_exception_logger_singleton():
+    """Reset ExceptionLogger singleton before each test."""
+    from src.code_indexer.utils.exception_logger import ExceptionLogger
+
+    ExceptionLogger._instance = None
+    yield
+    ExceptionLogger._instance = None
 
 
 class TestExceptionLoggerInitialization:

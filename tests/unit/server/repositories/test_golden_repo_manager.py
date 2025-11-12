@@ -115,7 +115,10 @@ class TestGoldenRepoManager:
 
                     # Verify workflow was called with force_init=False for initial setup
                     mock_workflow.assert_called_once_with(
-                        "/path/to/cloned/repo", force_init=False
+                        "/path/to/cloned/repo",
+                        force_init=False,
+                        enable_temporal=False,
+                        temporal_options=None,
                     )
 
     def test_add_golden_repo_duplicate_alias(
@@ -646,6 +649,8 @@ class TestGoldenRepo:
             "default_branch": "main",
             "clone_path": "/path/to/repo",
             "created_at": "2023-01-01T00:00:00Z",
+            "enable_temporal": False,
+            "temporal_options": None,
         }
 
         assert result == expected

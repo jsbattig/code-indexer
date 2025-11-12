@@ -7,16 +7,8 @@ These tests expose critical bugs that cause silent failures with fake success re
 4. Bug #4: CLI catches exceptions too broadly - might report success despite failure
 """
 
-import json
-import logging
-import subprocess
-import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
-import pytest
 
-from code_indexer.services.temporal.temporal_indexer import TemporalIndexer
-from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 
 
 class TestBug1FalseVectorCount:

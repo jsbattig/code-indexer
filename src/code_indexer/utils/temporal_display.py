@@ -60,20 +60,21 @@ def display_temporal_results(results: Any, quiet: bool = False):
     index = 1
 
     for result in commit_msg_matches:
-        _display_commit_message_match(result, index)
+        _display_commit_message_match(result, index, quiet=quiet)
         index += 1
 
     for result in file_chunk_matches:
-        _display_file_chunk_match(result, index)
+        _display_file_chunk_match(result, index, quiet=quiet)
         index += 1
 
 
-def _display_file_chunk_match(result: Any, index: int):
+def _display_file_chunk_match(result: Any, index: int, quiet: bool = False):
     """Display a file chunk temporal match with diff.
 
     Args:
         result: Either SearchResult object or dict from daemon
         index: Display index number
+        quiet: If True, use compact single-line format
     """
     # Handle both dict and object formats
     if isinstance(result, dict):
@@ -117,61 +118,66 @@ def _display_file_chunk_match(result: Any, index: int):
         # Regular results or temporal with specific lines - show range
         file_location = f"{file_path}:{line_start}-{line_end}"
 
-    # Display header with diff-type marker
-    diff_markers = {
-        "added": "[ADDED]",
-        "deleted": "[DELETED]",
-        "modified": "[MODIFIED]",
-        "renamed": "[RENAMED]",
-        "binary": "[BINARY]",
-    }
-    marker = diff_markers.get(diff_type, "")
-
-    if marker:
-        console.print(f"\n[bold cyan]{index}. {file_location}[/bold cyan] {marker}")
+    if quiet:
+        # Compact format for file chunks
+        console.print(f"{index}. {score:.3f} {file_path}", markup=False)
     else:
-        console.print(f"\n[bold cyan]{index}. {file_location}[/bold cyan]")
-    console.print(f"   Score: {score:.3f}")
-    console.print(f"   Commit: {commit_hash[:7]} ({commit_date})")
-    console.print(f"   Author: {author_name} <{author_email}>")
+        # Display header with diff-type marker
+        diff_markers = {
+            "added": "[ADDED]",
+            "deleted": "[DELETED]",
+            "modified": "[MODIFIED]",
+            "renamed": "[RENAMED]",
+            "binary": "[BINARY]",
+        }
+        marker = diff_markers.get(diff_type, "")
 
-    # Display full commit message (NOT truncated)
-    message_lines = commit_message.split("\n")
-    console.print(f"   Message: {message_lines[0]}")
-    for msg_line in message_lines[1:]:
-        console.print(f"            {msg_line}")
+        if marker:
+            console.print(f"\n[bold cyan]{index}. {file_location}[/bold cyan] {marker}")
+        else:
+            console.print(f"\n[bold cyan]{index}. {file_location}[/bold cyan]")
+        console.print(f"   Score: {score:.3f}")
+        console.print(f"   Commit: {commit_hash[:7]} ({commit_date})")
+        console.print(f"   Author: {author_name} <{author_email}>")
 
-    console.print()
+        # Display full commit message (NOT truncated)
+        message_lines = commit_message.split("\n")
+        console.print(f"   Message: {message_lines[0]}")
+        for msg_line in message_lines[1:]:
+            console.print(f"            {msg_line}")
 
-    # Display rename indicator if present
-    if "display_note" in metadata:
-        console.print(f"   {metadata['display_note']}", style="yellow")
         console.print()
 
-    # Display content
-    console.print()
-    lines = content.split("\n")
+        # Display rename indicator if present
+        if "display_note" in metadata:
+            console.print(f"   {metadata['display_note']}", style="yellow")
+            console.print()
 
-    # Modified diffs are self-documenting with @@ markers and +/- prefixes
-    # Suppress line numbers for them to avoid confusion
-    show_line_numbers = diff_type != "modified"
+        # Display content
+        console.print()
+        lines = content.split("\n")
 
-    if show_line_numbers:
-        for i, line in enumerate(lines):
-            line_num = line_start + i
-            console.print(f"{line_num:4d}  {line}")
-    else:
-        # Modified diff - no line numbers (diff markers are self-documenting)
-        for line in lines:
-            console.print(f"  {line}")
+        # Modified diffs are self-documenting with @@ markers and +/- prefixes
+        # Suppress line numbers for them to avoid confusion
+        show_line_numbers = diff_type != "modified"
+
+        if show_line_numbers:
+            for i, line in enumerate(lines):
+                line_num = line_start + i
+                console.print(f"{line_num:4d}  {line}")
+        else:
+            # Modified diff - no line numbers (diff markers are self-documenting)
+            for line in lines:
+                console.print(f"  {line}")
 
 
-def _display_commit_message_match(result: Any, index: int):
+def _display_commit_message_match(result: Any, index: int, quiet: bool = False):
     """Display a commit message temporal match.
 
     Args:
         result: Either SearchResult object or dict from daemon
         index: Display index number
+        quiet: If True, use compact single-line format
     """
     # Handle both dict and object formats
     if isinstance(result, dict):
@@ -196,15 +202,26 @@ def _display_commit_message_match(result: Any, index: int):
     )
     author_email = metadata.get("author_email", "unknown@example.com")
 
-    # Display header
-    console.print(f"\n[bold cyan]{index}. [COMMIT MESSAGE MATCH][/bold cyan]")
-    console.print(f"   Score: {score:.3f}")
-    console.print(f"   Commit: {commit_hash[:7]} ({commit_date})")
-    console.print(f"   Author: {author_name} <{author_email}>")
-    console.print()
+    if quiet:
+        # Compact format: number, score, commit metadata on one line
+        console.print(
+            f"{index}. {score:.3f} [Commit {commit_hash[:7]}] ({commit_date}) {author_name} <{author_email}>",
+            markup=False,
+        )
+        # ENTIRE commit message content (all lines, indented)
+        for line in content.split("\n"):
+            console.print(f"   {line}", markup=False)
+        console.print()
+    else:
+        # Display header
+        console.print(f"\n[bold cyan]{index}. [COMMIT MESSAGE MATCH][/bold cyan]")
+        console.print(f"   Score: {score:.3f}")
+        console.print(f"   Commit: {commit_hash[:7]} ({commit_date})")
+        console.print(f"   Author: {author_name} <{author_email}>")
+        console.print()
 
-    # Display matching section of commit message
-    console.print("   Message (matching section):")
-    for line in content.split("\n"):
-        console.print(f"   {line}")
-    console.print()
+        # Display matching section of commit message
+        console.print("   Message (matching section):")
+        for line in content.split("\n"):
+            console.print(f"   {line}")
+        console.print()

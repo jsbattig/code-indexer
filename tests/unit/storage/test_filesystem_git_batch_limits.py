@@ -4,11 +4,9 @@ Test Strategy: Reproduce and fix the "Argument list too long" error (Errno 7)
 that occurs when passing 1000+ file paths to git ls-tree command.
 """
 
-import json
 import numpy as np
 import pytest
 import subprocess
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 

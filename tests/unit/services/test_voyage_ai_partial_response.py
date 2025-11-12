@@ -7,7 +7,7 @@ leading to zip() length mismatches and IndexError in temporal_indexer.py.
 
 import os
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from src.code_indexer.services.voyage_ai import VoyageAIClient
 from src.code_indexer.config import VoyageAIConfig
 

@@ -4,9 +4,7 @@ Story 3: Efficient Unindexed Commit Detection
 Tests O(1) commit filtering, branch switch detection, and incremental catch-up indexing.
 """
 
-import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from code_indexer.cli_temporal_watch_handler import TemporalWatchHandler
 
 

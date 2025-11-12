@@ -8,7 +8,7 @@ import json
 import tempfile
 from pathlib import Path
 from unittest import TestCase
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from src.code_indexer.daemon.cache import CacheEntry
 

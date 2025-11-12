@@ -11,11 +11,8 @@ upsert_points() fails (e.g., missing projection_matrix.npy), the exception
 is caught by ThreadPoolExecutor and never logged.
 """
 
-import logging
-import threading
 from pathlib import Path
-from queue import Queue
-from unittest.mock import Mock, patch, MagicMock, call
+from unittest.mock import Mock, patch
 import pytest
 
 from src.code_indexer.services.temporal.temporal_indexer import TemporalIndexer

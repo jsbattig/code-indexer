@@ -11,6 +11,25 @@ from pydantic import BaseModel, Field
 from enum import Enum
 
 
+class QueryResultItem(BaseModel):
+    """Individual query result item."""
+
+    file_path: str
+    line_number: int
+    code_snippet: str
+    similarity_score: float
+    repository_alias: str
+
+    # Universal timestamp fields for staleness detection
+    file_last_modified: Optional[float] = Field(
+        None,
+        description="Unix timestamp when file was last modified (None if stat failed)",
+    )
+    indexed_timestamp: Optional[float] = Field(
+        None, description="Unix timestamp when file was indexed"
+    )
+
+
 class HealthStatus(str, Enum):
     """System health status levels."""
 
@@ -229,3 +248,24 @@ class RepositoryStatusSummary(BaseModel):
         ..., description="Recent activity information"
     )
     recommendations: List[str] = Field(..., description="Actionable recommendations")
+
+
+class TemporalIndexOptions(BaseModel):
+    """Options for temporal git history indexing."""
+
+    max_commits: Optional[int] = Field(
+        default=None, description="Limit commits to index (None = all)", ge=1
+    )
+    since_date: Optional[str] = Field(
+        default=None,
+        description="Index commits since date (ISO format YYYY-MM-DD)",
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+    )
+    diff_context: int = Field(
+        default=5,
+        description="Number of context lines for git diffs (0-50). "
+        "0=no context (minimal storage), 3=git default, "
+        "5=recommended (balance), 10=best quality",
+        ge=0,
+        le=50,
+    )

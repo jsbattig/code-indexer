@@ -9,7 +9,6 @@ Root cause analysis:
 - commits[-1].hash access at line 202 fails with IndexError
 """
 
-import json
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch

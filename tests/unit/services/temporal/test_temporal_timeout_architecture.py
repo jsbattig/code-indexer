@@ -8,20 +8,15 @@ Tests verify that:
 """
 
 import pytest
-import threading
 import time
-from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch, call
-from concurrent.futures import Future
+from unittest.mock import Mock, patch
 import httpx
 
 from code_indexer.services.vector_calculation_manager import (
     VectorCalculationManager,
-    VectorResult,
     VectorTask,
 )
 from code_indexer.services.temporal.temporal_indexer import TemporalIndexer
-from code_indexer.services.temporal.models import CommitInfo
 
 
 class TestAPITimeoutArchitecture:

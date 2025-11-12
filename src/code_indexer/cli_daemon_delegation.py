@@ -1289,6 +1289,7 @@ def _query_temporal_via_daemon(
     exclude_path: Optional[tuple] = None,
     min_score: Optional[float] = None,
     accuracy: str = "balanced",
+    chunk_type: Optional[str] = None,
     quiet: bool = False,
 ) -> int:
     """Delegate temporal query to daemon with crash recovery.
@@ -1308,6 +1309,7 @@ def _query_temporal_via_daemon(
         exclude_path: Path pattern filters (exclude) as tuple
         min_score: Minimum similarity score
         accuracy: Accuracy mode (fast/balanced/high)
+        chunk_type: Filter by chunk type ("commit_message" or "commit_diff")
         quiet: Suppress non-essential output
 
     Returns:
@@ -1341,6 +1343,7 @@ def _query_temporal_via_daemon(
                 exclude_path=list(exclude_path) if exclude_path else None,
                 min_score=min_score or 0.0,
                 accuracy=accuracy,
+                chunk_type=chunk_type,
             )
 
             # Check for errors

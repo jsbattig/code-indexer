@@ -82,6 +82,10 @@ class TestTemporalIndexerBatchItemLimit(unittest.TestCase):
         EXPECTED BEHAVIOR AFTER FIX:
         - Split into 2 batches: [1000 items] + [331 items]
         - Both batches stay under token limit AND item limit
+
+        NOTE: With commit message vectorization, we get:
+        - 1,331 file diff chunks + 1 commit message chunk = 1,332 total chunks
+        - Expected batches: [1000, 332]
         """
         # Create commit with 1,331 small chunks (reproduces production error)
         commit = CommitInfo(
@@ -106,8 +110,18 @@ class TestTemporalIndexerBatchItemLimit(unittest.TestCase):
 
         self.indexer.diff_scanner.get_diffs_for_commit.return_value = [diff]
 
-        # Mock chunker to return exactly 1,331 small chunks
+        # Mock chunker to return exactly 1,331 small chunks for file diff, 1 for commit message
         def mock_chunk_many_small(content, path):
+            # If this is a commit message (path contains '[commit:')
+            if "[commit:" in str(path):
+                return [
+                    {
+                        "text": content,
+                        "char_start": 0,
+                        "char_end": len(content),
+                    }
+                ]
+            # Otherwise return 1,331 small chunks for file diff
             return [
                 {
                     "text": f"small chunk {j}",  # Only ~3 tokens each
@@ -155,7 +169,7 @@ class TestTemporalIndexerBatchItemLimit(unittest.TestCase):
 
         # Process the commit
         # BEFORE FIX: This will raise RuntimeError about batch size 1331
-        # AFTER FIX: Should succeed with batches of [1000, 331]
+        # AFTER FIX: Should succeed with batches of [1000, 332]
         try:
             self.indexer._process_commits_parallel([commit], Mock(), vector_manager)
             processing_succeeded = True
@@ -171,7 +185,7 @@ class TestTemporalIndexerBatchItemLimit(unittest.TestCase):
         if not processing_succeeded:
             print(f"ERROR: {error_message}")
             print("\nFAILING: Batch exceeded 1,000 item limit!")
-            print("Expected: Batches split at 1,000 items [1000, 331]")
+            print("Expected: Batches split at 1,000 items [1 (commit), 1000, 331]")
             print(
                 f"Actual: Single batch with {submitted_batch_sizes[0] if submitted_batch_sizes else 0} items"
             )
@@ -183,25 +197,35 @@ class TestTemporalIndexerBatchItemLimit(unittest.TestCase):
             f"Batches: {submitted_batch_sizes}",
         )
 
-        # AFTER FIX: Should have 2 batches
+        # AFTER FIX: Should have 3 batches:
+        # - Batch 1: 1 chunk (commit message)
+        # - Batch 2: 1000 chunks (file diffs)
+        # - Batch 3: 331 chunks (remaining file diffs)
         self.assertEqual(
             len(submitted_batch_sizes),
-            2,
-            f"Expected 2 batches for 1,331 items, got {len(submitted_batch_sizes)}",
+            3,
+            f"Expected 3 batches (1 commit + 2 file diff batches), got {len(submitted_batch_sizes)}",
         )
 
-        # AFTER FIX: First batch should be exactly 1,000 items
+        # AFTER FIX: First batch should be 1 item (commit message)
         self.assertEqual(
             submitted_batch_sizes[0],
-            1000,
-            f"First batch should be 1,000 items, got {submitted_batch_sizes[0]}",
+            1,
+            f"First batch should be 1 item (commit message), got {submitted_batch_sizes[0]}",
         )
 
-        # AFTER FIX: Second batch should be remaining 331 items
+        # AFTER FIX: Second batch should be exactly 1,000 items
         self.assertEqual(
             submitted_batch_sizes[1],
+            1000,
+            f"Second batch should be 1,000 items, got {submitted_batch_sizes[1]}",
+        )
+
+        # AFTER FIX: Third batch should be remaining 331 items
+        self.assertEqual(
+            submitted_batch_sizes[2],
             331,
-            f"Second batch should be 331 items, got {submitted_batch_sizes[1]}",
+            f"Third batch should be 331 items, got {submitted_batch_sizes[2]}",
         )
 
         # AFTER FIX: All batches should be ≤ 1,000 items
@@ -210,12 +234,12 @@ class TestTemporalIndexerBatchItemLimit(unittest.TestCase):
                 size, 1000, f"Batch {i+1} has {size} items, exceeds 1,000 item limit"
             )
 
-        # Verify all chunks were processed
+        # Verify all chunks were processed (1,331 diffs + 1 commit message)
         total_chunks = sum(submitted_batch_sizes)
         self.assertEqual(
             total_chunks,
-            1331,
-            f"Should process all 1,331 chunks, processed {total_chunks}",
+            1332,
+            f"Should process all 1,332 chunks, processed {total_chunks}",
         )
 
     def test_item_limit_with_multiple_batches(self):
@@ -225,6 +249,10 @@ class TestTemporalIndexerBatchItemLimit(unittest.TestCase):
         - Commit with 2,500 small chunks
         - Should create 3 batches: [1000, 1000, 500]
         - Validates both token AND item limits work together
+
+        NOTE: With commit message vectorization, we get:
+        - 2,500 file diff chunks + 1 commit message chunk = 2,501 total chunks
+        - Expected batches: [1000, 1000, 501]
         """
         commit = CommitInfo(
             hash="test-commit-2500-items",
@@ -246,8 +274,18 @@ class TestTemporalIndexerBatchItemLimit(unittest.TestCase):
 
         self.indexer.diff_scanner.get_diffs_for_commit.return_value = [diff]
 
-        # Mock chunker to return 2,500 small chunks
+        # Mock chunker to return 2,500 small chunks for file diff, 1 for commit message
         def mock_chunk_2500(content, path):
+            # If this is a commit message (path contains '[commit:')
+            if "[commit:" in str(path):
+                return [
+                    {
+                        "text": content,
+                        "char_start": 0,
+                        "char_end": len(content),
+                    }
+                ]
+            # Otherwise return 2,500 small chunks for file diff
             return [
                 {"text": f"chunk {j}", "char_start": j * 10, "char_end": (j + 1) * 10}
                 for j in range(2500)
@@ -286,18 +324,23 @@ class TestTemporalIndexerBatchItemLimit(unittest.TestCase):
         print("\n=== Multi-Batch Item Limit Test ===")
         print(f"Batch sizes: {submitted_batch_sizes}")
 
-        # Should have 3 batches: [1000, 1000, 500]
-        self.assertEqual(len(submitted_batch_sizes), 3)
-        self.assertEqual(submitted_batch_sizes[0], 1000)
+        # Should have 4 batches:
+        # - Batch 1: 1 chunk (commit message)
+        # - Batch 2: 1000 chunks (file diffs)
+        # - Batch 3: 1000 chunks (file diffs)
+        # - Batch 4: 500 chunks (remaining file diffs)
+        self.assertEqual(len(submitted_batch_sizes), 4)
+        self.assertEqual(submitted_batch_sizes[0], 1)  # commit message
         self.assertEqual(submitted_batch_sizes[1], 1000)
-        self.assertEqual(submitted_batch_sizes[2], 500)
+        self.assertEqual(submitted_batch_sizes[2], 1000)
+        self.assertEqual(submitted_batch_sizes[3], 500)
 
         # All batches ≤ 1,000
         for size in submitted_batch_sizes:
             self.assertLessEqual(size, 1000)
 
-        # All chunks processed
-        self.assertEqual(sum(submitted_batch_sizes), 2500)
+        # All chunks processed (2,500 diffs + 1 commit message)
+        self.assertEqual(sum(submitted_batch_sizes), 2501)
 
 
 if __name__ == "__main__":

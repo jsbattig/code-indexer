@@ -22,6 +22,8 @@ class CacheEntry:
         project_path: Path to the project root
         hnsw_index: HNSW index for semantic search (None if not loaded)
         id_mapping: Mapping from point IDs to file paths (None if not loaded)
+        collection_name: Name of the loaded collection (None if not loaded)
+        vector_dim: Vector dimension of the loaded collection (1536 default)
         tantivy_index: Tantivy FTS index (None if not loaded)
         tantivy_searcher: Tantivy searcher instance (None if not loaded)
         fts_available: Whether FTS indexes are available
@@ -45,6 +47,8 @@ class CacheEntry:
         # Semantic indexes
         self.hnsw_index: Optional[Any] = None
         self.id_mapping: Optional[Dict[str, Any]] = None
+        self.collection_name: Optional[str] = None
+        self.vector_dim: int = 1536
 
         # FTS indexes
         self.tantivy_index: Optional[Any] = None
@@ -121,6 +125,8 @@ class CacheEntry:
         # will close the mmap when index object is deleted (refcount = 0)
         self.hnsw_index = None
         self.id_mapping = None
+        self.collection_name = None
+        self.vector_dim = 1536  # Reset to default
         self.tantivy_index = None
         self.tantivy_searcher = None
         self.fts_available = False

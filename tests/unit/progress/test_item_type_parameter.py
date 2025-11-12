@@ -4,7 +4,6 @@ This test verifies that progress display can show "commits" instead of "files"
 when item_type parameter is passed.
 """
 
-from unittest.mock import MagicMock
 from rich.console import Console
 
 from src.code_indexer.progress.multi_threaded_display import (

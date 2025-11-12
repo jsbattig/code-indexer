@@ -5,12 +5,11 @@ verifying non-blocking operation and CLI delegation.
 """
 
 import pytest
-import threading
 import time
 import tempfile
 import shutil
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import patch
 import yaml
 
 from code_indexer.daemon.service import CIDXDaemonService

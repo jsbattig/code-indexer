@@ -153,7 +153,7 @@ class TestDaemonWatchManagerRaceConditions:
         manager.start_time = time.time()
 
         # Check if _WatchStarting sentinel class exists
-        from code_indexer.daemon.watch_manager import _WatchStarting, WATCH_STARTING
+        from code_indexer.daemon.watch_manager import WATCH_STARTING
 
         # Set sentinel
         manager.watch_handler = WATCH_STARTING

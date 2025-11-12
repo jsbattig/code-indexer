@@ -19,6 +19,10 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+# Default "all time" range used when no time filtering is desired
+# This range represents minimal temporal filtering (1970-2100)
+ALL_TIME_RANGE = ("1970-01-01", "2100-12-31")
+
 
 @dataclass
 class TemporalSearchResult:
@@ -253,6 +257,7 @@ class TemporalSearchService:
         exclude_language: Optional[List[str]] = None,
         path_filter: Optional[List[str]] = None,
         exclude_path: Optional[List[str]] = None,
+        chunk_type: Optional[str] = None,
     ) -> TemporalSearchResults:
         """Execute temporal semantic search with time-range filtering.
 
@@ -327,11 +332,83 @@ class TemporalSearchService:
                 else:
                     filter_conditions["must_not"] = path_exclusion_filters["must_not"]
 
+        # Add time range filter to filter_conditions (Phase 3: Temporal Filter Migration)
+        start_ts = int(datetime.strptime(time_range[0], "%Y-%m-%d").timestamp())
+        end_ts = int(datetime.strptime(time_range[1], "%Y-%m-%d").replace(
+            hour=23, minute=59, second=59
+        ).timestamp())
+        filter_conditions.setdefault("must", []).append({
+            "key": "commit_timestamp",
+            "range": {"gte": start_ts, "lte": end_ts}
+        })
+
+        # Add diff_type filter if specified (Phase 3: Temporal Filter Migration)
+        if diff_types:
+            filter_conditions.setdefault("must", []).append({
+                "key": "diff_type",
+                "match": {"any": list(diff_types)}
+            })
+
+        # Add author filter if specified (Phase 3: Temporal Filter Migration)
+        if author:
+            filter_conditions.setdefault("must", []).append({
+                "key": "author_name",
+                "match": {"contains": author.lower()}
+            })
+
+        # Add chunk_type filter if specified (Story #476: Filter commit messages vs commit diffs)
+        if chunk_type:
+            filter_conditions.setdefault("must", []).append({
+                "key": "type",
+                "match": {"value": chunk_type}
+            })
+
         # Phase 1: Semantic search (over-fetch for filtering headroom)
         start_time = time.time()
 
-        # Calculate smart over-fetch multiplier based on limit size
-        multiplier = self._calculate_over_fetch_multiplier(limit)
+        # Smart limit optimization with chunk_type-specific multipliers
+        #
+        # Post-filters (applied after vector search):
+        # - Time range filtering: Narrow ranges filter out results aggressively
+        # - Diff type filtering: Filters by modification type (added/modified/deleted)
+        # - Author filtering: Filters by commit author
+        # - Chunk type filtering: Filters by commit_message vs diff (HIGHLY SELECTIVE)
+        #
+        # Vector distribution in temporal collections:
+        # - commit_message: ~2.7% of vectors
+        # - commit_diff: ~97.3% of vectors
+        #
+        # Chunk type filtering requires distribution-aware multipliers.
+        is_all_time = time_range == ALL_TIME_RANGE
+
+        # CHUNK_TYPE-SPECIFIC MULTIPLIER (HIGH PRIORITY)
+        if chunk_type == "commit_message":
+            # Commit messages are rare (~2.7%), need high over-fetch
+            multiplier = 40
+            search_limit = limit * multiplier
+            logger.debug(
+                f"[DEBUG] chunk_type=commit_message, limit={limit}, "
+                f"multiplier={multiplier}x, search_limit={search_limit}"
+            )
+        elif chunk_type == "commit_diff":
+            # Diff chunks are majority (~97.3%), minimal over-fetch needed
+            search_limit = int(limit * 1.5)
+            logger.debug(
+                f"[DEBUG] chunk_type=commit_diff, limit={limit}, "
+                f"multiplier=1.5x, search_limit={search_limit}"
+            )
+        elif diff_types or author or not is_all_time:
+            # Other post-filters: use existing logic
+            multiplier = self._calculate_over_fetch_multiplier(limit)
+            search_limit = limit * multiplier
+            logger.debug(
+                f"[DEBUG] post_filters (no chunk_type), limit={limit}, "
+                f"multiplier={multiplier}, search_limit={search_limit}"
+            )
+        else:
+            # No post-filters AND "all" time range: use exact limit
+            search_limit = limit
+            logger.debug(f"[DEBUG] no post_filters, using exact limit={limit}")
 
         # Execute vector search using the same pattern as regular query command
         from ...storage.filesystem_vector_store import FilesystemVectorStore
@@ -343,10 +420,11 @@ class TemporalSearchService:
                 query=query,  # Pass query text for parallel embedding
                 embedding_provider=self.embedding_provider,  # Provider for parallel execution
                 filter_conditions=filter_conditions,  # Apply user-specified filters (language, path, etc.)
-                limit=limit
-                * multiplier,  # Smart over-fetch based on limit size (5x to 20x)
+                limit=search_limit,  # Smart limit: exact or multiplied based on filters
                 collection_name=self.collection_name,
                 return_timing=True,
+                lazy_load=True,  # Enable lazy loading with early exit optimization
+                prefetch_limit=search_limit,  # Use calculated over-fetch limit
             )
             # Type: Tuple[List[Dict[str, Any]], Dict[str, Any]] when return_timing=True
             raw_results, _timing_info = search_result  # type: ignore
@@ -356,12 +434,12 @@ class TemporalSearchService:
             raw_results = self.vector_store_client.search(
                 query_vector=query_embedding,
                 filter_conditions=filter_conditions,  # Apply user-specified filters (language, path, etc.)
-                limit=limit
-                * multiplier,  # Smart over-fetch based on limit size (5x to 20x)
+                limit=search_limit,  # Smart limit: exact or multiplied based on filters
                 collection_name=self.collection_name,
             )
 
         semantic_time = time.time() - start_time
+        logger.debug(f"[DEBUG] Vector search returned {len(raw_results)} raw_results")
 
         if not raw_results:
             return TemporalSearchResults(
@@ -377,7 +455,9 @@ class TemporalSearchService:
                 },
             )
 
-        # Phase 2: Temporal filtering using JSON payloads
+        # Phase 2: Transform results (content reconstruction, filtering)
+        # Note: Time range, diff_type, and author filters applied in vector store,
+        # but we apply them again here as post-filters for safety and test compatibility
         filter_start = time.time()
         # Type assertion: raw_results is guaranteed to be List[Dict[str, Any]] at this point
         temporal_results, blob_fetch_time_ms = self._filter_by_time_range(
@@ -385,26 +465,13 @@ class TemporalSearchService:
             start_date=time_range[0],
             end_date=time_range[1],
             min_score=min_score,
+            diff_types=diff_types,
+            author=author,
+            chunk_type=chunk_type,
         )
         filter_time = time.time() - filter_start
 
-        # Phase 3: Filter by diff_types if specified
-        if diff_types:
-            temporal_results = [
-                r for r in temporal_results if r.metadata.get("diff_type") in diff_types
-            ]
-
-        # Phase 3b: Filter by author if specified
-        if author:
-            author_lower = author.lower()
-            temporal_results = [
-                r
-                for r in temporal_results
-                if author_lower in r.metadata.get("author_name", "").lower()
-                or author_lower in r.metadata.get("author_email", "").lower()
-            ]
-
-        # Phase 4: Sort reverse chronologically (newest to oldest, like git log)
+        # Phase 3: Sort reverse chronologically (newest to oldest, like git log)
         # With diff-based indexing, all results are changes - no filtering needed
         temporal_results = sorted(
             temporal_results,
@@ -509,31 +576,31 @@ class TemporalSearchService:
         start_date: str,
         end_date: str,
         min_score: Optional[float] = None,
+        diff_types: Optional[List[str]] = None,
+        author: Optional[str] = None,
+        chunk_type: Optional[str] = None,
     ) -> Tuple[List[TemporalSearchResult], float]:
-        """Filter semantic results by date range using JSON payloads.
+        """Transform semantic results to TemporalSearchResult objects.
 
-        Story 2: Complete SQLite removal - all filtering done using
-        commit metadata stored in JSON payloads during indexing.
-
-        In diff-based indexing, all results are changes (added/modified/deleted/renamed/binary).
-        Deleted files are automatically included with diff_type="deleted".
+        Phase 3 Migration: Time range filtering moved to vector store filter_conditions.
+        This method now handles:
+        - Content reconstruction from git (for added/deleted files)
+        - min_score filtering (if specified)
+        - diff_types post-filtering (safety layer + test compatibility)
+        - author post-filtering (safety layer + test compatibility)
+        - Result transformation to TemporalSearchResult objects
 
         Args:
             semantic_results: Results from semantic search (raw vector store format)
-            start_date: Start date (YYYY-MM-DD)
-            end_date: End date (YYYY-MM-DD)
+            start_date: Start date (YYYY-MM-DD) - kept for backward compatibility
+            end_date: End date (YYYY-MM-DD) - kept for backward compatibility
             min_score: Minimum similarity score filter
+            diff_types: Filter by diff type(s) (post-filter safety layer)
+            author: Filter by author name (post-filter safety layer)
 
         Returns:
             Tuple of (filtered results, blob_fetch_time_ms)
         """
-        # Convert dates to Unix timestamps
-        start_ts = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp())
-        end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
-            hour=23, minute=59, second=59
-        )
-        end_ts = int(end_dt.timestamp())
-
         filtered_results = []
 
         # Process each semantic result
@@ -584,29 +651,56 @@ class TemporalSearchService:
             if min_score and score < min_score:
                 continue
 
-            # Check if payload has temporal data
-            commit_timestamp = payload.get("commit_timestamp")
+            # Apply diff_types post-filter (safety layer + test compatibility)
+            if diff_types:
+                result_diff_type = payload.get("diff_type")
+                if result_diff_type not in diff_types:
+                    continue
 
-            # Filter by timestamp range
-            if commit_timestamp and start_ts <= commit_timestamp <= end_ts:
-                # Create temporal result from payload data
-                # Check both "path" and "file_path" - temporal indexer uses "path"
-                temporal_result = TemporalSearchResult(
-                    file_path=self._get_file_path_from_payload(payload, "unknown"),
-                    chunk_index=payload.get("chunk_index", 0),
-                    content=content,  # Now uses actual content from payload
-                    score=score,
-                    metadata=payload,  # Store full payload as metadata
-                    temporal_context={
-                        "commit_hash": payload.get("commit_hash"),
-                        "commit_date": payload.get("commit_date"),
-                        "commit_message": payload.get("commit_message"),
-                        "author_name": payload.get("author_name"),
-                        "commit_timestamp": commit_timestamp,
-                        "diff_type": payload.get("diff_type"),
-                    },
-                )
-                filtered_results.append(temporal_result)
+            # Apply author post-filter (safety layer + test compatibility)
+            if author:
+                result_author = payload.get("author_name", "")
+                if author.lower() not in result_author.lower():
+                    continue
+
+            # Apply chunk_type post-filter (AC3/AC4: Story #476)
+            if chunk_type:
+                result_chunk_type = payload.get("type")
+                if result_chunk_type != chunk_type:
+                    continue
+
+            # Apply time range post-filter (safety layer + test compatibility)
+            # Time range filtering is also done in vector store, but we apply it here
+            # as a safety layer when _filter_by_time_range is called directly
+            commit_timestamp = payload.get("commit_timestamp")
+            if commit_timestamp:
+                from datetime import datetime
+                start_ts = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp())
+                end_ts = int(datetime.strptime(end_date, "%Y-%m-%d").replace(
+                    hour=23, minute=59, second=59
+                ).timestamp())
+
+                if commit_timestamp < start_ts or commit_timestamp > end_ts:
+                    continue
+
+            # Create temporal result from payload data
+            # Check both "path" and "file_path" - temporal indexer uses "path"
+            temporal_result = TemporalSearchResult(
+                file_path=self._get_file_path_from_payload(payload, "unknown"),
+                chunk_index=payload.get("chunk_index", 0),
+                content=content,  # Now uses actual content from payload
+                score=score,
+                metadata=payload,  # Store full payload as metadata
+                temporal_context={
+                    "commit_hash": payload.get("commit_hash"),
+                    "commit_date": payload.get("commit_date"),
+                    "commit_message": payload.get("commit_message"),
+                    "author_name": payload.get("author_name"),
+                    "commit_timestamp": commit_timestamp,
+                    "diff_type": payload.get("diff_type"),
+                },
+            )
+            filtered_results.append(temporal_result)
 
         # Return results and 0 blob fetch time (no blob fetching in JSON approach)
         return filtered_results, 0.0

@@ -10,7 +10,6 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock, call
 
 from src.code_indexer.services.temporal.temporal_diff_scanner import (
-    DiffInfo,
     TemporalDiffScanner,
 )
 
@@ -136,9 +135,9 @@ index 0000000000000000000000000000000000000009..blob0000000000000000000000000000
         # OPTIMIZED BEHAVIOR: Only 1 git call
         assert mock_run.call_count == 1
 
-        # Verify it's git show with unified diff format and full-index
+        # Verify it's git show with unified diff format and full-index (with -U5 for 5 lines of context)
         assert mock_run.call_args_list[0] == call(
-            ["git", "show", "--full-index", "--format=", "abc123"],
+            ["git", "show", "-U5", "--full-index", "--format=", "abc123"],
             cwd=Path("/tmp/test-repo"),
             capture_output=True,
             text=True,

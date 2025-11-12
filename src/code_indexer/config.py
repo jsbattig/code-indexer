@@ -337,6 +337,17 @@ class DaemonConfig(BaseModel):
         return v
 
 
+class TemporalConfig(BaseModel):
+    """Configuration for temporal (git history) indexing."""
+
+    diff_context_lines: int = Field(
+        default=5,
+        ge=0,
+        le=50,
+        description="Number of context lines in git diffs (0-50, default 5)",
+    )
+
+
 class Config(BaseModel):
     """Main configuration for Code Indexer."""
 
@@ -483,6 +494,12 @@ class Config(BaseModel):
     daemon: Optional[DaemonConfig] = Field(
         default=None,
         description="Daemon mode configuration for semantic caching",
+    )
+
+    # Temporal indexing configuration
+    temporal: TemporalConfig = Field(
+        default_factory=TemporalConfig,
+        description="Temporal (git history) indexing configuration",
     )
 
     @field_validator("codebase_dir", mode="before")

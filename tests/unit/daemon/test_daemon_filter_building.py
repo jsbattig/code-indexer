@@ -6,9 +6,7 @@ parameters (languages, exclude_languages, path_filter, exclude_paths) instead
 of expecting pre-built filter_conditions in kwargs.
 """
 
-import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from code_indexer.daemon.service import CIDXDaemonService
 
 
@@ -24,15 +22,34 @@ class TestDaemonFilterBuilding:
         """
         service = CIDXDaemonService()
 
+        # Setup cache entry with mock HNSW index and id_mapping
+        from code_indexer.daemon.cache import CacheEntry
+        from pathlib import Path
+        import numpy as np
+
+        cache_entry = CacheEntry(project_path=Path("/tmp/test_project"))
+
+        # Mock HNSW index that returns one candidate
+        mock_hnsw_index = Mock()
+
+        # Mock id_mapping with test data
+        test_vector_path = Path("/tmp/test_vector.json")
+        mock_id_mapping = {"point_1": test_vector_path}
+
+        # Set semantic indexes in cache entry
+        cache_entry.set_semantic_indexes(mock_hnsw_index, mock_id_mapping)
+        service.cache_entry = cache_entry
+
         # Mock dependencies - patch where they're imported (inside method)
         with (
             patch("code_indexer.config.ConfigManager") as mock_config_mgr,
             patch(
-                "code_indexer.backends.backend_factory.BackendFactory"
-            ) as mock_backend_factory,
-            patch(
                 "code_indexer.services.embedding_factory.EmbeddingProviderFactory"
             ) as mock_embedding_factory,
+            patch(
+                "code_indexer.storage.hnsw_index_manager.HNSWIndexManager"
+            ) as mock_hnsw_manager_class,
+            patch("builtins.open", create=True) as mock_open,
         ):
 
             # Setup mocks
@@ -42,47 +59,49 @@ class TestDaemonFilterBuilding:
             )
 
             mock_embedding_provider = Mock()
+            mock_embedding_provider.embed.return_value = np.zeros(1024)
             mock_embedding_factory.create.return_value = mock_embedding_provider
 
-            mock_vector_store = Mock()
-            mock_vector_store.resolve_collection_name.return_value = "test_collection"
-            mock_vector_store.search.return_value = ([], {})
+            # Mock HNSWIndexManager.query() to return one candidate
+            mock_hnsw_manager = Mock()
+            mock_hnsw_manager.query.return_value = (["point_1"], [0.1])
+            mock_hnsw_manager_class.return_value = mock_hnsw_manager
 
-            mock_backend = Mock()
-            mock_backend.get_vector_store_client.return_value = mock_vector_store
-            mock_backend_factory.create.return_value = mock_backend
+            # Mock file reading for vector metadata
+            import json
 
-            # Execute semantic search with exclude_paths filter
-            kwargs = {
-                "exclude_paths": ("*test*",),
-                "min_score": 0.5,
+            vector_metadata = {
+                "payload": {
+                    "path": "/tmp/test_project/src/test_file.py",
+                    "language": ".py",
+                }
             }
+            mock_file = Mock()
+            mock_file.__enter__ = Mock(return_value=mock_file)
+            mock_file.__exit__ = Mock(return_value=False)
+            mock_file.read.return_value = json.dumps(vector_metadata)
+            mock_open.return_value = mock_file
 
-            results, timing = service._execute_semantic_search(
-                project_path="/tmp/test_project", query="test query", limit=10, **kwargs
-            )
+            # Mock json.load to return vector data
+            with patch("json.load", return_value=vector_metadata):
+                # Execute semantic search with exclude_paths filter
+                kwargs = {
+                    "exclude_paths": ("*test*",),
+                    "min_score": 0.5,
+                }
 
-            # Verify vector_store.search was called with filter_conditions
-            assert mock_vector_store.search.called
-            call_kwargs = mock_vector_store.search.call_args[1]
+                results, timing = service._execute_semantic_search(
+                    project_path="/tmp/test_project",
+                    query="test query",
+                    limit=10,
+                    **kwargs,
+                )
 
-            # CRITICAL ASSERTION: Should have filter_conditions built from exclude_paths
-            # BEFORE FIX: This will FAIL because filter_conditions is None
-            assert "filter_conditions" in call_kwargs
-            filter_conditions = call_kwargs["filter_conditions"]
-
-            # Verify filter_conditions is not None
+            # CRITICAL ASSERTION: Result should be filtered out by exclude_paths
+            # File path contains "test", so it should be excluded
             assert (
-                filter_conditions is not None
-            ), "filter_conditions should not be None when exclude_paths provided"
-
-            # Should have must_not array with path exclusion filter
-            assert (
-                "must_not" in filter_conditions
-            ), "filter_conditions should have must_not array"
-            assert (
-                len(filter_conditions["must_not"]) > 0
-            ), "must_not array should contain path exclusion filters"
+                len(results) == 0
+            ), "Results should be filtered out by exclude_paths pattern"
 
     def test_daemon_builds_language_filter_from_raw_params(self):
         """Daemon builds language inclusion filter from raw languages parameter."""

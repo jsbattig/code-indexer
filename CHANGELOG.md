@@ -5,6 +5,114 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.2.1] - 2025-11-12
+
+### Fixed
+
+#### Temporal Commit Message Truncation (Critical Bug)
+
+**Problem**: Temporal indexer only stored the **first line** of commit messages instead of full multi-paragraph messages, rendering semantic search across commit history ineffective.
+
+**Root Cause**: Git log format used `%s` (subject only) instead of `%B` (full body), and parsing split by newline before processing records, truncating multi-line messages.
+
+**Evidence**:
+```bash
+# Before fix - only 60 characters stored:
+feat: implement HNSW incremental updates...
+
+# After fix - full 3,339 characters (66 lines) stored:
+feat: implement HNSW incremental updates with FTS incremental indexing...
+
+Implement comprehensive HNSW updates...
+[50+ additional lines with full commit details]
+```
+
+**Solution**: Changed git format to use `%B` (full body) with record separator `\x1e` to preserve newlines in commit messages.
+
+**Implementation**:
+- **File**: `src/code_indexer/services/temporal/temporal_indexer.py` (line 395)
+  - Changed format: `--format=%H%x00%at%x00%an%x00%ae%x00%B%x00%P%x1e`
+  - Parse by record separator first: `output.strip().split("\x1e")`
+  - Then split fields by null byte: `record.split("\x00")`
+  - Preserves multi-paragraph commit messages with newlines
+- **Test**: `tests/unit/services/temporal/test_commit_message_full_body.py`
+  - Verifies full message parsing (including pipe characters)
+
+**Impact**:
+- ✅ Temporal queries now search across **full commit message content** (not just subject line)
+- ✅ Multi-paragraph commit messages fully indexed and searchable
+- ✅ Commit messages with special characters (pipes, newlines) handled correctly
+- ✅ Both regular and quiet modes display complete commit messages
+
+#### Match Number Display Consistency
+
+**Problem**: Match numbering was highly inconsistent across query modes - some showed sequential numbers (1, 2, 3...), others didn't, creating confusing UX.
+
+**Issues Fixed**:
+
+**1. Temporal Commit Message Quiet Mode** - Showed useless `[Commit Message]` placeholder instead of actual content
+
+**Solution**: Complete rewrite to display full metadata and entire commit message:
+```python
+# Before: Useless placeholder
+0.602 [Commit Message]
+
+# After: Full metadata + complete message
+1. 0.602 [Commit 237d736] (2025-11-02) Author Name <email>
+   feat: implement HNSW incremental updates...
+   [full 66-line commit message displayed]
+```
+
+**2. Daemon Mode --quiet Flag Ignored** - Hardcoded `quiet=False`, ignoring user's `--quiet` flag
+
+**Solution**: Parse `--quiet` from query arguments and pass actual value to display functions
+
+**3. Semantic Regular Mode** - Calculated match number `i` but never displayed it
+
+**Solution**: Added match number to header: `{i}. 📄 File: {file_path}`
+
+**4. All Quiet Modes** - Missing match numbers across FTS, semantic, hybrid, and temporal queries
+
+**Solution**: Added sequential numbering to all quiet mode outputs:
+- FTS quiet: `{i}. {path}:{line}:{column}`
+- Semantic quiet: `{i}. {score:.3f} {file_path}`
+- Temporal quiet: `{i}. {score:.3f} {metadata}`
+
+**Implementation**:
+- **File**: `src/code_indexer/cli.py`
+  - Line 823: FTS quiet mode - added match numbers
+  - Line 951: Semantic quiet mode - added match numbers
+  - Line 977: Semantic regular mode - added match numbers to header
+  - Line 1514: Hybrid quiet mode - added match numbers
+  - Lines 5266-5301: Temporal commit quiet mode - complete rewrite with full metadata
+- **File**: `src/code_indexer/cli_daemon_fast.py`
+  - Lines 86-87: Parse --quiet flag from arguments
+  - Lines 156, 163: Pass quiet flag to display functions
+- **File**: `src/code_indexer/utils/temporal_display.py`
+  - Added quiet mode support to commit message and file chunk display functions
+
+**Test Coverage**:
+- `tests/unit/cli/test_match_number_display_consistency.py` - 5 tests
+- `tests/unit/cli/test_temporal_commit_message_quiet_complete.py` - Metadata display validation
+- `tests/unit/daemon/test_daemon_quiet_flag_propagation.py` - 3 tests
+- `tests/unit/utils/test_temporal_display_quiet_mode.py` - 3 tests
+
+**Impact**:
+- ✅ **Consistent UX**: All query modes show sequential match numbers (1, 2, 3...)
+- ✅ **Quiet mode usability**: Numbers make it easy to reference specific results
+- ✅ **Temporal commit searches**: Actually useful output instead of placeholders
+- ✅ **Daemon mode**: Respects user's display preferences
+
+### Changed
+
+#### Test Suite Updates
+
+**New Tests**:
+- 11 unit tests for match number display consistency
+- 1 integration test for commit message full body parsing
+- All 3,246 fast-automation tests passing (100% pass rate)
+- Zero regressions introduced
+
 ## [7.2.0] - 2025-11-02
 
 ### Added

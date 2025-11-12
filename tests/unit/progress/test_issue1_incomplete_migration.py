@@ -4,8 +4,6 @@ Bug #470: Only 1 of 3 production code paths was updated to use async_handle_prog
 This test verifies all production paths use the async queue pattern.
 """
 
-from unittest.mock import MagicMock, Mock, patch
-import pytest
 
 
 class TestIssue1IncompleteMigration:

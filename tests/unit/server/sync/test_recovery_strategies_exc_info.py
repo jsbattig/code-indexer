@@ -4,10 +4,7 @@ This test verifies that exc_info=True is used in critical exception handlers
 to ensure complete debugging context is captured in error logs.
 """
 
-import pytest
 import logging
-from pathlib import Path
-from unittest.mock import Mock, patch
 
 
 class TestRecoveryStrategiesExceptionLogging:
@@ -49,7 +46,7 @@ class TestRecoveryStrategiesExceptionLogging:
 
         # Execute recovery (will fail)
         with caplog.at_level(logging.ERROR):
-            result = strategy.execute_recovery(error, context, failing_operation)
+            strategy.execute_recovery(error, context, failing_operation)
 
         # Verify error was logged
         assert any(

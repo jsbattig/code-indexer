@@ -6,9 +6,7 @@ instead of VoyageTokenizer, causing batches 4-8x larger than 120k token limit.
 SYMPTOM: VoyageAI API calls hang/timeout when batch exceeds token limit.
 """
 
-import pytest
-from unittest.mock import Mock, MagicMock, patch
-from pathlib import Path
+from unittest.mock import Mock, patch
 
 from code_indexer.services.temporal.temporal_indexer import TemporalIndexer
 from code_indexer.services.voyage_ai import VoyageAIClient

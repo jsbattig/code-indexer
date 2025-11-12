@@ -264,6 +264,7 @@ class CIDXDaemonService(Service):
         exclude_path: Optional[List[str]] = None,
         min_score: float = 0.0,
         accuracy: str = "balanced",
+        chunk_type: Optional[str] = None,
         correlation_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Query temporal collection via daemon with mmap cache.
@@ -279,6 +280,7 @@ class CIDXDaemonService(Service):
             exclude_path: Path pattern filters (exclude) - list of path patterns
             min_score: Minimum similarity score
             accuracy: Accuracy mode (fast/balanced/high)
+            chunk_type: Filter by chunk type ("commit_message" or "commit_diff")
             correlation_id: Correlation ID for progress tracking
 
         Returns:
@@ -412,6 +414,7 @@ class CIDXDaemonService(Service):
                 path_filter=path_filter,
                 exclude_path=exclude_path,
                 min_score=min_score,
+                chunk_type=chunk_type,
             )
 
             # Update cache access tracking
@@ -499,6 +502,10 @@ class CIDXDaemonService(Service):
                 vector_store = FilesystemVectorStore(
                     base_path=index_dir, project_root=Path(project_path)
                 )
+
+                # Handle --clear flag for temporal collection
+                if kwargs.get("force_full", False):
+                    vector_store.clear_collection("code-indexer-temporal")
 
                 # Setup callback infrastructure for temporal progress
                 import threading
@@ -1362,12 +1369,15 @@ class CIDXDaemonService(Service):
             # Set semantic indexes
             if hnsw_index and id_index:
                 entry.set_semantic_indexes(hnsw_index, id_index)
+                # Store collection metadata for search execution
+                entry.collection_name = collection_name
+                entry.vector_dim = vector_dim
                 # AC11: Track loaded index version for rebuild detection
                 entry.hnsw_index_version = entry._read_index_rebuild_uuid(
                     collection_path
                 )
                 logger.info(
-                    f"Semantic indexes loaded successfully (collection: {collection_name}, version: {entry.hnsw_index_version})"
+                    f"Semantic indexes loaded successfully (collection: {collection_name}, vector_dim: {vector_dim}, version: {entry.hnsw_index_version})"
                 )
             else:
                 logger.warning("Failed to load semantic indexes")

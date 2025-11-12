@@ -7,10 +7,8 @@ for file changes.
 
 import threading
 import time
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch, call
+from unittest.mock import MagicMock, patch
 import pytest
-from typing import Dict, Any
 
 from code_indexer.daemon.watch_manager import DaemonWatchManager
 
@@ -197,7 +195,6 @@ class TestDaemonWatchManager:
         # Arrange
         results = []
         errors = []
-        import random
 
         def try_start(project_path, config):
             try:

@@ -4,8 +4,6 @@ Tests that ExceptionLogger is properly initialized when FastAPI app starts
 and that exceptions are logged to ~/.cidx-server/logs/error_*.log files.
 """
 
-import pytest
-from pathlib import Path
 
 
 class TestServerExceptionLoggerIntegration:

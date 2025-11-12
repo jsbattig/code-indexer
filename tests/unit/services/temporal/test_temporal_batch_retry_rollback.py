@@ -12,11 +12,8 @@ Anti-Fallback Principle (Messi Rule #2):
 """
 
 import pytest
-import logging
 import time
-import tempfile
-from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch, call
+from unittest.mock import Mock, patch
 from types import SimpleNamespace
 import numpy as np
 

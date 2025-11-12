@@ -7,9 +7,7 @@ Bug: "abc12345 - Vectorizing 50% (4/8 chunks)" gets truncated to "8 chunks)"
 Fix: Detect temporal status strings and preserve them, only extract basename for real paths.
 """
 
-import pytest
 from pathlib import Path
-from unittest.mock import Mock
 from rich.console import Console
 
 from code_indexer.progress.multi_threaded_display import MultiThreadedProgressManager

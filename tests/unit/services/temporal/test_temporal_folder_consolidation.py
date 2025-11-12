@@ -10,7 +10,6 @@ After the fix, all temporal data should be in:
 - .code-indexer/index/code-indexer-temporal/
 """
 
-import shutil
 import tempfile
 from pathlib import Path
 

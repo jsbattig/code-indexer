@@ -81,6 +81,11 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         - Batch all 50 chunks into 1-2 API calls (depending on token limit)
         - Submit all batches at once, wait for results together
         - Map results back to correct diffs for point creation
+
+        NOTE: With commit message vectorization, we get:
+        - 10 files × 5 chunks = 50 file diff chunks
+        - 1 commit × 1 message chunk = 1 commit message chunk
+        - Total: 51 chunks
         """
         # Create commit with 10 diffs
         commit = CommitInfo(
@@ -108,8 +113,18 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
 
         self.indexer.diff_scanner.get_diffs_for_commit.return_value = diffs
 
-        # Mock chunker to return 5 chunks per diff
+        # Mock chunker to return 5 chunks per diff OR 1 chunk for commit message
         def mock_chunk_text(content, path):
+            # If this is a commit message (path contains '[commit:')
+            if "[commit:" in str(path):
+                return [
+                    {
+                        "text": content,  # Return the commit message as-is
+                        "char_start": 0,
+                        "char_end": len(content),
+                    }
+                ]
+            # Otherwise return 5 chunks for file diffs
             return [
                 {
                     "text": f"chunk {j} content from {path}",
@@ -159,7 +174,7 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
 
         # ASSERTIONS
         # Current implementation makes 10 API calls (one per diff)
-        # After fix, should make 1-2 calls (all 50 chunks batched)
+        # After fix, should make 1-2 calls (all 51 chunks batched: 50 diffs + 1 commit message)
         print(f"\n=== API Call Analysis ===")
         print(f"Total API calls: {api_call_count[0]}")
         print(f"Expected: 1-2 calls (batched)")
@@ -178,9 +193,9 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
             f"Expected 1-3 batched API calls, got {api_call_count[0]} sequential calls",
         )
 
-        # Verify all chunks were processed
+        # Verify all chunks were processed (50 file diffs + 1 commit message)
         total_chunks_submitted = sum(len(batch) for batch in submitted_batches)
-        self.assertEqual(total_chunks_submitted, 50, "Should process all 50 chunks")
+        self.assertEqual(total_chunks_submitted, 51, "Should process all 51 chunks (50 file diffs + 1 commit message)")
 
     def test_token_limit_enforcement_large_commit(self):
         """Test that large commits exceeding 120k token limit are split into multiple batches.
@@ -197,6 +212,9 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         - Split into multiple batches at 108,000 tokens (90% of 120k limit)
         - Submit multiple batches if needed
         - Merge results before point creation
+
+        NOTE: With commit message vectorization, we get:
+        - 50 file diff chunks + 1 commit message chunk = 51 total chunks
         """
         # Create commit with chunks totaling 200k tokens
         commit = CommitInfo(
@@ -222,8 +240,18 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
 
         self.indexer.diff_scanner.get_diffs_for_commit.return_value = [diff]
 
-        # Mock chunker to return 50 large chunks
+        # Mock chunker to return 50 large chunks for file diff, 1 chunk for commit message
         def mock_chunk_large(content, path):
+            # If this is a commit message (path contains '[commit:')
+            if "[commit:" in str(path):
+                return [
+                    {
+                        "text": content,  # Return the commit message as-is
+                        "char_start": 0,
+                        "char_end": len(content),
+                    }
+                ]
+            # Otherwise return 50 large chunks for file diff
             return [
                 {
                     "text": large_content,  # ~4000 tokens each
@@ -277,10 +305,10 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
             f"Expected 2+ batches for 200k tokens, got {len(submitted_batches)} batch(es)",
         )
 
-        # Verify all chunks were processed
+        # Verify all chunks were processed (50 file diffs + 1 commit message)
         total_chunks = sum(submitted_batches)
         self.assertEqual(
-            total_chunks, 50, "Should process all 50 chunks across batches"
+            total_chunks, 51, "Should process all 51 chunks across batches (50 file diffs + 1 commit message)"
         )
 
     def test_embedding_count_validation(self):
@@ -375,6 +403,9 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         - If all_chunks_data is empty, mark slot COMPLETE
         - No API calls made
         - Commit shown as successfully processed
+
+        NOTE: With commit message vectorization, even if all file diffs are skipped,
+        we still vectorize the commit message, so API will be called once.
         """
         commit = CommitInfo(
             hash="empty-commit-abc",
@@ -407,15 +438,36 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
 
         self.indexer.diff_scanner.get_diffs_for_commit.return_value = diffs
 
-        # Track API calls - should be ZERO
+        # Mock chunker to handle commit message
+        def mock_chunk_text(content, path):
+            # If this is a commit message (path contains '[commit:')
+            if "[commit:" in str(path):
+                return [
+                    {
+                        "text": content,
+                        "char_start": 0,
+                        "char_end": len(content),
+                    }
+                ]
+            # For binary/renamed files, return empty list
+            return []
+
+        self.indexer.chunker.chunk_text.side_effect = mock_chunk_text
+
+        # Track API calls - should be 1 (commit message only)
         api_call_count = [0]
 
-        def mock_submit_should_not_call(chunk_texts, metadata):
+        def mock_submit_batch(chunk_texts, metadata):
             api_call_count[0] += 1
-            raise AssertionError("API should NOT be called for empty chunks!")
+            future = Future()
+            mock_result = Mock()
+            mock_result.embeddings = [[0.1] * 1024 for _ in chunk_texts]
+            mock_result.error = None
+            future.set_result(mock_result)
+            return future
 
         vector_manager = Mock()
-        vector_manager.submit_batch_task.side_effect = mock_submit_should_not_call
+        vector_manager.submit_batch_task.side_effect = mock_submit_batch
         vector_manager.embedding_provider._get_model_token_limit.return_value = 120000
 
         # Mock cancellation event (required for worker threads)
@@ -429,11 +481,11 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         # ASSERTIONS
         print(f"\n=== Empty Chunks Test ===")
         print(f"API calls: {api_call_count[0]}")
-        print(f"Expected: 0 (all diffs skipped)")
+        print(f"Expected: 1 (commit message only, all file diffs skipped)")
 
-        # After fix: No API calls
+        # After fix: Should have 1 API call for commit message
         self.assertEqual(
-            api_call_count[0], 0, "Should not call API when all chunks are skipped"
+            api_call_count[0], 1, "Should call API once for commit message even when all file diffs are skipped"
         )
 
         # After fix: Verify slot was marked COMPLETE

@@ -92,9 +92,9 @@ index blob_hash_2..0000000000000000000000000000000000000000
             f"This is the N+1 problem - each deleted file triggers a separate git rev-parse."
         )
 
-        # Verify call 1: git show
+        # Verify call 1: git show (with -U5 for 5 lines of context)
         assert mock_run.call_args_list[0] == call(
-            ["git", "show", "--full-index", "--format=", "def456"],
+            ["git", "show", "-U5", "--full-index", "--format=", "def456"],
             cwd=Path("/tmp/test-repo"),
             capture_output=True,
             text=True,

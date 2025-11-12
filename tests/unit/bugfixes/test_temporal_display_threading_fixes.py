@@ -12,12 +12,8 @@ These tests follow strict TDD methodology:
 - Verify all tests pass
 """
 
-import pytest
-import signal
-import threading
 import time
-from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch, call
+from unittest.mock import Mock
 from concurrent.futures import ThreadPoolExecutor
 
 from code_indexer.services.clean_slot_tracker import (
@@ -26,7 +22,6 @@ from code_indexer.services.clean_slot_tracker import (
     FileStatus,
 )
 from code_indexer.progress.multi_threaded_display import MultiThreadedProgressManager
-from code_indexer.services.temporal.temporal_indexer import TemporalIndexer
 
 
 class TestIssue1ThreadSlotMismatch:

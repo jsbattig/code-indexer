@@ -27,11 +27,13 @@ class TemporalDiffScanner:
         self,
         codebase_dir,
         override_filter_service: Optional[OverrideFilterService] = None,
+        diff_context_lines: int = 5,
     ):
         from pathlib import Path
 
         self.codebase_dir = Path(codebase_dir)
         self.override_filter_service = override_filter_service
+        self.diff_context_lines = diff_context_lines
 
     def _should_include_file(self, file_path: str) -> bool:
         """Check if file should be included based on override filtering.
@@ -73,8 +75,9 @@ class TemporalDiffScanner:
 
         # OPTIMIZATION: Single git call to get all changes
         # Use --full-index to get full 40-character blob hashes
+        # Use -U flag to configure context lines (default 5, range 0-50)
         result = subprocess.run(
-            ["git", "show", "--full-index", "--format=", commit_hash],
+            ["git", "show", f"-U{self.diff_context_lines}", "--full-index", "--format=", commit_hash],
             cwd=self.codebase_dir,
             capture_output=True,
             text=True,

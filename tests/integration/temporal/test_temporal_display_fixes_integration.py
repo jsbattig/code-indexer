@@ -7,10 +7,8 @@ Tests verify all three fixes work together in realistic scenarios:
 3. Clean KeyboardInterrupt handling
 """
 
-import pytest
 import time
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock
 from concurrent.futures import ThreadPoolExecutor
 
 from code_indexer.services.clean_slot_tracker import (

@@ -4,9 +4,7 @@ Tests crash-resilient temporal indexing with disk-based reconciliation.
 """
 
 import json
-import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from src.code_indexer.services.temporal.temporal_reconciliation import (
     discover_indexed_commits_from_disk,
     reconcile_temporal_index,

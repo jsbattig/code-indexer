@@ -38,8 +38,6 @@ from src.code_indexer.services.temporal.temporal_indexer import TemporalIndexer
 from src.code_indexer.services.temporal.models import CommitInfo
 from src.code_indexer.services.clean_slot_tracker import (
     CleanSlotTracker,
-    FileStatus,
-    FileData,
 )
 
 

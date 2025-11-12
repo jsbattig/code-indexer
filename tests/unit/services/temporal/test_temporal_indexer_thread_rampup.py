@@ -21,7 +21,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch, call
+from unittest.mock import Mock, patch
 
 from src.code_indexer.services.temporal.temporal_indexer import TemporalIndexer
 from src.code_indexer.services.temporal.models import CommitInfo

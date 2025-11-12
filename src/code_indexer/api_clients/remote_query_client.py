@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 from .base_client import CIDXRemoteAPIClient, APIClientError, AuthenticationError
 
 # Import server model for consistency
-from ..server.app import QueryResultItem
+from ..server.models.api_models import QueryResultItem
 
 
 class QueryExecutionError(APIClientError):

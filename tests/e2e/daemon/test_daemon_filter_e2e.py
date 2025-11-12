@@ -5,10 +5,6 @@ Tests verify that daemon mode correctly applies filters when querying,
 ensuring exclude-path, language, and other filters work as expected.
 """
 
-import pytest
-from pathlib import Path
-import tempfile
-import shutil
 import subprocess
 import time
 

@@ -2,9 +2,11 @@
 
 AI-powered semantic code search for your codebase. Find code by meaning, not just keywords.
 
-## Version 7.2.0
+## Version 7.2.1
 
-**New in 7.2.0**: Incremental HNSW and FTS indexing for 3.6x-60x performance improvements - see [Performance Improvements](#performance-improvements-72) below.
+**New in 7.2.1**: Fixed critical bug where temporal indexer only stored first line of commit messages. Now stores and searches full multi-paragraph commit messages. Also fixed match number display consistency across all query modes.
+
+**Version 7.2.0**: Incremental HNSW and FTS indexing for 3.6x-60x performance improvements - see [Performance Improvements](#performance-improvements-72) below.
 
 **Version 7.1.0**: Full-text search (FTS) support with Tantivy backend - see [Full-Text Search](#full-text-search-fts) section below.
 

@@ -71,6 +71,7 @@ from .models.api_models import (
     ActivatedRepositorySummary,
     AvailableRepositorySummary,
     RecentActivity,
+    TemporalIndexOptions,
 )
 from .models.repository_discovery import (
     RepositoryDiscoveryResponse,
@@ -348,6 +349,8 @@ class AddGoldenRepoRequest(BaseModel):
     description: Optional[str] = Field(
         default=None, max_length=500, description="Optional repository description"
     )
+    enable_temporal: bool = False
+    temporal_options: Optional["TemporalIndexOptions"] = None
 
     @field_validator("repo_url")
     @classmethod
@@ -665,23 +668,8 @@ class SemanticQueryRequest(BaseModel):
         return validated_extensions
 
 
-class QueryResultItem(BaseModel):
-    """Individual query result item."""
-
-    file_path: str
-    line_number: int
-    code_snippet: str
-    similarity_score: float
-    repository_alias: str
-
-    # Universal timestamp fields for staleness detection
-    file_last_modified: Optional[float] = Field(
-        None,
-        description="Unix timestamp when file was last modified (None if stat failed)",
-    )
-    indexed_timestamp: Optional[float] = Field(
-        None, description="Unix timestamp when file was indexed"
-    )
+# Import QueryResultItem from api_models (re-exported for backward compatibility)
+from .models.api_models import QueryResultItem
 
 
 class QueryMetadata(BaseModel):
@@ -761,6 +749,8 @@ class RepositoryDetailsResponse(BaseModel):
     file_count: int
     index_size: int
     last_updated: str
+    enable_temporal: bool = False
+    temporal_status: Optional[Dict[str, Any]] = None
 
 
 class RepositoryListResponse(BaseModel):
@@ -2313,14 +2303,25 @@ def create_app() -> FastAPI:
         """
         try:
             # Submit background job for adding golden repo
+            func_kwargs = {
+                "repo_url": repo_data.repo_url,
+                "alias": repo_data.alias,
+                "default_branch": repo_data.default_branch,
+                "description": repo_data.description,
+                "enable_temporal": repo_data.enable_temporal,
+            }
+
+            # Add temporal_options if provided
+            if repo_data.temporal_options:
+                func_kwargs["temporal_options"] = (
+                    repo_data.temporal_options.model_dump()
+                )
+
             job_id = background_job_manager.submit_job(
                 "add_golden_repo",
                 golden_repo_manager.add_golden_repo,  # type: ignore[arg-type]
-                repo_url=repo_data.repo_url,
-                alias=repo_data.alias,
-                default_branch=repo_data.default_branch,
-                description=repo_data.description,
                 submitter_username=current_user.username,
+                **func_kwargs,  # type: ignore[arg-type]
             )
             return JobResponse(
                 job_id=job_id,
@@ -5174,5 +5175,5 @@ def create_app() -> FastAPI:
 
 
 # Create app instance
-# app = create_app()  # DISABLED: Causes singleton pollution when CLI imports types
-# Server should create app explicitly when starting
+app = create_app()  # ENABLED: Required for uvicorn to load the app
+# Note: This was temporarily enabled for manual testing

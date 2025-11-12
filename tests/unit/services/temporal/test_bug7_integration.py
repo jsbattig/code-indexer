@@ -88,9 +88,21 @@ class TestBug7Integration(unittest.TestCase):
                         )
                     ]
 
-                    # Mock the chunker to return 3 chunks
-                    with patch.object(indexer.chunker, "chunk_text") as mock_chunk:
-                        mock_chunk.return_value = [
+                    # Mock the chunker to return different chunks based on input
+                    # - For file diffs: return 3 chunks (2 existing, 1 new)
+                    # - For commit messages: return 1 chunk (the commit message text)
+                    def chunk_side_effect(content, path):
+                        # If path indicates commit message, return commit message chunk
+                        if "[commit:" in str(path):
+                            return [
+                                {
+                                    "text": content,  # Return the actual commit message
+                                    "char_start": 0,
+                                    "char_end": len(content),
+                                }
+                            ]
+                        # Otherwise, return file diff chunks
+                        return [
                             {
                                 "text": "chunk0_existing",
                                 "char_start": 0,
@@ -103,6 +115,9 @@ class TestBug7Integration(unittest.TestCase):
                             },
                             {"text": "chunk2_new", "char_start": 200, "char_end": 300},
                         ]
+
+                    with patch.object(indexer.chunker, "chunk_text") as mock_chunk:
+                        mock_chunk.side_effect = chunk_side_effect
 
                         # Mock VectorCalculationManager
                         with patch(
@@ -175,43 +190,54 @@ class TestBug7Integration(unittest.TestCase):
 
                             # ASSERTIONS
 
-                            # 1. Verify only 1 API call was made (for the new chunk)
+                            # 1. Verify 2 API calls were made (commit message + new file diff chunk)
                             self.assertEqual(
                                 len(api_calls),
-                                1,
-                                f"Should make 1 API call for new chunk only, made {len(api_calls)} calls",
+                                2,
+                                f"Should make 2 API calls (commit message + new chunk), made {len(api_calls)} calls",
                             )
 
-                            # 2. Verify the API call was for chunk2_new only
-                            if api_calls:
-                                self.assertEqual(
-                                    len(api_calls[0]),
-                                    1,
-                                    "API call should contain exactly 1 chunk text",
-                                )
-                                self.assertEqual(
-                                    api_calls[0][0],
-                                    "chunk2_new",
-                                    f"API call should be for chunk2_new, got {api_calls[0][0]}",
-                                )
+                            # 2. Verify the API calls are for commit message and chunk2_new
+                            # The order might vary (commit message first or file chunk first)
+                            all_chunks = [chunk for call in api_calls for chunk in call]
+                            self.assertIn(
+                                "chunk2_new",
+                                all_chunks,
+                                f"Expected chunk2_new in API calls, got {all_chunks}",
+                            )
+                            self.assertIn(
+                                "Test commit",
+                                all_chunks,
+                                f"Expected commit message in API calls, got {all_chunks}",
+                            )
 
-                            # 3. Verify only 1 point was upserted (for chunk2)
+                            # 3. Verify 2 points were upserted (commit message + chunk2)
                             self.assertEqual(
                                 len(upserted_points),
-                                1,
-                                f"Should upsert 1 point, upserted {len(upserted_points)}",
+                                2,
+                                f"Should upsert 2 points (commit message + file diff), upserted {len(upserted_points)}",
                             )
 
-                            # 4. Verify the point ID uses the correct original index (:2)
-                            if upserted_points:
-                                point_id = upserted_points[0]["id"]
+                            # 4. Verify one point ID uses the correct original index (:2) for file diff
+                            file_diff_points = [
+                                p for p in upserted_points
+                                if p["payload"].get("type") != "commit_message"
+                            ]
+                            self.assertEqual(
+                                len(file_diff_points),
+                                1,
+                                "Should have 1 file diff point",
+                            )
+                            if file_diff_points:
+                                point_id = file_diff_points[0]["id"]
                                 self.assertTrue(
                                     point_id.endswith(":2"),
-                                    f"Point ID should end with :2, got {point_id}",
+                                    f"File diff point ID should end with :2, got {point_id}",
                                 )
 
                                 # 5. Verify the payload has correct chunk_index
-                                chunk_index = upserted_points[0]["payload"][
+                                # Use file_diff_points[0] not upserted_points[0] since order may vary
+                                chunk_index = file_diff_points[0]["payload"][
                                     "chunk_index"
                                 ]
                                 self.assertEqual(

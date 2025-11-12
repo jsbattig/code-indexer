@@ -818,9 +818,9 @@ def _display_fts_results(
         line = result.get("line", 0)
         column = result.get("column", 0)
 
-        # Quiet mode: just print file:line:column
+        # Quiet mode: print match number with file:line:column
         if quiet:
-            console.print(f"{path}:{line}:{column}")
+            console.print(f"{i}. {path}:{line}:{column}")
             continue
 
         # Full mode: rich formatting with readable position
@@ -942,13 +942,13 @@ def _display_semantic_results(
             file_path_with_lines = file_path
 
         if quiet:
-            # Quiet mode - minimal output: score, staleness, path with line numbers
+            # Quiet mode - minimal output: match number, score, staleness, path with line numbers
             if staleness_indicator:
                 console.print(
-                    f"{score:.3f} {staleness_indicator} {file_path_with_lines}"
+                    f"{i}. {score:.3f} {staleness_indicator} {file_path_with_lines}"
                 )
             else:
-                console.print(f"{score:.3f} {file_path_with_lines}")
+                console.print(f"{i}. {score:.3f} {file_path_with_lines}")
             if content:
                 # Show full content with line numbers in quiet mode (no truncation)
                 content_lines = content.split("\n")
@@ -973,8 +973,8 @@ def _display_semantic_results(
             git_available = payload.get("git_available", False)
             project_id = payload.get("project_id", "unknown")
 
-            # Create header with git info and line numbers
-            header = f"📄 File: {file_path_with_lines}"
+            # Create header with match number, git info and line numbers
+            header = f"{i}. 📄 File: {file_path_with_lines}"
             if language != "unknown":
                 header += f" | 🏷️  Language: {language}"
             header += f" | 📊 Score: {score:.3f}"
@@ -1510,8 +1510,8 @@ def _display_hybrid_results(
                 file_path_with_lines = file_path
 
             if quiet:
-                # Quiet mode - minimal output
-                console.print(f"{score:.3f} {file_path_with_lines}")
+                # Quiet mode - minimal output with match number
+                console.print(f"{i}. {score:.3f} {file_path_with_lines}")
                 if content:
                     # Show content with line numbers
                     content_lines = content.split("\n")
@@ -1798,9 +1798,9 @@ def cli(
     exception_logger = ExceptionLogger.initialize(project_root=Path.cwd(), mode="cli")
     exception_logger.install_thread_exception_hook()
 
-    # TEMPORARY: Enable DEBUG logging for manual testing
+    # Configure logging at WARNING level for clean CLI output
     logging.basicConfig(
-        level=logging.DEBUG, format="%(levelname)s:%(name)s:%(message)s"
+        level=logging.WARNING, format="%(levelname)s:%(name)s:%(message)s"
     )
 
     # Configure logging to suppress noisy third-party messages
@@ -2503,12 +2503,18 @@ def init(
     type=int,
     help="Update cache TTL in minutes for daemon mode",
 )
+@click.option(
+    "--set-diff-context",
+    type=int,
+    help="Set default diff context lines for temporal indexing (0-50, default: 5)",
+)
 @click.pass_context
 def config(
     ctx,
     show: bool,
     daemon: Optional[bool],
     daemon_ttl: Optional[int],
+    set_diff_context: Optional[int],
 ):
     """Manage repository configuration.
 
@@ -2549,7 +2555,7 @@ def config(
     # Handle --show
     if show:
         try:
-            _ = config_manager.load()
+            config = config_manager.load()
             daemon_config = config_manager.get_daemon_config()
 
             console.print()
@@ -2576,6 +2582,23 @@ def config(
                 # Show socket path
                 socket_path = config_manager.get_socket_path()
                 console.print(f"  Socket Path:    {socket_path}")
+
+            console.print()
+
+            # Temporal indexing configuration
+            console.print("[bold cyan]Temporal Indexing[/bold cyan]")
+            console.print("─" * 50)
+            console.print()
+
+            if hasattr(config, "temporal") and config.temporal:
+                diff_context = config.temporal.diff_context_lines
+                console.print(f"  Diff Context:   {diff_context} lines", end="")
+                if diff_context == 5:
+                    console.print(" (default)", style="dim")
+                else:
+                    console.print(" (custom)", style="yellow")
+            else:
+                console.print("  Diff Context:   5 lines (default)", style="dim")
 
             console.print()
             return 0
@@ -2614,6 +2637,34 @@ def config(
             sys.exit(1)
         except Exception as e:
             console.print(f"❌ Failed to update daemon TTL: {e}", style="red")
+            sys.exit(1)
+
+    if set_diff_context is not None:
+        try:
+            # Validate range
+            if set_diff_context < 0 or set_diff_context > 50:
+                console.print(
+                    f"❌ Invalid diff-context {set_diff_context}. Valid range: 0-50",
+                    style="red",
+                )
+                sys.exit(1)
+
+            # Load config, update temporal settings, and save
+            from .config import TemporalConfig
+
+            config = config_manager.load()
+            if not hasattr(config, "temporal") or config.temporal is None:
+                config.temporal = TemporalConfig(diff_context_lines=set_diff_context)
+            else:
+                config.temporal.diff_context_lines = set_diff_context
+            config_manager.save(config)
+
+            console.print(
+                f"✅ Diff context set to {set_diff_context} lines", style="green"
+            )
+            update_performed = True
+        except Exception as e:
+            console.print(f"❌ Failed to update diff-context: {e}", style="red")
             sys.exit(1)
 
     # If no operations performed, show help message
@@ -3157,6 +3208,13 @@ def validate_index_flags(ctx, param, value):
     type=str,
     help="Index commits since date (YYYY-MM-DD format)",
 )
+@click.option(
+    "--diff-context",
+    type=int,
+    default=None,
+    help="Number of context lines for git diffs (0-50, default: 5). "
+    "Higher values improve search quality but increase storage.",
+)
 @click.pass_context
 @require_mode("local")
 def index(
@@ -3174,6 +3232,7 @@ def index(
     all_branches: bool,
     max_commits: Optional[int],
     since_date: Optional[str],
+    diff_context: Optional[int],
 ):
     """Index the codebase for semantic search.
 
@@ -3255,6 +3314,36 @@ def index(
     """
     config_manager = ctx.obj["config_manager"]
 
+    # Validate --diff-context flag (must happen before daemon delegation)
+    if diff_context is not None and not index_commits:
+        console.print(
+            "❌ Cannot use --diff-context without --index-commits",
+            style="red",
+        )
+        sys.exit(1)
+
+    if diff_context is not None:
+        # Validate diff context value
+        if diff_context < 0 or diff_context > 50:
+            console.print(
+                f"❌ Invalid diff-context {diff_context}. Valid range: 0-50",
+                style="red",
+            )
+            console.print(
+                "💡 Recommended values: 0 (minimal), 5 (default), 10 (maximum quality)",
+                style="yellow",
+            )
+            sys.exit(1)
+
+        if diff_context > 20:
+            console.print(
+                f"⚠️  Large diff context ({diff_context} lines) will significantly increase storage",
+                style="yellow",
+            )
+            console.print(
+                "💡 Recommended range: 3-10 lines for best balance", style="dim"
+            )
+
     # Check if daemon mode is enabled and delegate accordingly
     config = config_manager.load()
     daemon_enabled = config.daemon and config.daemon.enabled
@@ -3288,6 +3377,7 @@ def index(
             all_branches=all_branches,
             max_commits=max_commits,
             since_date=since_date,
+            diff_context=diff_context,
         )
         sys.exit(exit_code)
     else:
@@ -3342,6 +3432,36 @@ def index(
             )
             sys.exit(1)
 
+        # Validate --diff-context flag
+        if diff_context is not None and not index_commits:
+            console.print(
+                "❌ Cannot use --diff-context without --index-commits",
+                style="red",
+            )
+            sys.exit(1)
+
+        if diff_context is not None:
+            # Validate diff context value
+            if diff_context < 0 or diff_context > 50:
+                console.print(
+                    f"❌ Invalid diff-context {diff_context}. Valid range: 0-50",
+                    style="red",
+                )
+                console.print(
+                    "💡 Recommended values: 0 (minimal), 5 (default), 10 (maximum quality)",
+                    style="yellow",
+                )
+                sys.exit(1)
+
+            if diff_context > 20:
+                console.print(
+                    f"⚠️  Large diff context ({diff_context} lines) will significantly increase storage",
+                    style="yellow",
+                )
+                console.print(
+                    "💡 Recommended range: 3-10 lines for best balance", style="dim"
+                )
+
         # Handle --index-commits flag (standalone mode only - daemon delegates above)
         if index_commits:
             try:
@@ -3350,6 +3470,19 @@ def index(
                 from .storage.filesystem_vector_store import FilesystemVectorStore
 
                 config = config_manager.load()
+
+                # Apply diff_context override if provided
+                if diff_context is not None:
+                    from .config import TemporalConfig
+
+                    if not hasattr(config, "temporal") or config.temporal is None:
+                        config.temporal = TemporalConfig(
+                            diff_context_lines=diff_context
+                        )
+                    else:
+                        config.temporal.diff_context_lines = diff_context
+                    # Update config manager so TemporalIndexer sees the override
+                    config_manager._config = config
 
                 # Initialize vector store
                 index_dir = config.codebase_dir / ".code-indexer" / "index"
@@ -4577,10 +4710,11 @@ def _display_file_chunk_match(result, index, temporal_service):
     console.print(f"   Author: {author_name} <{author_email}>")
 
     # Display full commit message (NOT truncated)
+    # Bug #4 fix: Use markup=False to prevent Rich from interpreting special chars
     message_lines = commit_message.split("\n")
-    console.print(f"   Message: {message_lines[0]}")
+    console.print(f"   Message: {message_lines[0]}", markup=False)
     for msg_line in message_lines[1:]:
-        console.print(f"            {msg_line}")
+        console.print(f"            {msg_line}", markup=False)
 
     console.print()
 
@@ -4599,14 +4733,15 @@ def _display_file_chunk_match(result, index, temporal_service):
     # Suppress line numbers for them to avoid confusion
     show_line_numbers = diff_type != "modified"
 
+    # Bug #4 fix: Use markup=False to prevent Rich from interpreting special chars in diff content
     if show_line_numbers:
         for i, line in enumerate(lines):
             line_num = line_start + i
-            console.print(f"{line_num:4d}  {line}")
+            console.print(f"{line_num:4d}  {line}", markup=False)
     else:
         # Modified diff - no line numbers (diff markers are self-documenting)
         for line in lines:
-            console.print(f"  {line}")
+            console.print(f"  {line}", markup=False)
 
 
 def _display_commit_message_match(result, index, temporal_service):
@@ -4631,9 +4766,10 @@ def _display_commit_message_match(result, index, temporal_service):
     console.print()
 
     # Display matching section of commit message
+    # Bug #4 fix: Use markup=False to prevent Rich from interpreting special chars
     console.print("   Message (matching section):")
     for line in result.content.split("\n"):
-        console.print(f"   {line}")
+        console.print(f"   {line}", markup=False)
     console.print()
 
     # Story 2: No file changes available from diff-based indexing
@@ -4775,6 +4911,11 @@ def display_temporal_results(results, temporal_service):
     type=str,
     help="Filter by commit author name or email (requires temporal index). Example: --author 'John Doe'",
 )
+@click.option(
+    "--chunk-type",
+    type=click.Choice(["commit_message", "commit_diff"], case_sensitive=False),
+    help="Filter by chunk type: commit_message (commit descriptions) or commit_diff (code changes). Requires --time-range or --time-range-all.",
+)
 # --show-unchanged removed: Story 2 - all temporal results are changes now
 @click.pass_context
 @require_mode("local", "remote", "proxy")
@@ -4801,6 +4942,7 @@ def query(
     time_range_all: bool,
     diff_types: tuple,
     author: Optional[str],
+    chunk_type: Optional[str],
 ):
     """Search the indexed codebase using semantic similarity.
 
@@ -4871,12 +5013,31 @@ def query(
     Results show file paths, matched content, and similarity scores.
     Filter conflicts are automatically detected and warnings are displayed.
     """
+    # AC5: Validate --chunk-type requires temporal flags (Story #476)
+    if chunk_type and not (time_range or time_range_all):
+        console = Console()
+        console.print(
+            "[red]❌ Error: --chunk-type requires --time-range or --time-range-all[/red]"
+        )
+        console.print()
+        console.print("Usage examples:")
+        console.print(
+            "  [cyan]cidx query 'bug fix' --time-range-all --chunk-type commit_message[/cyan]"
+        )
+        console.print(
+            "  [cyan]cidx query 'refactor' --time-range 2024-01-01..2024-12-31 --chunk-type commit_diff[/cyan]"
+        )
+        sys.exit(1)
+
     # Get mode information from context
     mode = ctx.obj.get("mode", "uninitialized")
     project_root = ctx.obj.get("project_root")
 
     # Import Path - needed by all query modes
     from pathlib import Path
+
+    # Initialize console for output (needed by multiple code paths)
+    console = Console()
 
     # Check daemon delegation for local mode (Story 2.3 + Story 1: Temporal Support)
     # CRITICAL: Skip daemon delegation if standalone flag is set (prevents recursive loop)
@@ -4912,6 +5073,7 @@ def query(
                             exclude_path=exclude_paths,
                             min_score=min_score,
                             accuracy=accuracy,
+                            chunk_type=chunk_type,
                             quiet=quiet,
                         )
                         sys.exit(exit_code)
@@ -5077,6 +5239,7 @@ def query(
                 exclude_path=list(exclude_paths) if exclude_paths else None,
                 diff_types=list(diff_types) if diff_types else None,
                 author=author,
+                chunk_type=chunk_type,  # AC3/AC4: Filter by chunk type (Story #476)
             )
 
             # Display results
@@ -5098,12 +5261,50 @@ def query(
             if not quiet:
                 display_temporal_results(temporal_results, temporal_service)
             else:
-                # Quiet mode: minimal output
-                for temporal_result in temporal_results.results:
-                    file_path = temporal_result.metadata.get(
-                        "file_path", "[Commit Message]"
-                    )
-                    console.print(f"{temporal_result.score:.3f} {file_path}")
+                # Quiet mode: show match numbers and commit hash (not placeholder)
+                # Bug #4 fix: Use markup=False to prevent Rich from interpreting special chars
+                for index, temporal_result in enumerate(
+                    temporal_results.results, start=1
+                ):
+                    # Use type field to determine display (Bug #3 fix)
+                    # Commit messages have type="commit_message", diffs have type="commit_diff"
+                    match_type = temporal_result.metadata.get("type", "commit_diff")
+                    if match_type == "commit_message":
+                        # Extract ALL commit metadata
+                        commit_hash = temporal_result.metadata.get(
+                            "commit_hash", "unknown"
+                        )
+                        temporal_ctx = getattr(temporal_result, "temporal_context", {})
+                        commit_date = temporal_ctx.get(
+                            "commit_date",
+                            temporal_result.metadata.get("commit_date", "Unknown"),
+                        )
+                        author_name = temporal_ctx.get(
+                            "author_name",
+                            temporal_result.metadata.get("author_name", "Unknown"),
+                        )
+                        author_email = temporal_result.metadata.get(
+                            "author_email", "unknown@example.com"
+                        )
+
+                        # Header line with ALL metadata
+                        console.print(
+                            f"{index}. {temporal_result.score:.3f} [Commit {commit_hash[:7]}] ({commit_date}) {author_name} <{author_email}>",
+                            markup=False,
+                        )
+
+                        # Display ENTIRE commit message content (all lines, indented)
+                        for line in temporal_result.content.split("\n"):
+                            console.print(f"   {line}", markup=False)
+
+                        # Blank line between results
+                        console.print()
+                    else:
+                        # For commit_diff, use the file_path attribute (populated from "path" field)
+                        console.print(
+                            f"{index}. {temporal_result.score:.3f} {temporal_result.file_path}",
+                            markup=False,
+                        )
 
             sys.exit(0)
 
@@ -5417,7 +5618,7 @@ def query(
             from typing import cast
 
             from .remote.query_execution import execute_remote_query
-            from .server.app import QueryResultItem
+            from .server.models.api_models import QueryResultItem
 
             # NOTE: Remote query API currently supports single language only
             # Use first language from tuple, ignore additional languages for remote mode
@@ -6838,7 +7039,97 @@ def _status_impl(ctx, force_docker: bool):
 
                 # Add index files status if available
                 if fs_index_files_display:
-                    table.add_row("Index Files", "📊", fs_index_files_display)
+                    table.add_row("Index Files", "", fs_index_files_display)
+
+                # Check for temporal index and display if exists
+                try:
+                    temporal_collection_name = "code-indexer-temporal"
+                    if fs_store.collection_exists(temporal_collection_name):
+                        # Read temporal metadata
+                        temporal_dir = index_path / temporal_collection_name
+                        temporal_meta_path = temporal_dir / "temporal_meta.json"
+
+                        if temporal_meta_path.exists():
+                            import json
+
+                            with open(temporal_meta_path) as f:
+                                temporal_meta = json.load(f)
+
+                            # Extract metadata
+                            total_commits = temporal_meta.get("total_commits", 0)
+                            files_processed = temporal_meta.get("files_processed", 0)
+                            indexed_branches = temporal_meta.get("indexed_branches", [])
+                            indexed_at = temporal_meta.get("indexed_at", "")
+
+                            # Get vector count from collection
+                            vector_count = fs_store.count_points(
+                                temporal_collection_name
+                            )
+
+                            # Calculate storage size - include ALL files in temporal directory
+                            # Use du command for performance (30x faster than iterating files)
+                            import subprocess
+
+                            total_size_bytes = 0
+                            if temporal_dir.exists():
+                                try:
+                                    result = subprocess.run(
+                                        ["du", "-sb", str(temporal_dir)],
+                                        capture_output=True,
+                                        text=True,
+                                        timeout=5,
+                                    )
+                                    total_size_bytes = int(result.stdout.split()[0])
+                                except FileNotFoundError:
+                                    # Fallback to iteration if du command unavailable
+                                    for file_path in temporal_dir.rglob("*"):
+                                        if file_path.is_file():
+                                            total_size_bytes += file_path.stat().st_size
+                            total_size_mb = total_size_bytes / (1024 * 1024)
+
+                            # Format date
+                            if indexed_at:
+                                from datetime import datetime
+
+                                dt = datetime.fromisoformat(
+                                    indexed_at.replace("Z", "+00:00")
+                                )
+                                formatted_date = dt.strftime("%Y-%m-%d %H:%M")
+                            else:
+                                formatted_date = "Unknown"
+
+                            # Format branch list
+                            branch_list = (
+                                ", ".join(indexed_branches)
+                                if indexed_branches
+                                else "None"
+                            )
+
+                            # Build details string
+                            temporal_status = "✅ Available"
+                            temporal_details = (
+                                f"{total_commits} commits | {files_processed:,} files changed | {vector_count:,} vectors\n"
+                                f"Branches: {branch_list}\n"
+                                f"Storage: {total_size_mb:.1f} MB | Last indexed: {formatted_date}"
+                            )
+                            table.add_row(
+                                "Temporal Index", temporal_status, temporal_details
+                            )
+                        else:
+                            # Temporal collection exists but no metadata file
+                            temporal_status = "⚠️ Incomplete"
+                            temporal_details = "Collection exists but missing metadata"
+                            table.add_row(
+                                "Temporal Index", temporal_status, temporal_details
+                            )
+                except Exception as e:
+                    # Don't fail status command if temporal check fails, but log the error
+                    logger.warning(f"Failed to check temporal index status: {e}")
+                    table.add_row(
+                        "Temporal Index",
+                        "⚠️ Error",
+                        f"Failed to read temporal index information: {str(e)[:100]}",
+                    )
 
             except Exception as e:
                 table.add_row("Vector Storage", "❌ Error", str(e))
@@ -7271,7 +7562,7 @@ def _status_impl(ctx, force_docker: bool):
             index_status = "❌ Not Found"
             index_details = "Run 'index' command"
 
-        table.add_row("Index", index_status, index_details)
+        table.add_row("Semantic Index", index_status, index_details)
 
         # Add git repository status if available
         try:

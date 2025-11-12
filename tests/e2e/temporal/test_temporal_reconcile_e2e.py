@@ -8,7 +8,6 @@ import os
 import pytest
 import subprocess
 import time
-from pathlib import Path
 
 
 class TestTemporalReconcileE2E:

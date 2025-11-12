@@ -4,7 +4,6 @@ Tests that daemon queries return staleness indicators matching standalone mode b
 """
 
 import time
-from pathlib import Path
 
 import pytest
 

@@ -3,14 +3,12 @@
 Tests verify full stack integration: daemon start → index commits → query → verify results.
 """
 
-import json
 import os
 import shutil
 import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import Optional
 
 import pytest
 

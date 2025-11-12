@@ -11,8 +11,7 @@ pattern instead of blocking on terminal I/O.
 import queue
 import threading
 import time
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -234,8 +233,6 @@ class TestAsyncProgressCallback:
         Expected to FAIL initially: No warning logged.
         """
         from rich.console import Console
-        from unittest.mock import Mock
-        import logging
 
         console = Console()
         manager = RichLiveProgressManager(console)

@@ -4,13 +4,10 @@ Tests for tracking changed vectors during indexing sessions and
 applying incremental HNSW updates at the end of indexing cycles.
 """
 
-import json
 import time
-from pathlib import Path
 from typing import List, Dict, Any
 
 import numpy as np
-import pytest
 
 from src.code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 

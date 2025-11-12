@@ -4,8 +4,6 @@ Tests that ExceptionLogger is properly initialized when daemon service starts
 and that exceptions are logged to .code-indexer/error_*.log files.
 """
 
-import pytest
-from pathlib import Path
 
 
 class TestDaemonExceptionLoggerIntegration:

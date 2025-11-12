@@ -107,12 +107,17 @@ class TestBlobDeduplicationLogic:
                         )
                         mock_manager.embedding_provider = mock_embedding_provider
 
+                        # Track WHICH chunks are vectorized (file diffs vs commit messages)
+                        vectorized_chunks = []
+
                         def track_vectorization(chunk_texts, metadata):
                             nonlocal vectorization_called
                             vectorization_called = True
+                            # Store chunk texts to verify what's being vectorized
+                            vectorized_chunks.extend(chunk_texts)
                             mock_future = MagicMock()
                             mock_result = MagicMock()
-                            mock_result.embeddings = [[0.1] * 1024]
+                            mock_result.embeddings = [[0.1] * 1024 for _ in chunk_texts]
                             mock_result.error = None
                             mock_future.result.return_value = mock_result
                             return mock_future
@@ -127,8 +132,18 @@ class TestBlobDeduplicationLogic:
                                 commits, mock_provider, mock_manager
                             )
 
-                        # Verify: Since the blob is already in the registry,
-                        # vectorization should NOT be called
-                        assert (
-                            not vectorization_called
-                        ), "Vectorization should not be called for blobs already in the registry"
+                        # Verify: Since the blob is already in the registry, FILE DIFF
+                        # vectorization should NOT happen, BUT commit message should still be indexed
+                        assert vectorization_called, "Commit message should always be vectorized"
+
+                        # Verify that ONLY commit message was vectorized (not file diff)
+                        # The commit message should contain "Initial commit"
+                        assert len(vectorized_chunks) > 0, "No chunks were vectorized"
+                        # Check that file diff content "+print('hello')" was NOT vectorized
+                        assert not any(
+                            "+print('hello')" in chunk for chunk in vectorized_chunks
+                        ), "File diff should not be vectorized (blob already in registry)"
+                        # Check that commit message WAS vectorized
+                        assert any(
+                            "Initial commit" in chunk for chunk in vectorized_chunks
+                        ), "Commit message should be vectorized even if blob is in registry"

@@ -43,7 +43,23 @@ def parse_query_args(args: List[str]) -> Dict[str, Any]:
         - is_semantic: Semantic mode enabled
         - limit: Result limit
         - filters: Language/path filters
+
+    Raises:
+        ValueError: If unknown flag is encountered
     """
+    # Define valid flags for validation
+    VALID_FLAGS = {
+        "--fts",
+        "--semantic",
+        "--quiet",
+        "--limit",
+        "--language",
+        "--path-filter",
+        "--exclude-language",
+        "--exclude-path",
+        "--snippet-lines",
+    }
+
     result: Dict[str, Any] = {
         "query_text": "",
         "is_fts": False,
@@ -58,6 +74,10 @@ def parse_query_args(args: List[str]) -> Dict[str, Any]:
         arg = args[i]
 
         if arg.startswith("--"):
+            # Validate flag is known
+            if arg not in VALID_FLAGS:
+                raise ValueError(f"Unknown flag: {arg}")
+
             # Flag arguments
             if arg == "--fts":
                 result["is_fts"] = True
@@ -83,7 +103,6 @@ def parse_query_args(args: List[str]) -> Dict[str, Any]:
             elif arg == "--snippet-lines" and i + 1 < len(args):
                 result["filters"]["snippet_lines"] = int(args[i + 1])
                 i += 1
-            # Skip other flags for now
         else:
             # Query text (first non-flag argument)
             if not result["query_text"]:
@@ -99,7 +118,8 @@ def parse_query_args(args: List[str]) -> Dict[str, Any]:
 
 
 def _display_results(
-    results: Any, console: Console, timing_info: Optional[Dict[str, Any]] = None
+    results: Any, console: Console, timing_info: Optional[Dict[str, Any]] = None,
+    quiet: bool = False
 ) -> None:
     """Display query results by delegating to shared display functions (DRY principle).
 
@@ -114,6 +134,7 @@ def _display_results(
         results: Query results from daemon (FTS or semantic format)
         console: Rich console for output
         timing_info: Optional timing information for performance display (semantic only)
+        quiet: Whether to use quiet output mode (default: False)
     """
     # Import shared display functions (SINGLE source of truth)
     from .cli import _display_semantic_results, _display_fts_results
@@ -132,14 +153,14 @@ def _display_results(
         _display_fts_results(
             results=results,
             console=console,
-            quiet=False,  # Daemon mode always shows full output
+            quiet=quiet,  # Pass quiet flag from caller
         )
     else:
         # Semantic results: display with semantic-specific formatting
         _display_semantic_results(
             results=results,
             console=console,
-            quiet=False,  # Daemon mode always shows full output
+            quiet=quiet,  # Pass quiet flag from caller
             timing_info=timing_info,
             current_display_branch=None,  # Auto-detect in shared function
         )
@@ -164,6 +185,16 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
     command = argv[1] if len(argv) > 1 else ""
     args = argv[2:] if len(argv) > 2 else []
 
+    # CRITICAL: Validate arguments BEFORE attempting daemon connection
+    # This ensures typos and invalid flags are caught immediately
+    if command == "query":
+        try:
+            parsed = parse_query_args(args)
+        except ValueError as e:
+            console.print(f"[red]❌ Error: {e}[/red]")
+            console.print("[dim]Try 'cidx query --help' for valid options[/dim]")
+            return 2  # Exit code 2 for usage errors (matches Click)
+
     # Get socket path
     socket_path = get_socket_path(config_path)
 
@@ -185,8 +216,7 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
     try:
         # Route based on command
         if command == "query":
-            # Parse query arguments
-            parsed = parse_query_args(args)
+            # Arguments already parsed and validated above
 
             query_text = parsed["query_text"]
             is_fts = parsed["is_fts"]
@@ -266,8 +296,8 @@ def execute_via_daemon(argv: List[str], config_path: Path) -> int:
                 result = response.get("results", [])
                 timing_info = response.get("timing", None)
 
-            # Display results with full formatting including timing
-            _display_results(result, console, timing_info=timing_info)
+            # Display results with full formatting including timing and quiet flag
+            _display_results(result, console, timing_info=timing_info, quiet=is_quiet)
 
         elif command == "start":
             # Start daemon (should already be handled by cli_daemon_lifecycle)

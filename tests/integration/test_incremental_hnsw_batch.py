@@ -3,7 +3,6 @@
 Tests end-to-end scenarios with `cidx index` and `cidx temporal index` commands.
 """
 
-import json
 import os
 import subprocess
 import time

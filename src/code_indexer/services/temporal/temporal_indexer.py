@@ -111,9 +111,12 @@ class TemporalIndexer:
                 # Skip override filtering if initialization fails (e.g., mock objects)
                 pass
 
-        # Initialize components
+        # Initialize components with diff_context_lines from config
+        diff_context_lines = self.config.temporal.diff_context_lines
         self.diff_scanner = TemporalDiffScanner(
-            self.codebase_dir, override_filter_service=override_filter_service
+            self.codebase_dir,
+            override_filter_service=override_filter_service,
+            diff_context_lines=diff_context_lines,
         )
         self.chunker = FixedSizeChunker(self.config)
 
@@ -389,7 +392,10 @@ class TemporalIndexer:
         # Load last indexed commit for incremental indexing
         last_indexed_commit = self._load_last_indexed_commit()
 
-        cmd = ["git", "log", "--format=%H|%at|%an|%ae|%s|%P", "--reverse"]
+        # Use null byte delimiters to prevent pipe characters in commit messages from breaking parsing
+        # Use %B (full body) instead of %s (subject only) to capture multi-paragraph commit messages
+        # Use record separator (%x1e) at end of each record to enable correct parsing with multi-line messages
+        cmd = ["git", "log", "--format=%H%x00%at%x00%an%x00%ae%x00%B%x00%P%x1e", "--reverse"]
 
         # If we have a last indexed commit, only get commits after it
         if last_indexed_commit:
@@ -418,18 +424,23 @@ class TemporalIndexer:
         )
 
         commits = []
-        for line in result.stdout.strip().split("\n"):
-            if line:
-                parts = line.split("|")
+        # Split by record separator (%x1e) to handle multi-line commit messages correctly
+        for record in result.stdout.strip().split("\x1e"):
+            if record.strip():
+                # Use null-byte delimiter to match git format (%x00)
+                # This prevents pipe characters in commit messages from breaking parsing
+                parts = record.split("\x00")
                 if len(parts) >= 6:
+                    # Strip trailing newline from message body (%B includes trailing newline)
+                    message = parts[4].strip()
                     commits.append(
                         CommitInfo(
                             hash=parts[0],
                             timestamp=int(parts[1]),
                             author_name=parts[2],
                             author_email=parts[3],
-                            message=parts[4],
-                            parent_hashes=parts[5],
+                            message=message,
+                            parent_hashes=parts[5].strip(),  # Strip newlines from parent hashes too
                         )
                     )
 
@@ -576,6 +587,11 @@ class TemporalIndexer:
 
                     # Get diffs (potentially slow git operation)
                     diffs = self.diff_scanner.get_diffs_for_commit(commit.hash)
+
+                    # AC1: Index commit message as searchable entity (Story #476)
+                    # This creates commit_message chunks that can be searched alongside code diffs
+                    project_id = self.file_identifier._get_project_id()
+                    self._index_commit_message(commit, project_id, vector_manager)
 
                     # Track last file processed for THIS commit (local to this worker)
                     last_file_for_commit = Path(".")  # Default if no diffs
@@ -1181,6 +1197,9 @@ class TemporalIndexer:
             result = future.result(timeout=30)
 
             if not result.error and result.embeddings:
+                # Convert timestamp to date (YYYY-MM-DD format)
+                commit_date = datetime.fromtimestamp(commit.timestamp).strftime('%Y-%m-%d')
+
                 points = []
                 for j, (chunk, embedding) in enumerate(zip(chunks, result.embeddings)):
                     point_id = f"{project_id}:commit:{commit.hash}:{j}"
@@ -1189,6 +1208,10 @@ class TemporalIndexer:
                     payload = {
                         "type": "commit_message",  # Distinguish from file chunks
                         "commit_hash": commit.hash,
+                        "commit_timestamp": commit.timestamp,
+                        "commit_date": commit_date,
+                        "author_name": commit.author_name,
+                        "author_email": commit.author_email,
                         "chunk_index": j,
                         "char_start": chunk.get("char_start", 0),
                         "char_end": chunk.get("char_end", len(commit_msg)),
@@ -1199,6 +1222,7 @@ class TemporalIndexer:
                         "id": point_id,
                         "vector": list(embedding),
                         "payload": payload,
+                        "chunk_text": chunk["text"],
                     }
                     points.append(point)
 

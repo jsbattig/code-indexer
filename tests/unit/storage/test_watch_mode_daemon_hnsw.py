@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 import threading
 from pathlib import Path
-from unittest.mock import Mock, MagicMock
 from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
 from code_indexer.daemon.cache import CacheEntry
 
