@@ -132,14 +132,14 @@ class TestHashPhaseStaleTrackerFix:
         assert progress_manager._concurrent_files == concurrent_files
 
     def test_slot_tracker_takes_precedence_when_set(self):
-        """Test that slot_tracker is used when explicitly set (indexing phase)."""
+        """Test that concurrent_files takes precedence in daemon mode (FIXED behavior)."""
         # Setup
         console = Console()
         progress_manager = MultiThreadedProgressManager(
             console=console, live_manager=None, max_slots=4
         )
 
-        # Create slot tracker with data
+        # Create slot tracker with data (simulates RPyC proxy in daemon mode)
         slot_tracker = CleanSlotTracker(max_slots=4)
         file_data = FileData(
             filename="tracked_file.py",
@@ -149,8 +149,8 @@ class TestHashPhaseStaleTrackerFix:
         )
         slot_tracker.acquire_slot(file_data)
 
-        # Also provide concurrent_files (should be ignored)
-        concurrent_files = [{"file_path": "ignored.py", "status": "processing"}]
+        # Concurrent_files contains fresh serialized data (preferred in daemon mode)
+        concurrent_files = [{"file_path": "fresh_file.py", "status": "processing"}]
 
         progress_manager.update_complete_state(
             current=10,
@@ -163,10 +163,11 @@ class TestHashPhaseStaleTrackerFix:
             info="📊 Indexing",
         )
 
-        # Verify
+        # Verify both are stored
         assert progress_manager.slot_tracker == slot_tracker
         assert progress_manager._concurrent_files == concurrent_files
-        # Note: Display logic will use slot_tracker over concurrent_files
+        # FIXED: Display logic now prefers concurrent_files (fresh serialized data)
+        # over slot_tracker.get_concurrent_files_data() (slow RPyC proxy call)
 
     def test_phase_detection_from_info_string(self):
         """Test that phase is correctly detected from info string."""

@@ -49,8 +49,10 @@ class GoldenRepo(BaseModel):
     default_branch: str
     clone_path: str
     created_at: str
+    enable_temporal: bool = False
+    temporal_options: Optional[Dict] = None
 
-    def to_dict(self) -> Dict[str, str]:
+    def to_dict(self) -> Dict[str, Any]:
         """Convert golden repository to dictionary."""
         return {
             "alias": self.alias,
@@ -58,6 +60,8 @@ class GoldenRepo(BaseModel):
             "default_branch": self.default_branch,
             "clone_path": self.clone_path,
             "created_at": self.created_at,
+            "enable_temporal": self.enable_temporal,
+            "temporal_options": self.temporal_options,
         }
 
 
@@ -133,6 +137,8 @@ class GoldenRepoManager:
         alias: str,
         default_branch: str = "main",
         description: Optional[str] = None,
+        enable_temporal: bool = False,
+        temporal_options: Optional[Dict] = None,
     ) -> Dict[str, Any]:
         """
         Add a golden repository.
@@ -142,6 +148,8 @@ class GoldenRepoManager:
             alias: Unique alias for the repository
             default_branch: Default branch to clone (default: main)
             description: Optional description for the repository
+            enable_temporal: Enable temporal git history indexing
+            temporal_options: Temporal indexing configuration options
 
         Returns:
             Result dictionary with success status and message
@@ -172,7 +180,12 @@ class GoldenRepoManager:
             clone_path = self._clone_repository(repo_url, alias, default_branch)
 
             # Execute post-clone workflow if repository was successfully cloned
-            self._execute_post_clone_workflow(clone_path, force_init=False)
+            self._execute_post_clone_workflow(
+                clone_path,
+                force_init=False,
+                enable_temporal=enable_temporal,
+                temporal_options=temporal_options,
+            )
 
         except subprocess.CalledProcessError as e:
             raise GitOperationError(
@@ -209,6 +222,8 @@ class GoldenRepoManager:
             default_branch=default_branch,
             clone_path=clone_path,
             created_at=created_at,
+            enable_temporal=enable_temporal,
+            temporal_options=temporal_options,
         )
 
         # Store and persist
@@ -715,21 +730,26 @@ class GoldenRepoManager:
         return total_size
 
     def _execute_post_clone_workflow(
-        self, clone_path: str, force_init: bool = False
+        self,
+        clone_path: str,
+        force_init: bool = False,
+        enable_temporal: bool = False,
+        temporal_options: Optional[Dict] = None,
     ) -> None:
         """
         Execute the required workflow after successful repository cloning.
 
         The workflow includes:
         1. cidx init with voyage-ai embedding provider (with optional --force for refresh)
-        2. cidx start --force-docker
-        3. cidx status --force-docker (health check)
-        4. cidx index --force-docker
-        5. cidx stop --force-docker
+        2. cidx index (with optional temporal indexing parameters)
+
+        Note: FilesystemVectorStore is container-free, so no start/stop/status commands needed.
 
         Args:
             clone_path: Path to the cloned repository
             force_init: Whether to use --force flag with cidx init (for refresh operations)
+            enable_temporal: Whether to enable temporal indexing (git history)
+            temporal_options: Optional temporal indexing parameters (time_range, include/exclude paths, diff_context)
 
         Raises:
             GitOperationError: If any workflow step fails
@@ -743,12 +763,36 @@ class GoldenRepoManager:
         if force_init:
             init_command.append("--force")
 
+        # Build index command with optional temporal parameters
+        index_command = ["cidx", "index"]
+        if enable_temporal:
+            index_command.append("--index-commits")
+
+            if temporal_options:
+                if temporal_options.get("max_commits"):
+                    index_command.extend(
+                        ["--max-commits", str(temporal_options["max_commits"])]
+                    )
+
+                if temporal_options.get("since_date"):
+                    index_command.extend(
+                        ["--since-date", temporal_options["since_date"]]
+                    )
+
+                # Add diff-context parameter (default: 5 from model)
+                diff_context = temporal_options.get("diff_context", 5)
+                index_command.extend(["--diff-context", str(diff_context)])
+
+                # Log warning for large context values
+                if diff_context > 20:
+                    logging.warning(
+                        f"Large diff context ({diff_context} lines) will significantly "
+                        f"increase storage. Recommended range: 3-10 lines."
+                    )
+
         workflow_commands = [
             init_command,
-            ["cidx", "start", "--force-docker"],
-            ["cidx", "status", "--force-docker"],
-            ["cidx", "index"],  # index command does not support --force-docker
-            ["cidx", "stop", "--force-docker"],
+            index_command,
         ]
 
         try:
@@ -771,15 +815,18 @@ class GoldenRepoManager:
                     combined_output = result.stdout + result.stderr
 
                     # Special handling for cidx index command when no files are found to index
-                    if i == 4 and "cidx index" in " ".join(command):
-                        if "No files found to index" in combined_output:
-                            logging.warning(
-                                f"Workflow step {i}: Repository has no indexable files - this is acceptable for golden repository registration"
-                            )
-                            logging.info(
-                                f"Workflow step {i} completed with acceptable condition (no indexable files)"
-                            )
-                            continue  # This is acceptable, continue to next step
+                    # Check if this is the index command (regardless of step number)
+                    if (
+                        command_name == "index"
+                        and "No files found to index" in combined_output
+                    ):
+                        logging.warning(
+                            f"Workflow step {i}: Repository has no indexable files - this is acceptable for golden repository registration"
+                        )
+                        logging.info(
+                            f"Workflow step {i} completed with acceptable condition (no indexable files)"
+                        )
+                        continue  # This is acceptable, continue to next step
 
                     # Check for recoverable configuration conflicts
                     if command_name == "init" and self._is_recoverable_init_error(
@@ -861,13 +908,22 @@ class GoldenRepoManager:
         golden_repo = self.golden_repos[alias]
         clone_path = golden_repo.clone_path
 
+        # Read temporal configuration from existing golden repo
+        enable_temporal = golden_repo.enable_temporal
+        temporal_options = golden_repo.temporal_options
+
         try:
             # For local repositories, we can't do git pull, so just re-run workflow
             if self._is_local_path(golden_repo.repo_url):
                 logging.info(
                     f"Refreshing local repository {alias} by re-running workflow"
                 )
-                self._execute_post_clone_workflow(clone_path, force_init=True)
+                self._execute_post_clone_workflow(
+                    clone_path,
+                    force_init=True,
+                    enable_temporal=enable_temporal,
+                    temporal_options=temporal_options,
+                )
             else:
                 # For remote repositories, do git pull first
                 logging.info(f"Pulling latest changes for {alias}")
@@ -885,7 +941,12 @@ class GoldenRepoManager:
                 logging.info(f"Git pull successful for {alias}")
 
                 # Re-run the indexing workflow with force flag for refresh
-                self._execute_post_clone_workflow(clone_path, force_init=True)
+                self._execute_post_clone_workflow(
+                    clone_path,
+                    force_init=True,
+                    enable_temporal=enable_temporal,
+                    temporal_options=temporal_options,
+                )
 
             return {
                 "success": True,

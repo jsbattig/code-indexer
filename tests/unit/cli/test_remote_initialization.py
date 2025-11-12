@@ -73,9 +73,9 @@ class TestRemoteInitParameterValidation:
             assert "--username john" in result.stdout
             assert "--password" in result.stdout
 
-            # Should not create any configuration files
-            config_dir = test_dir / ".code-indexer"
-            assert not config_dir.exists()
+            # Should not create configuration file (directory may exist for error logs)
+            config_file = test_dir / ".code-indexer" / "config.json"
+            assert not config_file.exists()
 
     def test_remote_flag_without_password_fails(self):
         """Test that --remote without --password fails with clear error message."""
@@ -98,9 +98,9 @@ class TestRemoteInitParameterValidation:
                 in result.stdout
             )
 
-            # Should not create any configuration files
-            config_dir = test_dir / ".code-indexer"
-            assert not config_dir.exists()
+            # Should not create configuration file (directory may exist for error logs)
+            config_file = test_dir / ".code-indexer" / "config.json"
+            assert not config_file.exists()
 
     def test_remote_flag_without_credentials_fails(self):
         """Test that --remote without both --username and --password fails."""
@@ -119,9 +119,9 @@ class TestRemoteInitParameterValidation:
                 in result.stdout
             )
 
-            # Should not create any configuration files
-            config_dir = test_dir / ".code-indexer"
-            assert not config_dir.exists()
+            # Should not create configuration file (directory may exist for error logs)
+            config_file = test_dir / ".code-indexer" / "config.json"
+            assert not config_file.exists()
 
     def test_remote_initialization_help_shows_parameters(self):
         """Test that help shows remote, username, and password parameters."""

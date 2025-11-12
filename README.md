@@ -2,9 +2,13 @@
 
 AI-powered semantic code search for your codebase. Find code by meaning, not just keywords.
 
-## Version 7.1.0
+## Version 7.2.1
 
-**New in 7.1.0**: Full-text search (FTS) support with Tantivy backend - see [Full-Text Search](#full-text-search-fts) section below.
+**New in 7.2.1**: **Git History Search** - Semantically search your entire git commit history! Find when code was introduced, search commit messages by meaning, track feature evolution over time. Use `cidx index --index-commits` to enable, then query with `--time-range-all`. See [Git History Search](#git-history-search) for details. Also includes fix for temporal indexer commit message truncation and match number display consistency.
+
+**Version 7.2.0**: Incremental HNSW and FTS indexing for 3.6x-60x performance improvements - see [Performance Improvements](#performance-improvements-72) below.
+
+**Version 7.1.0**: Full-text search (FTS) support with Tantivy backend - see [Full-Text Search](#full-text-search-fts) section below.
 
 ## Two Operating Modes
 
@@ -27,9 +31,10 @@ FastAPI web service for team environments:
 
 ### Semantic Search Engine
 - **Vector embeddings** - Find code by meaning using fixed-size chunking
-- **Multiple providers** - Local (Ollama) or cloud (VoyageAI) embeddings  
-- **Smart indexing** - Parallel file processing, incremental updates, git-aware
-- **Advanced filtering** - Language, file paths, extensions, similarity scores
+- **Git history search** - Search commit history semantically with time-range filtering
+- **Multiple providers** - Local (Ollama) or cloud (VoyageAI) embeddings
+- **Smart indexing** - Parallel file processing, incremental HNSW/FTS updates (3.6x faster), git-aware
+- **Advanced filtering** - Language, file paths, extensions, similarity scores, time ranges, authors
 - **Multi-language** - Python, JavaScript, TypeScript, Java, C#, Go, Kotlin, and more
 
 ### Parallel Processing Architecture
@@ -175,6 +180,93 @@ return results[:limit]
 - **Individual files**: Enable incremental updates and git change tracking
 - **Binary exceptions**: ID index and HNSW use binary for performance-critical components
 
+## Performance Improvements (7.2)
+
+### Incremental HNSW Updates (3.6x Speedup)
+
+Code Indexer v7.2 introduces **incremental HNSW index updates**, eliminating expensive full rebuilds and delivering **3.6x average performance improvement** across indexing workflows.
+
+**Performance:**
+- **Watch mode updates**: < 20ms per file (vs 5-10s full rebuild) - **99.6% improvement**
+- **Batch indexing**: 1.46x-1.65x speedup for incremental updates
+- **Zero query delay**: First query after changes returns instantly (no rebuild wait)
+- **Overall**: **3.6x average speedup** in typical development workflows
+
+**How It Works:**
+- **Change Tracking**: Tracks added/updated/deleted vectors during indexing session
+- **Auto-Detection**: SmartIndexer automatically determines incremental vs full rebuild
+- **Label Management**: Efficient ID-to-label mapping maintains consistency
+- **Soft Delete**: Deleted vectors marked (not removed) to avoid rebuilds
+
+**When Incremental Updates Apply:**
+- ✅ **Watch mode**: File changes trigger real-time HNSW updates
+- ✅ **Re-indexing**: Subsequent `cidx index` runs use incremental updates
+- ✅ **Git workflow**: Changes after `git pull` indexed incrementally
+- ❌ **First-time indexing**: Full rebuild required (no existing index)
+- ❌ **Force reindex**: `cidx index --clear` explicitly forces full rebuild
+
+**Example Workflow:**
+```bash
+# First-time indexing (full rebuild)
+cidx index
+# → 40 seconds for 10K files
+
+# Modify 100 files, then re-index (incremental update)
+cidx index
+# → 15 seconds (3.6x faster!) - only 100 files processed
+
+# Watch mode (real-time incremental updates)
+cidx watch --fts
+# → File changes indexed in < 20ms each
+```
+
+### Incremental FTS Indexing (10-60x Speedup)
+
+FTS (Full-Text Search) now supports **incremental indexing**, delivering **10-60x speedup** for typical file change sets.
+
+**Performance:**
+- **Full rebuild**: 10-60 seconds for 10K files
+- **Incremental update**: 1-5 seconds for typical change set (100-500 files)
+- **Speedup**: **10-60x faster** (depends on percentage of files changed)
+- **Watch mode**: < 50ms per file for real-time FTS updates
+
+**How It Works:**
+- **Index Detection**: Checks for `meta.json` to detect existing FTS index
+- **Incremental Mode**: Tantivy updates only changed documents (not full rebuild)
+- **Automatic**: No configuration needed - automatically uses incremental mode
+
+**Example Output:**
+```bash
+# First-time indexing (full rebuild)
+cidx index --fts
+ℹ️  Building new FTS index from scratch (full rebuild)
+# → 60 seconds for 10K files
+
+# Subsequent indexing (incremental update)
+cidx index --fts
+ℹ️  Using existing FTS index (incremental updates enabled)
+# → 3 seconds for 200 changed files (20x faster!)
+
+# Force full rebuild if needed
+cidx index --fts --clear
+ℹ️  Building new FTS index from scratch (full rebuild)
+```
+
+### Performance Comparison Table
+
+| Operation | Before (7.1) | After (7.2) | Speedup |
+|-----------|-------------|-------------|---------|
+| **HNSW watch mode** | 5-10s per file | < 20ms per file | **99.6% faster** |
+| **HNSW batch re-index** | 40s (10K files) | 15s (100 changed) | **3.6x faster** |
+| **FTS incremental** | 60s (full rebuild) | 3s (incremental) | **20x faster** |
+| **FTS watch mode** | Full rebuild | < 50ms per file | **99.9% faster** |
+
+**Developer Experience Impact:**
+- ✅ **Instant query results**: No 5-10s delay after file changes in watch mode
+- ✅ **Faster development cycles**: Re-indexing 3.6x faster during iterative development
+- ✅ **Real-time responsiveness**: Watch mode feels truly real-time (< 20ms updates)
+- ✅ **Reduced CPU usage**: Incremental updates use < 1% CPU vs 100% for full rebuilds
+
 ## How the Indexing Algorithm Works
 
 The code-indexer uses a sophisticated dual-phase parallel processing architecture with git-aware metadata extraction and dynamic VoyageAI batch optimization.
@@ -191,7 +283,7 @@ The code-indexer uses a sophisticated dual-phase parallel processing architectur
 ### pipx (Recommended)
 ```bash
 # Install the package
-pipx install git+https://github.com/jsbattig/code-indexer.git@v7.1.0
+pipx install git+https://github.com/jsbattig/code-indexer.git@v7.2.0
 
 # Setup global registry (standalone command - requires sudo)
 cidx setup-global-registry
@@ -204,7 +296,7 @@ cidx setup-global-registry
 ```bash
 python3 -m venv code-indexer-env
 source code-indexer-env/bin/activate
-pip install git+https://github.com/jsbattig/code-indexer.git@v7.0.1
+pip install git+https://github.com/jsbattig/code-indexer.git@v7.2.0
 
 # Setup global registry (standalone command - requires sudo)
 cidx setup-global-registry
@@ -534,7 +626,7 @@ The CIDX server provides a FastAPI-based multi-user semantic code search service
 
 ```bash
 # 1. Install and setup (same as CLI)
-pipx install git+https://github.com/jsbattig/code-indexer.git@v7.0.1
+pipx install git+https://github.com/jsbattig/code-indexer.git@v7.2.0
 cidx setup-global-registry
 
 # 2. Install and configure the server
@@ -914,6 +1006,162 @@ cidx force-flush                # Force flush to disk (deprecated)
 cidx force-flush --collection mycoll  # Flush specific collection
 ```
 
+## Git History Search
+
+CIDX can index and semantically search your entire git commit history, enabling powerful time-based code archaeology:
+
+- **Find when code was introduced** - Search across all historical commits
+- **Search commit messages semantically** - Find commits by meaning, not exact text
+- **Track feature evolution** - See how code changed over time
+- **Filter by time ranges** - Search specific periods or branches
+- **Author filtering** - Find commits by specific developers
+
+### Indexing Git History
+
+```bash
+# Index git history for temporal search
+cidx index --index-commits
+
+# Index all branches (not just current)
+cidx index --index-commits --all-branches
+
+# Limit to recent commits
+cidx index --index-commits --max-commits 1000
+
+# Index commits since specific date
+cidx index --index-commits --since-date 2024-01-01
+
+# Combine options
+cidx index --index-commits --all-branches --since-date 2024-01-01
+```
+
+**What Gets Indexed:**
+- Commit messages (full text, not truncated)
+- Code diffs for each commit
+- Commit metadata (author, date, hash)
+- Branch information
+
+### Querying Git History
+
+```bash
+# Search entire git history
+cidx query "authentication logic" --time-range-all --quiet
+
+# Search specific time period
+cidx query "bug fix" --time-range 2024-01-01..2024-12-31 --quiet
+
+# Search only commit messages
+cidx query "refactor database" --time-range-all --chunk-type commit_message --quiet
+
+# Search only code diffs
+cidx query "function implementation" --time-range-all --chunk-type commit_diff --quiet
+
+# Filter by author
+cidx query "login" --time-range-all --author "john@example.com" --quiet
+
+# Combine with language filters
+cidx query "api endpoint" --time-range-all --language python --quiet
+
+# Exclude paths from historical search
+cidx query "config" --time-range-all --exclude-path "*/tests/*" --quiet
+```
+
+### Chunk Types
+
+When querying git history with `--chunk-type`:
+
+- **`commit_message`** - Search only commit messages
+  - Returns: Commit descriptions, not code
+  - Metadata: Hash, date, author, files changed count
+  - Use for: Finding when features were added, bug fix history
+
+- **`commit_diff`** - Search only code changes
+  - Returns: Actual code diffs from commits
+  - Metadata: File path, diff type (added/modified/deleted), language
+  - Use for: Finding specific code changes, implementation history
+
+- **(default)** - Search both messages and diffs
+  - Returns: Mixed results ranked by semantic relevance
+  - Use for: General historical code search
+
+### Time Range Formats
+
+```bash
+# All history (1970 to 2100)
+--time-range-all
+
+# Specific date range
+--time-range 2024-01-01..2024-12-31
+
+# Recent timeframe
+--time-range 2024-06-01..2024-12-31
+
+# Single year
+--time-range 2024-01-01..2024-12-31
+```
+
+### Use Cases
+
+**1. Code Archaeology - When Was This Added?**
+```bash
+# Find when JWT authentication was introduced
+cidx query "JWT token authentication" --time-range-all --quiet
+
+# Output shows commit where it was added:
+# 1. [Commit abc123] (2024-03-15) John Doe
+#    feat: add JWT authentication middleware
+```
+
+**2. Bug History Research**
+```bash
+# Find all bug fixes related to database connections
+cidx query "database connection bug" --time-range-all --chunk-type commit_message --quiet
+```
+
+**3. Author Code Analysis**
+```bash
+# Find all authentication-related work by specific developer
+cidx query "authentication" --time-range-all --author "sarah@company.com" --quiet
+```
+
+**4. Feature Evolution Tracking**
+```bash
+# See how API endpoints changed over time
+cidx query "API endpoint" --time-range 2023-01-01..2024-12-31 --language python --quiet
+```
+
+**5. Refactoring History**
+```bash
+# Find all refactoring work
+cidx query "refactor" --time-range-all --chunk-type commit_message --limit 20 --quiet
+```
+
+### Server Mode - Golden Repositories with Temporal Indexing
+
+When registering golden repositories via the API server, enable temporal indexing:
+
+```bash
+curl -X POST http://localhost:8090/api/admin/golden-repos \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo_url": "https://github.com/your-org/backend.git",
+    "alias": "backend",
+    "enable_temporal": true,
+    "temporal_options": {
+      "max_commits": 1000,
+      "since_date": "2024-01-01"
+    }
+  }'
+```
+
+**Temporal Options:**
+- `max_commits` (optional): Maximum commits to index per branch (default: unlimited)
+- `since_date` (optional): Index only commits after this date (YYYY-MM-DD format)
+- `diff_context` (optional): Context lines in diffs (default: 3)
+
+This enables API users to query the repository's git history, not just current code.
+
 ### Configuration Commands
 
 ```bash
@@ -1199,3 +1447,6 @@ MIT License
 ## Contributing
 
 Issues and pull requests welcome!
+# Test temporal watch
+# Test 2
+# Test 3

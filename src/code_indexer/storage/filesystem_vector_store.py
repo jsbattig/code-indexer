@@ -72,6 +72,14 @@ class FilesystemVectorStore:
         self._collection_metadata_cache: Dict[str, Dict[str, Any]] = {}
         self._metadata_lock = threading.Lock()  # Protect cache from concurrent access
 
+        # HNSW-001 & HNSW-002: Incremental update change tracking
+        # Structure: {collection_name: {'added': set(), 'updated': set(), 'deleted': set()}}
+        self._indexing_session_changes: Dict[str, Dict[str, set]] = {}
+
+        # HNSW-001 (AC3): Daemon mode cache entry (optional, set by daemon service)
+        # When set, enables in-memory HNSW updates for watch mode instead of disk I/O
+        self.cache_entry: Optional[Any] = None
+
     def create_collection(self, collection_name: str, vector_size: int) -> bool:
         """Create a new collection with projection matrix.
 
@@ -165,6 +173,8 @@ class FilesystemVectorStore:
         Note:
             This is part of the storage provider lifecycle interface that enables O(n)
             performance by deferring index rebuilding until end_indexing().
+
+            HNSW-001 & HNSW-002: Initializes change tracking for incremental HNSW updates.
         """
         self.logger.info(
             f"Beginning indexing session for collection '{collection_name}'"
@@ -174,6 +184,15 @@ class FilesystemVectorStore:
         with self._id_index_lock:
             if collection_name in self._file_path_cache:
                 del self._file_path_cache[collection_name]
+
+        # HNSW-001 & HNSW-002: Initialize change tracking for incremental updates
+        self._indexing_session_changes[collection_name] = {
+            "added": set(),
+            "updated": set(),
+            "deleted": set(),
+        }
+
+        self.logger.debug(f"Change tracking initialized for '{collection_name}'")
 
     def end_indexing(
         self,
@@ -223,41 +242,94 @@ class FilesystemVectorStore:
         hnsw_manager = HNSWIndexManager(vector_dim=vector_size, space="cosine")
         hnsw_skipped = False
 
-        if skip_hnsw_rebuild:
-            # Watch mode: Mark index as stale, defer rebuild to query time
-            hnsw_manager.mark_stale(collection_path)
-            hnsw_skipped = True
-            self.logger.info(
-                f"HNSW rebuild skipped for '{collection_name}' (watch mode), "
-                f"marked as stale for query-time rebuild"
-            )
-        else:
-            # Normal mode: Rebuild HNSW index from ALL vectors on disk (ONCE)
-            hnsw_manager.rebuild_from_vectors(
-                collection_path=collection_path, progress_callback=progress_callback
-            )
-            self.logger.info(f"HNSW index rebuilt for '{collection_name}'")
+        # HNSW-002: Auto-detection for incremental vs full rebuild
+        incremental_update_result = None
+        if (
+            hasattr(self, "_indexing_session_changes")
+            and collection_name in self._indexing_session_changes
+        ):
+            changes = self._indexing_session_changes[collection_name]
+            has_changes = changes["added"] or changes["updated"] or changes["deleted"]
+
+            if has_changes and not skip_hnsw_rebuild:
+                # INCREMENTAL UPDATE PATH
+                self.logger.info(
+                    f"Applying incremental HNSW update for '{collection_name}': "
+                    f"{len(changes['added'])} added, {len(changes['updated'])} updated, "
+                    f"{len(changes['deleted'])} deleted"
+                )
+                incremental_update_result = self._apply_incremental_hnsw_batch_update(
+                    collection_name=collection_name,
+                    changes=changes,
+                    progress_callback=progress_callback,
+                )
+
+                # Clear session changes after applying
+                del self._indexing_session_changes[collection_name]
+
+                self.logger.info(
+                    f"Incremental HNSW update complete for '{collection_name}'"
+                )
+
+        # Fallback to original logic if no incremental update was applied
+        if incremental_update_result is None:
+            if skip_hnsw_rebuild:
+                # Watch mode: Mark index as stale, defer rebuild to query time
+                hnsw_manager.mark_stale(collection_path)
+                hnsw_skipped = True
+                self.logger.info(
+                    f"HNSW rebuild skipped for '{collection_name}' (watch mode), "
+                    f"marked as stale for query-time rebuild"
+                )
+            else:
+                # Normal mode: Rebuild HNSW index from ALL vectors on disk (ONCE)
+                hnsw_manager.rebuild_from_vectors(
+                    collection_path=collection_path, progress_callback=progress_callback
+                )
+                self.logger.info(f"HNSW index rebuilt for '{collection_name}'")
 
         # Save ID index to disk (ALWAYS - needed for queries)
         from .id_index_manager import IDIndexManager
 
         id_manager = IDIndexManager()
         with self._id_index_lock:
+            # BUG FIX: Load ID index from disk if not in memory (reconciliation path)
+            # When reconciliation finds all commits indexed and calls end_indexing(),
+            # _id_index is empty because no new vectors were upserted.
+            if (
+                collection_name not in self._id_index
+                or not self._id_index[collection_name]
+            ):
+                self._id_index[collection_name] = self._load_id_index(collection_name)
+
             if collection_name in self._id_index:
                 id_manager.save_index(collection_path, self._id_index[collection_name])
 
         vector_count = len(self._id_index.get(collection_name, {}))
 
-        self.logger.info(
-            f"Indexing finalized for '{collection_name}': {vector_count} vectors indexed"
+        # Calculate and update unique file count in metadata
+        unique_file_count = self._calculate_and_save_unique_file_count(
+            collection_name, collection_path
         )
 
-        return {
+        self.logger.info(
+            f"Indexing finalized for '{collection_name}': {vector_count} vectors indexed "
+            f"({unique_file_count} unique files)"
+        )
+
+        result = {
             "status": "ok",
             "vectors_indexed": vector_count,
+            "unique_files": unique_file_count,
             "collection": collection_name,
             "hnsw_skipped": hnsw_skipped,
         }
+
+        # Add HNSW update type if incremental was used
+        if incremental_update_result is not None:
+            result["hnsw_update"] = "incremental"
+
+        return result
 
     def _get_vector_size(self, collection_name: str) -> int:
         """Get vector size for collection (cached to avoid repeated file I/O).
@@ -360,6 +432,7 @@ class FilesystemVectorStore:
         collection_name: Optional[str],
         points: List[Dict[str, Any]],
         progress_callback: Optional[Any] = None,
+        watch_mode: bool = False,
     ) -> Dict[str, Any]:
         """Store vectors in filesystem with git-aware optimization.
 
@@ -367,12 +440,20 @@ class FilesystemVectorStore:
             collection_name: Name of the collection (if None, auto-resolves to only collection)
             points: List of point dictionaries with id, vector, payload
             progress_callback: Optional callback(current, total, Path, info) for progress reporting
+            watch_mode: If True, triggers immediate real-time HNSW updates (HNSW-001)
 
         Returns:
             Status dictionary with operation result
 
         Raises:
             ValueError: If collection_name is None and multiple collections exist
+
+        Note:
+            HNSW-001 (Watch Mode): When watch_mode=True, updates HNSW index immediately
+            after upserting points, enabling real-time semantic search without delays.
+
+            HNSW-002 (Batch Mode): When watch_mode=False and session changes are tracked,
+            changes are accumulated for batch incremental update at end_indexing().
         """
         # Auto-resolve collection_name if None
         if collection_name is None:
@@ -395,6 +476,9 @@ class FilesystemVectorStore:
         # Load projection matrix (singleton-cached in ProjectionMatrixManager)
         projection_matrix = self.matrix_manager.load_matrix(collection_path)
 
+        # Get expected vector dimensions from projection matrix
+        expected_dims = projection_matrix.shape[0]
+
         # Load quantization range for locality-preserving quantization
         min_val, max_val = self._load_quantization_range(collection_name)
 
@@ -410,7 +494,12 @@ class FilesystemVectorStore:
         blob_hashes = {}
         uncommitted_files = set()
 
-        if repo_root is not None and file_paths:
+        # Skip blob hash lookup for temporal collection (FIX 1: Avoid Errno 7 on large temporal indexes)
+        if (
+            repo_root is not None
+            and file_paths
+            and collection_name != "code-indexer-temporal"
+        ):
             blob_hashes = self._get_blob_hashes_batch(file_paths, repo_root)
             uncommitted_files = self._check_uncommitted_batch(file_paths, repo_root)
 
@@ -429,7 +518,21 @@ class FilesystemVectorStore:
                 point_id = point["id"]
                 vector = np.array(point["vector"])
                 payload = point.get("payload", {})
+                chunk_text = point.get("chunk_text")  # Extract chunk_text from root
                 file_path = payload.get("path", "")
+
+                # LAYER 2 VALIDATION: Validate vector is numeric, not object array
+                if vector.dtype == object or vector.dtype == np.dtype("O"):
+                    raise ValueError(
+                        f"Point {point_id} has invalid vector with dtype={vector.dtype}. "
+                        f"Vector contains non-numeric values. First 5 values: {point['vector'][:5]}"
+                    )
+
+                # Validate vector dimension matches expected
+                if vector.shape[0] != expected_dims:
+                    raise ValueError(
+                        f"Point {point_id} has vector dimension {vector.shape[0]}, expected {expected_dims}"
+                    )
 
                 # Progress reporting
                 if progress_callback:
@@ -478,6 +581,7 @@ class FilesystemVectorStore:
                 point_id=point_id,
                 vector=vector,
                 payload=payload,
+                chunk_text=chunk_text,
                 repo_root=repo_root,
                 blob_hashes=blob_hashes,
                 uncommitted_files=uncommitted_files,
@@ -488,10 +592,37 @@ class FilesystemVectorStore:
 
             # Update ID index and file path cache
             with self._id_index_lock:
+                # Check if point existed before (for change tracking)
+                point_existed = point_id in self._id_index.get(collection_name, {})
+
                 self._id_index[collection_name][point_id] = vector_file
+
                 # Update file path cache
                 if file_path:
                     self._file_path_cache[collection_name].add(file_path)
+
+                # HNSW-001 & HNSW-002: Track changes for incremental updates
+                if collection_name in self._indexing_session_changes:
+                    if point_existed:
+                        self._indexing_session_changes[collection_name]["updated"].add(
+                            point_id
+                        )
+                    else:
+                        self._indexing_session_changes[collection_name]["added"].add(
+                            point_id
+                        )
+
+        # HNSW-001: Watch mode real-time HNSW update
+        if watch_mode:
+            # In watch mode, update HNSW immediately for all upserted points
+            # Note: Watch mode can be called outside of indexing sessions,
+            # so we don't rely on _indexing_session_changes tracking
+            if points:
+                self._update_hnsw_incrementally_realtime(
+                    collection_name=collection_name,
+                    changed_points=points,
+                    progress_callback=progress_callback,
+                )
 
         # Return success - index rebuilding now happens in end_indexing() (O(n) not O(n²))
         # This fixes the performance disaster where we rebuilt indexes after EVERY file.
@@ -499,7 +630,11 @@ class FilesystemVectorStore:
         return {"status": "ok", "count": len(points)}
 
     def count_points(self, collection_name: str) -> int:
-        """Count vectors in collection using ID index.
+        """Count vectors in collection using metadata (fast path) or ID index (fallback).
+
+        Performance optimization: Reads vector_count from collection_meta.json
+        instead of loading the full ID index (400K entries). This reduces
+        cidx status time from 9+ seconds to <50ms for large collections.
 
         Args:
             collection_name: Name of the collection
@@ -507,6 +642,25 @@ class FilesystemVectorStore:
         Returns:
             Number of vectors in collection
         """
+        # Fast path: Try reading count from metadata
+        collection_path = self.base_path / collection_name
+        meta_file = collection_path / "collection_meta.json"
+
+        if meta_file.exists():
+            try:
+                with open(meta_file) as f:
+                    metadata = json.load(f)
+
+                # Check if hnsw_index exists with vector_count
+                if "hnsw_index" in metadata:
+                    vector_count = metadata["hnsw_index"].get("vector_count")
+                    if isinstance(vector_count, int):
+                        return vector_count
+            except (json.JSONDecodeError, KeyError, OSError):
+                # If metadata read fails, fall through to ID index path
+                pass
+
+        # Fallback path: Load ID index (original behavior)
         with self._id_index_lock:
             if collection_name not in self._id_index:
                 self._id_index[collection_name] = self._load_id_index(collection_name)
@@ -523,6 +677,9 @@ class FilesystemVectorStore:
 
         Returns:
             Status dictionary with deletion result
+
+        Note:
+            HNSW-001 & HNSW-002: Tracks deletions for incremental HNSW updates.
         """
         deleted = 0
 
@@ -543,6 +700,12 @@ class FilesystemVectorStore:
 
                     # Remove from index
                     del index[point_id]
+
+                    # HNSW-001 & HNSW-002: Track deletion for incremental updates
+                    if collection_name in self._indexing_session_changes:
+                        self._indexing_session_changes[collection_name]["deleted"].add(
+                            point_id
+                        )
 
             # Clear file path cache since file structure changed
             if deleted > 0 and collection_name in self._file_path_cache:
@@ -706,11 +869,26 @@ class FilesystemVectorStore:
             # Atomic rename
             tmp_file.replace(file_path)
 
-    def _load_id_index(self, collection_name: str) -> Dict[str, Path]:
-        """Load ID index from filenames only - no file I/O required.
+    def load_id_index(self, collection_name: str) -> set:
+        """Load ID index and return set of existing point IDs.
 
-        Point IDs are encoded in filenames as: vector_POINTID.json
-        This allows instant index loading without parsing JSON files.
+        Public method for external components that need to check existing points.
+
+        Args:
+            collection_name: Name of the collection
+
+        Returns:
+            Set of existing point IDs
+        """
+        id_index = self._load_id_index(collection_name)
+        return set(id_index.keys())
+
+    def _load_id_index(self, collection_name: str) -> Dict[str, Path]:
+        """Load ID index from persistent binary file for fast loading.
+
+        Uses IDIndexManager to load from id_index.bin binary file which contains
+        all vector ID to file path mappings. Falls back to directory scan only
+        if binary index doesn't exist (for backward compatibility).
 
         Args:
             collection_name: Name of the collection
@@ -718,10 +896,21 @@ class FilesystemVectorStore:
         Returns:
             Dictionary mapping point IDs to file paths
         """
-        collection_path = self.base_path / collection_name
-        index = {}
+        from .id_index_manager import IDIndexManager
 
-        # Scan vector files by filename pattern only
+        collection_path = self.base_path / collection_name
+        index_manager = IDIndexManager()
+
+        # Try loading from persistent binary index first (FAST - O(1) file read)
+        index = index_manager.load_index(collection_path)
+
+        if index:
+            # Binary index loaded successfully
+            return index
+
+        # Fallback: Scan vector files by filename pattern (SLOW - O(n) directory traversal)
+        # Only used for backward compatibility with indexes created before binary index
+        index = {}
         for json_file in collection_path.rglob("vector_*.json"):
             # Extract point ID from filename: vector_POINTID.json
             filename = json_file.name
@@ -818,6 +1007,7 @@ class FilesystemVectorStore:
         point_id: str,
         vector: np.ndarray,
         payload: Dict[str, Any],
+        chunk_text: Optional[str],
         repo_root: Optional[Path],
         blob_hashes: Dict[str, str],
         uncommitted_files: set,
@@ -828,6 +1018,7 @@ class FilesystemVectorStore:
             point_id: Unique point identifier
             vector: Vector data
             payload: Point payload
+            chunk_text: Content text at root level (optimization path, optional)
             repo_root: Git repository root (None if not a git repo)
             blob_hashes: Dict of file_path -> blob_hash from batch operation
             uncommitted_files: Set of files with uncommitted changes
@@ -847,9 +1038,44 @@ class FilesystemVectorStore:
         }
 
         file_path = payload.get("path", "")
+        payload_type = payload.get("type", "")
 
-        # Git-aware chunk storage logic using batch results
-        if repo_root and file_path:
+        # Check if this is a commit message - these should ALWAYS store chunk_text
+        # Commit messages are indexed as searchable entities and need their content stored
+        if payload_type == "commit_message":
+            # Commit messages: always store chunk_text
+            if chunk_text is not None:
+                data["chunk_text"] = chunk_text
+            else:
+                # MESSI Rule #2 (Anti-Fallback): Fail fast instead of masking bugs
+                raise RuntimeError(
+                    f"Missing chunk_text for vector with payload_type={payload_type}. "
+                    f"This indicates an indexing bug. Vector ID: {point_id}"
+                )
+        # Check if this is a temporal diff - these should ALWAYS store content
+        # Temporal diffs represent historical commit content at specific points in time,
+        # NOT current working tree state. Using current HEAD blob hash would be meaningless.
+        elif payload_type == "commit_diff":
+            # Storage optimization: added/deleted files use pointer-based storage
+            if payload.get("reconstruct_from_git"):
+                # Added/deleted files: NO chunk_text storage (pointer only)
+                # Content can be reconstructed from git on query using commit hash
+                # This provides 88% storage reduction for these file types
+                pass  # Don't store chunk_text
+            else:
+                # Modified files: store diff in chunk_text
+                # Prefer chunk_text from point root (optimization path)
+                if chunk_text is not None:
+                    data["chunk_text"] = chunk_text
+                else:
+                    # Legacy: extract from payload if present
+                    data["chunk_text"] = payload.get("content", "")
+
+            # Remove content from payload to avoid duplication
+            if "content" in data["payload"]:
+                del data["payload"]["content"]
+        # Git-aware chunk storage logic using batch results (for regular files only)
+        elif repo_root and file_path:
             has_uncommitted = file_path in uncommitted_files
 
             if not has_uncommitted and file_path in blob_hashes:
@@ -861,14 +1087,24 @@ class FilesystemVectorStore:
                     del data["payload"]["content"]
             else:
                 # File has uncommitted changes or untracked: store chunk text
-                data["chunk_text"] = payload.get("content", "")
+                # Prefer chunk_text from point root (optimization path)
+                if chunk_text is not None:
+                    data["chunk_text"] = chunk_text
+                else:
+                    # Legacy: extract from payload if present
+                    data["chunk_text"] = payload.get("content", "")
                 data["indexed_with_uncommitted_changes"] = True
                 # Remove content from payload (stored in chunk_text instead)
                 if "content" in data["payload"]:
                     del data["payload"]["content"]
         else:
             # Non-git repo: always store chunk_text
-            data["chunk_text"] = payload.get("content", "")
+            # Prefer chunk_text from point root (optimization path)
+            if chunk_text is not None:
+                data["chunk_text"] = chunk_text
+            else:
+                # Legacy: extract from payload if present
+                data["chunk_text"] = payload.get("content", "")
             # Remove content from payload (stored in chunk_text instead)
             if "content" in data["payload"]:
                 del data["payload"]["content"]
@@ -878,7 +1114,7 @@ class FilesystemVectorStore:
     def _get_blob_hashes_batch(
         self, file_paths: List[str], repo_root: Path
     ) -> Dict[str, str]:
-        """Get git blob hashes for multiple files in single git call.
+        """Get git blob hashes for multiple files in batched git calls.
 
         Args:
             file_paths: List of file paths relative to repo root
@@ -886,31 +1122,39 @@ class FilesystemVectorStore:
 
         Returns:
             Dictionary mapping file_path to blob_hash
+
+        Note:
+            FIX 2: Batches git ls-tree calls to avoid "Argument list too long" error (Errno 7)
+            when processing thousands of files. Each batch processes up to 100 files.
         """
         try:
-            # Single git ls-tree call for all files
-            result = subprocess.run(
-                ["git", "ls-tree", "HEAD"] + file_paths,
-                cwd=repo_root,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-
+            # Batch to avoid "Argument list too long" error (Errno 7)
+            BATCH_SIZE = 100
             blob_hashes = {}
-            if result.returncode == 0 and result.stdout:
-                # Parse output: "mode type hash\tfilename"
-                for line in result.stdout.strip().split("\n"):
-                    if not line:
-                        continue
-                    parts = line.split()
-                    if len(parts) >= 3:
-                        blob_hash = parts[2]
-                        # Filename is after tab
-                        tab_idx = line.find("\t")
-                        if tab_idx >= 0:
-                            filename = line[tab_idx + 1 :]
-                            blob_hashes[filename] = blob_hash
+
+            for i in range(0, len(file_paths), BATCH_SIZE):
+                batch = file_paths[i : i + BATCH_SIZE]
+                result = subprocess.run(
+                    ["git", "ls-tree", "HEAD"] + batch,
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+
+                if result.returncode == 0 and result.stdout:
+                    # Parse output: "mode type hash\tfilename"
+                    for line in result.stdout.strip().split("\n"):
+                        if not line:
+                            continue
+                        parts = line.split()
+                        if len(parts) >= 3:
+                            blob_hash = parts[2]
+                            # Filename is after tab
+                            tab_idx = line.find("\t")
+                            if tab_idx >= 0:
+                                filename = line[tab_idx + 1 :]
+                                blob_hashes[filename] = blob_hash
 
             return blob_hashes
 
@@ -918,7 +1162,7 @@ class FilesystemVectorStore:
             return {}
 
     def _check_uncommitted_batch(self, file_paths: List[str], repo_root: Path) -> set:
-        """Check which files have uncommitted changes in single git call.
+        """Check which files have uncommitted changes in batched git calls.
 
         Args:
             file_paths: List of file paths to check
@@ -926,33 +1170,41 @@ class FilesystemVectorStore:
 
         Returns:
             Set of file paths with uncommitted changes
+
+        Note:
+            Batches git status calls to avoid "Argument list too long" error (Errno 7)
+            when processing thousands of files. Each batch processes up to 100 files.
         """
         try:
-            # Single git status call with file arguments
-            result = subprocess.run(
-                ["git", "status", "--porcelain"] + file_paths,
-                cwd=repo_root,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-
+            # Batch to avoid "Argument list too long" error (Errno 7)
+            BATCH_SIZE = 100
             uncommitted = set()
-            if result.returncode == 0:
-                # Parse output format: "XY filename"
-                # When file paths are provided as arguments, format is "XY filename" (status codes + space + filename)
-                # X = index status (position 0), Y = worktree status (position 1), space (position 2), filename (position 3+)
-                # However, when filtering by files, the format drops the leading space for clean index
-                for line in result.stdout.strip().split("\n"):
-                    if not line:
-                        continue
-                    # The status codes are in positions 0-1, space at position 2 (or 1 if no leading space)
-                    # Safe approach: find the first space and take everything after it
-                    space_idx = line.find(" ")
-                    if space_idx >= 0 and space_idx < len(line) - 1:
-                        filename = line[space_idx + 1 :]
-                        if filename:
-                            uncommitted.add(filename)
+
+            for i in range(0, len(file_paths), BATCH_SIZE):
+                batch = file_paths[i : i + BATCH_SIZE]
+                result = subprocess.run(
+                    ["git", "status", "--porcelain"] + batch,
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+
+                if result.returncode == 0:
+                    # Parse output format: "XY filename"
+                    # When file paths are provided as arguments, format is "XY filename" (status codes + space + filename)
+                    # X = index status (position 0), Y = worktree status (position 1), space (position 2), filename (position 3+)
+                    # However, when filtering by files, the format drops the leading space for clean index
+                    for line in result.stdout.strip().split("\n"):
+                        if not line:
+                            continue
+                        # The status codes are in positions 0-1, space at position 2 (or 1 if no leading space)
+                        # Safe approach: find the first space and take everything after it
+                        space_idx = line.find(" ")
+                        if space_idx >= 0 and space_idx < len(line) - 1:
+                            filename = line[space_idx + 1 :]
+                            if filename:
+                                uncommitted.add(filename)
 
             return uncommitted
 
@@ -992,11 +1244,15 @@ class FilesystemVectorStore:
 
                 # Payload should always exist in new format, but provide empty fallback
                 payload = data.get("payload", {})
-                return {
+                result = {
                     "id": data["id"],
                     "vector": data["vector"],
                     "payload": payload,
                 }
+                # Include chunk_text if present
+                if "chunk_text" in data:
+                    result["chunk_text"] = data["chunk_text"]
+                return result
             except (json.JSONDecodeError, KeyError):
                 return None
 
@@ -1072,8 +1328,6 @@ class FilesystemVectorStore:
                     if not key or not isinstance(key, str):
                         return False
 
-                    match_spec = condition.get("match", {})
-
                     # Handle nested payload keys (e.g., "metadata.language")
                     current: Any = payload
                     for key_part in key.split("."):
@@ -1081,6 +1335,48 @@ class FilesystemVectorStore:
                             current = current.get(key_part)
                         else:
                             return False
+
+                    # TEMPORAL COLLECTION FIX: If 'path' field is None and key is "path",
+                    # fall back to 'file_path' field (temporal collection format)
+                    # This enables path filters to work with both collection formats:
+                    # - Main collection: uses 'path' field
+                    # - Temporal collection: uses 'file_path' field
+                    if current is None and key == "path" and "file_path" in payload:
+                        current = payload["file_path"]
+
+                    # Check for range specification (NEW: temporal filter support)
+                    range_spec = condition.get("range")
+                    if range_spec:
+                        # Range filtering for numeric fields (timestamps, etc.)
+                        if not isinstance(current, (int, float)):
+                            return False
+
+                        # Apply range constraints
+                        if "gte" in range_spec and current < range_spec["gte"]:
+                            return False
+                        if "gt" in range_spec and current <= range_spec["gt"]:
+                            return False
+                        if "lte" in range_spec and current > range_spec["lte"]:
+                            return False
+                        if "lt" in range_spec and current >= range_spec["lt"]:
+                            return False
+
+                        return True
+
+                    # Check for match specification (existing logic)
+                    match_spec = condition.get("match", {})
+
+                    # Support "any" (set membership - NEW: temporal filter support)
+                    if "any" in match_spec:
+                        allowed_values = match_spec["any"]
+                        return current in allowed_values
+
+                    # Support "contains" (substring match - NEW: temporal filter support)
+                    if "contains" in match_spec:
+                        if not isinstance(current, str):
+                            return False
+                        substring = match_spec["contains"]
+                        return substring.lower() in current.lower()
 
                     # Support both "value" (exact match) and "text" (pattern match)
                     if "value" in match_spec:
@@ -1101,7 +1397,7 @@ class FilesystemVectorStore:
                         matcher = PathPatternMatcher()
                         return bool(matcher.matches_pattern(current, pattern))
                     else:
-                        # No match specification found
+                        # No match or range specification found
                         return False
 
             def evaluate_filter(payload: Dict[str, Any]) -> bool:
@@ -1244,6 +1540,8 @@ class FilesystemVectorStore:
         score_threshold: Optional[float] = None,
         filter_conditions: Optional[Dict[str, Any]] = None,
         return_timing: bool = False,
+        lazy_load: bool = False,
+        prefetch_limit: Optional[int] = None,
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], Dict[str, Any]]]:
         """Search for similar vectors using parallel execution of index loading and embedding generation.
 
@@ -1263,6 +1561,8 @@ class FilesystemVectorStore:
             score_threshold: Minimum similarity score (0-1)
             filter_conditions: Optional filter conditions for payload
             return_timing: If True, return tuple of (results, timing_dict)
+            lazy_load: If True, load payloads on-demand with early exit (optimization for restrictive filters)
+            prefetch_limit: How many candidate IDs to fetch from HNSW (default: limit * 2 or limit * 15 for lazy_load)
 
         Returns:
             List of results with id, score, payload (including content), and staleness
@@ -1391,13 +1691,17 @@ class FilesystemVectorStore:
         # Mark search path for timing metrics
         timing["search_path"] = "hnsw_index"
 
+        # Determine how many candidates to fetch from HNSW
+        # Use prefetch_limit if provided (for over-fetching with filters), otherwise limit * 2
+        hnsw_k = prefetch_limit if prefetch_limit is not None else limit * 2
+
         # Query HNSW index
         t0 = time.time()
         candidate_ids, distances = hnsw_manager.query(
             index=hnsw_index,
             query_vector=query_vec,
             collection_path=collection_path,
-            k=limit * 2,  # Get more candidates for filtering
+            k=hnsw_k,  # Use prefetch_limit when provided for filter headroom
             ef=50,  # HNSW query parameter
         )
         timing["hnsw_search_ms"] = (time.time() - t0) * 1000
@@ -1452,6 +1756,10 @@ class FilesystemVectorStore:
                     }
                 )
 
+                # EARLY EXIT: If lazy loading enabled, stop when we have enough results
+                if lazy_load and len(results) >= limit:
+                    break
+
             except (json.JSONDecodeError, KeyError, ValueError):
                 continue
 
@@ -1469,6 +1777,9 @@ class FilesystemVectorStore:
             content, staleness = self._get_chunk_content_with_staleness(vector_data)
             result["payload"]["content"] = content
             result["staleness"] = staleness
+            # Return chunk_text at root level for optimization contract
+            if "chunk_text" in vector_data:
+                result["chunk_text"] = vector_data["chunk_text"]
             enhanced_results.append(result)
 
         timing["staleness_detection_ms"] = (time.time() - t0) * 1000
@@ -1986,6 +2297,139 @@ class FilesystemVectorStore:
 
         return sorted(list(file_paths))
 
+    def get_indexed_file_count_fast(self, collection_name: str) -> int:
+        """Get count of indexed files from metadata (FAST - single JSON read).
+
+        Returns 100% accurate file count from collection metadata if available,
+        otherwise falls back to estimation. Use this for status/monitoring.
+
+        Args:
+            collection_name: Name of the collection
+
+        Returns:
+            Number of unique files indexed (accurate if metadata has it, estimated otherwise)
+
+        Note:
+            After indexing completes, unique_file_count is stored in metadata for instant lookup.
+            Old indexes without this field will fall back to estimation (~99.8% accurate).
+        """
+        collection_path = self.base_path / collection_name
+        meta_file = collection_path / "collection_meta.json"
+
+        # Try reading from metadata first (FAST - single small JSON read)
+        if meta_file.exists():
+            try:
+                with open(meta_file) as f:
+                    metadata = json.load(f)
+
+                # Return accurate count from metadata if available
+                if "unique_file_count" in metadata:
+                    return int(metadata["unique_file_count"])
+
+            except (json.JSONDecodeError, OSError) as e:
+                self.logger.warning(f"Failed to read collection metadata: {e}")
+
+        # Fallback: estimation for old indexes or if metadata read fails
+        with self._id_index_lock:
+            # If file paths already cached, return count from cache (instant)
+            if collection_name in self._file_path_cache:
+                return len(self._file_path_cache[collection_name])
+
+            # Otherwise estimate: vectors / average chunks per file (~2)
+            # This is fast but approximate - acceptable for status display
+            if collection_name not in self._id_index:
+                self._id_index[collection_name] = self._load_id_index(collection_name)
+
+            vector_count = len(self._id_index[collection_name])
+            # Estimate: most files have 1-3 chunks, average ~2
+            estimated_files = max(1, vector_count // 2)
+
+            return estimated_files
+
+    def _calculate_and_save_unique_file_count(
+        self, collection_name: str, collection_path: Path
+    ) -> int:
+        """Calculate unique file count from all vectors and save to collection metadata.
+
+        This method is called ONCE after indexing completes to calculate the 100% accurate
+        file count. It's thread-safe with daemon operations via file locking.
+
+        The count represents the CURRENT state of indexed files (not cumulative), which
+        handles re-indexing correctly - same file indexed twice only counts once.
+
+        Args:
+            collection_name: Name of the collection
+            collection_path: Path to collection directory
+
+        Returns:
+            Number of unique files indexed
+
+        Note:
+            Thread-safe: Uses file locking to prevent race conditions with daemon indexing
+        """
+        import fcntl
+        import json
+
+        # Calculate unique file count from vectors
+        unique_files = set()
+
+        # Use cached id_index for speed (already loaded during indexing)
+        with self._id_index_lock:
+            if collection_name not in self._id_index:
+                self._id_index[collection_name] = self._load_id_index(collection_name)
+
+            id_index = self._id_index[collection_name]
+
+        # Parse each vector to extract source file path
+        for point_id, vector_file in id_index.items():
+            try:
+                with open(vector_file) as f:
+                    vector_data = json.load(f)
+
+                # Extract source file path from payload
+                file_path = vector_data.get("payload", {}).get("path")
+                if file_path:
+                    unique_files.add(file_path)
+
+            except (json.JSONDecodeError, OSError) as e:
+                self.logger.warning(
+                    f"Failed to read vector file {vector_file} for file count: {e}"
+                )
+                continue
+
+        unique_file_count = len(unique_files)
+
+        # Update collection metadata with file locking (daemon-safe)
+        meta_file = collection_path / "collection_meta.json"
+        lock_file = collection_path / ".metadata.lock"
+        lock_file.touch(exist_ok=True)
+
+        with open(lock_file, "r") as lock_f:
+            # Acquire exclusive lock (blocks if daemon is writing)
+            fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
+
+            try:
+                # Read current metadata
+                with open(meta_file) as f:
+                    metadata = json.load(f)
+
+                # Update unique_file_count
+                metadata["unique_file_count"] = unique_file_count
+
+                # Save metadata atomically
+                with open(meta_file, "w") as f:
+                    json.dump(metadata, f, indent=2)
+
+                self.logger.debug(
+                    f"Updated collection metadata: {unique_file_count} unique files"
+                )
+
+            finally:
+                # Release lock
+                fcntl.flock(lock_f.fileno(), fcntl.LOCK_UN)
+
+        return unique_file_count
+
     def get_file_index_timestamps(self, collection_name: str) -> Dict[str, datetime]:
         """Get indexed_at timestamps for all files.
 
@@ -2161,3 +2605,333 @@ class FilesystemVectorStore:
                     pass
 
         return total_size
+
+    # === HNSW INCREMENTAL UPDATE HELPER METHODS (HNSW-001 & HNSW-002) ===
+
+    def _update_hnsw_incrementally_realtime(
+        self,
+        collection_name: str,
+        changed_points: List[Dict[str, Any]],
+        progress_callback: Optional[Any] = None,
+    ) -> None:
+        """Update HNSW index incrementally in real-time (watch mode).
+
+        Args:
+            collection_name: Name of the collection
+            changed_points: List of points that were added/updated
+            progress_callback: Optional progress callback
+
+        Note:
+            HNSW-001: Real-time incremental updates for watch mode.
+            Updates HNSW immediately after each batch of file changes,
+            enabling queries without rebuild delays.
+
+            AC2 (Concurrent Query Support): Uses readers-writer lock pattern
+            AC3 (Daemon Cache Updates): Detects daemon mode and updates cache in-memory
+            AC4 (Standalone Persistence): Falls back to disk persistence when no daemon
+        """
+        if not changed_points:
+            return
+
+        collection_path = self.base_path / collection_name
+        vector_size = self._get_vector_size(collection_name)
+
+        from .hnsw_index_manager import HNSWIndexManager
+
+        hnsw_manager = HNSWIndexManager(vector_dim=vector_size, space="cosine")
+
+        # AC3: Detect daemon mode vs standalone mode
+        daemon_mode = hasattr(self, "cache_entry") and self.cache_entry is not None
+
+        if daemon_mode and self.cache_entry is not None:
+            # === DAEMON MODE: Update cache in-memory with locking ===
+            cache_entry = self.cache_entry
+
+            # AC2: Acquire write lock for exclusive HNSW update
+            cache_entry.write_lock.acquire()
+            try:
+                # AC2: Nest read lock inside write lock to prevent concurrent queries
+                cache_entry.read_lock.acquire()
+                try:
+                    # Load from cache or disk if not cached
+                    if cache_entry.hnsw_index is None:
+                        # Cache not loaded - load from disk
+                        cache_entry.hnsw_index = hnsw_manager.load_index(
+                            collection_path, max_elements=100000
+                        )
+
+                        from .id_index_manager import IDIndexManager
+
+                        id_manager = IDIndexManager()
+                        cache_entry.id_mapping = id_manager.load_index(collection_path)
+
+                    # Use cache references
+                    index = cache_entry.hnsw_index
+                    id_mapping = cache_entry.id_mapping
+
+                    if index is None:
+                        # No existing index - mark as stale for query-time rebuild
+                        self.logger.debug(
+                            f"No existing HNSW index for watch mode update in '{collection_name}', "
+                            f"marking as stale"
+                        )
+                        hnsw_manager.mark_stale(collection_path)
+                        return
+
+                    # Build ID-to-label and label-to-ID mappings
+                    label_to_id = hnsw_manager._load_id_mapping(collection_path)
+                    id_to_label = {v: k for k, v in label_to_id.items()}
+                    next_label = max(label_to_id.keys()) + 1 if label_to_id else 0
+
+                    # Process each changed point
+                    processed = 0
+                    for point in changed_points:
+                        point_id = point["id"]
+                        vector = np.array(point["vector"], dtype=np.float32)
+
+                        try:
+                            # Add or update in HNSW (updates cache index directly)
+                            old_count = len(id_to_label)
+                            label, id_to_label, label_to_id, next_label = (
+                                hnsw_manager.add_or_update_vector(
+                                    index,
+                                    point_id,
+                                    vector,
+                                    id_to_label,
+                                    label_to_id,
+                                    next_label,
+                                )
+                            )
+                            new_count = len(id_to_label)
+
+                            self.logger.debug(
+                                f"Daemon watch mode HNSW: added '{point_id}' with label {label}, "
+                                f"mappings: {old_count} -> {new_count}, next_label: {next_label}"
+                            )
+
+                            processed += 1
+
+                        except Exception as e:
+                            self.logger.warning(
+                                f"Failed to update HNSW for point '{point_id}': {e}"
+                            )
+                            continue
+
+                    # Save updated index to disk (also updates cache since index is same object)
+                    total_vectors = len(id_to_label)
+                    hnsw_manager.save_incremental_update(
+                        index, collection_path, id_to_label, label_to_id, total_vectors
+                    )
+
+                    # AC3: Update cache ID mapping (keep cache warm)
+                    cache_entry.id_mapping = id_mapping
+
+                    self.logger.debug(
+                        f"Daemon watch mode HNSW update complete for '{collection_name}': "
+                        f"{processed} points updated, total vectors: {total_vectors}, "
+                        f"cache remains warm"
+                    )
+
+                finally:
+                    # AC2: Release read lock
+                    cache_entry.read_lock.release()
+            finally:
+                # AC2: Release write lock
+                cache_entry.write_lock.release()
+
+        else:
+            # === STANDALONE MODE: Load from disk, update, save to disk ===
+            # Load existing index for incremental update
+            index, id_to_label, label_to_id, next_label = (
+                hnsw_manager.load_for_incremental_update(collection_path)
+            )
+
+            if index is None:
+                # No existing index - mark as stale for query-time rebuild
+                self.logger.debug(
+                    f"No existing HNSW index for watch mode update in '{collection_name}', "
+                    f"marking as stale"
+                )
+                hnsw_manager.mark_stale(collection_path)
+                return
+
+            # Process each changed point
+            processed = 0
+            for point in changed_points:
+                point_id = point["id"]
+                vector = np.array(point["vector"], dtype=np.float32)
+
+                try:
+                    # Add or update in HNSW
+                    old_count = len(id_to_label)
+                    label, id_to_label, label_to_id, next_label = (
+                        hnsw_manager.add_or_update_vector(
+                            index,
+                            point_id,
+                            vector,
+                            id_to_label,
+                            label_to_id,
+                            next_label,
+                        )
+                    )
+                    new_count = len(id_to_label)
+
+                    self.logger.debug(
+                        f"Standalone watch mode HNSW: added '{point_id}' with label {label}, "
+                        f"mappings: {old_count} -> {new_count}, next_label: {next_label}"
+                    )
+
+                    processed += 1
+
+                except Exception as e:
+                    self.logger.warning(
+                        f"Failed to update HNSW for point '{point_id}': {e}"
+                    )
+                    continue
+
+            # Save updated index to disk
+            total_vectors = len(id_to_label)
+            hnsw_manager.save_incremental_update(
+                index, collection_path, id_to_label, label_to_id, total_vectors
+            )
+
+            self.logger.debug(
+                f"Standalone watch mode HNSW update complete for '{collection_name}': "
+                f"{processed} points updated, total vectors: {total_vectors}"
+            )
+
+    def _apply_incremental_hnsw_batch_update(
+        self,
+        collection_name: str,
+        changes: Dict[str, set],
+        progress_callback: Optional[Any] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Apply incremental HNSW update for batch of changes.
+
+        Args:
+            collection_name: Name of the collection
+            changes: Dictionary with 'added', 'updated', 'deleted' sets
+            progress_callback: Optional progress callback
+
+        Returns:
+            Dictionary with update results, or None if no existing index (fallback to full rebuild)
+
+        Note:
+            HNSW-002: Batch incremental updates at end of indexing session.
+            Applies all accumulated changes in one batch operation,
+            significantly faster than full rebuild.
+        """
+        collection_path = self.base_path / collection_name
+        vector_size = self._get_vector_size(collection_name)
+
+        from .hnsw_index_manager import HNSWIndexManager
+
+        hnsw_manager = HNSWIndexManager(vector_dim=vector_size, space="cosine")
+
+        # DEBUG: Mark that we're entering incremental update path
+        self.logger.info(
+            f"⚡ ENTERING INCREMENTAL HNSW UPDATE PATH for '{collection_name}'"
+        )
+
+        # Load existing index for incremental update
+        index, id_to_label, label_to_id, next_label = (
+            hnsw_manager.load_for_incremental_update(collection_path)
+        )
+
+        if index is None:
+            # No existing index - return None to trigger full rebuild fallback
+            self.logger.info(
+                f"🔨 No existing HNSW index for '{collection_name}', "
+                f"falling back to FULL REBUILD"
+            )
+            return None
+
+        # Process additions and updates
+        total_changes = (
+            len(changes["added"]) + len(changes["updated"]) + len(changes["deleted"])
+        )
+        processed = 0
+
+        for point_id in changes["added"] | changes["updated"]:
+            # Load vector from disk
+            try:
+                vector_file = self._id_index[collection_name].get(point_id)
+                if not vector_file or not Path(vector_file).exists():
+                    self.logger.warning(
+                        f"Vector file not found for point '{point_id}', skipping"
+                    )
+                    continue
+
+                with open(vector_file) as f:
+                    data = json.load(f)
+
+                vector = np.array(data["vector"], dtype=np.float32)
+
+                # Add or update in HNSW
+                label, id_to_label, label_to_id, next_label = (
+                    hnsw_manager.add_or_update_vector(
+                        index, point_id, vector, id_to_label, label_to_id, next_label
+                    )
+                )
+
+                processed += 1
+
+                # Report progress periodically
+                if progress_callback and processed % 10 == 0:
+                    progress_callback(
+                        processed,
+                        total_changes,
+                        Path(""),
+                        info=f"🔄 Incremental HNSW update: {processed}/{total_changes} changes",
+                    )
+
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                self.logger.warning(
+                    f"Failed to process point '{point_id}': {e}, skipping"
+                )
+                continue
+
+        # Process deletions
+        for point_id in changes["deleted"]:
+            hnsw_manager.remove_vector(index, point_id, id_to_label)
+            processed += 1
+
+            # Report progress periodically
+            if progress_callback and processed % 10 == 0:
+                progress_callback(
+                    processed,
+                    total_changes,
+                    Path(""),
+                    info=f"🔄 Incremental HNSW update: {processed}/{total_changes} changes",
+                )
+
+        # Save updated index
+        total_vectors = len(id_to_label)
+        hnsw_manager.save_incremental_update(
+            index, collection_path, id_to_label, label_to_id, total_vectors
+        )
+
+        # Final progress report
+        if progress_callback:
+            progress_callback(
+                total_changes,
+                total_changes,
+                Path(""),
+                info=f"✓ Incremental HNSW update complete: {total_changes} changes applied",
+            )
+
+        self.logger.info(
+            f"Incremental HNSW update complete for '{collection_name}': "
+            f"{len(changes['added'])} added, {len(changes['updated'])} updated, "
+            f"{len(changes['deleted'])} deleted, total vectors: {total_vectors}"
+        )
+
+        return {
+            "status": "incremental_update_applied",
+            "vectors": total_vectors,
+            "changes_applied": {
+                "added": len(changes["added"]),
+                "updated": len(changes["updated"]),
+                "deleted": len(changes["deleted"]),
+            },
+        }

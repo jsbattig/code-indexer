@@ -237,9 +237,36 @@ class VoyageAIClient(EmbeddingProvider):
                 # Submit current batch before it gets too large
                 try:
                     result = self._make_sync_request(current_batch, model)
+
+                    # LAYER 3 VALIDATION: Validate all embeddings from API before processing
+                    for idx, item in enumerate(result["data"]):
+                        emb = item["embedding"]
+                        if emb is None:
+                            raise RuntimeError(
+                                f"VoyageAI returned None embedding at index {idx} in batch. "
+                                f"API response is corrupt."
+                            )
+                        if not emb:  # Empty list
+                            raise RuntimeError(
+                                f"VoyageAI returned empty embedding at index {idx} in batch"
+                            )
+                        # Check for None values inside embedding
+                        if any(v is None for v in emb):
+                            raise RuntimeError(
+                                f"VoyageAI returned embedding with None values at index {idx}: {emb[:10]}..."
+                            )
+
                     batch_embeddings = [
                         list(item["embedding"]) for item in result["data"]
                     ]
+
+                    # VALIDATION: Ensure embeddings match input count
+                    if len(batch_embeddings) != len(current_batch):
+                        raise RuntimeError(
+                            f"VoyageAI returned {len(batch_embeddings)} embeddings "
+                            f"but expected {len(current_batch)}. Partial response detected."
+                        )
+
                     all_embeddings.extend(batch_embeddings)
                 except Exception as e:
                     raise RuntimeError(f"Batch embedding request failed: {e}")
@@ -256,7 +283,34 @@ class VoyageAIClient(EmbeddingProvider):
         if current_batch:
             try:
                 result = self._make_sync_request(current_batch, model)
+
+                # LAYER 3 VALIDATION: Validate all embeddings from API before processing
+                for idx, item in enumerate(result["data"]):
+                    emb = item["embedding"]
+                    if emb is None:
+                        raise RuntimeError(
+                            f"VoyageAI returned None embedding at index {idx} in batch. "
+                            f"API response is corrupt."
+                        )
+                    if not emb:  # Empty list
+                        raise RuntimeError(
+                            f"VoyageAI returned empty embedding at index {idx} in batch"
+                        )
+                    # Check for None values inside embedding
+                    if any(v is None for v in emb):
+                        raise RuntimeError(
+                            f"VoyageAI returned embedding with None values at index {idx}: {emb[:10]}..."
+                        )
+
                 batch_embeddings = [list(item["embedding"]) for item in result["data"]]
+
+                # VALIDATION: Ensure embeddings match input count
+                if len(batch_embeddings) != len(current_batch):
+                    raise RuntimeError(
+                        f"VoyageAI returned {len(batch_embeddings)} embeddings "
+                        f"but expected {len(current_batch)}. Partial response detected."
+                    )
+
                 all_embeddings.extend(batch_embeddings)
             except Exception as e:
                 raise RuntimeError(f"Batch embedding request failed: {e}")

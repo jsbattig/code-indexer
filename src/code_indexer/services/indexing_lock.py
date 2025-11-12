@@ -159,25 +159,23 @@ class IndexingLock:
         if not heartbeat_data:
             return False
 
-        last_heartbeat = heartbeat_data.get("last_heartbeat", 0)
-        age = time.time() - last_heartbeat
-
-        # Check if heartbeat is recent enough
-        if age > self.timeout:
-            return False
-
-        # Check if process is still running (additional safety check)
+        # Check if process is still running FIRST (primary check)
         pid = heartbeat_data.get("pid")
         if pid and isinstance(pid, int):
             try:
                 # On Unix systems, sending signal 0 checks if process exists
                 os.kill(pid, 0)
-                return True
+                # Process exists, now check heartbeat freshness
+                last_heartbeat = heartbeat_data.get("last_heartbeat", 0)
+                age = time.time() - last_heartbeat
+                return bool(age <= self.timeout)
             except (OSError, ProcessLookupError):
-                # Process doesn't exist
+                # Process doesn't exist - heartbeat is stale regardless of timestamp
                 return False
 
-        # If we can't check process, rely on heartbeat timeout
+        # If we can't check process (no PID), rely on heartbeat timeout
+        last_heartbeat = heartbeat_data.get("last_heartbeat", 0)
+        age = time.time() - last_heartbeat
         return bool(age <= self.timeout)
 
     def _cleanup_heartbeat(self) -> None:

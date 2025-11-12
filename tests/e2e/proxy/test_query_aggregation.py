@@ -187,7 +187,7 @@ def authenticate_request(username, password):
 
         # Story 3.2: Verify sorted by score (descending)
         lines = output.strip().split("\n")
-        score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
+        score_lines = [line for line in lines if line.strip() and line[0].isdigit()]
 
         # Extract scores from result lines
         scores = []
@@ -251,7 +251,7 @@ def authenticate_request(username, password):
 
         # Count results in output
         lines = output.strip().split("\n")
-        score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
+        score_lines = [line for line in lines if line.strip() and line[0].isdigit()]
 
         # Should have exactly 3 results (global limit)
         self.assertEqual(
@@ -261,7 +261,7 @@ def authenticate_request(username, password):
         )
 
         # Should be top 3 by score: 0.95, 0.92, 0.90
-        scores = [float(l.split()[0]) for l in score_lines]
+        scores = [float(line.split()[0]) for line in score_lines]
         self.assertEqual(
             scores, [0.95, 0.92, 0.90], "Limit did not return top 3 results by score"
         )
@@ -291,7 +291,7 @@ def authenticate_request(username, password):
 
         # Extract repo paths in order of appearance
         lines = output.strip().split("\n")
-        score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
+        score_lines = [line for line in lines if line.strip() and line[0].isdigit()]
 
         repo_order = []
         for line in score_lines:
@@ -334,7 +334,7 @@ def authenticate_request(username, password):
         self.assertIn("0.8", output)
 
         lines = output.strip().split("\n")
-        score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
+        score_lines = [line for line in lines if line.strip() and line[0].isdigit()]
         self.assertEqual(len(score_lines), 2)
 
     def test_handle_error_outputs(self):
@@ -387,7 +387,7 @@ def authenticate_request(username, password):
         output = aggregator.aggregate_results(repo_outputs, limit=None)
 
         lines = output.strip().split("\n")
-        score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
+        score_lines = [line for line in lines if line.strip() and line[0].isdigit()]
 
         # Should return all 3 results
         self.assertEqual(len(score_lines), 3)

@@ -189,7 +189,7 @@ class TestGoldenRepoRefreshWorkflow:
     def test_post_clone_workflow_command_sequence(
         self, golden_repo_manager, test_repo_path
     ):
-        """Test the exact sequence of commands in post-clone workflow."""
+        """Test the exact sequence of commands in post-clone workflow (container-free)."""
 
         with patch("subprocess.run") as mock_run:
             mock_result = MagicMock()
@@ -207,13 +207,11 @@ class TestGoldenRepoRefreshWorkflow:
             # This should call the post-clone workflow
             golden_repo_manager._execute_post_clone_workflow(clone_path)
 
-            # Verify the expected command sequence
+            # Verify the expected command sequence (container-free architecture)
+            # After Bug #2 fix: Removed obsolete docker start/stop/status commands
             expected_commands = [
                 ["cidx", "init", "--embedding-provider", "voyage-ai"],
-                ["cidx", "start", "--force-docker"],
-                ["cidx", "status", "--force-docker"],
                 ["cidx", "index"],
-                ["cidx", "stop", "--force-docker"],
             ]
 
             assert len(mock_run.call_args_list) == len(expected_commands)

@@ -229,7 +229,7 @@ class TestParallelCommandExecution(unittest.TestCase):
         """Test that MAX_WORKERS limit is respected."""
         # Create 15 mock repositories
         many_repos = [f"/tmp/repo{i}" for i in range(15)]
-        executor = ParallelCommandExecutor(many_repos)
+        ParallelCommandExecutor(many_repos)
 
         # Verify MAX_WORKERS is 10
         self.assertEqual(ParallelCommandExecutor.MAX_WORKERS, 10)

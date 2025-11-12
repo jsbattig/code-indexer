@@ -185,6 +185,9 @@ class IDIndexManager:
     def rebuild_from_vectors(self, collection_path: Path) -> Dict[str, Path]:
         """Rebuild ID index by scanning all vector JSON files.
 
+        Uses BackgroundIndexRebuilder for atomic file swapping with exclusive
+        locking. Index loads can continue using old index during rebuild.
+
         Args:
             collection_path: Path to collection directory
 
@@ -192,6 +195,7 @@ class IDIndexManager:
             Dictionary mapping point IDs to file paths
         """
         import json
+        from .background_index_rebuilder import BackgroundIndexRebuilder
 
         id_index = {}
 
@@ -214,7 +218,39 @@ class IDIndexManager:
                 # Skip corrupted files
                 continue
 
-        # Save to disk
-        self.save_index(collection_path, id_index)
+        # Use BackgroundIndexRebuilder for atomic swap with locking
+        rebuilder = BackgroundIndexRebuilder(collection_path)
+        index_file = collection_path / self.INDEX_FILENAME
+
+        def build_id_index_to_temp(temp_file: Path) -> None:
+            """Build ID index to temp file."""
+            with open(temp_file, "wb") as f:
+                # Write number of entries (4 bytes, uint32)
+                f.write(struct.pack("<I", len(id_index)))
+
+                # Write each entry
+                for point_id, file_path in id_index.items():
+                    # Make path relative to collection_path
+                    try:
+                        relative_path = file_path.relative_to(collection_path)
+                        path_str = str(relative_path)
+                    except ValueError:
+                        # If path is not relative to collection_path, store as-is
+                        path_str = str(file_path)
+
+                    # Encode strings to UTF-8
+                    id_bytes = point_id.encode("utf-8")
+                    path_bytes = path_str.encode("utf-8")
+
+                    # Write ID length (2 bytes, uint16) and ID string
+                    f.write(struct.pack("<H", len(id_bytes)))
+                    f.write(id_bytes)
+
+                    # Write path length (2 bytes, uint16) and path string
+                    f.write(struct.pack("<H", len(path_bytes)))
+                    f.write(path_bytes)
+
+        # Rebuild with lock (entire rebuild duration)
+        rebuilder.rebuild_with_lock(build_id_index_to_temp, index_file)
 
         return id_index

@@ -281,3 +281,22 @@ class GitAwareDocumentProcessor(DocumentProcessor):
             "file_stats": file_stats,
             "last_index_time": git_state.get("last_index_time", 0),
         }
+
+    def get_git_status_fast(self) -> Dict[str, Any]:
+        """Get git status WITHOUT expensive file stats (FAST for status display).
+
+        Returns git branch/commit info only, skipping the expensive file scanning.
+        Use this for status/monitoring where file stats aren't needed.
+
+        Returns:
+            Dict with git_available, current_branch, current_commit, project_id
+        """
+        git_state = self.git_detection._get_current_git_state()
+
+        return {
+            "git_available": git_state["git_available"],
+            "current_branch": git_state.get("branch", "unknown"),
+            "current_commit": git_state.get("commit_hash", "unknown"),
+            "project_id": self.file_identifier._get_project_id(),
+            "last_index_time": git_state.get("last_index_time", 0),
+        }

@@ -298,7 +298,7 @@ class Product:
         with tempfile.TemporaryDirectory() as tmpdir:
             project_dir = self.setup_test_project(Path(tmpdir))
 
-            result = self.run_cidx_command(["init"], cwd=project_dir)
+            self.run_cidx_command(["init"], cwd=project_dir)
 
             # If we somehow could test without tantivy installed:
             # result = self.run_cidx_command(["index", "--fts"], cwd=project_dir)

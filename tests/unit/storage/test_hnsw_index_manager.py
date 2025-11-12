@@ -570,4 +570,4 @@ class TestHNSWIndexManagerGracefulDegradation:
         # This test verifies the error message is clear
         # In practice, __init__ would fail first, but we test the pattern
         with pytest.raises(ImportError):
-            manager = HNSWIndexManager()
+            HNSWIndexManager()

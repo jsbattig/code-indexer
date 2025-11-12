@@ -113,7 +113,11 @@ class AuthenticationManager:
     def __init__(self):
         self.auth_provider = None
 """,
-                "identifiers": ["authenticate_user", "authorize_user", "AuthenticationManager"],
+                "identifiers": [
+                    "authenticate_user",
+                    "authorize_user",
+                    "AuthenticationManager",
+                ],
                 "line_start": 1,
                 "line_end": 10,
                 "language": "python",
@@ -142,7 +146,11 @@ class ConfigTest(unittest.TestCase):
         result = validate_config({})
         self.assertTrue(result)
 """,
-                "identifiers": ["ConfigTest", "test_config_loader", "test_config_validator"],
+                "identifiers": [
+                    "ConfigTest",
+                    "test_config_loader",
+                    "test_config_validator",
+                ],
                 "line_start": 1,
                 "line_end": 10,
                 "language": "python",
@@ -186,9 +194,9 @@ class ConfigTest(unittest.TestCase):
                 f"Got: {match_text}"
             )
             # Should contain 'parts' but with additional characters
-            assert "parts" in match_text.lower(), (
-                f"match_text should contain 'parts'. Got: {match_text}"
-            )
+            assert (
+                "parts" in match_text.lower()
+            ), f"match_text should contain 'parts'. Got: {match_text}"
 
     def test_regex_pattern_extracts_correct_line_number(self, indexed_manager):
         """
@@ -214,9 +222,9 @@ class ConfigTest(unittest.TestCase):
 
         # Bug behavior: all line numbers are 1
         # Correct behavior: should have matches beyond line 1
-        assert any(line > 1 for line in line_numbers), (
-            f"Expected matches beyond line 1. Got line numbers: {line_numbers}"
-        )
+        assert any(
+            line > 1 for line in line_numbers
+        ), f"Expected matches beyond line 1. Got line numbers: {line_numbers}"
 
     def test_regex_pattern_extracts_correct_column_number(self, indexed_manager):
         """
@@ -239,9 +247,9 @@ class ConfigTest(unittest.TestCase):
 
         # Some matches should be at column positions > 1
         # (not every match starts at beginning of line)
-        assert any(col > 1 for col in column_numbers), (
-            f"Expected some matches beyond column 1. Got columns: {column_numbers}"
-        )
+        assert any(
+            col > 1 for col in column_numbers
+        ), f"Expected some matches beyond column 1. Got columns: {column_numbers}"
 
     def test_regex_pattern_with_alternation(self, indexed_manager):
         """
@@ -262,13 +270,13 @@ class ConfigTest(unittest.TestCase):
         for result in results:
             match_text = result.get("match_text", "")
             # Should not be the query pattern
-            assert "|" not in match_text, (
-                f"match_text should not contain '|' from pattern. Got: {match_text}"
-            )
+            assert (
+                "|" not in match_text
+            ), f"match_text should not contain '|' from pattern. Got: {match_text}"
             # Should match one of the alternatives
-            assert "authen" in match_text.lower() or "author" in match_text.lower(), (
-                f"match_text should contain 'authen' or 'author'. Got: {match_text}"
-            )
+            assert (
+                "authen" in match_text.lower() or "author" in match_text.lower()
+            ), f"match_text should contain 'authen' or 'author'. Got: {match_text}"
 
     def test_regex_pattern_extracts_snippet_with_context(self, indexed_manager):
         """
@@ -295,15 +303,15 @@ class ConfigTest(unittest.TestCase):
             assert snippet, "Snippet should not be empty"
 
             # snippet_start_line should be <= line (snippet starts before or at match line)
-            assert snippet_start_line <= line, (
-                f"snippet_start_line ({snippet_start_line}) should be <= line ({line})"
-            )
+            assert (
+                snippet_start_line <= line
+            ), f"snippet_start_line ({snippet_start_line}) should be <= line ({line})"
 
             # Snippet should contain multiple lines
-            snippet_line_count = len(snippet.split('\n'))
-            assert snippet_line_count >= 1, (
-                f"Snippet should contain at least 1 line. Got {snippet_line_count} lines"
-            )
+            snippet_line_count = len(snippet.split("\n"))
+            assert (
+                snippet_line_count >= 1
+            ), f"Snippet should contain at least 1 line. Got {snippet_line_count} lines"
 
     def test_regex_case_insensitive_extracts_correct_match(self, indexed_manager):
         """
@@ -324,13 +332,13 @@ class ConfigTest(unittest.TestCase):
         for result in results:
             match_text = result.get("match_text", "")
             # Should not be the query pattern
-            assert match_text != "config.*", (
-                f"match_text should not be query pattern. Got: {match_text}"
-            )
+            assert (
+                match_text != "config.*"
+            ), f"match_text should not be query pattern. Got: {match_text}"
             # Should preserve original casing from source
-            assert "config" in match_text.lower(), (
-                f"match_text should contain 'config'. Got: {match_text}"
-            )
+            assert (
+                "config" in match_text.lower()
+            ), f"match_text should contain 'config'. Got: {match_text}"
 
     def test_regex_multiple_matches_in_same_file(self, indexed_manager):
         """
@@ -366,7 +374,9 @@ class ConfigTest(unittest.TestCase):
                 # Verify line number is reasonable (not all at line 1)
                 assert line >= 1, f"Line should be >= 1, got {line}"
 
-    def test_regex_with_dot_star_extracts_variable_length_matches(self, indexed_manager):
+    def test_regex_with_dot_star_extracts_variable_length_matches(
+        self, indexed_manager
+    ):
         """
         GIVEN indexed repo with variable-length matches (e.g., 'parts', 'parts_enabled', 'partsupcat')
         WHEN searching with pattern 'parts.*'
@@ -392,6 +402,6 @@ class ConfigTest(unittest.TestCase):
 
         # All match texts should start with 'parts'
         for match_text in match_texts:
-            assert match_text.lower().startswith("parts"), (
-                f"Match text should start with 'parts'. Got: {match_text}"
-            )
+            assert match_text.lower().startswith(
+                "parts"
+            ), f"Match text should start with 'parts'. Got: {match_text}"
