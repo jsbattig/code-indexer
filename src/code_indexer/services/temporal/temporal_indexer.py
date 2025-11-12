@@ -435,7 +435,7 @@ class TemporalIndexer:
                     message = parts[4].strip()
                     commits.append(
                         CommitInfo(
-                            hash=parts[0],
+                            hash=parts[0].strip(),  # Strip newlines from commit hash (BUG #1 FIX)
                             timestamp=int(parts[1]),
                             author_name=parts[2],
                             author_email=parts[3],
@@ -596,8 +596,8 @@ class TemporalIndexer:
                     # Track last file processed for THIS commit (local to this worker)
                     last_file_for_commit = Path(".")  # Default if no diffs
 
-                    # Track file count for this commit
-                    files_in_this_commit = 0
+                    # Track file count for this commit (BUG #2 FIX: moved before if/else)
+                    files_in_this_commit = len(diffs)
 
                     # If no diffs, mark complete and continue
                     if not diffs:
@@ -612,7 +612,7 @@ class TemporalIndexer:
                         )
 
                         # Phase 1: Collect all chunks from all diffs
-                        files_in_this_commit = len(diffs)
+                        # (files_in_this_commit already set above)
 
                         for diff_info in diffs:
                             # Update slot with current file information (no release/reacquire)
