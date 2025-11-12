@@ -661,28 +661,12 @@ class CheckpointRecoveryStrategy(RecoveryStrategy):
 
             # Load checkpoint data
             if not context.job_id:
-                attempt.notes = "No job ID available for checkpoint recovery"
-                attempts.append(attempt)
-                return RecoveryResult(
-                    success=False,
-                    action_taken=RecoveryAction.CHECKPOINT_RESTORE,
-                    outcome=RecoveryOutcome.FAILED,
-                    attempts=attempts,
-                    final_error=error,
-                )
+                raise ValueError("No job ID available for checkpoint recovery")
 
             checkpoint = self._load_checkpoint(context.job_id)
             if not checkpoint:
-                attempt.notes = "No valid checkpoint found"
-                attempts.append(attempt)
-
-                return RecoveryResult(
-                    success=False,
-                    action_taken=RecoveryAction.CHECKPOINT_RESTORE,
-                    outcome=RecoveryOutcome.FAILED,
-                    attempts=attempts,
-                    final_error=error,
-                    recovery_time_seconds=time.time() - start_time,
+                raise FileNotFoundError(
+                    f"No valid checkpoint found for job {context.job_id}"
                 )
 
             # Restore system state from checkpoint
@@ -750,7 +734,9 @@ class CheckpointRecoveryStrategy(RecoveryStrategy):
             )
             attempts.append(attempt)
 
-            self.logger.error(f"Checkpoint recovery failed: {checkpoint_exception}")
+            self.logger.error(
+                f"Checkpoint recovery failed: {checkpoint_exception}", exc_info=True
+            )
 
             return RecoveryResult(
                 success=False,

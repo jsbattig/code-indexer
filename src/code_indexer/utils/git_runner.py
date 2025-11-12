@@ -4,10 +4,14 @@ Centralized Git command runner with dubious ownership handling.
 This module provides a robust way to run git commands that properly handles
 the "dubious ownership" error that occurs when running under sudo or in
 environments where the repository owner differs from the current user.
+
+Additionally provides retry logic for transient git failures with full
+exception logging.
 """
 
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -108,6 +112,182 @@ def run_git_command(
         env=env,
         **kwargs,
     )
+
+
+def run_git_command_with_retry(
+    cmd: List[str],
+    cwd: Path,
+    check: bool = True,
+    capture_output: bool = True,
+    text: bool = True,
+    timeout: Optional[float] = None,
+    **kwargs,
+) -> subprocess.CompletedProcess:
+    """
+    Run a git command with automatic retry logic for transient failures.
+
+    Wraps run_git_command with retry capability. If a git command fails with
+    CalledProcessError, it will be retried once after a 1-second delay.
+    Timeout errors are not retried as they are not transient.
+
+    Args:
+        cmd: Git command as a list (e.g., ["git", "status"])
+        cwd: Working directory for the command
+        check: Whether to raise CalledProcessError on non-zero exit
+        capture_output: Whether to capture stdout and stderr
+        text: Whether to decode output as text
+        timeout: Optional timeout in seconds
+        **kwargs: Additional arguments to pass to subprocess.run
+
+    Returns:
+        CompletedProcess instance with the command result
+
+    Raises:
+        subprocess.CalledProcessError: If check=True and command fails after retries
+        subprocess.TimeoutExpired: If timeout is exceeded (not retried)
+    """
+    MAX_RETRIES = 1
+    RETRY_DELAY_SECONDS = 1
+
+    attempt = 0
+    last_exception: Optional[Exception] = None
+
+    while attempt <= MAX_RETRIES:
+        try:
+            # Get the proper environment with safe.directory configuration
+            env = get_git_environment(cwd)
+
+            # Merge any environment from kwargs if provided
+            if "env" in kwargs:
+                env.update(kwargs["env"])
+                kwargs_copy = kwargs.copy()
+                kwargs_copy.pop("env")
+            else:
+                kwargs_copy = kwargs
+
+            # Execute git command
+            result = subprocess.run(
+                cmd,
+                cwd=cwd,
+                check=check,
+                capture_output=capture_output,
+                text=text,
+                timeout=timeout,
+                env=env,
+                **kwargs_copy,
+            )
+
+            # Success - return immediately
+            return result
+
+        except subprocess.CalledProcessError as e:
+            last_exception = e
+
+            # Log failure with full command details
+            _log_git_failure(
+                exception=e,
+                cmd=cmd,
+                cwd=cwd,
+                attempt=attempt + 1,
+                max_attempts=MAX_RETRIES + 1,
+            )
+
+            # If this was the last attempt, re-raise
+            if attempt >= MAX_RETRIES:
+                raise last_exception
+
+            # Wait before retry
+            time.sleep(RETRY_DELAY_SECONDS)
+            attempt += 1
+
+        except subprocess.TimeoutExpired as e:
+            last_exception = e
+
+            # Log timeout with command details
+            _log_git_timeout(
+                exception=e,
+                cmd=cmd,
+                cwd=cwd,
+                timeout=timeout,
+            )
+
+            # Timeouts should not be retried (not transient)
+            raise last_exception
+
+    # Should never reach here, but safety fallback
+    # Raise RuntimeError as a last resort
+    raise RuntimeError(
+        f"Git command failed without proper exception handling: {' '.join(cmd)}"
+    )
+
+
+def _log_git_failure(
+    exception: subprocess.CalledProcessError,
+    cmd: List[str],
+    cwd: Path,
+    attempt: int,
+    max_attempts: int,
+) -> None:
+    """Log a git command failure with full context.
+
+    Args:
+        exception: The CalledProcessError that occurred
+        cmd: Git command that failed
+        cwd: Working directory
+        attempt: Current attempt number (1-indexed)
+        max_attempts: Maximum number of attempts
+    """
+    from .exception_logger import ExceptionLogger
+
+    logger = ExceptionLogger.get_instance()
+    if logger:
+        context = {
+            "git_command": " ".join(cmd),
+            "cwd": str(cwd),
+            "returncode": exception.returncode,
+            "stdout": getattr(exception, "stdout", ""),
+            "stderr": getattr(exception, "stderr", ""),
+            "attempt": f"{attempt}/{max_attempts}",
+        }
+
+        # Create a descriptive exception message
+        failure_msg = (
+            f"Git command failed (attempt {attempt}/{max_attempts}): "
+            f"{' '.join(cmd)}"
+        )
+
+        # Create a new exception with context for logging
+        logged_exception = Exception(failure_msg)
+        logger.log_exception(logged_exception, context=context)
+
+
+def _log_git_timeout(
+    exception: subprocess.TimeoutExpired,
+    cmd: List[str],
+    cwd: Path,
+    timeout: Optional[float],
+) -> None:
+    """Log a git command timeout with full context.
+
+    Args:
+        exception: The TimeoutExpired that occurred
+        cmd: Git command that timed out
+        cwd: Working directory
+        timeout: Timeout value in seconds
+    """
+    from .exception_logger import ExceptionLogger
+
+    logger = ExceptionLogger.get_instance()
+    if logger:
+        context = {
+            "git_command": " ".join(cmd),
+            "cwd": str(cwd),
+            "timeout": timeout,
+        }
+
+        timeout_msg = f"Git command timeout: {' '.join(cmd)}"
+        logged_exception = Exception(timeout_msg)
+        logger.log_exception(logged_exception, context=context)
 
 
 def is_git_repository(project_dir: Path) -> bool:

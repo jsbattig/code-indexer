@@ -69,7 +69,7 @@ class TestQueryResultAggregator:
 
         # Extract scores in order of appearance
         lines = output.strip().split("\n")
-        score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
+        score_lines = [line for line in lines if line.strip() and line[0].isdigit()]
 
         # Verify descending order: 0.95, 0.85, 0.75
         assert score_lines[0].startswith("0.95")
@@ -92,7 +92,7 @@ class TestQueryResultAggregator:
         output = aggregator.aggregate_results(repo_outputs, limit=10)
 
         lines = output.strip().split("\n")
-        score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
+        score_lines = [line for line in lines if line.strip() and line[0].isdigit()]
 
         # Verify interleaved order: 0.95(repo1), 0.85(repo2), 0.75(repo1)
         assert score_lines[0].startswith("0.95")
@@ -127,7 +127,7 @@ class TestQueryResultAggregator:
         output = aggregator.aggregate_results(repo_outputs, limit=3)
 
         lines = output.strip().split("\n")
-        score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
+        score_lines = [line for line in lines if line.strip() and line[0].isdigit()]
 
         # Should have exactly 3 results total (not 3 per repo)
         assert len(score_lines) == 3
@@ -150,7 +150,7 @@ class TestQueryResultAggregator:
         output = aggregator.aggregate_results(repo_outputs, limit=10)
 
         lines = output.strip().split("\n")
-        score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
+        score_lines = [line for line in lines if line.strip() and line[0].isdigit()]
 
         # Should return all available results (2)
         assert len(score_lines) == 2
@@ -172,14 +172,14 @@ class TestQueryResultAggregator:
         # Test with None
         output_none = aggregator.aggregate_results(repo_outputs, limit=None)
         lines_none = [
-            l for l in output_none.strip().split("\n") if l.strip() and l[0].isdigit()
+            line for line in output_none.strip().split("\n") if line.strip() and line[0].isdigit()
         ]
         assert len(lines_none) == 3
 
         # Test with 0
         output_zero = aggregator.aggregate_results(repo_outputs, limit=0)
         lines_zero = [
-            l for l in output_zero.strip().split("\n") if l.strip() and l[0].isdigit()
+            line for line in output_zero.strip().split("\n") if line.strip() and line[0].isdigit()
         ]
         assert len(lines_zero) == 3
 
@@ -217,7 +217,7 @@ class TestQueryResultAggregator:
         assert "0.8" in output
 
         lines = output.strip().split("\n")
-        score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
+        score_lines = [line for line in lines if line.strip() and line[0].isdigit()]
         assert len(score_lines) == 2
 
     def test_handle_all_empty_outputs(self):
@@ -264,10 +264,10 @@ class TestQueryResultAggregator:
         output = aggregator.aggregate_results(repo_outputs, limit=10)
 
         lines = output.strip().split("\n")
-        score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
+        score_lines = [line for line in lines if line.strip() and line[0].isdigit()]
 
         # All should have same score
-        assert all(l.startswith("0.9") for l in score_lines)
+        assert all(line.startswith("0.9") for line in score_lines)
 
         # Should maintain original parse order
         assert "repo1/a.py" in score_lines[0]
@@ -329,7 +329,7 @@ class TestQueryResultAggregator:
         output = aggregator.aggregate_results(repo_outputs, limit=50)
 
         lines = output.strip().split("\n")
-        score_lines = [l for l in lines if l.strip() and l[0].isdigit()]
+        score_lines = [line for line in lines if line.strip() and line[0].isdigit()]
 
         # Should have exactly 50 results (global limit)
         assert len(score_lines) == 50
@@ -379,5 +379,5 @@ class TestQueryResultAggregator:
         output = aggregator.aggregate_results(repo_outputs, limit=10)
 
         # Blank line should be preserved in output
-        lines = output.split("\n")
+        output.split("\n")
         assert "  3:" in output  # Line 3 exists (even if empty after colon)

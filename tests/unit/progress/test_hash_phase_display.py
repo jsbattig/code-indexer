@@ -94,11 +94,11 @@ def test_concurrent_files_display_fallback():
 
 
 def test_slot_tracker_takes_precedence():
-    """Test that slot_tracker is used when available over concurrent_files."""
+    """Test that concurrent_files takes precedence in daemon mode (FIXED behavior)."""
     console = Console()
     manager = MultiThreadedProgressManager(console=console)
 
-    # Create a real slot tracker with data
+    # Create a real slot tracker with data (simulates RPyC proxy in daemon mode)
     slot_tracker = CleanSlotTracker(max_slots=2)
     file_data = FileData(
         filename="tracker_file.py",
@@ -108,7 +108,7 @@ def test_slot_tracker_takes_precedence():
     )
     slot_id = slot_tracker.acquire_slot(file_data)
 
-    # Also provide concurrent_files (should be ignored)
+    # concurrent_files contains fresh serialized data (preferred in daemon mode)
     concurrent_files = [
         {
             "file_path": "concurrent_file.py",
@@ -129,7 +129,7 @@ def test_slot_tracker_takes_precedence():
         info="1/5 files (20%) | 1.0 files/s | 25.0 KB/s | 1 threads | Processing...",
     )
 
-    # Verify slot_tracker was set
+    # Verify slot_tracker was set (both values stored, but concurrent_files used for display)
     assert manager.slot_tracker == slot_tracker
 
     # Release slot for cleanup

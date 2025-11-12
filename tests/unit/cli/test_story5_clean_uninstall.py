@@ -28,7 +28,7 @@ def test_project_root(tmp_path):
     index_dir = project_root / ".code-indexer" / "index"
     index_dir.mkdir(parents=True)
 
-    # Create config.json with filesystem provider
+    # Create config.json with filesystem provider (daemon DISABLED for standalone testing)
     config_file = project_root / ".code-indexer" / "config.json"
     config_data = {
         "codebase_dir": str(project_root),
@@ -36,6 +36,9 @@ def test_project_root(tmp_path):
         "vector_store": {"provider": "filesystem"},
         "embedding": {"provider": "voyage", "model": "voyage-code-3"},
         "git": {"available": False},
+        "daemon": {
+            "enabled": False
+        },  # Explicitly disable daemon for standalone testing
     }
     with open(config_file, "w") as f:
         json.dump(config_data, f)
@@ -201,7 +204,7 @@ class TestCleanCommand:
     def test_clean_with_force_flag_skips_confirmation(
         self, test_project_root, mock_backend
     ):
-        """Test clean with --force flag skips confirmation prompt."""
+        """Test clean with --force flag skips confirmation prompt (standalone mode)."""
         from code_indexer.cli import cli
 
         runner = CliRunner()
@@ -213,9 +216,10 @@ class TestCleanCommand:
                 return_value=mock_backend,
             ),
         ):
+            # Use --path to explicitly specify project root with daemon disabled
             result = runner.invoke(
                 cli,
-                ["clean", "--force"],
+                ["--path", str(test_project_root), "clean", "--force"],
             )
 
         # Should clear collection without prompting

@@ -306,15 +306,32 @@ class SmartIndexer(HighThroughputProcessor):
                         self.config.codebase_dir / ".code-indexer" / "tantivy_index"
                     )
                     fts_manager = TantivyIndexManager(fts_index_dir)
-                    fts_manager.initialize_index(create_new=True)
+
+                    # Check if FTS index already exists to enable incremental updates
+                    # FTS uses meta.json as the marker file for existing indexes
+                    fts_index_exists = (fts_index_dir / "meta.json").exists()
+
+                    # Only force full rebuild if forcing full reindex or index doesn't exist
+                    create_new_fts = force_full or not fts_index_exists
+
+                    fts_manager.initialize_index(create_new=create_new_fts)
+
                     if progress_callback:
+                        if create_new_fts:
+                            info_message = (
+                                "✅ FTS indexing enabled - Creating new Tantivy index"
+                            )
+                        else:
+                            info_message = "✅ FTS indexing enabled - Opening existing Tantivy index for incremental updates"
                         progress_callback(
                             0,
                             0,
                             Path(""),
-                            info="✅ FTS indexing enabled - Tantivy index initialized",
+                            info=info_message,
                         )
-                    logger.info(f"FTS indexing enabled: {fts_index_dir}")
+                    logger.info(
+                        f"FTS indexing enabled: {fts_index_dir} (create_new={create_new_fts})"
+                    )
                 except ImportError as e:
                     logger.error(
                         f"FTS indexing failed - Tantivy library not installed: {e}"
@@ -1157,6 +1174,9 @@ class SmartIndexer(HighThroughputProcessor):
     ) -> ProcessingStats:
         """Reconcile disk files with database contents and index missing/modified files."""
 
+        # Initialize FTS manager to None (FTS not supported in reconcile)
+        fts_manager: Optional[TantivyIndexManager] = None
+
         # Ensure provider-aware collection exists
         collection_name = self.qdrant_client.ensure_provider_aware_collection(
             self.config, self.embedding_provider, quiet
@@ -1518,7 +1538,7 @@ class SmartIndexer(HighThroughputProcessor):
                 collection_name=collection_name,
                 progress_callback=progress_callback,
                 vector_thread_count=vector_thread_count,
-                fts_manager=fts_manager,  # type: ignore[name-defined]
+                fts_manager=fts_manager,  # type: ignore[name-defined]  # noqa: F821 (lazy-loaded FTS manager)
             )
 
             # Convert BranchIndexingResult to ProcessingStats
@@ -1800,7 +1820,7 @@ class SmartIndexer(HighThroughputProcessor):
             vector_thread_count=vector_thread_count,
             batch_size=batch_size,
             progress_callback=progress_callback,
-            fts_manager=fts_manager,  # type: ignore[name-defined]
+            fts_manager=fts_manager,  # type: ignore[name-defined]  # noqa: F821 (lazy-loaded FTS manager)
         )
 
         # Update metadata for all files based on success/failure
@@ -1938,6 +1958,9 @@ class SmartIndexer(HighThroughputProcessor):
         Returns:
             ProcessingStats with processing results
         """
+        # Initialize FTS manager to None (FTS not supported in incremental processing)
+        fts_manager: Optional[TantivyIndexManager] = None
+
         stats = ProcessingStats()
         stats.start_time = time.time()
 
@@ -2002,7 +2025,7 @@ class SmartIndexer(HighThroughputProcessor):
                         progress_callback=None,  # No progress callback for incremental processing
                         vector_thread_count=vector_thread_count,
                         watch_mode=watch_mode,  # Pass through watch_mode
-                        fts_manager=fts_manager,  # type: ignore[name-defined]
+                        fts_manager=fts_manager,  # type: ignore[name-defined]  # noqa: F821 (lazy-loaded FTS manager)
                     )
 
                     # For incremental file processing, also ensure branch isolation

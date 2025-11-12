@@ -169,6 +169,14 @@ class TestFilesystemVectorStoreLifecycle:
             mock_hnsw_instance = Mock()
             mock_hnsw_class.return_value = mock_hnsw_instance
 
+            # Mock load_for_incremental_update to return None (triggers full rebuild path)
+            mock_hnsw_instance.load_for_incremental_update.return_value = (
+                None,
+                {},
+                {},
+                0,
+            )
+
             # Track rebuild calls
             def track_rebuild(*args, **kwargs):
                 nonlocal rebuild_count
@@ -568,6 +576,14 @@ class TestFilesystemVectorStoreWatchModeOptimization:
             mock_hnsw_instance = Mock()
             mock_hnsw_class.return_value = mock_hnsw_instance
 
+            # Mock load_for_incremental_update to return None (triggers full rebuild path)
+            mock_hnsw_instance.load_for_incremental_update.return_value = (
+                None,
+                {},
+                {},
+                0,
+            )
+
             def track_rebuild(*args, **kwargs):
                 nonlocal rebuild_called
                 rebuild_called = True
@@ -626,6 +642,14 @@ class TestFilesystemVectorStoreWatchModeOptimization:
             mock_hnsw_instance = Mock()
             mock_hnsw_class.return_value = mock_hnsw_instance
 
+            # Mock load_for_incremental_update to return None (triggers full rebuild path)
+            mock_hnsw_instance.load_for_incremental_update.return_value = (
+                None,
+                {},
+                {},
+                0,
+            )
+
             def track_rebuild(*args, **kwargs):
                 nonlocal rebuild_called
                 rebuild_called = True
@@ -633,7 +657,7 @@ class TestFilesystemVectorStoreWatchModeOptimization:
             mock_hnsw_instance.rebuild_from_vectors.side_effect = track_rebuild
 
             # Call end_indexing WITHOUT skip_hnsw_rebuild parameter
-            result = store.end_indexing("test_coll")
+            store.end_indexing("test_coll")
 
         # Verify default behavior
         assert (

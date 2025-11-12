@@ -192,6 +192,19 @@ class RepositoryListingManager:
             details["index_size"] = 0
             details["last_updated"] = golden_repo["created_at"]
 
+        # Add temporal indexing status
+        enable_temporal = golden_repo.get("enable_temporal", False)
+        details["enable_temporal"] = enable_temporal
+
+        if enable_temporal:
+            temporal_options = golden_repo.get("temporal_options", {})
+            details["temporal_status"] = {
+                "enabled": True,
+                "diff_context": temporal_options.get("diff_context", 5),
+            }
+        else:
+            details["temporal_status"] = None
+
         return details
 
     def get_available_branches(self, alias: str) -> List[str]:

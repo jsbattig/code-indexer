@@ -57,6 +57,10 @@ class GitAwareWatchHandler(FileSystemEventHandler):
         # Processing state
         self.processing_in_progress = False
         self.processing_thread: Optional[threading.Thread] = None
+        self._stop_processing = threading.Event()  # Signal to stop processing thread
+
+        # Observer for file system events
+        self.observer: Optional[Any] = None
 
         # Statistics
         self.files_processed_count = 0
@@ -66,6 +70,9 @@ class GitAwareWatchHandler(FileSystemEventHandler):
         """Start the git-aware watch process."""
         logger.info("Starting git-aware watch handler")
 
+        # Reset stop event
+        self._stop_processing.clear()
+
         # Start git monitoring
         if self.git_monitor.start_monitoring():
             logger.info(
@@ -73,6 +80,14 @@ class GitAwareWatchHandler(FileSystemEventHandler):
             )
         else:
             logger.warning("Git not available - proceeding with file-only monitoring")
+
+        # Create and start Observer for file system events
+        from watchdog.observers import Observer
+
+        self.observer = Observer()
+        self.observer.schedule(self, str(self.config.codebase_dir), recursive=True)
+        self.observer.start()
+        logger.info(f"File system observer started for {self.config.codebase_dir}")
 
         # Start change processing thread
         self.processing_thread = threading.Thread(
@@ -87,8 +102,22 @@ class GitAwareWatchHandler(FileSystemEventHandler):
         """Stop the git-aware watch process."""
         logger.info("Stopping git-aware watch handler")
 
+        # Signal processing thread to stop
+        self._stop_processing.set()
+
+        # Stop Observer if running
+        if self.observer and self.observer.is_alive():
+            self.observer.stop()
+            self.observer.join(timeout=5.0)
+            logger.info("File system observer stopped")
+
         # Stop git monitoring
         self.git_monitor.stop_monitoring()
+
+        # Wait for processing thread to finish
+        if self.processing_thread and self.processing_thread.is_alive():
+            self.processing_thread.join(timeout=5.0)
+            logger.info("Processing thread stopped")
 
         # Process any remaining changes
         self._process_pending_changes(final_cleanup=True)
@@ -184,9 +213,11 @@ class GitAwareWatchHandler(FileSystemEventHandler):
 
     def _process_changes_loop(self):
         """Main loop for processing file changes with debouncing."""
-        while True:
+        while not self._stop_processing.is_set():
             try:
-                time.sleep(self.debounce_seconds)
+                # Use wait instead of sleep to be interruptible
+                if self._stop_processing.wait(timeout=self.debounce_seconds):
+                    break  # Stop signal received
 
                 # Check for git state changes before processing files
                 git_change = self.git_monitor.check_for_changes()
@@ -199,7 +230,9 @@ class GitAwareWatchHandler(FileSystemEventHandler):
 
             except Exception as e:
                 logger.error(f"Error in change processing loop: {e}")
-                time.sleep(5)  # Wait before retrying
+                # Use wait instead of sleep to be interruptible
+                if self._stop_processing.wait(timeout=5):
+                    break  # Stop signal received during error wait
 
     def _process_pending_changes(self, final_cleanup: bool = False):
         """Process all pending file changes using git-aware indexing."""
@@ -302,8 +335,12 @@ class GitAwareWatchHandler(FileSystemEventHandler):
 
             # Use git topology analysis for branch transition (same as index command)
             if old_branch and new_branch:
+                # Pass commit hashes to enable same-branch commit detection
+                old_commit = change_event.get("old_commit")
+                new_commit = change_event.get("new_commit")
+
                 branch_analysis = self.git_topology_service.analyze_branch_change(
-                    old_branch, new_branch
+                    old_branch, new_branch, old_commit=old_commit, new_commit=new_commit
                 )
 
                 # Use HighThroughputProcessor for proper branch transition
@@ -355,6 +392,29 @@ class GitAwareWatchHandler(FileSystemEventHandler):
         except Exception as e:
             logger.error(f"Failed to handle branch change: {e}")
             self.watch_metadata.mark_processing_interrupted(f"Branch change error: {e}")
+
+    def is_watching(self) -> bool:
+        """Check if actively watching.
+
+        Returns:
+            True if processing thread is alive and running, False otherwise
+        """
+        return self.processing_thread is not None and self.processing_thread.is_alive()
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get watch statistics.
+
+        Returns:
+            Dictionary with current watch statistics
+        """
+        return {
+            "files_processed": self.files_processed_count,
+            "indexing_cycles": self.indexing_cycles_count,
+            "current_branch": (
+                self.git_monitor.current_branch if self.git_monitor else None
+            ),
+            "pending_changes": len(self.pending_changes),
+        }
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get watch session statistics."""

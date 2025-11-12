@@ -4,7 +4,7 @@ import json
 import logging
 import yaml  # type: ignore
 from pathlib import Path
-from typing import List, Optional, Any, Literal, Tuple
+from typing import List, Optional, Any, Literal, Tuple, Dict
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -56,6 +56,10 @@ class VoyageAIConfig(BaseModel):
     batch_size: int = Field(
         default=128,
         description="Maximum number of texts to send in a single batch request",
+    )
+    max_concurrent_batches_per_commit: int = Field(
+        default=10,
+        description="Maximum number of batches a single commit can have in-flight simultaneously (prevents monopolization)",
     )
 
     # Retry configuration for server errors and transient failures
@@ -286,6 +290,64 @@ class VectorStoreConfig(BaseModel):
     )
 
 
+class DaemonConfig(BaseModel):
+    """Configuration for daemon mode (semantic caching daemon)."""
+
+    enabled: bool = Field(default=False, description="Enable daemon mode")
+    ttl_minutes: int = Field(
+        default=10,
+        description="Cache TTL in minutes (how long to keep indexes in memory)",
+    )
+    auto_shutdown_on_idle: bool = Field(
+        default=True, description="Automatically shutdown daemon when idle"
+    )
+    max_retries: int = Field(
+        default=4, description="Maximum retry attempts for daemon communication"
+    )
+    retry_delays_ms: List[int] = Field(
+        default=[100, 500, 1000, 2000],
+        description="Retry delays in milliseconds (exponential backoff)",
+    )
+    eviction_check_interval_seconds: int = Field(
+        default=60, description="How often to check for cache eviction (in seconds)"
+    )
+
+    @field_validator("ttl_minutes")
+    @classmethod
+    def validate_ttl(cls, v: int) -> int:
+        """Validate TTL is within reasonable range."""
+        if v < 1 or v > 10080:  # 1 week max
+            raise ValueError("TTL must be between 1 and 10080 minutes (1 week)")
+        return v
+
+    @field_validator("max_retries")
+    @classmethod
+    def validate_max_retries(cls, v: int) -> int:
+        """Validate max retries is reasonable."""
+        if v < 0 or v > 10:
+            raise ValueError("max_retries must be between 0 and 10")
+        return v
+
+    @field_validator("retry_delays_ms")
+    @classmethod
+    def validate_retry_delays(cls, v: List[int]) -> List[int]:
+        """Validate retry delays are positive."""
+        if any(d < 0 for d in v):
+            raise ValueError("All retry delays must be positive")
+        return v
+
+
+class TemporalConfig(BaseModel):
+    """Configuration for temporal (git history) indexing."""
+
+    diff_context_lines: int = Field(
+        default=5,
+        ge=0,
+        le=50,
+        description="Number of context lines in git diffs (0-50, default 5)",
+    )
+
+
 class Config(BaseModel):
     """Main configuration for Code Indexer."""
 
@@ -428,6 +490,18 @@ class Config(BaseModel):
         description="Automatic recovery system configuration",
     )
 
+    # Daemon configuration
+    daemon: Optional[DaemonConfig] = Field(
+        default=None,
+        description="Daemon mode configuration for semantic caching",
+    )
+
+    # Temporal indexing configuration
+    temporal: TemporalConfig = Field(
+        default_factory=TemporalConfig,
+        description="Temporal (git history) indexing configuration",
+    )
+
     @field_validator("codebase_dir", mode="before")
     @classmethod
     def convert_path(cls, v: Any) -> Path:
@@ -449,6 +523,16 @@ class ConfigManager:
     """Manages configuration loading, saving, and validation."""
 
     DEFAULT_CONFIG_PATH = Path(".code-indexer/config.json")
+
+    # Daemon configuration defaults
+    DAEMON_DEFAULTS = {
+        "enabled": False,
+        "ttl_minutes": 10,
+        "auto_shutdown_on_idle": True,
+        "max_retries": 4,
+        "retry_delays_ms": [100, 500, 1000, 2000],
+        "eviction_check_interval_seconds": 60,
+    }
 
     def __init__(self, config_path: Optional[Path] = None):
         self.config_path = config_path or self.DEFAULT_CONFIG_PATH
@@ -868,6 +952,106 @@ code-indexer index --clear
 
         # DEFENSIVE: Ensure we always return a ConfigManager with the first found config
         return cls(config_path)
+
+    def enable_daemon(self, ttl_minutes: int = 10) -> None:
+        """Enable daemon mode for repository.
+
+        Args:
+            ttl_minutes: Cache TTL in minutes (default: 10)
+
+        Raises:
+            ValueError: If ttl_minutes is invalid
+        """
+        # Validate TTL before creating config
+        if ttl_minutes < 1:
+            raise ValueError("TTL must be positive")
+        if ttl_minutes > 10080:
+            raise ValueError("TTL must be between 1 and 10080 minutes")
+
+        config = self.get_config()
+
+        # Create daemon config with specified TTL
+        daemon_config_dict = {
+            **self.DAEMON_DEFAULTS,
+            "enabled": True,
+            "ttl_minutes": ttl_minutes,
+        }
+
+        # Update config with daemon configuration
+        config.daemon = DaemonConfig(**daemon_config_dict)
+
+        # Save configuration
+        self.save()
+
+    def disable_daemon(self) -> None:
+        """Disable daemon mode for repository."""
+        config = self.get_config()
+
+        # If no daemon config exists, create one with enabled=False
+        if config.daemon is None:
+            config.daemon = DaemonConfig(**{**self.DAEMON_DEFAULTS, "enabled": False})
+        else:
+            # Just update the enabled flag, preserve other settings
+            daemon_dict = config.daemon.model_dump()
+            daemon_dict["enabled"] = False
+            config.daemon = DaemonConfig(**daemon_dict)
+
+        self.save()
+
+    def update_daemon_ttl(self, ttl_minutes: int) -> None:
+        """Update daemon cache TTL.
+
+        Args:
+            ttl_minutes: Cache TTL in minutes
+
+        Raises:
+            ValueError: If ttl_minutes is invalid
+        """
+        # Validate TTL
+        if ttl_minutes < 1 or ttl_minutes > 10080:
+            raise ValueError("TTL must be between 1 and 10080 minutes")
+
+        config = self.get_config()
+
+        # If no daemon config exists, create one with new TTL
+        if config.daemon is None:
+            config.daemon = DaemonConfig(
+                **{**self.DAEMON_DEFAULTS, "ttl_minutes": ttl_minutes}
+            )
+        else:
+            # Update TTL in existing config
+            daemon_dict = config.daemon.model_dump()
+            daemon_dict["ttl_minutes"] = ttl_minutes
+            config.daemon = DaemonConfig(**daemon_dict)
+
+        self.save()
+
+    def get_daemon_config(self) -> Dict[str, Any]:
+        """Get daemon configuration with defaults.
+
+        Returns:
+            Dictionary containing daemon configuration. If no daemon config exists,
+            returns defaults with enabled=False.
+        """
+        config = self.get_config()
+
+        # If no daemon config, return defaults
+        if config.daemon is None:
+            return {**self.DAEMON_DEFAULTS}
+
+        # Merge with defaults to ensure all fields present
+        daemon_dict = config.daemon.model_dump()
+        return {**self.DAEMON_DEFAULTS, **daemon_dict}
+
+    def get_socket_path(self) -> Path:
+        """Get daemon socket path.
+
+        Socket is always located at .code-indexer/daemon.sock relative to config.
+
+        Returns:
+            Path to daemon socket
+        """
+        return self.config_path.parent / "daemon.sock"
 
 
 def _load_override_config(override_path: Path) -> OverrideConfig:

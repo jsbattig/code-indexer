@@ -50,6 +50,7 @@ dependencies = [
     "zstandard>=0.25.0",
     "hnswlib>=0.8.0",
     "regex>=2023.0.0",
+    "rpyc>=6.0.0",
 ]
 
 [project.optional-dependencies]
@@ -71,8 +72,8 @@ Repository = "https://github.com/jsbattig/code-indexer"
 Issues = "https://github.com/jsbattig/code-indexer/issues"
 
 [project.scripts]
-code-indexer = "code_indexer.cli:main"
-cidx = "code_indexer.cli:main"
+code-indexer = "code_indexer.cli_fast_entry:main"
+cidx = "code_indexer.cli_fast_entry:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/code_indexer"]
@@ -113,6 +114,10 @@ exclude = [
     "tests/unit/bugfixes/test_container_name_resolution_stop_services.py",
     "tests/manual/"
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Intentional lazy loading after logger initialization
+"src/code_indexer/server/app.py" = ["E402"]
 
 [tool.mypy]
 python_version = "3.9"
@@ -156,6 +161,7 @@ python_files = ["test_*.py"]
 addopts = "-v"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+tdd_guard_project_root = "."
 filterwarnings = [
     # Pydantic v2 deprecations
     "ignore:The `__fields__` attribute is deprecated.*:DeprecationWarning",

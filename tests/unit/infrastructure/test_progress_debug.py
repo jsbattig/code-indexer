@@ -159,7 +159,7 @@ class TestClass_{i}:
                 stats = Mock()
                 stats.files_processed = len(self.test_files)
                 stats.chunks_created = len(self.test_files) * 3
-                stats.vectors_created = len(self.test_files) * 3
+                stats.approximate_vectors_created = len(self.test_files) * 3
                 stats.processing_time = 0.5  # Fast mock processing
                 return stats
 
@@ -301,7 +301,7 @@ class TestClass_{i}:
                 result = Mock()
                 result.files_processed = len(self.test_files)
                 result.chunks_created = len(self.test_files) * 2  # Simulate chunking
-                result.vectors_created = len(self.test_files) * 2
+                result.approximate_vectors_created = len(self.test_files) * 2
                 result.processing_time = 0.3
                 return result
 
