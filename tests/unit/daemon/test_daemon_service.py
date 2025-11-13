@@ -579,3 +579,43 @@ class TestConcurrency:
 
         # Cache should still exist
         assert service.cache_entry is not None
+
+
+class TestExposedRebuildFTSIndex:
+    """Test exposed_rebuild_fts_index method for AC4."""
+
+    @pytest.fixture
+    def service(self):
+        """Create daemon service with mocked dependencies."""
+        from code_indexer.daemon.service import CIDXDaemonService
+
+        service = CIDXDaemonService()
+        yield service
+
+        # Cleanup
+        service.eviction_thread.stop()
+        service.eviction_thread.join(timeout=1)
+
+    def test_exposed_rebuild_fts_index_exists(self, service):
+        """AC4: exposed_rebuild_fts_index method should exist."""
+        assert hasattr(service, "exposed_rebuild_fts_index")
+        assert callable(service.exposed_rebuild_fts_index)
+
+    def test_exposed_rebuild_fts_index_requires_progress_file(self, service, tmp_path):
+        """AC4: Should return error if indexing_progress.json doesn't exist."""
+        project_path = tmp_path / "project"
+        project_path.mkdir()
+
+        # Create .code-indexer but NO indexing_progress.json
+        config_dir = project_path / ".code-indexer"
+        config_dir.mkdir()
+
+        # Create minimal config.json
+        import json
+        config_file = config_dir / "config.json"
+        config_file.write_text(json.dumps({"version": "1.0"}))
+
+        result = service.exposed_rebuild_fts_index(str(project_path))
+
+        assert result["status"] == "error"
+        assert "indexing progress" in result["error"].lower()

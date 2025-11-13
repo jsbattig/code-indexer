@@ -1644,3 +1644,165 @@ class CIDXDaemonService(Service):
 
             logger.error(traceback.format_exc())
             return []
+
+    def exposed_rebuild_fts_index(
+        self, project_path: str, callback: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Rebuild FTS index from scratch using FileFinder (daemon mode).
+
+        Args:
+            project_path: Path to project root
+            callback: Optional progress callback for real-time updates
+
+        Returns:
+            Dict with rebuild status and stats
+        """
+        logger.info(f"exposed_rebuild_fts_index: project={project_path}")
+
+        from pathlib import Path
+        import shutil
+        from code_indexer.config import ConfigManager
+        from code_indexer.indexing.file_finder import FileFinder
+        from code_indexer.services.tantivy_index_manager import TantivyIndexManager
+
+        # Check if indexing progress file exists
+        progress_file = Path(project_path) / ".code-indexer" / "indexing_progress.json"
+        if not progress_file.exists():
+            return {
+                "status": "error",
+                "error": "No indexing progress found. Run 'cidx index' first to create the semantic index.",
+            }
+
+        try:
+            # Load configuration
+            config_manager = ConfigManager.create_with_backtrack(Path(project_path))
+            config = config_manager.get_config()
+
+            # Send progress callback: discovering files
+            if callback:
+                callback(0, 0, Path(""), info="Discovering files...")
+
+            # Use FileFinder to discover files
+            file_finder = FileFinder(config)
+            discovered_files = list(file_finder.find_files())
+
+            if not discovered_files:
+                return {
+                    "status": "error",
+                    "error": "No files found to index. Check your file_extensions and exclude_dirs configuration.",
+                }
+
+            # Send progress callback: found files
+            if callback:
+                callback(
+                    0,
+                    len(discovered_files),
+                    Path(""),
+                    info=f"Found {len(discovered_files)} files",
+                )
+
+            # Initialize Tantivy manager
+            fts_index_dir = Path(project_path) / ".code-indexer" / "tantivy_index"
+
+            # Clear existing FTS index
+            if fts_index_dir.exists():
+                if callback:
+                    callback(
+                        0,
+                        len(discovered_files),
+                        Path(""),
+                        info="Clearing existing FTS index...",
+                    )
+                shutil.rmtree(fts_index_dir)
+
+            tantivy_manager = TantivyIndexManager(fts_index_dir)
+            tantivy_manager.initialize_index(create_new=True)
+
+            if callback:
+                callback(
+                    0, len(discovered_files), Path(""), info="FTS index initialized"
+                )
+
+            # Index all files
+            indexed_count = 0
+            failed_count = 0
+
+            for i, file_path in enumerate(discovered_files, start=1):
+                try:
+                    # Read file content
+                    if not file_path.exists():
+                        failed_count += 1
+                        if callback:
+                            callback(
+                                i,
+                                len(discovered_files),
+                                file_path,
+                                info=f"Indexing files... ({i}/{len(discovered_files)})",
+                            )
+                        continue
+
+                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+
+                    # Detect language from file extension
+                    extension = file_path.suffix.lstrip(".")
+                    language = extension if extension else "unknown"
+
+                    # Create FTS document
+                    doc = {
+                        "path": str(file_path),
+                        "content": content,
+                        "content_raw": content,
+                        "identifiers": [],
+                        "line_start": 1,
+                        "line_end": len(content.splitlines()),
+                        "language": language,
+                    }
+
+                    # Add to FTS index
+                    tantivy_manager.add_document(doc)
+                    indexed_count += 1
+
+                except Exception as e:
+                    failed_count += 1
+                    logger.warning(f"Failed to index {file_path}: {e}")
+
+                # Send progress callback
+                if callback:
+                    callback(
+                        i,
+                        len(discovered_files),
+                        file_path,
+                        info=f"Indexing files... ({i}/{len(discovered_files)})",
+                    )
+
+            # Commit all documents
+            if callback:
+                callback(
+                    len(discovered_files),
+                    len(discovered_files),
+                    Path(""),
+                    info="Committing FTS index...",
+                )
+            tantivy_manager.commit()
+
+            if callback:
+                callback(
+                    len(discovered_files),
+                    len(discovered_files),
+                    Path(""),
+                    info=f"Complete: {indexed_count} indexed, {failed_count} failed",
+                )
+
+            return {
+                "status": "success",
+                "files_indexed": indexed_count,
+                "files_failed": failed_count,
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to rebuild FTS index: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "error": str(e),
+            }

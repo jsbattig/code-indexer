@@ -168,7 +168,11 @@ class TestRebuildFTSIndexE2E:
 
     @pytest.mark.e2e
     def test_rebuild_fts_index_with_empty_file_records(self):
-        """Test that --rebuild-fts-index fails when no completed files in progress."""
+        """Test that --rebuild-fts-index works with FileFinder (ignores file_records).
+
+        Updated for Story #488: FileFinder-based rebuild doesn't depend on progress
+        file_records. It discovers files from disk directly.
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             project_dir = self.setup_test_project(Path(tmpdir))
 
@@ -190,15 +194,15 @@ class TestRebuildFTSIndexE2E:
             with open(progress_file, "w") as f:
                 json.dump(progress_data, f)
 
-            # Try to rebuild FTS with empty file records
+            # Rebuild FTS - should succeed using FileFinder (not file_records)
             result = self.run_cidx_command(
                 ["index", "--rebuild-fts-index"], cwd=project_dir, timeout=30
             )
 
-            # Should fail with appropriate error
+            # Should succeed - FileFinder discovers files from disk
             output = result.stdout + result.stderr
-            assert result.returncode != 0
-            assert "No completed files found" in output
+            assert result.returncode == 0, f"Expected success but got: {output}"
+            assert "Found 3 files" in output or "Files indexed: 3" in output
 
     @pytest.mark.e2e
     def test_rebuild_fts_index_clears_existing_index(self):

@@ -168,3 +168,6 @@ code-indexer-temporal/
 
 # TDD Guard runtime data
 .claude/tdd-guard/data/instructions.md
+
+# FilesystemVectorStore collection
+voyage-code-3/

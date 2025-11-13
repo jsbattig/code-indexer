@@ -1405,6 +1405,41 @@ def _query_temporal_via_daemon(
     return 1
 
 
+def rebuild_fts_via_daemon(config_manager, console) -> int:
+    """Delegate FTS rebuild to daemon."""
+    config_path = config_manager.config_path
+    socket_path = _get_socket_path(config_path)
+    daemon_config = config_manager.get_daemon_config()
+
+    _start_daemon(config_path)
+    conn = _connect_to_daemon(socket_path, daemon_config)
+
+    # Simple callback for progress display
+    def progress_callback(current, total, file_path, info=""):
+        if total == 0:
+            console.print(f"ℹ️  {info}")
+        else:
+            console.print(f"📄 {current}/{total}: {file_path}")
+
+    result = conn.root.exposed_rebuild_fts_index(
+        project_path=str(Path.cwd()),
+        callback=progress_callback,
+    )
+
+    # Extract data BEFORE closing connection (RPyC proxies become invalid after close)
+    status = str(result.get("status", "unknown"))
+    error_msg = str(result.get("error", ""))
+
+    conn.close()
+
+    if status == "success":
+        console.print("✅ FTS index rebuilt successfully!", style="green")
+        return 0
+    else:
+        console.print(f"❌ Rebuild failed: {error_msg or 'Unknown error'}", style="red")
+        return 1
+
+
 def start_watch_via_daemon(project_root: Path, **kwargs: Any) -> bool:
     """Start watch mode via daemon delegation (Story #472).
 

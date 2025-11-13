@@ -6,7 +6,7 @@ AI-powered semantic code search for your codebase. Find code by meaning, not jus
 
 **New in 7.2.1**: **Git History Search** - Semantically search your entire git commit history! Find when code was introduced, search commit messages by meaning, track feature evolution over time. Use `cidx index --index-commits` to enable, then query with `--time-range-all`. See [Git History Search](#git-history-search) for details. Also includes fix for temporal indexer commit message truncation and match number display consistency.
 
-**Version 7.2.0**: Incremental HNSW and FTS indexing for 3.6x-60x performance improvements - see [Performance Improvements](#performance-improvements-72) below.
+**Version 7.2.0**: Incremental HNSW indexing (3.6x speedup) and FTS enhancements - see [Performance Improvements](#performance-improvements-72) below.
 
 **Version 7.1.0**: Full-text search (FTS) support with Tantivy backend - see [Full-Text Search](#full-text-search-fts) section below.
 
@@ -220,15 +220,22 @@ cidx watch --fts
 # → File changes indexed in < 20ms each
 ```
 
-### Incremental FTS Indexing (10-60x Speedup)
+### FTS Performance and Incremental Indexing
 
-FTS (Full-Text Search) now supports **incremental indexing**, delivering **10-60x speedup** for typical file change sets.
+FTS (Full-Text Search) now uses **FileFinder** for efficient file discovery and supports **incremental indexing** for faster rebuild operations.
 
-**Performance:**
-- **Full rebuild**: 10-60 seconds for 10K files
-- **Incremental update**: 1-5 seconds for typical change set (100-500 files)
-- **Speedup**: **10-60x faster** (depends on percentage of files changed)
-- **Watch mode**: < 50ms per file for real-time FTS updates
+**Query Performance (Benchmark Results):**
+- **Tested on**: 11,859-file codebase (evolution repo)
+- **FTS vs grep**: 1.36x faster for text searches
+- **grep average**: 1.426s per search
+- **FTS average**: 1.046s per search
+- **Methodology**: 8 search terms × 5 iterations each
+
+**Rebuild Performance (Story #488):**
+- **FileFinder integration**: 30-36x faster rebuild (6.3s vs 3+ minutes)
+- **Old method**: Scanned 6,160 vector JSON files
+- **New method**: Uses FileFinder with gitignore support
+- **Incremental updates**: Tantivy updates only changed documents
 
 **How It Works:**
 - **Index Detection**: Checks for `meta.json` to detect existing FTS index
@@ -237,15 +244,15 @@ FTS (Full-Text Search) now supports **incremental indexing**, delivering **10-60
 
 **Example Output:**
 ```bash
-# First-time indexing (full rebuild)
+# First-time indexing (full rebuild with FileFinder)
 cidx index --fts
 ℹ️  Building new FTS index from scratch (full rebuild)
-# → 60 seconds for 10K files
+# → 6.3s for 1,329 files
 
 # Subsequent indexing (incremental update)
 cidx index --fts
 ℹ️  Using existing FTS index (incremental updates enabled)
-# → 3 seconds for 200 changed files (20x faster!)
+# → Updates only changed files
 
 # Force full rebuild if needed
 cidx index --fts --clear
@@ -258,8 +265,8 @@ cidx index --fts --clear
 |-----------|-------------|-------------|---------|
 | **HNSW watch mode** | 5-10s per file | < 20ms per file | **99.6% faster** |
 | **HNSW batch re-index** | 40s (10K files) | 15s (100 changed) | **3.6x faster** |
-| **FTS incremental** | 60s (full rebuild) | 3s (incremental) | **20x faster** |
-| **FTS watch mode** | Full rebuild | < 50ms per file | **99.9% faster** |
+| **FTS rebuild** | 3+ minutes (vector scan) | 6.3s (FileFinder) | **30-36x faster** |
+| **FTS query** | grep: 1.426s | FTS: 1.046s | **1.36x faster** |
 
 **Developer Experience Impact:**
 - ✅ **Instant query results**: No 5-10s delay after file changes in watch mode
@@ -470,11 +477,11 @@ cidx index
 
 ## Full-Text Search (FTS)
 
-CIDX now supports blazing-fast, index-backed full-text search alongside semantic search. FTS is perfect for finding exact text matches, specific identifiers, or debugging typos in your codebase.
+CIDX supports index-backed full-text search alongside semantic search. FTS is perfect for finding exact text matches, specific identifiers, or debugging typos in your codebase.
 
 ### Why Use FTS?
 
-- **Sub-5ms query latency** on large codebases (vs ~20ms for semantic search)
+- **Faster than grep** - 1.36x speedup on indexed codebases (measured on 11,859-file repo)
 - **Exact text matching** for finding specific function names, classes, or identifiers
 - **Fuzzy matching** with configurable edit distance for typo tolerance
 - **Case sensitivity control** for precise matching
@@ -570,8 +577,8 @@ cidx query "login" --fts --semantic
 
 ### FTS Performance
 
-FTS queries are extremely fast:
-- **Sub-5ms latency** for most searches
+FTS queries use Tantivy index for efficient text search:
+- **1.36x faster than grep** on indexed codebases (benchmark: 1.046s vs 1.426s avg)
 - **Parallel execution** in hybrid mode (both searches run simultaneously)
 - **Real-time index updates** in watch mode
 - **Storage**: `.code-indexer/tantivy_index/`
@@ -616,7 +623,7 @@ cidx query "ERROR" --fts --regex --case-sensitive
 
 For multi-word patterns spanning whitespace, use exact search instead of regex.
 
-**Performance**: Regex on indexed repos is 10-50x faster than grep for large codebases.
+**Performance**: Regex uses Tantivy index for token-based pattern matching (1.36x faster than grep based on FTS benchmarks).
 
 ## Multi-User Server
 
