@@ -10,12 +10,9 @@ CRITICAL: This is about storage format, not display. The temporal indexer MUST:
 4. Support searching across all paragraphs of commit messages
 """
 
-import pytest
 import tempfile
-import shutil
 from pathlib import Path
 import subprocess
-import json
 
 from code_indexer.config import ConfigManager
 from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore

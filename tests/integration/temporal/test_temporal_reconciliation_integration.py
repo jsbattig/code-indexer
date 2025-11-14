@@ -375,7 +375,7 @@ class TestTemporalReconciliationIntegration:
         # but it should still call reconciliation and end_indexing
         try:
             result = temporal_indexer.index_commits(reconcile=True)
-        except Exception as e:
+        except Exception:
             # Expected to fail on embedding creation, but should have called reconciliation
             # The key is that reconciliation logic ran before the failure
             pass

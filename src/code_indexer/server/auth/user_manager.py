@@ -368,3 +368,53 @@ class UserManager:
             "entropy": result.entropy,
             "requirements": self.password_strength_validator.get_requirements(),
         }
+
+    def update_user(
+        self,
+        username: str,
+        new_username: Optional[str] = None,
+        new_email: Optional[str] = None,
+    ) -> bool:
+        """
+        Update user's username or email.
+
+        Args:
+            username: Current username
+            new_username: New username (if changing)
+            new_email: New email (if changing)
+
+        Returns:
+            True if successful, False if user not found
+
+        Raises:
+            ValueError: If username/email already exists
+        """
+        users_data = self._load_users()
+
+        # Check if user exists
+        if username not in users_data:
+            return False
+
+        # Track the current username (might change)
+        current_username = username
+
+        if new_username and new_username != username:
+            # Check if new username already exists
+            if new_username in users_data:
+                raise ValueError(f"Username already exists: {new_username}")
+            # Copy user data to new username
+            users_data[new_username] = users_data[username]
+            # Delete old username
+            del users_data[username]
+            # Update current username reference
+            current_username = new_username
+
+        if new_email:
+            # Check for duplicate email
+            for user, data in users_data.items():
+                if user != current_username and data.get("email") == new_email:
+                    raise ValueError(f"Email already exists: {new_email}")
+            users_data[current_username]["email"] = new_email
+
+        self._save_users(users_data)
+        return True

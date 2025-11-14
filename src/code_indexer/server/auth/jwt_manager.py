@@ -7,6 +7,7 @@ Uses 10-minute default expiration with configurable settings.
 
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any
+import uuid
 from jose import JWTError, jwt
 from jose.exceptions import ExpiredSignatureError
 
@@ -69,6 +70,7 @@ class JWTManager:
             "created_at": user_data.get("created_at"),
             "exp": expire.timestamp(),  # Use timestamp() for microsecond precision
             "iat": now.timestamp(),  # Use timestamp() for microsecond precision
+            "jti": str(uuid.uuid4()),  # JWT ID for blacklist support
         }
 
         # Create and return JWT token
@@ -127,6 +129,7 @@ class JWTManager:
             "created_at": payload.get("created_at"),
             "exp": expire.timestamp(),  # Use timestamp() for microsecond precision
             "iat": now.timestamp(),  # Use timestamp() for microsecond precision
+            "jti": payload.get("jti", str(uuid.uuid4())),  # Preserve JTI or create new one
         }
 
         # Create and return new token

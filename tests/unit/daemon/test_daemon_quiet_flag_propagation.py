@@ -9,8 +9,7 @@ in display function calls, causing daemon mode to always show verbose output.
 
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-from typing import List, Any, Dict
+from unittest.mock import patch, MagicMock
 
 from code_indexer.cli_daemon_fast import (
     parse_query_args,

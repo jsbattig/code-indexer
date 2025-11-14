@@ -1542,6 +1542,7 @@ class FilesystemVectorStore:
         return_timing: bool = False,
         lazy_load: bool = False,
         prefetch_limit: Optional[int] = None,
+        ef: int = 50,
     ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], Dict[str, Any]]]:
         """Search for similar vectors using parallel execution of index loading and embedding generation.
 
@@ -1702,7 +1703,7 @@ class FilesystemVectorStore:
             query_vector=query_vec,
             collection_path=collection_path,
             k=hnsw_k,  # Use prefetch_limit when provided for filter headroom
-            ef=50,  # HNSW query parameter
+            ef=ef,  # HNSW query parameter - passed from search method
         )
         timing["hnsw_search_ms"] = (time.time() - t0) * 1000
 

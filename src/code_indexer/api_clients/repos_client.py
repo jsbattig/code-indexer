@@ -614,6 +614,62 @@ class ReposAPIClient(CIDXRemoteAPIClient):
                 response.status_code,
             )
 
+    async def list_repository_files(
+        self, repo_alias: str, path: str = "", recursive: bool = False
+    ) -> Dict[str, Any]:
+        params = {"recursive": str(recursive).lower()}
+        if path:
+            params["path"] = path
+
+        response = await self._authenticated_request(
+            "GET", f"/api/repositories/{repo_alias}/files", params=params
+        )
+
+        if response.status_code == 200:
+            result: Dict[str, Any] = response.json()
+            return result
+        else:
+            error_detail = response.json().get("detail", f"HTTP {response.status_code}")
+            raise APIClientError(
+                f"Failed to list repository files: {error_detail}",
+                response.status_code,
+            )
+
+    async def get_file_content(self, repo_alias: str, file_path: str) -> Dict[str, Any]:
+        """
+        Get content of a specific file in repository.
+
+        Args:
+            repo_alias: Repository alias
+            file_path: Path to the file
+
+        Returns:
+            Dict with:
+            - path: File path
+            - content: File content (if text)
+            - is_binary: Boolean
+            - size: File size in bytes
+
+        Raises:
+            APIClientError: If request fails
+        """
+        # Call API with content=true
+        params = {"path": file_path, "content": "true"}
+
+        response = await self._authenticated_request(
+            "GET", f"/api/repositories/{repo_alias}/files", params=params
+        )
+
+        if response.status_code == 200:
+            result: Dict[str, Any] = response.json()
+            return result
+        else:
+            error_detail = response.json().get("detail", f"HTTP {response.status_code}")
+            raise APIClientError(
+                f"Failed to get file content: {error_detail}",
+                response.status_code,
+            )
+
 
 class SyncReposAPIClient:
     """Synchronous wrapper for repository management operations.

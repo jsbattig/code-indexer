@@ -1264,6 +1264,18 @@ def _get_composite_details(repo: ActivatedRepository) -> CompositeRepositoryDeta
     )
 
 
+# Token blacklist for logout functionality (Story #491) - MODULE LEVEL
+token_blacklist: set[str] = set()
+
+def blacklist_token(jti: str) -> None:
+    """Add token JTI to blacklist."""
+    token_blacklist.add(jti)
+
+def is_token_blacklisted(jti: str) -> bool:
+    """Check if token JTI is blacklisted."""
+    return jti in token_blacklist
+
+
 def create_app() -> FastAPI:
     """
     Create and configure FastAPI application.
@@ -4576,6 +4588,7 @@ def create_app() -> FastAPI:
         sort_by: str = "path",
         path: Optional[str] = None,
         recursive: bool = False,
+        content: bool = False,
         current_user: dependencies.User = Depends(dependencies.get_current_user),
     ):
         """
@@ -4584,8 +4597,69 @@ def create_app() -> FastAPI:
         Supports both single and composite repository file listing.
         For composite repos, use path and recursive parameters.
         For single repos, use existing pagination and filtering.
+        If content=True and path points to a single file, return file content.
         Uses real file system operations following CLAUDE.md Foundation #1.
         """
+        # If content requested and path is a file, return content
+        if content and path:
+            repo_dict = activated_repo_manager.get_repository(
+                current_user.username, repo_id
+            )
+            if not repo_dict:
+                raise HTTPException(status_code=404, detail="Repository not found")
+
+            # Add missing fields required by ActivatedRepository model
+            repo_dict["username"] = current_user.username
+            repo_dict["path"] = activated_repo_manager.get_activated_repo_path(
+                current_user.username, repo_id
+            )
+
+            repo = ActivatedRepository.from_dict(repo_dict)
+            file_path = Path(repo.path) / path
+
+            if not file_path.exists():
+                raise HTTPException(status_code=404, detail=f"File '{path}' not found")
+
+            if not file_path.is_file():
+                raise HTTPException(status_code=400, detail=f"Path '{path}' is not a file")
+
+            # Detect if binary
+            try:
+                with open(file_path, 'rb') as f:
+                    chunk = f.read(8192)
+                    is_binary = b'\x00' in chunk
+                    if not is_binary:
+                        try:
+                            chunk.decode('utf-8')
+                        except UnicodeDecodeError:
+                            is_binary = True
+            except Exception:
+                is_binary = True
+
+            if is_binary:
+                return {
+                    "path": path,
+                    "is_binary": True,
+                    "size": file_path.stat().st_size,
+                    "content": None
+                }
+            else:
+                try:
+                    content_text = file_path.read_text(encoding='utf-8')
+                    return {
+                        "path": path,
+                        "is_binary": False,
+                        "size": file_path.stat().st_size,
+                        "content": content_text
+                    }
+                except UnicodeDecodeError:
+                    return {
+                        "path": path,
+                        "is_binary": True,
+                        "size": file_path.stat().st_size,
+                        "content": None
+                    }
+
         # Check if this is a composite repository
         try:
             repo_dict = activated_repo_manager.get_repository(
@@ -4631,7 +4705,7 @@ def create_app() -> FastAPI:
                 sort_by=sort_by,
             )
 
-            file_list = file_service.list_files(repo_id, query_params)
+            file_list = file_service.list_files(repo_id, current_user.username, query_params)
             return file_list
 
         except FileNotFoundError:

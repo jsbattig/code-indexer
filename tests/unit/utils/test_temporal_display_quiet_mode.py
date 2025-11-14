@@ -6,7 +6,6 @@ for both commit message matches and file chunk matches.
 
 from unittest.mock import patch
 
-import pytest
 
 from code_indexer.utils.temporal_display import _display_commit_message_match
 

@@ -358,7 +358,7 @@ class Module{i}Handler{j}:
         incremental_time = time.time() - start_time
         assert result.returncode == 0
 
-        print(f"\nPerformance comparison:")
+        print("\nPerformance comparison:")
         print(f"  Full index (100 files): {full_index_time:.2f}s")
         print(f"  Incremental (5 new files): {incremental_time:.2f}s")
         if incremental_time > 0:

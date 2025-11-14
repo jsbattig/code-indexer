@@ -282,7 +282,7 @@ class TestDaemonFilterBuilding:
                 "min_score": 0.5,
             }
 
-            print(f"\n=== Input kwargs ===")
+            print("\n=== Input kwargs ===")
             print(f"exclude_paths: {test_kwargs.get('exclude_paths')}")
             print(f"languages: {test_kwargs.get('languages')}")
 
@@ -297,7 +297,7 @@ class TestDaemonFilterBuilding:
             call_kwargs = mock_vector_store.search.call_args[1]
             filter_conditions = call_kwargs.get("filter_conditions")
 
-            print(f"\n=== Filter conditions passed to search ===")
+            print("\n=== Filter conditions passed to search ===")
             print(f"filter_conditions: {filter_conditions}")
 
             # Verify

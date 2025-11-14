@@ -7,6 +7,7 @@ Provides consistent error response formatting across all endpoints.
 
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, Any
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError as PydanticValidationError
@@ -36,6 +37,30 @@ def get_current_timestamp() -> datetime:
 def format_timestamp(timestamp: datetime) -> str:
     """Format timestamp in ISO 8601 format."""
     return timestamp.isoformat().replace("+00:00", "Z")
+
+
+def _serialize_value_for_json(value: Any) -> Any:
+    """
+    Serialize value to ensure JSON compatibility.
+
+    Handles datetime, Path objects, nested dicts, and lists recursively.
+
+    Args:
+        value: Value to serialize
+
+    Returns:
+        JSON-serializable value
+    """
+    if isinstance(value, datetime):
+        return value.isoformat()
+    elif isinstance(value, Path):
+        return str(value)
+    elif isinstance(value, dict):
+        return {k: _serialize_value_for_json(v) for k, v in value.items()}
+    elif isinstance(value, (list, tuple)):
+        return [_serialize_value_for_json(item) for item in value]
+    else:
+        return value
 
 
 def humanize_validation_message(pydantic_error: Dict[str, Any]) -> str:
@@ -114,12 +139,16 @@ def create_validation_error_response(
     # Create FastAPI-compatible detail for existing tests
     fastapi_detail = []
     for pydantic_error in validation_error.errors():
+        # Serialize input value to ensure JSON compatibility (datetime → ISO string)
+        raw_input = pydantic_error.get("input")
+        serialized_input = _serialize_value_for_json(raw_input)
+
         fastapi_detail.append(
             {
                 "loc": pydantic_error.get("loc", []),
                 "msg": pydantic_error.get("msg", ""),
                 "type": pydantic_error.get("type", ""),
-                "input": pydantic_error.get("input"),
+                "input": serialized_input,
             }
         )
 

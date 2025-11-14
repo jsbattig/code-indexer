@@ -7,8 +7,7 @@ Tests AC4: Daemon mode FTS rebuild with progress reporting.
 import tempfile
 from pathlib import Path
 import json
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock
 
 
 class TestDaemonRebuildFTS:

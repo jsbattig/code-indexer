@@ -54,6 +54,16 @@ def get_current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+        # Check if token is blacklisted
+        from src.code_indexer.server.app import is_token_blacklisted
+        jti = payload.get("jti")
+        if jti and is_token_blacklisted(jti):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         # Get user from storage
         user = user_manager.get_user(username)
         if user is None:

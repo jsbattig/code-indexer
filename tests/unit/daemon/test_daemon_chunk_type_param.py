@@ -60,7 +60,7 @@ def test_daemon_passes_chunk_type_to_search_service():
     Currently FAILS because chunk_type is not passed in the RPC call.
     """
     from code_indexer.cli_daemon_delegation import _query_temporal_via_daemon
-    from unittest.mock import Mock, patch, MagicMock
+    from unittest.mock import Mock, patch
     from pathlib import Path
 
     # Mock daemon connection

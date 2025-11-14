@@ -19,7 +19,6 @@ import tempfile
 import shutil
 import subprocess
 from pathlib import Path
-import pytest
 
 
 class TestStandaloneChunkTypeFilteringE2E:

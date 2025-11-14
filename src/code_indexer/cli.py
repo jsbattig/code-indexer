@@ -11920,6 +11920,197 @@ def repos_sync_status(ctx, user_alias: Optional[str], detailed: bool):
         sys.exit(1)
 
 
+@repos_group.command("files")
+@click.argument("user_alias")
+@click.option("--path", default="", help="Directory path to list")
+@click.pass_context
+def repos_files(ctx, user_alias: str, path: str):
+    """Browse repository files and directories.
+
+    \b
+    Display files and directories in your activated repositories. Navigate
+    through the file tree to explore repository content.
+
+    \b
+    EXAMPLES:
+      cidx repos files my-project                    # List files in root
+      cidx repos files my-project --path src         # List files in src/
+      cidx repos files my-project --limit 50         # Show max 50 files
+    """
+    try:
+        from pathlib import Path
+        import asyncio
+        from .mode_detection.command_mode_detector import find_project_root
+        from .cli_repos_files import get_repo_id_from_alias_sync, display_file_tree
+        from .remote.sync_execution import (
+            _load_remote_configuration,
+            _load_and_decrypt_credentials,
+        )
+
+        # Get project root and credentials
+        project_root = find_project_root(Path.cwd())
+        if not project_root:
+            console.print("❌ Not in a CIDX project directory", style="red")
+            sys.exit(1)
+
+        # Load remote configuration and credentials
+        try:
+            remote_config = _load_remote_configuration(project_root)
+            server_url = remote_config["server_url"]
+            credentials = _load_and_decrypt_credentials(project_root)
+        except Exception as e:
+            console.print(f"❌ Failed to load credentials: {e}", style="red")
+            console.print(
+                "   Please run 'cidx init --remote' to configure authentication.",
+                style="dim",
+            )
+            sys.exit(1)
+
+        # Verify repository exists
+        try:
+            _ = get_repo_id_from_alias_sync(
+                server_url, credentials, user_alias, project_root
+            )
+        except ValueError as e:
+            console.print(f"❌ {e}", style="red")
+            sys.exit(1)
+
+        # Fetch files from API
+        from .api_clients.repos_client import ReposAPIClient
+
+        async def fetch_files():
+            client = ReposAPIClient(
+                server_url=server_url,
+                credentials=credentials,
+                project_root=project_root,
+            )
+            try:
+                return await client.list_repository_files(
+                    repo_alias=user_alias, path=path
+                )
+            finally:
+                await client.close()
+
+        files = asyncio.run(fetch_files())
+
+        # Display results
+        display_file_tree(files.get("files", []), path if path else "/")
+
+    except Exception as e:
+        console.print(f"❌ Failed to list files: {e}", style="red")
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@repos_group.command("cat")
+@click.argument("user_alias")
+@click.argument("file_path")
+@click.option("--no-highlight", is_flag=True, help="Disable syntax highlighting")
+@click.pass_context
+def repos_cat(ctx, user_alias: str, file_path: str, no_highlight: bool):
+    """View repository file contents.
+
+    \b
+    Display the contents of a file from your activated repository with
+    optional syntax highlighting and line numbers.
+
+    \b
+    EXAMPLES:
+      cidx repos cat my-project README.md              # View README
+      cidx repos cat my-project src/main.py           # View Python file
+      cidx repos cat my-project config.json --no-highlight  # Plain text
+    """
+    try:
+        from pathlib import Path
+        import asyncio
+        from .mode_detection.command_mode_detector import find_project_root
+        from .cli_repos_files import (
+            get_repo_id_from_alias_sync,
+            display_with_line_numbers,
+            apply_syntax_highlighting,
+            format_file_size,
+        )
+        from .remote.sync_execution import (
+            _load_remote_configuration,
+            _load_and_decrypt_credentials,
+        )
+
+        # Get project root and credentials
+        project_root = find_project_root(Path.cwd())
+        if not project_root:
+            console.print("❌ Not in a CIDX project directory", style="red")
+            sys.exit(1)
+
+        # Load remote configuration and credentials
+        try:
+            remote_config = _load_remote_configuration(project_root)
+            server_url = remote_config["server_url"]
+            credentials = _load_and_decrypt_credentials(project_root)
+        except Exception as e:
+            console.print(f"❌ Failed to load credentials: {e}", style="red")
+            console.print(
+                "   Please run 'cidx init --remote' to configure authentication.",
+                style="dim",
+            )
+            sys.exit(1)
+
+        # Verify repository exists
+        try:
+            _ = get_repo_id_from_alias_sync(
+                server_url, credentials, user_alias, project_root
+            )
+        except ValueError as e:
+            console.print(f"❌ {e}", style="red")
+            sys.exit(1)
+
+        # Fetch file content from API
+        from .api_clients.repos_client import ReposAPIClient
+
+        async def fetch_file_content():
+            client = ReposAPIClient(
+                server_url=server_url,
+                credentials=credentials,
+                project_root=project_root,
+            )
+            try:
+                return await client.get_file_content(
+                    repo_alias=user_alias, file_path=file_path
+                )
+            finally:
+                await client.close()
+
+        file_data = asyncio.run(fetch_file_content())
+
+        # Check if binary file
+        if file_data.get("is_binary"):
+            size = file_data.get("size", 0)
+            console.print(
+                f"📦 Binary file (size: {format_file_size(size)})", style="yellow"
+            )
+            return
+
+        # Get content
+        content = file_data.get("content", "")
+
+        # Apply syntax highlighting unless disabled
+        if not no_highlight:
+            content = apply_syntax_highlighting(content, file_path)
+
+        # Display with line numbers
+        display_with_line_numbers(content)
+
+    except Exception as e:
+        console.print(f"❌ Failed to view file: {e}", style="red")
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
 class ActivationProgressDisplay:
     """Display class for repository activation progress."""
 

@@ -175,14 +175,14 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         # ASSERTIONS
         # Current implementation makes 10 API calls (one per diff)
         # After fix, should make 1-2 calls (all 51 chunks batched: 50 diffs + 1 commit message)
-        print(f"\n=== API Call Analysis ===")
+        print("\n=== API Call Analysis ===")
         print(f"Total API calls: {api_call_count[0]}")
-        print(f"Expected: 1-2 calls (batched)")
+        print("Expected: 1-2 calls (batched)")
         print(f"Actual: {api_call_count[0]} calls")
 
         if api_call_count[0] > 3:
-            print(f"\nFAILING: Too many API calls! Should batch all diffs together.")
-            print(f"Batch details:")
+            print("\nFAILING: Too many API calls! Should batch all diffs together.")
+            print("Batch details:")
             for i, batch in enumerate(submitted_batches):
                 print(f"  Batch {i+1}: {len(batch)} chunks")
 
@@ -293,10 +293,10 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         self.indexer._process_commits_parallel([commit], Mock(), vector_manager)
 
         # ASSERTIONS
-        print(f"\n=== Token Limit Test ===")
+        print("\n=== Token Limit Test ===")
         print(f"Total batches: {len(submitted_batches)}")
         print(f"Batch sizes: {submitted_batches}")
-        print(f"Expected: 2+ batches (200k tokens > 108k limit)")
+        print("Expected: 2+ batches (200k tokens > 108k limit)")
 
         # After fix: Should split into 2+ batches (200k tokens > 108k limit)
         self.assertGreaterEqual(
@@ -479,9 +479,9 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         self.indexer._process_commits_parallel([commit], Mock(), vector_manager)
 
         # ASSERTIONS
-        print(f"\n=== Empty Chunks Test ===")
+        print("\n=== Empty Chunks Test ===")
         print(f"API calls: {api_call_count[0]}")
-        print(f"Expected: 1 (commit message only, all file diffs skipped)")
+        print("Expected: 1 (commit message only, all file diffs skipped)")
 
         # After fix: Should have 1 API call for commit message
         self.assertEqual(

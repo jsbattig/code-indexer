@@ -1554,6 +1554,11 @@ class CIDXDaemonService(Service):
                             "must_not"
                         ]
 
+            # Extract accuracy parameter and map to HNSW ef value
+            accuracy = kwargs.get("accuracy", "balanced")
+            ef_map = {"fast": 50, "balanced": 100, "high": 200}
+            ef = ef_map.get(accuracy, 100)  # Default to balanced if unknown
+
             # Execute search using FilesystemVectorStore.search() with timing
             # This uses HNSW index for fast approximate nearest neighbor search
             results_raw = vector_store.search(
@@ -1564,6 +1569,7 @@ class CIDXDaemonService(Service):
                 score_threshold=score_threshold,
                 filter_conditions=filter_conditions,
                 return_timing=True,  # CRITICAL FIX: Request timing information
+                ef=ef,  # Pass accuracy-based ef parameter
             )
 
             # Parse return value (tuple when return_timing=True)
