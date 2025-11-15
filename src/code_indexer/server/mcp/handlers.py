@@ -7,32 +7,47 @@ from fastapi import HTTPException
 
 async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Search code using semantic search, FTS, or hybrid mode."""
-    from code_indexer.server import app
-
     try:
-        # Use search_service for semantic query
-        result = await app.search_service.semantic_search(
-            query_text=params["query_text"],
-            repository_alias=params.get("repository_alias"),
+        from code_indexer.server.services.search_service import search_service
+        from code_indexer.server.models.api_models import SemanticSearchRequest
+
+        # Build search request
+        search_request = SemanticSearchRequest(
+            query=params["query_text"],
             limit=params.get("limit", 10),
             min_score=params.get("min_score", 0.5),
-            search_mode=params.get("search_mode", "semantic"),
-            username=user.username,
         )
-        return {"success": True, "results": result}
+
+        # Use repository_alias as repo_id
+        repo_id = params.get("repository_alias", user.username)
+
+        # Call the actual search_repository method that exists
+        result = search_service.search_repository(repo_id, search_request)
+        return {"success": True, "results": result.model_dump()}
     except Exception as e:
         return {"success": False, "error": str(e), "results": []}
 
 
 async def discover_repositories(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Discover available repositories from configured sources."""
-    from code_indexer.server import app
-
     try:
-        result = await app.repository_discovery_service.discover_repositories(
-            source_type=params.get("source_type")
+        # Import actual dependencies as done in app.py endpoint
+        from code_indexer.server.services.repository_discovery_service import RepositoryDiscoveryService
+        from code_indexer.server.app import golden_repo_manager, activated_repo_manager
+
+        # Instantiate service following app.py pattern
+        discovery_service = RepositoryDiscoveryService(
+            golden_repo_manager=golden_repo_manager,
+            activated_repo_manager=activated_repo_manager,
         )
-        return {"success": True, "repositories": result.get("discovered_repositories", [])}
+
+        # Call with source from params
+        result = await discovery_service.discover_repositories(
+            repo_url=params.get("source", ""),
+            user=user,
+        )
+
+        return {"success": True, "repositories": result.model_dump()["matching_repositories"]}
     except Exception as e:
         return {"success": False, "error": str(e), "repositories": []}
 
@@ -221,11 +236,12 @@ async def get_branches(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 async def check_health(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Check system health status."""
-    from code_indexer.server import app
-
     try:
-        health_status = await app.health_service.check_health()
-        return {"success": True, "health": health_status}
+        from code_indexer.server.services.health_service import health_service
+
+        # Call the actual method (not async)
+        health_response = health_service.get_system_health()
+        return {"success": True, "health": health_response.model_dump()}
     except Exception as e:
         return {"success": False, "error": str(e), "health": {}}
 
@@ -313,14 +329,13 @@ async def create_user(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 async def get_repository_statistics(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Get repository statistics."""
-    from code_indexer.server import app
-
     try:
+        from code_indexer.server.services.stats_service import stats_service
+
         repository_alias = params["repository_alias"]
-        stats = await app.stats_service.get_repository_statistics(
-            repository_alias, user.username
-        )
-        return {"success": True, "statistics": stats}
+        # Call the actual method (not async, different name)
+        stats_response = stats_service.get_repository_stats(repository_alias)
+        return {"success": True, "statistics": stats_response.model_dump()}
     except Exception as e:
         return {"success": False, "error": str(e), "statistics": {}}
 

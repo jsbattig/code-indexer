@@ -107,9 +107,22 @@ class TestSearchCode:
             "search_mode": "semantic",
         }
 
-        with patch("code_indexer.server.app.search_service") as mock_service:
-            mock_service.semantic_search = AsyncMock(return_value=[{"file": "auth.py"}])
-            
+        with patch("code_indexer.server.services.search_service.search_service") as mock_service:
+            from code_indexer.server.models.api_models import SemanticSearchResponse, SearchResultItem
+            mock_response = SemanticSearchResponse(
+                query="authentication",
+                results=[SearchResultItem(
+                    file_path="auth.py",
+                    score=0.9,
+                    line_start=1,
+                    line_end=10,
+                    content="auth code"
+                )],
+                total=1,
+                query_time_ms=100
+            )
+            mock_service.search_repository = Mock(return_value=mock_response)
+
             result = await search_code(params, mock_user)
 
             assert result["success"] is True
@@ -119,14 +132,37 @@ class TestSearchCode:
         """Test search_code error handling."""
         params = {"query_text": "test"}
 
-        with patch("code_indexer.server.app.search_service") as mock_service:
-            mock_service.semantic_search = AsyncMock(side_effect=Exception("Search failed"))
-            
+        with patch("code_indexer.server.services.search_service.search_service") as mock_service:
+            mock_service.search_repository = Mock(side_effect=Exception("Search failed"))
+
             result = await search_code(params, mock_user)
 
             assert result["success"] is False
             assert "error" in result
             assert result["results"] == []
+
+
+@pytest.mark.asyncio
+class TestDiscoverRepositories:
+    """Test discover_repositories handler."""
+
+    async def test_discover_repositories_success(self, mock_user):
+        """Test successful repository discovery."""
+        params = {"source": "https://github.com/user/repo.git"}
+
+        with patch("code_indexer.server.services.repository_discovery_service.RepositoryDiscoveryService") as mock_service_class:
+            mock_service = Mock()
+            mock_response = Mock()
+            mock_response.model_dump = Mock(return_value={
+                "matching_repositories": [{"alias": "repo1"}, {"alias": "repo2"}]
+            })
+            mock_service.discover_repositories = AsyncMock(return_value=mock_response)
+            mock_service_class.return_value = mock_service
+
+            result = await discover_repositories(params, mock_user)
+
+            assert result["success"] is True
+            assert len(result["repositories"]) == 2
 
 
 @pytest.mark.asyncio
@@ -142,7 +178,7 @@ class TestListRepositories:
 
         with patch("code_indexer.server.app.activated_repo_manager") as mock_manager:
             mock_manager.list_activated_repositories = Mock(return_value=mock_repos)
-            
+
             result = await list_repositories({}, mock_user)
 
             assert result["success"] is True
@@ -336,11 +372,11 @@ class TestHealthCheck:
 
     async def test_check_health(self, mock_user):
         """Test system health check."""
-        with patch("code_indexer.server.app.health_service") as mock_service:
-            mock_service.check_health = AsyncMock(
-                return_value={"status": "healthy", "uptime": 3600}
-            )
-            
+        with patch("code_indexer.server.services.health_service.health_service") as mock_service:
+            mock_response = Mock()
+            mock_response.model_dump = Mock(return_value={"status": "healthy", "uptime": 3600})
+            mock_service.get_system_health = Mock(return_value=mock_response)
+
             result = await check_health({}, mock_user)
 
             assert result["success"] is True
@@ -355,11 +391,11 @@ class TestStatisticsHandlers:
         """Test getting repository statistics."""
         params = {"repository_alias": "my-repo"}
 
-        with patch("code_indexer.server.app.stats_service") as mock_service:
-            mock_service.get_repository_statistics = AsyncMock(
-                return_value={"file_count": 100, "total_lines": 5000}
-            )
-            
+        with patch("code_indexer.server.services.stats_service.stats_service") as mock_service:
+            mock_response = Mock()
+            mock_response.model_dump = Mock(return_value={"file_count": 100, "total_lines": 5000})
+            mock_service.get_repository_stats = Mock(return_value=mock_response)
+
             result = await get_repository_statistics(params, mock_user)
 
             assert result["success"] is True
