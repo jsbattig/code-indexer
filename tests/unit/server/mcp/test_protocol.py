@@ -5,6 +5,7 @@ Following batched TDD approach approved for Story #479.
 """
 
 import pytest
+from unittest.mock import patch, Mock
 from code_indexer.server.mcp.protocol import (
     validate_jsonrpc_request,
     create_jsonrpc_response,
@@ -261,21 +262,23 @@ class TestToolsCallHandler:
         assert "name" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
+    @pytest.mark.asyncio
     async def test_valid_call_returns_stub_success(self):
-        """Test tools/call returns stub success message."""
+        """Test tools/call dispatches to actual handler."""
         user = User(
             username="test",
             password_hash="hashed_password",
             role=UserRole.POWER_USER,
             created_at=__import__("datetime").datetime.now(),
         )
-        params = {"name": "search_code", "arguments": {"query": "test"}}
+        params = {"name": "list_repositories", "arguments": {}}
 
-        result = await handle_tools_call(params, user)
+        with patch("code_indexer.server.app.activated_repo_manager") as mock_mgr:
+            mock_mgr.list_activated_repositories = Mock(return_value=[])
+            result = await handle_tools_call(params, user)
 
         assert result["success"] is True
-        assert "stub" in result["message"].lower()
-        assert "search_code" in result["message"]
+        assert "repositories" in result
 
     @pytest.mark.asyncio
     async def test_call_without_arguments(self):
@@ -286,11 +289,14 @@ class TestToolsCallHandler:
             role=UserRole.POWER_USER,
             created_at=__import__("datetime").datetime.now(),
         )
-        params = {"name": "search_code"}
+        params = {"name": "list_repositories"}  # No arguments
 
-        result = await handle_tools_call(params, user)
+        with patch("code_indexer.server.app.activated_repo_manager") as mock_mgr:
+            mock_mgr.list_activated_repositories = Mock(return_value=[])
+            result = await handle_tools_call(params, user)
 
         assert result["success"] is True
+        assert "repositories" in result
 
 
 class TestBatchRequests:

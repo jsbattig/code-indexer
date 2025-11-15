@@ -122,7 +122,7 @@ async def handle_tools_list(params: Dict[str, Any], user: User) -> Dict[str, Any
 
 async def handle_tools_call(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """
-    Handle tools/call method (Phase 1 stub).
+    Handle tools/call method - dispatches to actual tool handlers.
 
     Args:
         params: Request parameters (must contain 'name' and optional 'arguments')
@@ -132,18 +132,37 @@ async def handle_tools_call(params: Dict[str, Any], user: User) -> Dict[str, Any
         Dictionary with call result
 
     Raises:
-        ValueError: If required parameters are missing
+        ValueError: If required parameters are missing or tool not found
     """
+    from .handlers import HANDLER_REGISTRY
+    from .tools import TOOL_REGISTRY
+
     # Validate required 'name' parameter
     if "name" not in params:
         raise ValueError("Missing required parameter: name")
 
     tool_name = params["name"]
-    _ = params.get("arguments", {})  # Arguments will be used in Phase 3
+    arguments = params.get("arguments", {})
 
-    # Phase 1: Return stub success
-    # Phase 3 will implement actual tool wrappers
-    return {"success": True, "message": f"Tool {tool_name} called (stub)"}
+    # Check if tool exists
+    if tool_name not in TOOL_REGISTRY:
+        raise ValueError(f"Unknown tool: {tool_name}")
+
+    # Check if user has permission for this tool
+    tool_def = TOOL_REGISTRY[tool_name]
+    required_permission = tool_def["required_permission"]
+    if not user.has_permission(required_permission):
+        raise ValueError(f"Permission denied: {required_permission} required for tool {tool_name}")
+
+    # Get handler function
+    if tool_name not in HANDLER_REGISTRY:
+        raise ValueError(f"Handler not implemented for tool: {tool_name}")
+
+    handler = HANDLER_REGISTRY[tool_name]
+
+    # Call handler with arguments
+    result = await handler(arguments, user)
+    return result
 
 
 async def process_jsonrpc_request(
