@@ -56,6 +56,7 @@ from .query.semantic_query_manager import (
     SemanticQueryError,
 )
 from .auth.refresh_token_manager import RefreshTokenManager
+from .auth.oauth.routes import router as oauth_router
 from .models.branch_models import BranchListResponse
 from .models.activated_repository import ActivatedRepository
 from .services.branch_service import BranchService
@@ -1334,6 +1335,16 @@ def create_app() -> FastAPI:
     users_file_path = str(Path(server_data_dir) / "users.json")
     user_manager = UserManager(users_file_path=users_file_path)
     refresh_token_manager = RefreshTokenManager(jwt_manager=jwt_manager)
+
+    # Initialize OAuth manager
+    oauth_db_path = str(Path(server_data_dir) / "oauth.db")
+    from .auth.oauth.oauth_manager import OAuthManager
+    oauth_manager = OAuthManager(
+        db_path=oauth_db_path,
+        issuer="http://localhost:8000",
+        user_manager=user_manager
+    )
+
     golden_repo_manager = GoldenRepoManager()
     background_job_manager = BackgroundJobManager()
     activated_repo_manager = ActivatedRepoManager(
@@ -1352,6 +1363,7 @@ def create_app() -> FastAPI:
     # Set global dependencies
     dependencies.jwt_manager = jwt_manager
     dependencies.user_manager = user_manager
+    dependencies.oauth_manager = oauth_manager
 
     # Seed initial admin user
     user_manager.seed_initial_admin()
@@ -5306,6 +5318,9 @@ def create_app() -> FastAPI:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to retrieve repository information: {str(e)}",
             )
+
+    # Mount OAuth 2.1 routes
+    app.include_router(oauth_router)
 
     return app
 

@@ -354,6 +354,67 @@ class PasswordChangeAuditLogger:
 
         self.audit_logger.info(f"PASSWORD_RESET_ATTEMPT: {json.dumps(log_entry)}")
 
+    def log_oauth_client_registration(
+        self, client_id, client_name, ip_address, user_agent=None, additional_context=None
+    ):
+        """Log OAuth client registration."""
+        log_entry = {
+            "event_type": "oauth_client_registration",
+            "client_id": client_id,
+            "client_name": client_name,
+            "ip_address": ip_address,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "user_agent": user_agent,
+            "additional_context": additional_context or {},
+        }
+        self.audit_logger.info(f"OAUTH_CLIENT_REGISTRATION: {json.dumps(log_entry)}")
+
+    def log_oauth_authorization(
+        self, username, client_id, ip_address, user_agent=None, additional_context=None
+    ):
+        """Log OAuth authorization."""
+        log_entry = {
+            "event_type": "oauth_authorization",
+            "username": username,
+            "client_id": client_id,
+            "ip_address": ip_address,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "user_agent": user_agent,
+            "additional_context": additional_context or {},
+        }
+        self.audit_logger.info(f"OAUTH_AUTHORIZATION: {json.dumps(log_entry)}")
+
+    def log_oauth_token_exchange(
+        self, username, client_id, grant_type, ip_address, user_agent=None, additional_context=None
+    ):
+        """Log OAuth token exchange."""
+        log_entry = {
+            "event_type": "oauth_token_exchange",
+            "username": username,
+            "client_id": client_id,
+            "grant_type": grant_type,
+            "ip_address": ip_address,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "user_agent": user_agent,
+            "additional_context": additional_context or {},
+        }
+        self.audit_logger.info(f"OAUTH_TOKEN_EXCHANGE: {json.dumps(log_entry)}")
+
+    def log_oauth_token_revocation(
+        self, username, token_type, ip_address, user_agent=None, additional_context=None
+    ):
+        """Log OAuth token revocation."""
+        log_entry = {
+            "event_type": "oauth_token_revocation",
+            "username": username,
+            "token_type": token_type,
+            "ip_address": ip_address,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "user_agent": user_agent,
+            "additional_context": additional_context or {},
+        }
+        self.audit_logger.info(f"OAUTH_TOKEN_REVOCATION: {json.dumps(log_entry)}")
+
 
 # Global audit logger instance
 password_audit_logger = PasswordChangeAuditLogger()
