@@ -1,8 +1,5 @@
 """Unit tests for MCP tool registry - comprehensive validation of all 22 tools."""
 
-import pytest
-from datetime import datetime, timezone
-from code_indexer.server.auth.user_manager import UserRole, User
 from code_indexer.server.mcp.tools import TOOL_REGISTRY
 
 

@@ -143,17 +143,16 @@ async def switch_branch(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     try:
         user_alias = params["user_alias"]
         branch_name = params["branch_name"]
+        create = params.get("create", False)
 
-        # Get activated repository
-        repo = app.activated_repo_manager.get_activated_repository(
-            user.username, user_alias
+        # Use activated_repo_manager.switch_branch (matches app.py endpoint pattern)
+        result = app.activated_repo_manager.switch_branch(
+            username=user.username,
+            user_alias=user_alias,
+            branch_name=branch_name,
+            create=create,
         )
-        if not repo:
-            return {"success": False, "error": f"Repository '{user_alias}' not found"}
-
-        # Perform branch switch
-        app.branch_service.switch_branch(repo, branch_name)
-        return {"success": True, "message": f"Switched to branch '{branch_name}'"}
+        return {"success": True, "message": result["message"]}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -217,19 +216,59 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
 async def get_branches(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Get available branches for a repository."""
     from code_indexer.server import app
+    from pathlib import Path
+    from code_indexer.services.git_topology_service import GitTopologyService
+    from code_indexer.server.services.branch_service import BranchService
 
     try:
         repository_alias = params["repository_alias"]
+        include_remote = params.get("include_remote", False)
 
-        # Get activated repository
-        repo = app.activated_repo_manager.get_activated_repository(
-            user.username, repository_alias
+        # Get repository path (matches app.py endpoint pattern at line 4383-4395)
+        repo_path = app.activated_repo_manager.get_activated_repo_path(
+            username=user.username,
+            user_alias=repository_alias,
         )
-        if not repo:
-            return {"success": False, "error": f"Repository '{repository_alias}' not found", "branches": []}
-
-        branches = app.branch_service.list_branches(repo)
-        return {"success": True, "branches": branches}
+        
+        # Initialize git topology service
+        git_topology_service = GitTopologyService(Path(repo_path))
+        
+        # Use BranchService as context manager (matches app.py pattern at line 4404-4408)
+        with BranchService(
+            git_topology_service=git_topology_service, 
+            index_status_manager=None
+        ) as branch_service:
+            # Get branch information
+            branches = branch_service.list_branches(include_remote=include_remote)
+            
+            # Convert BranchInfo objects to dicts for JSON serialization
+            branches_data = [
+                {
+                    "name": b.name,
+                    "is_current": b.is_current,
+                    "last_commit": {
+                        "sha": b.last_commit.sha,
+                        "message": b.last_commit.message,
+                        "author": b.last_commit.author,
+                        "date": b.last_commit.date,
+                    },
+                    "index_status": {
+                        "status": b.index_status.status,
+                        "files_indexed": b.index_status.files_indexed,
+                        "total_files": b.index_status.total_files,
+                        "last_indexed": b.index_status.last_indexed,
+                        "progress_percentage": b.index_status.progress_percentage,
+                    } if b.index_status else None,
+                    "remote_tracking": {
+                        "remote": b.remote_tracking.remote,
+                        "ahead": b.remote_tracking.ahead,
+                        "behind": b.remote_tracking.behind,
+                    } if b.remote_tracking else None,
+                }
+                for b in branches
+            ]
+            
+            return {"success": True, "branches": branches_data}
     except Exception as e:
         return {"success": False, "error": str(e), "branches": []}
 

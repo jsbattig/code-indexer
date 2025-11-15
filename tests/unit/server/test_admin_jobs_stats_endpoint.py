@@ -1,7 +1,7 @@
 """Unit tests for admin jobs stats API endpoint."""
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from datetime import datetime
 
