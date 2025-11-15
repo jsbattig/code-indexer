@@ -210,8 +210,8 @@ class TestToolsListHandler:
     """Test tools/list handler (stub implementation for Phase 1)."""
 
     @pytest.mark.asyncio
-    async def test_returns_empty_tools_list(self):
-        """Test tools/list returns empty list in Phase 1."""
+    async def test_returns_filtered_tools_list(self):
+        """Test tools/list returns filtered tools based on user role."""
         user = User(
             username="test",
             password_hash="hashed_password",
@@ -223,7 +223,7 @@ class TestToolsListHandler:
 
         assert "tools" in result
         assert isinstance(result["tools"], list)
-        assert len(result["tools"]) == 0
+        assert len(result["tools"]) > 0, "Power user should get at least some tools"
 
     @pytest.mark.asyncio
     async def test_accepts_empty_params(self):

@@ -105,18 +105,19 @@ def create_jsonrpc_error(
 
 async def handle_tools_list(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """
-    Handle tools/list method (Phase 1 stub).
+    Handle tools/list method.
 
     Args:
         params: Request parameters
         user: Authenticated user
 
     Returns:
-        Dictionary with tools list (empty in Phase 1)
+        Dictionary with tools list filtered by user role
     """
-    # Phase 1: Return empty tools list
-    # Phase 2 will implement actual tool registry filtering by role
-    return {"tools": []}
+    from .tools import filter_tools_by_role
+
+    tools = filter_tools_by_role(user)
+    return {"tools": tools}
 
 
 async def handle_tools_call(params: Dict[str, Any], user: User) -> Dict[str, Any]:
