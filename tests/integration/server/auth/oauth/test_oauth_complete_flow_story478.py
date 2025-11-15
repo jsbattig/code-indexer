@@ -113,7 +113,8 @@ class TestOAuthCompleteFlowStory478:
         auth_code = auth_data["code"]
 
         # Step 5: Exchange authorization code for tokens (AC: Token exchange with PKCE)
-        response = test_app.post("/oauth/token", json={
+        # OAuth 2.1 spec requires form-encoded data, not JSON
+        response = test_app.post("/oauth/token", data={
             "grant_type": "authorization_code",
             "code": auth_code,
             "code_verifier": code_verifier,
@@ -130,7 +131,7 @@ class TestOAuthCompleteFlowStory478:
         refresh_token = tokens["refresh_token"]
 
         # Step 6: Refresh tokens (AC: Token refresh)
-        response = test_app.post("/oauth/token", json={
+        response = test_app.post("/oauth/token", data={
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
             "client_id": client_id
@@ -224,7 +225,7 @@ class TestOAuthCompleteFlowStory478:
 
         # Make 10 failed token attempts
         for i in range(10):
-            response = test_app.post("/oauth/token", json={
+            response = test_app.post("/oauth/token", data={
                 "grant_type": "authorization_code",
                 "code": "invalid_code",
                 "code_verifier": "invalid_verifier",
@@ -234,7 +235,7 @@ class TestOAuthCompleteFlowStory478:
             assert response.status_code in [400, 401]
 
         # 11th attempt should be rate limited
-        response = test_app.post("/oauth/token", json={
+        response = test_app.post("/oauth/token", data={
             "grant_type": "authorization_code",
             "code": "invalid_code",
             "code_verifier": "invalid_verifier",

@@ -112,10 +112,10 @@ class TestOAuthEndpointsIntegration:
             state="state123"
         )
 
-        # Step 3: Exchange code for token
+        # Step 3: Exchange code for token (OAuth 2.1 spec requires form data)
         token_response = app.post(
             "/oauth/token",
-            json={
+            data={
                 "grant_type": "authorization_code",
                 "code": auth_code,
                 "code_verifier": code_verifier,
@@ -156,7 +156,7 @@ class TestOAuthEndpointsIntegration:
         # Try to exchange with wrong verifier
         token_response = app.post(
             "/oauth/token",
-            json={
+            data={
                 "grant_type": "authorization_code",
                 "code": auth_code,
                 "code_verifier": "wrong_verifier",
@@ -192,7 +192,7 @@ class TestOAuthEndpointsIntegration:
 
         token_response = app.post(
             "/oauth/token",
-            json={
+            data={
                 "grant_type": "authorization_code",
                 "code": auth_code,
                 "code_verifier": code_verifier,
@@ -204,7 +204,7 @@ class TestOAuthEndpointsIntegration:
         # Use refresh token
         refresh_response = app.post(
             "/oauth/token",
-            json={
+            data={
                 "grant_type": "refresh_token",
                 "refresh_token": tokens["refresh_token"],
                 "client_id": client_id
@@ -223,7 +223,7 @@ class TestOAuthEndpointsIntegration:
         """Test that refresh_token grant requires refresh_token parameter."""
         response = app.post(
             "/oauth/token",
-            json={
+            data={
                 "grant_type": "refresh_token",
                 "client_id": "test_client"
                 # Missing refresh_token parameter
@@ -232,3 +232,47 @@ class TestOAuthEndpointsIntegration:
 
         assert response.status_code == 400
         assert "refresh_token required" in str(response.json())
+
+    def test_token_endpoint_accepts_form_encoded_data_oauth21_compliance(self, app, oauth_manager, pkce_pair):
+        """Test that token endpoint accepts application/x-www-form-urlencoded (OAuth 2.1 spec).
+
+        OAuth 2.1 specification mandates that the token endpoint MUST accept
+        application/x-www-form-urlencoded data, not JSON.
+        """
+        code_verifier, code_challenge = pkce_pair
+
+        # Register client
+        reg_response = app.post(
+            "/oauth/register",
+            json={
+                "client_name": "Form Data Test Client",
+                "redirect_uris": ["https://example.com/callback"]
+            }
+        )
+        client_id = reg_response.json()["client_id"]
+
+        # Generate auth code
+        auth_code = oauth_manager.generate_authorization_code(
+            client_id=client_id,
+            user_id="testuser",
+            code_challenge=code_challenge,
+            redirect_uri="https://example.com/callback",
+            state="state123"
+        )
+
+        # Exchange code for token using form-encoded data
+        # This is the OAuth 2.1 compliant way
+        response = app.post(
+            "/oauth/token",
+            data={  # Using 'data' parameter sends application/x-www-form-urlencoded
+                "grant_type": "authorization_code",
+                "code": auth_code,
+                "code_verifier": code_verifier,
+                "client_id": client_id
+            }
+        )
+
+        assert response.status_code == 200
+        token_data = response.json()
+        assert "access_token" in token_data
+        assert token_data["token_type"] == "Bearer"

@@ -1,6 +1,6 @@
 """FastAPI routes for OAuth 2.1 endpoints with rate limiting and audit logging."""
 
-from fastapi import APIRouter, HTTPException, status, Depends, Request
+from fastapi import APIRouter, HTTPException, status, Depends, Request, Form
 from pydantic import BaseModel
 from typing import List, Optional
 from pathlib import Path
@@ -180,14 +180,20 @@ async def authorize_endpoint(
 
 @router.post("/token", response_model=TokenResponse)
 async def token_endpoint(
-    request_model: TokenRequest,
-    http_request: Request,
+    grant_type: str = Form(...),
+    code: Optional[str] = Form(None),
+    code_verifier: Optional[str] = Form(None),
+    client_id: str = Form(...),
+    refresh_token: Optional[str] = Form(None),
+    http_request: Request = None,
     manager: OAuthManager = Depends(get_oauth_manager)
 ):
-    """Token endpoint for authorization code exchange with rate limiting and audit logging."""
+    """Token endpoint for authorization code exchange with rate limiting and audit logging.
+
+    OAuth 2.1 compliant - accepts application/x-www-form-urlencoded data.
+    """
     ip_address = http_request.client.host if http_request.client else "unknown"
     user_agent = http_request.headers.get("user-agent")
-    client_id = request_model.client_id
 
     # Rate limit check
     rate_limit_error = oauth_token_rate_limiter.check_rate_limit(client_id)
@@ -198,8 +204,8 @@ async def token_endpoint(
         )
 
     try:
-        if request_model.grant_type == "authorization_code":
-            if not request_model.code or not request_model.code_verifier:
+        if grant_type == "authorization_code":
+            if not code or not code_verifier:
                 oauth_token_rate_limiter.record_failed_attempt(client_id)
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -207,8 +213,8 @@ async def token_endpoint(
                 )
 
             result = manager.exchange_code_for_token(
-                code=request_model.code,
-                code_verifier=request_model.code_verifier,
+                code=code,
+                code_verifier=code_verifier,
                 client_id=client_id
             )
 
@@ -228,8 +234,8 @@ async def token_endpoint(
 
             return result
 
-        elif request_model.grant_type == "refresh_token":
-            if not request_model.refresh_token:
+        elif grant_type == "refresh_token":
+            if not refresh_token:
                 oauth_token_rate_limiter.record_failed_attempt(client_id)
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -237,7 +243,7 @@ async def token_endpoint(
                 )
 
             result = manager.refresh_access_token(
-                refresh_token=request_model.refresh_token,
+                refresh_token=refresh_token,
                 client_id=client_id
             )
 
@@ -260,7 +266,7 @@ async def token_endpoint(
             oauth_token_rate_limiter.record_failed_attempt(client_id)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unsupported grant_type: {request_model.grant_type}"
+                detail=f"Unsupported grant_type: {grant_type}"
             )
     except PKCEVerificationError as e:
         oauth_token_rate_limiter.record_failed_attempt(client_id)
