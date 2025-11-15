@@ -2549,6 +2549,68 @@ def create_app() -> FastAPI:
             message=f"Cleaned up {cleaned_count} old background jobs",
         )
 
+    @app.get("/api/admin/jobs/stats")
+    async def admin_jobs_stats(
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        current_user: dependencies.User = Depends(dependencies.get_current_admin_user)
+    ):
+        """Get job statistics for admin dashboard."""
+        from datetime import datetime, timezone
+
+        # Get all jobs from the background job manager
+        all_jobs = list(background_job_manager.jobs.values())
+
+        # Filter by date range if provided
+        filtered_jobs = all_jobs
+        if start_date or end_date:
+            start_dt = datetime.fromisoformat(start_date) if start_date else None
+            end_dt = datetime.fromisoformat(end_date) if end_date else None
+
+            filtered_jobs = [
+                job for job in all_jobs
+                if (not start_dt or job.created_at >= start_dt) and
+                   (not end_dt or job.created_at <= end_dt)
+            ]
+
+        # Calculate statistics
+        total_jobs = len(filtered_jobs)
+
+        # Count by status
+        by_status = {}
+        for job in filtered_jobs:
+            status = job.status.value
+            by_status[status] = by_status.get(status, 0) + 1
+
+        # Count by type
+        by_type = {}
+        for job in filtered_jobs:
+            job_type = job.operation_type
+            by_type[job_type] = by_type.get(job_type, 0) + 1
+
+        # Calculate success rate
+        completed_jobs = by_status.get("completed", 0)
+        failed_jobs = by_status.get("failed", 0)
+        total_finished = completed_jobs + failed_jobs
+        success_rate = (completed_jobs / total_finished * 100.0) if total_finished > 0 else 0.0
+
+        # Calculate average duration for completed jobs
+        durations = []
+        for job in filtered_jobs:
+            if job.completed_at and job.started_at:
+                duration = (job.completed_at - job.started_at).total_seconds()
+                durations.append(duration)
+
+        average_duration = sum(durations) / len(durations) if durations else 0.0
+
+        return {
+            "total_jobs": total_jobs,
+            "by_status": by_status,
+            "by_type": by_type,
+            "success_rate": success_rate,
+            "average_duration": average_duration,
+        }
+
     @app.delete("/api/admin/golden-repos/{alias}", status_code=204)
     async def remove_golden_repo(
         alias: str,

@@ -665,6 +665,46 @@ class AdminAPIClient(CIDXRemoteAPIClient):
         except Exception as e:
             raise APIClientError(f"Unexpected error refreshing golden repository: {e}")
 
+    async def get_golden_repository_branches(self, alias: str) -> Dict[str, Any]:
+        """Get branches for a golden repository.
+
+        Args:
+            alias: Repository alias
+
+        Returns:
+            Dictionary with branch information
+        """
+        try:
+            response = await self._authenticated_request(
+                "GET", f"/api/repos/golden/{alias}/branches"
+            )
+
+            if response.status_code == 200:
+                return dict(response.json())
+            elif response.status_code == 403:
+                raise AuthenticationError(
+                    "Insufficient privileges for viewing repository branches (admin role required)"
+                )
+            elif response.status_code == 404:
+                raise APIClientError(f"Repository '{alias}' not found", 404)
+            else:
+                error_detail = "Unknown error"
+                try:
+                    error_data = response.json()
+                    error_detail = error_data.get(
+                        "detail", f"HTTP {response.status_code}"
+                    )
+                except Exception:
+                    error_detail = f"HTTP {response.status_code}"
+                raise APIClientError(
+                    f"Failed to get repository branches: {error_detail}",
+                    response.status_code,
+                )
+        except (APIClientError, AuthenticationError):
+            raise
+        except Exception as e:
+            raise APIClientError(f"Unexpected error getting repository branches: {e}")
+
     async def delete_golden_repository(
         self,
         alias: str,
@@ -760,3 +800,10 @@ class AdminAPIClient(CIDXRemoteAPIClient):
             raise
         except Exception as e:
             raise APIClientError(f"Unexpected error deleting golden repository: {e}")
+
+    async def cleanup_jobs(self, max_age_hours: int = 24) -> Dict[str, Any]:  # type: ignore[empty-body]
+        """Clean up old completed/failed background jobs (admin only).
+
+        Note: Stub implementation - to be completed in future story.
+        """
+        pass

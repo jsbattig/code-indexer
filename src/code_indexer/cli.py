@@ -14291,6 +14291,163 @@ def admin_users_change_password(ctx, username: str, password: str, force: bool):
 
 
 # =============================================================================
+# Admin Jobs Commands
+# =============================================================================
+
+
+@admin_group.group("jobs")
+@click.pass_context
+def admin_jobs_group(ctx):
+    """Background job management commands."""
+    pass
+
+
+@admin_jobs_group.command("cleanup")
+@click.option(
+    "--older-than", default=30, type=int, help="Delete jobs older than N days"
+)
+@click.option(
+    "--status",
+    type=click.Choice(["completed", "failed", "cancelled"]),
+    help="Only cleanup jobs with this status",
+)
+@click.option(
+    "--dry-run", is_flag=True, help="Show what would be deleted without deleting"
+)
+@click.pass_context
+def admin_jobs_cleanup(ctx, older_than: int, status: Optional[str], dry_run: bool):
+    """Cleanup old jobs from the system."""
+    from .mode_detection.command_mode_detector import find_project_root
+    from .remote.config import load_remote_configuration
+    from pathlib import Path
+    import json
+
+    project_root = find_project_root(Path.cwd())
+    remote_config = load_remote_configuration(project_root)
+
+    # Simple credential loading for now - just read the file
+    creds_file = project_root / ".code-indexer" / ".credentials"
+    if creds_file.exists():
+        credentials = json.loads(creds_file.read_text())
+    else:
+        credentials = {}
+
+    server_url = remote_config.get("server_url")
+    token = credentials.get("token")
+
+    from typing import Dict, Union
+
+    params: Dict[str, Union[str, int]] = {"max_age_hours": older_than * 24}
+    if status:
+        params["status"] = status
+    if dry_run:
+        params["dry_run"] = "true"
+
+    import requests
+    import json
+
+    try:
+        response = requests.delete(
+            f"{server_url}/api/admin/jobs/cleanup",
+            params=params,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+
+        if response.status_code == 401:
+            console.print("❌ Authentication failed", style="red")
+            sys.exit(1)
+        elif response.status_code == 403:
+            console.print("❌ Admin privileges required", style="red")
+            sys.exit(1)
+        elif response.status_code != 200:
+            console.print(f"❌ Server error (HTTP {response.status_code})", style="red")
+            sys.exit(1)
+
+        result = response.json()
+        cleaned_count = result.get("cleaned_count", 0)
+        console.print(f"✅ Cleaned up {cleaned_count} jobs", style="green")
+    except requests.exceptions.Timeout:
+        console.print("❌ Request timed out", style="red")
+        sys.exit(1)
+    except requests.exceptions.RequestException as e:
+        console.print(f"❌ Network error: {e}", style="red")
+        sys.exit(1)
+    except json.JSONDecodeError:
+        console.print("❌ Invalid response from server", style="red")
+        sys.exit(1)
+
+
+@admin_jobs_group.command("stats")
+@click.option("--start", help="Start date (YYYY-MM-DD)")
+@click.option("--end", help="End date (YYYY-MM-DD)")
+@click.pass_context
+def admin_jobs_stats(ctx, start: Optional[str], end: Optional[str]):
+    """View job statistics and analytics."""
+    from .mode_detection.command_mode_detector import find_project_root
+    from .remote.config import load_remote_configuration
+    from pathlib import Path
+    import json
+
+    project_root = find_project_root(Path.cwd())
+    remote_config = load_remote_configuration(project_root)
+
+    # Simple credential loading
+    creds_file = project_root / ".code-indexer" / ".credentials"
+    if creds_file.exists():
+        credentials = json.loads(creds_file.read_text())
+    else:
+        credentials = {}
+
+    server_url = remote_config.get("server_url")
+    token = credentials.get("token")
+
+    params = {}
+    if start:
+        params["start_date"] = start
+    if end:
+        params["end_date"] = end
+
+    import requests
+
+    response = requests.get(
+        f"{server_url}/api/admin/jobs/stats",
+        params=params,
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+
+    if response.status_code == 401:
+        console.print("❌ Authentication failed", style="red")
+        sys.exit(1)
+    elif response.status_code == 403:
+        console.print("❌ Admin privileges required", style="red")
+        sys.exit(1)
+
+    stats = response.json()
+    console.print(f"Total Jobs: {stats['total_jobs']}")
+
+    # Display status breakdown
+    if stats.get("by_status"):
+        for status_name, count in stats["by_status"].items():
+            console.print(f"{status_name.title()}: {count}")
+
+    # Display type breakdown
+    if stats.get("by_type"):
+        for job_type, count in stats["by_type"].items():
+            formatted = job_type.replace("_", " ").title()
+            console.print(f"{formatted}: {count}")
+
+    # Display success rate
+    if "success_rate" in stats:
+        console.print(f"Success Rate: {stats['success_rate']:.1f}%")
+
+    # Display average duration
+    if "average_duration" in stats:
+        console.print(f"Average Duration: {stats['average_duration']:.1f}s")
+
+
+# =============================================================================
 # Admin Repos Commands
 # =============================================================================
 
@@ -15024,7 +15181,17 @@ def admin_repos_refresh(ctx, alias: str):
 
             result = run_async(admin_client.refresh_golden_repository(alias))
 
+            # Validate response type
+            if not isinstance(result, dict):
+                console.print("❌ Invalid response from server", style="red")
+                sys.exit(1)
+
             job_id = result.get("job_id")
+            if not job_id:
+                console.print(
+                    "⚠️  Refresh completed but no job ID returned", style="yellow"
+                )
+
             message = result.get("message", "Refresh job submitted successfully")
 
             console.print(f"✅ {message}", style="green")
@@ -15078,6 +15245,189 @@ def admin_repos_refresh(ctx, alias: str):
             console.print("💡 Check server connectivity and try again", style="dim")
         else:
             console.print(f"❌ Failed to refresh repository: {e}", style="red")
+
+        if ctx.obj.get("verbose"):
+            import traceback
+
+            console.print(traceback.format_exc(), style="dim red")
+        sys.exit(1)
+
+
+@admin_repos_group.command("branches")
+@click.argument("alias")
+@click.option("--detailed", is_flag=True, help="Show detailed branch information")
+@click.pass_context
+def admin_repos_branches(ctx, alias: str, detailed: bool):
+    """List branches in a golden repository.
+
+    Displays all available branches in the specified golden repository
+    with commit information and active user counts. Use --detailed flag
+    for additional health and status information.
+    Requires admin privileges.
+
+    Args:
+        alias: Repository alias to list branches for
+
+    Examples:
+        cidx admin repos branches web-app
+        cidx admin repos branches api-service --detailed
+    """
+    try:
+        from rich.console import Console
+        from rich.table import Table
+        from .mode_detection.command_mode_detector import find_project_root
+        from .remote.config import load_remote_configuration
+        from .remote.credential_manager import CredentialNotFoundError
+
+        console = Console()
+
+        # Find project root for configuration and credentials
+        project_root = find_project_root(start_path=Path.cwd())
+        if not project_root:
+            console.print("❌ No project root found", style="red")
+            console.print(
+                "💡 Run this command from within a project directory", style="dim"
+            )
+            sys.exit(1)
+
+        # Check command mode and load configuration
+        try:
+            config = load_remote_configuration(project_root)
+            if not config:
+                console.print("❌ No remote configuration found", style="red")
+                console.print(
+                    "💡 Use 'cidx remote init' to configure remote access", style="dim"
+                )
+                sys.exit(1)
+
+            server_url = config.get("server_url")
+            if not server_url:
+                console.print("❌ Server URL not found in configuration", style="red")
+                sys.exit(1)
+
+        except Exception as e:
+            console.print(f"❌ Failed to load configuration: {e}", style="red")
+            sys.exit(1)
+
+        # Load credentials
+        try:
+            from .remote.sync_execution import _load_and_decrypt_credentials
+
+            credentials = _load_and_decrypt_credentials(project_root)
+            if not credentials:
+                console.print("❌ No credentials found", style="red")
+                console.print("💡 Use 'cidx auth login' to authenticate", style="dim")
+                sys.exit(1)
+
+        except CredentialNotFoundError:
+            console.print("❌ No credentials found", style="red")
+            console.print("💡 Use 'cidx auth login' to authenticate", style="dim")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"❌ Failed to load credentials: {e}", style="red")
+            sys.exit(1)
+
+        # Create admin client and fetch branches
+        from .api_clients.admin_client import AdminAPIClient
+
+        admin_client = AdminAPIClient(
+            server_url=server_url,
+            credentials=credentials,
+            project_root=project_root,
+        )
+
+        try:
+            result = run_async(admin_client.get_golden_repository_branches(alias))
+
+            # Validate response type
+            if not isinstance(result, dict):
+                console.print("❌ Invalid response from server", style="red")
+                sys.exit(1)
+
+            branches = result.get("branches")
+            if branches is None:
+                console.print("❌ Server response missing branch data", style="red")
+                sys.exit(1)
+
+            # Display Rich table
+            table = Table(title=f"Golden Repository Branches: {alias}")
+            table.add_column("Branch", style="cyan", no_wrap=True)
+            table.add_column("Commit", style="yellow", no_wrap=True)
+            table.add_column("Date", style="green")
+            table.add_column("Active Users", justify="right", style="magenta")
+
+            if detailed:
+                table.add_column("Health", style="blue")
+
+            if not branches:
+                console.print(
+                    f"ℹ️ No branches found for repository '{alias}'", style="yellow"
+                )
+            else:
+                for branch in branches:
+                    name = branch.get("name", branch.get("branch_name", "unknown"))
+                    commit_hash = branch.get("commit_hash", "N/A")
+                    commit_date = branch.get(
+                        "commit_date", branch.get("last_commit_date", "N/A")
+                    )
+                    active_users = str(branch.get("active_users", 0))
+
+                    # Truncate commit hash to 8 characters
+                    short_hash = commit_hash[:8] if commit_hash != "N/A" else "N/A"
+
+                    row = [name, short_hash, commit_date, active_users]
+
+                    if detailed:
+                        health = branch.get("health", "unknown")
+                        if health == "healthy":
+                            health_display = "✅ healthy"
+                        elif health == "warning":
+                            health_display = "⚠️ warning"
+                        elif health == "error":
+                            health_display = "❌ error"
+                        else:
+                            health_display = "❓ unknown"
+                        row.append(health_display)
+
+                    table.add_row(*row)
+
+                console.print(table)
+                console.print(
+                    f"\n{len(branches)} branch{'es' if len(branches) != 1 else ''} total\n"
+                )
+
+        finally:
+            run_async(admin_client.close())
+
+    except Exception as e:
+        error_str = str(e).lower()
+        if "repository" in error_str and "not found" in error_str:
+            console.print(f"❌ Repository '{alias}' not found", style="red")
+            console.print(
+                "💡 Use 'cidx admin repos list' to see available repositories",
+                style="dim",
+            )
+        elif (
+            "insufficient privileges" in error_str or "admin role required" in error_str
+        ):
+            console.print(
+                "❌ Insufficient privileges for viewing repository branches",
+                style="red",
+            )
+            console.print(
+                "💡 You need admin privileges to view golden repository branches",
+                style="dim",
+            )
+        elif "authentication" in error_str or "unauthorized" in error_str:
+            console.print("❌ Authentication failed", style="red")
+            console.print(
+                "💡 Check your authentication with 'cidx auth login'", style="dim"
+            )
+        elif "connection" in error_str or "network" in error_str:
+            console.print("❌ Connection error", style="red")
+            console.print("💡 Check server connectivity and try again", style="dim")
+        else:
+            console.print(f"❌ Failed to fetch branches: {e}", style="red")
 
         if ctx.obj.get("verbose"):
             import traceback
