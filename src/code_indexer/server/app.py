@@ -6,6 +6,7 @@ Multi-user semantic code search server with JWT authentication and role-based ac
 
 from fastapi import FastAPI, HTTPException, status, Depends, Response, Request, Query
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Dict, Any, Optional, List, Callable, Literal
 import os
@@ -1307,6 +1308,20 @@ def create_app() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
+    )
+
+    # Add CORS middleware for Claude.ai OAuth compatibility
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "https://claude.ai",
+            "https://claude.com",
+            "https://www.anthropic.com",
+            "https://api.anthropic.com",
+        ],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
     )
 
     # Add global error handler middleware
