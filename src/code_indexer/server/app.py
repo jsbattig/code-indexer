@@ -5324,6 +5324,18 @@ def create_app() -> FastAPI:
     app.include_router(oauth_router)
     app.include_router(mcp_router)
 
+    # RFC 8414 compliance: OAuth discovery at root level for Claude.ai compatibility
+    @app.get("/.well-known/oauth-authorization-server")
+    async def root_oauth_discovery():
+        """OAuth 2.1 discovery endpoint at root path (RFC 8414 compliance)."""
+        from pathlib import Path
+        from .auth.oauth.oauth_manager import OAuthManager
+
+        # Use same configuration as /oauth/ routes for consistency
+        oauth_db = Path.home() / ".cidx-server" / "oauth.db"
+        manager = OAuthManager(db_path=str(oauth_db), issuer="http://localhost:8000")
+        return manager.get_discovery_metadata()
+
     return app
 
 
