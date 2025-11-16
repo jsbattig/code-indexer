@@ -22,7 +22,7 @@ from ...indexing.fixed_size_chunker import FixedSizeChunker
 from ...services.vector_calculation_manager import VectorCalculationManager
 from ...services.file_identifier import FileIdentifier
 from ...storage.filesystem_vector_store import FilesystemVectorStore
-from ...utils.debug_log_helper import get_debug_log_path
+from ...utils.log_path_helper import get_debug_log_path
 
 from .models import CommitInfo
 from .temporal_diff_scanner import TemporalDiffScanner

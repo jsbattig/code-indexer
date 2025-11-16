@@ -18,7 +18,7 @@ from typing import Dict, Any, Optional, List, Tuple
 import copy
 
 from .embedding_provider import EmbeddingProvider
-from ..utils.debug_log_helper import get_debug_log_path
+from ..utils.log_path_helper import get_debug_log_path
 
 logger = logging.getLogger(__name__)
 
