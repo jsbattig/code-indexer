@@ -119,7 +119,7 @@ class TestDebugLogPathIntegration:
         config_dir.mkdir()
 
         # Import the helper function
-        from code_indexer.utils.debug_log_helper import get_debug_log_path
+        from code_indexer.utils.log_path_helper import get_debug_log_path
 
         # Get debug log paths
         vectorcalc_log = get_debug_log_path(config_dir, "cidx_vectorcalc_debug.log")

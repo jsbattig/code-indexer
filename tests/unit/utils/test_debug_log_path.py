@@ -11,7 +11,7 @@ import tempfile
 import shutil
 import os
 
-from code_indexer.utils.debug_log_helper import get_debug_log_path
+from code_indexer.utils.log_path_helper import get_debug_log_path
 
 
 class TestDebugLogPath:
