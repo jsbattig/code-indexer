@@ -22,7 +22,8 @@ user_manager: Optional[UserManager] = None
 oauth_manager: Optional["OAuthManager"] = None  # Forward reference to avoid circular dependency
 
 # Security scheme for bearer token authentication
-security = HTTPBearer(auto_error=True)
+# auto_error=False allows us to handle missing credentials manually and return 401 per MCP spec
+security = HTTPBearer(auto_error=False)
 
 
 def _build_www_authenticate_header() -> str:
@@ -47,7 +48,7 @@ def _build_www_authenticate_header() -> str:
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> User:
     """
     Get current authenticated user from OAuth or JWT token.
@@ -68,6 +69,14 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Authentication not properly initialized",
+        )
+
+    # Handle missing credentials (per MCP spec RFC 9728, return 401 not 403)
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication credentials",
+            headers={"WWW-Authenticate": _build_www_authenticate_header()},
         )
 
     token = credentials.credentials

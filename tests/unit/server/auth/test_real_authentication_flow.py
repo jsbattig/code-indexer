@@ -120,10 +120,12 @@ class TestRealAuthenticationFlow:
             )
             assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-            # Test 4: Missing token - should fail through real middleware
+            # Test 4: Missing token - should return 401 per MCP spec (RFC 9728)
             response = infrastructure.client.get("/health")
-            # The actual behavior is 403 Forbidden (not 401) - this is valuable discovery
-            assert response.status_code == status.HTTP_403_FORBIDDEN
+            assert response.status_code == status.HTTP_401_UNAUTHORIZED
+            # Should include WWW-Authenticate header per RFC 9728
+            assert "www-authenticate" in response.headers
+            assert "bearer" in response.headers["www-authenticate"].lower()
 
         finally:
             infrastructure.cleanup()

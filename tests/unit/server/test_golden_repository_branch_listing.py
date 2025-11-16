@@ -95,8 +95,9 @@ class TestGoldenRepositoryBranchListingEndpoint:
         self._setup_unauthenticated_client()
         response = self.client.get("/api/repos/golden/test-repo/branches")
 
-        # Should return 403 for unauthenticated request (FastAPI default)
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        # Should return 401 for unauthenticated request per MCP spec (RFC 9728)
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert "www-authenticate" in response.headers
 
     @patch("code_indexer.server.app.golden_repo_manager")
     def test_list_branches_for_existing_golden_repository(
@@ -164,7 +165,8 @@ class TestGoldenRepositoryBranchListingEndpoint:
 
         response = self.client.get("/api/repos/golden/test-repo/branches")
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert "www-authenticate" in response.headers
 
     @patch("code_indexer.server.app.golden_repo_manager")
     def test_list_branches_regular_user_access(
