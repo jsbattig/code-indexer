@@ -84,6 +84,21 @@ CIDX has **three operational modes**. Understanding which mode you're working in
 - Real-time vs batch updates
 - Performance optimizations
 
+### MCP Protocol (Server Mode)
+
+**Protocol Version**: `2024-11-05` (Model Context Protocol)
+
+**Initialize Handshake** (CRITICAL for Claude Code connection):
+- Method: `initialize` - MUST be first client-server interaction
+- Server Response: `{ "protocolVersion": "2024-11-05", "capabilities": { "tools": {} }, "serverInfo": { "name": "CIDX", "version": "7.3.0" } }`
+- Implemented in: `src/code_indexer/server/mcp/protocol.py` (process_jsonrpc_request)
+- Required for OAuth flow completion - Claude Code calls `initialize` after authentication
+
+**Key Points**:
+- Without `initialize` method, Claude Code fails with "Method not found: initialize"
+- Must return protocolVersion, capabilities (with tools), and serverInfo (name + version)
+- Tests in: `tests/unit/server/mcp/test_protocol.py::TestInitializeMethod`
+
 ---
 
 ## 3. Daily Development Workflows

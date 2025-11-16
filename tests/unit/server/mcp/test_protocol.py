@@ -549,6 +549,73 @@ class TestEdgeCases:
         assert "jsonrpc" in response
 
 
+class TestInitializeMethod:
+    """Test MCP initialize method - critical for protocol handshake."""
+
+    @pytest.mark.asyncio
+    async def test_initialize_returns_protocol_version(self):
+        """Test initialize method returns protocolVersion matching spec."""
+        user = User(
+            username="test",
+            password_hash="hashed_password",
+            role=UserRole.POWER_USER,
+            created_at=__import__("datetime").datetime.now(),
+        )
+        request = {
+            "jsonrpc": "2.0",
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "TestClient", "version": "1.0.0"},
+            },
+            "id": "init-1",
+        }
+
+        response = await process_jsonrpc_request(request, user)
+
+        # Should return success response
+        assert response["jsonrpc"] == "2.0"
+        assert "result" in response
+        assert response["id"] == "init-1"
+
+        # Result must contain required fields per MCP spec
+        result = response["result"]
+        assert "protocolVersion" in result
+        assert result["protocolVersion"] == "2024-11-05"
+        assert "capabilities" in result
+        assert "serverInfo" in result
+
+        # Server info must contain name and version
+        assert "name" in result["serverInfo"]
+        assert "version" in result["serverInfo"]
+
+    @pytest.mark.asyncio
+    async def test_initialize_includes_tools_capability(self):
+        """Test initialize returns tools capability."""
+        user = User(
+            username="test",
+            password_hash="hashed_password",
+            role=UserRole.POWER_USER,
+            created_at=__import__("datetime").datetime.now(),
+        )
+        request = {
+            "jsonrpc": "2.0",
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "TestClient", "version": "1.0.0"},
+            },
+            "id": "init-2",
+        }
+
+        response = await process_jsonrpc_request(request, user)
+
+        result = response["result"]
+        assert "tools" in result["capabilities"]
+
+
 class TestStreamableHTTPTransport:
     """Test Streamable HTTP transport features (GET, DELETE, Mcp-Session-Id)."""
 

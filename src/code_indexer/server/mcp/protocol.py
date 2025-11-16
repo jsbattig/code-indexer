@@ -193,7 +193,20 @@ async def process_jsonrpc_request(
 
     # Route to appropriate handler
     try:
-        if method == "tools/list":
+        if method == "initialize":
+            # MCP protocol handshake
+            result = {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {
+                    "tools": {}
+                },
+                "serverInfo": {
+                    "name": "CIDX",
+                    "version": "7.3.0"
+                }
+            }
+            return create_jsonrpc_response(result, request_id)
+        elif method == "tools/list":
             result = await handle_tools_list(params, user)
             return create_jsonrpc_response(result, request_id)
         elif method == "tools/call":
