@@ -80,7 +80,7 @@ async def discovery_endpoint(manager: OAuthManager = Depends(get_oauth_manager))
 async def register_client(
     request_model: ClientRegistrationRequest,
     http_request: Request,
-    manager: OAuthManager = Depends(get_oauth_manager)
+    manager: OAuthManager = Depends(get_oauth_manager),
 ):
     """Dynamic client registration endpoint with rate limiting and audit logging."""
     ip_address = http_request.client.host if http_request.client else "unknown"
@@ -90,14 +90,13 @@ async def register_client(
     rate_limit_error = oauth_register_rate_limiter.check_rate_limit(ip_address)
     if rate_limit_error:
         raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=rate_limit_error
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=rate_limit_error
         )
 
     try:
         result = manager.register_client(
             client_name=request_model.client_name,
-            redirect_uris=request_model.redirect_uris
+            redirect_uris=request_model.redirect_uris,
         )
 
         # Record success
@@ -108,7 +107,7 @@ async def register_client(
             client_id=result["client_id"],
             client_name=result["client_name"],
             ip_address=ip_address,
-            user_agent=user_agent
+            user_agent=user_agent,
         )
 
         return result
@@ -124,9 +123,25 @@ async def get_authorize_form(
     redirect_uri: str,
     code_challenge: str,
     response_type: str,
-    state: str
+    state: str,
+    manager: OAuthManager = Depends(get_oauth_manager),
 ):
-    """GET /oauth/authorize - Returns HTML login form for browser-based OAuth flow."""
+    """GET /oauth/authorize - Returns HTML login form for browser-based OAuth flow.
+
+    Per OAuth 2.1 spec: Validates client_id exists. If invalid, returns HTTP 401
+    with error="invalid_client" to trigger Claude.ai re-registration.
+    """
+    # Validate client_id exists (OAuth 2.1 requirement)
+    client = manager.get_client(client_id)
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "error": "invalid_client",
+                "error_description": "Client ID not found",
+            },
+        )
+
     html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -185,7 +200,7 @@ async def authorize_endpoint(
     code_challenge: Optional[str] = Form(None),
     state: Optional[str] = Form(None),
     username: Optional[str] = Form(None),
-    password: Optional[str] = Form(None)
+    password: Optional[str] = Form(None),
 ):
     """OAuth authorization endpoint with user authentication.
 
@@ -215,22 +230,21 @@ async def authorize_endpoint(
             password = request_model.password
         except Exception:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid request body"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid request body"
             )
 
     # Validate response_type
     if response_type != "code":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid response_type. Must be 'code'"
+            detail="Invalid response_type. Must be 'code'",
         )
 
     # Validate PKCE
     if not code_challenge:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="code_challenge required (PKCE)"
+            detail="code_challenge required (PKCE)",
         )
 
     # Authenticate user
@@ -238,8 +252,7 @@ async def authorize_endpoint(
 
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
 
     try:
@@ -249,7 +262,7 @@ async def authorize_endpoint(
             user_id=user.username,
             code_challenge=code_challenge,
             redirect_uri=redirect_uri,
-            state=state
+            state=state,
         )
 
         # Audit log
@@ -257,7 +270,7 @@ async def authorize_endpoint(
             username=user.username,
             client_id=client_id,
             ip_address=ip_address,
-            user_agent=user_agent
+            user_agent=user_agent,
         )
 
         # Return redirect for Form requests, JSON for API requests
@@ -270,10 +283,7 @@ async def authorize_endpoint(
             return {"code": code, "state": state}
 
     except OAuthError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post("/token", response_model=TokenResponse)
@@ -284,7 +294,7 @@ async def token_endpoint(
     client_id: str = Form(...),
     refresh_token: Optional[str] = Form(None),
     http_request: Request = None,
-    manager: OAuthManager = Depends(get_oauth_manager)
+    manager: OAuthManager = Depends(get_oauth_manager),
 ):
     """Token endpoint for authorization code exchange with rate limiting and audit logging.
 
@@ -297,8 +307,7 @@ async def token_endpoint(
     rate_limit_error = oauth_token_rate_limiter.check_rate_limit(client_id)
     if rate_limit_error:
         raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=rate_limit_error
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=rate_limit_error
         )
 
     try:
@@ -307,13 +316,11 @@ async def token_endpoint(
                 oauth_token_rate_limiter.record_failed_attempt(client_id)
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="code and code_verifier required for authorization_code grant"
+                    detail="code and code_verifier required for authorization_code grant",
                 )
 
             result = manager.exchange_code_for_token(
-                code=code,
-                code_verifier=code_verifier,
-                client_id=client_id
+                code=code, code_verifier=code_verifier, client_id=client_id
             )
 
             # Record success
@@ -327,7 +334,7 @@ async def token_endpoint(
                     client_id=client_id,
                     grant_type="authorization_code",
                     ip_address=ip_address,
-                    user_agent=user_agent
+                    user_agent=user_agent,
                 )
 
             return result
@@ -337,12 +344,11 @@ async def token_endpoint(
                 oauth_token_rate_limiter.record_failed_attempt(client_id)
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="refresh_token required for refresh_token grant"
+                    detail="refresh_token required for refresh_token grant",
                 )
 
             result = manager.refresh_access_token(
-                refresh_token=refresh_token,
-                client_id=client_id
+                refresh_token=refresh_token, client_id=client_id
             )
 
             # Record success
@@ -356,7 +362,7 @@ async def token_endpoint(
                     client_id=client_id,
                     grant_type="refresh_token",
                     ip_address=ip_address,
-                    user_agent=user_agent
+                    user_agent=user_agent,
                 )
 
             return result
@@ -364,19 +370,19 @@ async def token_endpoint(
             oauth_token_rate_limiter.record_failed_attempt(client_id)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unsupported grant_type: {grant_type}"
+                detail=f"Unsupported grant_type: {grant_type}",
             )
     except PKCEVerificationError as e:
         oauth_token_rate_limiter.record_failed_attempt(client_id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "invalid_grant", "error_description": str(e)}
+            detail={"error": "invalid_grant", "error_description": str(e)},
         )
     except OAuthError as e:
         oauth_token_rate_limiter.record_failed_attempt(client_id)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": "invalid_request", "error_description": str(e)}
+            detail={"error": "invalid_request", "error_description": str(e)},
         )
 
 
@@ -384,7 +390,7 @@ async def token_endpoint(
 async def revoke_endpoint(
     request_model: RevokeRequest,
     http_request: Request,
-    manager: OAuthManager = Depends(get_oauth_manager)
+    manager: OAuthManager = Depends(get_oauth_manager),
 ):
     """Token revocation endpoint (always returns 200 per OAuth 2.1 spec)."""
     ip_address = http_request.client.host if http_request.client else "unknown"
@@ -399,7 +405,7 @@ async def revoke_endpoint(
             username=result["username"],
             token_type=result["token_type"],
             ip_address=ip_address,
-            user_agent=user_agent
+            user_agent=user_agent,
         )
 
     # Always return 200 (don't reveal if token existed)
