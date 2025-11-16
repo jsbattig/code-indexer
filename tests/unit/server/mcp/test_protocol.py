@@ -547,3 +547,142 @@ class TestEdgeCases:
 
         # Should handle unicode without errors
         assert "jsonrpc" in response
+
+
+class TestStreamableHTTPTransport:
+    """Test Streamable HTTP transport features (GET, DELETE, Mcp-Session-Id)."""
+
+    def test_get_mcp_returns_sse_stream_with_auth(self):
+        """Test GET /mcp returns SSE event stream when authenticated."""
+        from fastapi.testclient import TestClient
+        from code_indexer.server.app import create_app
+        from code_indexer.server.auth.user_manager import User, UserRole
+        from code_indexer.server.auth.dependencies import get_current_user
+        import datetime
+
+        app = create_app()
+
+        # Mock authentication using dependency override
+        test_user = User(
+            username="test_user",
+            password_hash="hashed",
+            role=UserRole.POWER_USER,
+            created_at=datetime.datetime.now()
+        )
+
+        app.dependency_overrides[get_current_user] = lambda: test_user
+        client = TestClient(app)
+
+        try:
+            # GET /mcp with auth should return SSE stream
+            response = client.get(
+                "/mcp",
+                headers={"Accept": "text/event-stream"}
+            )
+
+            # Should return 200 with SSE content-type
+            assert response.status_code == 200, \
+                f"Expected 200, got {response.status_code}"
+            assert "text/event-stream" in response.headers.get("content-type", ""), \
+                f"Expected SSE content-type, got {response.headers.get('content-type')}"
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_get_mcp_requires_authentication(self):
+        """Test GET /mcp returns 401 when not authenticated."""
+        from fastapi.testclient import TestClient
+        from code_indexer.server.app import create_app
+
+        app = create_app()
+        client = TestClient(app)
+
+        # GET /mcp without auth should return 401
+        response = client.get(
+            "/mcp",
+            headers={"Accept": "text/event-stream"}
+        )
+
+        assert response.status_code == 401, \
+            f"Expected 401 Unauthorized, got {response.status_code}"
+        assert "www-authenticate" in response.headers, \
+            "Expected WWW-Authenticate header in 401 response"
+
+    def test_delete_mcp_terminates_session(self):
+        """Test DELETE /mcp terminates session."""
+        from fastapi.testclient import TestClient
+        from code_indexer.server.app import create_app
+        from code_indexer.server.auth.user_manager import User, UserRole
+        from code_indexer.server.auth.dependencies import get_current_user
+        import datetime
+
+        app = create_app()
+
+        # Mock authentication
+        test_user = User(
+            username="test_user",
+            password_hash="hashed",
+            role=UserRole.POWER_USER,
+            created_at=datetime.datetime.now()
+        )
+
+        app.dependency_overrides[get_current_user] = lambda: test_user
+        client = TestClient(app)
+
+        try:
+            # DELETE /mcp should terminate session
+            response = client.delete(
+                "/mcp",
+                headers={"Mcp-Session-Id": "test-session-123"}
+            )
+
+            # Should return 200 with terminated status
+            assert response.status_code == 200, \
+                f"Expected 200, got {response.status_code}"
+            assert response.json().get("status") == "terminated", \
+                f"Expected status='terminated', got {response.json()}"
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_post_mcp_returns_session_id_header(self):
+        """Test POST /mcp returns Mcp-Session-Id header in response."""
+        from fastapi.testclient import TestClient
+        from code_indexer.server.app import create_app
+        from code_indexer.server.auth.user_manager import User, UserRole
+        from code_indexer.server.auth.dependencies import get_current_user
+        import datetime
+
+        app = create_app()
+
+        # Mock authentication
+        test_user = User(
+            username="test_user",
+            password_hash="hashed",
+            role=UserRole.POWER_USER,
+            created_at=datetime.datetime.now()
+        )
+
+        app.dependency_overrides[get_current_user] = lambda: test_user
+        client = TestClient(app)
+
+        try:
+            # POST /mcp should return session ID in header
+            response = client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "tools/list", "id": 1}
+            )
+
+            # Should have Mcp-Session-Id header
+            assert "mcp-session-id" in response.headers, \
+                f"Expected Mcp-Session-Id header, got headers: {response.headers.keys()}"
+
+            session_id = response.headers["mcp-session-id"]
+
+            # Session ID should be non-empty
+            assert len(session_id) > 0, "Session ID should not be empty"
+
+            # Session ID should contain only visible ASCII (0x21-0x7E)
+            for char in session_id:
+                assert 0x21 <= ord(char) <= 0x7E, \
+                    f"Invalid character in session ID: {char} (0x{ord(char):02x})"
+        finally:
+            app.dependency_overrides.clear()

@@ -53,6 +53,7 @@ dependencies = [
     "rpyc>=6.0.0",
     "authlib>=1.6.5",
     "aiosqlite>=0.21.0",
+    "sse-starlette>=1.6.0",
 ]
 
 [project.optional-dependencies]

@@ -4,10 +4,13 @@ Implements the Model Context Protocol (MCP) JSON-RPC 2.0 endpoint for tool disco
 and execution. Phase 1 implementation with stub handlers for tools/list and tools/call.
 """
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from typing import Dict, Any, List, Optional, Tuple, Union
 from code_indexer.server.auth.dependencies import get_current_user
 from code_indexer.server.auth.user_manager import User
+from sse_starlette.sse import EventSourceResponse
+import asyncio
+import uuid
 
 mcp_router = APIRouter()
 
@@ -237,7 +240,7 @@ async def process_batch_request(
 
 @mcp_router.post("/mcp")
 async def mcp_endpoint(
-    request: Request, current_user: User = Depends(get_current_user)
+    request: Request, response: Response, current_user: User = Depends(get_current_user)
 ) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
     """
     MCP JSON-RPC 2.0 endpoint.
@@ -247,11 +250,16 @@ async def mcp_endpoint(
 
     Args:
         request: FastAPI Request object
+        response: FastAPI Response object for setting headers
         current_user: Authenticated user (from Bearer token)
 
     Returns:
         JSON-RPC response (single or batch)
     """
+    # Generate and set session ID header
+    session_id = str(uuid.uuid4())
+    response.headers["Mcp-Session-Id"] = session_id
+
     try:
         body = await request.json()
     except Exception:
@@ -267,3 +275,24 @@ async def mcp_endpoint(
         return create_jsonrpc_error(
             -32600, "Invalid Request: body must be object or array", None
         )
+
+
+async def sse_event_generator():
+    """Generate minimal SSE events."""
+    yield {"data": "connected"}
+
+
+@mcp_router.get("/mcp")
+async def mcp_sse_endpoint(
+    current_user: User = Depends(get_current_user)
+) -> EventSourceResponse:
+    """MCP SSE endpoint for server-to-client notifications."""
+    return EventSourceResponse(sse_event_generator())
+
+
+@mcp_router.delete("/mcp")
+async def mcp_delete_session(
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, str]:
+    """MCP DELETE endpoint for session termination."""
+    return {"status": "terminated"}
