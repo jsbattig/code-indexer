@@ -127,15 +127,49 @@ async def get_authorize_form(
     state: str
 ):
     """GET /oauth/authorize - Returns HTML login form for browser-based OAuth flow."""
-    html = '<form method="post" action="/oauth/authorize">'
-    html += f'<input type="hidden" name="client_id" value="{client_id}">'
-    html += f'<input type="hidden" name="redirect_uri" value="{redirect_uri}">'
-    html += f'<input type="hidden" name="code_challenge" value="{code_challenge}">'
-    html += f'<input type="hidden" name="response_type" value="{response_type}">'
-    html += f'<input type="hidden" name="state" value="{state}">'
-    html += '<input type="text" name="username">'
-    html += '<input type="password" name="password">'
-    html += '</form>'
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CIDX Authorization</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+               background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+               display: flex; justify-content: center; align-items: center;
+               min-height: 100vh; margin: 0; }}
+        .container {{ background: white; padding: 40px; border-radius: 10px;
+                      box-shadow: 0 10px 40px rgba(0,0,0,0.2); max-width: 400px; width: 100%; }}
+        h2 {{ margin: 0 0 10px 0; color: #333; }}
+        p {{ color: #666; margin: 0 0 30px 0; font-size: 14px; }}
+        input {{ width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd;
+                 border-radius: 5px; box-sizing: border-box; font-size: 14px; }}
+        input:focus {{ outline: none; border-color: #667eea; }}
+        button {{ width: 100%; padding: 14px; background: #667eea; color: white;
+                  border: none; border-radius: 5px; font-size: 16px; font-weight: 600;
+                  cursor: pointer; margin-top: 10px; }}
+        button:hover {{ background: #5568d3; }}
+        .footer {{ text-align: center; margin-top: 20px; font-size: 12px; color: #999; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>CIDX Authorization</h2>
+        <p>CIDX Server is requesting access to your account</p>
+        <form method="post" action="/oauth/authorize">
+            <input type="hidden" name="client_id" value="{client_id}">
+            <input type="hidden" name="redirect_uri" value="{redirect_uri}">
+            <input type="hidden" name="code_challenge" value="{code_challenge}">
+            <input type="hidden" name="response_type" value="{response_type}">
+            <input type="hidden" name="state" value="{state}">
+            <input type="text" name="username" placeholder="Username" required autofocus>
+            <input type="password" name="password" placeholder="Password" required>
+            <button type="submit">Authorize Access</button>
+        </form>
+        <div class="footer">CIDX Semantic Code Search</div>
+    </div>
+</body>
+</html>"""
     return HTMLResponse(content=html)
 
 
