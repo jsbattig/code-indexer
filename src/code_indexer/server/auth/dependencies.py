@@ -25,6 +25,27 @@ oauth_manager: Optional["OAuthManager"] = None  # Forward reference to avoid cir
 security = HTTPBearer(auto_error=True)
 
 
+def _build_www_authenticate_header() -> str:
+    """
+    Build RFC 9728 compliant WWW-Authenticate header value.
+
+    Per RFC 9728 Section 5.1, the header should include resource_metadata
+    parameter pointing to the OAuth authorization server discovery endpoint.
+
+    This enables Claude.ai and other MCP clients to discover OAuth endpoints.
+
+    Returns:
+        WWW-Authenticate header value with resource_metadata parameter
+    """
+    # Build discovery URL from oauth_manager's issuer
+    if oauth_manager:
+        discovery_url = f"{oauth_manager.issuer}/.well-known/oauth-authorization-server"
+        return f'Bearer resource_metadata="{discovery_url}"'
+    else:
+        # Fallback to basic Bearer if oauth_manager not initialized
+        return "Bearer"
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> User:
@@ -63,7 +84,7 @@ def get_current_user(
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="User not found",
-                        headers={"WWW-Authenticate": "Bearer"},
+                        headers={"WWW-Authenticate": _build_www_authenticate_header()},
                     )
                 return user
 
@@ -77,7 +98,7 @@ def get_current_user(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token: missing username",
-                headers={"WWW-Authenticate": "Bearer"},
+                headers={"WWW-Authenticate": _build_www_authenticate_header()},
             )
 
         # Check if token is blacklisted
@@ -87,7 +108,7 @@ def get_current_user(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token has been revoked",
-                headers={"WWW-Authenticate": "Bearer"},
+                headers={"WWW-Authenticate": _build_www_authenticate_header()},
             )
 
         # Get user from storage
@@ -96,7 +117,7 @@ def get_current_user(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User not found",
-                headers={"WWW-Authenticate": "Bearer"},
+                headers={"WWW-Authenticate": _build_www_authenticate_header()},
             )
 
         return user
@@ -105,13 +126,13 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",
-            headers={"WWW-Authenticate": "Bearer"},
+            headers={"WWW-Authenticate": _build_www_authenticate_header()},
         )
     except InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
-            headers={"WWW-Authenticate": "Bearer"},
+            headers={"WWW-Authenticate": _build_www_authenticate_header()},
         )
 
 
