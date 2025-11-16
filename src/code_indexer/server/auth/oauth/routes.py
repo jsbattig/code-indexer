@@ -1,6 +1,7 @@
 """FastAPI routes for OAuth 2.1 endpoints with rate limiting and audit logging."""
 
 from fastapi import APIRouter, HTTPException, status, Depends, Request, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from pathlib import Path
@@ -117,33 +118,89 @@ async def register_client(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
+@router.get("/authorize", response_class=HTMLResponse)
+async def get_authorize_form(
+    client_id: str,
+    redirect_uri: str,
+    code_challenge: str,
+    response_type: str,
+    state: str
+):
+    """GET /oauth/authorize - Returns HTML login form for browser-based OAuth flow."""
+    html = '<form method="post" action="/oauth/authorize">'
+    html += f'<input type="hidden" name="client_id" value="{client_id}">'
+    html += f'<input type="hidden" name="redirect_uri" value="{redirect_uri}">'
+    html += f'<input type="hidden" name="code_challenge" value="{code_challenge}">'
+    html += f'<input type="hidden" name="response_type" value="{response_type}">'
+    html += f'<input type="hidden" name="state" value="{state}">'
+    html += '<input type="text" name="username">'
+    html += '<input type="password" name="password">'
+    html += '</form>'
+    return HTMLResponse(content=html)
+
+
 @router.post("/authorize")
 async def authorize_endpoint(
-    request_model: AuthorizeRequest,
     http_request: Request,
     manager: OAuthManager = Depends(get_oauth_manager),
-    user_manager: UserManager = Depends(get_user_manager)
+    user_manager: UserManager = Depends(get_user_manager),
+    # Form parameters (for browser-based flow)
+    client_id: Optional[str] = Form(None),
+    redirect_uri: Optional[str] = Form(None),
+    response_type: Optional[str] = Form(None),
+    code_challenge: Optional[str] = Form(None),
+    state: Optional[str] = Form(None),
+    username: Optional[str] = Form(None),
+    password: Optional[str] = Form(None)
 ):
-    """OAuth authorization endpoint with user authentication."""
+    """OAuth authorization endpoint with user authentication.
+
+    Supports both:
+    - Form data (application/x-www-form-urlencoded) for browser-based flows - returns redirect
+    - JSON body for programmatic access - returns JSON response
+    """
     ip_address = http_request.client.host if http_request.client else "unknown"
     user_agent = http_request.headers.get("user-agent")
 
+    # Determine if this is Form data or JSON request
+    content_type = http_request.headers.get("content-type", "")
+    is_form_request = "application/x-www-form-urlencoded" in content_type
+
+    # Handle JSON request (backward compatibility)
+    if not is_form_request and client_id is None:
+        # Parse JSON body
+        try:
+            body = await http_request.json()
+            request_model = AuthorizeRequest(**body)
+            client_id = request_model.client_id
+            redirect_uri = request_model.redirect_uri
+            response_type = request_model.response_type
+            code_challenge = request_model.code_challenge
+            state = request_model.state
+            username = request_model.username
+            password = request_model.password
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid request body"
+            )
+
     # Validate response_type
-    if request_model.response_type != "code":
+    if response_type != "code":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid response_type. Must be 'code'"
         )
 
     # Validate PKCE
-    if not request_model.code_challenge:
+    if not code_challenge:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="code_challenge required (PKCE)"
         )
 
     # Authenticate user
-    user = user_manager.authenticate_user(request_model.username, request_model.password)
+    user = user_manager.authenticate_user(username, password)
 
     if not user:
         raise HTTPException(
@@ -154,22 +211,29 @@ async def authorize_endpoint(
     try:
         # Generate authorization code
         code = manager.generate_authorization_code(
-            client_id=request_model.client_id,
+            client_id=client_id,
             user_id=user.username,
-            code_challenge=request_model.code_challenge,
-            redirect_uri=request_model.redirect_uri,
-            state=request_model.state
+            code_challenge=code_challenge,
+            redirect_uri=redirect_uri,
+            state=state
         )
 
         # Audit log
         password_audit_logger.log_oauth_authorization(
             username=user.username,
-            client_id=request_model.client_id,
+            client_id=client_id,
             ip_address=ip_address,
             user_agent=user_agent
         )
 
-        return {"code": code, "state": request_model.state}
+        # Return redirect for Form requests, JSON for API requests
+        if is_form_request:
+            # Browser-based flow: redirect to callback URL with code and state
+            redirect_url = f"{redirect_uri}?code={code}&state={state}"
+            return RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
+        else:
+            # Programmatic flow: return JSON response
+            return {"code": code, "state": state}
 
     except OAuthError as e:
         raise HTTPException(
