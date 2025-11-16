@@ -129,6 +129,11 @@ class TestBrowserBasedOAuthFlow:
         assert 'name="password"' in html
         assert 'type="password"' in html
 
+        # CRITICAL: Form must have submit button
+        assert '<button' in html.lower(), "HTML missing button tag"
+        assert 'type="submit"' in html.lower(), "Button missing type=submit"
+        assert 'Authorize' in html, "Button missing 'Authorize' text"
+
     # ============================================================================
     # TEST 2: POST /oauth/authorize with Form data returns redirect
     # ============================================================================
