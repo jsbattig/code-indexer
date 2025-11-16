@@ -4,7 +4,7 @@ FastAPI authentication dependencies.
 Provides dependency injection for JWT authentication and role-based access control.
 """
 
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from functools import wraps
@@ -12,10 +12,14 @@ from functools import wraps
 from .jwt_manager import JWTManager, TokenExpiredError, InvalidTokenError
 from .user_manager import UserManager, User
 
+if TYPE_CHECKING:
+    from .oauth.oauth_manager import OAuthManager
+
 
 # Global instances (will be initialized by app)
 jwt_manager: Optional[JWTManager] = None
 user_manager: Optional[UserManager] = None
+oauth_manager: Optional["OAuthManager"] = None  # Forward reference to avoid circular dependency
 
 # Security scheme for bearer token authentication
 security = HTTPBearer(auto_error=True)
@@ -25,10 +29,13 @@ def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> User:
     """
-    Get current authenticated user from JWT token.
+    Get current authenticated user from OAuth or JWT token.
+
+    Validates OAuth tokens first (if oauth_manager is available), then falls back to JWT.
+    This allows both OAuth 2.1 tokens and legacy JWT tokens to work.
 
     Args:
-        credentials: JWT token from Authorization header
+        credentials: Bearer token from Authorization header
 
     Returns:
         Current User object
@@ -42,9 +49,28 @@ def get_current_user(
             detail="Authentication not properly initialized",
         )
 
+    token = credentials.credentials
+
+    # Try OAuth token validation first (if oauth_manager is available)
+    if oauth_manager:
+        oauth_result = oauth_manager.validate_token(token)
+        if oauth_result:
+            # Valid OAuth token - get user
+            username = oauth_result.get("user_id")
+            if username:
+                user = user_manager.get_user(username)
+                if user is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="User not found",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+                return user
+
+    # Fallback to JWT validation
     try:
         # Validate JWT token
-        payload = jwt_manager.validate_token(credentials.credentials)
+        payload = jwt_manager.validate_token(token)
         username = payload.get("username")
 
         if not username:

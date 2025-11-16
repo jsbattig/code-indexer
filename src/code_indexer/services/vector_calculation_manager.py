@@ -8,6 +8,7 @@ file I/O, chunking, and Qdrant operations in the main thread.
 import logging
 import threading
 import time
+from pathlib import Path
 
 # import concurrent.futures - not needed
 from concurrent.futures import ThreadPoolExecutor, Future
@@ -17,6 +18,7 @@ from typing import Dict, Any, Optional, List, Tuple
 import copy
 
 from .embedding_provider import EmbeddingProvider
+from ..utils.log_path_helper import get_debug_log_path
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +194,7 @@ class VectorCalculationManager:
         embedding_provider: EmbeddingProvider,
         thread_count: int,
         max_queue_size: int = 1000,
+        config_dir: Optional[Path] = None,
     ):
         """
         Initialize vector calculation manager.
@@ -200,10 +203,12 @@ class VectorCalculationManager:
             embedding_provider: Provider for generating embeddings
             thread_count: Number of worker threads
             max_queue_size: Maximum size of task queue
+            config_dir: Path to .code-indexer directory for debug logs
         """
         self.embedding_provider = embedding_provider
         self.thread_count = thread_count
         self.max_queue_size = max_queue_size
+        self.config_dir = config_dir
 
         # Thread pool for vector calculations
         self.executor: Optional[ThreadPoolExecutor] = None
@@ -494,12 +499,14 @@ class VectorCalculationManager:
             # Calculate embeddings using batch processing API
             chunk_texts_list = list(task.chunk_texts)  # Convert tuple to list for API
 
-            # DEBUG: Log batch processing start
-            with open("/tmp/cidx_vectorcalc_debug.log", "a") as f:
-                f.write(
-                    f"VectorCalc: Processing batch {task.task_id} with {len(chunk_texts_list)} chunks - STARTING API call\n"
-                )
-                f.flush()
+            # DEBUG: Log batch processing start (only if config_dir available)
+            if self.config_dir:
+                debug_log_path = get_debug_log_path(self.config_dir, "cidx_vectorcalc_debug.log")
+                with open(debug_log_path, "a") as f:
+                    f.write(
+                        f"VectorCalc: Processing batch {task.task_id} with {len(chunk_texts_list)} chunks - STARTING API call\n"
+                    )
+                    f.flush()
 
             embeddings_list = self.embedding_provider.get_embeddings_batch(
                 chunk_texts_list
@@ -507,12 +514,14 @@ class VectorCalculationManager:
 
             processing_time = time.time() - start_time
 
-            # DEBUG: Log batch processing complete
-            with open("/tmp/cidx_vectorcalc_debug.log", "a") as f:
-                f.write(
-                    f"VectorCalc: Batch {task.task_id} COMPLETED in {processing_time:.2f}s - returned {len(embeddings_list)} embeddings\n"
-                )
-                f.flush()
+            # DEBUG: Log batch processing complete (only if config_dir available)
+            if self.config_dir:
+                debug_log_path = get_debug_log_path(self.config_dir, "cidx_vectorcalc_debug.log")
+                with open(debug_log_path, "a") as f:
+                    f.write(
+                        f"VectorCalc: Batch {task.task_id} COMPLETED in {processing_time:.2f}s - returned {len(embeddings_list)} embeddings\n"
+                    )
+                    f.flush()
 
             # Convert embeddings to immutable tuple format
             immutable_embeddings = tuple(tuple(emb) for emb in embeddings_list)
