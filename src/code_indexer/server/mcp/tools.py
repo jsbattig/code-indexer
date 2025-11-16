@@ -9,7 +9,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "search_code": {
         "name": "search_code",
         "description": "Search code using semantic search, FTS, or hybrid mode",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "query_text": {
@@ -48,7 +48,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "discover_repositories": {
         "name": "discover_repositories",
         "description": "Discover available repositories from configured sources",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "source_type": {
@@ -64,7 +64,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "list_repositories": {
         "name": "list_repositories",
         "description": "List activated repositories for the current user",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {},
             "required": [],
@@ -74,7 +74,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "activate_repository": {
         "name": "activate_repository",
         "description": "Activate a repository for querying (supports single or composite)",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "golden_repo_alias": {
@@ -102,7 +102,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "deactivate_repository": {
         "name": "deactivate_repository",
         "description": "Deactivate a repository",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "user_alias": {
@@ -117,7 +117,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "get_repository_status": {
         "name": "get_repository_status",
         "description": "Get detailed status of a repository",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "user_alias": {
@@ -132,7 +132,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "sync_repository": {
         "name": "sync_repository",
         "description": "Sync repository with upstream",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "user_alias": {
@@ -147,7 +147,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "switch_branch": {
         "name": "switch_branch",
         "description": "Switch repository to different branch",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "user_alias": {
@@ -167,7 +167,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "list_files": {
         "name": "list_files",
         "description": "List files in a repository",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "repository_alias": {
@@ -186,7 +186,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "get_file_content": {
         "name": "get_file_content",
         "description": "Get content of a specific file",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "repository_alias": {
@@ -205,7 +205,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "browse_directory": {
         "name": "browse_directory",
         "description": "Browse directory recursively",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "repository_alias": {
@@ -229,7 +229,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "get_branches": {
         "name": "get_branches",
         "description": "Get available branches for a repository",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "repository_alias": {
@@ -244,7 +244,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "check_health": {
         "name": "check_health",
         "description": "Check system health status",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {},
             "required": [],
@@ -255,7 +255,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "add_golden_repo": {
         "name": "add_golden_repo",
         "description": "Add a golden repository",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "url": {
@@ -278,7 +278,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "remove_golden_repo": {
         "name": "remove_golden_repo",
         "description": "Remove a golden repository",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "alias": {
@@ -293,7 +293,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "refresh_golden_repo": {
         "name": "refresh_golden_repo",
         "description": "Refresh a golden repository",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "alias": {
@@ -308,7 +308,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "list_users": {
         "name": "list_users",
         "description": "List all users",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {},
             "required": [],
@@ -318,7 +318,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "create_user": {
         "name": "create_user",
         "description": "Create a new user",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "username": {
@@ -343,7 +343,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "get_repository_statistics": {
         "name": "get_repository_statistics",
         "description": "Get repository statistics",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "repository_alias": {
@@ -358,7 +358,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "get_job_statistics": {
         "name": "get_job_statistics",
         "description": "Get background job statistics",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {},
             "required": [],
@@ -368,7 +368,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "get_all_repositories_status": {
         "name": "get_all_repositories_status",
         "description": "Get status summary of all repositories",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {},
             "required": [],
@@ -378,7 +378,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "manage_composite_repository": {
         "name": "manage_composite_repository",
         "description": "Manage composite repository operations",
-        "parameters": {
+        "inputSchema": {
             "type": "object",
             "properties": {
                 "operation": {

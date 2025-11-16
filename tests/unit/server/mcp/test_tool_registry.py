@@ -12,7 +12,7 @@ class TestToolRegistryStructure:
 
     def test_all_tools_have_required_fields(self):
         """Test that all tools have required fields."""
-        required_fields = {"name", "description", "parameters", "required_permission"}
+        required_fields = {"name", "description", "inputSchema", "required_permission"}
 
         for tool_name, tool_def in TOOL_REGISTRY.items():
             assert required_fields.issubset(tool_def.keys()), \
