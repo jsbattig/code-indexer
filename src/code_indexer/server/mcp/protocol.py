@@ -4,9 +4,13 @@ Implements the Model Context Protocol (MCP) JSON-RPC 2.0 endpoint for tool disco
 and execution. Phase 1 implementation with stub handlers for tools/list and tools/call.
 """
 
-from fastapi import APIRouter, Depends, Request, Response, Header
+from fastapi import APIRouter, Depends, Request, Response
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Dict, Any, List, Optional, Tuple, Union
-from code_indexer.server.auth.dependencies import get_current_user
+from code_indexer.server.auth.dependencies import (
+    get_current_user,
+    _build_www_authenticate_header,
+)
 from code_indexer.server.auth.user_manager import User
 from sse_starlette.sse import EventSourceResponse
 import asyncio
@@ -14,6 +18,9 @@ import uuid
 import json
 
 mcp_router = APIRouter()
+
+# Security scheme for bearer token authentication (auto_error=False for optional auth)
+security = HTTPBearer(auto_error=False)
 
 
 def validate_jsonrpc_request(
@@ -189,6 +196,7 @@ async def process_jsonrpc_request(
     # Validate request structure
     is_valid, error = validate_jsonrpc_request(request)
     if not is_valid:
+        assert error is not None  # Type narrowing for mypy
         return create_jsonrpc_error(error["code"], error["message"], request_id)
 
     method = request["method"]
@@ -293,82 +301,64 @@ async def sse_event_generator():
     yield {"data": "connected"}
 
 
-@mcp_router.get("/mcp")
+async def get_optional_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> Optional[User]:
+    """
+    Optional user dependency that returns None for unauthenticated requests.
+
+    Wraps get_current_user() to handle authentication failures gracefully
+    instead of raising HTTPException.
+
+    Used for endpoints that need to distinguish between authenticated
+    and unauthenticated requests (e.g., MCP SSE endpoint per RFC 9728).
+
+    Args:
+        credentials: Bearer token from Authorization header
+
+    Returns:
+        User object if authentication succeeds, None otherwise
+    """
+    from fastapi import HTTPException
+
+    try:
+        return get_current_user(credentials)
+    except HTTPException:
+        # Authentication failed - return None to indicate unauthenticated
+        return None
+
+
+@mcp_router.get("/mcp", response_model=None)
 async def mcp_sse_endpoint(
-    authorization: Optional[str] = Header(None),
-) -> EventSourceResponse:
+    user: Optional[User] = Depends(get_optional_user),
+) -> Union[Response, EventSourceResponse]:
     """
     MCP SSE endpoint for server-to-client notifications.
 
-    Supports both:
-    - Unauthenticated: Returns minimal discovery stream for claude.ai
-    - Authenticated: Returns full MCP notification stream with Bearer token
+    Per MCP specification (RFC 9728 Section 5):
+    - Unauthenticated requests: Return HTTP 401 with WWW-Authenticate header
+    - Authenticated requests: Return SSE stream with full MCP capabilities
+
+    Args:
+        user: Authenticated user (None if authentication fails)
+
+    Returns:
+        401 Response with WWW-Authenticate header for unauthenticated requests,
+        SSE stream for authenticated requests
     """
-    user = None
+    if user is None:
+        # Per RFC 9728: Return 401 with WWW-Authenticate header for unauthenticated requests
+        return Response(
+            status_code=401,
+            headers={
+                "WWW-Authenticate": _build_www_authenticate_header(),
+                "Content-Type": "application/json",
+            },
+            content='{"error": "unauthorized", "message": "Bearer token required for MCP access"}',
+        )
 
-    # Try to authenticate if Authorization header provided
-    if authorization:
-        if authorization.startswith("Bearer "):
-            token = authorization.split(" ", 1)[1]
-            try:
-                # Use existing auth logic - manually validate token and get user
-                from ..auth.dependencies import jwt_manager, user_manager, oauth_manager
-                from ..auth.jwt_manager import TokenExpiredError, InvalidTokenError
-
-                if not jwt_manager or not user_manager:
-                    # Auth not initialized - continue as unauthenticated
-                    pass
-                else:
-                    # Try OAuth token validation first
-                    if oauth_manager:
-                        oauth_result = oauth_manager.validate_token(token)
-                        if oauth_result:
-                            username = oauth_result.get("user_id")
-                            if username:
-                                user = user_manager.get_user(username)
-
-                    # Fallback to JWT validation if OAuth didn't work
-                    if user is None:
-                        try:
-                            payload = jwt_manager.validate_token(token)
-                            username = payload.get("username")
-                            if username:
-                                # Check if token is blacklisted
-                                from ..app import is_token_blacklisted
-
-                                jti = payload.get("jti")
-                                if not (jti and is_token_blacklisted(jti)):
-                                    user = user_manager.get_user(username)
-                        except (TokenExpiredError, InvalidTokenError):
-                            # Invalid/expired token - continue as unauthenticated
-                            pass
-            except Exception:
-                # Any error - continue as unauthenticated
-                pass
-
-    # Return appropriate SSE stream
-    if user:
-        # Authenticated: full MCP capabilities
-        return EventSourceResponse(authenticated_sse_generator(user))
-    else:
-        # Unauthenticated: minimal discovery stream
-        return EventSourceResponse(discovery_sse_generator())
-
-
-async def discovery_sse_generator():
-    """Minimal SSE stream for unauthenticated MCP discovery."""
-    # Send initial endpoint info
-    yield {
-        "event": "endpoint",
-        "data": json.dumps(
-            {"protocol": "mcp", "version": "2024-11-05", "authentication": "oauth2"}
-        ),
-    }
-
-    # Keep connection alive with periodic pings
-    while True:
-        await asyncio.sleep(30)
-        yield {"event": "ping", "data": "keepalive"}
+    # Authenticated: return SSE stream with full MCP capabilities
+    return EventSourceResponse(authenticated_sse_generator(user))
 
 
 async def authenticated_sse_generator(user):

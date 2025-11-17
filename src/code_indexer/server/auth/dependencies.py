@@ -30,21 +30,22 @@ def _build_www_authenticate_header() -> str:
     """
     Build RFC 9728 compliant WWW-Authenticate header value.
 
-    Per RFC 9728 Section 5.1, the header should include resource_metadata
-    parameter pointing to the OAuth authorization server discovery endpoint.
+    Per RFC 9728 Section 5.1, the header must include:
+    - realm="mcp" - Protection space identifier
+    - resource_metadata - OAuth authorization server discovery endpoint
 
     This enables Claude.ai and other MCP clients to discover OAuth endpoints.
 
     Returns:
-        WWW-Authenticate header value with resource_metadata parameter
+        WWW-Authenticate header value with realm and resource_metadata parameters
     """
     # Build discovery URL from oauth_manager's issuer
     if oauth_manager:
         discovery_url = f"{oauth_manager.issuer}/.well-known/oauth-authorization-server"
-        return f'Bearer resource_metadata="{discovery_url}"'
+        return f'Bearer realm="mcp", resource_metadata="{discovery_url}"'
     else:
-        # Fallback to basic Bearer if oauth_manager not initialized
-        return "Bearer"
+        # Fallback to basic Bearer with realm if oauth_manager not initialized
+        return 'Bearer realm="mcp"'
 
 
 def get_current_user(

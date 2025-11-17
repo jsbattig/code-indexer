@@ -8891,7 +8891,14 @@ def setup_global_registry(ctx, test_access: bool, quiet: bool):
     help="VoyageAI API key for embeddings (optional, can use VOYAGE_API_KEY env var)",
 )
 @click.pass_context
-def install_server(ctx, port: Optional[int], force: bool, systemd: bool, issuer_url: Optional[str], voyage_api_key: Optional[str]):
+def install_server(
+    ctx,
+    port: Optional[int],
+    force: bool,
+    systemd: bool,
+    issuer_url: Optional[str],
+    voyage_api_key: Optional[str],
+):
     """Install and configure CIDX multi-user server.
 
     Sets up the CIDX multi-user server with JWT authentication, role-based
@@ -9020,7 +9027,7 @@ def install_server(ctx, port: Optional[int], force: bool, systemd: bool, issuer_
                 service_path = installer.create_systemd_service(
                     port=allocated_port,
                     issuer_url=issuer_url,
-                    voyage_api_key=voyage_api_key
+                    voyage_api_key=voyage_api_key,
                 )
 
         # Display success message
@@ -9060,7 +9067,9 @@ def install_server(ctx, port: Optional[int], force: bool, systemd: bool, issuer_
             # Systemd installation instructions
             console.print("🔧 Systemd Service Installation:", style="cyan bold")
             console.print("   Copy service file to system:", style="white")
-            console.print(f"   sudo cp {service_path} /etc/systemd/system/", style="green")
+            console.print(
+                f"   sudo cp {service_path} /etc/systemd/system/", style="green"
+            )
             console.print()
             console.print("   Enable and start service:", style="white")
             console.print("   sudo systemctl daemon-reload", style="green")

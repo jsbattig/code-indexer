@@ -277,8 +277,17 @@ class TestToolsCallHandler:
             mock_mgr.list_activated_repositories = Mock(return_value=[])
             result = await handle_tools_call(params, user)
 
-        assert result["success"] is True
-        assert "repositories" in result
+        # MCP responses have content array with text blocks
+        assert "content" in result
+        assert isinstance(result["content"], list)
+        assert len(result["content"]) > 0
+        assert result["content"][0]["type"] == "text"
+
+        # Parse the JSON text to check the actual data
+        import json
+        data = json.loads(result["content"][0]["text"])
+        assert data["success"] is True
+        assert "repositories" in data
 
     @pytest.mark.asyncio
     async def test_call_without_arguments(self):
@@ -295,8 +304,17 @@ class TestToolsCallHandler:
             mock_mgr.list_activated_repositories = Mock(return_value=[])
             result = await handle_tools_call(params, user)
 
-        assert result["success"] is True
-        assert "repositories" in result
+        # MCP responses have content array with text blocks
+        assert "content" in result
+        assert isinstance(result["content"], list)
+        assert len(result["content"]) > 0
+        assert result["content"][0]["type"] == "text"
+
+        # Parse the JSON text to check the actual data
+        import json
+        data = json.loads(result["content"][0]["text"])
+        assert data["success"] is True
+        assert "repositories" in data
 
 
 class TestBatchRequests:
@@ -624,7 +642,7 @@ class TestStreamableHTTPTransport:
         from fastapi.testclient import TestClient
         from code_indexer.server.app import create_app
         from code_indexer.server.auth.user_manager import User, UserRole
-        from code_indexer.server.auth.dependencies import get_current_user
+        from code_indexer.server.mcp.protocol import get_optional_user
         import datetime
 
         app = create_app()
@@ -634,46 +652,60 @@ class TestStreamableHTTPTransport:
             username="test_user",
             password_hash="hashed",
             role=UserRole.POWER_USER,
-            created_at=datetime.datetime.now()
+            created_at=datetime.datetime.now(),
         )
 
-        app.dependency_overrides[get_current_user] = lambda: test_user
+        app.dependency_overrides[get_optional_user] = lambda: test_user
         client = TestClient(app)
 
         try:
             # GET /mcp with auth should return SSE stream
-            response = client.get(
-                "/mcp",
-                headers={"Accept": "text/event-stream"}
-            )
+            response = client.get("/mcp", headers={"Accept": "text/event-stream"})
 
             # Should return 200 with SSE content-type
-            assert response.status_code == 200, \
-                f"Expected 200, got {response.status_code}"
-            assert "text/event-stream" in response.headers.get("content-type", ""), \
-                f"Expected SSE content-type, got {response.headers.get('content-type')}"
+            assert (
+                response.status_code == 200
+            ), f"Expected 200, got {response.status_code}"
+            assert "text/event-stream" in response.headers.get(
+                "content-type", ""
+            ), f"Expected SSE content-type, got {response.headers.get('content-type')}"
         finally:
             app.dependency_overrides.clear()
 
     def test_get_mcp_requires_authentication(self):
-        """Test GET /mcp allows unauthenticated discovery but returns minimal stream."""
+        """Test GET /mcp returns 401 Unauthorized for unauthenticated requests per MCP spec."""
         from fastapi.testclient import TestClient
         from code_indexer.server.app import create_app
 
         app = create_app()
         client = TestClient(app)
 
-        # GET /mcp without auth should now return 200 for unauthenticated discovery
-        response = client.get(
-            "/mcp",
-            headers={"Accept": "text/event-stream"}
-        )
+        # GET /mcp without auth should return 401 per MCP Authorization Specification (RFC 9728)
+        response = client.get("/mcp", headers={"Accept": "text/event-stream"})
 
-        # Now returns 200 for unauthenticated discovery
-        assert response.status_code == 200, \
-            f"Expected 200 for unauthenticated discovery, got {response.status_code}"
-        assert response.headers.get("content-type") == "text/event-stream; charset=utf-8", \
-            f"Expected SSE content-type, got {response.headers.get('content-type')}"
+        # Must return 401 Unauthorized
+        assert (
+            response.status_code == 401
+        ), f"Expected 401 Unauthorized per MCP spec, got {response.status_code}"
+
+        # Must include WWW-Authenticate header with Bearer scheme and resource_metadata
+        assert (
+            "www-authenticate" in response.headers
+        ), f"Expected WWW-Authenticate header, got headers: {response.headers.keys()}"
+
+        www_auth = response.headers["www-authenticate"]
+        assert www_auth.startswith(
+            "Bearer"
+        ), f"Expected Bearer scheme in WWW-Authenticate, got: {www_auth}"
+        assert (
+            'realm="mcp"' in www_auth
+        ), f"Expected realm='mcp' in WWW-Authenticate, got: {www_auth}"
+        assert (
+            "resource_metadata=" in www_auth
+        ), f"Expected resource_metadata URL in WWW-Authenticate, got: {www_auth}"
+        assert (
+            "/.well-known/oauth-authorization-server" in www_auth
+        ), f"Expected OAuth discovery URL in WWW-Authenticate, got: {www_auth}"
 
     def test_delete_mcp_terminates_session(self):
         """Test DELETE /mcp terminates session."""
@@ -690,7 +722,7 @@ class TestStreamableHTTPTransport:
             username="test_user",
             password_hash="hashed",
             role=UserRole.POWER_USER,
-            created_at=datetime.datetime.now()
+            created_at=datetime.datetime.now(),
         )
 
         app.dependency_overrides[get_current_user] = lambda: test_user
@@ -699,15 +731,16 @@ class TestStreamableHTTPTransport:
         try:
             # DELETE /mcp should terminate session
             response = client.delete(
-                "/mcp",
-                headers={"Mcp-Session-Id": "test-session-123"}
+                "/mcp", headers={"Mcp-Session-Id": "test-session-123"}
             )
 
             # Should return 200 with terminated status
-            assert response.status_code == 200, \
-                f"Expected 200, got {response.status_code}"
-            assert response.json().get("status") == "terminated", \
-                f"Expected status='terminated', got {response.json()}"
+            assert (
+                response.status_code == 200
+            ), f"Expected 200, got {response.status_code}"
+            assert (
+                response.json().get("status") == "terminated"
+            ), f"Expected status='terminated', got {response.json()}"
         finally:
             app.dependency_overrides.clear()
 
@@ -726,7 +759,7 @@ class TestStreamableHTTPTransport:
             username="test_user",
             password_hash="hashed",
             role=UserRole.POWER_USER,
-            created_at=datetime.datetime.now()
+            created_at=datetime.datetime.now(),
         )
 
         app.dependency_overrides[get_current_user] = lambda: test_user
@@ -735,13 +768,13 @@ class TestStreamableHTTPTransport:
         try:
             # POST /mcp should return session ID in header
             response = client.post(
-                "/mcp",
-                json={"jsonrpc": "2.0", "method": "tools/list", "id": 1}
+                "/mcp", json={"jsonrpc": "2.0", "method": "tools/list", "id": 1}
             )
 
             # Should have Mcp-Session-Id header
-            assert "mcp-session-id" in response.headers, \
-                f"Expected Mcp-Session-Id header, got headers: {response.headers.keys()}"
+            assert (
+                "mcp-session-id" in response.headers
+            ), f"Expected Mcp-Session-Id header, got headers: {response.headers.keys()}"
 
             session_id = response.headers["mcp-session-id"]
 
@@ -750,7 +783,35 @@ class TestStreamableHTTPTransport:
 
             # Session ID should contain only visible ASCII (0x21-0x7E)
             for char in session_id:
-                assert 0x21 <= ord(char) <= 0x7E, \
-                    f"Invalid character in session ID: {char} (0x{ord(char):02x})"
+                assert (
+                    0x21 <= ord(char) <= 0x7E
+                ), f"Invalid character in session ID: {char} (0x{ord(char):02x})"
         finally:
             app.dependency_overrides.clear()
+
+    def test_get_mcp_with_invalid_bearer_token_returns_401(self):
+        """Test GET /mcp returns 401 for invalid Bearer token."""
+        from fastapi.testclient import TestClient
+        from code_indexer.server.app import create_app
+
+        app = create_app()
+        client = TestClient(app)
+
+        # GET /mcp with invalid token should return 401
+        response = client.get(
+            "/mcp",
+            headers={
+                "Authorization": "Bearer invalid_token_12345",
+                "Accept": "text/event-stream",
+            },
+        )
+
+        # Must return 401 for invalid token
+        assert (
+            response.status_code == 401
+        ), f"Expected 401 for invalid token, got {response.status_code}"
+
+        # Must include WWW-Authenticate header
+        assert (
+            "www-authenticate" in response.headers
+        ), f"Expected WWW-Authenticate header for invalid token"
