@@ -303,21 +303,53 @@ async def get_file_content(params: Dict[str, Any], user: User) -> Dict[str, Any]
 
 
 async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]:
-    """Browse directory recursively."""
+    """Browse directory recursively.
+
+    FileListingService doesn't have browse_directory method.
+    Use list_files with path patterns instead.
+    """
     from code_indexer.server import app
+    from code_indexer.server.models.api_models import FileListQueryParams
 
     try:
         repository_alias = params["repository_alias"]
         path = params.get("path", "")
         recursive = params.get("recursive", True)
 
-        result = await app.file_service.browse_directory(
-            repository_alias=repository_alias,
-            path=path,
-            recursive=recursive,
-            username=user.username,
+        # Build path pattern for recursive search
+        path_pattern = None
+        if path:
+            # Match files under the specified path
+            path_pattern = f"{path}/**/*" if recursive else f"{path}/*"
+
+        # Use list_files with max allowed limit to get directory structure
+        query_params = FileListQueryParams(
+            page=1,
+            limit=500,  # Max limit allowed by FileListQueryParams
+            path_pattern=path_pattern,
         )
-        return _mcp_response({"success": True, "structure": result})
+
+        result = app.file_service.list_files(
+            repo_id=repository_alias,
+            username=user.username,
+            query_params=query_params,
+        )
+
+        # Convert FileInfo objects to dict structure
+        files_data = result.files if hasattr(result, 'files') else result.get("files", [])
+        serialized_files = [
+            f.model_dump(mode="json") if hasattr(f, "model_dump") else f
+            for f in files_data
+        ]
+
+        # Build directory structure from file list
+        structure = {
+            "path": path or "/",
+            "files": serialized_files,
+            "total": len(serialized_files),
+        }
+
+        return _mcp_response({"success": True, "structure": structure})
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "structure": {}})
 
@@ -528,11 +560,25 @@ async def get_repository_statistics(
 
 
 async def get_job_statistics(params: Dict[str, Any], user: User) -> Dict[str, Any]:
-    """Get background job statistics."""
+    """Get background job statistics.
+
+    BackgroundJobManager doesn't have get_job_statistics method.
+    Use get_active_job_count, get_pending_job_count, get_failed_job_count instead.
+    """
     from code_indexer.server import app
 
     try:
-        stats = app.background_job_manager.get_job_statistics()
+        active = app.background_job_manager.get_active_job_count()
+        pending = app.background_job_manager.get_pending_job_count()
+        failed = app.background_job_manager.get_failed_job_count()
+
+        stats = {
+            "active": active,
+            "pending": pending,
+            "failed": failed,
+            "total": active + pending + failed,
+        }
+
         return _mcp_response({"success": True, "statistics": stats})
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "statistics": {}})

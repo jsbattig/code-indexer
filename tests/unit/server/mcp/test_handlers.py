@@ -222,7 +222,10 @@ class TestDiscoverRepositories:
     """Test discover_repositories handler."""
 
     async def test_discover_repositories_success(self, mock_user):
-        """Test successful repository discovery."""
+        """Test successful repository discovery.
+
+        Should pass source as 'repo_url' parameter, not as 'source' filter.
+        """
         params = {"source": "https://github.com/user/repo.git"}
 
         with patch(
@@ -239,6 +242,11 @@ class TestDiscoverRepositories:
             mock_service_class.return_value = mock_service
 
             result = await discover_repositories(params, mock_user)
+
+            # Verify correct parameter passed (repo_url, not source)
+            call_kwargs = mock_service.discover_repositories.call_args[1]
+            assert "repo_url" in call_kwargs, "Should pass repo_url parameter"
+            assert call_kwargs["repo_url"] == "https://github.com/user/repo.git"
 
             # MCP format: parse content array
             import json
@@ -610,7 +618,11 @@ class TestFileHandlers:
             assert data["content"] == [], "content should be empty array on error"
 
     async def test_browse_directory(self, mock_user):
-        """Test browsing directory structure."""
+        """Test browsing directory structure.
+
+        FileListingService doesn't have browse_directory method.
+        Should use list_files method with path patterns instead.
+        """
         params = {
             "repository_alias": "my-repo",
             "path": "src/",
@@ -618,11 +630,30 @@ class TestFileHandlers:
         }
 
         with patch("code_indexer.server.app.file_service") as mock_service:
-            mock_service.browse_directory = AsyncMock(
-                return_value={"src": {"main.py": None}}
-            )
+            # Mock FileListResponse with files attribute
+            mock_response = Mock()
+            mock_response.files = [
+                Mock(
+                    path="src/main.py",
+                    size_bytes=1024,
+                    modified_at=datetime.now(timezone.utc),
+                    language="python",
+                    is_indexed=True,
+                    model_dump=lambda mode=None: {
+                        "path": "src/main.py",
+                        "size_bytes": 1024,
+                        "modified_at": datetime.now(timezone.utc).isoformat(),
+                        "language": "python",
+                        "is_indexed": True,
+                    }
+                ),
+            ]
+            mock_service.list_files = Mock(return_value=mock_response)
 
             result = await browse_directory(params, mock_user)
+
+            # Verify list_files was called (not browse_directory which doesn't exist)
+            mock_service.list_files.assert_called_once()
 
             # MCP format: parse content array
             import json
@@ -630,6 +661,7 @@ class TestFileHandlers:
 
             assert data["success"] is True
             assert "structure" in data
+            assert len(data["structure"]["files"]) >= 1
 
 
 @pytest.mark.asyncio
@@ -655,6 +687,47 @@ class TestHealthCheck:
 
             assert data["success"] is True
             assert "health" in data
+
+
+@pytest.mark.asyncio
+class TestRepositoryStatus:
+    """Test get_repository_status handler."""
+
+    async def test_get_repository_status_activated_repo(self, mock_user):
+        """Test getting status for activated repository.
+
+        Should look in activated repos (user workspace) not golden repos.
+        Uses repository_listing_manager.get_repository_details with username.
+        """
+        from code_indexer.server.mcp.handlers import get_repository_status
+
+        params = {"user_alias": "my-activated-repo"}
+
+        with patch("code_indexer.server.app.repository_listing_manager") as mock_manager:
+            mock_manager.get_repository_details = Mock(
+                return_value={
+                    "alias": "my-activated-repo",
+                    "repo_url": "https://github.com/user/repo.git",
+                    "current_branch": "main",
+                    "activation_status": "activated",
+                    "file_count": 150,
+                }
+            )
+
+            result = await get_repository_status(params, mock_user)
+
+            # Verify correct method called with username
+            mock_manager.get_repository_details.assert_called_once_with(
+                "my-activated-repo", mock_user.username
+            )
+
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert data["status"]["alias"] == "my-activated-repo"
+            assert data["status"]["activation_status"] == "activated"
 
 
 @pytest.mark.asyncio
@@ -684,13 +757,22 @@ class TestStatisticsHandlers:
             assert "statistics" in data
 
     async def test_get_job_statistics(self, mock_user):
-        """Test getting job statistics."""
+        """Test getting job statistics.
+
+        BackgroundJobManager doesn't have get_job_statistics method.
+        Should use get_active_job_count, get_pending_job_count, get_failed_job_count instead.
+        """
         with patch("code_indexer.server.app.background_job_manager") as mock_manager:
-            mock_manager.get_job_statistics = Mock(
-                return_value={"total": 50, "pending": 5, "completed": 45}
-            )
+            mock_manager.get_active_job_count = Mock(return_value=5)
+            mock_manager.get_pending_job_count = Mock(return_value=10)
+            mock_manager.get_failed_job_count = Mock(return_value=2)
 
             result = await get_job_statistics({}, mock_user)
+
+            # Verify actual methods called
+            mock_manager.get_active_job_count.assert_called_once()
+            mock_manager.get_pending_job_count.assert_called_once()
+            mock_manager.get_failed_job_count.assert_called_once()
 
             # MCP format: parse content array
             import json
@@ -698,6 +780,10 @@ class TestStatisticsHandlers:
 
             assert data["success"] is True
             assert "statistics" in data
+            assert data["statistics"]["active"] == 5
+            assert data["statistics"]["pending"] == 10
+            assert data["statistics"]["failed"] == 2
+            assert data["statistics"]["total"] == 17  # 5 + 10 + 2
 
 
 @pytest.mark.asyncio
