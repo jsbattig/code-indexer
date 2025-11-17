@@ -221,17 +221,29 @@ async def switch_branch(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """List files in a repository."""
     from code_indexer.server import app
+    from code_indexer.server.models.api_models import FileListQueryParams
 
     try:
         repository_alias = params["repository_alias"]
         path_filter = params.get("path", "")
 
-        result = await app.file_service.list_files(
-            repository_alias=repository_alias,
-            username=user.username,
-            path=path_filter,
+        # Create FileListQueryParams object as required by service method signature
+        query_params = FileListQueryParams(
+            page=1,
+            limit=500,  # Max limit for MCP tool usage
+            path_pattern=path_filter if path_filter else None,
         )
-        return _mcp_response({"success": True, "files": result.get("files", [])})
+
+        # Call with correct signature: list_files(repo_id, username, query_params)
+        result = app.file_service.list_files(
+            repo_id=repository_alias,
+            username=user.username,
+            query_params=query_params,
+        )
+
+        # Extract files from FileListResponse
+        files = result.files if hasattr(result, 'files') else result.get("files", [])
+        return _mcp_response({"success": True, "files": files})
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "files": []})
 
@@ -248,7 +260,7 @@ async def get_file_content(params: Dict[str, Any], user: User) -> Dict[str, Any]
         repository_alias = params["repository_alias"]
         file_path = params["file_path"]
 
-        result = await app.file_service.get_file_content(
+        result = app.file_service.get_file_content(
             repository_alias=repository_alias,
             file_path=file_path,
             username=user.username,
@@ -489,8 +501,8 @@ async def get_repository_statistics(
         from code_indexer.server.services.stats_service import stats_service
 
         repository_alias = params["repository_alias"]
-        # Call the actual method (not async, different name)
-        stats_response = stats_service.get_repository_stats(repository_alias)
+        # Call with username to lookup activated repository
+        stats_response = stats_service.get_repository_stats(repository_alias, username=user.username)
         # Use mode='json' to serialize datetime objects to ISO format strings
         return _mcp_response(
             {"success": True, "statistics": stats_response.model_dump(mode="json")}

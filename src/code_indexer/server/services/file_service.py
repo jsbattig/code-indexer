@@ -7,7 +7,7 @@ All operations use real file system operations with proper pagination and filter
 
 import os
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 from datetime import datetime, timezone
 import logging
 import fnmatch
@@ -350,6 +350,31 @@ class FileListingService:
 
         return paginated_files, pagination_info
 
+
+    def get_file_content(
+        self, repository_alias: str, file_path: str, username: str
+    ) -> Dict[str, Any]:
+        """Get content of a specific file from repository."""
+        repo_path = self._get_repository_path(repository_alias, username)
+        full_file_path = Path(repo_path) / file_path
+        full_file_path = full_file_path.resolve()
+        repo_root = Path(repo_path).resolve()
+        if not str(full_file_path).startswith(str(repo_root)):
+            raise PermissionError("Access denied")
+        if not full_file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+        if not full_file_path.is_file():
+            raise FileNotFoundError(f"Not a file: {file_path}")
+        with open(full_file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        stat_info = full_file_path.stat()
+        metadata = {
+            "size": stat_info.st_size,
+            "modified_at": datetime.fromtimestamp(stat_info.st_mtime, tz=timezone.utc).isoformat(),
+            "language": self._detect_language(full_file_path),
+            "path": file_path,
+        }
+        return {"content": content, "metadata": metadata}
 
 # Global service instance
 file_service = FileListingService()

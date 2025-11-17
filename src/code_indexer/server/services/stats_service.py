@@ -111,12 +111,14 @@ class RepositoryStatsService:
             logger.error(f"Failed to initialize real dependencies: {e}")
             raise RuntimeError(f"Cannot initialize repository stats service: {e}")
 
-    def get_repository_stats(self, repo_id: str) -> RepositoryStatsResponse:
+    def get_repository_stats(self, repo_id: str, username: str = None) -> RepositoryStatsResponse:
         """
         Get comprehensive statistics for a repository.
 
         Args:
-            repo_id: Repository identifier
+            repo_id: Repository identifier (user_alias)
+            username: Username owning the activated repository (user_alias for activated repos)
+            username: Username owning the activated repository (for activated repos)
 
         Returns:
             Repository statistics response
@@ -125,7 +127,7 @@ class RepositoryStatsService:
             FileNotFoundError: If repository doesn't exist
             PermissionError: If repository access denied
         """
-        repo_path = self._get_repository_path(repo_id)
+        repo_path = self._get_repository_path(repo_id, username)
 
         if not os.path.exists(repo_path):
             raise FileNotFoundError(f"Repository {repo_id} not found at {repo_path}")
@@ -147,14 +149,15 @@ class RepositoryStatsService:
             health=health_info,
         )
 
-    def _get_repository_path(self, repo_id: str) -> str:
+    def _get_repository_path(self, repo_id: str, username: str = None) -> str:
         """
         Get file system path for repository from real database.
 
         CLAUDE.md Foundation #1: Real database lookup, no placeholders.
 
         Args:
-            repo_id: Repository identifier
+            repo_id: Repository identifier (user_alias for activated repos)
+            username: Username owning the activated repository (for activated repos)
 
         Returns:
             Real file system path to repository
@@ -164,27 +167,23 @@ class RepositoryStatsService:
             FileNotFoundError: If repository not found
         """
         try:
-            # Use existing repository manager patterns from the codebase
-            from ..repositories.golden_repo_manager import GoldenRepoManager
+            # Use ActivatedRepoManager to find user's activated repository
+            from ..repositories.activated_repo_manager import ActivatedRepoManager
 
-            repo_manager = GoldenRepoManager()
+            repo_manager = ActivatedRepoManager()
 
-            # Search for repository by alias (repo_id)
-            golden_repos = repo_manager.list_golden_repos()
-            for repo_data in golden_repos:
-                if repo_data.get("alias") == repo_id:
-                    clone_path = repo_data.get("clone_path")
-                    if clone_path and Path(clone_path).exists():
-                        return clone_path
-                    else:
-                        raise FileNotFoundError(
-                            f"Repository path {clone_path} does not exist"
-                        )
-
-            # Repository not found
-            raise FileNotFoundError(
-                f"Repository {repo_id} not found in golden repositories"
+            # Get activated repository path for user
+            activated_path = repo_manager.get_activated_repo_path(
+                username=username,
+                user_alias=repo_id
             )
+
+            if activated_path and Path(activated_path).exists():
+                return activated_path
+            else:
+                raise FileNotFoundError(
+                    f"Repository '{repo_id}' not found for user '{username}'"
+                )
 
         except Exception as e:
             logger.error(f"Failed to get repository path for {repo_id}: {e}")
@@ -361,7 +360,8 @@ class RepositoryStatsService:
         Calculate activity-related statistics.
 
         Args:
-            repo_id: Repository identifier
+            repo_id: Repository identifier (user_alias for activated repos)
+            username: Username owning the activated repository (for activated repos)
             repo_path: Repository path
 
         Returns:
@@ -431,7 +431,8 @@ class RepositoryStatsService:
         CLAUDE.md Foundation #1: Real Qdrant integration, no placeholders.
 
         Args:
-            repo_id: Repository identifier
+            repo_id: Repository identifier (user_alias for activated repos)
+            username: Username owning the activated repository (for activated repos)
 
         Returns:
             Number of embeddings in Qdrant collection
@@ -465,7 +466,8 @@ class RepositoryStatsService:
         CLAUDE.md Foundation #1: Real database query, no simulated data.
 
         Args:
-            repo_id: Repository identifier
+            repo_id: Repository identifier (user_alias for activated repos)
+            username: Username owning the activated repository (for activated repos)
 
         Returns:
             Repository metadata dictionary
