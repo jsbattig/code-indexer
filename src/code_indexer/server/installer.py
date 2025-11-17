@@ -5,6 +5,7 @@ Handles server installation, port allocation, configuration setup,
 and startup script generation.
 """
 
+import getpass
 import socket
 import stat
 import sys
@@ -157,14 +158,20 @@ cd "{self.home_dir}"
         Args:
             port: Server port
             issuer_url: OAuth issuer URL (e.g., https://linner.ddns.net:8383)
-            voyage_api_key: VoyageAI API key for embeddings
+            voyage_api_key: VoyageAI API key (WARNING: stored in plaintext in service file)
 
         Returns:
             Path to created service file
+
+        Security Note:
+            If voyage_api_key is provided, it will be stored in PLAINTEXT in the systemd
+            service file. For production, prefer using systemd EnvironmentFile with
+            restricted permissions instead.
         """
         import sys
 
         python_exe = sys.executable
+        current_user = getpass.getuser()
 
         # Build environment variables
         env_vars = [
@@ -184,7 +191,7 @@ After=network.target
 
 [Service]
 Type=simple
-User={Path.home().name}
+User={current_user}
 WorkingDirectory={self.home_dir}
 {chr(10).join(env_vars)}
 ExecStart={python_exe} -m code_indexer.server.main --host 0.0.0.0 --port {port}

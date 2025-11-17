@@ -656,23 +656,24 @@ class TestStreamableHTTPTransport:
             app.dependency_overrides.clear()
 
     def test_get_mcp_requires_authentication(self):
-        """Test GET /mcp returns 401 when not authenticated."""
+        """Test GET /mcp allows unauthenticated discovery but returns minimal stream."""
         from fastapi.testclient import TestClient
         from code_indexer.server.app import create_app
 
         app = create_app()
         client = TestClient(app)
 
-        # GET /mcp without auth should return 401
+        # GET /mcp without auth should now return 200 for unauthenticated discovery
         response = client.get(
             "/mcp",
             headers={"Accept": "text/event-stream"}
         )
 
-        assert response.status_code == 401, \
-            f"Expected 401 Unauthorized, got {response.status_code}"
-        assert "www-authenticate" in response.headers, \
-            "Expected WWW-Authenticate header in 401 response"
+        # Now returns 200 for unauthenticated discovery
+        assert response.status_code == 200, \
+            f"Expected 200 for unauthenticated discovery, got {response.status_code}"
+        assert response.headers.get("content-type") == "text/event-stream; charset=utf-8", \
+            f"Expected SSE content-type, got {response.headers.get('content-type')}"
 
     def test_delete_mcp_terminates_session(self):
         """Test DELETE /mcp terminates session."""
