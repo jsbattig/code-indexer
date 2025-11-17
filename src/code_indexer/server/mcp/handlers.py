@@ -78,10 +78,13 @@ async def discover_repositories(params: Dict[str, Any], user: User) -> Dict[str,
             user=user,
         )
 
-        return _mcp_response({
-            "success": True,
-            "repositories": result.model_dump()["matching_repositories"],
-        })
+        # Use mode='json' to serialize datetime objects to ISO format strings
+        return _mcp_response(
+            {
+                "success": True,
+                "repositories": result.model_dump(mode="json")["matching_repositories"],
+            }
+        )
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "repositories": []})
 
@@ -109,11 +112,13 @@ async def activate_repository(params: Dict[str, Any], user: User) -> Dict[str, A
             branch_name=params.get("branch_name"),
             user_alias=params.get("user_alias"),
         )
-        return _mcp_response({
-            "success": True,
-            "job_id": job_id,
-            "message": "Repository activation started",
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "job_id": job_id,
+                "message": "Repository activation started",
+            }
+        )
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "job_id": None})
 
@@ -127,11 +132,13 @@ async def deactivate_repository(params: Dict[str, Any], user: User) -> Dict[str,
         job_id = app.activated_repo_manager.deactivate_repository(
             username=user.username, user_alias=user_alias
         )
-        return _mcp_response({
-            "success": True,
-            "job_id": job_id,
-            "message": f"Repository '{user_alias}' deactivation started",
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "job_id": job_id,
+                "message": f"Repository '{user_alias}' deactivation started",
+            }
+        )
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "job_id": None})
 
@@ -165,11 +172,13 @@ async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 break
 
         if not repo_id:
-            return _mcp_response({
-                "success": False,
-                "error": f"Repository '{user_alias}' not found",
-                "job_id": None,
-            })
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": f"Repository '{user_alias}' not found",
+                    "job_id": None,
+                }
+            )
 
         # Submit sync job
         job_id = app.background_job_manager.submit_job(
@@ -177,11 +186,13 @@ async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             params={"repo_id": repo_id, "username": user.username},
             username=user.username,
         )
-        return _mcp_response({
-            "success": True,
-            "job_id": job_id,
-            "message": f"Repository '{user_alias}' sync started",
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "job_id": job_id,
+                "message": f"Repository '{user_alias}' sync started",
+            }
+        )
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "job_id": None})
 
@@ -249,14 +260,18 @@ async def get_file_content(params: Dict[str, Any], user: User) -> Dict[str, Any]
             [{"type": "text", "text": file_content}] if file_content else []
         )
 
-        return _mcp_response({
-            "success": True,
-            "content": content_blocks,
-            "metadata": result.get("metadata", {}),
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "content": content_blocks,
+                "metadata": result.get("metadata", {}),
+            }
+        )
     except Exception as e:
         # Even on error, content must be an array (empty array is valid)
-        return _mcp_response({"success": False, "error": str(e), "content": [], "metadata": {}})
+        return _mcp_response(
+            {"success": False, "error": str(e), "content": [], "metadata": {}}
+        )
 
 
 async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -353,7 +368,10 @@ async def check_health(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
         # Call the actual method (not async)
         health_response = health_service.get_system_health()
-        return _mcp_response({"success": True, "health": health_response.model_dump()})
+        # Use mode='json' to serialize datetime objects to ISO format strings
+        return _mcp_response(
+            {"success": True, "health": health_response.model_dump(mode="json")}
+        )
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "health": {}})
 
@@ -382,10 +400,12 @@ async def remove_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, An
     try:
         alias = params["alias"]
         app.golden_repo_manager.remove_golden_repo(alias)
-        return _mcp_response({
-            "success": True,
-            "message": f"Golden repository '{alias}' removed successfully",
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "message": f"Golden repository '{alias}' removed successfully",
+            }
+        )
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e)})
 
@@ -397,11 +417,13 @@ async def refresh_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, A
     try:
         alias = params["alias"]
         job_id = app.golden_repo_manager.refresh_golden_repo(alias)
-        return _mcp_response({
-            "success": True,
-            "job_id": job_id,
-            "message": f"Golden repository '{alias}' refresh started",
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "job_id": job_id,
+                "message": f"Golden repository '{alias}' refresh started",
+            }
+        )
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "job_id": None})
 
@@ -412,20 +434,24 @@ async def list_users(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
     try:
         all_users = app.user_manager.get_all_users()
-        return _mcp_response({
-            "success": True,
-            "users": [
-                {
-                    "username": u.username,
-                    "role": u.role.value,
-                    "created_at": u.created_at.isoformat(),
-                }
-                for u in all_users
-            ],
-            "total": len(all_users),
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "users": [
+                    {
+                        "username": u.username,
+                        "role": u.role.value,
+                        "created_at": u.created_at.isoformat(),
+                    }
+                    for u in all_users
+                ],
+                "total": len(all_users),
+            }
+        )
     except Exception as e:
-        return _mcp_response({"success": False, "error": str(e), "users": [], "total": 0})
+        return _mcp_response(
+            {"success": False, "error": str(e), "users": [], "total": 0}
+        )
 
 
 async def create_user(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -440,15 +466,17 @@ async def create_user(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         new_user = app.user_manager.create_user(
             username=username, password=password, role=role
         )
-        return _mcp_response({
-            "success": True,
-            "user": {
-                "username": new_user.username,
-                "role": new_user.role.value,
-                "created_at": new_user.created_at.isoformat(),
-            },
-            "message": f"User '{username}' created successfully",
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "user": {
+                    "username": new_user.username,
+                    "role": new_user.role.value,
+                    "created_at": new_user.created_at.isoformat(),
+                },
+                "message": f"User '{username}' created successfully",
+            }
+        )
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "user": None})
 
@@ -463,7 +491,10 @@ async def get_repository_statistics(
         repository_alias = params["repository_alias"]
         # Call the actual method (not async, different name)
         stats_response = stats_service.get_repository_stats(repository_alias)
-        return _mcp_response({"success": True, "statistics": stats_response.model_dump()})
+        # Use mode='json' to serialize datetime objects to ISO format strings
+        return _mcp_response(
+            {"success": True, "statistics": stats_response.model_dump(mode="json")}
+        )
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "statistics": {}})
 
@@ -498,13 +529,17 @@ async def get_all_repositories_status(
                 # Skip repos that fail to get details
                 continue
 
-        return _mcp_response({
-            "success": True,
-            "repositories": status_summary,
-            "total": len(status_summary),
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "repositories": status_summary,
+                "total": len(status_summary),
+            }
+        )
     except Exception as e:
-        return _mcp_response({"success": False, "error": str(e), "repositories": [], "total": 0})
+        return _mcp_response(
+            {"success": False, "error": str(e), "repositories": [], "total": 0}
+        )
 
 
 async def manage_composite_repository(
@@ -524,11 +559,13 @@ async def manage_composite_repository(
                 golden_repo_aliases=golden_repo_aliases,
                 user_alias=user_alias,
             )
-            return _mcp_response({
-                "success": True,
-                "job_id": job_id,
-                "message": f"Composite repository '{user_alias}' creation started",
-            })
+            return _mcp_response(
+                {
+                    "success": True,
+                    "job_id": job_id,
+                    "message": f"Composite repository '{user_alias}' creation started",
+                }
+            )
 
         elif operation == "update":
             # For update, deactivate then reactivate
@@ -544,24 +581,30 @@ async def manage_composite_repository(
                 golden_repo_aliases=golden_repo_aliases,
                 user_alias=user_alias,
             )
-            return _mcp_response({
-                "success": True,
-                "job_id": job_id,
-                "message": f"Composite repository '{user_alias}' update started",
-            })
+            return _mcp_response(
+                {
+                    "success": True,
+                    "job_id": job_id,
+                    "message": f"Composite repository '{user_alias}' update started",
+                }
+            )
 
         elif operation == "delete":
             job_id = app.activated_repo_manager.deactivate_repository(
                 username=user.username, user_alias=user_alias
             )
-            return _mcp_response({
-                "success": True,
-                "job_id": job_id,
-                "message": f"Composite repository '{user_alias}' deletion started",
-            })
+            return _mcp_response(
+                {
+                    "success": True,
+                    "job_id": job_id,
+                    "message": f"Composite repository '{user_alias}' deletion started",
+                }
+            )
 
         else:
-            return _mcp_response({"success": False, "error": f"Unknown operation: {operation}"})
+            return _mcp_response(
+                {"success": False, "error": f"Unknown operation: {operation}"}
+            )
 
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "job_id": None})
