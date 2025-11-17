@@ -19,7 +19,7 @@ router = APIRouter(prefix="/oauth", tags=["oauth"])
 def get_oauth_manager() -> OAuthManager:
     """Get OAuth manager instance."""
     oauth_db = Path.home() / ".cidx-server" / "oauth.db"
-    return OAuthManager(db_path=str(oauth_db), issuer="http://localhost:8000")
+    return OAuthManager(db_path=str(oauth_db), issuer=None)
 
 
 def get_user_manager() -> UserManager:

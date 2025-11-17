@@ -1357,7 +1357,7 @@ def create_app() -> FastAPI:
     from .auth.oauth.oauth_manager import OAuthManager
     oauth_manager = OAuthManager(
         db_path=oauth_db_path,
-        issuer="http://localhost:8000",
+        issuer=None,
         user_manager=user_manager
     )
 
@@ -5348,7 +5348,7 @@ def create_app() -> FastAPI:
 
         # Use same configuration as /oauth/ routes for consistency
         oauth_db = Path.home() / ".cidx-server" / "oauth.db"
-        manager = OAuthManager(db_path=str(oauth_db), issuer="http://localhost:8000")
+        manager = OAuthManager(db_path=str(oauth_db), issuer=None)
         return manager.get_discovery_metadata()
 
     return app
