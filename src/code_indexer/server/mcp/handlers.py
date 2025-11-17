@@ -290,16 +290,16 @@ async def add_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     from code_indexer.server import app
 
     try:
-        url = params["url"]
+        repo_url = params["url"]
         alias = params["alias"]
-        branch = params.get("branch")
+        default_branch = params.get("branch", "main")
 
-        job_id = app.golden_repo_manager.add_golden_repo(
-            url=url, alias=alias, branch=branch
+        result = app.golden_repo_manager.add_golden_repo(
+            repo_url=repo_url, alias=alias, default_branch=default_branch
         )
-        return {"success": True, "job_id": job_id, "message": f"Golden repository '{alias}' addition started"}
+        return {"success": True, "message": result["message"]}
     except Exception as e:
-        return {"success": False, "error": str(e), "job_id": None}
+        return {"success": False, "error": str(e)}
 
 
 async def remove_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, Any]:

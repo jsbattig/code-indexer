@@ -43,6 +43,20 @@
           {
             "type": "command",
             "command": "tdd-guard"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/session-start.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/stop.sh"
           }
         ]
       }

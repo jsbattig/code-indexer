@@ -254,12 +254,15 @@ class TestAdminHandlers:
         }
 
         with patch("code_indexer.server.app.golden_repo_manager") as mock_manager:
-            mock_manager.add_golden_repo = Mock(return_value="job-golden-1")
-            
+            mock_manager.add_golden_repo = Mock(return_value={
+                "success": True,
+                "message": "Golden repository 'my-golden-repo' added successfully"
+            })
+
             result = await add_golden_repo(params, mock_admin_user)
 
             assert result["success"] is True
-            assert result["job_id"] == "job-golden-1"
+            assert "message" in result
 
     async def test_remove_golden_repo(self, mock_admin_user):
         """Test removing a golden repository."""
