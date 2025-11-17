@@ -459,7 +459,8 @@ class TestFileHandlers:
         params = {"repository_alias": "my-repo", "path": "src/"}
 
         with patch("code_indexer.server.app.file_service") as mock_service:
-            mock_service.list_files = AsyncMock(
+            # list_files is NOT async, use Mock not AsyncMock
+            mock_service.list_files = Mock(
                 return_value={"files": ["file1.py", "file2.py"]}
             )
 
@@ -472,6 +473,73 @@ class TestFileHandlers:
             assert data["success"] is True
             assert len(data["files"]) == 2
 
+    async def test_list_files_with_fileinfo_objects(self, mock_user):
+        """Test list_files properly serializes FileInfo objects with datetime fields."""
+        from code_indexer.server.models.api_models import (
+            FileInfo,
+            FileListResponse,
+            PaginationInfo,
+        )
+
+        params = {"repository_alias": "my-repo", "path": "src/"}
+
+        # Create FileInfo objects with datetime fields (as returned by actual service)
+        file_info_1 = FileInfo(
+            path="src/main.py",
+            size_bytes=1024,
+            modified_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+            language="python",
+            is_indexed=True,
+        )
+        file_info_2 = FileInfo(
+            path="src/utils.py",
+            size_bytes=512,
+            modified_at=datetime(2024, 1, 2, 14, 30, 0, tzinfo=timezone.utc),
+            language="python",
+            is_indexed=False,
+        )
+
+        # Create proper PaginationInfo object
+        pagination = PaginationInfo(page=1, limit=500, total=2, has_next=False)
+
+        # Mock service returns FileListResponse with FileInfo objects
+        mock_response = FileListResponse(
+            files=[file_info_1, file_info_2],
+            pagination=pagination,
+        )
+
+        with patch("code_indexer.server.app.file_service") as mock_service:
+            mock_service.list_files = Mock(return_value=mock_response)
+
+            result = await list_files(params, mock_user)
+
+            # MCP format: parse content array
+            import json
+
+            # This should NOT raise "Object of type FileInfo is not JSON serializable"
+            # or "Object of type datetime is not JSON serializable"
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert len(data["files"]) == 2
+
+            # Verify datetime fields are properly serialized as ISO format strings
+            assert data["files"][0]["path"] == "src/main.py"
+            assert data["files"][0]["size_bytes"] == 1024
+            assert (
+                data["files"][0]["modified_at"] == "2024-01-01T12:00:00Z"
+            )  # ISO format
+            assert data["files"][0]["language"] == "python"
+            assert data["files"][0]["is_indexed"] is True
+
+            assert data["files"][1]["path"] == "src/utils.py"
+            assert data["files"][1]["size_bytes"] == 512
+            assert (
+                data["files"][1]["modified_at"] == "2024-01-02T14:30:00Z"
+            )  # ISO format
+            assert data["files"][1]["language"] == "python"
+            assert data["files"][1]["is_indexed"] is False
+
     async def test_get_file_content(self, mock_user):
         """Test getting file content."""
         params = {
@@ -480,7 +548,8 @@ class TestFileHandlers:
         }
 
         with patch("code_indexer.server.app.file_service") as mock_service:
-            mock_service.get_file_content = AsyncMock(
+            # get_file_content is NOT async, use Mock not AsyncMock
+            mock_service.get_file_content = Mock(
                 return_value={
                     "content": "def main():\n    pass",
                     "metadata": {"size": 100},
@@ -521,7 +590,8 @@ class TestFileHandlers:
         }
 
         with patch("code_indexer.server.app.file_service") as mock_service:
-            mock_service.get_file_content = AsyncMock(
+            # get_file_content is NOT async, use Mock not AsyncMock
+            mock_service.get_file_content = Mock(
                 side_effect=Exception("File not found")
             )
 

@@ -241,9 +241,25 @@ async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             query_params=query_params,
         )
 
-        # Extract files from FileListResponse
-        files = result.files if hasattr(result, 'files') else result.get("files", [])
-        return _mcp_response({"success": True, "files": files})
+        # Extract files from FileListResponse and serialize FileInfo objects
+        # Handle both FileListResponse objects and plain dicts
+        if hasattr(result, 'files'):
+            # FileListResponse object with FileInfo objects
+            files_data = result.files
+        elif isinstance(result, dict):
+            # Plain dict (for backward compatibility with tests)
+            files_data = result.get("files", [])
+        else:
+            files_data = []
+
+        # Convert FileInfo Pydantic objects to dicts with proper datetime serialization
+        # Use mode='json' to convert datetime objects to ISO format strings
+        serialized_files = [
+            f.model_dump(mode="json") if hasattr(f, "model_dump") else f
+            for f in files_data
+        ]
+
+        return _mcp_response({"success": True, "files": serialized_files})
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "files": []})
 
