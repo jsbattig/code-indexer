@@ -98,24 +98,28 @@ class TestSearchCode:
         params = {
             "query_text": "authentication",
             "limit": 10,
-            "search_mode": "semantic",
         }
 
-        with patch("code_indexer.server.services.search_service.search_service") as mock_service:
-            from code_indexer.server.models.api_models import SemanticSearchResponse, SearchResultItem
-            mock_response = SemanticSearchResponse(
-                query="authentication",
-                results=[SearchResultItem(
-                    file_path="auth.py",
-                    score=0.9,
-                    line_start=1,
-                    line_end=10,
-                    content="auth code"
-                )],
-                total=1,
-                query_time_ms=100
-            )
-            mock_service.search_repository = Mock(return_value=mock_response)
+        with patch("code_indexer.server.app.semantic_query_manager") as mock_query_manager:
+            mock_query_manager.query_user_repositories = Mock(return_value={
+                "results": [
+                    {
+                        "file_path": "auth.py",
+                        "score": 0.9,
+                        "line_start": 1,
+                        "line_end": 10,
+                        "content": "auth code",
+                        "language": "python"
+                    }
+                ],
+                "total_results": 1,
+                "query_metadata": {
+                    "query_text": "authentication",
+                    "execution_time_ms": 100,
+                    "repositories_searched": 1,
+                    "timeout_occurred": False
+                }
+            })
 
             result = await search_code(params, mock_user)
 
@@ -126,14 +130,59 @@ class TestSearchCode:
         """Test search_code error handling."""
         params = {"query_text": "test"}
 
-        with patch("code_indexer.server.services.search_service.search_service") as mock_service:
-            mock_service.search_repository = Mock(side_effect=Exception("Search failed"))
+        with patch("code_indexer.server.app.semantic_query_manager") as mock_query_manager:
+            mock_query_manager.query_user_repositories = Mock(side_effect=Exception("Search failed"))
 
             result = await search_code(params, mock_user)
 
             assert result["success"] is False
             assert "error" in result
             assert result["results"] == []
+
+    async def test_search_code_with_activated_repository(self, mock_user):
+        """Test search_code uses semantic_query_manager for activated repositories."""
+        params = {
+            "query_text": "function",
+            "repository_alias": "my-tries",
+            "limit": 10,
+            "min_score": 0.5,
+        }
+
+        with patch("code_indexer.server.app.semantic_query_manager") as mock_query_manager:
+            mock_query_manager.query_user_repositories = Mock(return_value={
+                "results": [
+                    {
+                        "file_path": "test.py",
+                        "score": 0.9,
+                        "line_start": 1,
+                        "line_end": 10,
+                        "content": "def function():\n    pass",
+                        "language": "python"
+                    }
+                ],
+                "total_results": 1,
+                "query_metadata": {
+                    "query_text": "function",
+                    "execution_time_ms": 100,
+                    "repositories_searched": 1,
+                    "timeout_occurred": False
+                }
+            })
+
+            result = await search_code(params, mock_user)
+
+            assert result["success"] is True
+            assert "results" in result
+            assert len(result["results"]["results"]) == 1
+
+            mock_query_manager.query_user_repositories.assert_called_once_with(
+                username=mock_user.username,
+                query_text="function",
+                repository_alias="my-tries",
+                limit=10,
+                min_score=0.5,
+                file_extensions=None
+            )
 
 
 @pytest.mark.asyncio

@@ -8,22 +8,18 @@ from fastapi import HTTPException
 async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Search code using semantic search, FTS, or hybrid mode."""
     try:
-        from code_indexer.server.services.search_service import search_service
-        from code_indexer.server.models.api_models import SemanticSearchRequest
+        from code_indexer.server import app
 
-        # Build search request
-        search_request = SemanticSearchRequest(
-            query=params["query_text"],
+        # Use semantic_query_manager for activated repositories (matches REST endpoint pattern)
+        result = app.semantic_query_manager.query_user_repositories(
+            username=user.username,
+            query_text=params["query_text"],
+            repository_alias=params.get("repository_alias"),
             limit=params.get("limit", 10),
             min_score=params.get("min_score", 0.5),
+            file_extensions=params.get("file_extensions"),
         )
-
-        # Use repository_alias as repo_id
-        repo_id = params.get("repository_alias", user.username)
-
-        # Call the actual search_repository method that exists
-        result = search_service.search_repository(repo_id, search_request)
-        return {"success": True, "results": result.model_dump()}
+        return {"success": True, "results": result}
     except Exception as e:
         return {"success": False, "error": str(e), "results": []}
 
