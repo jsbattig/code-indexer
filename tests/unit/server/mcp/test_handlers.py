@@ -75,18 +75,23 @@ class TestHandlerRegistry:
             "manage_composite_repository",
         ]
 
-        assert len(HANDLER_REGISTRY) == 22, f"Expected 22 handlers, found {len(HANDLER_REGISTRY)}"
-        
+        assert (
+            len(HANDLER_REGISTRY) == 22
+        ), f"Expected 22 handlers, found {len(HANDLER_REGISTRY)}"
+
         for handler_name in expected_handlers:
-            assert handler_name in HANDLER_REGISTRY, f"Handler '{handler_name}' not registered"
+            assert (
+                handler_name in HANDLER_REGISTRY
+            ), f"Handler '{handler_name}' not registered"
 
     def test_all_handlers_are_coroutines(self):
         """Verify all handlers are async functions."""
         import inspect
 
         for handler_name, handler_func in HANDLER_REGISTRY.items():
-            assert inspect.iscoroutinefunction(handler_func), \
-                f"Handler '{handler_name}' is not an async function"
+            assert inspect.iscoroutinefunction(
+                handler_func
+            ), f"Handler '{handler_name}' is not an async function"
 
 
 @pytest.mark.asyncio
@@ -100,26 +105,30 @@ class TestSearchCode:
             "limit": 10,
         }
 
-        with patch("code_indexer.server.app.semantic_query_manager") as mock_query_manager:
-            mock_query_manager.query_user_repositories = Mock(return_value={
-                "results": [
-                    {
-                        "file_path": "auth.py",
-                        "score": 0.9,
-                        "line_start": 1,
-                        "line_end": 10,
-                        "content": "auth code",
-                        "language": "python"
-                    }
-                ],
-                "total_results": 1,
-                "query_metadata": {
-                    "query_text": "authentication",
-                    "execution_time_ms": 100,
-                    "repositories_searched": 1,
-                    "timeout_occurred": False
+        with patch(
+            "code_indexer.server.app.semantic_query_manager"
+        ) as mock_query_manager:
+            mock_query_manager.query_user_repositories = Mock(
+                return_value={
+                    "results": [
+                        {
+                            "file_path": "auth.py",
+                            "score": 0.9,
+                            "line_start": 1,
+                            "line_end": 10,
+                            "content": "auth code",
+                            "language": "python",
+                        }
+                    ],
+                    "total_results": 1,
+                    "query_metadata": {
+                        "query_text": "authentication",
+                        "execution_time_ms": 100,
+                        "repositories_searched": 1,
+                        "timeout_occurred": False,
+                    },
                 }
-            })
+            )
 
             result = await search_code(params, mock_user)
 
@@ -130,8 +139,12 @@ class TestSearchCode:
         """Test search_code error handling."""
         params = {"query_text": "test"}
 
-        with patch("code_indexer.server.app.semantic_query_manager") as mock_query_manager:
-            mock_query_manager.query_user_repositories = Mock(side_effect=Exception("Search failed"))
+        with patch(
+            "code_indexer.server.app.semantic_query_manager"
+        ) as mock_query_manager:
+            mock_query_manager.query_user_repositories = Mock(
+                side_effect=Exception("Search failed")
+            )
 
             result = await search_code(params, mock_user)
 
@@ -148,26 +161,30 @@ class TestSearchCode:
             "min_score": 0.5,
         }
 
-        with patch("code_indexer.server.app.semantic_query_manager") as mock_query_manager:
-            mock_query_manager.query_user_repositories = Mock(return_value={
-                "results": [
-                    {
-                        "file_path": "test.py",
-                        "score": 0.9,
-                        "line_start": 1,
-                        "line_end": 10,
-                        "content": "def function():\n    pass",
-                        "language": "python"
-                    }
-                ],
-                "total_results": 1,
-                "query_metadata": {
-                    "query_text": "function",
-                    "execution_time_ms": 100,
-                    "repositories_searched": 1,
-                    "timeout_occurred": False
+        with patch(
+            "code_indexer.server.app.semantic_query_manager"
+        ) as mock_query_manager:
+            mock_query_manager.query_user_repositories = Mock(
+                return_value={
+                    "results": [
+                        {
+                            "file_path": "test.py",
+                            "score": 0.9,
+                            "line_start": 1,
+                            "line_end": 10,
+                            "content": "def function():\n    pass",
+                            "language": "python",
+                        }
+                    ],
+                    "total_results": 1,
+                    "query_metadata": {
+                        "query_text": "function",
+                        "execution_time_ms": 100,
+                        "repositories_searched": 1,
+                        "timeout_occurred": False,
+                    },
                 }
-            })
+            )
 
             result = await search_code(params, mock_user)
 
@@ -181,7 +198,7 @@ class TestSearchCode:
                 repository_alias="my-tries",
                 limit=10,
                 min_score=0.5,
-                file_extensions=None
+                file_extensions=None,
             )
 
 
@@ -193,12 +210,16 @@ class TestDiscoverRepositories:
         """Test successful repository discovery."""
         params = {"source": "https://github.com/user/repo.git"}
 
-        with patch("code_indexer.server.services.repository_discovery_service.RepositoryDiscoveryService") as mock_service_class:
+        with patch(
+            "code_indexer.server.services.repository_discovery_service.RepositoryDiscoveryService"
+        ) as mock_service_class:
             mock_service = Mock()
             mock_response = Mock()
-            mock_response.model_dump = Mock(return_value={
-                "matching_repositories": [{"alias": "repo1"}, {"alias": "repo2"}]
-            })
+            mock_response.model_dump = Mock(
+                return_value={
+                    "matching_repositories": [{"alias": "repo1"}, {"alias": "repo2"}]
+                }
+            )
             mock_service.discover_repositories = AsyncMock(return_value=mock_response)
             mock_service_class.return_value = mock_service
 
@@ -230,8 +251,10 @@ class TestListRepositories:
     async def test_list_repositories_error_handling(self, mock_user):
         """Test list_repositories error handling."""
         with patch("code_indexer.server.app.activated_repo_manager") as mock_manager:
-            mock_manager.list_activated_repositories = Mock(side_effect=Exception("DB error"))
-            
+            mock_manager.list_activated_repositories = Mock(
+                side_effect=Exception("DB error")
+            )
+
             result = await list_repositories({}, mock_user)
 
             assert result["success"] is False
@@ -251,7 +274,7 @@ class TestActivateRepository:
 
         with patch("code_indexer.server.app.activated_repo_manager") as mock_manager:
             mock_manager.activate_repository = Mock(return_value="job-123")
-            
+
             result = await activate_repository(params, mock_user)
 
             assert result["success"] is True
@@ -266,7 +289,7 @@ class TestActivateRepository:
 
         with patch("code_indexer.server.app.activated_repo_manager") as mock_manager:
             mock_manager.activate_repository = Mock(return_value="job-456")
-            
+
             result = await activate_repository(params, mock_user)
 
             assert result["success"] is True
@@ -283,7 +306,7 @@ class TestDeactivateRepository:
 
         with patch("code_indexer.server.app.activated_repo_manager") as mock_manager:
             mock_manager.deactivate_repository = Mock(return_value="job-789")
-            
+
             result = await deactivate_repository(params, mock_user)
 
             assert result["success"] is True
@@ -303,10 +326,12 @@ class TestAdminHandlers:
         }
 
         with patch("code_indexer.server.app.golden_repo_manager") as mock_manager:
-            mock_manager.add_golden_repo = Mock(return_value={
-                "success": True,
-                "message": "Golden repository 'my-golden-repo' added successfully"
-            })
+            mock_manager.add_golden_repo = Mock(
+                return_value={
+                    "success": True,
+                    "message": "Golden repository 'my-golden-repo' added successfully",
+                }
+            )
 
             result = await add_golden_repo(params, mock_admin_user)
 
@@ -319,7 +344,7 @@ class TestAdminHandlers:
 
         with patch("code_indexer.server.app.golden_repo_manager") as mock_manager:
             mock_manager.remove_golden_repo = Mock()
-            
+
             result = await remove_golden_repo(params, mock_admin_user)
 
             assert result["success"] is True
@@ -327,13 +352,21 @@ class TestAdminHandlers:
     async def test_list_users(self, mock_admin_user):
         """Test listing all users."""
         mock_users = [
-            Mock(username="user1", role=UserRole.NORMAL_USER, created_at=datetime.now(timezone.utc)),
-            Mock(username="user2", role=UserRole.ADMIN, created_at=datetime.now(timezone.utc)),
+            Mock(
+                username="user1",
+                role=UserRole.NORMAL_USER,
+                created_at=datetime.now(timezone.utc),
+            ),
+            Mock(
+                username="user2",
+                role=UserRole.ADMIN,
+                created_at=datetime.now(timezone.utc),
+            ),
         ]
 
         with patch("code_indexer.server.app.user_manager") as mock_manager:
             mock_manager.get_all_users = Mock(return_value=mock_users)
-            
+
             result = await list_users({}, mock_admin_user)
 
             assert result["success"] is True
@@ -350,12 +383,12 @@ class TestAdminHandlers:
         mock_new_user = Mock(
             username="newuser",
             role=UserRole.NORMAL_USER,
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.now(timezone.utc),
         )
 
         with patch("code_indexer.server.app.user_manager") as mock_manager:
             mock_manager.create_user = Mock(return_value=mock_new_user)
-            
+
             result = await create_user(params, mock_admin_user)
 
             assert result["success"] is True
@@ -371,8 +404,10 @@ class TestFileHandlers:
         params = {"repository_alias": "my-repo", "path": "src/"}
 
         with patch("code_indexer.server.app.file_service") as mock_service:
-            mock_service.list_files = AsyncMock(return_value={"files": ["file1.py", "file2.py"]})
-            
+            mock_service.list_files = AsyncMock(
+                return_value={"files": ["file1.py", "file2.py"]}
+            )
+
             result = await list_files(params, mock_user)
 
             assert result["success"] is True
@@ -387,13 +422,55 @@ class TestFileHandlers:
 
         with patch("code_indexer.server.app.file_service") as mock_service:
             mock_service.get_file_content = AsyncMock(
-                return_value={"content": "def main():\n    pass", "metadata": {}}
+                return_value={
+                    "content": "def main():\n    pass",
+                    "metadata": {"size": 100},
+                }
             )
-            
+
             result = await get_file_content(params, mock_user)
 
             assert result["success"] is True
             assert "content" in result
+            # MCP spec: content must be an array of content blocks
+            assert isinstance(result["content"], list), "content must be an array"
+            assert len(result["content"]) > 0, "content array must not be empty"
+            # First content block must have type and text fields
+            assert (
+                "type" in result["content"][0]
+            ), "content block must have 'type' field"
+            assert (
+                result["content"][0]["type"] == "text"
+            ), "content block type must be 'text'"
+            assert (
+                "text" in result["content"][0]
+            ), "content block must have 'text' field"
+            assert result["content"][0]["text"] == "def main():\n    pass"
+            # Metadata should still be returned
+            assert "metadata" in result
+            assert result["metadata"]["size"] == 100
+
+    async def test_get_file_content_error(self, mock_user):
+        """Test get_file_content error handling returns MCP-compliant format."""
+        params = {
+            "repository_alias": "my-repo",
+            "file_path": "nonexistent.py",
+        }
+
+        with patch("code_indexer.server.app.file_service") as mock_service:
+            mock_service.get_file_content = AsyncMock(
+                side_effect=Exception("File not found")
+            )
+
+            result = await get_file_content(params, mock_user)
+
+            assert result["success"] is False
+            assert "error" in result
+            # Even on error, content should be array (empty array is valid)
+            assert isinstance(
+                result["content"], list
+            ), "content must be an array even on error"
+            assert result["content"] == [], "content should be empty array on error"
 
     async def test_browse_directory(self, mock_user):
         """Test browsing directory structure."""
@@ -404,8 +481,10 @@ class TestFileHandlers:
         }
 
         with patch("code_indexer.server.app.file_service") as mock_service:
-            mock_service.browse_directory = AsyncMock(return_value={"src": {"main.py": None}})
-            
+            mock_service.browse_directory = AsyncMock(
+                return_value={"src": {"main.py": None}}
+            )
+
             result = await browse_directory(params, mock_user)
 
             assert result["success"] is True
@@ -418,9 +497,13 @@ class TestHealthCheck:
 
     async def test_check_health(self, mock_user):
         """Test system health check."""
-        with patch("code_indexer.server.services.health_service.health_service") as mock_service:
+        with patch(
+            "code_indexer.server.services.health_service.health_service"
+        ) as mock_service:
             mock_response = Mock()
-            mock_response.model_dump = Mock(return_value={"status": "healthy", "uptime": 3600})
+            mock_response.model_dump = Mock(
+                return_value={"status": "healthy", "uptime": 3600}
+            )
             mock_service.get_system_health = Mock(return_value=mock_response)
 
             result = await check_health({}, mock_user)
@@ -437,9 +520,13 @@ class TestStatisticsHandlers:
         """Test getting repository statistics."""
         params = {"repository_alias": "my-repo"}
 
-        with patch("code_indexer.server.services.stats_service.stats_service") as mock_service:
+        with patch(
+            "code_indexer.server.services.stats_service.stats_service"
+        ) as mock_service:
             mock_response = Mock()
-            mock_response.model_dump = Mock(return_value={"file_count": 100, "total_lines": 5000})
+            mock_response.model_dump = Mock(
+                return_value={"file_count": 100, "total_lines": 5000}
+            )
             mock_service.get_repository_stats = Mock(return_value=mock_response)
 
             result = await get_repository_statistics(params, mock_user)
@@ -453,7 +540,7 @@ class TestStatisticsHandlers:
             mock_manager.get_job_statistics = Mock(
                 return_value={"total": 50, "pending": 5, "completed": 45}
             )
-            
+
             result = await get_job_statistics({}, mock_user)
 
             assert result["success"] is True
@@ -474,7 +561,7 @@ class TestCompositeRepository:
 
         with patch("code_indexer.server.app.activated_repo_manager") as mock_manager:
             mock_manager.activate_repository = Mock(return_value="job-composite-1")
-            
+
             result = await manage_composite_repository(params, mock_user)
 
             assert result["success"] is True
@@ -489,7 +576,7 @@ class TestCompositeRepository:
 
         with patch("code_indexer.server.app.activated_repo_manager") as mock_manager:
             mock_manager.deactivate_repository = Mock(return_value="job-deactivate-1")
-            
+
             result = await manage_composite_repository(params, mock_user)
 
             assert result["success"] is True

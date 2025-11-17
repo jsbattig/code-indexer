@@ -1,8 +1,7 @@
 """MCP Tool Handler Functions - Complete implementation for all 22 tools."""
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from code_indexer.server.auth.user_manager import User, UserRole
-from fastapi import HTTPException
 
 
 async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -28,7 +27,9 @@ async def discover_repositories(params: Dict[str, Any], user: User) -> Dict[str,
     """Discover available repositories from configured sources."""
     try:
         # Import actual dependencies as done in app.py endpoint
-        from code_indexer.server.services.repository_discovery_service import RepositoryDiscoveryService
+        from code_indexer.server.services.repository_discovery_service import (
+            RepositoryDiscoveryService,
+        )
         from code_indexer.server.app import golden_repo_manager, activated_repo_manager
 
         # Instantiate service following app.py pattern
@@ -43,7 +44,10 @@ async def discover_repositories(params: Dict[str, Any], user: User) -> Dict[str,
             user=user,
         )
 
-        return {"success": True, "repositories": result.model_dump()["matching_repositories"]}
+        return {
+            "success": True,
+            "repositories": result.model_dump()["matching_repositories"],
+        }
     except Exception as e:
         return {"success": False, "error": str(e), "repositories": []}
 
@@ -71,7 +75,11 @@ async def activate_repository(params: Dict[str, Any], user: User) -> Dict[str, A
             branch_name=params.get("branch_name"),
             user_alias=params.get("user_alias"),
         )
-        return {"success": True, "job_id": job_id, "message": "Repository activation started"}
+        return {
+            "success": True,
+            "job_id": job_id,
+            "message": "Repository activation started",
+        }
     except Exception as e:
         return {"success": False, "error": str(e), "job_id": None}
 
@@ -85,7 +93,11 @@ async def deactivate_repository(params: Dict[str, Any], user: User) -> Dict[str,
         job_id = app.activated_repo_manager.deactivate_repository(
             username=user.username, user_alias=user_alias
         )
-        return {"success": True, "job_id": job_id, "message": f"Repository '{user_alias}' deactivation started"}
+        return {
+            "success": True,
+            "job_id": job_id,
+            "message": f"Repository '{user_alias}' deactivation started",
+        }
     except Exception as e:
         return {"success": False, "error": str(e), "job_id": None}
 
@@ -119,7 +131,11 @@ async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 break
 
         if not repo_id:
-            return {"success": False, "error": f"Repository '{user_alias}' not found", "job_id": None}
+            return {
+                "success": False,
+                "error": f"Repository '{user_alias}' not found",
+                "job_id": None,
+            }
 
         # Submit sync job
         job_id = app.background_job_manager.submit_job(
@@ -127,7 +143,11 @@ async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             params={"repo_id": repo_id, "username": user.username},
             username=user.username,
         )
-        return {"success": True, "job_id": job_id, "message": f"Repository '{user_alias}' sync started"}
+        return {
+            "success": True,
+            "job_id": job_id,
+            "message": f"Repository '{user_alias}' sync started",
+        }
     except Exception as e:
         return {"success": False, "error": str(e), "job_id": None}
 
@@ -172,7 +192,11 @@ async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
 
 async def get_file_content(params: Dict[str, Any], user: User) -> Dict[str, Any]:
-    """Get content of a specific file."""
+    """Get content of a specific file.
+
+    Returns MCP-compliant response with content as array of text blocks.
+    Per MCP spec, content must be an array of content blocks, each with 'type' and 'text' fields.
+    """
     from code_indexer.server import app
 
     try:
@@ -184,9 +208,21 @@ async def get_file_content(params: Dict[str, Any], user: User) -> Dict[str, Any]
             file_path=file_path,
             username=user.username,
         )
-        return {"success": True, "content": result.get("content", ""), "metadata": result.get("metadata", {})}
+
+        # MCP spec: content must be array of content blocks
+        file_content = result.get("content", "")
+        content_blocks = (
+            [{"type": "text", "text": file_content}] if file_content else []
+        )
+
+        return {
+            "success": True,
+            "content": content_blocks,
+            "metadata": result.get("metadata", {}),
+        }
     except Exception as e:
-        return {"success": False, "error": str(e), "content": "", "metadata": {}}
+        # Even on error, content must be an array (empty array is valid)
+        return {"success": False, "error": str(e), "content": [], "metadata": {}}
 
 
 async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -225,18 +261,17 @@ async def get_branches(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             username=user.username,
             user_alias=repository_alias,
         )
-        
+
         # Initialize git topology service
         git_topology_service = GitTopologyService(Path(repo_path))
-        
+
         # Use BranchService as context manager (matches app.py pattern at line 4404-4408)
         with BranchService(
-            git_topology_service=git_topology_service, 
-            index_status_manager=None
+            git_topology_service=git_topology_service, index_status_manager=None
         ) as branch_service:
             # Get branch information
             branches = branch_service.list_branches(include_remote=include_remote)
-            
+
             # Convert BranchInfo objects to dicts for JSON serialization
             branches_data = [
                 {
@@ -248,22 +283,30 @@ async def get_branches(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                         "author": b.last_commit.author,
                         "date": b.last_commit.date,
                     },
-                    "index_status": {
-                        "status": b.index_status.status,
-                        "files_indexed": b.index_status.files_indexed,
-                        "total_files": b.index_status.total_files,
-                        "last_indexed": b.index_status.last_indexed,
-                        "progress_percentage": b.index_status.progress_percentage,
-                    } if b.index_status else None,
-                    "remote_tracking": {
-                        "remote": b.remote_tracking.remote,
-                        "ahead": b.remote_tracking.ahead,
-                        "behind": b.remote_tracking.behind,
-                    } if b.remote_tracking else None,
+                    "index_status": (
+                        {
+                            "status": b.index_status.status,
+                            "files_indexed": b.index_status.files_indexed,
+                            "total_files": b.index_status.total_files,
+                            "last_indexed": b.index_status.last_indexed,
+                            "progress_percentage": b.index_status.progress_percentage,
+                        }
+                        if b.index_status
+                        else None
+                    ),
+                    "remote_tracking": (
+                        {
+                            "remote": b.remote_tracking.remote,
+                            "ahead": b.remote_tracking.ahead,
+                            "behind": b.remote_tracking.behind,
+                        }
+                        if b.remote_tracking
+                        else None
+                    ),
                 }
                 for b in branches
             ]
-            
+
             return {"success": True, "branches": branches_data}
     except Exception as e:
         return {"success": False, "error": str(e), "branches": []}
@@ -305,7 +348,10 @@ async def remove_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, An
     try:
         alias = params["alias"]
         app.golden_repo_manager.remove_golden_repo(alias)
-        return {"success": True, "message": f"Golden repository '{alias}' removed successfully"}
+        return {
+            "success": True,
+            "message": f"Golden repository '{alias}' removed successfully",
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -317,7 +363,11 @@ async def refresh_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, A
     try:
         alias = params["alias"]
         job_id = app.golden_repo_manager.refresh_golden_repo(alias)
-        return {"success": True, "job_id": job_id, "message": f"Golden repository '{alias}' refresh started"}
+        return {
+            "success": True,
+            "job_id": job_id,
+            "message": f"Golden repository '{alias}' refresh started",
+        }
     except Exception as e:
         return {"success": False, "error": str(e), "job_id": None}
 
@@ -330,7 +380,14 @@ async def list_users(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         all_users = app.user_manager.get_all_users()
         return {
             "success": True,
-            "users": [{"username": u.username, "role": u.role.value, "created_at": u.created_at.isoformat()} for u in all_users],
+            "users": [
+                {
+                    "username": u.username,
+                    "role": u.role.value,
+                    "created_at": u.created_at.isoformat(),
+                }
+                for u in all_users
+            ],
             "total": len(all_users),
         }
     except Exception as e:
@@ -362,7 +419,9 @@ async def create_user(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         return {"success": False, "error": str(e), "user": None}
 
 
-async def get_repository_statistics(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+async def get_repository_statistics(
+    params: Dict[str, Any], user: User
+) -> Dict[str, Any]:
     """Get repository statistics."""
     try:
         from code_indexer.server.services.stats_service import stats_service
@@ -386,7 +445,9 @@ async def get_job_statistics(params: Dict[str, Any], user: User) -> Dict[str, An
         return {"success": False, "error": str(e), "statistics": {}}
 
 
-async def get_all_repositories_status(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+async def get_all_repositories_status(
+    params: Dict[str, Any], user: User
+) -> Dict[str, Any]:
     """Get status summary of all repositories."""
     from code_indexer.server import app
 
@@ -403,12 +464,18 @@ async def get_all_repositories_status(params: Dict[str, Any], user: User) -> Dic
                 # Skip repos that fail to get details
                 continue
 
-        return {"success": True, "repositories": status_summary, "total": len(status_summary)}
+        return {
+            "success": True,
+            "repositories": status_summary,
+            "total": len(status_summary),
+        }
     except Exception as e:
         return {"success": False, "error": str(e), "repositories": [], "total": 0}
 
 
-async def manage_composite_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
+async def manage_composite_repository(
+    params: Dict[str, Any], user: User
+) -> Dict[str, Any]:
     """Manage composite repository operations."""
     from code_indexer.server import app
 
@@ -423,12 +490,16 @@ async def manage_composite_repository(params: Dict[str, Any], user: User) -> Dic
                 golden_repo_aliases=golden_repo_aliases,
                 user_alias=user_alias,
             )
-            return {"success": True, "job_id": job_id, "message": f"Composite repository '{user_alias}' creation started"}
+            return {
+                "success": True,
+                "job_id": job_id,
+                "message": f"Composite repository '{user_alias}' creation started",
+            }
 
         elif operation == "update":
             # For update, deactivate then reactivate
             try:
-                deactivate_job = app.activated_repo_manager.deactivate_repository(
+                app.activated_repo_manager.deactivate_repository(
                     username=user.username, user_alias=user_alias
                 )
             except Exception:
@@ -439,13 +510,21 @@ async def manage_composite_repository(params: Dict[str, Any], user: User) -> Dic
                 golden_repo_aliases=golden_repo_aliases,
                 user_alias=user_alias,
             )
-            return {"success": True, "job_id": job_id, "message": f"Composite repository '{user_alias}' update started"}
+            return {
+                "success": True,
+                "job_id": job_id,
+                "message": f"Composite repository '{user_alias}' update started",
+            }
 
         elif operation == "delete":
             job_id = app.activated_repo_manager.deactivate_repository(
                 username=user.username, user_alias=user_alias
             )
-            return {"success": True, "job_id": job_id, "message": f"Composite repository '{user_alias}' deletion started"}
+            return {
+                "success": True,
+                "job_id": job_id,
+                "message": f"Composite repository '{user_alias}' deletion started",
+            }
 
         else:
             return {"success": False, "error": f"Unknown operation: {operation}"}

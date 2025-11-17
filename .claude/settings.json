@@ -16,6 +16,14 @@
         "hooks": [
           {
             "type": "command",
+            "command": "tdd-guard"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
             "command": "~/.claude/hooks/post-tool-use.sh",
             "timeout": 360
           }
@@ -28,7 +36,11 @@
           {
             "type": "command",
             "command": "tdd-guard"
-          },
+          }
+        ]
+      },
+      {
+        "hooks": [
           {
             "type": "command",
             "command": "~/.claude/hooks/user-prompt-submit.sh"
@@ -43,7 +55,11 @@
           {
             "type": "command",
             "command": "tdd-guard"
-          },
+          }
+        ]
+      },
+      {
+        "hooks": [
           {
             "type": "command",
             "command": "~/.claude/hooks/session-start.sh"

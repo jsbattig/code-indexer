@@ -99,6 +99,16 @@ CIDX has **three operational modes**. Understanding which mode you're working in
 - Must return protocolVersion, capabilities (with tools), and serverInfo (name + version)
 - Tests in: `tests/unit/server/mcp/test_protocol.py::TestInitializeMethod`
 
+**Tool Response Format** (CRITICAL for Claude Code compatibility):
+- All tool results MUST return `content` as an **array of content blocks**, NOT a string
+- Each content block must have: `{ "type": "text", "text": "actual content here" }`
+- Empty content should be `[]`, NOT `""` or missing
+- Error responses must also include `content: []` (empty array is valid)
+- Example: `{ "success": true, "content": [{"type": "text", "text": "file contents"}], "metadata": {...} }`
+- Violating this format causes Claude Code to fail with "Expected array, received string"
+- Implemented in: `src/code_indexer/server/mcp/handlers.py` (all tool handlers)
+- Tests in: `tests/unit/server/mcp/test_handlers.py::TestFileHandlers::test_get_file_content`
+
 ---
 
 ## 3. Daily Development Workflows
