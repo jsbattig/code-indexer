@@ -4,13 +4,14 @@ Implements the Model Context Protocol (MCP) JSON-RPC 2.0 endpoint for tool disco
 and execution. Phase 1 implementation with stub handlers for tools/list and tools/call.
 """
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Request, Response, Header
 from typing import Dict, Any, List, Optional, Tuple, Union
 from code_indexer.server.auth.dependencies import get_current_user
 from code_indexer.server.auth.user_manager import User
 from sse_starlette.sse import EventSourceResponse
 import asyncio
 import uuid
+import json
 
 mcp_router = APIRouter()
 
@@ -155,7 +156,9 @@ async def handle_tools_call(params: Dict[str, Any], user: User) -> Dict[str, Any
     tool_def = TOOL_REGISTRY[tool_name]
     required_permission = tool_def["required_permission"]
     if not user.has_permission(required_permission):
-        raise ValueError(f"Permission denied: {required_permission} required for tool {tool_name}")
+        raise ValueError(
+            f"Permission denied: {required_permission} required for tool {tool_name}"
+        )
 
     # Get handler function
     if tool_name not in HANDLER_REGISTRY:
@@ -197,13 +200,8 @@ async def process_jsonrpc_request(
             # MCP protocol handshake
             result = {
                 "protocolVersion": "2024-11-05",
-                "capabilities": {
-                    "tools": {}
-                },
-                "serverInfo": {
-                    "name": "CIDX",
-                    "version": "7.3.0"
-                }
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "CIDX", "version": "7.3.0"},
             }
             return create_jsonrpc_response(result, request_id)
         elif method == "tools/list":
@@ -297,15 +295,106 @@ async def sse_event_generator():
 
 @mcp_router.get("/mcp")
 async def mcp_sse_endpoint(
-    current_user: User = Depends(get_current_user)
+    authorization: Optional[str] = Header(None),
 ) -> EventSourceResponse:
-    """MCP SSE endpoint for server-to-client notifications."""
-    return EventSourceResponse(sse_event_generator())
+    """
+    MCP SSE endpoint for server-to-client notifications.
+
+    Supports both:
+    - Unauthenticated: Returns minimal discovery stream for claude.ai
+    - Authenticated: Returns full MCP notification stream with Bearer token
+    """
+    user = None
+
+    # Try to authenticate if Authorization header provided
+    if authorization:
+        if authorization.startswith("Bearer "):
+            token = authorization.split(" ", 1)[1]
+            try:
+                # Use existing auth logic - manually validate token and get user
+                from ..auth.dependencies import jwt_manager, user_manager, oauth_manager
+                from ..auth.jwt_manager import TokenExpiredError, InvalidTokenError
+
+                if not jwt_manager or not user_manager:
+                    # Auth not initialized - continue as unauthenticated
+                    pass
+                else:
+                    # Try OAuth token validation first
+                    if oauth_manager:
+                        oauth_result = oauth_manager.validate_token(token)
+                        if oauth_result:
+                            username = oauth_result.get("user_id")
+                            if username:
+                                user = user_manager.get_user(username)
+
+                    # Fallback to JWT validation if OAuth didn't work
+                    if user is None:
+                        try:
+                            payload = jwt_manager.validate_token(token)
+                            username = payload.get("username")
+                            if username:
+                                # Check if token is blacklisted
+                                from ..app import is_token_blacklisted
+
+                                jti = payload.get("jti")
+                                if not (jti and is_token_blacklisted(jti)):
+                                    user = user_manager.get_user(username)
+                        except (TokenExpiredError, InvalidTokenError):
+                            # Invalid/expired token - continue as unauthenticated
+                            pass
+            except Exception:
+                # Any error - continue as unauthenticated
+                pass
+
+    # Return appropriate SSE stream
+    if user:
+        # Authenticated: full MCP capabilities
+        return EventSourceResponse(authenticated_sse_generator(user))
+    else:
+        # Unauthenticated: minimal discovery stream
+        return EventSourceResponse(discovery_sse_generator())
+
+
+async def discovery_sse_generator():
+    """Minimal SSE stream for unauthenticated MCP discovery."""
+    # Send initial endpoint info
+    yield {
+        "event": "endpoint",
+        "data": json.dumps(
+            {"protocol": "mcp", "version": "2024-11-05", "authentication": "oauth2"}
+        ),
+    }
+
+    # Keep connection alive with periodic pings
+    while True:
+        await asyncio.sleep(30)
+        yield {"event": "ping", "data": "keepalive"}
+
+
+async def authenticated_sse_generator(user):
+    """Full SSE stream for authenticated MCP clients."""
+    # Send authenticated endpoint info
+    yield {
+        "event": "endpoint",
+        "data": json.dumps(
+            {
+                "protocol": "mcp",
+                "version": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "user": user.username,
+            }
+        ),
+    }
+
+    # Full MCP notification stream
+    while True:
+        await asyncio.sleep(30)
+        yield {"event": "ping", "data": "authenticated"}
 
 
 @mcp_router.delete("/mcp")
 async def mcp_delete_session(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ) -> Dict[str, str]:
     """MCP DELETE endpoint for session termination."""
     return {"status": "terminated"}
