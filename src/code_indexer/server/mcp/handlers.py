@@ -1,7 +1,41 @@
-"""MCP Tool Handler Functions - Complete implementation for all 22 tools."""
+"""MCP Tool Handler Functions - Complete implementation for all 22 tools.
 
+All handlers return MCP-compliant responses with content arrays:
+{
+    "content": [
+        {
+            "type": "text",
+            "text": "<JSON-stringified response data>"
+        }
+    ]
+}
+"""
+
+import json
 from typing import Dict, Any
 from code_indexer.server.auth.user_manager import User, UserRole
+
+
+def _mcp_response(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Wrap response data in MCP-compliant content array format.
+
+    Per MCP spec, all tool responses must return:
+    {
+        "content": [
+            {
+                "type": "text",
+                "text": "<JSON-stringified data>"
+            }
+        ]
+    }
+
+    Args:
+        data: The actual response data to wrap (dict with success, results, etc)
+
+    Returns:
+        MCP-compliant response with content array
+    """
+    return {"content": [{"type": "text", "text": json.dumps(data, indent=2)}]}
 
 
 async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -18,9 +52,9 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             min_score=params.get("min_score", 0.5),
             file_extensions=params.get("file_extensions"),
         )
-        return {"success": True, "results": result}
+        return _mcp_response({"success": True, "results": result})
     except Exception as e:
-        return {"success": False, "error": str(e), "results": []}
+        return _mcp_response({"success": False, "error": str(e), "results": []})
 
 
 async def discover_repositories(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -44,12 +78,12 @@ async def discover_repositories(params: Dict[str, Any], user: User) -> Dict[str,
             user=user,
         )
 
-        return {
+        return _mcp_response({
             "success": True,
             "repositories": result.model_dump()["matching_repositories"],
-        }
+        })
     except Exception as e:
-        return {"success": False, "error": str(e), "repositories": []}
+        return _mcp_response({"success": False, "error": str(e), "repositories": []})
 
 
 async def list_repositories(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -58,9 +92,9 @@ async def list_repositories(params: Dict[str, Any], user: User) -> Dict[str, Any
 
     try:
         repos = app.activated_repo_manager.list_activated_repositories(user.username)
-        return {"success": True, "repositories": repos}
+        return _mcp_response({"success": True, "repositories": repos})
     except Exception as e:
-        return {"success": False, "error": str(e), "repositories": []}
+        return _mcp_response({"success": False, "error": str(e), "repositories": []})
 
 
 async def activate_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -75,13 +109,13 @@ async def activate_repository(params: Dict[str, Any], user: User) -> Dict[str, A
             branch_name=params.get("branch_name"),
             user_alias=params.get("user_alias"),
         )
-        return {
+        return _mcp_response({
             "success": True,
             "job_id": job_id,
             "message": "Repository activation started",
-        }
+        })
     except Exception as e:
-        return {"success": False, "error": str(e), "job_id": None}
+        return _mcp_response({"success": False, "error": str(e), "job_id": None})
 
 
 async def deactivate_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -93,13 +127,13 @@ async def deactivate_repository(params: Dict[str, Any], user: User) -> Dict[str,
         job_id = app.activated_repo_manager.deactivate_repository(
             username=user.username, user_alias=user_alias
         )
-        return {
+        return _mcp_response({
             "success": True,
             "job_id": job_id,
             "message": f"Repository '{user_alias}' deactivation started",
-        }
+        })
     except Exception as e:
-        return {"success": False, "error": str(e), "job_id": None}
+        return _mcp_response({"success": False, "error": str(e), "job_id": None})
 
 
 async def get_repository_status(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -111,9 +145,9 @@ async def get_repository_status(params: Dict[str, Any], user: User) -> Dict[str,
         status = app.repository_listing_manager.get_repository_details(
             user_alias, user.username
         )
-        return {"success": True, "status": status}
+        return _mcp_response({"success": True, "status": status})
     except Exception as e:
-        return {"success": False, "error": str(e), "status": {}}
+        return _mcp_response({"success": False, "error": str(e), "status": {}})
 
 
 async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -131,11 +165,11 @@ async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 break
 
         if not repo_id:
-            return {
+            return _mcp_response({
                 "success": False,
                 "error": f"Repository '{user_alias}' not found",
                 "job_id": None,
-            }
+            })
 
         # Submit sync job
         job_id = app.background_job_manager.submit_job(
@@ -143,13 +177,13 @@ async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             params={"repo_id": repo_id, "username": user.username},
             username=user.username,
         )
-        return {
+        return _mcp_response({
             "success": True,
             "job_id": job_id,
             "message": f"Repository '{user_alias}' sync started",
-        }
+        })
     except Exception as e:
-        return {"success": False, "error": str(e), "job_id": None}
+        return _mcp_response({"success": False, "error": str(e), "job_id": None})
 
 
 async def switch_branch(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -168,9 +202,9 @@ async def switch_branch(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             branch_name=branch_name,
             create=create,
         )
-        return {"success": True, "message": result["message"]}
+        return _mcp_response({"success": True, "message": result["message"]})
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return _mcp_response({"success": False, "error": str(e)})
 
 
 async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -186,9 +220,9 @@ async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             username=user.username,
             path=path_filter,
         )
-        return {"success": True, "files": result.get("files", [])}
+        return _mcp_response({"success": True, "files": result.get("files", [])})
     except Exception as e:
-        return {"success": False, "error": str(e), "files": []}
+        return _mcp_response({"success": False, "error": str(e), "files": []})
 
 
 async def get_file_content(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -215,14 +249,14 @@ async def get_file_content(params: Dict[str, Any], user: User) -> Dict[str, Any]
             [{"type": "text", "text": file_content}] if file_content else []
         )
 
-        return {
+        return _mcp_response({
             "success": True,
             "content": content_blocks,
             "metadata": result.get("metadata", {}),
-        }
+        })
     except Exception as e:
         # Even on error, content must be an array (empty array is valid)
-        return {"success": False, "error": str(e), "content": [], "metadata": {}}
+        return _mcp_response({"success": False, "error": str(e), "content": [], "metadata": {}})
 
 
 async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -240,9 +274,9 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
             recursive=recursive,
             username=user.username,
         )
-        return {"success": True, "structure": result}
+        return _mcp_response({"success": True, "structure": result})
     except Exception as e:
-        return {"success": False, "error": str(e), "structure": {}}
+        return _mcp_response({"success": False, "error": str(e), "structure": {}})
 
 
 async def get_branches(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -307,9 +341,9 @@ async def get_branches(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 for b in branches
             ]
 
-            return {"success": True, "branches": branches_data}
+            return _mcp_response({"success": True, "branches": branches_data})
     except Exception as e:
-        return {"success": False, "error": str(e), "branches": []}
+        return _mcp_response({"success": False, "error": str(e), "branches": []})
 
 
 async def check_health(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -319,9 +353,9 @@ async def check_health(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
         # Call the actual method (not async)
         health_response = health_service.get_system_health()
-        return {"success": True, "health": health_response.model_dump()}
+        return _mcp_response({"success": True, "health": health_response.model_dump()})
     except Exception as e:
-        return {"success": False, "error": str(e), "health": {}}
+        return _mcp_response({"success": False, "error": str(e), "health": {}})
 
 
 async def add_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -336,9 +370,9 @@ async def add_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         result = app.golden_repo_manager.add_golden_repo(
             repo_url=repo_url, alias=alias, default_branch=default_branch
         )
-        return {"success": True, "message": result["message"]}
+        return _mcp_response({"success": True, "message": result["message"]})
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return _mcp_response({"success": False, "error": str(e)})
 
 
 async def remove_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -348,12 +382,12 @@ async def remove_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, An
     try:
         alias = params["alias"]
         app.golden_repo_manager.remove_golden_repo(alias)
-        return {
+        return _mcp_response({
             "success": True,
             "message": f"Golden repository '{alias}' removed successfully",
-        }
+        })
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return _mcp_response({"success": False, "error": str(e)})
 
 
 async def refresh_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -363,13 +397,13 @@ async def refresh_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, A
     try:
         alias = params["alias"]
         job_id = app.golden_repo_manager.refresh_golden_repo(alias)
-        return {
+        return _mcp_response({
             "success": True,
             "job_id": job_id,
             "message": f"Golden repository '{alias}' refresh started",
-        }
+        })
     except Exception as e:
-        return {"success": False, "error": str(e), "job_id": None}
+        return _mcp_response({"success": False, "error": str(e), "job_id": None})
 
 
 async def list_users(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -378,7 +412,7 @@ async def list_users(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
     try:
         all_users = app.user_manager.get_all_users()
-        return {
+        return _mcp_response({
             "success": True,
             "users": [
                 {
@@ -389,9 +423,9 @@ async def list_users(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 for u in all_users
             ],
             "total": len(all_users),
-        }
+        })
     except Exception as e:
-        return {"success": False, "error": str(e), "users": [], "total": 0}
+        return _mcp_response({"success": False, "error": str(e), "users": [], "total": 0})
 
 
 async def create_user(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -406,7 +440,7 @@ async def create_user(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         new_user = app.user_manager.create_user(
             username=username, password=password, role=role
         )
-        return {
+        return _mcp_response({
             "success": True,
             "user": {
                 "username": new_user.username,
@@ -414,9 +448,9 @@ async def create_user(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 "created_at": new_user.created_at.isoformat(),
             },
             "message": f"User '{username}' created successfully",
-        }
+        })
     except Exception as e:
-        return {"success": False, "error": str(e), "user": None}
+        return _mcp_response({"success": False, "error": str(e), "user": None})
 
 
 async def get_repository_statistics(
@@ -429,9 +463,9 @@ async def get_repository_statistics(
         repository_alias = params["repository_alias"]
         # Call the actual method (not async, different name)
         stats_response = stats_service.get_repository_stats(repository_alias)
-        return {"success": True, "statistics": stats_response.model_dump()}
+        return _mcp_response({"success": True, "statistics": stats_response.model_dump()})
     except Exception as e:
-        return {"success": False, "error": str(e), "statistics": {}}
+        return _mcp_response({"success": False, "error": str(e), "statistics": {}})
 
 
 async def get_job_statistics(params: Dict[str, Any], user: User) -> Dict[str, Any]:
@@ -440,9 +474,9 @@ async def get_job_statistics(params: Dict[str, Any], user: User) -> Dict[str, An
 
     try:
         stats = app.background_job_manager.get_job_statistics()
-        return {"success": True, "statistics": stats}
+        return _mcp_response({"success": True, "statistics": stats})
     except Exception as e:
-        return {"success": False, "error": str(e), "statistics": {}}
+        return _mcp_response({"success": False, "error": str(e), "statistics": {}})
 
 
 async def get_all_repositories_status(
@@ -464,13 +498,13 @@ async def get_all_repositories_status(
                 # Skip repos that fail to get details
                 continue
 
-        return {
+        return _mcp_response({
             "success": True,
             "repositories": status_summary,
             "total": len(status_summary),
-        }
+        })
     except Exception as e:
-        return {"success": False, "error": str(e), "repositories": [], "total": 0}
+        return _mcp_response({"success": False, "error": str(e), "repositories": [], "total": 0})
 
 
 async def manage_composite_repository(
@@ -490,11 +524,11 @@ async def manage_composite_repository(
                 golden_repo_aliases=golden_repo_aliases,
                 user_alias=user_alias,
             )
-            return {
+            return _mcp_response({
                 "success": True,
                 "job_id": job_id,
                 "message": f"Composite repository '{user_alias}' creation started",
-            }
+            })
 
         elif operation == "update":
             # For update, deactivate then reactivate
@@ -510,27 +544,27 @@ async def manage_composite_repository(
                 golden_repo_aliases=golden_repo_aliases,
                 user_alias=user_alias,
             )
-            return {
+            return _mcp_response({
                 "success": True,
                 "job_id": job_id,
                 "message": f"Composite repository '{user_alias}' update started",
-            }
+            })
 
         elif operation == "delete":
             job_id = app.activated_repo_manager.deactivate_repository(
                 username=user.username, user_alias=user_alias
             )
-            return {
+            return _mcp_response({
                 "success": True,
                 "job_id": job_id,
                 "message": f"Composite repository '{user_alias}' deletion started",
-            }
+            })
 
         else:
-            return {"success": False, "error": f"Unknown operation: {operation}"}
+            return _mcp_response({"success": False, "error": f"Unknown operation: {operation}"})
 
     except Exception as e:
-        return {"success": False, "error": str(e), "job_id": None}
+        return _mcp_response({"success": False, "error": str(e), "job_id": None})
 
 
 # Handler registry mapping tool names to handler functions

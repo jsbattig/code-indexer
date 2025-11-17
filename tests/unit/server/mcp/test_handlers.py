@@ -132,8 +132,15 @@ class TestSearchCode:
 
             result = await search_code(params, mock_user)
 
-            assert result["success"] is True
-            assert "results" in result
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+            assert data["success"] is True
+            assert "results" in data
 
     async def test_search_code_error_handling(self, mock_user):
         """Test search_code error handling."""
@@ -148,9 +155,13 @@ class TestSearchCode:
 
             result = await search_code(params, mock_user)
 
-            assert result["success"] is False
-            assert "error" in result
-            assert result["results"] == []
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is False
+            assert "error" in data
+            assert data["results"] == []
 
     async def test_search_code_with_activated_repository(self, mock_user):
         """Test search_code uses semantic_query_manager for activated repositories."""
@@ -188,9 +199,13 @@ class TestSearchCode:
 
             result = await search_code(params, mock_user)
 
-            assert result["success"] is True
-            assert "results" in result
-            assert len(result["results"]["results"]) == 1
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert "results" in data
+            assert len(data["results"]["results"]) == 1
 
             mock_query_manager.query_user_repositories.assert_called_once_with(
                 username=mock_user.username,
@@ -225,8 +240,12 @@ class TestDiscoverRepositories:
 
             result = await discover_repositories(params, mock_user)
 
-            assert result["success"] is True
-            assert len(result["repositories"]) == 2
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert len(data["repositories"]) == 2
 
 
 @pytest.mark.asyncio
@@ -245,8 +264,12 @@ class TestListRepositories:
 
             result = await list_repositories({}, mock_user)
 
-            assert result["success"] is True
-            assert len(result["repositories"]) == 2
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert len(data["repositories"]) == 2
 
     async def test_list_repositories_error_handling(self, mock_user):
         """Test list_repositories error handling."""
@@ -257,8 +280,12 @@ class TestListRepositories:
 
             result = await list_repositories({}, mock_user)
 
-            assert result["success"] is False
-            assert result["repositories"] == []
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is False
+            assert data["repositories"] == []
 
 
 @pytest.mark.asyncio
@@ -277,8 +304,12 @@ class TestActivateRepository:
 
             result = await activate_repository(params, mock_user)
 
-            assert result["success"] is True
-            assert result["job_id"] == "job-123"
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert data["job_id"] == "job-123"
 
     async def test_activate_composite_repository(self, mock_user):
         """Test activating a composite repository."""
@@ -292,8 +323,12 @@ class TestActivateRepository:
 
             result = await activate_repository(params, mock_user)
 
-            assert result["success"] is True
-            assert result["job_id"] == "job-456"
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert data["job_id"] == "job-456"
 
 
 @pytest.mark.asyncio
@@ -309,8 +344,12 @@ class TestDeactivateRepository:
 
             result = await deactivate_repository(params, mock_user)
 
-            assert result["success"] is True
-            assert result["job_id"] == "job-789"
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert data["job_id"] == "job-789"
 
 
 @pytest.mark.asyncio
@@ -335,8 +374,12 @@ class TestAdminHandlers:
 
             result = await add_golden_repo(params, mock_admin_user)
 
-            assert result["success"] is True
-            assert "message" in result
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert "message" in data
 
     async def test_remove_golden_repo(self, mock_admin_user):
         """Test removing a golden repository."""
@@ -347,7 +390,11 @@ class TestAdminHandlers:
 
             result = await remove_golden_repo(params, mock_admin_user)
 
-            assert result["success"] is True
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
 
     async def test_list_users(self, mock_admin_user):
         """Test listing all users."""
@@ -369,8 +416,12 @@ class TestAdminHandlers:
 
             result = await list_users({}, mock_admin_user)
 
-            assert result["success"] is True
-            assert result["total"] == 2
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert data["total"] == 2
 
     async def test_create_user(self, mock_admin_user):
         """Test creating a new user."""
@@ -391,8 +442,12 @@ class TestAdminHandlers:
 
             result = await create_user(params, mock_admin_user)
 
-            assert result["success"] is True
-            assert result["user"]["username"] == "newuser"
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert data["user"]["username"] == "newuser"
 
 
 @pytest.mark.asyncio
@@ -410,8 +465,12 @@ class TestFileHandlers:
 
             result = await list_files(params, mock_user)
 
-            assert result["success"] is True
-            assert len(result["files"]) == 2
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert len(data["files"]) == 2
 
     async def test_get_file_content(self, mock_user):
         """Test getting file content."""
@@ -430,11 +489,15 @@ class TestFileHandlers:
 
             result = await get_file_content(params, mock_user)
 
-            assert result["success"] is True
-            assert "content" in result
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert "content" in data
             # MCP spec: content must be an array of content blocks
-            assert isinstance(result["content"], list), "content must be an array"
-            assert len(result["content"]) > 0, "content array must not be empty"
+            assert isinstance(data["content"], list), "content must be an array"
+            assert len(data["content"]) > 0, "content array must not be empty"
             # First content block must have type and text fields
             assert (
                 "type" in result["content"][0]
@@ -445,10 +508,10 @@ class TestFileHandlers:
             assert (
                 "text" in result["content"][0]
             ), "content block must have 'text' field"
-            assert result["content"][0]["text"] == "def main():\n    pass"
+            assert data["content"][0]["text"] == "def main():\n    pass"
             # Metadata should still be returned
-            assert "metadata" in result
-            assert result["metadata"]["size"] == 100
+            assert "metadata" in data
+            assert data["metadata"]["size"] == 100
 
     async def test_get_file_content_error(self, mock_user):
         """Test get_file_content error handling returns MCP-compliant format."""
@@ -464,13 +527,17 @@ class TestFileHandlers:
 
             result = await get_file_content(params, mock_user)
 
-            assert result["success"] is False
-            assert "error" in result
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is False
+            assert "error" in data
             # Even on error, content should be array (empty array is valid)
             assert isinstance(
                 result["content"], list
             ), "content must be an array even on error"
-            assert result["content"] == [], "content should be empty array on error"
+            assert data["content"] == [], "content should be empty array on error"
 
     async def test_browse_directory(self, mock_user):
         """Test browsing directory structure."""
@@ -487,8 +554,12 @@ class TestFileHandlers:
 
             result = await browse_directory(params, mock_user)
 
-            assert result["success"] is True
-            assert "structure" in result
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert "structure" in data
 
 
 @pytest.mark.asyncio
@@ -508,8 +579,12 @@ class TestHealthCheck:
 
             result = await check_health({}, mock_user)
 
-            assert result["success"] is True
-            assert "health" in result
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert "health" in data
 
 
 @pytest.mark.asyncio
@@ -531,8 +606,12 @@ class TestStatisticsHandlers:
 
             result = await get_repository_statistics(params, mock_user)
 
-            assert result["success"] is True
-            assert "statistics" in result
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert "statistics" in data
 
     async def test_get_job_statistics(self, mock_user):
         """Test getting job statistics."""
@@ -543,8 +622,12 @@ class TestStatisticsHandlers:
 
             result = await get_job_statistics({}, mock_user)
 
-            assert result["success"] is True
-            assert "statistics" in result
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert "statistics" in data
 
 
 @pytest.mark.asyncio
@@ -564,8 +647,12 @@ class TestCompositeRepository:
 
             result = await manage_composite_repository(params, mock_user)
 
-            assert result["success"] is True
-            assert result["job_id"] == "job-composite-1"
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert data["job_id"] == "job-composite-1"
 
     async def test_delete_composite_repository(self, mock_user):
         """Test deleting a composite repository."""
@@ -579,4 +666,8 @@ class TestCompositeRepository:
 
             result = await manage_composite_repository(params, mock_user)
 
-            assert result["success"] is True
+            # MCP format: parse content array
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
