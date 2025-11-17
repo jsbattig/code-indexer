@@ -224,29 +224,19 @@ class TestDiscoverRepositories:
     async def test_discover_repositories_success(self, mock_user):
         """Test successful repository discovery.
 
-        Should pass source as 'repo_url' parameter, not as 'source' filter.
+        Should list all golden repositories from golden_repo_manager.
         """
-        params = {"source": "https://github.com/user/repo.git"}
+        params = {}  # No params needed - lists all repos
 
-        with patch(
-            "code_indexer.server.services.repository_discovery_service.RepositoryDiscoveryService"
-        ) as mock_service_class:
-            mock_service = Mock()
-            mock_response = Mock()
-            mock_response.model_dump = Mock(
-                return_value={
-                    "matching_repositories": [{"alias": "repo1"}, {"alias": "repo2"}]
-                }
+        with patch("code_indexer.server.app.golden_repo_manager") as mock_manager:
+            mock_manager.list_golden_repos = Mock(
+                return_value=[{"alias": "repo1"}, {"alias": "repo2"}]
             )
-            mock_service.discover_repositories = AsyncMock(return_value=mock_response)
-            mock_service_class.return_value = mock_service
 
             result = await discover_repositories(params, mock_user)
 
-            # Verify correct parameter passed (repo_url, not source)
-            call_kwargs = mock_service.discover_repositories.call_args[1]
-            assert "repo_url" in call_kwargs, "Should pass repo_url parameter"
-            assert call_kwargs["repo_url"] == "https://github.com/user/repo.git"
+            # Verify list_golden_repos was called
+            mock_manager.list_golden_repos.assert_called_once()
 
             # MCP format: parse content array
             import json
@@ -254,6 +244,8 @@ class TestDiscoverRepositories:
 
             assert data["success"] is True
             assert len(data["repositories"]) == 2
+            assert data["repositories"][0]["alias"] == "repo1"
+            assert data["repositories"][1]["alias"] == "repo2"
 
 
 @pytest.mark.asyncio
@@ -827,3 +819,55 @@ class TestCompositeRepository:
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
+
+
+@pytest.mark.asyncio
+class TestSyncRepository:
+    """Test sync_repository handler."""
+
+    async def test_sync_repository_submits_background_job(self, mock_user):
+        """Test that sync_repository correctly submits a background job."""
+        from code_indexer.server.mcp.handlers import sync_repository
+
+        params = {"user_alias": "my-repo"}
+
+        # Mock activated_repo_manager to return repo info
+        mock_repos = [
+            {
+                "user_alias": "my-repo",
+                "golden_repo_alias": "golden-repo",
+                "actual_repo_id": "repo-123",
+            }
+        ]
+
+        with patch("code_indexer.server.app.activated_repo_manager") as mock_repo_mgr, \
+             patch("code_indexer.server.app.background_job_manager") as mock_job_mgr, \
+             patch("code_indexer.server.app._execute_repository_sync") as mock_exec_sync:
+
+            mock_repo_mgr.list_activated_repositories = Mock(return_value=mock_repos)
+            mock_job_mgr.submit_job = Mock(return_value="job-sync-123")
+            mock_exec_sync.return_value = {"status": "completed"}
+
+            result = await sync_repository(params, mock_user)
+
+            # Verify submit_job was called with correct signature
+            mock_job_mgr.submit_job.assert_called_once()
+            call_kwargs = mock_job_mgr.submit_job.call_args[1]
+
+            # Check correct parameter names
+            assert "operation_type" in call_kwargs, "Must use 'operation_type' parameter"
+            assert call_kwargs["operation_type"] == "sync_repository"
+
+            assert "func" in call_kwargs, "Must provide 'func' callable parameter"
+            assert callable(call_kwargs["func"]), "func must be callable"
+
+            assert "submitter_username" in call_kwargs, "Must use 'submitter_username' parameter"
+            assert call_kwargs["submitter_username"] == mock_user.username
+
+            # Verify MCP response format
+            import json
+            data = json.loads(result["content"][0]["text"])
+
+            assert data["success"] is True
+            assert data["job_id"] == "job-sync-123"
+            assert "message" in data

@@ -60,31 +60,15 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 async def discover_repositories(params: Dict[str, Any], user: User) -> Dict[str, Any]:
     """Discover available repositories from configured sources."""
     try:
-        # Import actual dependencies as done in app.py endpoint
-        from code_indexer.server.services.repository_discovery_service import (
-            RepositoryDiscoveryService,
-        )
-        from code_indexer.server.app import golden_repo_manager, activated_repo_manager
+        from code_indexer.server.app import golden_repo_manager
 
-        # Instantiate service following app.py pattern
-        discovery_service = RepositoryDiscoveryService(
-            golden_repo_manager=golden_repo_manager,
-            activated_repo_manager=activated_repo_manager,
-        )
+        # List all golden repositories (source_type filter not currently used)
+        repos = golden_repo_manager.list_golden_repos()
 
-        # Call with source from params
-        result = await discovery_service.discover_repositories(
-            repo_url=params.get("source", ""),
-            user=user,
-        )
-
-        # Use mode='json' to serialize datetime objects to ISO format strings
-        return _mcp_response(
-            {
-                "success": True,
-                "repositories": result.model_dump(mode="json")["matching_repositories"],
-            }
-        )
+        return _mcp_response({
+            "success": True,
+            "repositories": repos
+        })
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "repositories": []})
 
@@ -180,11 +164,30 @@ async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
                 }
             )
 
-        # Submit sync job
+        # Defensive check
+        if not hasattr(app, 'background_job_manager') or app.background_job_manager is None:
+            return _mcp_response({
+                "success": False,
+                "error": "Background job manager not initialized",
+                "job_id": None
+            })
+
+        # Create sync job wrapper function
+        from code_indexer.server.app import _execute_repository_sync
+
+        def sync_job_wrapper():
+            return _execute_repository_sync(
+                repo_id=repo_id,
+                username=user.username,
+                options={},
+                progress_callback=None,
+            )
+
+        # Submit sync job with correct signature
         job_id = app.background_job_manager.submit_job(
-            operation="sync_repository",
-            params={"repo_id": repo_id, "username": user.username},
-            username=user.username,
+            operation_type="sync_repository",
+            func=sync_job_wrapper,
+            submitter_username=user.username,
         )
         return _mcp_response(
             {
