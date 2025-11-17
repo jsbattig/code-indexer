@@ -162,9 +162,6 @@ class SemanticSearchService:
             # Create repository-specific embedding service
             embedding_service = EmbeddingProviderFactory.create(config=config)
 
-            # Generate real embedding for query using repository's embedding service
-            query_embedding = embedding_service.get_embedding(query)
-
             # Resolve correct collection name based on repository configuration
             collection_name = vector_store_client.resolve_collection_name(
                 config, embedding_service
@@ -172,12 +169,29 @@ class SemanticSearchService:
 
             logger.info(f"Using collection: {collection_name}")
 
-            # Real vector search in repository-specific vector store
-            search_results = vector_store_client.search(
-                query_vector=query_embedding,
-                limit=limit,
-                collection_name=collection_name,
-            )
+            # Real vector search - different parameter patterns for different backends
+            # FilesystemVectorStore: parallel execution (query + embedding_provider)
+            # QdrantClient: sequential execution (pre-computed query_vector)
+            from ...storage.filesystem_vector_store import FilesystemVectorStore
+
+            if isinstance(vector_store_client, FilesystemVectorStore):
+                # FilesystemVectorStore: parallel execution with query string and provider
+                # Embedding generation happens in parallel with index loading
+                search_results, _ = vector_store_client.search(
+                    query=query,
+                    embedding_provider=embedding_service,
+                    collection_name=collection_name,
+                    limit=limit,
+                    return_timing=True,
+                )
+            else:
+                # QdrantClient: sequential execution with pre-computed embedding
+                query_embedding = embedding_service.get_embedding(query)
+                search_results = vector_store_client.search(
+                    query_vector=query_embedding,
+                    limit=limit,
+                    collection_name=collection_name,
+                )
 
             logger.info(f"Found {len(search_results)} results")
 
