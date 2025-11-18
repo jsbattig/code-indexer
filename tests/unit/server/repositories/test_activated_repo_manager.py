@@ -306,16 +306,44 @@ class TestActivatedRepoManager:
 
         assert result is True
 
-        # Verify git clone is used for git repositories
+        # Verify CoW clone workflow (Issue #500 fix):
+        # 1. cp --reflink=auto -r
+        # 2. git update-index --refresh
+        # 3. git restore .
+        # 4. cidx fix-config --force
+        # 5. git remote add origin
+        # 6. git fetch origin
+        # 7. git status (verification)
         expected_calls = [
             call(
-                ["git", "clone", "--local", golden_path, activated_path],
+                ["cp", "--reflink=auto", "-r", golden_path, activated_path],
                 capture_output=True,
                 text=True,
                 timeout=120,
             ),
             call(
-                ["git", "remote", "-v"],
+                ["git", "update-index", "--refresh"],
+                cwd=activated_path,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            ),
+            call(
+                ["git", "restore", "."],
+                cwd=activated_path,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            ),
+            call(
+                ["cidx", "fix-config", "--force"],
+                cwd=activated_path,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            ),
+            call(
+                ["git", "remote", "add", "origin", golden_path],
                 cwd=activated_path,
                 capture_output=True,
                 text=True,
@@ -327,6 +355,13 @@ class TestActivatedRepoManager:
                 capture_output=True,
                 text=True,
                 timeout=60,
+            ),
+            call(
+                ["git", "status"],
+                cwd=activated_path,
+                capture_output=True,
+                text=True,
+                timeout=30,
             ),
         ]
 
@@ -353,13 +388,14 @@ class TestActivatedRepoManager:
 
         assert result is True
 
-        # Verify CoW clone is used for non-git directories
+        # Verify CoW clone is used for non-git directories (Issue #500 fix)
+        # For non-git repos, only cp --reflink=auto is called (no git operations)
         expected_calls = [
             call(
-                ["cp", "--reflink=always", "-r", golden_path, activated_path],
+                ["cp", "--reflink=auto", "-r", golden_path, activated_path],
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=120,
             ),
         ]
 

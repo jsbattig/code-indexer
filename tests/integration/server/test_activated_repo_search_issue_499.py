@@ -7,6 +7,7 @@ and can perform semantic searches that return actual results (not 0 results).
 
 import json
 import os
+import subprocess
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -72,6 +73,14 @@ def execute_query(conn, query):
         # Commit files
         os.system(f"cd {golden_path} && git add .")
         os.system(f"cd {golden_path} && git commit -m 'Add code files'")
+
+        # Initialize .code-indexer/ (required after Issue #500 fix - CoW clone copies .code-indexer/)
+        subprocess.run(
+            ["cidx", "init"],
+            cwd=golden_path,
+            check=True,
+            capture_output=True,
+        )
 
         return golden_path
 

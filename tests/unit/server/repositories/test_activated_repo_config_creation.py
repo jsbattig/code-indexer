@@ -7,6 +7,7 @@ containing FilesystemVectorStore and VoyageAI configuration to ensure search wor
 
 import json
 import os
+import subprocess
 import tempfile
 import yaml
 from pathlib import Path
@@ -47,6 +48,14 @@ class TestActivatedRepoConfigCreation:
         test_file.write_text("def hello():\n    pass\n")
         os.system(f"cd {golden_path} && git add test.py")
         os.system(f"cd {golden_path} && git commit -m 'Initial commit'")
+
+        # Initialize .code-indexer/ (required after Issue #500 fix - CoW clone copies .code-indexer/)
+        subprocess.run(
+            ["cidx", "init"],
+            cwd=golden_path,
+            check=True,
+            capture_output=True,
+        )
 
         return golden_path
 
