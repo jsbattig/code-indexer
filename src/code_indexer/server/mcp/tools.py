@@ -22,7 +22,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum number of results",
+                    "description": "Maximum number of results. IMPORTANT: Start with limit=5 to conserve context tokens. Each result consumes tokens proportional to code snippet size. Only increase limit if initial results insufficient. High limits (>20) can rapidly consume context window.",
                     "default": 10,
                     "minimum": 1,
                     "maximum": 100,
