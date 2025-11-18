@@ -6766,7 +6766,7 @@ def _status_impl(ctx, force_docker: bool):
         # Add daemon mode indicator (requested by user)
         try:
             daemon_config = config.daemon if hasattr(config, "daemon") else None
-            socket_path = config_manager.config_path.parent / "daemon.sock"
+            socket_path = config_manager.get_socket_path()
             daemon_running = socket_path.exists()
 
             if daemon_config and daemon_config.enabled:

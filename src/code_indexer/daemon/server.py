@@ -12,6 +12,9 @@ from pathlib import Path
 from rpyc.utils.server import ThreadedServer
 
 from .service import CIDXDaemonService
+# Import socket helper for /tmp/cidx socket management (fixes 108-char limit bug)
+from code_indexer.config import ConfigManager
+from code_indexer.daemon.socket_helper import create_mapping_file, cleanup_old_socket
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +31,16 @@ def start_daemon(config_path: Path) -> None:
     Raises:
         SystemExit: If daemon already running or socket binding fails
     """
-    # Derive socket path from config directory
-    config_dir = config_path.parent
-    socket_path = config_dir / "daemon.sock"
+    # Get socket path using ConfigManager (uses /tmp/cidx/ to avoid 108-char limit)
+    config_manager = ConfigManager(config_path)
+    socket_path = config_manager.get_socket_path()
 
+    config_dir = config_path.parent
     logger.info(f"Starting CIDX daemon for {config_dir}")
+    logger.info(f"Socket path: {socket_path}")
+
+    # Clean up old socket in .code-indexer/ if it exists (backward compatibility)
+    cleanup_old_socket(config_dir)
 
     # Clean stale socket if exists
     _clean_stale_socket(socket_path)
@@ -58,6 +66,10 @@ def start_daemon(config_path: Path) -> None:
 
         logger.info(f"CIDX daemon listening on {socket_path}")
         print(f"CIDX daemon started on {socket_path}")
+
+        # Create mapping file for debugging (links socket to repo path)
+        repo_path = config_path.parent
+        create_mapping_file(repo_path, socket_path)
 
         # Blocks here until shutdown
         server.start()

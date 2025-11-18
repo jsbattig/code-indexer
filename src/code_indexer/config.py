@@ -311,6 +311,14 @@ class DaemonConfig(BaseModel):
     eviction_check_interval_seconds: int = Field(
         default=60, description="How often to check for cache eviction (in seconds)"
     )
+    socket_mode: Literal["shared", "user"] = Field(
+        default="shared",
+        description="Socket mode: 'shared' for multi-user (/tmp/cidx) or 'user' for single-user"
+    )
+    socket_base: Optional[str] = Field(
+        default=None,
+        description="Custom socket base directory (overrides socket_mode)"
+    )
 
     @field_validator("ttl_minutes")
     @classmethod
@@ -1044,14 +1052,38 @@ code-indexer index --clear
         return {**self.DAEMON_DEFAULTS, **daemon_dict}
 
     def get_socket_path(self) -> Path:
-        """Get daemon socket path.
+        """Get daemon socket path using system-wide directory.
 
-        Socket is always located at .code-indexer/daemon.sock relative to config.
+        Uses a hash-based naming scheme in /tmp/cidx/ to avoid Unix socket
+        path length limitations (108 chars).
 
         Returns:
             Path to daemon socket
         """
-        return self.config_path.parent / "daemon.sock"
+        from .daemon.socket_helper import (
+            generate_socket_path,
+            create_mapping_file,
+            generate_repo_hash,
+            ensure_socket_directory,
+        )
+
+        daemon_config = self.get_daemon_config()
+        socket_mode = daemon_config.get("socket_mode", "shared")
+
+        # Custom socket base override
+        if daemon_config.get("socket_base"):
+            socket_base = Path(daemon_config["socket_base"])
+            ensure_socket_directory(socket_base, socket_mode)
+            repo_hash = generate_repo_hash(self.config_path.parent.parent)
+            socket_path = socket_base / f"{repo_hash}.sock"
+        else:
+            # Use standard location
+            socket_path = generate_socket_path(self.config_path.parent.parent, socket_mode)
+
+        # Create mapping file for debugging
+        create_mapping_file(self.config_path.parent.parent, socket_path)
+
+        return socket_path
 
 
 def _load_override_config(override_path: Path) -> OverrideConfig:
