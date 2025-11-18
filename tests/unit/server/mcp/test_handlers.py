@@ -214,6 +214,11 @@ class TestSearchCode:
                 limit=10,
                 min_score=0.5,
                 file_extensions=None,
+                language=None,
+                exclude_language=None,
+                path_filter=None,
+                exclude_path=None,
+                accuracy="balanced",
             )
 
 
@@ -386,7 +391,8 @@ class TestAdminHandlers:
         params = {"alias": "my-golden-repo"}
 
         with patch("code_indexer.server.app.golden_repo_manager") as mock_manager:
-            mock_manager.remove_golden_repo = Mock()
+            # Mock to return job_id (async version)
+            mock_manager.remove_golden_repo = Mock(return_value="test-job-id-12345")
 
             result = await remove_golden_repo(params, mock_admin_user)
 
@@ -395,6 +401,8 @@ class TestAdminHandlers:
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
+            assert data["job_id"] == "test-job-id-12345"
+            assert "removal started" in data["message"]
 
     async def test_list_users(self, mock_admin_user):
         """Test listing all users."""
