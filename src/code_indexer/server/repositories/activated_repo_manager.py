@@ -10,7 +10,7 @@ import os
 import shutil
 import subprocess
 import logging
-import yaml  # type: ignore
+# yaml import removed - using json for config files
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Callable
@@ -2407,7 +2407,7 @@ class ActivatedRepoManager:
 
     def _create_repo_config(self, repo_path: str) -> None:
         """
-        Create .code-indexer/config.yml for activated repository.
+        Create .code-indexer/config.json for activated repository.
 
         Creates configuration with FilesystemVectorStore and VoyageAI settings
         to ensure search works correctly in server mode (Issue #499).
@@ -2433,17 +2433,17 @@ class ActivatedRepoManager:
                 }
             }
 
-            config_path = config_dir / "config.yml"
+            config_path = config_dir / "config.json"
             with open(config_path, 'w') as f:
-                yaml.dump(config_data, f, default_flow_style=False)
+                json.dump(config_data, f, indent=2)
 
             self.logger.info(
-                f"Created .code-indexer/config.yml with FilesystemVectorStore for {repo_path}"
+                f"Created .code-indexer/config.json with FilesystemVectorStore for {repo_path}"
             )
 
         except Exception as e:
             raise ActivatedRepoError(
-                f"Failed to create .code-indexer/config.yml: {str(e)}"
+                f"Failed to create .code-indexer/config.json: {str(e)}"
             )
 
     def _update_composite_config(self, composite_path: Path) -> None:

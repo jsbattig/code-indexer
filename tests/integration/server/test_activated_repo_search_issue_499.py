@@ -114,7 +114,7 @@ def execute_query(conn, query):
         """Test that backend factory creates FilesystemBackend for activated repos.
 
         This is the core integration test for Issue #499 - verifies that the
-        config.yml created during activation causes backend_factory to select
+        config.json created during activation causes backend_factory to select
         FilesystemBackend instead of defaulting to QdrantContainerBackend.
         """
         username = "testuser"
@@ -136,7 +136,7 @@ def execute_query(conn, query):
         activated_repo_path = Path(temp_data_dir) / "activated-repos" / username / user_alias
 
         # Verify config exists
-        config_yml_path = activated_repo_path / ".code-indexer" / "config.yml"
+        config_yml_path = activated_repo_path / ".code-indexer" / "config.json"
         assert config_yml_path.exists(), "Config file must exist after activation"
 
         # Convert YAML to JSON for ConfigManager
@@ -170,7 +170,7 @@ def execute_query(conn, query):
     def test_config_prevents_qdrant_default_fallback(
         self, activated_repo_manager, temp_data_dir
     ):
-        """Test that config.yml prevents backend_factory from defaulting to Qdrant.
+        """Test that config.json prevents backend_factory from defaulting to Qdrant.
 
         Before the fix: config.vector_store was None, backend_factory defaulted to Qdrant
         After the fix: config.vector_store.provider='filesystem', backend_factory uses FilesystemBackend
@@ -189,7 +189,7 @@ def execute_query(conn, query):
 
         # Load config
         activated_repo_path = Path(temp_data_dir) / "activated-repos" / username / user_alias
-        config_yml_path = activated_repo_path / ".code-indexer" / "config.yml"
+        config_yml_path = activated_repo_path / ".code-indexer" / "config.json"
 
         import yaml
         with open(config_yml_path, 'r') as f:
@@ -232,7 +232,7 @@ def execute_query(conn, query):
 
         # Load config
         activated_repo_path = Path(temp_data_dir) / "activated-repos" / username / user_alias
-        config_yml_path = activated_repo_path / ".code-indexer" / "config.yml"
+        config_yml_path = activated_repo_path / ".code-indexer" / "config.json"
 
         import yaml
         with open(config_yml_path, 'r') as f:
