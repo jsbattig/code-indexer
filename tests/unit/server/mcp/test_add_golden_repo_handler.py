@@ -29,8 +29,8 @@ class TestAddGoldenRepoParameterMapping:
         }
 
         with patch("code_indexer.server.app.golden_repo_manager") as mock_manager:
-            # Mock the add_golden_repo method to return success
-            mock_manager.add_golden_repo = Mock(return_value={"success": True, "message": "Success"})
+            # Mock the add_golden_repo method to return job_id (async behavior)
+            mock_manager.add_golden_repo = Mock(return_value="test-job-id-12345")
 
             result = await add_golden_repo(mcp_params, mock_admin_user)
 
@@ -39,7 +39,14 @@ class TestAddGoldenRepoParameterMapping:
                 repo_url="https://github.com/user/repo.git",
                 alias="my-golden-repo",
                 default_branch="develop",
+                submitter_username="admin",
             )
 
-            # Verify the handler returned success
-            assert result["success"] is True
+            # Verify the handler returned success with job_id
+            assert result["content"][0]["type"] == "text"
+            response_content = result["content"][0]["text"]
+            import json
+            response_data = json.loads(response_content)
+            assert response_data["success"] is True
+            assert response_data["job_id"] == "test-job-id-12345"
+            assert "addition started" in response_data["message"]

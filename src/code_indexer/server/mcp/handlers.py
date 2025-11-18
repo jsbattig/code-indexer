@@ -448,10 +448,17 @@ async def add_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, Any]:
         alias = params["alias"]
         default_branch = params.get("branch", "main")
 
-        result = app.golden_repo_manager.add_golden_repo(
-            repo_url=repo_url, alias=alias, default_branch=default_branch
+        job_id = app.golden_repo_manager.add_golden_repo(
+            repo_url=repo_url,
+            alias=alias,
+            default_branch=default_branch,
+            submitter_username=user.username,
         )
-        return _mcp_response({"success": True, "message": result["message"]})
+        return _mcp_response({
+            "success": True,
+            "job_id": job_id,
+            "message": f"Golden repository '{alias}' addition started"
+        })
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e)})
 
@@ -462,11 +469,15 @@ async def remove_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, An
 
     try:
         alias = params["alias"]
-        app.golden_repo_manager.remove_golden_repo(alias)
+        job_id = app.golden_repo_manager.remove_golden_repo(
+            alias,
+            submitter_username=user.username
+        )
         return _mcp_response(
             {
                 "success": True,
-                "message": f"Golden repository '{alias}' removed successfully",
+                "job_id": job_id,
+                "message": f"Golden repository '{alias}' removal started",
             }
         )
     except Exception as e:
@@ -479,7 +490,10 @@ async def refresh_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, A
 
     try:
         alias = params["alias"]
-        job_id = app.golden_repo_manager.refresh_golden_repo(alias)
+        job_id = app.golden_repo_manager.refresh_golden_repo(
+            alias,
+            submitter_username=user.username
+        )
         return _mcp_response(
             {
                 "success": True,

@@ -1363,6 +1363,8 @@ def create_app() -> FastAPI:
 
     golden_repo_manager = GoldenRepoManager()
     background_job_manager = BackgroundJobManager()
+    # Inject BackgroundJobManager into GoldenRepoManager for async operations
+    golden_repo_manager.background_job_manager = background_job_manager
     activated_repo_manager = ActivatedRepoManager(
         golden_repo_manager=golden_repo_manager,
         background_job_manager=background_job_manager,
