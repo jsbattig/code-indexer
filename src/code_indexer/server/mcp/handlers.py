@@ -51,6 +51,11 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             limit=params.get("limit", 10),
             min_score=params.get("min_score", 0.5),
             file_extensions=params.get("file_extensions"),
+            language=params.get("language"),
+            exclude_language=params.get("exclude_language"),
+            path_filter=params.get("path_filter"),
+            exclude_path=params.get("exclude_path"),
+            accuracy=params.get("accuracy", "balanced"),
         )
         return _mcp_response({"success": True, "results": result})
     except Exception as e:

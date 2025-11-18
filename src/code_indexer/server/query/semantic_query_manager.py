@@ -307,8 +307,10 @@ class SemanticQueryManager:
             limit=limit,
             min_score=min_score,
             language=kwargs.get("language"),
-            path=kwargs.get("path"),
+            path=kwargs.get("path_filter"),
             accuracy=kwargs.get("accuracy"),
+            exclude_language=kwargs.get("exclude_language"),
+            exclude_path=kwargs.get("exclude_path"),
         )
 
     def query_user_repositories(
@@ -319,6 +321,11 @@ class SemanticQueryManager:
         limit: int = 10,
         min_score: Optional[float] = None,
         file_extensions: Optional[List[str]] = None,
+        language: Optional[str] = None,
+        exclude_language: Optional[str] = None,
+        path_filter: Optional[str] = None,
+        exclude_path: Optional[str] = None,
+        accuracy: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Perform semantic query on user's activated repositories.
@@ -330,6 +337,11 @@ class SemanticQueryManager:
             limit: Maximum results to return
             min_score: Minimum similarity score threshold
             file_extensions: List of file extensions to filter results (e.g., ['.py', '.js'])
+            language: Filter by programming language (e.g., 'python', 'js', 'typescript')
+            exclude_language: Exclude files of specified language
+            path_filter: Filter by file path pattern using glob syntax (e.g., '*/tests/*')
+            exclude_path: Exclude files matching path pattern (e.g., '*/node_modules/*')
+            accuracy: Search accuracy profile ('fast', 'balanced', 'high')
 
         Returns:
             Dictionary with results, total_results, and query_metadata
@@ -362,7 +374,17 @@ class SemanticQueryManager:
         start_time = time.time()
         try:
             results = self._perform_search(
-                username, user_repos, query_text, limit, min_score, file_extensions
+                username,
+                user_repos,
+                query_text,
+                limit,
+                min_score,
+                file_extensions,
+                language,
+                exclude_language,
+                path_filter,
+                exclude_path,
+                accuracy,
             )
             execution_time_ms = int((time.time() - start_time) * 1000)
             timeout_occurred = False
@@ -485,6 +507,11 @@ class SemanticQueryManager:
         limit: int,
         min_score: Optional[float],
         file_extensions: Optional[List[str]],
+        language: Optional[str] = None,
+        exclude_language: Optional[str] = None,
+        path_filter: Optional[str] = None,
+        exclude_path: Optional[str] = None,
+        accuracy: Optional[str] = None,
     ) -> List[QueryResult]:
         """
         Perform the actual semantic search across user repositories.
@@ -496,6 +523,11 @@ class SemanticQueryManager:
             limit: Result limit
             min_score: Score threshold
             file_extensions: List of file extensions to filter results
+            language: Filter by programming language
+            exclude_language: Exclude files of specified language
+            path_filter: Filter by file path pattern
+            exclude_path: Exclude files matching path pattern
+            accuracy: Search accuracy profile
 
         Returns:
             List of QueryResult objects sorted by similarity score
@@ -513,7 +545,17 @@ class SemanticQueryManager:
                 # Create temporary config and search engine for this repository
                 # This would need actual implementation with proper config management
                 results = self._search_single_repository(
-                    repo_path, repo_alias, query_text, limit, min_score, file_extensions
+                    repo_path,
+                    repo_alias,
+                    query_text,
+                    limit,
+                    min_score,
+                    file_extensions,
+                    language,
+                    exclude_language,
+                    path_filter,
+                    exclude_path,
+                    accuracy,
                 )
                 all_results.extend(results)
 
@@ -544,9 +586,21 @@ class SemanticQueryManager:
         limit: int,
         min_score: Optional[float],
         file_extensions: Optional[List[str]],
+        language: Optional[str] = None,
+        exclude_language: Optional[str] = None,
+        path_filter: Optional[str] = None,
+        exclude_path: Optional[str] = None,
+        accuracy: Optional[str] = None,
     ) -> List[QueryResult]:
         """
         Search a single repository using the SemanticSearchService.
+
+        For composite repositories (proxy_mode=true), delegates to CLI integration
+        which supports all filter parameters (language, exclude_language, path_filter,
+        exclude_path, accuracy).
+
+        For regular repositories, uses SemanticSearchService with post-search filtering
+        for file_extensions and min_score.
 
         Args:
             repo_path: Path to the repository
@@ -555,11 +609,45 @@ class SemanticQueryManager:
             limit: Result limit
             min_score: Score threshold
             file_extensions: List of file extensions to filter results
+            language: Filter by programming language
+            exclude_language: Exclude files of specified language
+            path_filter: Filter by file path pattern
+            exclude_path: Exclude files matching path pattern
+            accuracy: Search accuracy profile
 
         Returns:
             List of QueryResult objects from this repository
         """
         try:
+            # Check if this is a composite repository
+            repo_path_obj = Path(repo_path)
+            if self._is_composite_repository(repo_path_obj):
+                # Use CLI integration for composite repos (supports all filters)
+                self.logger.debug(
+                    f"Composite repository detected: {repo_path}. Using CLI integration for search."
+                )
+                return self._execute_cli_query(
+                    repo_path=repo_path_obj,
+                    query=query_text,
+                    limit=limit,
+                    min_score=min_score,
+                    language=language,
+                    path=path_filter,
+                    accuracy=accuracy,
+                    exclude_language=exclude_language,
+                    exclude_path=exclude_path,
+                )
+
+            # For non-composite repos, warn if advanced filters are used
+            # (they are not supported by SemanticSearchService)
+            if any([language, exclude_language, path_filter, exclude_path, accuracy]):
+                self.logger.warning(
+                    f"Advanced filter parameters (language={language}, exclude_language={exclude_language}, "
+                    f"path_filter={path_filter}, exclude_path={exclude_path}, accuracy={accuracy}) "
+                    f"are not supported for non-composite repository '{repository_alias}'. "
+                    "These filters will be ignored. Consider using file_extensions filter instead."
+                )
+
             # Import SemanticSearchService and related models
             from ..services.search_service import SemanticSearchService
             from ..models.api_models import SemanticSearchRequest
@@ -620,6 +708,8 @@ class SemanticQueryManager:
         language: Optional[str] = None,
         path: Optional[str] = None,
         accuracy: Optional[str] = None,
+        exclude_language: Optional[str] = None,
+        exclude_path: Optional[str] = None,
     ) -> List[str]:
         """
         Convert server parameters to CLI args format.
@@ -631,6 +721,8 @@ class SemanticQueryManager:
             language: Programming language filter
             path: Path pattern filter
             accuracy: Accuracy level (fast, balanced, high)
+            exclude_language: Exclude specified language
+            exclude_path: Exclude path pattern
 
         Returns:
             List of CLI arguments
@@ -656,6 +748,12 @@ class SemanticQueryManager:
         if accuracy is not None:
             args.extend(["--accuracy", accuracy])
 
+        if exclude_language is not None:
+            args.extend(["--exclude-language", exclude_language])
+
+        if exclude_path is not None:
+            args.extend(["--exclude-path", exclude_path])
+
         return args
 
     def _execute_cli_query(
@@ -667,6 +765,8 @@ class SemanticQueryManager:
         language: Optional[str] = None,
         path: Optional[str] = None,
         accuracy: Optional[str] = None,
+        exclude_language: Optional[str] = None,
+        exclude_path: Optional[str] = None,
     ) -> List[QueryResult]:
         """
         Execute CLI query and parse results.
@@ -686,6 +786,8 @@ class SemanticQueryManager:
             language: Language filter
             path: Path filter
             accuracy: Accuracy level
+            exclude_language: Exclude specified language
+            exclude_path: Exclude path pattern
 
         Returns:
             List of QueryResult objects with:
@@ -711,6 +813,8 @@ class SemanticQueryManager:
             language=language,
             path=path,
             accuracy=accuracy,
+            exclude_language=exclude_language,
+            exclude_path=exclude_path,
         )
 
         # Capture stdout

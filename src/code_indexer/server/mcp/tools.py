@@ -40,6 +40,33 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "enum": ["semantic", "fts", "hybrid"],
                     "default": "semantic",
                 },
+                "language": {
+                    "type": "string",
+                    "description": "Filter by programming language. Supported languages: c, cpp, csharp, dart, go, java, javascript, kotlin, php, python, ruby, rust, scala, swift, typescript, css, html, vue, markdown, xml, json, yaml, bash, shell, and more. Can use friendly names or file extensions (py, js, ts, etc.).",
+                },
+                "exclude_language": {
+                    "type": "string",
+                    "description": "Exclude files of specified language. Use same language names as --language parameter.",
+                },
+                "path_filter": {
+                    "type": "string",
+                    "description": "Filter by file path pattern using glob syntax (e.g., '*/tests/*' for test files, '*/src/**/*.py' for Python files in src). Supports *, **, ?, [seq] wildcards.",
+                },
+                "exclude_path": {
+                    "type": "string",
+                    "description": "Exclude files matching path pattern. Supports glob patterns (*, **, ?, [seq]). Example: '*/tests/*' to exclude all test files, '*.min.js' to exclude minified JavaScript.",
+                },
+                "file_extensions": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Filter by file extensions (e.g., [\".py\", \".js\"]). Alternative to language filter when you need exact extension matching.",
+                },
+                "accuracy": {
+                    "type": "string",
+                    "enum": ["fast", "balanced", "high"],
+                    "default": "balanced",
+                    "description": "Search accuracy profile: 'fast' (lower accuracy, faster response), 'balanced' (default, good tradeoff), 'high' (higher accuracy, slower response). Affects embedding search precision.",
+                },
             },
             "required": ["query_text"],
         },
