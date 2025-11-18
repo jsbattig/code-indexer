@@ -10,6 +10,7 @@ import os
 import shutil
 import subprocess
 import logging
+import yaml  # type: ignore
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Callable
@@ -332,6 +333,10 @@ class ActivatedRepoManager:
                 proxy_init = ProxyInitializer(composite_path)
                 proxy_init.initialize(force=True)
                 update_progress(30, "Proxy configuration initialized")
+
+                # Add FilesystemVectorStore and VoyageAI config for composite repos
+                self._update_composite_config(composite_path)
+
             except Exception as e:
                 # Clean up on failure
                 if composite_path.exists():
@@ -1286,6 +1291,10 @@ class ActivatedRepoManager:
                 update_progress(80, f"Successfully switched to branch '{branch_name}'")
             else:
                 update_progress(75, f"Using default branch '{branch_name}'")
+
+            # Create .code-indexer/config.yml for FilesystemVectorStore and VoyageAI
+            update_progress(80, "Creating repository configuration")
+            self._create_repo_config(activated_repo_path)
 
             # Create metadata file
             update_progress(85, "Creating repository metadata")
@@ -2395,3 +2404,91 @@ class ActivatedRepoManager:
         except Exception as e:
             self.logger.warning(f"Failed to get branches for {repo_path}: {str(e)}")
             return ["main"]
+
+    def _create_repo_config(self, repo_path: str) -> None:
+        """
+        Create .code-indexer/config.yml for activated repository.
+
+        Creates configuration with FilesystemVectorStore and VoyageAI settings
+        to ensure search works correctly in server mode (Issue #499).
+
+        Args:
+            repo_path: Path to the activated repository
+
+        Raises:
+            ActivatedRepoError: If config creation fails
+        """
+        try:
+            config_dir = Path(repo_path) / ".code-indexer"
+            config_dir.mkdir(parents=True, exist_ok=True)
+
+            # Create config with FilesystemVectorStore and VoyageAI
+            config_data = {
+                "vector_store": {
+                    "provider": "filesystem"
+                },
+                "embedding_provider": "voyage-ai",
+                "voyage_ai": {
+                    "model": "voyage-code-3"
+                }
+            }
+
+            config_path = config_dir / "config.yml"
+            with open(config_path, 'w') as f:
+                yaml.dump(config_data, f, default_flow_style=False)
+
+            self.logger.info(
+                f"Created .code-indexer/config.yml with FilesystemVectorStore for {repo_path}"
+            )
+
+        except Exception as e:
+            raise ActivatedRepoError(
+                f"Failed to create .code-indexer/config.yml: {str(e)}"
+            )
+
+    def _update_composite_config(self, composite_path: Path) -> None:
+        """
+        Update composite repository config with FilesystemVectorStore and VoyageAI.
+
+        ProxyInitializer creates config.json with proxy_mode settings, but we need
+        to add vector_store and embedding_provider settings for Issue #499.
+
+        Args:
+            composite_path: Path to the composite repository
+
+        Raises:
+            ActivatedRepoError: If config update fails
+        """
+        try:
+            config_file = composite_path / ".code-indexer" / "config.json"
+
+            if not config_file.exists():
+                raise ActivatedRepoError(
+                    f"Config file not found at {config_file}. ProxyInitializer should have created it."
+                )
+
+            # Read existing config
+            with open(config_file, 'r') as f:
+                config_data = json.load(f)
+
+            # Add FilesystemVectorStore and VoyageAI settings
+            config_data["vector_store"] = {
+                "provider": "filesystem"
+            }
+            config_data["embedding_provider"] = "voyage-ai"
+            config_data["voyage_ai"] = {
+                "model": "voyage-code-3"
+            }
+
+            # Write updated config
+            with open(config_file, 'w') as f:
+                json.dump(config_data, f, indent=2)
+
+            self.logger.info(
+                f"Updated composite config with FilesystemVectorStore for {composite_path}"
+            )
+
+        except Exception as e:
+            raise ActivatedRepoError(
+                f"Failed to update composite repository config: {str(e)}"
+            )
