@@ -1,4 +1,55 @@
-"""FastAPI routes for OAuth 2.1 endpoints with rate limiting and audit logging."""
+"""FastAPI routes for OAuth 2.1 endpoints with rate limiting and audit logging.
+
+CRITICAL WARNING - DO NOT MODIFY WITHOUT UNDERSTANDING:
+==========================================================
+
+This OAuth implementation is WORKING and TESTED with:
+- Claude Code MCP integration (http transport)
+- Claude Desktop (if configured)
+- RFC 8414 OAuth 2.0 Authorization Server Metadata compliance
+
+THINGS YOU MUST NOT DO:
+------------------------
+1. DO NOT add /mcp suffixes to discovery endpoints
+   - The /.well-known/oauth-authorization-server endpoint is correct AS-IS
+   - No /mcp suffix needed despite MCP protocol using /mcp SSE endpoint
+   - MCP spec path-based discovery is for RESOURCE endpoints, not auth server
+
+2. DO NOT create separate routers for .well-known endpoints
+   - The router prefix="/oauth" is correct
+   - FastAPI handles .well-known/* at root automatically
+   - Creating a separate discovery_router will BREAK everything
+
+3. DO NOT add /.well-known/oauth-protected-resource endpoints
+   - MCP servers use WWW-Authenticate headers for resource metadata
+   - Protected resource discovery happens via 401 responses, not .well-known
+   - See src/code_indexer/server/auth/dependencies.py for WWW-Authenticate
+
+4. DO NOT change the router prefix from "/oauth"
+   - All OAuth endpoints (/register, /authorize, /token, /revoke) use this prefix
+   - Discovery endpoint at /.well-known/* is handled correctly by FastAPI
+
+WHY THIS WORKS:
+---------------
+- FastAPI serves /.well-known/* at domain root regardless of router prefix
+- The /oauth prefix only affects non-.well-known routes
+- MCP authentication uses standard OAuth 2.1, no special /mcp endpoints needed
+- GET /mcp returns 401 with WWW-Authenticate pointing to this discovery endpoint
+
+IF YOU THINK SOMETHING IS BROKEN:
+----------------------------------
+1. Test with: curl https://linner.ddns.net:8383/.well-known/oauth-authorization-server
+2. Should return OAuth metadata JSON with issuer, endpoints, etc.
+3. If working, DO NOT CHANGE ANYTHING
+4. If broken, check server logs first, don't modify code blindly
+
+VERIFIED WORKING:
+-----------------
+- Date: 2025-11-18
+- Commit: 6bda63f
+- Test: Claude Code MCP authentication successful
+- DO NOT BREAK THIS AGAIN
+"""
 
 from fastapi import APIRouter, HTTPException, status, Depends, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
