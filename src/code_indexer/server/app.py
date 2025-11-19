@@ -615,6 +615,28 @@ class SemanticQueryRequest(BaseModel):
         None, description="Filter by path pattern (e.g., '*/tests/*', '*.py')"
     )
 
+    # Exclusion filters (Story #503 Phase 1)
+    exclude_language: Optional[str] = Field(
+        None,
+        description="Exclude files of specified language (e.g., 'python', 'javascript')",
+    )
+    exclude_path: Optional[str] = Field(
+        None,
+        description="Exclude files matching path pattern (e.g., '*/tests/*', '*.min.js')",
+    )
+
+    # Accuracy profile (Story #503 Phase 1)
+    accuracy: Literal["fast", "balanced", "high"] = Field(
+        default="balanced",
+        description="Search accuracy profile: 'fast' (quick), 'balanced' (default), 'high' (thorough)",
+    )
+
+    # FTS regex mode (Story #503 Phase 1)
+    regex: bool = Field(
+        default=False,
+        description="FTS only: Interpret query as regex pattern (requires search_mode='fts' or 'hybrid')",
+    )
+
     # Temporal query parameters (Story #446)
     time_range: Optional[str] = Field(
         None,
@@ -690,6 +712,22 @@ class SemanticQueryRequest(BaseModel):
             validated_extensions.append(ext)
 
         return validated_extensions
+
+    @model_validator(mode="after")
+    def validate_regex_compatibility(self) -> "SemanticQueryRequest":
+        """Validate regex parameter compatibility (Story #503 Phase 1)."""
+        if self.regex:
+            # regex requires FTS mode
+            if self.search_mode not in ["fts", "hybrid"]:
+                raise ValueError(
+                    "regex=true requires search_mode to be 'fts' or 'hybrid'"
+                )
+            # regex is incompatible with fuzzy
+            if self.fuzzy:
+                raise ValueError(
+                    "regex=true is incompatible with fuzzy=true (mutual exclusion)"
+                )
+        return self
 
 
 # Import QueryResultItem from api_models (re-exported for backward compatibility)
@@ -3900,6 +3938,9 @@ def create_app() -> FastAPI:
                             limit=request.limit,
                             language_filter=request.language,
                             path_filter=request.path_filter,
+                            exclude_languages=[request.exclude_language] if request.exclude_language else None,  # Story #503 Phase 1
+                            exclude_paths=[request.exclude_path] if request.exclude_path else None,  # Story #503 Phase 1
+                            use_regex=request.regex,  # Story #503 Phase 1
                         )
 
                         # Convert to API response format
@@ -3936,6 +3977,10 @@ def create_app() -> FastAPI:
                             limit=request.limit,
                             min_score=request.min_score,
                             file_extensions=request.file_extensions,
+                            # Phase 1 parameters (Story #503)
+                            exclude_language=request.exclude_language,
+                            exclude_path=request.exclude_path,
+                            accuracy=request.accuracy,
                             # Temporal parameters (Story #446)
                             time_range=request.time_range,
                             at_commit=request.at_commit,
@@ -3990,6 +4035,10 @@ def create_app() -> FastAPI:
                 limit=request.limit,
                 min_score=request.min_score,
                 file_extensions=request.file_extensions,
+                # Phase 1 parameters (Story #503)
+                exclude_language=request.exclude_language,
+                exclude_path=request.exclude_path,
+                accuracy=request.accuracy,
                 # Temporal parameters (Story #446)
                 time_range=request.time_range,
                 at_commit=request.at_commit,
