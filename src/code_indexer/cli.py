@@ -7051,19 +7051,43 @@ def _status_impl(ctx, force_docker: bool):
                             # Calculate storage size - include ALL files in temporal directory
                             # Use du command for performance (30x faster than iterating files)
                             import subprocess
+                            import platform
 
                             total_size_bytes = 0
                             if temporal_dir.exists():
                                 try:
+                                    # Try GNU du first (Linux) with -sb for bytes
                                     result = subprocess.run(
                                         ["du", "-sb", str(temporal_dir)],
                                         capture_output=True,
                                         text=True,
                                         timeout=5,
                                     )
-                                    total_size_bytes = int(result.stdout.split()[0])
-                                except FileNotFoundError:
-                                    # Fallback to iteration if du command unavailable
+
+                                    # Check if command succeeded and has output
+                                    if result.returncode == 0 and result.stdout.strip():
+                                        stdout_parts = result.stdout.split()
+                                        if stdout_parts:
+                                            total_size_bytes = int(stdout_parts[0])
+                                    else:
+                                        # BSD du (macOS) doesn't support -b, use -k for kilobytes
+                                        result = subprocess.run(
+                                            ["du", "-sk", str(temporal_dir)],
+                                            capture_output=True,
+                                            text=True,
+                                            timeout=5,
+                                        )
+                                        if result.returncode == 0 and result.stdout.strip():
+                                            stdout_parts = result.stdout.split()
+                                            if stdout_parts:
+                                                total_size_kb = int(stdout_parts[0])
+                                                total_size_bytes = total_size_kb * 1024
+                                        else:
+                                            # If du command failed, fall back to Python iteration
+                                            raise subprocess.CalledProcessError(result.returncode, result.args)
+
+                                except (FileNotFoundError, subprocess.CalledProcessError, ValueError, IndexError):
+                                    # Fallback to iteration if du command unavailable or fails
                                     for file_path in temporal_dir.rglob("*"):
                                         if file_path.is_file():
                                             total_size_bytes += file_path.stat().st_size
