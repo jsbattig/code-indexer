@@ -2,14 +2,14 @@
 
 AI-powered semantic code search for your codebase. Find code by meaning, not just keywords.
 
-**Version 7.2.1** - [Changelog](CHANGELOG.md) | [Architecture](docs/architecture.md) | [Technical Details](docs/technical-details.md)
+**Version 7.4.0** - [Changelog](docs/CHANGELOG.md) | [Architecture](docs/architecture.md) | [Technical Details](docs/technical-details.md)
 
 ## Quick Install
 
 ### pipx (Recommended)
 ```bash
 # Install the package
-pipx install git+https://github.com/jsbattig/code-indexer.git@v7.2.1
+pipx install git+https://github.com/jsbattig/code-indexer.git@v7.4.0
 
 # Setup global registry (required once per system)
 cidx setup-global-registry
@@ -22,7 +22,7 @@ cidx setup-global-registry
 ```bash
 python3 -m venv code-indexer-env
 source code-indexer-env/bin/activate
-pip install git+https://github.com/jsbattig/code-indexer.git@v7.2.1
+pip install git+https://github.com/jsbattig/code-indexer.git@v7.4.0
 
 # Setup global registry
 cidx setup-global-registry

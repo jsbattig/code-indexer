@@ -1,6 +1,44 @@
 # Code Indexer Release Notes
 
-## Version 7.2.1 (2025-11-XX) - Git History Search & Fixes
+## Version 7.4.0 (2024-11-19) - Multi-User Daemon & MCP Enhancements
+
+### 🔒 Multi-User Daemon Support
+
+**Production-ready multi-user daemon environment with permission handling**
+
+#### New Features
+- **Group permissions for /tmp/cidx**: Configurable via umask for multi-user daemon access
+- **Permission error handling**: Silently ignore mapping file permission errors in shared environments
+- **Socket path limits**: Fix Unix socket path exceeding 108-char limit in deep directories
+- **Socket directory creation**: Graceful permission error handling for shared socket directories
+
+#### MCP Server Improvements
+- **CLI-MCP query parity**: Added 6 new filter parameters to MCP endpoints
+  - `language` filter support
+  - `exclude_language` filter support
+  - `path_filter` support
+  - `exclude_path` support
+  - `file_extensions` filter support
+  - `accuracy` parameter support
+- **Async golden repo operations**: Refactored MCP endpoints to async for better performance
+- **Temporal query parameters**: Added time-range filtering to REST API (Story #446)
+- **Token conservation**: Added limit parameter guidance to search_code tool
+
+#### Bug Fixes
+- **CoW clone activation**: Replace git clone with CoW clone in activation flow (issue #500)
+- **Config file format**: Create config.json (not config.yml) for ConfigManager compatibility
+- **Golden repo async**: Fixed test_remove_golden_repo for async return type
+- **OAuth route protection**: Added critical warnings to prevent future breakage
+
+#### Documentation
+- **Query parity business insight**: Added critical note to CLAUDE.md about CLI-MCP feature parity
+- **README restructuring**: Complete documentation reorganization (81% size reduction)
+- **MCP connectivity**: Added MCP server documentation to README
+- **Broken links**: Fixed all broken documentation links
+
+---
+
+## Version 7.2.1 (2024-10-XX) - Git History Search & Fixes
 
 ### 🕰️ Git History Search (Temporal Indexing)
 
