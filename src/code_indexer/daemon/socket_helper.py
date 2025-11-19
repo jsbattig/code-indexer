@@ -53,11 +53,21 @@ def ensure_socket_directory(socket_dir: Path, mode: SocketMode = "shared") -> No
         mode: "shared" (1777 permissions) or "user" (700 permissions)
     """
     permissions = 0o1777 if mode == "shared" else 0o700
-    socket_dir.mkdir(mode=permissions, parents=True, exist_ok=True)
 
-    # If directory already exists, update permissions
+    # Try to create directory (only works if doesn't exist or we own it)
+    try:
+        socket_dir.mkdir(mode=permissions, parents=True, exist_ok=True)
+    except FileExistsError:
+        pass  # Directory exists, that's fine
+
+    # Only chmod if we own the directory (avoid EPERM errors)
     if socket_dir.exists():
-        socket_dir.chmod(permissions)
+        try:
+            socket_dir.chmod(permissions)
+        except PermissionError:
+            # Can't chmod (don't own directory), but that's fine if permissions are already correct
+            # In shared mode with sticky bit, users can still create sockets even if they don't own the dir
+            pass
 
 
 def generate_socket_path(repo_path: Path, mode: SocketMode = "shared") -> Path:
