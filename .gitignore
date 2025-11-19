@@ -172,3 +172,6 @@ code-indexer-temporal/
 # FilesystemVectorStore collection
 voyage-code-3/
 .codecov.yml
+
+# FilesystemVectorStore collection
+code-indexer-temporal/

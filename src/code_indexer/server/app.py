@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, status, Depends, Response, Request, 
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Dict, Any, Optional, List, Callable, Literal
+from typing import Dict, Any, Optional, List, Callable, Literal, Union
 import os
 import json
 from pathlib import Path
@@ -656,6 +656,20 @@ class SemanticQueryRequest(BaseModel):
     )
     evolution_limit: Optional[int] = Field(
         None, ge=1, description="Limit number of evolution entries. User-controlled."
+    )
+
+    # Temporal filtering parameters (Story #503 Phase 3)
+    diff_type: Optional[Union[str, List[str]]] = Field(
+        None,
+        description="Filter temporal results by diff type (added/modified/deleted/renamed/binary). Can be single value or array.",
+    )
+    author: Optional[str] = Field(
+        None,
+        description="Filter temporal results by commit author (name or email).",
+    )
+    chunk_type: Optional[Literal["commit_message", "commit_diff"]] = Field(
+        None,
+        description="Filter temporal results by chunk type (commit_message or commit_diff).",
     )
 
     @field_validator("query_text")
@@ -3987,6 +4001,10 @@ def create_app() -> FastAPI:
                             include_removed=request.include_removed,
                             show_evolution=request.show_evolution,
                             evolution_limit=request.evolution_limit,
+                            # Phase 3 temporal filtering parameters (Story #503)
+                            diff_type=request.diff_type,
+                            author=request.author,
+                            chunk_type=request.chunk_type,
                         )
                         semantic_results_list = [
                             QueryResultItem(**result)
@@ -4045,6 +4063,10 @@ def create_app() -> FastAPI:
                 include_removed=request.include_removed,
                 show_evolution=request.show_evolution,
                 evolution_limit=request.evolution_limit,
+                # Phase 3 temporal filtering parameters (Story #503)
+                diff_type=request.diff_type,
+                author=request.author,
+                chunk_type=request.chunk_type,
             )
 
             return SemanticQueryResponse(

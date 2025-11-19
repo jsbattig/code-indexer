@@ -223,6 +223,80 @@ class TestSearchCode:
                 path_filter=None,
                 exclude_path=None,
                 accuracy="balanced",
+                # Temporal parameters (Story #446)
+                time_range=None,
+                at_commit=None,
+                include_removed=False,
+                show_evolution=False,
+                evolution_limit=None,
+                # FTS parameters (Story #503 Phase 2)
+                case_sensitive=False,
+                fuzzy=False,
+                edit_distance=0,
+                snippet_lines=5,
+                regex=False,
+            )
+
+    async def test_search_code_with_fts_parameters(self, mock_user):
+        """Test search_code passes FTS parameters through to semantic_query_manager.
+
+        This is a RED test proving Phase 2 requirement: FTS parameters must be
+        wired through the complete call chain.
+        """
+        params = {
+            "query_text": "authenticate",
+            "repository_alias": "test-repo",
+            "limit": 5,
+            "case_sensitive": True,
+            "fuzzy": True,
+            "edit_distance": 2,
+            "snippet_lines": 10,
+            "regex": False,
+        }
+
+        with patch(
+            "code_indexer.server.app.semantic_query_manager"
+        ) as mock_query_manager:
+            mock_query_manager.query_user_repositories = Mock(
+                return_value={
+                    "results": [],
+                    "total_results": 0,
+                    "query_metadata": {
+                        "query_text": "authenticate",
+                        "execution_time_ms": 50,
+                        "repositories_searched": 1,
+                        "timeout_occurred": False,
+                    },
+                }
+            )
+
+            result = await search_code(params, mock_user)
+
+            # Verify FTS parameters were passed to query manager
+            mock_query_manager.query_user_repositories.assert_called_once_with(
+                username=mock_user.username,
+                query_text="authenticate",
+                repository_alias="test-repo",
+                limit=5,
+                min_score=0.5,
+                file_extensions=None,
+                language=None,
+                exclude_language=None,
+                path_filter=None,
+                exclude_path=None,
+                accuracy="balanced",
+                # Temporal parameters (Story #446)
+                time_range=None,
+                at_commit=None,
+                include_removed=False,
+                show_evolution=False,
+                evolution_limit=None,
+                # FTS parameters that MUST be passed through
+                case_sensitive=True,
+                fuzzy=True,
+                edit_distance=2,
+                snippet_lines=10,
+                regex=False,
             )
 
 

@@ -12,7 +12,7 @@ import io
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass
 
 from ..repositories.activated_repo_manager import ActivatedRepoManager
@@ -332,6 +332,16 @@ class SemanticQueryManager:
         include_removed: bool = False,
         show_evolution: bool = False,
         evolution_limit: Optional[int] = None,
+        # FTS-specific parameters (Story #503 Phase 2)
+        case_sensitive: bool = False,
+        fuzzy: bool = False,
+        edit_distance: int = 0,
+        snippet_lines: int = 5,
+        regex: bool = False,
+        # Temporal filtering parameters (Story #503 Phase 3)
+        diff_type: Optional[Union[str, List[str]]] = None,
+        author: Optional[str] = None,
+        chunk_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Perform semantic query on user's activated repositories.
@@ -353,6 +363,11 @@ class SemanticQueryManager:
             include_removed: Include files removed from current HEAD
             show_evolution: Include code evolution timeline with diffs
             evolution_limit: Limit evolution entries (user-controlled)
+            case_sensitive: Enable case-sensitive FTS matching (FTS-only)
+            fuzzy: Enable fuzzy matching with edit distance 1 (FTS-only, incompatible with regex)
+            edit_distance: Fuzzy match tolerance level 0-3 (FTS-only)
+            snippet_lines: Context lines around FTS matches 0-50 (FTS-only)
+            regex: Interpret query as regex pattern (FTS-only, incompatible with fuzzy)
 
         Returns:
             Dictionary with results, total_results, and query_metadata
@@ -402,6 +417,16 @@ class SemanticQueryManager:
                 include_removed=include_removed,
                 show_evolution=show_evolution,
                 evolution_limit=evolution_limit,
+                # FTS-specific parameters (Story #503 Phase 2)
+                case_sensitive=case_sensitive,
+                fuzzy=fuzzy,
+                edit_distance=edit_distance,
+                snippet_lines=snippet_lines,
+                regex=regex,
+                # Temporal filtering parameters (Story #503 Phase 3)
+                diff_type=diff_type,
+                author=author,
+                chunk_type=chunk_type,
             )
             execution_time_ms = int((time.time() - start_time) * 1000)
             timeout_occurred = False
@@ -559,6 +584,16 @@ class SemanticQueryManager:
         include_removed: bool = False,
         show_evolution: bool = False,
         evolution_limit: Optional[int] = None,
+        # FTS-specific parameters (Story #503 Phase 2)
+        case_sensitive: bool = False,
+        fuzzy: bool = False,
+        edit_distance: int = 0,
+        snippet_lines: int = 5,
+        regex: bool = False,
+        # Temporal filtering parameters (Story #503 Phase 3)
+        diff_type: Optional[Union[str, List[str]]] = None,
+        author: Optional[str] = None,
+        chunk_type: Optional[str] = None,
     ) -> List[QueryResult]:
         """
         Perform the actual semantic search across user repositories.
@@ -580,6 +615,11 @@ class SemanticQueryManager:
             include_removed: Include removed files
             show_evolution: Include evolution timeline
             evolution_limit: Limit evolution entries
+            case_sensitive: Enable case-sensitive FTS matching
+            fuzzy: Enable fuzzy matching
+            edit_distance: Fuzzy match tolerance 0-3
+            snippet_lines: Context lines around FTS matches 0-50
+            regex: Interpret query as regex pattern
 
         Returns:
             List of QueryResult objects sorted by similarity score
@@ -614,6 +654,16 @@ class SemanticQueryManager:
                     include_removed=include_removed,
                     show_evolution=show_evolution,
                     evolution_limit=evolution_limit,
+                    # FTS-specific parameters (Story #503 Phase 2)
+                    case_sensitive=case_sensitive,
+                    fuzzy=fuzzy,
+                    edit_distance=edit_distance,
+                    snippet_lines=snippet_lines,
+                    regex=regex,
+                    # Temporal filtering parameters (Story #503 Phase 3)
+                    diff_type=diff_type,
+                    author=author,
+                    chunk_type=chunk_type,
                 )
                 all_results.extend(results)
 
@@ -655,6 +705,16 @@ class SemanticQueryManager:
         include_removed: bool = False,
         show_evolution: bool = False,
         evolution_limit: Optional[int] = None,
+        # FTS-specific parameters (Story #503 Phase 2)
+        case_sensitive: bool = False,
+        fuzzy: bool = False,
+        edit_distance: int = 0,
+        snippet_lines: int = 5,
+        regex: bool = False,
+        # Temporal filtering parameters (Story #503 Phase 3)
+        diff_type: Optional[Union[str, List[str]]] = None,
+        author: Optional[str] = None,
+        chunk_type: Optional[str] = None,
     ) -> List[QueryResult]:
         """
         Search a single repository using the SemanticSearchService or TemporalSearchService.
@@ -687,6 +747,11 @@ class SemanticQueryManager:
             include_removed: Include removed files
             show_evolution: Include evolution timeline
             evolution_limit: Limit evolution entries
+            case_sensitive: Enable case-sensitive FTS matching
+            fuzzy: Enable fuzzy matching
+            edit_distance: Fuzzy match tolerance 0-3
+            snippet_lines: Context lines around FTS matches 0-50
+            regex: Interpret query as regex pattern
 
         Returns:
             List of QueryResult objects from this repository
@@ -709,6 +774,16 @@ class SemanticQueryManager:
                     accuracy=accuracy,
                     exclude_language=exclude_language,
                     exclude_path=exclude_path,
+                    # FTS-specific parameters (Story #503 Phase 2)
+                    case_sensitive=case_sensitive,
+                    fuzzy=fuzzy,
+                    edit_distance=edit_distance,
+                    snippet_lines=snippet_lines,
+                    regex=regex,
+                    # Temporal filtering parameters (Story #503 Phase 3)
+                    diff_type=diff_type,
+                    author=author,
+                    chunk_type=chunk_type,
                 )
 
             # TEMPORAL QUERY HANDLING (Story #446)
@@ -805,6 +880,16 @@ class SemanticQueryManager:
         accuracy: Optional[str] = None,
         exclude_language: Optional[str] = None,
         exclude_path: Optional[str] = None,
+        # FTS-specific parameters (Story #503 Phase 2)
+        case_sensitive: bool = False,
+        fuzzy: bool = False,
+        edit_distance: int = 0,
+        snippet_lines: int = 5,
+        regex: bool = False,
+        # Temporal filtering parameters (Story #503 Phase 3)
+        diff_type: Optional[Union[str, List[str]]] = None,
+        author: Optional[str] = None,
+        chunk_type: Optional[str] = None,
     ) -> List[str]:
         """
         Convert server parameters to CLI args format.
@@ -818,6 +903,11 @@ class SemanticQueryManager:
             accuracy: Accuracy level (fast, balanced, high)
             exclude_language: Exclude specified language
             exclude_path: Exclude path pattern
+            case_sensitive: Enable case-sensitive FTS matching
+            fuzzy: Enable fuzzy matching
+            edit_distance: Fuzzy match tolerance 0-3
+            snippet_lines: Context lines around FTS matches 0-50
+            regex: Interpret query as regex pattern
 
         Returns:
             List of CLI arguments
@@ -849,6 +939,44 @@ class SemanticQueryManager:
         if exclude_path is not None:
             args.extend(["--exclude-path", exclude_path])
 
+        # FTS-specific parameters (Story #503 Phase 2)
+        if case_sensitive:
+            args.append("--case-sensitive")
+
+        if fuzzy:
+            args.append("--fuzzy")
+
+        if edit_distance > 0:
+            args.extend(["--edit-distance", str(edit_distance)])
+
+        if snippet_lines != 5:  # Only add if different from default
+            args.extend(["--snippet-lines", str(snippet_lines)])
+
+        if regex:
+            args.append("--regex")
+
+        # Temporal filtering parameters (Story #503 Phase 3)
+        if diff_type is not None:
+            # Handle diff_type: can be string, array, or comma-separated string
+            if isinstance(diff_type, list):
+                # Array: add --diff-type flag for each value
+                for dt in diff_type:
+                    args.extend(["--diff-type", dt])
+            elif isinstance(diff_type, str):
+                # String: check if comma-separated, split and add multiple flags
+                if "," in diff_type:
+                    for dt in diff_type.split(","):
+                        args.extend(["--diff-type", dt.strip()])
+                else:
+                    # Single value
+                    args.extend(["--diff-type", diff_type])
+
+        if author is not None:
+            args.extend(["--author", author])
+
+        if chunk_type is not None:
+            args.extend(["--chunk-type", chunk_type])
+
         return args
 
     def _execute_cli_query(
@@ -862,6 +990,16 @@ class SemanticQueryManager:
         accuracy: Optional[str] = None,
         exclude_language: Optional[str] = None,
         exclude_path: Optional[str] = None,
+        # FTS-specific parameters (Story #503 Phase 2)
+        case_sensitive: bool = False,
+        fuzzy: bool = False,
+        edit_distance: int = 0,
+        snippet_lines: int = 5,
+        regex: bool = False,
+        # Temporal filtering parameters (Story #503 Phase 3)
+        diff_type: Optional[Union[str, List[str]]] = None,
+        author: Optional[str] = None,
+        chunk_type: Optional[str] = None,
     ) -> List[QueryResult]:
         """
         Execute CLI query and parse results.
@@ -910,6 +1048,16 @@ class SemanticQueryManager:
             accuracy=accuracy,
             exclude_language=exclude_language,
             exclude_path=exclude_path,
+            # FTS-specific parameters (Story #503 Phase 2)
+            case_sensitive=case_sensitive,
+            fuzzy=fuzzy,
+            edit_distance=edit_distance,
+            snippet_lines=snippet_lines,
+            regex=regex,
+            # Temporal filtering parameters (Story #503 Phase 3)
+            diff_type=diff_type,
+            author=author,
+            chunk_type=chunk_type,
         )
 
         # Capture stdout

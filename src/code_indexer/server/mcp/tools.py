@@ -91,6 +91,50 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "minimum": 1,
                     "description": "Limit number of evolution entries per result (user-controlled, no maximum). Only applicable when show_evolution=true. Higher values provide more complete history but increase response size.",
                 },
+                # FTS-specific parameters (Story #503 Phase 2)
+                "case_sensitive": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Enable case-sensitive FTS matching. Only applicable when search_mode is 'fts' or 'hybrid'. When true, query matches must have exact case.",
+                },
+                "fuzzy": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Enable fuzzy matching with edit distance of 1 (typo tolerance). Only applicable when search_mode is 'fts' or 'hybrid'. Incompatible with regex=true.",
+                },
+                "edit_distance": {
+                    "type": "integer",
+                    "default": 0,
+                    "minimum": 0,
+                    "maximum": 3,
+                    "description": "Fuzzy match tolerance level (0=exact, 1=1 typo, 2=2 typos, 3=3 typos). Only applicable when search_mode is 'fts' or 'hybrid'. Higher values allow more typos but may reduce precision.",
+                },
+                "snippet_lines": {
+                    "type": "integer",
+                    "default": 5,
+                    "minimum": 0,
+                    "maximum": 50,
+                    "description": "Number of context lines to show around FTS matches (0=list only, 1-50=show context). Only applicable when search_mode is 'fts' or 'hybrid'. Higher values provide more context but increase response size.",
+                },
+                "regex": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Interpret query as regex pattern for token-based matching. Only applicable when search_mode is 'fts' or 'hybrid'. Incompatible with fuzzy=true. Enables pattern matching like 'def.*auth' or 'test_.*'.",
+                },
+                # Temporal filtering parameters (Story #503 Phase 3)
+                "diff_type": {
+                    "type": "string",
+                    "description": "Filter temporal results by diff type (added/modified/deleted/renamed/binary). Can be comma-separated for multiple types (e.g., 'added,modified'). Only applicable when time_range is specified.",
+                },
+                "author": {
+                    "type": "string",
+                    "description": "Filter temporal results by commit author (name or email). Only applicable when time_range is specified.",
+                },
+                "chunk_type": {
+                    "type": "string",
+                    "enum": ["commit_message", "commit_diff"],
+                    "description": "Filter temporal results by chunk type: 'commit_message' searches commit messages, 'commit_diff' searches code diffs. Only applicable when time_range is specified.",
+                },
             },
             "required": ["query_text"],
         },

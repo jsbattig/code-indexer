@@ -62,6 +62,16 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             include_removed=params.get("include_removed", False),
             show_evolution=params.get("show_evolution", False),
             evolution_limit=params.get("evolution_limit"),
+            # FTS-specific parameters (Story #503 Phase 2)
+            case_sensitive=params.get("case_sensitive", False),
+            fuzzy=params.get("fuzzy", False),
+            edit_distance=params.get("edit_distance", 0),
+            snippet_lines=params.get("snippet_lines", 5),
+            regex=params.get("regex", False),
+            # Temporal filtering parameters (Story #503 Phase 3)
+            diff_type=params.get("diff_type"),
+            author=params.get("author"),
+            chunk_type=params.get("chunk_type"),
         )
         return _mcp_response({"success": True, "results": result})
     except Exception as e:

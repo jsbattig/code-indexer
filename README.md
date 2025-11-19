@@ -209,6 +209,9 @@ cidx query "text" --fts             # Full-text search
 cidx query "pattern" --fts --regex  # Regex search
 cidx query "code" --fts --semantic  # Hybrid search
 
+# For complete parameter reference (23 query parameters)
+# See: src/code_indexer/query/QUERY_PARAMETERS.md
+
 # Watch mode
 cidx watch                          # Real-time file watching
 cidx watch --fts                    # Watch with FTS updates
