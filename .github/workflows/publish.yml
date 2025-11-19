@@ -3,6 +3,9 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
+  push:
+    branches-ignore:
+      - '**'  # Never run on push to any branch
 
 jobs:
   publish:
