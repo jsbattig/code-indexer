@@ -132,7 +132,7 @@ cidx watch --debounce 5.0
 
 ### 🤖 AI Platform Integration
 
-Teach AI assistants (Claude, Gemini, etc.) to use semantic search:
+**Local CLI Integration**: Teach AI assistants to use semantic search via CLI:
 ```bash
 # Install instructions for Claude Code
 cidx teach-ai --claude --project    # Creates ./CLAUDE.md
@@ -143,6 +143,18 @@ cidx teach-ai --claude --global     # Creates ~/.claude/CLAUDE.md
 # Other platforms
 cidx teach-ai --gemini --project
 cidx teach-ai --codex --global
+```
+
+**Remote MCP Server Integration**: Connect AI assistants to CIDX server for team-wide semantic search:
+- **MCP Protocol 2024-11-05** - Standard Model Context Protocol implementation
+- **OAuth 2.0 Authentication** - Secure AI assistant authentication via browser flow
+- **Remote Code Search** - AI tools query centralized indexed codebases
+- **Permission Controls** - Role-based access (admin, power_user, normal_user)
+- **Golden Repository Access** - Query team's shared code repositories
+
+```bash
+# Configure Claude Code to connect to CIDX MCP server
+# Add to Claude Code MCP settings (see docs/server-mode.md for details)
 ```
 
 ## Two Operating Modes
@@ -159,6 +171,7 @@ Direct command-line interface for local development:
 
 Multi-user FastAPI web service for teams:
 - REST API with JWT authentication
+- **MCP (Model Context Protocol) server** - Remote connectivity for AI assistants
 - Golden Repositories for centralized code management
 - User workspaces via Copy-on-Write cloning
 - Background job processing
@@ -171,6 +184,8 @@ cidx server start
 
 # Access API docs at http://localhost:8090/docs
 ```
+
+**MCP Server Integration**: Connect AI assistants (Claude Code, etc.) to your CIDX server for remote semantic code search. The server implements MCP protocol 2024-11-05, enabling AI tools to query your team's indexed codebases with full authentication and permission controls.
 
 See [Server Documentation](docs/server-mode.md) for details.
 
