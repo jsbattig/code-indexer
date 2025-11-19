@@ -708,6 +708,10 @@ class SemanticQueryResponse(BaseModel):
     results: List[QueryResultItem]
     total_results: int
     query_metadata: QueryMetadata
+    warning: Optional[str] = Field(
+        default=None,
+        description="Warning message for graceful fallbacks (e.g., missing temporal index)"
+    )
 
 
 class FTSResultItem(BaseModel):
@@ -3938,6 +3942,16 @@ def create_app() -> FastAPI:
                             QueryResultItem(**result)
                             for result in semantic_results_raw["results"]
                         ]
+                    except ValueError as e:
+                        # Surface validation errors as HTTP 400
+                        logger.warning(f"Validation error in query: {e}")
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={
+                                "error": "Invalid query parameters",
+                                "message": str(e)
+                            }
+                        )
                     except Exception as e:
                         logger.error(f"Semantic search failed: {e}")
                         if search_mode_actual == "semantic":
@@ -3983,11 +3997,23 @@ def create_app() -> FastAPI:
                 results=[QueryResultItem(**result) for result in results["results"]],
                 total_results=results["total_results"],
                 query_metadata=QueryMetadata(**results["query_metadata"]),
+                warning=results.get("warning"),  # Pass warning from backend
             )
 
         except HTTPException:
             # Re-raise HTTP exceptions as-is
             raise
+
+        except ValueError as e:
+            # Surface validation errors from backend as HTTP 400
+            logger.warning(f"Validation error in query: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "Invalid query parameters",
+                    "message": str(e)
+                }
+            )
 
         except SemanticQueryError as e:
             error_message = str(e)

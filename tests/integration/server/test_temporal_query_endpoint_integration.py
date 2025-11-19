@@ -278,6 +278,173 @@ class TestTemporalSearchServiceIntegration:
             app.dependency_overrides.clear()
             app_module.activated_repo_manager = original_repo_mgr
 
+
+class TestValidationErrorHandling:
+    """Test validation errors return HTTP 400 (Manual Test Issue 2)."""
+
+    def test_invalid_time_range_format_returns_400(self, mock_current_user):
+        """Test invalid time_range format returns HTTP 400 with clear error"""
+        # Arrange
+        def override_get_current_user():
+            return mock_current_user
+
+        mock_repo_mgr = Mock()
+        mock_repo_mgr.list_activated_repositories.return_value = [{
+            "user_alias": "test-repo",
+            "golden_repo_id": "123"
+        }]
+
+        mock_semantic_mgr = Mock()
+        # Simulate ValueError from backend validation
+        mock_semantic_mgr.query_user_repositories.side_effect = ValueError(
+            "Invalid time_range format: expected YYYY-MM-DD..YYYY-MM-DD"
+        )
+
+        app.dependency_overrides[dependencies.get_current_user] = override_get_current_user
+
+        # Temporarily replace managers
+        import code_indexer.server.app as app_module
+        original_repo_mgr = app_module.activated_repo_manager
+        original_semantic_mgr = app_module.semantic_query_manager
+        app_module.activated_repo_manager = mock_repo_mgr
+        app_module.semantic_query_manager = mock_semantic_mgr
+
+        try:
+            client = TestClient(app)
+
+            # Act
+            response = client.post(
+                "/api/query",
+                json={
+                    "query_text": "test",
+                    "time_range": "invalid-format"
+                },
+                headers={"Authorization": "Bearer fake-token"}
+            )
+
+            # Assert
+            assert response.status_code == 400
+            error_detail = response.json()["detail"]
+            assert "Invalid query parameters" in str(error_detail) or "time_range" in str(error_detail).lower()
+        finally:
+            # Clean up overrides
+            app.dependency_overrides.clear()
+            app_module.activated_repo_manager = original_repo_mgr
+            app_module.semantic_query_manager = original_semantic_mgr
+
+    def test_invalid_at_commit_returns_400(self, mock_current_user):
+        """Test invalid at_commit (non-existent) returns HTTP 400"""
+        # Arrange
+        def override_get_current_user():
+            return mock_current_user
+
+        mock_repo_mgr = Mock()
+        mock_repo_mgr.list_activated_repositories.return_value = [{
+            "user_alias": "test-repo",
+            "golden_repo_id": "123"
+        }]
+
+        mock_semantic_mgr = Mock()
+        # Simulate ValueError from backend validation
+        mock_semantic_mgr.query_user_repositories.side_effect = ValueError(
+            "Invalid commit reference: nonexistent123"
+        )
+
+        app.dependency_overrides[dependencies.get_current_user] = override_get_current_user
+
+        # Temporarily replace managers
+        import code_indexer.server.app as app_module
+        original_repo_mgr = app_module.activated_repo_manager
+        original_semantic_mgr = app_module.semantic_query_manager
+        app_module.activated_repo_manager = mock_repo_mgr
+        app_module.semantic_query_manager = mock_semantic_mgr
+
+        try:
+            client = TestClient(app)
+
+            # Act
+            response = client.post(
+                "/api/query",
+                json={
+                    "query_text": "test",
+                    "at_commit": "nonexistent123"
+                },
+                headers={"Authorization": "Bearer fake-token"}
+            )
+
+            # Assert
+            assert response.status_code == 400
+            error_detail = response.json()["detail"]
+            assert "Invalid query parameters" in str(error_detail) or "commit" in str(error_detail).lower()
+        finally:
+            # Clean up overrides
+            app.dependency_overrides.clear()
+            app_module.activated_repo_manager = original_repo_mgr
+            app_module.semantic_query_manager = original_semantic_mgr
+
+
+class TestWarningFieldPropagation:
+    """Test warning field is propagated from backend to API response (Manual Test Issue 1)."""
+
+    def test_warning_appears_when_temporal_index_missing(self, mock_current_user):
+        """Test warning field populated when backend returns warning"""
+        # Arrange
+        def override_get_current_user():
+            return mock_current_user
+
+        mock_repo_mgr = Mock()
+        mock_repo_mgr.list_activated_repositories.return_value = [{
+            "user_alias": "test-repo",
+            "golden_repo_id": "123"
+        }]
+
+        mock_semantic_mgr = Mock()
+        # Simulate backend returning warning
+        mock_semantic_mgr.query_user_repositories.return_value = {
+            "results": [],
+            "total_results": 0,
+            "query_metadata": {
+                "query_text": "test",
+                "execution_time_ms": 100,
+                "repositories_searched": 1,
+                "timeout_occurred": False
+            },
+            "warning": "Temporal index not available, using standard search"
+        }
+
+        app.dependency_overrides[dependencies.get_current_user] = override_get_current_user
+
+        # Temporarily replace managers
+        import code_indexer.server.app as app_module
+        original_repo_mgr = app_module.activated_repo_manager
+        original_semantic_mgr = app_module.semantic_query_manager
+        app_module.activated_repo_manager = mock_repo_mgr
+        app_module.semantic_query_manager = mock_semantic_mgr
+
+        try:
+            client = TestClient(app)
+
+            # Act
+            response = client.post(
+                "/api/query",
+                json={
+                    "query_text": "test",
+                    "time_range": "2024-01-01..2024-12-31"
+                },
+                headers={"Authorization": "Bearer fake-token"}
+            )
+
+            # Assert
+            assert response.status_code == 200
+            data = response.json()
+            assert "warning" in data
+            assert data["warning"] == "Temporal index not available, using standard search"
+        finally:
+            # Clean up overrides
+            app.dependency_overrides.clear()
+            app_module.activated_repo_manager = original_repo_mgr
+            app_module.semantic_query_manager = original_semantic_mgr
+
     def test_includes_commit_metadata_in_response(
         self, mock_current_user, mock_temporal_results, monkeypatch
     ):
