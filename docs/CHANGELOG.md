@@ -2,7 +2,7 @@
 
 ## Version 7.4.0 (2024-11-19) - Multi-User Daemon & MCP Enhancements
 
-### 🔒 Multi-User Daemon Support
+### Multi-User Daemon Support
 
 **Production-ready multi-user daemon environment with permission handling**
 
@@ -40,7 +40,7 @@
 
 ## Version 7.2.1 (2024-10-XX) - Git History Search & Fixes
 
-### 🕰️ Git History Search (Temporal Indexing)
+### Git History Search (Temporal Indexing)
 
 **Semantically search your entire git commit history!**
 
@@ -66,7 +66,7 @@
 
 ## Version 7.2.0 (2025-10-XX) - Incremental HNSW & FTS Enhancements
 
-### ⚡ Performance Improvements
+### Performance Improvements
 
 #### Incremental HNSW Updates (3.6x Speedup)
 - **Watch mode**: < 20ms per file (vs 5-10s full rebuild) - **99.6% improvement**
@@ -89,7 +89,7 @@
 
 ## Version 7.1.0 (2025-09-XX) - Full-Text Search Support
 
-### 🔍 Full-Text Search (FTS)
+### Full-Text Search (FTS)
 
 **Index-backed full-text search with Tantivy backend**
 
@@ -109,7 +109,7 @@
 
 ## Version 7.0.0 (2025-08-XX) - HNSW Graph-Based Indexing
 
-### 🚀 HNSW Performance Revolution
+### HNSW Performance Revolution
 
 **300x speedup with graph-based indexing**
 

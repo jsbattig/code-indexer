@@ -1,6 +1,23 @@
 # Code-Indexer (CIDX) Project Instructions
 
-## 0. CRITICAL BUSINESS INSIGHT - Query is Everything
+## 0. DOCUMENTATION STANDARDS
+
+**NO EMOJI/ICONOGRAPHY**: Never use emoji, unicode icons, or decorative symbols in any documentation files (README.md, CLAUDE.md, CHANGELOG.md, docs/*.md). Use plain text headers and formatting only. This applies to all project documentation.
+
+**Examples of forbidden iconography:**
+- Emoji: 🔍 🕰️ ⚡ 🎯 🔄 🤖 ✅ ❌ 👍 🚀 🔧 🔐
+- Unicode symbols: ✓ ✗ ★ ● ◆ → ←
+- Decorative characters
+
+**Correct heading format**: Use plain text only
+```markdown
+### Performance Improvements
+### Git History Search
+```
+
+---
+
+## 1. CRITICAL BUSINESS INSIGHT - Query is Everything
 
 **THE SINGLE MOST IMPORTANT FEATURE**: Query capability is the core value proposition of CIDX. All query features available in CLI MUST be available in MCP/REST APIs with full parity.
 
@@ -16,7 +33,7 @@
 
 ---
 
-## 1. Operational Modes Overview
+## 2. Operational Modes Overview
 
 CIDX has **three operational modes**. Understanding which mode you're working in is critical.
 
@@ -65,7 +82,7 @@ CIDX has **three operational modes**. Understanding which mode you're working in
 
 ---
 
-## 2. Architecture Details
+## 3. Architecture Details
 
 **For Full Details**: See `/docs/v5.0.0-architecture-summary.md` and `/docs/v7.2.0-architecture-incremental-updates.md`
 
@@ -127,7 +144,7 @@ CIDX has **three operational modes**. Understanding which mode you're working in
 
 ---
 
-## 3. Daily Development Workflows
+## 4. Daily Development Workflows
 
 ### Test Suites
 
@@ -267,7 +284,7 @@ ruff check --fix src/ tests/        # Fix linting
 
 ---
 
-## 4. Critical Rules (NEVER BREAK)
+## 5. Critical Rules (NEVER BREAK)
 
 ### Performance Prohibitions
 
@@ -308,7 +325,7 @@ When working on smart indexer, always consider `--reconcile` (non git-aware) and
 
 ---
 
-## 5. Performance & Optimization
+## 6. Performance & Optimization
 
 ### FTS Lazy Import (CRITICAL)
 
@@ -342,7 +359,7 @@ if enable_fts:
 
 ---
 
-## 6. Embedding Provider
+## 7. Embedding Provider
 
 ### VoyageAI (PRODUCTION ONLY)
 
@@ -366,7 +383,7 @@ if enable_fts:
 
 ---
 
-## 7. CIDX Usage Quick Reference
+## 8. CIDX Usage Quick Reference
 
 ### CLI Mode (Most Common)
 
@@ -408,7 +425,7 @@ See server documentation - involves server setup, user management, golden/activa
 
 ---
 
-## 8. Mode-Specific Concepts
+## 9. Mode-Specific Concepts
 
 ### CLI Mode Concepts
 - `.code-indexer/` - Project config and index storage
@@ -432,7 +449,7 @@ See server documentation - involves server setup, user management, golden/activa
 
 ---
 
-## 9. Miscellaneous
+## 10. Miscellaneous
 
 ### Claude CLI Integration
 
@@ -442,7 +459,7 @@ See server documentation - involves server setup, user management, golden/activa
 
 ---
 
-## 10. Where to Find More
+## 11. Where to Find More
 
 **Detailed Architecture**: `/docs/v5.0.0-architecture-summary.md`, `/docs/v7.2.0-architecture-incremental-updates.md`
 

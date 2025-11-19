@@ -50,7 +50,7 @@ cidx query "save" --path-filter "*/models/*" --limit 20
 
 ## Key Features
 
-### 🔍 Three Search Modes
+### Three Search Modes
 
 **1. Semantic Search (Default)** - Find code by meaning using AI embeddings
 ```bash
@@ -71,7 +71,7 @@ cidx query "def" --fts --regex                    # Find function definitions
 cidx query "test_.*" --fts --regex --language python  # Find test functions
 ```
 
-### 🕰️ Git History Search
+### Git History Search
 
 Search your entire commit history semantically:
 ```bash
@@ -90,14 +90,14 @@ cidx query "login" --time-range-all --author "john@example.com" --quiet
 
 **Use Cases**: Code archaeology, bug history, feature evolution tracking, author analysis
 
-### ⚡ Performance
+### Performance
 
 - **HNSW indexing**: 300x faster queries (~20ms vs 6+ seconds)
 - **Incremental updates**: 3.6x speedup for re-indexing
 - **Watch mode**: <20ms per file change
 - **FTS**: 1.36x faster than grep on indexed codebases
 
-### 🎯 Advanced Filtering
+### Advanced Filtering
 
 ```bash
 # Language filtering
@@ -120,7 +120,7 @@ cidx query "database models" \
   --min-score 0.8
 ```
 
-### 🔄 Real-Time Watch Mode
+### Real-Time Watch Mode
 
 ```bash
 # Watch for file changes and auto-index
@@ -130,7 +130,7 @@ cidx watch --fts
 cidx watch --debounce 5.0
 ```
 
-### 🤖 AI Platform Integration
+### AI Platform Integration
 
 **Local CLI Integration**: Teach AI assistants to use semantic search via CLI:
 ```bash
