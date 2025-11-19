@@ -615,6 +615,24 @@ class SemanticQueryRequest(BaseModel):
         None, description="Filter by path pattern (e.g., '*/tests/*', '*.py')"
     )
 
+    # Temporal query parameters (Story #446)
+    time_range: Optional[str] = Field(
+        None,
+        description="Time range filter (e.g., '2024-01-01..2024-12-31'). Requires temporal index.",
+    )
+    at_commit: Optional[str] = Field(
+        None, description="Query code at specific commit hash or ref. Requires temporal index."
+    )
+    include_removed: bool = Field(
+        False, description="Include files removed from current HEAD. Requires temporal index."
+    )
+    show_evolution: bool = Field(
+        False, description="Show code evolution timeline with diffs. Requires temporal index."
+    )
+    evolution_limit: Optional[int] = Field(
+        None, ge=1, description="Limit number of evolution entries. User-controlled."
+    )
+
     @field_validator("query_text")
     @classmethod
     def validate_query_text(cls, v: str) -> str:
@@ -3908,6 +3926,12 @@ def create_app() -> FastAPI:
                                 limit=request.limit,
                                 min_score=request.min_score,
                                 file_extensions=request.file_extensions,
+                                # Temporal parameters (Story #446)
+                                time_range=request.time_range,
+                                at_commit=request.at_commit,
+                                include_removed=request.include_removed,
+                                show_evolution=request.show_evolution,
+                                evolution_limit=request.evolution_limit,
                             )
                         )
                         semantic_results_list = [
@@ -3947,6 +3971,12 @@ def create_app() -> FastAPI:
                 limit=request.limit,
                 min_score=request.min_score,
                 file_extensions=request.file_extensions,
+                # Temporal parameters (Story #446)
+                time_range=request.time_range,
+                at_commit=request.at_commit,
+                include_removed=request.include_removed,
+                show_evolution=request.show_evolution,
+                evolution_limit=request.evolution_limit,
             )
 
             return SemanticQueryResponse(

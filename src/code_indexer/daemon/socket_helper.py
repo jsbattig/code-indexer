@@ -95,12 +95,20 @@ def create_mapping_file(repo_path: Path, socket_path: Path) -> None:
     Creates a .repo-path file alongside the socket that contains
     the full path to the repository for debugging purposes.
 
+    CRITICAL: Silently ignores permission errors in multi-user environments.
+    Mapping files are for debugging only, not critical for daemon operation.
+
     Args:
         repo_path: Path to repository
         socket_path: Path to socket file
     """
     mapping_path = socket_path.with_suffix('.repo-path')
-    mapping_path.write_text(str(repo_path.resolve()))
+    try:
+        mapping_path.write_text(str(repo_path.resolve()))
+    except (PermissionError, OSError):
+        # Mapping file write failed (likely exists from different user)
+        # This is non-critical - mapping is only for debugging
+        pass
 
 
 def get_repo_from_mapping(socket_path: Path) -> Optional[Path]:

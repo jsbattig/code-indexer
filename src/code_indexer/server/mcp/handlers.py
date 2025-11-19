@@ -56,6 +56,12 @@ async def search_code(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             path_filter=params.get("path_filter"),
             exclude_path=params.get("exclude_path"),
             accuracy=params.get("accuracy", "balanced"),
+            # Temporal query parameters (Story #446)
+            time_range=params.get("time_range"),
+            at_commit=params.get("at_commit"),
+            include_removed=params.get("include_removed", False),
+            show_evolution=params.get("show_evolution", False),
+            evolution_limit=params.get("evolution_limit"),
         )
         return _mcp_response({"success": True, "results": result})
     except Exception as e:

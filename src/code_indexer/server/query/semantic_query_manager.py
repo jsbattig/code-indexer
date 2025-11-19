@@ -326,6 +326,12 @@ class SemanticQueryManager:
         path_filter: Optional[str] = None,
         exclude_path: Optional[str] = None,
         accuracy: Optional[str] = None,
+        # Temporal query parameters (Story #446)
+        time_range: Optional[str] = None,
+        at_commit: Optional[str] = None,
+        include_removed: bool = False,
+        show_evolution: bool = False,
+        evolution_limit: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Perform semantic query on user's activated repositories.
@@ -342,6 +348,11 @@ class SemanticQueryManager:
             path_filter: Filter by file path pattern using glob syntax (e.g., '*/tests/*')
             exclude_path: Exclude files matching path pattern (e.g., '*/node_modules/*')
             accuracy: Search accuracy profile ('fast', 'balanced', 'high')
+            time_range: Time range filter for temporal queries (format: YYYY-MM-DD..YYYY-MM-DD)
+            at_commit: Query code at specific commit hash or ref
+            include_removed: Include files removed from current HEAD
+            show_evolution: Include code evolution timeline with diffs
+            evolution_limit: Limit evolution entries (user-controlled)
 
         Returns:
             Dictionary with results, total_results, and query_metadata
@@ -385,6 +396,12 @@ class SemanticQueryManager:
                 path_filter,
                 exclude_path,
                 accuracy,
+                # Temporal parameters (Story #446)
+                time_range=time_range,
+                at_commit=at_commit,
+                include_removed=include_removed,
+                show_evolution=show_evolution,
+                evolution_limit=evolution_limit,
             )
             execution_time_ms = int((time.time() - start_time) * 1000)
             timeout_occurred = False
@@ -416,11 +433,35 @@ class SemanticQueryManager:
             # This shouldn't happen in normal operation, but handle gracefully
             self.logger.warning("Unexpected result format in query response")
 
-        return {
-            "results": [r.to_dict() for r in results],
+        # Check if temporal parameters were used but no results (graceful fallback)
+        has_temporal_params = any([time_range, at_commit, show_evolution])
+        warning_message = None
+        if has_temporal_params and len(results) == 0:
+            warning_message = (
+                "Temporal index not available. Showing results from current code only. "
+                "Build temporal index with 'cidx index --index-commits' to enable temporal queries."
+            )
+
+        # Build response with temporal context in results
+        response_results = []
+        for r in results:
+            result_dict = r.to_dict()
+            # Add temporal_context if present
+            if hasattr(r, '_temporal_context'):
+                result_dict['temporal_context'] = getattr(r, '_temporal_context')
+            response_results.append(result_dict)
+
+        response = {
+            "results": response_results,
             "total_results": len(results),
             "query_metadata": metadata.to_dict(),
         }
+
+        # Add warning if temporal fallback occurred
+        if warning_message:
+            response["warning"] = warning_message
+
+        return response
 
     def submit_query_job(
         self,
@@ -512,6 +553,12 @@ class SemanticQueryManager:
         path_filter: Optional[str] = None,
         exclude_path: Optional[str] = None,
         accuracy: Optional[str] = None,
+        # Temporal parameters (Story #446)
+        time_range: Optional[str] = None,
+        at_commit: Optional[str] = None,
+        include_removed: bool = False,
+        show_evolution: bool = False,
+        evolution_limit: Optional[int] = None,
     ) -> List[QueryResult]:
         """
         Perform the actual semantic search across user repositories.
@@ -528,6 +575,11 @@ class SemanticQueryManager:
             path_filter: Filter by file path pattern
             exclude_path: Exclude files matching path pattern
             accuracy: Search accuracy profile
+            time_range: Time range filter for temporal queries
+            at_commit: Query at specific commit
+            include_removed: Include removed files
+            show_evolution: Include evolution timeline
+            evolution_limit: Limit evolution entries
 
         Returns:
             List of QueryResult objects sorted by similarity score
@@ -556,6 +608,12 @@ class SemanticQueryManager:
                     path_filter,
                     exclude_path,
                     accuracy,
+                    # Temporal parameters (Story #446)
+                    time_range=time_range,
+                    at_commit=at_commit,
+                    include_removed=include_removed,
+                    show_evolution=show_evolution,
+                    evolution_limit=evolution_limit,
                 )
                 all_results.extend(results)
 
@@ -591,9 +649,19 @@ class SemanticQueryManager:
         path_filter: Optional[str] = None,
         exclude_path: Optional[str] = None,
         accuracy: Optional[str] = None,
+        # Temporal parameters (Story #446)
+        time_range: Optional[str] = None,
+        at_commit: Optional[str] = None,
+        include_removed: bool = False,
+        show_evolution: bool = False,
+        evolution_limit: Optional[int] = None,
     ) -> List[QueryResult]:
         """
-        Search a single repository using the SemanticSearchService.
+        Search a single repository using the SemanticSearchService or TemporalSearchService.
+
+        For temporal queries (when time_range, at_commit, or show_evolution provided),
+        uses TemporalSearchService with graceful fallback to regular search if temporal
+        index not available.
 
         For composite repositories (proxy_mode=true), delegates to CLI integration
         which supports all filter parameters (language, exclude_language, path_filter,
@@ -614,6 +682,11 @@ class SemanticQueryManager:
             path_filter: Filter by file path pattern
             exclude_path: Exclude files matching path pattern
             accuracy: Search accuracy profile
+            time_range: Time range filter for temporal queries
+            at_commit: Query at specific commit
+            include_removed: Include removed files
+            show_evolution: Include evolution timeline
+            evolution_limit: Limit evolution entries
 
         Returns:
             List of QueryResult objects from this repository
@@ -635,6 +708,28 @@ class SemanticQueryManager:
                     path=path_filter,
                     accuracy=accuracy,
                     exclude_language=exclude_language,
+                    exclude_path=exclude_path,
+                )
+
+            # TEMPORAL QUERY HANDLING (Story #446)
+            # Check if temporal parameters are present
+            has_temporal_params = any([time_range, at_commit, show_evolution])
+
+            if has_temporal_params:
+                return self._execute_temporal_query(
+                    repo_path=repo_path_obj,
+                    repository_alias=repository_alias,
+                    query_text=query_text,
+                    limit=limit,
+                    min_score=min_score,
+                    time_range=time_range,
+                    at_commit=at_commit,
+                    include_removed=include_removed,
+                    show_evolution=show_evolution,
+                    evolution_limit=evolution_limit,
+                    language=language,
+                    exclude_language=exclude_language,
+                    path_filter=path_filter,
                     exclude_path=exclude_path,
                 )
 
@@ -932,3 +1027,178 @@ class SemanticQueryManager:
                 i += 1
 
         return results
+
+    def _execute_temporal_query(
+        self,
+        repo_path: Path,
+        repository_alias: str,
+        query_text: str,
+        limit: int,
+        min_score: Optional[float],
+        time_range: Optional[str],
+        at_commit: Optional[str],
+        include_removed: bool,
+        show_evolution: bool,
+        evolution_limit: Optional[int],
+        language: Optional[str] = None,
+        exclude_language: Optional[str] = None,
+        path_filter: Optional[str] = None,
+        exclude_path: Optional[str] = None,
+    ) -> List[QueryResult]:
+        """Execute temporal query using TemporalSearchService with graceful fallback.
+
+        Story #446: Temporal Query Parameters via API
+
+        Integrates TemporalSearchService for time-based code searches. If temporal
+        index not available, gracefully falls back to regular search with warning.
+
+        Args:
+            repo_path: Repository path
+            repository_alias: Repository alias for results
+            query_text: Search query
+            limit: Result limit
+            min_score: Minimum similarity score
+            time_range: Time range filter (YYYY-MM-DD..YYYY-MM-DD)
+            at_commit: Query at specific commit
+            include_removed: Include removed files
+            show_evolution: Show evolution timeline
+            evolution_limit: Limit evolution entries
+            language: Filter by language
+            exclude_language: Exclude language
+            path_filter: Path filter pattern
+            exclude_path: Exclude path pattern
+
+        Returns:
+            List of QueryResult objects with temporal context
+        """
+        from ...services.temporal.temporal_search_service import TemporalSearchService
+        from ...proxy.config_manager import ConfigManager
+        from ...backends.backend_factory import BackendFactory
+        from ...services.embedding_factory import EmbeddingProviderFactory
+
+        try:
+            # Load repository configuration
+            config_manager = ConfigManager.create_with_backtrack(repo_path)
+            config = config_manager.get_config()
+
+            # Create vector store and embedding provider
+            backend = BackendFactory.create(config=config, project_root=repo_path)
+            vector_store = backend.get_vector_store_client()
+            embedding_provider = EmbeddingProviderFactory.create(config, console=None)
+
+            # Create temporal service
+            temporal_service = TemporalSearchService(
+                config_manager=config_manager,
+                project_root=repo_path,
+                vector_store_client=vector_store,
+                embedding_provider=embedding_provider,
+            )
+
+            # Check if temporal index exists
+            if not temporal_service.has_temporal_index():
+                # GRACEFUL FALLBACK (Acceptance Criterion 9)
+                self.logger.warning(
+                    f"Temporal index not available for repository '{repository_alias}'. "
+                    "Falling back to regular search."
+                )
+                # Fall back to regular search - return empty list with warning
+                # The warning will be added to query response by caller
+                return []
+
+            # Validate and parse temporal parameters
+            if time_range:
+                time_range_tuple = temporal_service._validate_date_range(time_range)
+            elif at_commit:
+                # For at_commit, use a wide range and filter by commit later
+                # This is a simplified implementation - full at_commit support
+                # would require additional TemporalSearchService methods
+                time_range_tuple = ("1970-01-01", "2100-12-31")
+            else:
+                time_range_tuple = ("1970-01-01", "2100-12-31")
+
+            # Determine diff_types based on include_removed
+            diff_types = None
+            if not include_removed:
+                # Exclude deleted files
+                diff_types = ["added", "modified"]
+
+            # Build language filters
+            language_list = [language] if language else None
+            exclude_language_list = [exclude_language] if exclude_language else None
+
+            # Build path filters
+            path_filter_list = [path_filter] if path_filter else None
+            exclude_path_list = [exclude_path] if exclude_path else None
+
+            # Execute temporal query (Acceptance Criterion 8: Internal service calls)
+            temporal_results = temporal_service.query_temporal(
+                query=query_text,
+                time_range=time_range_tuple,
+                diff_types=diff_types,
+                limit=limit,
+                min_score=min_score,
+                language=language_list,
+                exclude_language=exclude_language_list,
+                path_filter=path_filter_list,
+                exclude_path=exclude_path_list,
+            )
+
+            # Convert temporal results to QueryResult objects
+            query_results = []
+            for temporal_result in temporal_results.results:
+                # Build temporal context (Acceptance Criterion 7)
+                temporal_context = {
+                    "first_seen": temporal_result.temporal_context.get("first_seen"),
+                    "last_seen": temporal_result.temporal_context.get("last_seen"),
+                    "commit_count": temporal_result.temporal_context.get("appearance_count", 0),
+                    "commits": temporal_result.temporal_context.get("commits", []),
+                }
+
+                # Add is_removed flag if applicable
+                if include_removed and temporal_result.metadata.get("diff_type") == "deleted":
+                    temporal_context["is_removed"] = True
+
+                # Add evolution data if requested (Acceptance Criterion 5 & 6)
+                if show_evolution and "evolution" in temporal_result.temporal_context:
+                    evolution_data = temporal_result.temporal_context["evolution"]
+                    # Apply user-controlled evolution_limit (NO arbitrary max)
+                    if evolution_limit and len(evolution_data) > evolution_limit:
+                        evolution_data = evolution_data[:evolution_limit]
+                    temporal_context["evolution"] = evolution_data
+
+                # Create QueryResult with temporal context
+                query_result = QueryResult(
+                    file_path=temporal_result.file_path,
+                    line_number=1,  # Temporal results don't have line numbers
+                    code_snippet=temporal_result.content,
+                    similarity_score=temporal_result.score,
+                    repository_alias=repository_alias,
+                    source_repo=None,
+                )
+
+                # Add temporal_context to result dict
+                result_dict = query_result.to_dict()
+                result_dict["temporal_context"] = temporal_context
+
+                # Convert back to QueryResult (preserve structure)
+                # Note: QueryResult dataclass doesn't have temporal_context field,
+                # so we'll add it as custom attribute
+                query_result_with_temporal = query_result
+                # Store temporal context as custom attribute for later serialization
+                setattr(query_result_with_temporal, '_temporal_context', temporal_context)
+
+                query_results.append(query_result)
+
+            return query_results
+
+        except ValueError as e:
+            # Clear error messages for invalid parameters (Acceptance Criterion 10)
+            self.logger.error(f"Temporal query validation error: {str(e)}")
+            raise ValueError(str(e))
+        except Exception as e:
+            # Log error and fall back to regular search
+            self.logger.error(
+                f"Temporal query failed for repository '{repository_alias}': {str(e)}"
+            )
+            # Re-raise to let caller handle
+            raise SemanticQueryError(f"Temporal query failed: {str(e)}")

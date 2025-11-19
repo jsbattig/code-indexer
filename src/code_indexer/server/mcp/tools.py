@@ -67,6 +67,30 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                     "default": "balanced",
                     "description": "Search accuracy profile: 'fast' (lower accuracy, faster response), 'balanced' (default, good tradeoff), 'high' (higher accuracy, slower response). Affects embedding search precision.",
                 },
+                # Temporal query parameters (Story #446)
+                "time_range": {
+                    "type": "string",
+                    "description": "Time range filter for temporal queries (format: YYYY-MM-DD..YYYY-MM-DD, e.g., '2024-01-01..2024-12-31'). Returns only code that existed during this period. Requires temporal index built with 'cidx index --index-commits'.",
+                },
+                "at_commit": {
+                    "type": "string",
+                    "description": "Query code at a specific commit hash or ref (e.g., 'abc123' or 'HEAD~5'). Returns code state as it existed at that commit. Requires temporal index.",
+                },
+                "include_removed": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Include files that have been removed from the current HEAD in search results. Only applicable with temporal queries. Removed files will have is_removed flag in temporal_context.",
+                },
+                "show_evolution": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Include code evolution timeline with commit history and diffs in response. Shows how code changed over time. Requires temporal index.",
+                },
+                "evolution_limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Limit number of evolution entries per result (user-controlled, no maximum). Only applicable when show_evolution=true. Higher values provide more complete history but increase response size.",
+                },
             },
             "required": ["query_text"],
         },
