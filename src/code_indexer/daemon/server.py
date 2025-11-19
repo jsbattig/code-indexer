@@ -67,6 +67,12 @@ def start_daemon(config_path: Path) -> None:
         logger.info(f"CIDX daemon listening on {socket_path}")
         print(f"CIDX daemon started on {socket_path}")
 
+        # CRITICAL: Set socket to group-writable for multi-user access
+        # Socket needs rw permissions for other users to connect
+        import os
+        import stat
+        os.chmod(socket_path, stat.S_IRWXU | stat.S_IRWXG)  # 770 (rwxrwx---)
+
         # Create mapping file for debugging (links socket to repo path)
         repo_path = config_path.parent
         create_mapping_file(repo_path, socket_path)
