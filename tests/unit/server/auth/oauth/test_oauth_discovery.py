@@ -34,7 +34,10 @@ class TestOAuthDiscovery:
         discovery = oauth_manager.get_discovery_metadata()
 
         assert "authorization_endpoint" in discovery
-        assert discovery["authorization_endpoint"] == "http://localhost:8000/oauth/authorize"
+        assert (
+            discovery["authorization_endpoint"]
+            == "http://localhost:8000/oauth/authorize"
+        )
 
     def test_discovery_endpoint_returns_token_endpoint(self, oauth_manager):
         """Test that discovery response contains token endpoint."""
@@ -48,7 +51,9 @@ class TestOAuthDiscovery:
         discovery = oauth_manager.get_discovery_metadata()
 
         assert "registration_endpoint" in discovery
-        assert discovery["registration_endpoint"] == "http://localhost:8000/oauth/register"
+        assert (
+            discovery["registration_endpoint"] == "http://localhost:8000/oauth/register"
+        )
 
     def test_discovery_endpoint_indicates_pkce_required(self, oauth_manager):
         """Test that discovery response indicates PKCE is required."""

@@ -10,7 +10,6 @@ These tests expose critical bugs that cause silent failures with fake success re
 from pathlib import Path
 
 
-
 class TestBug1FalseVectorCount:
     """Tests for Bug #1: False vector count without verification of actual writes."""
 

@@ -82,6 +82,7 @@ class TestTemporalModeDetection:
 
     def test_detects_temporal_mode_with_time_range(self, mock_current_user):
         """Test temporal mode detected when time_range present"""
+
         # Arrange
         def override_get_current_user():
             return mock_current_user
@@ -91,10 +92,13 @@ class TestTemporalModeDetection:
 
         mock_semantic_mgr = Mock()
 
-        app.dependency_overrides[dependencies.get_current_user] = override_get_current_user
+        app.dependency_overrides[dependencies.get_current_user] = (
+            override_get_current_user
+        )
 
         # Temporarily replace managers
         import code_indexer.server.app as app_module
+
         original_repo_mgr = app_module.activated_repo_manager
         original_semantic_mgr = app_module.semantic_query_manager
         app_module.activated_repo_manager = mock_repo_mgr
@@ -106,11 +110,8 @@ class TestTemporalModeDetection:
             # Act
             response = client.post(
                 "/api/query",
-                json={
-                    "query_text": "test",
-                    "time_range": "2024-01-01..2024-12-31"
-                },
-                headers={"Authorization": "Bearer fake-token"}
+                json={"query_text": "test", "time_range": "2024-01-01..2024-12-31"},
+                headers={"Authorization": "Bearer fake-token"},
             )
 
             # Assert - Should attempt temporal search (will fail without repo, but proves detection)
@@ -124,6 +125,7 @@ class TestTemporalModeDetection:
 
     def test_detects_temporal_mode_with_diff_type(self, mock_current_user):
         """Test temporal mode detected when diff_type present"""
+
         # Arrange
         def override_get_current_user():
             return mock_current_user
@@ -133,10 +135,13 @@ class TestTemporalModeDetection:
 
         mock_semantic_mgr = Mock()
 
-        app.dependency_overrides[dependencies.get_current_user] = override_get_current_user
+        app.dependency_overrides[dependencies.get_current_user] = (
+            override_get_current_user
+        )
 
         # Temporarily replace managers
         import code_indexer.server.app as app_module
+
         original_repo_mgr = app_module.activated_repo_manager
         original_semantic_mgr = app_module.semantic_query_manager
         app_module.activated_repo_manager = mock_repo_mgr
@@ -148,11 +153,8 @@ class TestTemporalModeDetection:
             # Act
             response = client.post(
                 "/api/query",
-                json={
-                    "query_text": "test",
-                    "diff_type": ["added"]
-                },
-                headers={"Authorization": "Bearer fake-token"}
+                json={"query_text": "test", "diff_type": ["added"]},
+                headers={"Authorization": "Bearer fake-token"},
             )
 
             # Assert
@@ -166,6 +168,7 @@ class TestTemporalModeDetection:
 
     def test_standard_mode_when_no_temporal_params(self, mock_current_user):
         """Test non-temporal mode when no temporal parameters"""
+
         # Arrange
         def override_get_current_user():
             return mock_current_user
@@ -178,14 +181,17 @@ class TestTemporalModeDetection:
                 "query_text": "test",
                 "execution_time_ms": 100,
                 "repositories_searched": 0,
-                "timeout_occurred": False
-            }
+                "timeout_occurred": False,
+            },
         }
 
-        app.dependency_overrides[dependencies.get_current_user] = override_get_current_user
+        app.dependency_overrides[dependencies.get_current_user] = (
+            override_get_current_user
+        )
 
         # Temporarily replace managers
         import code_indexer.server.app as app_module
+
         original_semantic_mgr = app_module.semantic_query_manager
         app_module.semantic_query_manager = mock_semantic_mgr
 
@@ -196,12 +202,14 @@ class TestTemporalModeDetection:
             response = client.post(
                 "/api/query",
                 json={"query_text": "test"},
-                headers={"Authorization": "Bearer fake-token"}
+                headers={"Authorization": "Bearer fake-token"},
             )
 
             # Assert - Should use standard semantic search
             assert response.status_code == 200
-            assert "temporal_mode" not in response.json() or not response.json().get("temporal_mode")
+            assert "temporal_mode" not in response.json() or not response.json().get(
+                "temporal_mode"
+            )
         finally:
             # Clean up overrides
             app.dependency_overrides.clear()
@@ -215,15 +223,15 @@ class TestTemporalSearchServiceIntegration:
         self, mock_current_user, mock_temporal_results, monkeypatch
     ):
         """Test TemporalSearchService called with parsed time_range"""
+
         # Arrange
         def override_get_current_user():
             return mock_current_user
 
         mock_repo_mgr = Mock()
-        mock_repo_mgr.list_activated_repositories.return_value = [{
-            "user_alias": "test-repo",
-            "golden_repo_id": "123"
-        }]
+        mock_repo_mgr.list_activated_repositories.return_value = [
+            {"user_alias": "test-repo", "golden_repo_id": "123"}
+        ]
         mock_repo_mgr.activated_repos_dir = "/tmp/activated"
 
         mock_temporal_service = Mock()
@@ -234,24 +242,26 @@ class TestTemporalSearchServiceIntegration:
         mock_vector_store = Mock()
         mock_embedding = Mock()
 
-        app.dependency_overrides[dependencies.get_current_user] = override_get_current_user
+        app.dependency_overrides[dependencies.get_current_user] = (
+            override_get_current_user
+        )
 
         # Temporarily replace managers and mock classes
         import code_indexer.server.app as app_module
+
         original_repo_mgr = app_module.activated_repo_manager
         app_module.activated_repo_manager = mock_repo_mgr
 
         monkeypatch.setattr(
             "code_indexer.services.temporal.temporal_search_service.TemporalSearchService",
-            mock_temporal_service_class
+            mock_temporal_service_class,
         )
         monkeypatch.setattr(
             "code_indexer.storage.filesystem_vector_store.FilesystemVectorStore",
-            mock_vector_store
+            mock_vector_store,
         )
         monkeypatch.setattr(
-            "code_indexer.services.voyage_ai.VoyageAIClient",
-            mock_embedding
+            "code_indexer.services.voyage_ai.VoyageAIClient", mock_embedding
         )
 
         try:
@@ -262,9 +272,9 @@ class TestTemporalSearchServiceIntegration:
                 "/api/query",
                 json={
                     "query_text": "authentication",
-                    "time_range": "2024-01-01..2024-12-31"
+                    "time_range": "2024-01-01..2024-12-31",
                 },
-                headers={"Authorization": "Bearer fake-token"}
+                headers={"Authorization": "Bearer fake-token"},
             )
 
             # Assert
@@ -284,15 +294,15 @@ class TestValidationErrorHandling:
 
     def test_invalid_time_range_format_returns_400(self, mock_current_user):
         """Test invalid time_range format returns HTTP 400 with clear error"""
+
         # Arrange
         def override_get_current_user():
             return mock_current_user
 
         mock_repo_mgr = Mock()
-        mock_repo_mgr.list_activated_repositories.return_value = [{
-            "user_alias": "test-repo",
-            "golden_repo_id": "123"
-        }]
+        mock_repo_mgr.list_activated_repositories.return_value = [
+            {"user_alias": "test-repo", "golden_repo_id": "123"}
+        ]
 
         mock_semantic_mgr = Mock()
         # Simulate ValueError from backend validation
@@ -300,10 +310,13 @@ class TestValidationErrorHandling:
             "Invalid time_range format: expected YYYY-MM-DD..YYYY-MM-DD"
         )
 
-        app.dependency_overrides[dependencies.get_current_user] = override_get_current_user
+        app.dependency_overrides[dependencies.get_current_user] = (
+            override_get_current_user
+        )
 
         # Temporarily replace managers
         import code_indexer.server.app as app_module
+
         original_repo_mgr = app_module.activated_repo_manager
         original_semantic_mgr = app_module.semantic_query_manager
         app_module.activated_repo_manager = mock_repo_mgr
@@ -315,17 +328,17 @@ class TestValidationErrorHandling:
             # Act
             response = client.post(
                 "/api/query",
-                json={
-                    "query_text": "test",
-                    "time_range": "invalid-format"
-                },
-                headers={"Authorization": "Bearer fake-token"}
+                json={"query_text": "test", "time_range": "invalid-format"},
+                headers={"Authorization": "Bearer fake-token"},
             )
 
             # Assert
             assert response.status_code == 400
             error_detail = response.json()["detail"]
-            assert "Invalid query parameters" in str(error_detail) or "time_range" in str(error_detail).lower()
+            assert (
+                "Invalid query parameters" in str(error_detail)
+                or "time_range" in str(error_detail).lower()
+            )
         finally:
             # Clean up overrides
             app.dependency_overrides.clear()
@@ -334,15 +347,15 @@ class TestValidationErrorHandling:
 
     def test_invalid_at_commit_returns_400(self, mock_current_user):
         """Test invalid at_commit (non-existent) returns HTTP 400"""
+
         # Arrange
         def override_get_current_user():
             return mock_current_user
 
         mock_repo_mgr = Mock()
-        mock_repo_mgr.list_activated_repositories.return_value = [{
-            "user_alias": "test-repo",
-            "golden_repo_id": "123"
-        }]
+        mock_repo_mgr.list_activated_repositories.return_value = [
+            {"user_alias": "test-repo", "golden_repo_id": "123"}
+        ]
 
         mock_semantic_mgr = Mock()
         # Simulate ValueError from backend validation
@@ -350,10 +363,13 @@ class TestValidationErrorHandling:
             "Invalid commit reference: nonexistent123"
         )
 
-        app.dependency_overrides[dependencies.get_current_user] = override_get_current_user
+        app.dependency_overrides[dependencies.get_current_user] = (
+            override_get_current_user
+        )
 
         # Temporarily replace managers
         import code_indexer.server.app as app_module
+
         original_repo_mgr = app_module.activated_repo_manager
         original_semantic_mgr = app_module.semantic_query_manager
         app_module.activated_repo_manager = mock_repo_mgr
@@ -365,17 +381,17 @@ class TestValidationErrorHandling:
             # Act
             response = client.post(
                 "/api/query",
-                json={
-                    "query_text": "test",
-                    "at_commit": "nonexistent123"
-                },
-                headers={"Authorization": "Bearer fake-token"}
+                json={"query_text": "test", "at_commit": "nonexistent123"},
+                headers={"Authorization": "Bearer fake-token"},
             )
 
             # Assert
             assert response.status_code == 400
             error_detail = response.json()["detail"]
-            assert "Invalid query parameters" in str(error_detail) or "commit" in str(error_detail).lower()
+            assert (
+                "Invalid query parameters" in str(error_detail)
+                or "commit" in str(error_detail).lower()
+            )
         finally:
             # Clean up overrides
             app.dependency_overrides.clear()
@@ -388,15 +404,15 @@ class TestWarningFieldPropagation:
 
     def test_warning_appears_when_temporal_index_missing(self, mock_current_user):
         """Test warning field populated when backend returns warning"""
+
         # Arrange
         def override_get_current_user():
             return mock_current_user
 
         mock_repo_mgr = Mock()
-        mock_repo_mgr.list_activated_repositories.return_value = [{
-            "user_alias": "test-repo",
-            "golden_repo_id": "123"
-        }]
+        mock_repo_mgr.list_activated_repositories.return_value = [
+            {"user_alias": "test-repo", "golden_repo_id": "123"}
+        ]
 
         mock_semantic_mgr = Mock()
         # Simulate backend returning warning
@@ -407,15 +423,18 @@ class TestWarningFieldPropagation:
                 "query_text": "test",
                 "execution_time_ms": 100,
                 "repositories_searched": 1,
-                "timeout_occurred": False
+                "timeout_occurred": False,
             },
-            "warning": "Temporal index not available, using standard search"
+            "warning": "Temporal index not available, using standard search",
         }
 
-        app.dependency_overrides[dependencies.get_current_user] = override_get_current_user
+        app.dependency_overrides[dependencies.get_current_user] = (
+            override_get_current_user
+        )
 
         # Temporarily replace managers
         import code_indexer.server.app as app_module
+
         original_repo_mgr = app_module.activated_repo_manager
         original_semantic_mgr = app_module.semantic_query_manager
         app_module.activated_repo_manager = mock_repo_mgr
@@ -427,18 +446,17 @@ class TestWarningFieldPropagation:
             # Act
             response = client.post(
                 "/api/query",
-                json={
-                    "query_text": "test",
-                    "time_range": "2024-01-01..2024-12-31"
-                },
-                headers={"Authorization": "Bearer fake-token"}
+                json={"query_text": "test", "time_range": "2024-01-01..2024-12-31"},
+                headers={"Authorization": "Bearer fake-token"},
             )
 
             # Assert
             assert response.status_code == 200
             data = response.json()
             assert "warning" in data
-            assert data["warning"] == "Temporal index not available, using standard search"
+            assert (
+                data["warning"] == "Temporal index not available, using standard search"
+            )
         finally:
             # Clean up overrides
             app.dependency_overrides.clear()
@@ -449,15 +467,15 @@ class TestWarningFieldPropagation:
         self, mock_current_user, mock_temporal_results, monkeypatch
     ):
         """Test response includes commit_hash, author, date, diff_type"""
+
         # Arrange
         def override_get_current_user():
             return mock_current_user
 
         mock_repo_mgr = Mock()
-        mock_repo_mgr.list_activated_repositories.return_value = [{
-            "user_alias": "test-repo",
-            "golden_repo_id": "123"
-        }]
+        mock_repo_mgr.list_activated_repositories.return_value = [
+            {"user_alias": "test-repo", "golden_repo_id": "123"}
+        ]
         mock_repo_mgr.activated_repos_dir = "/tmp/activated"
 
         mock_temporal_service = Mock()
@@ -468,24 +486,26 @@ class TestWarningFieldPropagation:
         mock_vector_store = Mock()
         mock_embedding = Mock()
 
-        app.dependency_overrides[dependencies.get_current_user] = override_get_current_user
+        app.dependency_overrides[dependencies.get_current_user] = (
+            override_get_current_user
+        )
 
         # Temporarily replace managers and mock classes
         import code_indexer.server.app as app_module
+
         original_repo_mgr = app_module.activated_repo_manager
         app_module.activated_repo_manager = mock_repo_mgr
 
         monkeypatch.setattr(
             "code_indexer.services.temporal.temporal_search_service.TemporalSearchService",
-            mock_temporal_service_class
+            mock_temporal_service_class,
         )
         monkeypatch.setattr(
             "code_indexer.storage.filesystem_vector_store.FilesystemVectorStore",
-            mock_vector_store
+            mock_vector_store,
         )
         monkeypatch.setattr(
-            "code_indexer.services.voyage_ai.VoyageAIClient",
-            mock_embedding
+            "code_indexer.services.voyage_ai.VoyageAIClient", mock_embedding
         )
 
         try:
@@ -496,9 +516,9 @@ class TestWarningFieldPropagation:
                 "/api/query",
                 json={
                     "query_text": "authentication",
-                    "time_range": "2024-01-01..2024-12-31"
+                    "time_range": "2024-01-01..2024-12-31",
                 },
-                headers={"Authorization": "Bearer fake-token"}
+                headers={"Authorization": "Bearer fake-token"},
             )
 
             # Assert

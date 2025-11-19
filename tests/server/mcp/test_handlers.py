@@ -21,7 +21,7 @@ class TestSearchCodeHandler:
             username="testuser",
             password_hash="fake_hash",
             role=UserRole.NORMAL_USER,
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.now(timezone.utc),
         )
 
     @pytest.mark.asyncio
@@ -32,11 +32,11 @@ class TestSearchCodeHandler:
             "query_text": "authentication",
             "limit": 10,
             "min_score": 0.5,
-            "search_mode": "semantic"
+            "search_mode": "semantic",
         }
 
         # Mock app-level activated_repo_manager
-        with patch('code_indexer.server.app.activated_repo_manager') as mock_repo_mgr:
+        with patch("code_indexer.server.app.activated_repo_manager") as mock_repo_mgr:
             mock_repo_mgr.list_activated_repositories.return_value = []
 
             # Act
@@ -46,7 +46,9 @@ class TestSearchCodeHandler:
             assert result["success"] is False
             assert "No activated repositories" in result["error"]
             assert result["results"] == []
-            mock_repo_mgr.list_activated_repositories.assert_called_once_with("testuser")
+            mock_repo_mgr.list_activated_repositories.assert_called_once_with(
+                "testuser"
+            )
 
 
 class TestDiscoverRepositoriesHandler:
@@ -59,7 +61,7 @@ class TestDiscoverRepositoriesHandler:
             username="testuser",
             password_hash="fake_hash",
             role=UserRole.NORMAL_USER,
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.now(timezone.utc),
         )
 
     @pytest.mark.asyncio

@@ -32,33 +32,29 @@ class TestSemanticSearchServiceBackendIntegration:
             # Create config.json with filesystem backend (ConfigManager expects JSON, not YAML)
             config_file = config_dir / "config.json"
             import json
+
             config_data = {
                 "embedding": {
                     "provider": "voyage",
                     "model": "voyage-3-large",
-                    "dimensions": 1024
+                    "dimensions": 1024,
                 },
-                "vector_store": {
-                    "provider": "filesystem"
-                },
+                "vector_store": {"provider": "filesystem"},
                 "chunking": {
                     "chunk_size": 512,
                     "chunk_overlap": 128,
                     "tree_sitter_config": {
-                        "python": {
-                            "enabled": True
-                        },
-                        "javascript": {
-                            "enabled": True
-                        }
-                    }
-                }
+                        "python": {"enabled": True},
+                        "javascript": {"enabled": True},
+                    },
+                },
             }
             config_file.write_text(json.dumps(config_data, indent=2))
 
             # Create a sample Python file to index
             sample_file = repo_path / "sample.py"
-            sample_file.write_text("""
+            sample_file.write_text(
+                """
 def authenticate_user(username, password):
     '''Authenticate user with credentials.'''
     if not username or not password:
@@ -70,7 +66,8 @@ def login_handler(request):
     username = request.get('username')
     password = request.get('password')
     return authenticate_user(username, password)
-""")
+"""
+            )
 
             yield str(repo_path)
 
@@ -95,17 +92,17 @@ def login_handler(request):
             qdrant_instantiation_count += 1
             return original_qdrant_init(self, *args, **kwargs)
 
-        with patch.object(QdrantClient, '__init__', tracked_init):
+        with patch.object(QdrantClient, "__init__", tracked_init):
             # Mock embedding to avoid Ollama connection issues
             mock_embedding_service = MagicMock()
             mock_embedding_service.get_embedding.return_value = [0.1] * 1024
 
-            with patch('src.code_indexer.server.services.search_service.EmbeddingProviderFactory.create',
-                      return_value=mock_embedding_service):
+            with patch(
+                "src.code_indexer.server.services.search_service.EmbeddingProviderFactory.create",
+                return_value=mock_embedding_service,
+            ):
                 search_request = SemanticSearchRequest(
-                    query="authentication logic",
-                    limit=5,
-                    include_source=True
+                    query="authentication logic", limit=5, include_source=True
                 )
 
                 try:

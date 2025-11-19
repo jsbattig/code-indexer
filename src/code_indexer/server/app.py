@@ -621,13 +621,16 @@ class SemanticQueryRequest(BaseModel):
         description="Time range filter (e.g., '2024-01-01..2024-12-31'). Requires temporal index.",
     )
     at_commit: Optional[str] = Field(
-        None, description="Query code at specific commit hash or ref. Requires temporal index."
+        None,
+        description="Query code at specific commit hash or ref. Requires temporal index.",
     )
     include_removed: bool = Field(
-        False, description="Include files removed from current HEAD. Requires temporal index."
+        False,
+        description="Include files removed from current HEAD. Requires temporal index.",
     )
     show_evolution: bool = Field(
-        False, description="Show code evolution timeline with diffs. Requires temporal index."
+        False,
+        description="Show code evolution timeline with diffs. Requires temporal index.",
     )
     evolution_limit: Optional[int] = Field(
         None, ge=1, description="Limit number of evolution entries. User-controlled."
@@ -710,7 +713,7 @@ class SemanticQueryResponse(BaseModel):
     query_metadata: QueryMetadata
     warning: Optional[str] = Field(
         default=None,
-        description="Warning message for graceful fallbacks (e.g., missing temporal index)"
+        description="Warning message for graceful fallbacks (e.g., missing temporal index)",
     )
 
 
@@ -1292,9 +1295,11 @@ def _get_composite_details(repo: ActivatedRepository) -> CompositeRepositoryDeta
 # Token blacklist for logout functionality (Story #491) - MODULE LEVEL
 token_blacklist: set[str] = set()
 
+
 def blacklist_token(jti: str) -> None:
     """Add token JTI to blacklist."""
     token_blacklist.add(jti)
+
 
 def is_token_blacklisted(jti: str) -> bool:
     """Check if token JTI is blacklisted."""
@@ -1377,10 +1382,9 @@ def create_app() -> FastAPI:
     # Initialize OAuth manager
     oauth_db_path = str(Path(server_data_dir) / "oauth.db")
     from .auth.oauth.oauth_manager import OAuthManager
+
     oauth_manager = OAuthManager(
-        db_path=oauth_db_path,
-        issuer=None,
-        user_manager=user_manager
+        db_path=oauth_db_path, issuer=None, user_manager=user_manager
     )
 
     golden_repo_manager = GoldenRepoManager()
@@ -2605,7 +2609,7 @@ def create_app() -> FastAPI:
     async def admin_jobs_stats(
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
-        current_user: dependencies.User = Depends(dependencies.get_current_admin_user)
+        current_user: dependencies.User = Depends(dependencies.get_current_admin_user),
     ):
         """Get job statistics for admin dashboard."""
         from datetime import datetime, timezone
@@ -2620,9 +2624,10 @@ def create_app() -> FastAPI:
             end_dt = datetime.fromisoformat(end_date) if end_date else None
 
             filtered_jobs = [
-                job for job in all_jobs
-                if (not start_dt or job.created_at >= start_dt) and
-                   (not end_dt or job.created_at <= end_dt)
+                job
+                for job in all_jobs
+                if (not start_dt or job.created_at >= start_dt)
+                and (not end_dt or job.created_at <= end_dt)
             ]
 
         # Calculate statistics
@@ -2644,7 +2649,9 @@ def create_app() -> FastAPI:
         completed_jobs = by_status.get("completed", 0)
         failed_jobs = by_status.get("failed", 0)
         total_finished = completed_jobs + failed_jobs
-        success_rate = (completed_jobs / total_finished * 100.0) if total_finished > 0 else 0.0
+        success_rate = (
+            (completed_jobs / total_finished * 100.0) if total_finished > 0 else 0.0
+        )
 
         # Calculate average duration for completed jobs
         durations = []
@@ -3922,21 +3929,19 @@ def create_app() -> FastAPI:
                 # Execute semantic search for hybrid or degraded mode
                 if search_mode_actual in ["semantic", "hybrid"]:
                     try:
-                        semantic_results_raw = (
-                            semantic_query_manager.query_user_repositories(
-                                username=current_user.username,
-                                query_text=request.query_text,
-                                repository_alias=request.repository_alias,
-                                limit=request.limit,
-                                min_score=request.min_score,
-                                file_extensions=request.file_extensions,
-                                # Temporal parameters (Story #446)
-                                time_range=request.time_range,
-                                at_commit=request.at_commit,
-                                include_removed=request.include_removed,
-                                show_evolution=request.show_evolution,
-                                evolution_limit=request.evolution_limit,
-                            )
+                        semantic_results_raw = semantic_query_manager.query_user_repositories(
+                            username=current_user.username,
+                            query_text=request.query_text,
+                            repository_alias=request.repository_alias,
+                            limit=request.limit,
+                            min_score=request.min_score,
+                            file_extensions=request.file_extensions,
+                            # Temporal parameters (Story #446)
+                            time_range=request.time_range,
+                            at_commit=request.at_commit,
+                            include_removed=request.include_removed,
+                            show_evolution=request.show_evolution,
+                            evolution_limit=request.evolution_limit,
                         )
                         semantic_results_list = [
                             QueryResultItem(**result)
@@ -3949,8 +3954,8 @@ def create_app() -> FastAPI:
                             status_code=status.HTTP_400_BAD_REQUEST,
                             detail={
                                 "error": "Invalid query parameters",
-                                "message": str(e)
-                            }
+                                "message": str(e),
+                            },
                         )
                     except Exception as e:
                         logger.error(f"Semantic search failed: {e}")
@@ -4009,10 +4014,7 @@ def create_app() -> FastAPI:
             logger.warning(f"Validation error in query: {e}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={
-                    "error": "Invalid query parameters",
-                    "message": str(e)
-                }
+                detail={"error": "Invalid query parameters", "message": str(e)},
             )
 
         except SemanticQueryError as e:
@@ -4769,16 +4771,18 @@ def create_app() -> FastAPI:
                 raise HTTPException(status_code=404, detail=f"File '{path}' not found")
 
             if not file_path.is_file():
-                raise HTTPException(status_code=400, detail=f"Path '{path}' is not a file")
+                raise HTTPException(
+                    status_code=400, detail=f"Path '{path}' is not a file"
+                )
 
             # Detect if binary
             try:
-                with open(file_path, 'rb') as f:
+                with open(file_path, "rb") as f:
                     chunk = f.read(8192)
-                    is_binary = b'\x00' in chunk
+                    is_binary = b"\x00" in chunk
                     if not is_binary:
                         try:
-                            chunk.decode('utf-8')
+                            chunk.decode("utf-8")
                         except UnicodeDecodeError:
                             is_binary = True
             except Exception:
@@ -4789,23 +4793,23 @@ def create_app() -> FastAPI:
                     "path": path,
                     "is_binary": True,
                     "size": file_path.stat().st_size,
-                    "content": None
+                    "content": None,
                 }
             else:
                 try:
-                    content_text = file_path.read_text(encoding='utf-8')
+                    content_text = file_path.read_text(encoding="utf-8")
                     return {
                         "path": path,
                         "is_binary": False,
                         "size": file_path.stat().st_size,
-                        "content": content_text
+                        "content": content_text,
                     }
                 except UnicodeDecodeError:
                     return {
                         "path": path,
                         "is_binary": True,
                         "size": file_path.stat().st_size,
-                        "content": None
+                        "content": None,
                     }
 
         # Check if this is a composite repository
@@ -4853,7 +4857,9 @@ def create_app() -> FastAPI:
                 sort_by=sort_by,
             )
 
-            file_list = file_service.list_files(repo_id, current_user.username, query_params)
+            file_list = file_service.list_files(
+                repo_id, current_user.username, query_params
+            )
             return file_list
 
         except FileNotFoundError:

@@ -172,14 +172,18 @@ class TestQueryResultAggregator:
         # Test with None
         output_none = aggregator.aggregate_results(repo_outputs, limit=None)
         lines_none = [
-            line for line in output_none.strip().split("\n") if line.strip() and line[0].isdigit()
+            line
+            for line in output_none.strip().split("\n")
+            if line.strip() and line[0].isdigit()
         ]
         assert len(lines_none) == 3
 
         # Test with 0
         output_zero = aggregator.aggregate_results(repo_outputs, limit=0)
         lines_zero = [
-            line for line in output_zero.strip().split("\n") if line.strip() and line[0].isdigit()
+            line
+            for line in output_zero.strip().split("\n")
+            if line.strip() and line[0].isdigit()
         ]
         assert len(lines_zero) == 3
 

@@ -27,8 +27,7 @@ class TestTemporalParameterValidation:
         """AC1: Test valid time_range format YYYY-MM-DD..YYYY-MM-DD"""
         # Arrange & Act
         request = SemanticQueryRequest(
-            query_text="test",
-            time_range="2024-01-01..2024-12-31"
+            query_text="test", time_range="2024-01-01..2024-12-31"
         )
 
         # Assert
@@ -38,10 +37,7 @@ class TestTemporalParameterValidation:
         """AC5: Test invalid month in time_range (>12) - should fail validation"""
         # Arrange, Act & Assert
         with pytest.raises(ValidationError) as exc_info:
-            SemanticQueryRequest(
-                query_text="test",
-                time_range="2024-13-01..2024-12-31"
-            )
+            SemanticQueryRequest(query_text="test", time_range="2024-13-01..2024-12-31")
 
         # Verify error mentions time_range
         error_msg = str(exc_info.value)

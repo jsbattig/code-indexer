@@ -4,7 +4,9 @@ import pytest
 from unittest.mock import MagicMock
 from pathlib import Path
 
-from src.code_indexer.services.temporal.temporal_search_service import TemporalSearchService
+from src.code_indexer.services.temporal.temporal_search_service import (
+    TemporalSearchService,
+)
 
 
 @pytest.fixture
@@ -24,7 +26,7 @@ def temporal_search_service(mock_config_manager):
         config_manager=mock_config_manager,
         project_root=Path("/tmp/test"),
         vector_store_client=MagicMock(),
-        embedding_provider=MagicMock()
+        embedding_provider=MagicMock(),
     )
 
 
@@ -58,7 +60,7 @@ class TestChunkTypeFiltering:
                     "commit_message": "Fix bug",
                     "path": "[commit:abc123]",
                 },
-                chunk_text="Fix authentication bug"
+                chunk_text="Fix authentication bug",
             ),
             MagicMock(
                 id="test:diff:def456:file.py:0",
@@ -73,8 +75,8 @@ class TestChunkTypeFiltering:
                     "path": "file.py",
                     "diff_type": "modified",
                 },
-                chunk_text="def authenticate():"
-            )
+                chunk_text="def authenticate():",
+            ),
         ]
 
         mock_embedding_provider.get_embedding.return_value = [0.1] * 1024
@@ -84,7 +86,7 @@ class TestChunkTypeFiltering:
             query="authentication",
             time_range=("2024-01-01", "2024-12-31"),
             limit=10,
-            chunk_type="commit_message"  # AC3: Filter to commit messages only
+            chunk_type="commit_message",  # AC3: Filter to commit messages only
         )
 
         # Assert: Should only return commit_message chunks
@@ -92,7 +94,9 @@ class TestChunkTypeFiltering:
         assert results.results[0].metadata["type"] == "commit_message"
         assert "Fix authentication bug" in results.results[0].content
 
-    def test_query_without_chunk_type_returns_mixed_results(self, temporal_search_service):
+    def test_query_without_chunk_type_returns_mixed_results(
+        self, temporal_search_service
+    ):
         """Test that query_temporal without chunk_type returns both chunk types.
 
         This test verifies AC2: Without chunk_type filter, results include both
@@ -119,7 +123,7 @@ class TestChunkTypeFiltering:
                     "commit_message": "Fix bug",
                     "path": "[commit:abc123]",
                 },
-                chunk_text="Fix authentication bug"
+                chunk_text="Fix authentication bug",
             ),
             MagicMock(
                 id="test:diff:def456:file.py:0",
@@ -134,8 +138,8 @@ class TestChunkTypeFiltering:
                     "path": "file.py",
                     "diff_type": "modified",
                 },
-                chunk_text="def authenticate():"
-            )
+                chunk_text="def authenticate():",
+            ),
         ]
 
         mock_embedding_provider.get_embedding.return_value = [0.1] * 1024
@@ -144,7 +148,7 @@ class TestChunkTypeFiltering:
         results = temporal_search_service.query_temporal(
             query="authentication",
             time_range=("2024-01-01", "2024-12-31"),
-            limit=10
+            limit=10,
             # AC2: No chunk_type specified - should return all types
         )
 
@@ -181,7 +185,7 @@ class TestChunkTypeFiltering:
                     "commit_message": "Fix bug",
                     "path": "[commit:abc123]",
                 },
-                chunk_text="Fix authentication bug"
+                chunk_text="Fix authentication bug",
             ),
             MagicMock(
                 id="test:commit:def456:1",
@@ -196,7 +200,7 @@ class TestChunkTypeFiltering:
                     "commit_message": "Update auth",
                     "path": "[commit:def456]",
                 },
-                chunk_text="Update authentication method"
+                chunk_text="Update authentication method",
             ),
             MagicMock(
                 id="test:diff:ghi789:file.py:0",
@@ -211,8 +215,8 @@ class TestChunkTypeFiltering:
                     "path": "file.py",
                     "diff_type": "modified",
                 },
-                chunk_text="def authenticate():"
-            )
+                chunk_text="def authenticate():",
+            ),
         ]
 
         mock_embedding_provider.get_embedding.return_value = [0.1] * 1024
@@ -223,7 +227,7 @@ class TestChunkTypeFiltering:
             time_range=("2024-01-01", "2024-12-31"),
             limit=10,
             chunk_type="commit_message",  # AC6: Filter to commit messages
-            author="Alice"  # AC6: Filter to Alice's commits
+            author="Alice",  # AC6: Filter to Alice's commits
         )
 
         # Assert: Should only return commit_message chunks from Alice

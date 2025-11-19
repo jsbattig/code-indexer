@@ -59,7 +59,7 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
                 "file_extensions": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Filter by file extensions (e.g., [\".py\", \".js\"]). Alternative to language filter when you need exact extension matching.",
+                    "description": 'Filter by file extensions (e.g., [".py", ".js"]). Alternative to language filter when you need exact extension matching.',
                 },
                 "accuracy": {
                     "type": "string",

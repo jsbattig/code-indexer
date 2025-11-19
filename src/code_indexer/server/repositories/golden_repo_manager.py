@@ -288,7 +288,9 @@ class GoldenRepoManager:
 
             # Perform cleanup BEFORE removing from memory
             try:
-                cleanup_successful = self._cleanup_repository_files(golden_repo.clone_path)
+                cleanup_successful = self._cleanup_repository_files(
+                    golden_repo.clone_path
+                )
             except GitOperationError as cleanup_error:
                 # Critical cleanup failures should prevent deletion
                 logging.error(

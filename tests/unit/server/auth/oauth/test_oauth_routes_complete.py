@@ -37,6 +37,7 @@ class TestAuthorizeEndpoint:
     def oauth_manager(self, temp_db_path):
         """Create OAuth manager instance for testing."""
         from code_indexer.server.auth.oauth.oauth_manager import OAuthManager
+
         return OAuthManager(db_path=temp_db_path, issuer="http://localhost:8000")
 
     @pytest.fixture
@@ -54,19 +55,26 @@ class TestAuthorizeEndpoint:
         """Register a test client."""
         return oauth_manager.register_client(
             client_name="Test Client",
-            redirect_uris=["https://example.com/callback", "https://app.example.com/oauth/callback"]
+            redirect_uris=[
+                "https://example.com/callback",
+                "https://app.example.com/oauth/callback",
+            ],
         )
 
     @pytest.fixture
     def pkce_pair(self):
         """Generate PKCE code verifier and challenge."""
         code_verifier = secrets.token_urlsafe(64)
-        code_challenge = base64.urlsafe_b64encode(
-            hashlib.sha256(code_verifier.encode()).digest()
-        ).decode().rstrip("=")
+        code_challenge = (
+            base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
+            .decode()
+            .rstrip("=")
+        )
         return code_verifier, code_challenge
 
-    def test_authorize_success_valid_client(self, oauth_manager, user_manager, registered_client, pkce_pair):
+    def test_authorize_success_valid_client(
+        self, oauth_manager, user_manager, registered_client, pkce_pair
+    ):
         """Test successful authorization with valid client and user."""
         code_verifier, code_challenge = pkce_pair
 
@@ -76,7 +84,7 @@ class TestAuthorizeEndpoint:
             user_id="testuser",
             code_challenge=code_challenge,
             redirect_uri="https://example.com/callback",
-            state="random_state_123"
+            state="random_state_123",
         )
 
         assert auth_code is not None

@@ -34,23 +34,26 @@ class TestChunkTypeMultipliers:
             config_manager=Mock(),
             project_root="/fake/path",
             vector_store_client=Mock(),
-            embedding_provider=Mock()
+            embedding_provider=Mock(),
         )
 
         # Mock vector_store_client.search to capture prefetch_limit and stop execution
         captured_prefetch_limit = None
+
         class PrefetchCaptured(Exception):
             """Exception to stop test execution after capturing prefetch_limit."""
+
             pass
 
         def mock_search(*args, **kwargs):
             nonlocal captured_prefetch_limit
-            captured_prefetch_limit = kwargs.get('prefetch_limit')
+            captured_prefetch_limit = kwargs.get("prefetch_limit")
             # Raise exception to stop execution (we only need to verify prefetch_limit)
             raise PrefetchCaptured()
 
         # Make isinstance check pass for FilesystemVectorStore
         from code_indexer.storage.filesystem_vector_store import FilesystemVectorStore
+
         service.vector_store_client = Mock(spec=FilesystemVectorStore)
         service.vector_store_client.search = mock_search
 
@@ -60,7 +63,7 @@ class TestChunkTypeMultipliers:
                 query="fix",
                 limit=20,
                 chunk_type="commit_message",
-                time_range=("1970-01-01", "2100-12-31")  # ALL_TIME_RANGE
+                time_range=("1970-01-01", "2100-12-31"),  # ALL_TIME_RANGE
             )
         except PrefetchCaptured:
             pass  # Expected - we only need prefetch_limit

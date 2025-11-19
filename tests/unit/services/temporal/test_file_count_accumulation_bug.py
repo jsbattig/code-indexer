@@ -171,15 +171,15 @@ class TestFileCountLogicBug:
             files_count_fixed = len(diffs)  # Line 600 (CORRECT)
 
             # ASSERT: Fixed version is immediately correct
-            assert files_count_fixed == len(diffs), (
-                f"Fixed version should immediately equal len(diffs)={len(diffs)}"
-            )
+            assert files_count_fixed == len(
+                diffs
+            ), f"Fixed version should immediately equal len(diffs)={len(diffs)}"
 
             # Buggy version starts wrong (for non-empty diffs)
             if diffs:
-                assert files_count_buggy != len(diffs), (
-                    f"Buggy version starts at 0, not len(diffs)={len(diffs)}"
-                )
+                assert files_count_buggy != len(
+                    diffs
+                ), f"Buggy version starts at 0, not len(diffs)={len(diffs)}"
             else:
                 # For empty diffs, 0 happens to be correct
                 assert files_count_buggy == 0

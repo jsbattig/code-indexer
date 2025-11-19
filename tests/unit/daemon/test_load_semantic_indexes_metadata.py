@@ -62,7 +62,9 @@ class TestLoadSemanticIndexesMetadata:
             mock_hnsw_manager_class.return_value = mock_hnsw_manager
 
             mock_id_manager = Mock()
-            mock_id_manager.load_index.return_value = {"point_1": Path("/tmp/test.json")}
+            mock_id_manager.load_index.return_value = {
+                "point_1": Path("/tmp/test.json")
+            }
             mock_id_manager_class.return_value = mock_id_manager
 
             # Execute _load_semantic_indexes

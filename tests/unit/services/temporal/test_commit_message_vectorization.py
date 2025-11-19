@@ -30,14 +30,19 @@ def test_commit_message_chunk_created_with_type_commit_message():
     mock_config_manager.get_config.return_value = mock_config
 
     from pathlib import Path
+
     mock_vector_store = Mock()
     mock_vector_store.project_root = Path("/tmp/test_repo")
     mock_vector_store.base_path = Path("/tmp/.code-indexer/index")
     mock_vector_store.collection_exists.return_value = True
     mock_vector_store.load_id_index.return_value = set()
 
-    with patch('src.code_indexer.services.temporal.temporal_indexer.TemporalDiffScanner'):
-        with patch('src.code_indexer.services.temporal.temporal_indexer.FileIdentifier'):
+    with patch(
+        "src.code_indexer.services.temporal.temporal_indexer.TemporalDiffScanner"
+    ):
+        with patch(
+            "src.code_indexer.services.temporal.temporal_indexer.FileIdentifier"
+        ):
             temporal_indexer = TemporalIndexer(mock_config_manager, mock_vector_store)
 
     commit = CommitInfo(
@@ -46,7 +51,7 @@ def test_commit_message_chunk_created_with_type_commit_message():
         author_name="John Doe",
         author_email="john@example.com",
         message="Fix authentication timeout bug",
-        parent_hashes="parent123"
+        parent_hashes="parent123",
     )
 
     project_id = "test-project"
@@ -72,11 +77,11 @@ def test_commit_message_chunk_created_with_type_commit_message():
     # Assert
     assert mock_vector_store.upsert_points.called
     call_args = mock_vector_store.upsert_points.call_args
-    points = call_args[1]['points']
+    points = call_args[1]["points"]
     assert len(points) > 0
 
-    payload = points[0]['payload']
-    assert payload['type'] == 'commit_message'
+    payload = points[0]["payload"]
+    assert payload["type"] == "commit_message"
 
 
 def test_commit_message_payload_includes_all_required_metadata():
@@ -107,8 +112,12 @@ def test_commit_message_payload_includes_all_required_metadata():
     mock_vector_store.collection_exists.return_value = True
     mock_vector_store.load_id_index.return_value = set()
 
-    with patch('src.code_indexer.services.temporal.temporal_indexer.TemporalDiffScanner'):
-        with patch('src.code_indexer.services.temporal.temporal_indexer.FileIdentifier'):
+    with patch(
+        "src.code_indexer.services.temporal.temporal_indexer.TemporalDiffScanner"
+    ):
+        with patch(
+            "src.code_indexer.services.temporal.temporal_indexer.FileIdentifier"
+        ):
             temporal_indexer = TemporalIndexer(mock_config_manager, mock_vector_store)
 
     commit = CommitInfo(
@@ -117,7 +126,7 @@ def test_commit_message_payload_includes_all_required_metadata():
         author_name="Jane Smith",
         author_email="jane@example.com",
         message="Refactor database connection pooling",
-        parent_hashes="parent456"
+        parent_hashes="parent456",
     )
 
     project_id = "test-project"
@@ -142,21 +151,21 @@ def test_commit_message_payload_includes_all_required_metadata():
 
     # Assert
     call_args = mock_vector_store.upsert_points.call_args
-    points = call_args[1]['points']
-    payload = points[0]['payload']
+    points = call_args[1]["points"]
+    payload = points[0]["payload"]
 
     # AC1: Verify all required metadata fields exist
-    assert 'commit_hash' in payload
-    assert payload['commit_hash'] == commit.hash
+    assert "commit_hash" in payload
+    assert payload["commit_hash"] == commit.hash
 
-    assert 'commit_timestamp' in payload
-    assert payload['commit_timestamp'] == commit.timestamp
+    assert "commit_timestamp" in payload
+    assert payload["commit_timestamp"] == commit.timestamp
 
-    assert 'commit_date' in payload
-    assert payload['commit_date'] == '2023-11-10'  # YYYY-MM-DD format
+    assert "commit_date" in payload
+    assert payload["commit_date"] == "2023-11-10"  # YYYY-MM-DD format
 
-    assert 'author_name' in payload
-    assert payload['author_name'] == commit.author_name
+    assert "author_name" in payload
+    assert payload["author_name"] == commit.author_name
 
-    assert 'author_email' in payload
-    assert payload['author_email'] == commit.author_email
+    assert "author_email" in payload
+    assert payload["author_email"] == commit.author_email

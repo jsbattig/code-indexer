@@ -77,7 +77,7 @@ class TestMappingFiles:
 
             create_mapping_file(repo_path, socket_path)
 
-            mapping_path = socket_path.with_suffix('.repo-path')
+            mapping_path = socket_path.with_suffix(".repo-path")
             assert mapping_path.exists()
             assert mapping_path.read_text().strip() == str(repo_path.resolve())
 
@@ -190,7 +190,9 @@ class TestSocketPathGeneration:
         """generate_socket_path should ensure directory exists."""
         with tempfile.TemporaryDirectory() as tmpdir:
             # Use a custom temp directory for testing
-            with patch('code_indexer.daemon.socket_helper.get_socket_directory') as mock_get_dir:
+            with patch(
+                "code_indexer.daemon.socket_helper.get_socket_directory"
+            ) as mock_get_dir:
                 test_socket_dir = Path(tmpdir) / "test_cidx"
                 mock_get_dir.return_value = test_socket_dir
 
@@ -208,4 +210,4 @@ class TestSocketPathGeneration:
             repo_path = Path(tmpdir)
             hash_str = generate_repo_hash(repo_path)
             assert len(hash_str) == 16
-            assert all(c in '0123456789abcdef' for c in hash_str)
+            assert all(c in "0123456789abcdef" for c in hash_str)

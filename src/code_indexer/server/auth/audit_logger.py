@@ -355,7 +355,12 @@ class PasswordChangeAuditLogger:
         self.audit_logger.info(f"PASSWORD_RESET_ATTEMPT: {json.dumps(log_entry)}")
 
     def log_oauth_client_registration(
-        self, client_id, client_name, ip_address, user_agent=None, additional_context=None
+        self,
+        client_id,
+        client_name,
+        ip_address,
+        user_agent=None,
+        additional_context=None,
     ):
         """Log OAuth client registration."""
         log_entry = {
@@ -385,7 +390,13 @@ class PasswordChangeAuditLogger:
         self.audit_logger.info(f"OAUTH_AUTHORIZATION: {json.dumps(log_entry)}")
 
     def log_oauth_token_exchange(
-        self, username, client_id, grant_type, ip_address, user_agent=None, additional_context=None
+        self,
+        username,
+        client_id,
+        grant_type,
+        ip_address,
+        user_agent=None,
+        additional_context=None,
     ):
         """Log OAuth token exchange."""
         log_entry = {

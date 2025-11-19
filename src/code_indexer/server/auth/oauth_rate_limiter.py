@@ -12,7 +12,7 @@ from threading import Lock
 class OAuthTokenRateLimiter:
     """
     Rate limiter for /oauth/token endpoint.
-    
+
     Security requirements:
     - Maximum 10 failed attempts per client
     - 5-minute lockout period after exceeding limit
@@ -28,10 +28,10 @@ class OAuthTokenRateLimiter:
     def check_rate_limit(self, client_id: str) -> Optional[str]:
         """
         Check if client is rate limited.
-        
+
         Args:
             client_id: Client ID to check
-            
+
         Returns:
             None if not rate limited, error message if rate limited
         """
@@ -54,10 +54,10 @@ class OAuthTokenRateLimiter:
     def record_failed_attempt(self, client_id: str) -> bool:
         """
         Record a failed token request attempt.
-        
+
         Args:
             client_id: Client ID that failed
-            
+
         Returns:
             True if client should be locked out, False otherwise
         """
@@ -90,7 +90,7 @@ class OAuthTokenRateLimiter:
     def record_successful_attempt(self, client_id: str) -> None:
         """
         Record a successful token request (clears rate limiting).
-        
+
         Args:
             client_id: Client ID that succeeded
         """
@@ -114,7 +114,7 @@ class OAuthTokenRateLimiter:
 class OAuthRegisterRateLimiter:
     """
     Rate limiter for /oauth/register endpoint.
-    
+
     Security requirements:
     - Maximum 5 failed attempts per IP
     - 15-minute lockout period after exceeding limit
@@ -130,10 +130,10 @@ class OAuthRegisterRateLimiter:
     def check_rate_limit(self, ip_address: str) -> Optional[str]:
         """
         Check if IP is rate limited.
-        
+
         Args:
             ip_address: IP address to check
-            
+
         Returns:
             None if not rate limited, error message if rate limited
         """
@@ -156,10 +156,10 @@ class OAuthRegisterRateLimiter:
     def record_failed_attempt(self, ip_address: str) -> bool:
         """
         Record a failed registration attempt.
-        
+
         Args:
             ip_address: IP address that failed
-            
+
         Returns:
             True if IP should be locked out, False otherwise
         """
@@ -192,7 +192,7 @@ class OAuthRegisterRateLimiter:
     def record_successful_attempt(self, ip_address: str) -> None:
         """
         Record a successful registration (clears rate limiting).
-        
+
         Args:
             ip_address: IP address that succeeded
         """

@@ -39,7 +39,9 @@ class TestActivatedRepoSearchIssue500:
         golden_path.mkdir(parents=True, exist_ok=True)
 
         # Initialize git repo
-        subprocess.run(["git", "init"], cwd=golden_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "init"], cwd=golden_path, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "config", "user.email", "test@example.com"],
             cwd=golden_path,
@@ -54,7 +56,8 @@ class TestActivatedRepoSearchIssue500:
         )
 
         # Create Python files with searchable content
-        (golden_path / "auth.py").write_text("""
+        (golden_path / "auth.py").write_text(
+            """
 def authenticate_user(username, password):
     '''Authenticate user with credentials'''
     # Verify username and password against database
@@ -64,9 +67,11 @@ def verify_token(token):
     '''Verify JWT token validity'''
     # Check token signature and expiration
     pass
-""")
+"""
+        )
 
-        (golden_path / "database.py").write_text("""
+        (golden_path / "database.py").write_text(
+            """
 import sqlite3
 
 def connect_database(db_path):
@@ -78,10 +83,13 @@ def execute_query(conn, query):
     cursor = conn.cursor()
     cursor.execute(query)
     return cursor.fetchall()
-""")
+"""
+        )
 
         # Commit files
-        subprocess.run(["git", "add", "."], cwd=golden_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "add", "."], cwd=golden_path, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "commit", "-m", "Add code files"],
             cwd=golden_path,
@@ -113,15 +121,23 @@ def execute_query(conn, query):
             index_dir.mkdir(parents=True, exist_ok=True)
 
             # Create mock vector file
-            (index_dir / "vectors_000.json").write_text(json.dumps({
-                "vectors": [
+            (index_dir / "vectors_000.json").write_text(
+                json.dumps(
                     {
-                        "id": "auth.py:1",
-                        "vector": [0.1] * 1024,
-                        "metadata": {"file": "auth.py", "content": "authenticate_user"},
+                        "vectors": [
+                            {
+                                "id": "auth.py:1",
+                                "vector": [0.1] * 1024,
+                                "metadata": {
+                                    "file": "auth.py",
+                                    "content": "authenticate_user",
+                                },
+                            },
+                        ]
                     },
-                ]
-            }, indent=2))
+                    indent=2,
+                )
+            )
 
             # Create metadata
             metadata = {
@@ -129,7 +145,9 @@ def execute_query(conn, query):
                 "total_chunks": 2,
                 "last_indexed": datetime.now(timezone.utc).isoformat(),
             }
-            (code_indexer_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
+            (code_indexer_dir / "metadata.json").write_text(
+                json.dumps(metadata, indent=2)
+            )
 
         return golden_path
 
@@ -198,7 +216,9 @@ def execute_query(conn, query):
         assert result["success"] is True
 
         # Get activated repo path
-        activated_repo_path = Path(temp_data_dir) / "activated-repos" / username / user_alias
+        activated_repo_path = (
+            Path(temp_data_dir) / "activated-repos" / username / user_alias
+        )
 
         # Verify .code-indexer/ directory was copied
         code_indexer_dir = activated_repo_path / ".code-indexer"
@@ -216,9 +236,7 @@ def execute_query(conn, query):
 
         # Verify config.json was copied and is valid
         config_file = code_indexer_dir / "config.json"
-        assert config_file.exists(), (
-            "FAILURE: config.json NOT copied from golden repo!"
-        )
+        assert config_file.exists(), "FAILURE: config.json NOT copied from golden repo!"
 
         # Note: We skip the actual cidx query test here because:
         # 1. It requires VOYAGE_API_KEY to index (not available in CI)
@@ -249,25 +267,27 @@ def execute_query(conn, query):
         )
 
         # Get activated repo path
-        activated_repo_path = Path(temp_data_dir) / "activated-repos" / username / user_alias
+        activated_repo_path = (
+            Path(temp_data_dir) / "activated-repos" / username / user_alias
+        )
 
         # Verify .code-indexer/ directory exists
         code_indexer_dir = activated_repo_path / ".code-indexer"
-        assert code_indexer_dir.exists(), (
-            "FAILURE: .code-indexer/ directory NOT copied!"
-        )
+        assert (
+            code_indexer_dir.exists()
+        ), "FAILURE: .code-indexer/ directory NOT copied!"
 
         # Verify critical files/dirs were copied
-        assert (code_indexer_dir / "config.json").exists(), (
-            "config.json must be copied from golden repo"
-        )
+        assert (
+            code_indexer_dir / "config.json"
+        ).exists(), "config.json must be copied from golden repo"
 
-        assert (code_indexer_dir / "index").exists(), (
-            "index/ directory must be copied from golden repo"
-        )
+        assert (
+            code_indexer_dir / "index"
+        ).exists(), "index/ directory must be copied from golden repo"
 
         # Verify metadata.json exists (created by cidx init or cidx fix-config)
         metadata_file = code_indexer_dir / "metadata.json"
-        assert metadata_file.exists(), (
-            "metadata.json missing - should be created by cidx init or cidx fix-config"
-        )
+        assert (
+            metadata_file.exists()
+        ), "metadata.json missing - should be created by cidx init or cidx fix-config"

@@ -19,13 +19,14 @@ async def get_repo_id_from_alias(user_alias: str, project_root: Path) -> str:
         await client.close()
 
 
-def get_repo_id_from_alias_sync(server_url: str, credentials: dict, user_alias: str, project_root: Path) -> str:
+def get_repo_id_from_alias_sync(
+    server_url: str, credentials: dict, user_alias: str, project_root: Path
+) -> str:
     """Get repository ID from user alias (synchronous version for CLI commands)."""
+
     async def fetch() -> str:
         client = ReposAPIClient(
-            server_url=server_url,
-            credentials=credentials,
-            project_root=project_root
+            server_url=server_url, credentials=credentials, project_root=project_root
         )
         try:
             repos = await client.list_activated_repositories()
@@ -60,7 +61,11 @@ def display_file_tree(files: list, base_path: str = ""):
     # Separate directories and files
     # Note: API returns files without 'type' field, only directories have is_directory=True
     dirs = [f for f in files if f.get("type") == "directory" or f.get("is_directory")]
-    regular_files = [f for f in files if f.get("type") == "file" or (not f.get("is_directory", False))]
+    regular_files = [
+        f
+        for f in files
+        if f.get("type") == "file" or (not f.get("is_directory", False))
+    ]
 
     # Sort alphabetically - handle both 'name' and 'path' fields
     dirs.sort(key=lambda x: x.get("path", x.get("name", "")))

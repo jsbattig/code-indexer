@@ -21,4 +21,6 @@ class TestClientRegistrationValidation:
     def test_register_client_rejects_empty_client_name(self, oauth_manager):
         """Test that register_client rejects empty client_name."""
         with pytest.raises(OAuthError, match="client_name cannot be empty"):
-            oauth_manager.register_client(client_name="", redirect_uris=["https://example.com"])
+            oauth_manager.register_client(
+                client_name="", redirect_uris=["https://example.com"]
+            )

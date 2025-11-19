@@ -100,7 +100,9 @@ class TestGoldenRepoManager:
                     golden_repo_manager, "_execute_post_clone_workflow"
                 ) as mock_workflow:
                     mock_workflow.return_value = None
-                    with patch.object(golden_repo_manager, "_get_repository_size") as mock_size:
+                    with patch.object(
+                        golden_repo_manager, "_get_repository_size"
+                    ) as mock_size:
                         mock_size.return_value = 1000  # Small repo
 
                         result = golden_repo_manager.add_golden_repo(
@@ -125,6 +127,7 @@ class TestGoldenRepoManager:
         """Test adding golden repository with duplicate alias fails."""
         # Manually add a repo to test duplicate alias validation
         from datetime import datetime, timezone
+
         test_repo = GoldenRepo(
             alias="test-repo",
             repo_url=valid_git_repo_url,
@@ -372,7 +375,9 @@ class TestGoldenRepoManager:
                         assert isinstance(job_id, str)
 
                         # Execute the background worker to trigger the exception
-                        call_args = golden_repo_manager.background_job_manager.submit_job.call_args
+                        call_args = (
+                            golden_repo_manager.background_job_manager.submit_job.call_args
+                        )
                         background_worker = call_args[1]["func"]
 
                         with pytest.raises(
@@ -560,7 +565,9 @@ class TestGoldenRepoManager:
 
                         # Verify the fixed regular copy method was called
                         # (Execution happens in background worker, but validation already passed)
-                        assert golden_repo_manager.background_job_manager.submit_job.called
+                        assert (
+                            golden_repo_manager.background_job_manager.submit_job.called
+                        )
 
     def test_should_not_use_cow_for_golden_repo_registration(self, golden_repo_manager):
         """

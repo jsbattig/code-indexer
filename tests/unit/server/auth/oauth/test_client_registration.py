@@ -32,7 +32,7 @@ class TestClientRegistration:
         """Test that client registration generates a unique client_id."""
         result = oauth_manager.register_client(
             client_name="Claude.ai MCP Client",
-            redirect_uris=["https://claude.ai/oauth/callback"]
+            redirect_uris=["https://claude.ai/oauth/callback"],
         )
 
         assert "client_id" in result

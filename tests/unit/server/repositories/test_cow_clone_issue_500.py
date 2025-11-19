@@ -37,7 +37,9 @@ class TestCowCloneIssue500:
         golden_path.mkdir(parents=True, exist_ok=True)
 
         # Initialize git repo
-        subprocess.run(["git", "init"], cwd=golden_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "init"], cwd=golden_path, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "config", "user.email", "test@example.com"],
             cwd=golden_path,
@@ -52,14 +54,18 @@ class TestCowCloneIssue500:
         )
 
         # Create Python files with searchable content
-        (golden_path / "auth.py").write_text("""
+        (golden_path / "auth.py").write_text(
+            """
 def authenticate_user(username, password):
     '''Authenticate user with credentials'''
     pass
-""")
+"""
+        )
 
         # Commit files
-        subprocess.run(["git", "add", "."], cwd=golden_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "add", "."], cwd=golden_path, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "commit", "-m", "Add code files"],
             cwd=golden_path,
@@ -84,11 +90,20 @@ def authenticate_user(username, password):
         index_dir.mkdir(parents=True, exist_ok=True)
 
         # Create mock vector files (simulating real indexes)
-        (index_dir / "vectors_000.json").write_text(json.dumps({
-            "vectors": [
-                {"id": "auth.py:1", "vector": [0.1] * 1024, "metadata": {"file": "auth.py"}},
-            ]
-        }, indent=2))
+        (index_dir / "vectors_000.json").write_text(
+            json.dumps(
+                {
+                    "vectors": [
+                        {
+                            "id": "auth.py:1",
+                            "vector": [0.1] * 1024,
+                            "metadata": {"file": "auth.py"},
+                        },
+                    ]
+                },
+                indent=2,
+            )
+        )
 
         # Create metadata file
         metadata = {
@@ -160,7 +175,9 @@ def authenticate_user(username, password):
         assert result["success"] is True
 
         # Get activated repo path
-        activated_repo_path = Path(temp_data_dir) / "activated-repos" / username / user_alias
+        activated_repo_path = (
+            Path(temp_data_dir) / "activated-repos" / username / user_alias
+        )
 
         # CRITICAL ASSERTION: .code-indexer/ directory MUST exist
         code_indexer_dir = activated_repo_path / ".code-indexer"
@@ -172,13 +189,11 @@ def authenticate_user(username, password):
 
         # Verify config.json exists
         config_file = code_indexer_dir / "config.json"
-        assert config_file.exists(), (
-            ".code-indexer/config.json must exist (copied from golden repo)"
-        )
+        assert (
+            config_file.exists()
+        ), ".code-indexer/config.json must exist (copied from golden repo)"
 
-    def test_cow_clone_copies_indexes(
-        self, activated_repo_manager, temp_data_dir
-    ):
+    def test_cow_clone_copies_indexes(self, activated_repo_manager, temp_data_dir):
         """
         CRITICAL TEST: Verify CoW clone copies index files.
 
@@ -202,7 +217,9 @@ def authenticate_user(username, password):
         assert result["success"] is True
 
         # Get activated repo path
-        activated_repo_path = Path(temp_data_dir) / "activated-repos" / username / user_alias
+        activated_repo_path = (
+            Path(temp_data_dir) / "activated-repos" / username / user_alias
+        )
 
         # CRITICAL ASSERTION: index directory MUST exist with vector files
         index_dir = activated_repo_path / ".code-indexer" / "index" / "default"
@@ -220,9 +237,7 @@ def authenticate_user(username, password):
 
         # Verify metadata.json exists
         metadata_file = activated_repo_path / ".code-indexer" / "metadata.json"
-        assert metadata_file.exists(), (
-            "metadata.json must be copied from golden repo"
-        )
+        assert metadata_file.exists(), "metadata.json must be copied from golden repo"
 
     def test_git_operations_clean_status_after_cow_clone(
         self, activated_repo_manager, temp_data_dir
@@ -253,7 +268,9 @@ def authenticate_user(username, password):
         assert result["success"] is True
 
         # Get activated repo path
-        activated_repo_path = Path(temp_data_dir) / "activated-repos" / username / user_alias
+        activated_repo_path = (
+            Path(temp_data_dir) / "activated-repos" / username / user_alias
+        )
 
         # Run git status to check for modified files
         git_status = subprocess.run(
@@ -265,12 +282,17 @@ def authenticate_user(username, password):
         )
 
         # Parse git status output
-        status_lines = [line.strip() for line in git_status.stdout.strip().split('\n') if line.strip()]
+        status_lines = [
+            line.strip()
+            for line in git_status.stdout.strip().split("\n")
+            if line.strip()
+        ]
 
         # Filter out .code-indexer/ (it's gitignored, so ?? is expected)
         modified_files = [
-            line for line in status_lines
-            if not line.endswith('.code-indexer/') and line.strip()
+            line
+            for line in status_lines
+            if not line.endswith(".code-indexer/") and line.strip()
         ]
 
         # CRITICAL ASSERTION: No tracked files should be modified
@@ -281,9 +303,7 @@ def authenticate_user(username, password):
             f"Note: .code-indexer/ being untracked is OK (it's gitignored)."
         )
 
-    def test_cidx_fix_config_updates_paths(
-        self, activated_repo_manager, temp_data_dir
-    ):
+    def test_cidx_fix_config_updates_paths(self, activated_repo_manager, temp_data_dir):
         """
         TEST: Verify cidx fix-config updates cloned config paths.
 
@@ -307,13 +327,15 @@ def authenticate_user(username, password):
         assert result["success"] is True
 
         # Get activated repo path
-        activated_repo_path = Path(temp_data_dir) / "activated-repos" / username / user_alias
+        activated_repo_path = (
+            Path(temp_data_dir) / "activated-repos" / username / user_alias
+        )
 
         # Load config.json
         config_file = activated_repo_path / ".code-indexer" / "config.json"
         assert config_file.exists(), "config.json must exist"
 
-        with open(config_file, 'r') as f:
+        with open(config_file, "r") as f:
             config_data = json.load(f)
 
         # Verify codebase_dir points to activated repo (not golden repo)

@@ -285,6 +285,7 @@ class TestToolsCallHandler:
 
         # Parse the JSON text to check the actual data
         import json
+
         data = json.loads(result["content"][0]["text"])
         assert data["success"] is True
         assert "repositories" in data
@@ -312,6 +313,7 @@ class TestToolsCallHandler:
 
         # Parse the JSON text to check the actual data
         import json
+
         data = json.loads(result["content"][0]["text"])
         assert data["success"] is True
         assert "repositories" in data

@@ -137,11 +137,15 @@ class TestDebugLogPathIntegration:
 
         # Simulate debug logging
         with open(log_path, "a") as f:
-            f.write("VectorCalc: Processing batch abc123 with 10 chunks - STARTING API call\n")
+            f.write(
+                "VectorCalc: Processing batch abc123 with 10 chunks - STARTING API call\n"
+            )
             f.flush()
 
         with open(log_path, "a") as f:
-            f.write("VectorCalc: Batch abc123 COMPLETED in 1.23s - returned 10 embeddings\n")
+            f.write(
+                "VectorCalc: Batch abc123 COMPLETED in 1.23s - returned 10 embeddings\n"
+            )
             f.flush()
 
         # Verify logs were written
@@ -160,7 +164,9 @@ class TestDebugLogPathIntegration:
 
         # Simulate debug logging
         with open(log_path, "a") as f:
-            f.write("Commit abc12345: Processing 3 batch(es) with 150 total chunks (max 10 concurrent)\n")
+            f.write(
+                "Commit abc12345: Processing 3 batch(es) with 150 total chunks (max 10 concurrent)\n"
+            )
             f.flush()
 
         with open(log_path, "a") as f:

@@ -30,7 +30,11 @@ class TestTokenBlacklist:
 
     def test_is_token_blacklisted_returns_true_for_blacklisted(self):
         """Test that is_token_blacklisted returns True for blacklisted tokens."""
-        from src.code_indexer.server.app import blacklist_token, is_token_blacklisted, token_blacklist
+        from src.code_indexer.server.app import (
+            blacklist_token,
+            is_token_blacklisted,
+            token_blacklist,
+        )
 
         # Clear blacklist
         token_blacklist.clear()
@@ -55,7 +59,7 @@ class TestJWTWithJTI:
         user_data = {
             "username": "testuser",
             "role": "standard",
-            "created_at": "2024-01-01T00:00:00Z"
+            "created_at": "2024-01-01T00:00:00Z",
         }
 
         token = jwt_manager.create_token(user_data)
@@ -88,20 +92,20 @@ class TestJWTWithJTI:
             role=UserRole.NORMAL_USER,
             created_at="2024-01-01T00:00:00Z",
             email="test@example.com",
-            password_hash="fakehash"
+            password_hash="fakehash",
         )
         test_user_manager.get_user.return_value = test_user
 
         # Set global managers
         import src.code_indexer.server.auth.dependencies as deps
+
         deps.jwt_manager = test_jwt_manager
         deps.user_manager = test_user_manager
 
         # Create token
-        token = test_jwt_manager.create_token({
-            "username": "testuser",
-            "role": "normal_user"
-        })
+        token = test_jwt_manager.create_token(
+            {"username": "testuser", "role": "normal_user"}
+        )
 
         # Verify token works initially
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
@@ -150,13 +154,14 @@ class TestLogoutEndpoint:
             role=UserRole.NORMAL_USER,
             created_at="2024-01-01T00:00:00Z",
             email="test@example.com",
-            password_hash="fakehash"
+            password_hash="fakehash",
         )
 
         app = create_app()
 
         # Override the dependency
         from src.code_indexer.server.auth.dependencies import get_current_user
+
         app.dependency_overrides[get_current_user] = lambda: mock_user
 
         client = TestClient(app)
@@ -184,15 +189,14 @@ class TestLogoutEndpoint:
             role=UserRole.NORMAL_USER,
             created_at="2024-01-01T00:00:00Z",
             email="test@example.com",
-            password_hash="fakehash"
+            password_hash="fakehash",
         )
 
         # Create JWT manager and token with JTI
         test_jwt_manager = JWTManager(secret_key="test-secret")
-        token = test_jwt_manager.create_token({
-            "username": "testuser",
-            "role": "normal_user"
-        })
+        token = test_jwt_manager.create_token(
+            {"username": "testuser", "role": "normal_user"}
+        )
 
         # Get JTI from token
         payload = test_jwt_manager.validate_token(token)
@@ -202,6 +206,7 @@ class TestLogoutEndpoint:
         app = create_app()
 
         import src.code_indexer.server.app as app_module
+
         original_jwt = app_module.jwt_manager
         app_module.jwt_manager = test_jwt_manager
 
@@ -212,15 +217,17 @@ class TestLogoutEndpoint:
             return mock_user
 
         app.dependency_overrides[
-            __import__('src.code_indexer.server.auth.dependencies', fromlist=['get_current_user']).get_current_user
+            __import__(
+                "src.code_indexer.server.auth.dependencies",
+                fromlist=["get_current_user"],
+            ).get_current_user
         ] = mock_get_current_user_with_token
 
         client = TestClient(app)
 
         # Call logout with the token
         response = client.post(
-            "/api/auth/logout",
-            headers={"Authorization": f"Bearer {token}"}
+            "/api/auth/logout", headers={"Authorization": f"Bearer {token}"}
         )
 
         # Should return 200
@@ -243,10 +250,9 @@ class TestLogoutEndpoint:
 
         # Create JWT manager and token with JTI
         test_jwt_manager = JWTManager(secret_key="test-secret")
-        token = test_jwt_manager.create_token({
-            "username": "testuser",
-            "role": "normal_user"
-        })
+        token = test_jwt_manager.create_token(
+            {"username": "testuser", "role": "normal_user"}
+        )
 
         # Get JTI from token
         payload = test_jwt_manager.validate_token(token)
@@ -257,6 +263,7 @@ class TestLogoutEndpoint:
 
         # Set the global jwt_manager
         import src.code_indexer.server.app as app_module
+
         original_jwt = app_module.jwt_manager
         app_module.jwt_manager = test_jwt_manager
 
@@ -266,7 +273,7 @@ class TestLogoutEndpoint:
             role=UserRole.NORMAL_USER,
             created_at="2024-01-01T00:00:00Z",
             email="test@example.com",
-            password_hash="fakehash"
+            password_hash="fakehash",
         )
 
         # Override get_current_user to return mock user but NOT set request.state.token
@@ -275,15 +282,17 @@ class TestLogoutEndpoint:
             return mock_user
 
         app.dependency_overrides[
-            __import__('src.code_indexer.server.auth.dependencies', fromlist=['get_current_user']).get_current_user
+            __import__(
+                "src.code_indexer.server.auth.dependencies",
+                fromlist=["get_current_user"],
+            ).get_current_user
         ] = mock_get_current_user
 
         client = TestClient(app)
 
         # Call logout with the token
         response = client.post(
-            "/api/auth/logout",
-            headers={"Authorization": f"Bearer {token}"}
+            "/api/auth/logout", headers={"Authorization": f"Bearer {token}"}
         )
 
         # Should return 200

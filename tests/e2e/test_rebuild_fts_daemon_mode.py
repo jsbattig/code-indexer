@@ -30,7 +30,14 @@ class TestRebuildFTSDaemonMode:
 
             # Initialize
             result = subprocess.run(
-                [sys.executable, "-m", "code_indexer.cli", "init", "--vector-store", "filesystem"],
+                [
+                    sys.executable,
+                    "-m",
+                    "code_indexer.cli",
+                    "init",
+                    "--vector-store",
+                    "filesystem",
+                ],
                 cwd=project_dir,
                 capture_output=True,
                 text=True,
@@ -50,16 +57,31 @@ class TestRebuildFTSDaemonMode:
 
             # Create progress file
             progress_file = config_dir / "indexing_progress.json"
-            progress_file.write_text(json.dumps({
-                "current_session": {"session_id": "test", "operation_type": "full",
-                                  "embedding_provider": "voyage-ai", "embedding_model": "voyage-code-3",
-                                  "total_files": 1, "files_completed": 1},
-                "file_records": {}
-            }))
+            progress_file.write_text(
+                json.dumps(
+                    {
+                        "current_session": {
+                            "session_id": "test",
+                            "operation_type": "full",
+                            "embedding_provider": "voyage-ai",
+                            "embedding_model": "voyage-code-3",
+                            "total_files": 1,
+                            "files_completed": 1,
+                        },
+                        "file_records": {},
+                    }
+                )
+            )
 
             # Rebuild FTS in daemon mode - should work!
             result = subprocess.run(
-                [sys.executable, "-m", "code_indexer.cli", "index", "--rebuild-fts-index"],
+                [
+                    sys.executable,
+                    "-m",
+                    "code_indexer.cli",
+                    "index",
+                    "--rebuild-fts-index",
+                ],
                 cwd=project_dir,
                 capture_output=True,
                 text=True,
@@ -69,5 +91,9 @@ class TestRebuildFTSDaemonMode:
             output = result.stdout + result.stderr
 
             # Should succeed
-            assert result.returncode == 0, f"Expected success, got {result.returncode}\nOutput: {output}"
-            assert ("success" in output.lower() or "complete" in output.lower()), f"Expected success message\nOutput: {output}"
+            assert (
+                result.returncode == 0
+            ), f"Expected success, got {result.returncode}\nOutput: {output}"
+            assert (
+                "success" in output.lower() or "complete" in output.lower()
+            ), f"Expected success message\nOutput: {output}"

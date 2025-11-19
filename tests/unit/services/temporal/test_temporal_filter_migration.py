@@ -41,7 +41,9 @@ def mock_vector_store():
 
 
 @pytest.fixture
-def temporal_service(mock_config_manager, mock_vector_store, mock_embedding_provider, tmp_path):
+def temporal_service(
+    mock_config_manager, mock_vector_store, mock_embedding_provider, tmp_path
+):
     """Create TemporalSearchService with mocked dependencies."""
     service = TemporalSearchService(
         config_manager=mock_config_manager,
@@ -81,8 +83,7 @@ class TestTemporalFilterMigration:
         # Verify time range filter is present with range operator
         assert "must" in filter_conditions
         time_filters = [
-            f for f in filter_conditions["must"]
-            if f.get("key") == "commit_timestamp"
+            f for f in filter_conditions["must"] if f.get("key") == "commit_timestamp"
         ]
         assert len(time_filters) == 1
 
@@ -91,9 +92,11 @@ class TestTemporalFilterMigration:
 
         # Verify timestamp conversion
         start_ts = int(datetime.strptime("2024-01-01", "%Y-%m-%d").timestamp())
-        end_ts = int(datetime.strptime("2024-12-31", "%Y-%m-%d").replace(
-            hour=23, minute=59, second=59
-        ).timestamp())
+        end_ts = int(
+            datetime.strptime("2024-12-31", "%Y-%m-%d")
+            .replace(hour=23, minute=59, second=59)
+            .timestamp()
+        )
 
         assert time_filter["range"]["gte"] == start_ts
         assert time_filter["range"]["lte"] == end_ts
@@ -119,8 +122,7 @@ class TestTemporalFilterMigration:
         # Verify diff_type filter is present with any operator
         assert "must" in filter_conditions
         diff_filters = [
-            f for f in filter_conditions["must"]
-            if f.get("key") == "diff_type"
+            f for f in filter_conditions["must"] if f.get("key") == "diff_type"
         ]
         assert len(diff_filters) == 1
 
@@ -150,8 +152,7 @@ class TestTemporalFilterMigration:
         # Verify author filter is present with contains operator
         assert "must" in filter_conditions
         author_filters = [
-            f for f in filter_conditions["must"]
-            if f.get("key") == "author_name"
+            f for f in filter_conditions["must"] if f.get("key") == "author_name"
         ]
         assert len(author_filters) == 1
 

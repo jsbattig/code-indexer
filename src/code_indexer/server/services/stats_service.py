@@ -111,7 +111,9 @@ class RepositoryStatsService:
             logger.error(f"Failed to initialize real dependencies: {e}")
             raise RuntimeError(f"Cannot initialize repository stats service: {e}")
 
-    def get_repository_stats(self, repo_id: str, username: str = None) -> RepositoryStatsResponse:
+    def get_repository_stats(
+        self, repo_id: str, username: str = None
+    ) -> RepositoryStatsResponse:
         """
         Get comprehensive statistics for a repository.
 
@@ -174,8 +176,7 @@ class RepositoryStatsService:
 
             # Get activated repository path for user
             activated_path = repo_manager.get_activated_repo_path(
-                username=username,
-                user_alias=repo_id
+                username=username, user_alias=repo_id
             )
 
             if activated_path and Path(activated_path).exists():

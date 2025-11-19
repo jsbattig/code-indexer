@@ -39,7 +39,7 @@ def get_socket_directory(mode: SocketMode = "shared") -> Path:
     if mode == "shared":
         return Path("/tmp/cidx")
     else:  # user mode
-        runtime_dir = os.environ.get('XDG_RUNTIME_DIR')
+        runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
         if runtime_dir:
             return Path(runtime_dir) / "cidx"
         return Path("/tmp/cidx")  # fallback
@@ -103,7 +103,7 @@ def create_mapping_file(repo_path: Path, socket_path: Path) -> None:
         repo_path: Path to repository
         socket_path: Path to socket file
     """
-    mapping_path = socket_path.with_suffix('.repo-path')
+    mapping_path = socket_path.with_suffix(".repo-path")
     try:
         # CRITICAL: Set umask to 002 so files are created with group-write by default
         # This ensures write_text() creates the file as 664 (rw-rw-r--) instead of 644
@@ -130,7 +130,7 @@ def get_repo_from_mapping(socket_path: Path) -> Optional[Path]:
     Returns:
         Path to repository if mapping exists, None otherwise
     """
-    mapping_path = socket_path.with_suffix('.repo-path')
+    mapping_path = socket_path.with_suffix(".repo-path")
     if mapping_path.exists():
         return Path(mapping_path.read_text().strip())
     return None

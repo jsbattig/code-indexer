@@ -45,7 +45,8 @@ class TestActivatedRepoSearchIssue499:
         os.system(f"cd {golden_path} && git config user.name 'Test User'")
 
         # Create multiple Python files with searchable content
-        (golden_path / "auth.py").write_text("""
+        (golden_path / "auth.py").write_text(
+            """
 def authenticate_user(username, password):
     '''Authenticate user with credentials'''
     # TODO: implement authentication logic
@@ -54,9 +55,11 @@ def authenticate_user(username, password):
 def verify_token(token):
     '''Verify JWT token validity'''
     pass
-""")
+"""
+        )
 
-        (golden_path / "database.py").write_text("""
+        (golden_path / "database.py").write_text(
+            """
 import sqlite3
 
 def connect_database(db_path):
@@ -68,7 +71,8 @@ def execute_query(conn, query):
     cursor = conn.cursor()
     cursor.execute(query)
     return cursor.fetchall()
-""")
+"""
+        )
 
         # Commit files
         os.system(f"cd {golden_path} && git add .")
@@ -142,7 +146,9 @@ def execute_query(conn, query):
         assert result["success"] is True
 
         # Get activated repo path
-        activated_repo_path = Path(temp_data_dir) / "activated-repos" / username / user_alias
+        activated_repo_path = (
+            Path(temp_data_dir) / "activated-repos" / username / user_alias
+        )
 
         # Verify config exists
         config_yml_path = activated_repo_path / ".code-indexer" / "config.json"
@@ -150,11 +156,12 @@ def execute_query(conn, query):
 
         # Convert YAML to JSON for ConfigManager
         import yaml
-        with open(config_yml_path, 'r') as f:
+
+        with open(config_yml_path, "r") as f:
             config_data = yaml.safe_load(f)
 
         config_json_path = activated_repo_path / ".code-indexer" / "config.json"
-        with open(config_json_path, 'w') as f:
+        with open(config_json_path, "w") as f:
             json.dump(config_data, f)
 
         # Load config and create backend
@@ -163,9 +170,9 @@ def execute_query(conn, query):
 
         # Verify config has correct settings
         assert config.vector_store is not None, "vector_store must be configured"
-        assert config.vector_store.provider == "filesystem", (
-            "vector_store provider must be 'filesystem'"
-        )
+        assert (
+            config.vector_store.provider == "filesystem"
+        ), "vector_store provider must be 'filesystem'"
 
         # Create backend using factory
         backend = BackendFactory.create(config, activated_repo_path)
@@ -197,16 +204,19 @@ def execute_query(conn, query):
         )
 
         # Load config
-        activated_repo_path = Path(temp_data_dir) / "activated-repos" / username / user_alias
+        activated_repo_path = (
+            Path(temp_data_dir) / "activated-repos" / username / user_alias
+        )
         config_yml_path = activated_repo_path / ".code-indexer" / "config.json"
 
         import yaml
-        with open(config_yml_path, 'r') as f:
+
+        with open(config_yml_path, "r") as f:
             config_data = yaml.safe_load(f)
 
         # Convert to JSON for ConfigManager
         config_json_path = activated_repo_path / ".code-indexer" / "config.json"
-        with open(config_json_path, 'w') as f:
+        with open(config_json_path, "w") as f:
             json.dump(config_data, f)
 
         config_manager = ConfigManager(config_path=config_json_path)
@@ -219,9 +229,9 @@ def execute_query(conn, query):
         )
 
         # Verify provider is filesystem
-        assert config.vector_store.provider == "filesystem", (
-            "vector_store.provider must be 'filesystem' to prevent Qdrant fallback"
-        )
+        assert (
+            config.vector_store.provider == "filesystem"
+        ), "vector_store.provider must be 'filesystem' to prevent Qdrant fallback"
 
     def test_voyage_ai_configuration_in_activated_repo(
         self, activated_repo_manager, temp_data_dir
@@ -240,20 +250,23 @@ def execute_query(conn, query):
         )
 
         # Load config
-        activated_repo_path = Path(temp_data_dir) / "activated-repos" / username / user_alias
+        activated_repo_path = (
+            Path(temp_data_dir) / "activated-repos" / username / user_alias
+        )
         config_yml_path = activated_repo_path / ".code-indexer" / "config.json"
 
         import yaml
-        with open(config_yml_path, 'r') as f:
+
+        with open(config_yml_path, "r") as f:
             config_data = yaml.safe_load(f)
 
         # Verify embedding provider
-        assert config_data['embedding_provider'] == 'voyage-ai', (
-            "Server mode must use VoyageAI embedding provider"
-        )
+        assert (
+            config_data["embedding_provider"] == "voyage-ai"
+        ), "Server mode must use VoyageAI embedding provider"
 
         # Verify voyage_ai configuration
-        assert 'voyage_ai' in config_data, "Config must contain voyage_ai section"
-        assert config_data['voyage_ai']['model'] == 'voyage-code-3', (
-            "VoyageAI model must be voyage-code-3 (production default)"
-        )
+        assert "voyage_ai" in config_data, "Config must contain voyage_ai section"
+        assert (
+            config_data["voyage_ai"]["model"] == "voyage-code-3"
+        ), "VoyageAI model must be voyage-code-3 (production default)"

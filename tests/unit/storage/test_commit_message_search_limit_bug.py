@@ -36,7 +36,7 @@ def test_search_uses_prefetch_limit_not_limit_multiplier():
     store = FilesystemVectorStore(base_path=base_path)
 
     # Mock collection existence
-    with patch.object(store, 'collection_exists', return_value=True):
+    with patch.object(store, "collection_exists", return_value=True):
         # Mock metadata
         mock_metadata = {"vector_size": 1024}
 
@@ -53,12 +53,17 @@ def test_search_uses_prefetch_limit_not_limit_multiplier():
                 mock_hnsw_manager.load_index.return_value = mock_hnsw_index
                 mock_hnsw_manager.query.return_value = ([], [])
 
-                with patch("code_indexer.storage.hnsw_index_manager.HNSWIndexManager", return_value=mock_hnsw_manager):
+                with patch(
+                    "code_indexer.storage.hnsw_index_manager.HNSWIndexManager",
+                    return_value=mock_hnsw_manager,
+                ):
                     # Mock ID index
-                    with patch.object(store, '_id_index', {"test_collection": {}}):
+                    with patch.object(store, "_id_index", {"test_collection": {}}):
                         # Mock embedding provider
                         mock_embedding_provider = Mock()
-                        mock_embedding_provider.get_embedding.return_value = [0.1] * 1024
+                        mock_embedding_provider.get_embedding.return_value = [
+                            0.1
+                        ] * 1024
 
                         # Execute search with prefetch_limit
                         user_limit = 20
@@ -78,7 +83,7 @@ def test_search_uses_prefetch_limit_not_limit_multiplier():
                         call_kwargs = mock_hnsw_manager.query.call_args[1]
 
                         # BUG: Currently uses k=limit*2 (=40) instead of k=prefetch_limit (=400)
-                        assert call_kwargs['k'] == prefetch_limit, (
+                        assert call_kwargs["k"] == prefetch_limit, (
                             f"HNSW query should use k=prefetch_limit ({prefetch_limit}), "
                             f"but used k={call_kwargs['k']} (limit*2={user_limit*2})"
                         )

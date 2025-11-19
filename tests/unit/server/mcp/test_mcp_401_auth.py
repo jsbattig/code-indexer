@@ -42,20 +42,20 @@ class TestMCP401Authentication:
                 www_auth = response.headers["www-authenticate"]
 
                 # Must use Bearer scheme
-                assert www_auth.startswith("Bearer"), (
-                    f"Expected Bearer scheme, got: {www_auth}"
-                )
+                assert www_auth.startswith(
+                    "Bearer"
+                ), f"Expected Bearer scheme, got: {www_auth}"
 
                 # Must include realm="mcp"
-                assert 'realm="mcp"' in www_auth, (
-                    f"Expected realm='mcp', got: {www_auth}"
-                )
+                assert (
+                    'realm="mcp"' in www_auth
+                ), f"Expected realm='mcp', got: {www_auth}"
 
                 # Must include resource_metadata with OAuth discovery URL
-                assert "resource_metadata=" in www_auth, (
-                    f"Expected resource_metadata parameter, got: {www_auth}"
-                )
+                assert (
+                    "resource_metadata=" in www_auth
+                ), f"Expected resource_metadata parameter, got: {www_auth}"
 
-                assert "/.well-known/oauth-authorization-server" in www_auth, (
-                    f"Expected OAuth discovery URL, got: {www_auth}"
-                )
+                assert (
+                    "/.well-known/oauth-authorization-server" in www_auth
+                ), f"Expected OAuth discovery URL, got: {www_auth}"

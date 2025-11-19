@@ -28,7 +28,7 @@ class TestDaemonAccuracySupport:
             service.cache_entry = MagicMock()
             service.cache_entry.update_access = MagicMock()
 
-            with patch.object(service, '_execute_semantic_search') as mock_search:
+            with patch.object(service, "_execute_semantic_search") as mock_search:
                 mock_search.return_value = ([], {})
 
                 # Test that accuracy parameter is accepted
@@ -38,7 +38,7 @@ class TestDaemonAccuracySupport:
                         str(project_path),
                         "test query",
                         limit=10,
-                        accuracy="high"  # This is what we're testing
+                        accuracy="high",  # This is what we're testing
                     )
                     # If we get here without error, the parameter is accepted
                     assert True
@@ -61,7 +61,9 @@ class TestDaemonAccuracySupport:
             index_dir = config_dir / "index"
             index_dir.mkdir()
             config_file = config_dir / "config.json"
-            config_file.write_text('{"embedding_provider": "voyage-ai", "backend": {"type": "filesystem"}}')
+            config_file.write_text(
+                '{"embedding_provider": "voyage-ai", "backend": {"type": "filesystem"}}'
+            )
 
             # Create a complete mock vector store with all required methods
             mock_vector_store = MagicMock()
@@ -74,22 +76,28 @@ class TestDaemonAccuracySupport:
 
             # Create mock backend with configured method
             mock_backend = MagicMock()
-            mock_backend.get_vector_store_client = MagicMock(return_value=mock_vector_store)
+            mock_backend.get_vector_store_client = MagicMock(
+                return_value=mock_vector_store
+            )
 
             # Patch the backend factory and embedding provider factory
-            with patch('code_indexer.backends.backend_factory.BackendFactory.create', return_value=mock_backend):
-                with patch('src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.create') as mock_emb_create:
+            with patch(
+                "code_indexer.backends.backend_factory.BackendFactory.create",
+                return_value=mock_backend,
+            ):
+                with patch(
+                    "src.code_indexer.services.embedding_factory.EmbeddingProviderFactory.create"
+                ) as mock_emb_create:
                     mock_emb_create.return_value = mock_embedding_provider
 
                     # Call _execute_semantic_search with accuracy="high"
                     results, timing = service._execute_semantic_search(
-                        str(project_path),
-                        "test query",
-                        limit=10,
-                        accuracy="high"
+                        str(project_path), "test query", limit=10, accuracy="high"
                     )
 
                     # Verify that vector_store.search was called with ef=200
                     mock_vector_store.search.assert_called_once()
                     call_kwargs = mock_vector_store.search.call_args[1]
-                    assert call_kwargs.get('ef') == 200, f"Expected ef=200 for high accuracy, got {call_kwargs.get('ef')}"
+                    assert (
+                        call_kwargs.get("ef") == 200
+                    ), f"Expected ef=200 for high accuracy, got {call_kwargs.get('ef')}"

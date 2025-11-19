@@ -134,10 +134,12 @@ class TestSearchCode:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
             assert data["success"] is True
             assert "results" in data
@@ -157,6 +159,7 @@ class TestSearchCode:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is False
@@ -201,6 +204,7 @@ class TestSearchCode:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -245,6 +249,7 @@ class TestDiscoverRepositories:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -271,6 +276,7 @@ class TestListRepositories:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -287,6 +293,7 @@ class TestListRepositories:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is False
@@ -311,6 +318,7 @@ class TestActivateRepository:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -330,6 +338,7 @@ class TestActivateRepository:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -351,6 +360,7 @@ class TestDeactivateRepository:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -381,6 +391,7 @@ class TestAdminHandlers:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -398,6 +409,7 @@ class TestAdminHandlers:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -426,6 +438,7 @@ class TestAdminHandlers:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -452,6 +465,7 @@ class TestAdminHandlers:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -476,6 +490,7 @@ class TestFileHandlers:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -568,6 +583,7 @@ class TestFileHandlers:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -607,6 +623,7 @@ class TestFileHandlers:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is False
@@ -645,7 +662,7 @@ class TestFileHandlers:
                         "modified_at": datetime.now(timezone.utc).isoformat(),
                         "language": "python",
                         "is_indexed": True,
-                    }
+                    },
                 ),
             ]
             mock_service.list_files = Mock(return_value=mock_response)
@@ -657,6 +674,7 @@ class TestFileHandlers:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -683,6 +701,7 @@ class TestHealthCheck:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -703,7 +722,9 @@ class TestRepositoryStatus:
 
         params = {"user_alias": "my-activated-repo"}
 
-        with patch("code_indexer.server.app.repository_listing_manager") as mock_manager:
+        with patch(
+            "code_indexer.server.app.repository_listing_manager"
+        ) as mock_manager:
             mock_manager.get_repository_details = Mock(
                 return_value={
                     "alias": "my-activated-repo",
@@ -723,6 +744,7 @@ class TestRepositoryStatus:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -751,6 +773,7 @@ class TestStatisticsHandlers:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -776,6 +799,7 @@ class TestStatisticsHandlers:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -805,6 +829,7 @@ class TestCompositeRepository:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -824,6 +849,7 @@ class TestCompositeRepository:
 
             # MCP format: parse content array
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True
@@ -848,9 +874,11 @@ class TestSyncRepository:
             }
         ]
 
-        with patch("code_indexer.server.app.activated_repo_manager") as mock_repo_mgr, \
-             patch("code_indexer.server.app.background_job_manager") as mock_job_mgr, \
-             patch("code_indexer.server.app._execute_repository_sync") as mock_exec_sync:
+        with (
+            patch("code_indexer.server.app.activated_repo_manager") as mock_repo_mgr,
+            patch("code_indexer.server.app.background_job_manager") as mock_job_mgr,
+            patch("code_indexer.server.app._execute_repository_sync") as mock_exec_sync,
+        ):
 
             mock_repo_mgr.list_activated_repositories = Mock(return_value=mock_repos)
             mock_job_mgr.submit_job = Mock(return_value="job-sync-123")
@@ -863,17 +891,22 @@ class TestSyncRepository:
             call_kwargs = mock_job_mgr.submit_job.call_args[1]
 
             # Check correct parameter names
-            assert "operation_type" in call_kwargs, "Must use 'operation_type' parameter"
+            assert (
+                "operation_type" in call_kwargs
+            ), "Must use 'operation_type' parameter"
             assert call_kwargs["operation_type"] == "sync_repository"
 
             assert "func" in call_kwargs, "Must provide 'func' callable parameter"
             assert callable(call_kwargs["func"]), "func must be callable"
 
-            assert "submitter_username" in call_kwargs, "Must use 'submitter_username' parameter"
+            assert (
+                "submitter_username" in call_kwargs
+            ), "Must use 'submitter_username' parameter"
             assert call_kwargs["submitter_username"] == mock_user.username
 
             # Verify MCP response format
             import json
+
             data = json.loads(result["content"][0]["text"])
 
             assert data["success"] is True

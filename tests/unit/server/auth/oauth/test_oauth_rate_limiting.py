@@ -10,7 +10,7 @@ from code_indexer.server.auth.oauth_rate_limiter import (
     OAuthTokenRateLimiter,
     OAuthRegisterRateLimiter,
     oauth_token_rate_limiter,
-    oauth_register_rate_limiter
+    oauth_register_rate_limiter,
 )
 
 

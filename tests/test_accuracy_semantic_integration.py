@@ -34,13 +34,15 @@ class TestAccuracySemanticIntegration:
                     embedding_provider=mock_provider,
                     collection_name="test",
                     limit=10,
-                    ef=100  # This is what we're testing
+                    ef=100,  # This is what we're testing
                 )
                 # If no collection exists, it should return empty list
                 assert results == []
             except TypeError as e:
                 if "ef" in str(e):
-                    pytest.fail(f"FilesystemVectorStore.search does not accept ef parameter: {e}")
+                    pytest.fail(
+                        f"FilesystemVectorStore.search does not accept ef parameter: {e}"
+                    )
 
     def test_ef_parameter_default_value(self):
         """Test that ef parameter has a default value of 50."""
@@ -57,7 +59,7 @@ class TestAccuracySemanticIntegration:
                     query="test query",
                     embedding_provider=mock_provider,
                     collection_name="test",
-                    limit=10
+                    limit=10,
                     # No ef parameter - should use default of 50
                 )
                 # If no collection exists, it should return empty list

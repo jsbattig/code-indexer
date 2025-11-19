@@ -612,6 +612,7 @@ class TestExposedRebuildFTSIndex:
 
         # Create minimal config.json
         import json
+
         config_file = config_dir / "config.json"
         config_file.write_text(json.dumps({"version": "1.0"}))
 

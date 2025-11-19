@@ -2,6 +2,7 @@
 
 Tests that datetime objects are properly serialized to ISO strings.
 """
+
 import json
 import pytest
 from fastapi.testclient import TestClient
@@ -14,8 +15,7 @@ def test_file_content_endpoint_returns_json_serializable_response():
 
     # Login
     login_response = client.post(
-        "/auth/login",
-        json={"username": "admin", "password": "MySecurePass2024_Word"}
+        "/auth/login", json={"username": "admin", "password": "MySecurePass2024_Word"}
     )
     assert login_response.status_code == 200
     token = login_response.json()["access_token"]
@@ -24,7 +24,7 @@ def test_file_content_endpoint_returns_json_serializable_response():
     response = client.get(
         "/api/repositories/tries-test/files",
         params={"path": "README.md", "content": "true"},
-        headers={"Authorization": f"Bearer {token}"}
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     # Should not crash with serialization error

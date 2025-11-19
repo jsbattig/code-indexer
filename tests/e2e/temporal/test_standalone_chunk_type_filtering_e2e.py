@@ -90,7 +90,10 @@ class TestStandaloneChunkTypeFilteringE2E:
             text=True,
             check=True,
         )
-        assert "Daemon Mode: ❌ Disabled" in result.stdout or "disabled" in result.stdout.lower()
+        assert (
+            "Daemon Mode: ❌ Disabled" in result.stdout
+            or "disabled" in result.stdout.lower()
+        )
 
         # Build temporal index
         subprocess.run(
@@ -146,7 +149,9 @@ class TestStandaloneChunkTypeFilteringE2E:
             # Example expected: "0.850 auth.py"
             # Example WRONG: "0.850 [Commit Message]"
             if not line.startswith("🕒") and not line.startswith("📊"):
-                assert "[Commit Message]" not in line, \
-                    f"BUG REPRODUCED: commit_diff filter returned commit message: {line}"
-                assert "auth.py" in line or ".py" in line or any(c.isalnum() for c in line), \
-                    f"Expected file path in result, got: {line}"
+                assert (
+                    "[Commit Message]" not in line
+                ), f"BUG REPRODUCED: commit_diff filter returned commit message: {line}"
+                assert (
+                    "auth.py" in line or ".py" in line or any(c.isalnum() for c in line)
+                ), f"Expected file path in result, got: {line}"

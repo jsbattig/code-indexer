@@ -38,7 +38,7 @@ class TestOAuthTokenValidationInDependencies:
         self.oauth_manager = OAuthManager(
             db_path=str(test_dir / "oauth.db"),
             issuer="http://localhost:8000",
-            user_manager=self.user_manager
+            user_manager=self.user_manager,
         )
 
         # Set global instances in dependencies module
@@ -52,13 +52,12 @@ class TestOAuthTokenValidationInDependencies:
         self.user_manager.create_user(
             username=self.test_username,
             password=self.test_password,
-            role=UserRole.NORMAL_USER
+            role=UserRole.NORMAL_USER,
         )
 
         # Create OAuth client for testing
         self.client_info = self.oauth_manager.register_client(
-            client_name="Test Client",
-            redirect_uris=["http://localhost/callback"]
+            client_name="Test Client", redirect_uris=["http://localhost/callback"]
         )
         self.client_id = self.client_info["client_id"]
 
@@ -78,31 +77,30 @@ class TestOAuthTokenValidationInDependencies:
         """
         # Generate OAuth authorization code with PKCE
         code_verifier = "test-verifier-" + "x" * 43
-        code_challenge = base64.urlsafe_b64encode(
-            hashlib.sha256(code_verifier.encode()).digest()
-        ).decode().rstrip("=")
+        code_challenge = (
+            base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
+            .decode()
+            .rstrip("=")
+        )
 
         auth_code = self.oauth_manager.generate_authorization_code(
             client_id=self.client_id,
             user_id=self.test_username,
             code_challenge=code_challenge,
             redirect_uri=self.client_info["redirect_uris"][0],
-            state="test-state"
+            state="test-state",
         )
 
         # Exchange code for OAuth tokens
         token_response = self.oauth_manager.exchange_code_for_token(
-            code=auth_code,
-            code_verifier=code_verifier,
-            client_id=self.client_id
+            code=auth_code, code_verifier=code_verifier, client_id=self.client_id
         )
 
         oauth_access_token = token_response["access_token"]
 
         # Create credentials with OAuth token
         credentials = HTTPAuthorizationCredentials(
-            scheme="Bearer",
-            credentials=oauth_access_token
+            scheme="Bearer", credentials=oauth_access_token
         )
 
         # This should validate the OAuth token and return the user
@@ -119,15 +117,13 @@ class TestOAuthTokenValidationInDependencies:
         This ensures backward compatibility - existing JWT tokens continue to work.
         """
         # Generate JWT token
-        jwt_token = self.jwt_manager.create_token(user_data={
-            "username": self.test_username,
-            "role": "normal_user"
-        })
+        jwt_token = self.jwt_manager.create_token(
+            user_data={"username": self.test_username, "role": "normal_user"}
+        )
 
         # Create credentials with JWT token
         credentials = HTTPAuthorizationCredentials(
-            scheme="Bearer",
-            credentials=jwt_token
+            scheme="Bearer", credentials=jwt_token
         )
 
         # This should validate the JWT token and return the user

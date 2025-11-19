@@ -19,17 +19,13 @@ class TestDiffTypeParameter:
 
     def test_diff_type_valid_single(self):
         """AC6: Test valid single diff_type"""
-        request = SemanticQueryRequest(
-            query_text="test",
-            diff_type=["added"]
-        )
+        request = SemanticQueryRequest(query_text="test", diff_type=["added"])
         assert request.diff_type == ["added"]
 
     def test_diff_type_valid_multiple(self):
         """AC4: Test valid multiple diff_types"""
         request = SemanticQueryRequest(
-            query_text="test",
-            diff_type=["added", "modified", "deleted"]
+            query_text="test", diff_type=["added", "modified", "deleted"]
         )
         assert request.diff_type == ["added", "modified", "deleted"]
 
@@ -37,17 +33,14 @@ class TestDiffTypeParameter:
         """Test all valid diff_type values"""
         request = SemanticQueryRequest(
             query_text="test",
-            diff_type=["added", "modified", "deleted", "renamed", "binary"]
+            diff_type=["added", "modified", "deleted", "renamed", "binary"],
         )
         assert len(request.diff_type) == 5
 
     def test_diff_type_invalid_value(self):
         """AC6: Test invalid diff_type raises ValidationError"""
         with pytest.raises(ValidationError) as exc_info:
-            SemanticQueryRequest(
-                query_text="test",
-                diff_type=["invalid_type"]
-            )
+            SemanticQueryRequest(query_text="test", diff_type=["invalid_type"])
         error_msg = str(exc_info.value)
         assert "diff_type" in error_msg.lower()
 
@@ -62,20 +55,14 @@ class TestAuthorParameter:
 
     def test_author_valid_string(self):
         """AC3: Test valid author string"""
-        request = SemanticQueryRequest(
-            query_text="test",
-            author="john@example.com"
-        )
+        request = SemanticQueryRequest(query_text="test", author="john@example.com")
         assert request.author == "john@example.com"
 
     def test_author_max_length(self):
         """Test author max_length validation (255 chars)"""
         long_author = "a" * 256  # Exceeds max_length
         with pytest.raises(ValidationError) as exc_info:
-            SemanticQueryRequest(
-                query_text="test",
-                author=long_author
-            )
+            SemanticQueryRequest(query_text="test", author=long_author)
         error_msg = str(exc_info.value)
         assert "author" in error_msg.lower()
 
@@ -90,18 +77,12 @@ class TestChunkTypeParameter:
 
     def test_chunk_type_commit_message(self):
         """AC3: Test chunk_type='commit_message'"""
-        request = SemanticQueryRequest(
-            query_text="test",
-            chunk_type="commit_message"
-        )
+        request = SemanticQueryRequest(query_text="test", chunk_type="commit_message")
         assert request.chunk_type == "commit_message"
 
     def test_chunk_type_commit_diff(self):
         """Test chunk_type='commit_diff'"""
-        request = SemanticQueryRequest(
-            query_text="test",
-            chunk_type="commit_diff"
-        )
+        request = SemanticQueryRequest(query_text="test", chunk_type="commit_diff")
         assert request.chunk_type == "commit_diff"
 
     def test_chunk_type_optional(self):
@@ -112,10 +93,7 @@ class TestChunkTypeParameter:
     def test_chunk_type_invalid_value(self):
         """Test invalid chunk_type raises ValidationError"""
         with pytest.raises(ValidationError) as exc_info:
-            SemanticQueryRequest(
-                query_text="test",
-                chunk_type="invalid_type"
-            )
+            SemanticQueryRequest(query_text="test", chunk_type="invalid_type")
         error_msg = str(exc_info.value)
         assert "chunk_type" in error_msg.lower()
 
@@ -128,7 +106,7 @@ class TestTemporalParameterCombinations:
         request = SemanticQueryRequest(
             query_text="authentication",
             time_range="2024-01-01..2024-12-31",
-            diff_type=["added"]
+            diff_type=["added"],
         )
         assert request.time_range == "2024-01-01..2024-12-31"
         assert request.diff_type == ["added"]
@@ -136,9 +114,7 @@ class TestTemporalParameterCombinations:
     def test_ac2_diff_type_with_time_range_all(self):
         """AC2: Search deleted code across full history"""
         request = SemanticQueryRequest(
-            query_text="deprecated",
-            diff_type=["deleted"],
-            time_range_all=True
+            query_text="deprecated", diff_type=["deleted"], time_range_all=True
         )
         assert request.diff_type == ["deleted"]
         assert request.time_range_all is True
@@ -146,9 +122,7 @@ class TestTemporalParameterCombinations:
     def test_ac3_chunk_type_with_author(self):
         """AC3: Search commit messages by author"""
         request = SemanticQueryRequest(
-            query_text="bug fix",
-            chunk_type="commit_message",
-            author="john@example.com"
+            query_text="bug fix", chunk_type="commit_message", author="john@example.com"
         )
         assert request.chunk_type == "commit_message"
         assert request.author == "john@example.com"
@@ -158,7 +132,7 @@ class TestTemporalParameterCombinations:
         request = SemanticQueryRequest(
             query_text="TODO",
             time_range="2024-11-01..2024-11-12",
-            diff_type=["modified", "added"]
+            diff_type=["modified", "added"],
         )
         assert request.time_range == "2024-11-01..2024-11-12"
         assert request.diff_type == ["modified", "added"]
@@ -179,7 +153,7 @@ class TestTemporalParameterCombinations:
             repository_alias="my-repo",
             limit=20,
             time_range="2024-01-01..2024-12-31",
-            diff_type=["added"]
+            diff_type=["added"],
         )
         assert request.query_text == "authentication"
         assert request.repository_alias == "my-repo"

@@ -52,6 +52,7 @@ def _get_socket_path(config_path: Path) -> Path:
         Path to daemon socket file
     """
     from code_indexer.config import ConfigManager
+
     config_manager = ConfigManager(config_path)
     return config_manager.get_socket_path()
 

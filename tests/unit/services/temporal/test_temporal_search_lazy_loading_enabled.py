@@ -36,7 +36,7 @@ class TestTemporalSearchLazyLoadingEnabled:
             project_root=project_root,
             vector_store_client=vector_store,
             embedding_provider=embedding_provider,
-            collection_name="code-indexer-temporal"
+            collection_name="code-indexer-temporal",
         )
 
         # Execute temporal query with filters

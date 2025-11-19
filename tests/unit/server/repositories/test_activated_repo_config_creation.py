@@ -113,7 +113,9 @@ class TestActivatedRepoConfigCreation:
         )
 
         # Verify config.json exists
-        activated_repo_path = Path(temp_data_dir) / "activated-repos" / username / user_alias
+        activated_repo_path = (
+            Path(temp_data_dir) / "activated-repos" / username / user_alias
+        )
         config_yml_path = activated_repo_path / ".code-indexer" / "config.json"
 
         assert config_yml_path.exists(), (
@@ -143,19 +145,21 @@ class TestActivatedRepoConfigCreation:
         )
 
         # Read config.json
-        activated_repo_path = Path(temp_data_dir) / "activated-repos" / username / user_alias
+        activated_repo_path = (
+            Path(temp_data_dir) / "activated-repos" / username / user_alias
+        )
         config_yml_path = activated_repo_path / ".code-indexer" / "config.json"
 
-        with open(config_yml_path, 'r') as f:
+        with open(config_yml_path, "r") as f:
             config_data = yaml.safe_load(f)
 
         # Verify vector_store configuration
-        assert 'vector_store' in config_data, (
-            "config.json must contain 'vector_store' section"
-        )
-        assert config_data['vector_store']['provider'] == 'filesystem', (
-            "vector_store provider must be 'filesystem' to avoid defaulting to Qdrant"
-        )
+        assert (
+            "vector_store" in config_data
+        ), "config.json must contain 'vector_store' section"
+        assert (
+            config_data["vector_store"]["provider"] == "filesystem"
+        ), "vector_store provider must be 'filesystem' to avoid defaulting to Qdrant"
 
     def test_config_yml_contains_voyage_ai_configuration(
         self, activated_repo_manager, temp_data_dir
@@ -177,27 +181,29 @@ class TestActivatedRepoConfigCreation:
         )
 
         # Read config.json
-        activated_repo_path = Path(temp_data_dir) / "activated-repos" / username / user_alias
+        activated_repo_path = (
+            Path(temp_data_dir) / "activated-repos" / username / user_alias
+        )
         config_yml_path = activated_repo_path / ".code-indexer" / "config.json"
 
-        with open(config_yml_path, 'r') as f:
+        with open(config_yml_path, "r") as f:
             config_data = yaml.safe_load(f)
 
         # Verify embedding provider configuration
-        assert 'embedding_provider' in config_data, (
-            "config.json must contain 'embedding_provider' field"
-        )
-        assert config_data['embedding_provider'] == 'voyage-ai', (
-            "embedding_provider must be 'voyage-ai' for server mode"
-        )
+        assert (
+            "embedding_provider" in config_data
+        ), "config.json must contain 'embedding_provider' field"
+        assert (
+            config_data["embedding_provider"] == "voyage-ai"
+        ), "embedding_provider must be 'voyage-ai' for server mode"
 
         # Verify voyage_ai section exists
-        assert 'voyage_ai' in config_data, (
-            "config.json must contain 'voyage_ai' configuration section"
-        )
-        assert config_data['voyage_ai']['model'] == 'voyage-code-3', (
-            "voyage_ai model must be 'voyage-code-3' (production default)"
-        )
+        assert (
+            "voyage_ai" in config_data
+        ), "config.json must contain 'voyage_ai' configuration section"
+        assert (
+            config_data["voyage_ai"]["model"] == "voyage-code-3"
+        ), "voyage_ai model must be 'voyage-code-3' (production default)"
 
     def test_config_yml_has_correct_yaml_structure(
         self, activated_repo_manager, temp_data_dir
@@ -216,17 +222,21 @@ class TestActivatedRepoConfigCreation:
         )
 
         # Read config.json
-        activated_repo_path = Path(temp_data_dir) / "activated-repos" / username / user_alias
+        activated_repo_path = (
+            Path(temp_data_dir) / "activated-repos" / username / user_alias
+        )
         config_yml_path = activated_repo_path / ".code-indexer" / "config.json"
 
         # Verify YAML is valid
-        with open(config_yml_path, 'r') as f:
+        with open(config_yml_path, "r") as f:
             config_data = yaml.safe_load(f)
 
-        assert isinstance(config_data, dict), "config.json must be a valid JSON dictionary"
+        assert isinstance(
+            config_data, dict
+        ), "config.json must be a valid JSON dictionary"
 
         # Verify expected keys are present
-        expected_keys = ['vector_store', 'embedding_provider', 'voyage_ai']
+        expected_keys = ["vector_store", "embedding_provider", "voyage_ai"]
         for key in expected_keys:
             assert key in config_data, f"config.json must contain '{key}' key"
 
@@ -254,14 +264,16 @@ class TestActivatedRepoConfigCreation:
         )
 
         # Load config from activated repo
-        activated_repo_path = Path(temp_data_dir) / "activated-repos" / username / user_alias
+        activated_repo_path = (
+            Path(temp_data_dir) / "activated-repos" / username / user_alias
+        )
         config_path = activated_repo_path / ".code-indexer" / "config.json"
 
         # Convert YAML to JSON for ConfigManager (it expects JSON)
         config_json_path = activated_repo_path / ".code-indexer" / "config.json"
-        with open(config_path, 'r') as f:
+        with open(config_path, "r") as f:
             config_data = yaml.safe_load(f)
-        with open(config_json_path, 'w') as f:
+        with open(config_json_path, "w") as f:
             json.dump(config_data, f)
 
         # Load config and create backend
@@ -305,12 +317,14 @@ class TestActivatedRepoConfigCreation:
             "last_accessed": datetime.now(timezone.utc).isoformat(),
         }
         metadata_file = user_dir / f"{user_alias}_metadata.json"
-        with open(metadata_file, 'w') as f:
+        with open(metadata_file, "w") as f:
             json.dump(metadata, f)
 
         # Verify config.json does NOT exist yet
         config_yml_path = repo_dir / ".code-indexer" / "config.json"
-        assert not config_yml_path.exists(), "Test setup: config.json should not exist initially"
+        assert (
+            not config_yml_path.exists()
+        ), "Test setup: config.json should not exist initially"
 
         # TODO: Implement migration function that adds config.json to existing repos
         # This will be implemented as part of the fix

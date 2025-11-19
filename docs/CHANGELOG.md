@@ -1,5 +1,94 @@
 # Code Indexer Release Notes
 
+## Version 7.2.1 (2025-11-XX) - Git History Search & Fixes
+
+### 🕰️ Git History Search (Temporal Indexing)
+
+**Semantically search your entire git commit history!**
+
+#### New Features
+- **Temporal indexing**: Index git commits with `cidx index --index-commits`
+- **Time-range queries**: Search historical code with `--time-range-all` or specific date ranges
+- **Chunk type filtering**: Search commit messages (`--chunk-type commit_message`) or code diffs (`--chunk-type commit_diff`)
+- **Author filtering**: Find commits by specific developers with `--author`
+- **Branch support**: Index all branches or specific branches with `--all-branches`
+- **Date limiting**: Index recent commits with `--since-date` or `--max-commits`
+
+#### Use Cases
+- **Code archaeology**: Find when code was introduced
+- **Bug history research**: Search commit messages for bug fixes
+- **Feature evolution**: Track how code changed over time
+- **Author analysis**: Find all work by specific developers
+
+#### Bug Fixes
+- **Temporal indexer**: Fixed commit message truncation at 100 characters (now stores full messages)
+- **Query output**: Fixed missing match number display in query results (Story #446)
+
+---
+
+## Version 7.2.0 (2025-10-XX) - Incremental HNSW & FTS Enhancements
+
+### ⚡ Performance Improvements
+
+#### Incremental HNSW Updates (3.6x Speedup)
+- **Watch mode**: < 20ms per file (vs 5-10s full rebuild) - **99.6% improvement**
+- **Batch indexing**: 1.46x-1.65x speedup for incremental updates
+- **Zero query delay**: First query after changes returns instantly
+- **Overall**: **3.6x average speedup** in typical development workflows
+
+**How It Works:**
+- Change tracking for added/updated/deleted vectors
+- Auto-detection of incremental vs full rebuild scenarios
+- Efficient label management for consistency
+- Soft delete marking to avoid rebuilds
+
+#### FTS Performance Enhancements
+- **FileFinder integration**: 30-36x faster rebuild (6.3s vs 3+ minutes)
+- **Incremental updates**: Tantivy updates only changed documents
+- **Query performance**: 1.36x faster than grep on indexed codebases
+
+---
+
+## Version 7.1.0 (2025-09-XX) - Full-Text Search Support
+
+### 🔍 Full-Text Search (FTS)
+
+**Index-backed full-text search with Tantivy backend**
+
+#### New Features
+- **FTS mode**: `--fts` flag for fast exact text matching
+- **Fuzzy matching**: `--fuzzy` with configurable edit distance for typo tolerance
+- **Case sensitivity**: `--case-sensitive` for precise matching
+- **Regex support**: `--regex` for token-based pattern matching (10-50x faster than grep)
+- **Hybrid search**: `--fts --semantic` runs both searches in parallel
+- **Watch mode FTS**: Real-time FTS index updates with `cidx watch --fts`
+
+#### Performance
+- **1.36x faster than grep** on indexed codebases (measured on 11,859-file repo)
+- Benchmark: FTS 1.046s vs grep 1.426s average (8 search terms × 5 iterations)
+
+---
+
+## Version 7.0.0 (2025-08-XX) - HNSW Graph-Based Indexing
+
+### 🚀 HNSW Performance Revolution
+
+**300x speedup with graph-based indexing**
+
+#### Major Changes
+- **HNSW indexing**: O(log N) graph search vs O(N) linear scan
+- **Query performance**: ~20ms for 37K vectors (vs 6+ seconds with binary index)
+- **Memory efficiency**: 154 MB index for 37K vectors (4.2 KB per vector)
+- **Parallel query execution**: 15-30% latency reduction via 2-thread architecture
+
+#### Technical Details
+- **HNSW config**: M=16, ef_construction=200, ef_query=50, cosine similarity
+- **Binary ID index**: Memory-mapped <20ms cached loads
+- **Path quantization**: 64-dim projection → 4-level directory depth
+- **Git-aware storage**: Blob hash for clean files, full text for dirty files
+
+---
+
 ## Version 5.8.0 (2025-10-06) - CoW Cloning Portability Fix
 
 ### 🔧 Critical Database Portability Fix

@@ -5,7 +5,6 @@ and that exceptions are logged to ~/.cidx-server/logs/error_*.log files.
 """
 
 
-
 class TestServerExceptionLoggerIntegration:
     """Test ExceptionLogger integration with server app."""
 

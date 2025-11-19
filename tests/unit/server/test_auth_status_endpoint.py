@@ -34,8 +34,7 @@ class TestAuthStatusEndpoint:
 
         # Call status with invalid token
         response = client.get(
-            "/api/auth/status",
-            headers={"Authorization": "Bearer invalid-token"}
+            "/api/auth/status", headers={"Authorization": "Bearer invalid-token"}
         )
 
         # Should return 200 (not 401) with authenticated=false
@@ -51,11 +50,12 @@ class TestAuthStatusEndpoint:
         import time
 
         # Create JWT with very short expiration
-        test_jwt_manager = JWTManager(secret_key="test-secret", token_expiration_minutes=0)
-        token = test_jwt_manager.create_token({
-            "username": "testuser",
-            "role": "normal_user"
-        })
+        test_jwt_manager = JWTManager(
+            secret_key="test-secret", token_expiration_minutes=0
+        )
+        token = test_jwt_manager.create_token(
+            {"username": "testuser", "role": "normal_user"}
+        )
 
         # Wait briefly to ensure token expires
         time.sleep(1)
@@ -64,6 +64,7 @@ class TestAuthStatusEndpoint:
 
         # Replace global jwt_manager with test one
         import src.code_indexer.server.app as app_module
+
         original_jwt = app_module.jwt_manager
         app_module.jwt_manager = test_jwt_manager
 
@@ -72,8 +73,7 @@ class TestAuthStatusEndpoint:
         try:
             # Call status with expired token
             response = client.get(
-                "/api/auth/status",
-                headers={"Authorization": f"Bearer {token}"}
+                "/api/auth/status", headers={"Authorization": f"Bearer {token}"}
             )
 
             # Should return 200 with authenticated=false
@@ -109,16 +109,14 @@ class TestAuthStatusEndpoint:
 
             # Login to get a valid token
             login_response = client.post(
-                "/auth/login",
-                json={"username": "john", "password": "password"}
+                "/auth/login", json={"username": "john", "password": "password"}
             )
             assert login_response.status_code == 200
             token = login_response.json()["access_token"]
 
             # Call status endpoint with token
             response = client.get(
-                "/api/auth/status",
-                headers={"Authorization": f"Bearer {token}"}
+                "/api/auth/status", headers={"Authorization": f"Bearer {token}"}
             )
 
             # Should return authenticated=true with metadata

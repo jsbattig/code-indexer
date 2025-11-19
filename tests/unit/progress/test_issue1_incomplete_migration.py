@@ -5,7 +5,6 @@ This test verifies all production paths use the async queue pattern.
 """
 
 
-
 class TestIssue1IncompleteMigration:
     """Test Issue #1: All production code paths must use async_handle_progress_update."""
 

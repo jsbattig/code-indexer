@@ -77,7 +77,14 @@ class TemporalDiffScanner:
         # Use --full-index to get full 40-character blob hashes
         # Use -U flag to configure context lines (default 5, range 0-50)
         result = subprocess.run(
-            ["git", "show", f"-U{self.diff_context_lines}", "--full-index", "--format=", commit_hash],
+            [
+                "git",
+                "show",
+                f"-U{self.diff_context_lines}",
+                "--full-index",
+                "--format=",
+                commit_hash,
+            ],
             cwd=self.codebase_dir,
             capture_output=True,
             text=True,

@@ -7,7 +7,6 @@ the error log file in .code-indexer/ directory.
 import subprocess
 
 
-
 class TestCLIModeExceptionLogger:
     """Test ExceptionLogger initialization in CLI mode."""
 

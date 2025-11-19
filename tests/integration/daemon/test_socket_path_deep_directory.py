@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 
 from code_indexer.config import ConfigManager
-from code_indexer.daemon.socket_helper import generate_socket_path, get_repo_from_mapping
+from code_indexer.daemon.socket_helper import (
+    generate_socket_path,
+    get_repo_from_mapping,
+)
 
 
 class TestDeepDirectorySocketPath:
@@ -25,7 +28,9 @@ class TestDeepDirectorySocketPath:
 
             # Verify the path would exceed 108 chars with old method
             old_socket_path = deep_path / ".code-indexer" / "daemon.sock"
-            assert len(str(old_socket_path)) > 108, f"Test path not deep enough: {len(str(old_socket_path))}"
+            assert (
+                len(str(old_socket_path)) > 108
+            ), f"Test path not deep enough: {len(str(old_socket_path))}"
 
             # Initialize config in deep directory
             config_path = deep_path / ".code-indexer" / "config.yaml"
@@ -37,13 +42,15 @@ class TestDeepDirectorySocketPath:
             socket_path = manager.get_socket_path()
 
             # Verify socket path is under 108 chars
-            assert len(str(socket_path)) < 108, f"Socket path too long: {len(str(socket_path))} chars"
+            assert (
+                len(str(socket_path)) < 108
+            ), f"Socket path too long: {len(str(socket_path))} chars"
 
             # Verify socket is in /tmp/cidx/
             assert str(socket_path).startswith("/tmp/cidx/")
 
             # Verify mapping file was created
-            mapping_path = socket_path.with_suffix('.repo-path')
+            mapping_path = socket_path.with_suffix(".repo-path")
             assert mapping_path.exists()
 
             # Verify we can retrieve repo path from mapping

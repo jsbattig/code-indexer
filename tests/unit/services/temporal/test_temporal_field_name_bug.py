@@ -93,7 +93,9 @@ class TestTemporalFieldNameBug:
             vector_store.upsert_points = capture_upsert
 
             # Mock diff scanner to return diffs
-            from src.code_indexer.services.temporal.temporal_diff_scanner import DiffInfo
+            from src.code_indexer.services.temporal.temporal_diff_scanner import (
+                DiffInfo,
+            )
 
             with patch.object(
                 temporal_indexer.diff_scanner, "get_diffs_for_commit"
@@ -150,7 +152,8 @@ class TestTemporalFieldNameBug:
                     # Check that payload uses 'path' field, not 'file_path'
                     # Filter to only check file diff points (commit messages don't have paths)
                     file_diff_points = [
-                        point for point in captured_points
+                        point
+                        for point in captured_points
                         if point["payload"].get("type") != "commit_message"
                     ]
 

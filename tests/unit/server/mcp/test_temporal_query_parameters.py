@@ -35,7 +35,9 @@ class TestMCPToolSchemaTemporalParameters:
         schema = TOOL_REGISTRY["search_code"]["inputSchema"]
         properties = schema["properties"]
 
-        assert "time_range" in properties, "time_range parameter missing from search_code tool schema"
+        assert (
+            "time_range" in properties
+        ), "time_range parameter missing from search_code tool schema"
 
         time_range_spec = properties["time_range"]
         assert time_range_spec["type"] == "string"
@@ -47,7 +49,9 @@ class TestMCPToolSchemaTemporalParameters:
         schema = TOOL_REGISTRY["search_code"]["inputSchema"]
         properties = schema["properties"]
 
-        assert "at_commit" in properties, "at_commit parameter missing from search_code tool schema"
+        assert (
+            "at_commit" in properties
+        ), "at_commit parameter missing from search_code tool schema"
 
         at_commit_spec = properties["at_commit"]
         assert at_commit_spec["type"] == "string"
@@ -58,7 +62,9 @@ class TestMCPToolSchemaTemporalParameters:
         schema = TOOL_REGISTRY["search_code"]["inputSchema"]
         properties = schema["properties"]
 
-        assert "include_removed" in properties, "include_removed parameter missing from search_code tool schema"
+        assert (
+            "include_removed" in properties
+        ), "include_removed parameter missing from search_code tool schema"
 
         include_removed_spec = properties["include_removed"]
         assert include_removed_spec["type"] == "boolean"
@@ -69,7 +75,9 @@ class TestMCPToolSchemaTemporalParameters:
         schema = TOOL_REGISTRY["search_code"]["inputSchema"]
         properties = schema["properties"]
 
-        assert "show_evolution" in properties, "show_evolution parameter missing from search_code tool schema"
+        assert (
+            "show_evolution" in properties
+        ), "show_evolution parameter missing from search_code tool schema"
 
         show_evolution_spec = properties["show_evolution"]
         assert show_evolution_spec["type"] == "boolean"
@@ -80,13 +88,18 @@ class TestMCPToolSchemaTemporalParameters:
         schema = TOOL_REGISTRY["search_code"]["inputSchema"]
         properties = schema["properties"]
 
-        assert "evolution_limit" in properties, "evolution_limit parameter missing from search_code tool schema"
+        assert (
+            "evolution_limit" in properties
+        ), "evolution_limit parameter missing from search_code tool schema"
 
         evolution_limit_spec = properties["evolution_limit"]
         assert evolution_limit_spec["type"] == "integer"
         assert evolution_limit_spec["minimum"] >= 1
         # User-controlled, NO arbitrary max per story requirement
-        assert "maximum" not in evolution_limit_spec or evolution_limit_spec["maximum"] >= 100
+        assert (
+            "maximum" not in evolution_limit_spec
+            or evolution_limit_spec["maximum"] >= 100
+        )
 
 
 @pytest.mark.asyncio
@@ -358,7 +371,9 @@ class TestTemporalErrorHandling:
 
         with patch("code_indexer.server.app.semantic_query_manager") as mock_qm:
             mock_qm.query_user_repositories = Mock(
-                side_effect=ValueError("Invalid date format. Use YYYY-MM-DD with zero-padded month/day (e.g., 2023-01-01)")
+                side_effect=ValueError(
+                    "Invalid date format. Use YYYY-MM-DD with zero-padded month/day (e.g., 2023-01-01)"
+                )
             )
 
             result = await search_code(params, mock_user)
@@ -379,7 +394,9 @@ class TestTemporalErrorHandling:
 
         with patch("code_indexer.server.app.semantic_query_manager") as mock_qm:
             mock_qm.query_user_repositories = Mock(
-                side_effect=ValueError("Time range must use '..' separator (format: YYYY-MM-DD..YYYY-MM-DD)")
+                side_effect=ValueError(
+                    "Time range must use '..' separator (format: YYYY-MM-DD..YYYY-MM-DD)"
+                )
             )
 
             result = await search_code(params, mock_user)

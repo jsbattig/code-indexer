@@ -447,8 +447,8 @@ class SemanticQueryManager:
         for r in results:
             result_dict = r.to_dict()
             # Add temporal_context if present
-            if hasattr(r, '_temporal_context'):
-                result_dict['temporal_context'] = getattr(r, '_temporal_context')
+            if hasattr(r, "_temporal_context"):
+                result_dict["temporal_context"] = getattr(r, "_temporal_context")
             response_results.append(result_dict)
 
         response = {
@@ -1150,12 +1150,17 @@ class SemanticQueryManager:
                 temporal_context = {
                     "first_seen": temporal_result.temporal_context.get("first_seen"),
                     "last_seen": temporal_result.temporal_context.get("last_seen"),
-                    "commit_count": temporal_result.temporal_context.get("appearance_count", 0),
+                    "commit_count": temporal_result.temporal_context.get(
+                        "appearance_count", 0
+                    ),
                     "commits": temporal_result.temporal_context.get("commits", []),
                 }
 
                 # Add is_removed flag if applicable
-                if include_removed and temporal_result.metadata.get("diff_type") == "deleted":
+                if (
+                    include_removed
+                    and temporal_result.metadata.get("diff_type") == "deleted"
+                ):
                     temporal_context["is_removed"] = True
 
                 # Add evolution data if requested (Acceptance Criterion 5 & 6)
@@ -1185,7 +1190,9 @@ class SemanticQueryManager:
                 # so we'll add it as custom attribute
                 query_result_with_temporal = query_result
                 # Store temporal context as custom attribute for later serialization
-                setattr(query_result_with_temporal, '_temporal_context', temporal_context)
+                setattr(
+                    query_result_with_temporal, "_temporal_context", temporal_context
+                )
 
                 query_results.append(query_result)
 

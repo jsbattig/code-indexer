@@ -76,10 +76,7 @@ async def discover_repositories(params: Dict[str, Any], user: User) -> Dict[str,
         # List all golden repositories (source_type filter not currently used)
         repos = golden_repo_manager.list_golden_repos()
 
-        return _mcp_response({
-            "success": True,
-            "repositories": repos
-        })
+        return _mcp_response({"success": True, "repositories": repos})
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e), "repositories": []})
 
@@ -176,12 +173,17 @@ async def sync_repository(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             )
 
         # Defensive check
-        if not hasattr(app, 'background_job_manager') or app.background_job_manager is None:
-            return _mcp_response({
-                "success": False,
-                "error": "Background job manager not initialized",
-                "job_id": None
-            })
+        if (
+            not hasattr(app, "background_job_manager")
+            or app.background_job_manager is None
+        ):
+            return _mcp_response(
+                {
+                    "success": False,
+                    "error": "Background job manager not initialized",
+                    "job_id": None,
+                }
+            )
 
         # Create sync job wrapper function
         from code_indexer.server.app import _execute_repository_sync
@@ -257,7 +259,7 @@ async def list_files(params: Dict[str, Any], user: User) -> Dict[str, Any]:
 
         # Extract files from FileListResponse and serialize FileInfo objects
         # Handle both FileListResponse objects and plain dicts
-        if hasattr(result, 'files'):
+        if hasattr(result, "files"):
             # FileListResponse object with FileInfo objects
             files_data = result.files
         elif isinstance(result, dict):
@@ -350,7 +352,9 @@ async def browse_directory(params: Dict[str, Any], user: User) -> Dict[str, Any]
         )
 
         # Convert FileInfo objects to dict structure
-        files_data = result.files if hasattr(result, 'files') else result.get("files", [])
+        files_data = (
+            result.files if hasattr(result, "files") else result.get("files", [])
+        )
         serialized_files = [
             f.model_dump(mode="json") if hasattr(f, "model_dump") else f
             for f in files_data
@@ -465,11 +469,13 @@ async def add_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, Any]:
             default_branch=default_branch,
             submitter_username=user.username,
         )
-        return _mcp_response({
-            "success": True,
-            "job_id": job_id,
-            "message": f"Golden repository '{alias}' addition started"
-        })
+        return _mcp_response(
+            {
+                "success": True,
+                "job_id": job_id,
+                "message": f"Golden repository '{alias}' addition started",
+            }
+        )
     except Exception as e:
         return _mcp_response({"success": False, "error": str(e)})
 
@@ -481,8 +487,7 @@ async def remove_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, An
     try:
         alias = params["alias"]
         job_id = app.golden_repo_manager.remove_golden_repo(
-            alias,
-            submitter_username=user.username
+            alias, submitter_username=user.username
         )
         return _mcp_response(
             {
@@ -502,8 +507,7 @@ async def refresh_golden_repo(params: Dict[str, Any], user: User) -> Dict[str, A
     try:
         alias = params["alias"]
         job_id = app.golden_repo_manager.refresh_golden_repo(
-            alias,
-            submitter_username=user.username
+            alias, submitter_username=user.username
         )
         return _mcp_response(
             {
@@ -578,7 +582,9 @@ async def get_repository_statistics(
 
         repository_alias = params["repository_alias"]
         # Call with username to lookup activated repository
-        stats_response = stats_service.get_repository_stats(repository_alias, username=user.username)
+        stats_response = stats_service.get_repository_stats(
+            repository_alias, username=user.username
+        )
         # Use mode='json' to serialize datetime objects to ISO format strings
         return _mcp_response(
             {"success": True, "statistics": stats_response.model_dump(mode="json")}

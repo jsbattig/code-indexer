@@ -103,7 +103,7 @@ def test_range_filter_gte_lte(temporal_store):
                 "range": {
                     "gte": 1612137600,  # 2021-02-01
                     "lte": 1614556800,  # 2021-03-01
-                }
+                },
             }
         ]
     }
@@ -138,14 +138,7 @@ def test_any_filter_multiple_matches(temporal_store):
 
     # Filter: diff_type in ["added", "modified"]
     filter_conditions = {
-        "must": [
-            {
-                "key": "diff_type",
-                "match": {
-                    "any": ["added", "modified"]
-                }
-            }
-        ]
+        "must": [{"key": "diff_type", "match": {"any": ["added", "modified"]}}]
     }
 
     query_vector = [1.0, 0.0, 0.0, 0.0]
@@ -179,14 +172,7 @@ def test_contains_filter_case_insensitive(temporal_store):
 
     # Filter: author_name contains "john" (case-insensitive)
     filter_conditions = {
-        "must": [
-            {
-                "key": "author_name",
-                "match": {
-                    "contains": "john"
-                }
-            }
-        ]
+        "must": [{"key": "author_name", "match": {"contains": "john"}}]
     }
 
     query_vector = [1.0, 0.0, 0.0, 0.0]

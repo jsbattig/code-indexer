@@ -35,9 +35,7 @@ class TestDiffContextCLIE2E:
 
         # Create initial commit with a function
         file_path = repo_path / "example.py"
-        file_path.write_text(
-            "# Initial version\ndef function_v1():\n    return 1\n"
-        )
+        file_path.write_text("# Initial version\ndef function_v1():\n    return 1\n")
         subprocess.run(
             ["git", "add", "."], cwd=repo_path, check=True, capture_output=True
         )

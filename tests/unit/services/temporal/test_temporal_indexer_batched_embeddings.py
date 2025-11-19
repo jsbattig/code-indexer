@@ -195,7 +195,11 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
 
         # Verify all chunks were processed (50 file diffs + 1 commit message)
         total_chunks_submitted = sum(len(batch) for batch in submitted_batches)
-        self.assertEqual(total_chunks_submitted, 51, "Should process all 51 chunks (50 file diffs + 1 commit message)")
+        self.assertEqual(
+            total_chunks_submitted,
+            51,
+            "Should process all 51 chunks (50 file diffs + 1 commit message)",
+        )
 
     def test_token_limit_enforcement_large_commit(self):
         """Test that large commits exceeding 120k token limit are split into multiple batches.
@@ -308,7 +312,9 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
         # Verify all chunks were processed (50 file diffs + 1 commit message)
         total_chunks = sum(submitted_batches)
         self.assertEqual(
-            total_chunks, 51, "Should process all 51 chunks across batches (50 file diffs + 1 commit message)"
+            total_chunks,
+            51,
+            "Should process all 51 chunks across batches (50 file diffs + 1 commit message)",
         )
 
     def test_embedding_count_validation(self):
@@ -485,7 +491,9 @@ class TestTemporalIndexerBatchedEmbeddings(unittest.TestCase):
 
         # After fix: Should have 1 API call for commit message
         self.assertEqual(
-            api_call_count[0], 1, "Should call API once for commit message even when all file diffs are skipped"
+            api_call_count[0],
+            1,
+            "Should call API once for commit message even when all file diffs are skipped",
         )
 
         # After fix: Verify slot was marked COMPLETE

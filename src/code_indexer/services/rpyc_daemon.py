@@ -33,10 +33,7 @@ except ImportError:
 
 # Import socket helper for /tmp/cidx socket management
 from code_indexer.config import ConfigManager
-from code_indexer.daemon.socket_helper import (
-    create_mapping_file,
-    cleanup_old_socket
-)
+from code_indexer.daemon.socket_helper import create_mapping_file, cleanup_old_socket
 
 logger = logging.getLogger(__name__)
 

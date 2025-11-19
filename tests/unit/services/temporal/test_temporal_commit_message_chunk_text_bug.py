@@ -45,7 +45,9 @@ class TestCommitMessageChunkTextBug:
             repo_path.mkdir()
 
             # Initialize git repo (required by FilesystemVectorStore)
-            subprocess.run(["git", "init"], cwd=repo_path, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "init"], cwd=repo_path, check=True, capture_output=True
+            )
             subprocess.run(
                 ["git", "config", "user.email", "test@example.com"],
                 cwd=repo_path,
@@ -76,8 +78,7 @@ class TestCommitMessageChunkTextBug:
             index_dir = tmpdir_path / "index"
             index_dir.mkdir()
             vector_store = FilesystemVectorStore(
-                base_path=index_dir,
-                project_root=repo_path
+                base_path=index_dir, project_root=repo_path
             )
 
             # Create indexer with mocked embedding provider
@@ -116,7 +117,9 @@ class TestCommitMessageChunkTextBug:
                     mock_vector_manager = Mock()
                     mock_result = Mock()
                     mock_result.error = None
-                    mock_result.embeddings = [[0.1] * 1024]  # One embedding for the commit message
+                    mock_result.embeddings = [
+                        [0.1] * 1024
+                    ]  # One embedding for the commit message
                     mock_future = Mock()
                     mock_future.result.return_value = mock_result
                     mock_vector_manager.submit_batch_task.return_value = mock_future
@@ -133,7 +136,9 @@ class TestCommitMessageChunkTextBug:
 
                     # Call _index_commit_message directly
                     project_id = "test_project"
-                    indexer._index_commit_message(commit, project_id, mock_vector_manager)
+                    indexer._index_commit_message(
+                        commit, project_id, mock_vector_manager
+                    )
 
             # VERIFICATION: Check that upsert_points was called with points containing chunk_text
             assert len(upsert_spy_calls) > 0, "upsert_points was never called"
@@ -175,8 +180,7 @@ class TestCommitMessageChunkTextBug:
             )
 
             assert "testing purposes" in chunk_text, (
-                f"BUG: chunk_text missing commit body text. "
-                f"Got: {chunk_text!r}"
+                f"BUG: chunk_text missing commit body text. " f"Got: {chunk_text!r}"
             )
 
             # Verify the text length is reasonable (not truncated to empty)

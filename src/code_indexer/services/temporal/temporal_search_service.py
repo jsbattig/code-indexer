@@ -334,34 +334,32 @@ class TemporalSearchService:
 
         # Add time range filter to filter_conditions (Phase 3: Temporal Filter Migration)
         start_ts = int(datetime.strptime(time_range[0], "%Y-%m-%d").timestamp())
-        end_ts = int(datetime.strptime(time_range[1], "%Y-%m-%d").replace(
-            hour=23, minute=59, second=59
-        ).timestamp())
-        filter_conditions.setdefault("must", []).append({
-            "key": "commit_timestamp",
-            "range": {"gte": start_ts, "lte": end_ts}
-        })
+        end_ts = int(
+            datetime.strptime(time_range[1], "%Y-%m-%d")
+            .replace(hour=23, minute=59, second=59)
+            .timestamp()
+        )
+        filter_conditions.setdefault("must", []).append(
+            {"key": "commit_timestamp", "range": {"gte": start_ts, "lte": end_ts}}
+        )
 
         # Add diff_type filter if specified (Phase 3: Temporal Filter Migration)
         if diff_types:
-            filter_conditions.setdefault("must", []).append({
-                "key": "diff_type",
-                "match": {"any": list(diff_types)}
-            })
+            filter_conditions.setdefault("must", []).append(
+                {"key": "diff_type", "match": {"any": list(diff_types)}}
+            )
 
         # Add author filter if specified (Phase 3: Temporal Filter Migration)
         if author:
-            filter_conditions.setdefault("must", []).append({
-                "key": "author_name",
-                "match": {"contains": author.lower()}
-            })
+            filter_conditions.setdefault("must", []).append(
+                {"key": "author_name", "match": {"contains": author.lower()}}
+            )
 
         # Add chunk_type filter if specified (Story #476: Filter commit messages vs commit diffs)
         if chunk_type:
-            filter_conditions.setdefault("must", []).append({
-                "key": "type",
-                "match": {"value": chunk_type}
-            })
+            filter_conditions.setdefault("must", []).append(
+                {"key": "type", "match": {"value": chunk_type}}
+            )
 
         # Phase 1: Semantic search (over-fetch for filtering headroom)
         start_time = time.time()
@@ -675,10 +673,13 @@ class TemporalSearchService:
             commit_timestamp = payload.get("commit_timestamp")
             if commit_timestamp:
                 from datetime import datetime
+
                 start_ts = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp())
-                end_ts = int(datetime.strptime(end_date, "%Y-%m-%d").replace(
-                    hour=23, minute=59, second=59
-                ).timestamp())
+                end_ts = int(
+                    datetime.strptime(end_date, "%Y-%m-%d")
+                    .replace(hour=23, minute=59, second=59)
+                    .timestamp()
+                )
 
                 if commit_timestamp < start_ts or commit_timestamp > end_ts:
                     continue

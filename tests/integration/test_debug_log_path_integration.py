@@ -44,7 +44,9 @@ class TestDebugLogPathIntegration:
         # Create a test file and commit
         test_file = repo_path / "test.py"
         test_file.write_text("def hello():\n    return 'world'\n")
-        subprocess.run(["git", "add", "."], cwd=repo_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "add", "."], cwd=repo_path, check=True, capture_output=True
+        )
         subprocess.run(
             ["git", "commit", "-m", "Initial commit"],
             cwd=repo_path,
@@ -81,7 +83,9 @@ class TestDebugLogPathIntegration:
 
     def test_vector_calculation_manager_uses_config_dir(self, tmp_path):
         """Test that VectorCalculationManager accepts and uses config_dir parameter."""
-        from code_indexer.services.vector_calculation_manager import VectorCalculationManager
+        from code_indexer.services.vector_calculation_manager import (
+            VectorCalculationManager,
+        )
         from code_indexer.services.embedding_factory import EmbeddingProviderFactory
         from code_indexer.config import Config
 
@@ -99,9 +103,7 @@ class TestDebugLogPathIntegration:
 
             # Create VectorCalculationManager with config_dir
             manager = VectorCalculationManager(
-                embedding_provider=provider,
-                thread_count=2,
-                config_dir=config_dir
+                embedding_provider=provider, thread_count=2, config_dir=config_dir
             )
 
             # Verify config_dir is set

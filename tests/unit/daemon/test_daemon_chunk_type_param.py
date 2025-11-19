@@ -79,10 +79,14 @@ def test_daemon_passes_chunk_type_to_search_service():
 
     daemon_config = {"enabled": True, "retry_delays_ms": [100]}
 
-    with patch("code_indexer.cli_daemon_delegation._find_config_file") as mock_find, \
-         patch("code_indexer.cli_daemon_delegation._get_socket_path") as mock_socket, \
-         patch("code_indexer.cli_daemon_delegation._connect_to_daemon") as mock_connect, \
-         patch("code_indexer.utils.temporal_display.display_temporal_results") as mock_display:
+    with (
+        patch("code_indexer.cli_daemon_delegation._find_config_file") as mock_find,
+        patch("code_indexer.cli_daemon_delegation._get_socket_path") as mock_socket,
+        patch("code_indexer.cli_daemon_delegation._connect_to_daemon") as mock_connect,
+        patch(
+            "code_indexer.utils.temporal_display.display_temporal_results"
+        ) as mock_display,
+    ):
 
         mock_find.return_value = Path("/fake/.code-indexer/config.json")
         mock_socket.return_value = Path("/fake/.code-indexer/daemon.sock")
@@ -101,16 +105,18 @@ def test_daemon_passes_chunk_type_to_search_service():
         assert result == 0, "Function should return success"
 
         # Verify chunk_type was passed to RPC call
-        assert mock_conn.root.exposed_query_temporal.called, "RPC method should be called"
+        assert (
+            mock_conn.root.exposed_query_temporal.called
+        ), "RPC method should be called"
         call_kwargs = mock_conn.root.exposed_query_temporal.call_args.kwargs
 
         assert "chunk_type" in call_kwargs, (
             f"chunk_type not passed to exposed_query_temporal. "
             f"Actual kwargs: {call_kwargs}"
         )
-        assert call_kwargs["chunk_type"] == "commit_diff", (
-            f"chunk_type value incorrect. Expected 'commit_diff', got {call_kwargs.get('chunk_type')}"
-        )
+        assert (
+            call_kwargs["chunk_type"] == "commit_diff"
+        ), f"chunk_type value incorrect. Expected 'commit_diff', got {call_kwargs.get('chunk_type')}"
 
 
 if __name__ == "__main__":

@@ -3,11 +3,14 @@
 Tests _serialize_value_for_json function to ensure all common Python types
 are properly converted to JSON-serializable values.
 """
+
 import json
 from pathlib import Path
 from datetime import datetime
 
-from src.code_indexer.server.middleware.error_formatters import _serialize_value_for_json
+from src.code_indexer.server.middleware.error_formatters import (
+    _serialize_value_for_json,
+)
 
 
 def test_serialize_path_object():
@@ -26,8 +29,8 @@ def test_serialize_nested_structure_with_path_and_datetime():
         "created_at": datetime(2025, 11, 13, 12, 0, 0),
         "nested": {
             "paths": [Path("/a"), Path("/b")],
-            "timestamp": datetime(2025, 11, 13, 13, 0, 0)
-        }
+            "timestamp": datetime(2025, 11, 13, 13, 0, 0),
+        },
     }
 
     result = _serialize_value_for_json(data)

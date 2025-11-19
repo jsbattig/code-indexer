@@ -27,18 +27,22 @@ def large_temporal_store(temp_store):
     points = []
     for i in range(50):
         is_match = i < 10  # First 10 match time range
-        points.append({
-            "id": f"commit{i}_file",
-            "vector": [1.0 - (i * 0.01), i * 0.01, 0.0, 0.0],
-            "payload": {
-                "path": f"src/file{i}.py",
-                "language": "python",
-                "commit_hash": f"hash{i}",
-                "commit_timestamp": 1609459200 + (i * 86400) if is_match else 1640995200 + i,  # Match vs no-match
-                "author_name": "John Doe" if is_match else "Jane Smith",
-                "diff_type": "modified",
-            },
-        })
+        points.append(
+            {
+                "id": f"commit{i}_file",
+                "vector": [1.0 - (i * 0.01), i * 0.01, 0.0, 0.0],
+                "payload": {
+                    "path": f"src/file{i}.py",
+                    "language": "python",
+                    "commit_hash": f"hash{i}",
+                    "commit_timestamp": (
+                        1609459200 + (i * 86400) if is_match else 1640995200 + i
+                    ),  # Match vs no-match
+                    "author_name": "John Doe" if is_match else "Jane Smith",
+                    "diff_type": "modified",
+                },
+            }
+        )
 
     temp_store.begin_indexing(collection_name)
     temp_store.upsert_points(collection_name, points)
@@ -62,7 +66,7 @@ def test_lazy_loading_early_exit_reduces_json_loads(large_temporal_store):
                 "range": {
                     "gte": 1609459200,  # Start of matching range
                     "lte": 1609459200 + (9 * 86400),  # End of matching range (10 days)
-                }
+                },
             }
         ]
     }
@@ -79,11 +83,11 @@ def test_lazy_loading_early_exit_reduces_json_loads(large_temporal_store):
         nonlocal json_loads_count
         if len(args) > 0 and isinstance(args[0], (str, Path)):
             path_str = str(args[0])
-            if path_str.endswith('.json') and 'collection_meta.json' not in path_str:
+            if path_str.endswith(".json") and "collection_meta.json" not in path_str:
                 json_loads_count += 1
         return original_open(*args, **kwargs)
 
-    with patch('builtins.open', side_effect=counting_open):
+    with patch("builtins.open", side_effect=counting_open):
         results = store.search(
             query="test query",
             embedding_provider=mock_embedding_provider,

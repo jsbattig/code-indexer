@@ -134,7 +134,9 @@ class TestBlobDeduplicationLogic:
 
                         # Verify: Since the blob is already in the registry, FILE DIFF
                         # vectorization should NOT happen, BUT commit message should still be indexed
-                        assert vectorization_called, "Commit message should always be vectorized"
+                        assert (
+                            vectorization_called
+                        ), "Commit message should always be vectorized"
 
                         # Verify that ONLY commit message was vectorized (not file diff)
                         # The commit message should contain "Initial commit"

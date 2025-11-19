@@ -79,9 +79,27 @@ class TestFilterParsingPerformance:
             mock_vector_store.resolve_collection_name.return_value = "voyage-code-3"
             # Return 3 results to test filter parsing performance
             mock_results = [
-                {"score": 0.9, "payload": {"path": "/tmp/test_project/src/file1.py", "language": ".py"}},
-                {"score": 0.8, "payload": {"path": "/tmp/test_project/src/file2.py", "language": ".py"}},
-                {"score": 0.7, "payload": {"path": "/tmp/test_project/src/file3.py", "language": ".py"}},
+                {
+                    "score": 0.9,
+                    "payload": {
+                        "path": "/tmp/test_project/src/file1.py",
+                        "language": ".py",
+                    },
+                },
+                {
+                    "score": 0.8,
+                    "payload": {
+                        "path": "/tmp/test_project/src/file2.py",
+                        "language": ".py",
+                    },
+                },
+                {
+                    "score": 0.7,
+                    "payload": {
+                        "path": "/tmp/test_project/src/file3.py",
+                        "language": ".py",
+                    },
+                },
             ]
             mock_vector_store.search.return_value = (mock_results, {})
 

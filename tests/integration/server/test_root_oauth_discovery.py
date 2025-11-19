@@ -20,9 +20,9 @@ class TestRootOAuthDiscovery:
     def test_root_discovery_endpoint_exists(self, client):
         """Test that /.well-known/oauth-authorization-server exists at root level."""
         response = client.get("/.well-known/oauth-authorization-server")
-        assert response.status_code == 200, (
-            "Root-level OAuth discovery endpoint must return 200 OK for RFC 8414 compliance"
-        )
+        assert (
+            response.status_code == 200
+        ), "Root-level OAuth discovery endpoint must return 200 OK for RFC 8414 compliance"
 
     def test_root_discovery_returns_valid_metadata(self, client):
         """Test that root discovery endpoint returns valid OAuth 2.1 metadata."""
@@ -33,10 +33,14 @@ class TestRootOAuthDiscovery:
 
         # Verify required OAuth 2.1 discovery fields
         assert "issuer" in data, "Missing required field: issuer"
-        assert "authorization_endpoint" in data, "Missing required field: authorization_endpoint"
+        assert (
+            "authorization_endpoint" in data
+        ), "Missing required field: authorization_endpoint"
         assert "token_endpoint" in data, "Missing required field: token_endpoint"
         assert "code_challenge_methods_supported" in data
-        assert "S256" in data["code_challenge_methods_supported"], "Must support PKCE S256"
+        assert (
+            "S256" in data["code_challenge_methods_supported"]
+        ), "Must support PKCE S256"
 
     def test_root_discovery_matches_oauth_prefixed_endpoint(self, client):
         """Test that root discovery returns same metadata as /oauth/ prefixed endpoint."""
@@ -50,6 +54,6 @@ class TestRootOAuthDiscovery:
         root_data = root_response.json()
         oauth_data = oauth_response.json()
 
-        assert root_data == oauth_data, (
-            "Root and /oauth/ discovery endpoints must return identical metadata"
-        )
+        assert (
+            root_data == oauth_data
+        ), "Root and /oauth/ discovery endpoints must return identical metadata"

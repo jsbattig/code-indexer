@@ -78,9 +78,9 @@ class TestCountPointsPerformance:
             actual_count = store.count_points(collection_name)
 
             # Verify count is correct
-            assert actual_count == expected_count, (
-                f"Expected count {expected_count}, got {actual_count}"
-            )
+            assert (
+                actual_count == expected_count
+            ), f"Expected count {expected_count}, got {actual_count}"
 
             # Verify _load_id_index was NOT called (fast path used)
             mock_load_id_index.assert_not_called()
@@ -113,13 +113,11 @@ class TestCountPointsPerformance:
         actual_count = store.count_points(collection_name)
 
         # Verify count matches ID index length
-        assert actual_count == len(id_index), (
-            f"Expected count {len(id_index)}, got {actual_count}"
-        )
+        assert actual_count == len(
+            id_index
+        ), f"Expected count {len(id_index)}, got {actual_count}"
 
-    def test_count_points_fallback_when_hnsw_index_missing(
-        self, temp_index_dir: Path
-    ):
+    def test_count_points_fallback_when_hnsw_index_missing(self, temp_index_dir: Path):
         """Test that count_points() falls back when hnsw_index field missing.
 
         This test verifies the FALLBACK PATH:
@@ -157,9 +155,9 @@ class TestCountPointsPerformance:
         actual_count = store.count_points(collection_name)
 
         # Verify count matches ID index length
-        assert actual_count == len(id_index), (
-            f"Expected count {len(id_index)}, got {actual_count}"
-        )
+        assert actual_count == len(
+            id_index
+        ), f"Expected count {len(id_index)}, got {actual_count}"
 
     def test_count_points_fallback_when_vector_count_missing(
         self, temp_index_dir: Path
@@ -208,9 +206,9 @@ class TestCountPointsPerformance:
         actual_count = store.count_points(collection_name)
 
         # Verify count matches ID index length
-        assert actual_count == len(id_index), (
-            f"Expected count {len(id_index)}, got {actual_count}"
-        )
+        assert actual_count == len(
+            id_index
+        ), f"Expected count {len(id_index)}, got {actual_count}"
 
     def test_count_points_accuracy_matches_id_index(self, temp_index_dir: Path):
         """Test that fast path count exactly matches ID index count.
@@ -243,7 +241,9 @@ class TestCountPointsPerformance:
             json.dump(metadata, f)
 
         # Create ID index with SAME count as metadata (using proper binary format)
-        id_index = {f"file{i}.py:0": Path(f"path/to/file{i}") for i in range(test_count)}
+        id_index = {
+            f"file{i}.py:0": Path(f"path/to/file{i}") for i in range(test_count)
+        }
 
         id_index_manager = IDIndexManager()
         id_index_manager.save_index(collection_path, id_index)
@@ -259,12 +259,10 @@ class TestCountPointsPerformance:
         slow_count = len(store._id_index[collection_name])
 
         # Verify both methods return same count
-        assert fast_count == slow_count, (
-            f"Fast path count {fast_count} != slow path count {slow_count}"
-        )
-        assert fast_count == test_count, (
-            f"Count {fast_count} != expected {test_count}"
-        )
+        assert (
+            fast_count == slow_count
+        ), f"Fast path count {fast_count} != slow path count {slow_count}"
+        assert fast_count == test_count, f"Count {fast_count} != expected {test_count}"
 
     def test_count_points_performance_improvement(
         self, temp_index_dir: Path, collection_with_metadata: tuple[Path, int]

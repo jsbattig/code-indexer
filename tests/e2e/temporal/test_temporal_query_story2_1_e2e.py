@@ -120,7 +120,11 @@ class TestTemporalQueryStory21E2E:
         assert "[MODIFIED]" in output or "[ADDED]" in output
 
         # Check for diff display or line-numbered content
-        assert "@@" in output or "logger.warning" in output or "TokenExpiredError" in output
+        assert (
+            "@@" in output
+            or "logger.warning" in output
+            or "TokenExpiredError" in output
+        )
 
         # Check that we show the specific changed lines
         assert "logger.warning" in output or "TokenExpiredError" in output
@@ -152,7 +156,11 @@ class TestTemporalQueryStory21E2E:
 
         # Check that commit message content or file changes are shown
         # (Message content may be empty in diff-based indexing, but file changes are tracked)
-        assert "auth.py" in output or "JWT validation" in output or "File changes tracked" in output
+        assert (
+            "auth.py" in output
+            or "JWT validation" in output
+            or "File changes tracked" in output
+        )
 
     def test_temporal_query_mixed_results(self):
         """Test that temporal query shows both commit messages and file chunks properly ordered."""
@@ -245,7 +253,9 @@ class TestTemporalQueryStory21E2E:
         # Check that it shows the chunk properly (not truncated at 500 chars)
         assert "def test_function" in output
 
-    @pytest.mark.skip(reason="E2E test times out on re-indexing (>180s) and commit message body not stored in diff-based indexing")
+    @pytest.mark.skip(
+        reason="E2E test times out on re-indexing (>180s) and commit message body not stored in diff-based indexing"
+    )
     def test_temporal_query_shows_full_commit_message(self):
         """Test that full commit message is shown, not truncated."""
         # Add a commit with a long message

@@ -220,7 +220,8 @@ class TestBug7Integration(unittest.TestCase):
 
                             # 4. Verify one point ID uses the correct original index (:2) for file diff
                             file_diff_points = [
-                                p for p in upserted_points
+                                p
+                                for p in upserted_points
                                 if p["payload"].get("type") != "commit_message"
                             ]
                             self.assertEqual(

@@ -36,18 +36,24 @@ def test_commit_message_parsing_captures_full_body():
         subprocess.run(["git", "init"], cwd=repo_path, check=True, capture_output=True)
         subprocess.run(
             ["git", "config", "user.name", "Test User"],
-            cwd=repo_path, check=True, capture_output=True
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
         )
         subprocess.run(
             ["git", "config", "user.email", "test@example.com"],
-            cwd=repo_path, check=True, capture_output=True
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
         )
 
         # Create file and make commit with multi-paragraph message
         test_file = repo_path / "test.py"
         test_file.write_text("print('hello')\n")
 
-        subprocess.run(["git", "add", "."], cwd=repo_path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "add", "."], cwd=repo_path, check=True, capture_output=True
+        )
 
         # Multi-paragraph commit message with pipe character (would break old parsing)
         commit_message = """feat: implement watch mode | add real-time indexing
@@ -71,7 +77,9 @@ This is critical functionality for development workflows."""
         # Create commit with subprocess to preserve exact message
         subprocess.run(
             ["git", "commit", "-m", commit_message],
-            cwd=repo_path, check=True, capture_output=True,
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
             env={
                 **subprocess.os.environ,
                 "GIT_AUTHOR_NAME": "Test User",
@@ -87,16 +95,13 @@ This is critical functionality for development workflows."""
         temporal_dir.mkdir(parents=True, exist_ok=True)
 
         vector_store = FilesystemVectorStore(
-            base_path=temporal_dir,
-            project_root=repo_path
+            base_path=temporal_dir, project_root=repo_path
         )
         indexer = TemporalIndexer(config_manager, vector_store)
 
         # Get commit history - this will invoke _get_commit_history()
         commits = indexer._get_commit_history(
-            all_branches=False,
-            max_commits=None,
-            since_date=None
+            all_branches=False, max_commits=None, since_date=None
         )
 
         # Should have exactly one commit
@@ -106,21 +111,26 @@ This is critical functionality for development workflows."""
 
         # CRITICAL VERIFICATION: Check that full message was captured
         # The message field should contain FULL body, not just subject line
-        assert "feat: implement watch mode | add real-time indexing" in commit.message, \
-            f"Subject line not found in commit message. Got: {commit.message[:100]}"
+        assert (
+            "feat: implement watch mode | add real-time indexing" in commit.message
+        ), f"Subject line not found in commit message. Got: {commit.message[:100]}"
 
         # Verify multi-paragraph content is preserved
-        assert "Technical Details:" in commit.message, \
-            f"Multi-paragraph message not preserved. Got: {commit.message[:200]}"
+        assert (
+            "Technical Details:" in commit.message
+        ), f"Multi-paragraph message not preserved. Got: {commit.message[:200]}"
 
-        assert "Architecture Changes:" in commit.message, \
-            f"Multi-paragraph message not preserved. Got: {commit.message[:200]}"
+        assert (
+            "Architecture Changes:" in commit.message
+        ), f"Multi-paragraph message not preserved. Got: {commit.message[:200]}"
 
         # Verify pipe character in message didn't break parsing
-        assert "prevents thrashing" in commit.message, \
-            f"Content after pipe character was truncated. Got: {commit.message[:200]}"
+        assert (
+            "prevents thrashing" in commit.message
+        ), f"Content after pipe character was truncated. Got: {commit.message[:200]}"
 
         # Verify it's not truncated to first line
         first_line = "feat: implement watch mode | add real-time indexing"
-        assert len(commit.message) > len(first_line) * 2, \
-            f"Message appears truncated to first line only ({len(commit.message)} chars)"
+        assert (
+            len(commit.message) > len(first_line) * 2
+        ), f"Message appears truncated to first line only ({len(commit.message)} chars)"

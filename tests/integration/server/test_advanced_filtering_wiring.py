@@ -38,20 +38,24 @@ def app_with_test_repo(tmp_path: Path):
     config_dir.mkdir()
 
     # Create sample code files
-    (repo_dir / "auth.py").write_text("""
+    (repo_dir / "auth.py").write_text(
+        """
 def authenticate(user, password):
     '''Authentication function in Python.'''
     return user and password
-""")
+"""
+    )
 
-    (repo_dir / "user.go").write_text("""
+    (repo_dir / "user.go").write_text(
+        """
 package main
 
 func GetUser(id int) User {
     // User retrieval in Go
     return User{ID: id}
 }
-""")
+"""
+    )
 
     # Create config
     config = {"proxy_mode": False, "embedding_provider": "voyage-ai"}
@@ -77,6 +81,7 @@ func GetUser(id int) User {
 
     # Override activated repo manager data directory
     from code_indexer.server import app as app_module
+
     app_module.activated_repo_manager.activated_repos_dir = activated_repos_dir
 
     yield app
@@ -103,27 +108,47 @@ def override_get_current_user():
 class TestLanguageFilterWiring:
     """Test language filters are properly wired through the endpoint."""
 
-    def test_language_filters_passed_to_fts_search(self, test_client: TestClient, tmp_path: Path):
+    def test_language_filters_passed_to_fts_search(
+        self, test_client: TestClient, tmp_path: Path
+    ):
         """Test that language and exclude_language are processed and passed to FTS search."""
         app = test_client.app
-        app.dependency_overrides[dependencies.get_current_user] = override_get_current_user
+        app.dependency_overrides[dependencies.get_current_user] = (
+            override_get_current_user
+        )
 
         try:
             # Create FTS index directory
             from code_indexer.server import app as app_module
+
             activated_repos_dir = app_module.activated_repo_manager.activated_repos_dir
-            fts_index_dir = Path(activated_repos_dir) / "testuser" / "test-repo" / ".code-indexer" / "tantivy_index"
+            fts_index_dir = (
+                Path(activated_repos_dir)
+                / "testuser"
+                / "test-repo"
+                / ".code-indexer"
+                / "tantivy_index"
+            )
             fts_index_dir.mkdir(parents=True, exist_ok=True)
             (fts_index_dir / "dummy.txt").write_text("dummy")
 
             # Mock activated repository listing
-            with patch('code_indexer.server.app.activated_repo_manager.list_activated_repositories') as mock_list_repos:
+            with patch(
+                "code_indexer.server.app.activated_repo_manager.list_activated_repositories"
+            ) as mock_list_repos:
                 mock_list_repos.return_value = [
-                    {"user_alias": "test-repo", "path": str(Path(activated_repos_dir) / "testuser" / "test-repo")}
+                    {
+                        "user_alias": "test-repo",
+                        "path": str(
+                            Path(activated_repos_dir) / "testuser" / "test-repo"
+                        ),
+                    }
                 ]
 
                 # Mock TantivyIndexManager to capture calls
-                with patch('code_indexer.services.tantivy_index_manager.TantivyIndexManager') as MockTantivyClass:
+                with patch(
+                    "code_indexer.services.tantivy_index_manager.TantivyIndexManager"
+                ) as MockTantivyClass:
                     mock_tantivy_instance = MockTantivyClass.return_value
                     mock_tantivy_instance.initialize_index.return_value = None
                     mock_tantivy_instance.search.return_value = []
@@ -136,8 +161,8 @@ class TestLanguageFilterWiring:
                             "search_mode": "fts",
                             "language": ["python", "go", "rust"],
                             "exclude_language": ["rust"],
-                            "repository_alias": "test-repo"
-                        }
+                            "repository_alias": "test-repo",
+                        },
                     )
 
                     assert response.status_code == 200
@@ -148,30 +173,50 @@ class TestLanguageFilterWiring:
 
                     # After wiring, languages should be passed properly
                     # exclude_language should remove "rust" from the list
-                    assert 'languages' in call_kwargs
-                    assert sorted(call_kwargs['languages']) == ["go", "python"]
+                    assert "languages" in call_kwargs
+                    assert sorted(call_kwargs["languages"]) == ["go", "python"]
 
         finally:
             app.dependency_overrides.clear()
 
-    def test_path_filters_with_exclusions(self, test_client: TestClient, tmp_path: Path):
+    def test_path_filters_with_exclusions(
+        self, test_client: TestClient, tmp_path: Path
+    ):
         """Test that path_filter and exclude_path are processed correctly."""
         app = test_client.app
-        app.dependency_overrides[dependencies.get_current_user] = override_get_current_user
+        app.dependency_overrides[dependencies.get_current_user] = (
+            override_get_current_user
+        )
 
         try:
             from code_indexer.server import app as app_module
+
             activated_repos_dir = app_module.activated_repo_manager.activated_repos_dir
-            fts_index_dir = Path(activated_repos_dir) / "testuser" / "test-repo" / ".code-indexer" / "tantivy_index"
+            fts_index_dir = (
+                Path(activated_repos_dir)
+                / "testuser"
+                / "test-repo"
+                / ".code-indexer"
+                / "tantivy_index"
+            )
             fts_index_dir.mkdir(parents=True, exist_ok=True)
             (fts_index_dir / "dummy.txt").write_text("dummy")
 
-            with patch('code_indexer.server.app.activated_repo_manager.list_activated_repositories') as mock_list_repos:
+            with patch(
+                "code_indexer.server.app.activated_repo_manager.list_activated_repositories"
+            ) as mock_list_repos:
                 mock_list_repos.return_value = [
-                    {"user_alias": "test-repo", "path": str(Path(activated_repos_dir) / "testuser" / "test-repo")}
+                    {
+                        "user_alias": "test-repo",
+                        "path": str(
+                            Path(activated_repos_dir) / "testuser" / "test-repo"
+                        ),
+                    }
                 ]
 
-                with patch('code_indexer.services.tantivy_index_manager.TantivyIndexManager') as MockTantivyClass:
+                with patch(
+                    "code_indexer.services.tantivy_index_manager.TantivyIndexManager"
+                ) as MockTantivyClass:
                     mock_tantivy_instance = MockTantivyClass.return_value
                     mock_tantivy_instance.initialize_index.return_value = None
                     mock_tantivy_instance.search.return_value = []
@@ -183,16 +228,16 @@ class TestLanguageFilterWiring:
                             "search_mode": "fts",
                             "path_filter": ["*/src/*", "*/lib/*", "*/tests/*"],
                             "exclude_path": ["*/tests/*"],
-                            "repository_alias": "test-repo"
-                        }
+                            "repository_alias": "test-repo",
+                        },
                     )
 
                     assert response.status_code == 200
 
                     # Verify path filters with exclusion applied
                     call_kwargs = mock_tantivy_instance.search.call_args[1]
-                    assert 'path_filters' in call_kwargs
-                    assert sorted(call_kwargs['path_filters']) == ["*/lib/*", "*/src/*"]
+                    assert "path_filters" in call_kwargs
+                    assert sorted(call_kwargs["path_filters"]) == ["*/lib/*", "*/src/*"]
 
         finally:
             app.dependency_overrides.clear()
@@ -200,21 +245,39 @@ class TestLanguageFilterWiring:
     def test_regex_mode_passed_to_fts(self, test_client: TestClient, tmp_path: Path):
         """Test that regex=True is passed to FTS search."""
         app = test_client.app
-        app.dependency_overrides[dependencies.get_current_user] = override_get_current_user
+        app.dependency_overrides[dependencies.get_current_user] = (
+            override_get_current_user
+        )
 
         try:
             from code_indexer.server import app as app_module
+
             activated_repos_dir = app_module.activated_repo_manager.activated_repos_dir
-            fts_index_dir = Path(activated_repos_dir) / "testuser" / "test-repo" / ".code-indexer" / "tantivy_index"
+            fts_index_dir = (
+                Path(activated_repos_dir)
+                / "testuser"
+                / "test-repo"
+                / ".code-indexer"
+                / "tantivy_index"
+            )
             fts_index_dir.mkdir(parents=True, exist_ok=True)
             (fts_index_dir / "dummy.txt").write_text("dummy")
 
-            with patch('code_indexer.server.app.activated_repo_manager.list_activated_repositories') as mock_list_repos:
+            with patch(
+                "code_indexer.server.app.activated_repo_manager.list_activated_repositories"
+            ) as mock_list_repos:
                 mock_list_repos.return_value = [
-                    {"user_alias": "test-repo", "path": str(Path(activated_repos_dir) / "testuser" / "test-repo")}
+                    {
+                        "user_alias": "test-repo",
+                        "path": str(
+                            Path(activated_repos_dir) / "testuser" / "test-repo"
+                        ),
+                    }
                 ]
 
-                with patch('code_indexer.services.tantivy_index_manager.TantivyIndexManager') as MockTantivyClass:
+                with patch(
+                    "code_indexer.services.tantivy_index_manager.TantivyIndexManager"
+                ) as MockTantivyClass:
                     mock_tantivy_instance = MockTantivyClass.return_value
                     mock_tantivy_instance.initialize_index.return_value = None
                     mock_tantivy_instance.search.return_value = []
@@ -225,16 +288,16 @@ class TestLanguageFilterWiring:
                             "query_text": "def.*",
                             "search_mode": "fts",
                             "regex": True,
-                            "repository_alias": "test-repo"
-                        }
+                            "repository_alias": "test-repo",
+                        },
                     )
 
                     assert response.status_code == 200
 
                     # Verify regex parameter passed to search
                     call_kwargs = mock_tantivy_instance.search.call_args[1]
-                    assert 'use_regex' in call_kwargs
-                    assert call_kwargs['use_regex'] is True
+                    assert "use_regex" in call_kwargs
+                    assert call_kwargs["use_regex"] is True
 
         finally:
             app.dependency_overrides.clear()

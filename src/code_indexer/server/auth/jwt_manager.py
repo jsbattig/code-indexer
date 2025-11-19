@@ -129,7 +129,9 @@ class JWTManager:
             "created_at": payload.get("created_at"),
             "exp": expire.timestamp(),  # Use timestamp() for microsecond precision
             "iat": now.timestamp(),  # Use timestamp() for microsecond precision
-            "jti": payload.get("jti", str(uuid.uuid4())),  # Preserve JTI or create new one
+            "jti": payload.get(
+                "jti", str(uuid.uuid4())
+            ),  # Preserve JTI or create new one
         }
 
         # Create and return new token

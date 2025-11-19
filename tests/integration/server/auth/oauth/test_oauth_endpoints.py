@@ -16,7 +16,11 @@ class TestOAuthEndpointsIntegration:
     @pytest.fixture(autouse=True)
     def reset_rate_limiters(self):
         """Reset global rate limiters before each test to ensure test isolation."""
-        from code_indexer.server.auth.oauth_rate_limiter import oauth_token_rate_limiter, oauth_register_rate_limiter
+        from code_indexer.server.auth.oauth_rate_limiter import (
+            oauth_token_rate_limiter,
+            oauth_register_rate_limiter,
+        )
+
         oauth_token_rate_limiter._attempts.clear()
         oauth_register_rate_limiter._attempts.clear()
         yield
@@ -36,6 +40,7 @@ class TestOAuthEndpointsIntegration:
     def oauth_manager(self, temp_oauth_db):
         """Create shared OAuth manager instance."""
         from code_indexer.server.auth.oauth.oauth_manager import OAuthManager
+
         return OAuthManager(db_path=temp_oauth_db, issuer="http://localhost:8000")
 
     @pytest.fixture
@@ -54,9 +59,11 @@ class TestOAuthEndpointsIntegration:
     def pkce_pair(self):
         """Generate PKCE code verifier and challenge."""
         code_verifier = secrets.token_urlsafe(64)
-        code_challenge = base64.urlsafe_b64encode(
-            hashlib.sha256(code_verifier.encode()).digest()
-        ).decode().rstrip("=")
+        code_challenge = (
+            base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
+            .decode()
+            .rstrip("=")
+        )
         return code_verifier, code_challenge
 
     def test_discovery_endpoint_returns_metadata(self, app):
@@ -77,8 +84,8 @@ class TestOAuthEndpointsIntegration:
             "/oauth/register",
             json={
                 "client_name": "Test Client",
-                "redirect_uris": ["https://example.com/callback"]
-            }
+                "redirect_uris": ["https://example.com/callback"],
+            },
         )
 
         assert response.status_code == 200
@@ -97,8 +104,8 @@ class TestOAuthEndpointsIntegration:
             "/oauth/register",
             json={
                 "client_name": "E2E Test Client",
-                "redirect_uris": ["https://example.com/callback"]
-            }
+                "redirect_uris": ["https://example.com/callback"],
+            },
         )
         assert reg_response.status_code == 200
         client_id = reg_response.json()["client_id"]
@@ -109,7 +116,7 @@ class TestOAuthEndpointsIntegration:
             user_id="testuser",
             code_challenge=code_challenge,
             redirect_uri="https://example.com/callback",
-            state="state123"
+            state="state123",
         )
 
         # Step 3: Exchange code for token (OAuth 2.1 spec requires form data)
@@ -119,8 +126,8 @@ class TestOAuthEndpointsIntegration:
                 "grant_type": "authorization_code",
                 "code": auth_code,
                 "code_verifier": code_verifier,
-                "client_id": client_id
-            }
+                "client_id": client_id,
+            },
         )
 
         assert token_response.status_code == 200
@@ -130,7 +137,9 @@ class TestOAuthEndpointsIntegration:
         assert token_data["expires_in"] == 28800  # 8 hours
         assert "refresh_token" in token_data
 
-    def test_token_exchange_with_invalid_pkce_fails(self, app, oauth_manager, pkce_pair):
+    def test_token_exchange_with_invalid_pkce_fails(
+        self, app, oauth_manager, pkce_pair
+    ):
         """Test that invalid PKCE verifier fails token exchange."""
         code_verifier, code_challenge = pkce_pair
 
@@ -139,8 +148,8 @@ class TestOAuthEndpointsIntegration:
             "/oauth/register",
             json={
                 "client_name": "PKCE Test Client",
-                "redirect_uris": ["https://example.com/callback"]
-            }
+                "redirect_uris": ["https://example.com/callback"],
+            },
         )
         client_id = reg_response.json()["client_id"]
 
@@ -150,7 +159,7 @@ class TestOAuthEndpointsIntegration:
             user_id="testuser",
             code_challenge=code_challenge,
             redirect_uri="https://example.com/callback",
-            state="state123"
+            state="state123",
         )
 
         # Try to exchange with wrong verifier
@@ -160,8 +169,8 @@ class TestOAuthEndpointsIntegration:
                 "grant_type": "authorization_code",
                 "code": auth_code,
                 "code_verifier": "wrong_verifier",
-                "client_id": client_id
-            }
+                "client_id": client_id,
+            },
         )
 
         assert token_response.status_code == 401
@@ -176,8 +185,8 @@ class TestOAuthEndpointsIntegration:
             "/oauth/register",
             json={
                 "client_name": "Refresh Test Client",
-                "redirect_uris": ["https://example.com/callback"]
-            }
+                "redirect_uris": ["https://example.com/callback"],
+            },
         )
         client_id = reg_response.json()["client_id"]
 
@@ -187,7 +196,7 @@ class TestOAuthEndpointsIntegration:
             user_id="testuser",
             code_challenge=code_challenge,
             redirect_uri="https://example.com/callback",
-            state="state123"
+            state="state123",
         )
 
         token_response = app.post(
@@ -196,8 +205,8 @@ class TestOAuthEndpointsIntegration:
                 "grant_type": "authorization_code",
                 "code": auth_code,
                 "code_verifier": code_verifier,
-                "client_id": client_id
-            }
+                "client_id": client_id,
+            },
         )
         tokens = token_response.json()
 
@@ -207,8 +216,8 @@ class TestOAuthEndpointsIntegration:
             data={
                 "grant_type": "refresh_token",
                 "refresh_token": tokens["refresh_token"],
-                "client_id": client_id
-            }
+                "client_id": client_id,
+            },
         )
 
         assert refresh_response.status_code == 200
@@ -225,15 +234,17 @@ class TestOAuthEndpointsIntegration:
             "/oauth/token",
             data={
                 "grant_type": "refresh_token",
-                "client_id": "test_client"
+                "client_id": "test_client",
                 # Missing refresh_token parameter
-            }
+            },
         )
 
         assert response.status_code == 400
         assert "refresh_token required" in str(response.json())
 
-    def test_token_endpoint_accepts_form_encoded_data_oauth21_compliance(self, app, oauth_manager, pkce_pair):
+    def test_token_endpoint_accepts_form_encoded_data_oauth21_compliance(
+        self, app, oauth_manager, pkce_pair
+    ):
         """Test that token endpoint accepts application/x-www-form-urlencoded (OAuth 2.1 spec).
 
         OAuth 2.1 specification mandates that the token endpoint MUST accept
@@ -246,8 +257,8 @@ class TestOAuthEndpointsIntegration:
             "/oauth/register",
             json={
                 "client_name": "Form Data Test Client",
-                "redirect_uris": ["https://example.com/callback"]
-            }
+                "redirect_uris": ["https://example.com/callback"],
+            },
         )
         client_id = reg_response.json()["client_id"]
 
@@ -257,7 +268,7 @@ class TestOAuthEndpointsIntegration:
             user_id="testuser",
             code_challenge=code_challenge,
             redirect_uri="https://example.com/callback",
-            state="state123"
+            state="state123",
         )
 
         # Exchange code for token using form-encoded data
@@ -268,8 +279,8 @@ class TestOAuthEndpointsIntegration:
                 "grant_type": "authorization_code",
                 "code": auth_code,
                 "code_verifier": code_verifier,
-                "client_id": client_id
-            }
+                "client_id": client_id,
+            },
         )
 
         assert response.status_code == 200

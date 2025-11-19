@@ -31,6 +31,7 @@ def get_socket_path(config_path: Path) -> Path:
         Path to daemon socket file
     """
     from code_indexer.config import ConfigManager
+
     config_manager = ConfigManager(config_path)
     return config_manager.get_socket_path()
 
@@ -123,8 +124,10 @@ def parse_query_args(args: List[str]) -> Dict[str, Any]:
 
 
 def _display_results(
-    results: Any, console: Console, timing_info: Optional[Dict[str, Any]] = None,
-    quiet: bool = False
+    results: Any,
+    console: Console,
+    timing_info: Optional[Dict[str, Any]] = None,
+    quiet: bool = False,
 ) -> None:
     """Display query results by delegating to shared display functions (DRY principle).
 

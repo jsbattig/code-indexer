@@ -52,7 +52,9 @@ class TestOAuthAuditLogging:
                         continue
         return entries
 
-    def test_log_oauth_client_registration_creates_audit_entry(self, audit_logger, temp_audit_log):
+    def test_log_oauth_client_registration_creates_audit_entry(
+        self, audit_logger, temp_audit_log
+    ):
         """
         RED: Test that OAuth client registration is audit logged.
 
@@ -66,7 +68,7 @@ class TestOAuthAuditLogging:
             client_id="test_client_123",
             client_name="Test OAuth Client",
             ip_address="192.168.1.100",
-            user_agent="Mozilla/5.0"
+            user_agent="Mozilla/5.0",
         )
 
         # Verify audit entry was written
@@ -81,7 +83,9 @@ class TestOAuthAuditLogging:
         assert entry["user_agent"] == "Mozilla/5.0"
         assert "timestamp" in entry
 
-    def test_log_oauth_authorization_creates_audit_entry(self, audit_logger, temp_audit_log):
+    def test_log_oauth_authorization_creates_audit_entry(
+        self, audit_logger, temp_audit_log
+    ):
         """
         RED: Test that OAuth authorization is audit logged.
 
@@ -93,7 +97,7 @@ class TestOAuthAuditLogging:
             username="testuser",
             client_id="test_client_123",
             ip_address="192.168.1.100",
-            user_agent="Mozilla/5.0"
+            user_agent="Mozilla/5.0",
         )
 
         entries = self._read_audit_entries(temp_audit_log)
@@ -105,14 +109,16 @@ class TestOAuthAuditLogging:
         assert entry["client_id"] == "test_client_123"
         assert entry["ip_address"] == "192.168.1.100"
 
-    def test_log_oauth_token_exchange_creates_audit_entry(self, audit_logger, temp_audit_log):
+    def test_log_oauth_token_exchange_creates_audit_entry(
+        self, audit_logger, temp_audit_log
+    ):
         """RED: Test that OAuth token exchange is audit logged."""
         audit_logger.log_oauth_token_exchange(
             username="testuser",
             client_id="test_client_123",
             grant_type="authorization_code",
             ip_address="192.168.1.100",
-            user_agent="Mozilla/5.0"
+            user_agent="Mozilla/5.0",
         )
 
         entries = self._read_audit_entries(temp_audit_log)
@@ -123,13 +129,15 @@ class TestOAuthAuditLogging:
         assert entry["client_id"] == "test_client_123"
         assert entry["grant_type"] == "authorization_code"
 
-    def test_log_oauth_token_revocation_creates_audit_entry(self, audit_logger, temp_audit_log):
+    def test_log_oauth_token_revocation_creates_audit_entry(
+        self, audit_logger, temp_audit_log
+    ):
         """RED: Test that OAuth token revocation is audit logged."""
         audit_logger.log_oauth_token_revocation(
             username="testuser",
             token_type="access_token",
             ip_address="192.168.1.100",
-            user_agent="Mozilla/5.0"
+            user_agent="Mozilla/5.0",
         )
 
         entries = self._read_audit_entries(temp_audit_log)

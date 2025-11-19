@@ -350,7 +350,6 @@ class FileListingService:
 
         return paginated_files, pagination_info
 
-
     def get_file_content(
         self, repository_alias: str, file_path: str, username: str
     ) -> Dict[str, Any]:
@@ -365,16 +364,19 @@ class FileListingService:
             raise FileNotFoundError(f"File not found: {file_path}")
         if not full_file_path.is_file():
             raise FileNotFoundError(f"Not a file: {file_path}")
-        with open(full_file_path, 'r', encoding='utf-8') as f:
+        with open(full_file_path, "r", encoding="utf-8") as f:
             content = f.read()
         stat_info = full_file_path.stat()
         metadata = {
             "size": stat_info.st_size,
-            "modified_at": datetime.fromtimestamp(stat_info.st_mtime, tz=timezone.utc).isoformat(),
+            "modified_at": datetime.fromtimestamp(
+                stat_info.st_mtime, tz=timezone.utc
+            ).isoformat(),
             "language": self._detect_language(full_file_path),
             "path": file_path,
         }
         return {"content": content, "metadata": metadata}
+
 
 # Global service instance
 file_service = FileListingService()

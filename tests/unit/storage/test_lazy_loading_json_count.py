@@ -162,4 +162,6 @@ def test_lazy_load_reduces_json_loads(store_with_many_vectors):
     print(f"✓ Eager loading: {eager_json_loads} JSON files loaded")
     print(f"✓ Lazy loading: {lazy_json_loads} JSON files loaded")
     print(f"✓ Reduction: {eager_json_loads - lazy_json_loads} fewer JSON loads")
-    print(f"✓ Lazy loading reduces I/O by {100 * (1 - lazy_json_loads / eager_json_loads):.1f}%")
+    print(
+        f"✓ Lazy loading reduces I/O by {100 * (1 - lazy_json_loads / eager_json_loads):.1f}%"
+    )

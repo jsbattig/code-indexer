@@ -25,7 +25,8 @@ class TestFileListingSignatureRegression:
     def auth_token(self, client):
         """Login and get authentication token."""
         response = client.post(
-            "/auth/login", json={"username": "admin", "password": "MySecurePass2024_Word"}
+            "/auth/login",
+            json={"username": "admin", "password": "MySecurePass2024_Word"},
         )
         assert response.status_code == 200, f"Login failed: {response.json()}"
         return response.json()["access_token"]

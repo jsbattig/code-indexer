@@ -8,7 +8,9 @@ This test reproduces the bug by directly calling the filter method with realisti
 
 from unittest.mock import MagicMock
 
-from src.code_indexer.services.temporal.temporal_search_service import TemporalSearchService
+from src.code_indexer.services.temporal.temporal_search_service import (
+    TemporalSearchService,
+)
 
 
 def test_chunk_type_filter_with_realistic_data():
@@ -26,6 +28,7 @@ def test_chunk_type_filter_with_realistic_data():
     mock_config_manager = MagicMock()
     mock_config = MagicMock()
     from pathlib import Path
+
     mock_config.codebase_dir = Path("/tmp/test")
     mock_config_manager.get_config.return_value = mock_config
 
@@ -88,9 +91,9 @@ def test_chunk_type_filter_with_realistic_data():
     )
 
     # VERIFICATION: The result should be the commit_message
-    assert filtered_results[0].metadata["type"] == "commit_message", (
-        f"Expected type='commit_message' but got type='{filtered_results[0].metadata['type']}'"
-    )
-    assert "exception logging" in filtered_results[0].content.lower(), (
-        f"Expected commit message content but got: {filtered_results[0].content}"
-    )
+    assert (
+        filtered_results[0].metadata["type"] == "commit_message"
+    ), f"Expected type='commit_message' but got type='{filtered_results[0].metadata['type']}'"
+    assert (
+        "exception logging" in filtered_results[0].content.lower()
+    ), f"Expected commit message content but got: {filtered_results[0].content}"

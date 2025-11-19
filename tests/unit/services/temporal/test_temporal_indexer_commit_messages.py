@@ -125,12 +125,15 @@ class TestCommitMessageIntegration:
         temporal_indexer.diff_scanner.get_diffs_for_commit = MagicMock(return_value=[])
 
         # Mock embedding provider and vector manager
-        from src.code_indexer.services.vector_calculation_manager import VectorCalculationManager
+        from src.code_indexer.services.vector_calculation_manager import (
+            VectorCalculationManager,
+        )
+
         mock_embedding_provider = MagicMock()
         mock_embedding_provider._get_model_token_limit.return_value = 120000
 
         # Patch _index_commit_message to track calls
-        with patch.object(temporal_indexer, '_index_commit_message') as mock_index_msg:
+        with patch.object(temporal_indexer, "_index_commit_message") as mock_index_msg:
             with VectorCalculationManager(mock_embedding_provider, 2) as vector_manager:
                 # Act
                 temporal_indexer._process_commits_parallel(
@@ -142,8 +145,9 @@ class TestCommitMessageIntegration:
                 )
 
                 # Assert: _index_commit_message should be called for each commit
-                assert mock_index_msg.call_count == len(commits), \
-                    "Expected _index_commit_message to be called once per commit"
+                assert mock_index_msg.call_count == len(
+                    commits
+                ), "Expected _index_commit_message to be called once per commit"
 
                 # Verify called with correct arguments
                 call_args = mock_index_msg.call_args_list[0]

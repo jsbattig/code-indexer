@@ -61,7 +61,7 @@ def test_chunk_type_filter_logic_in_filter_by_time_range():
     filtered_results, _ = service._filter_by_time_range(
         semantic_results=semantic_results,
         start_date="1970-01-01",  # ALL_TIME_RANGE
-        end_date="2100-12-31",    # ALL_TIME_RANGE
+        end_date="2100-12-31",  # ALL_TIME_RANGE
         chunk_type="commit_message",  # Filter for commit messages
     )
 

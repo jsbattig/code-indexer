@@ -399,7 +399,12 @@ class TemporalIndexer:
         # Use null byte delimiters to prevent pipe characters in commit messages from breaking parsing
         # Use %B (full body) instead of %s (subject only) to capture multi-paragraph commit messages
         # Use record separator (%x1e) at end of each record to enable correct parsing with multi-line messages
-        cmd = ["git", "log", "--format=%H%x00%at%x00%an%x00%ae%x00%B%x00%P%x1e", "--reverse"]
+        cmd = [
+            "git",
+            "log",
+            "--format=%H%x00%at%x00%an%x00%ae%x00%B%x00%P%x1e",
+            "--reverse",
+        ]
 
         # If we have a last indexed commit, only get commits after it
         if last_indexed_commit:
@@ -439,12 +444,16 @@ class TemporalIndexer:
                     message = parts[4].strip()
                     commits.append(
                         CommitInfo(
-                            hash=parts[0].strip(),  # Strip newlines from commit hash (BUG #1 FIX)
+                            hash=parts[
+                                0
+                            ].strip(),  # Strip newlines from commit hash (BUG #1 FIX)
                             timestamp=int(parts[1]),
                             author_name=parts[2],
                             author_email=parts[3],
                             message=message,
-                            parent_hashes=parts[5].strip(),  # Strip newlines from parent hashes too
+                            parent_hashes=parts[
+                                5
+                            ].strip(),  # Strip newlines from parent hashes too
                         )
                     )
 
@@ -761,7 +770,8 @@ class TemporalIndexer:
 
                                 # DEBUG: Log wave submission
                                 debug_log_path = get_debug_log_path(
-                                    self.config_manager.config_path.parent, "cidx_debug.log"
+                                    self.config_manager.config_path.parent,
+                                    "cidx_debug.log",
                                 )
                                 with open(debug_log_path, "a") as f:
                                     f.write(
@@ -1213,7 +1223,9 @@ class TemporalIndexer:
 
             if not result.error and result.embeddings:
                 # Convert timestamp to date (YYYY-MM-DD format)
-                commit_date = datetime.fromtimestamp(commit.timestamp).strftime('%Y-%m-%d')
+                commit_date = datetime.fromtimestamp(commit.timestamp).strftime(
+                    "%Y-%m-%d"
+                )
 
                 points = []
                 for j, (chunk, embedding) in enumerate(zip(chunks, result.embeddings)):

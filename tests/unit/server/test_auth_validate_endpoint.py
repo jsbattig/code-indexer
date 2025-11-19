@@ -43,16 +43,14 @@ class TestAuthValidateEndpoint:
 
         # Login to get a valid token
         login_response = client.post(
-            "/auth/login",
-            json={"username": "admin", "password": "admin"}
+            "/auth/login", json={"username": "admin", "password": "admin"}
         )
         assert login_response.status_code == 200
         token = login_response.json()["access_token"]
 
         # Call validate with valid token
         response = client.post(
-            "/api/auth/validate",
-            headers={"Authorization": f"Bearer {token}"}
+            "/api/auth/validate", headers={"Authorization": f"Bearer {token}"}
         )
 
         # Should return 200 with valid=true
@@ -68,11 +66,12 @@ class TestAuthValidateEndpoint:
         import time
 
         # Create JWT with very short expiration
-        test_jwt_manager = JWTManager(secret_key="test-secret", token_expiration_minutes=0)
-        token = test_jwt_manager.create_token({
-            "username": "testuser",
-            "role": "normal_user"
-        })
+        test_jwt_manager = JWTManager(
+            secret_key="test-secret", token_expiration_minutes=0
+        )
+        token = test_jwt_manager.create_token(
+            {"username": "testuser", "role": "normal_user"}
+        )
 
         # Wait briefly to ensure token expires
         time.sleep(1)
@@ -84,8 +83,7 @@ class TestAuthValidateEndpoint:
 
             # Call validate with expired token
             response = client.post(
-                "/api/auth/validate",
-                headers={"Authorization": f"Bearer {token}"}
+                "/api/auth/validate", headers={"Authorization": f"Bearer {token}"}
             )
 
             # Should return 401 with error message
@@ -96,7 +94,9 @@ class TestAuthValidateEndpoint:
             # Restore original JWT manager
             deps.jwt_manager = original_jwt
 
-    def test_validate_with_revoked_token_returns_unauthorized(self, client, mock_user_manager):
+    def test_validate_with_revoked_token_returns_unauthorized(
+        self, client, mock_user_manager
+    ):
         """Test that validate endpoint returns 401 for revoked token."""
         from src.code_indexer.server.app import blacklist_token, token_blacklist
 
@@ -115,14 +115,14 @@ class TestAuthValidateEndpoint:
 
         # Login to get a valid token
         login_response = client.post(
-            "/auth/login",
-            json={"username": "admin", "password": "admin"}
+            "/auth/login", json={"username": "admin", "password": "admin"}
         )
         assert login_response.status_code == 200
         token = login_response.json()["access_token"]
 
         # Extract JTI and blacklist it
         import src.code_indexer.server.auth.dependencies as deps
+
         original_jwt = deps.jwt_manager
         payload = original_jwt.validate_token(token)
         jti = payload["jti"]
@@ -130,8 +130,7 @@ class TestAuthValidateEndpoint:
 
         # Call validate with revoked token
         response = client.post(
-            "/api/auth/validate",
-            headers={"Authorization": f"Bearer {token}"}
+            "/api/auth/validate", headers={"Authorization": f"Bearer {token}"}
         )
 
         # Should return 401 with revoked message
@@ -143,8 +142,7 @@ class TestAuthValidateEndpoint:
         """Test that validate endpoint returns 401 for invalid token."""
         # Call validate with invalid token
         response = client.post(
-            "/api/auth/validate",
-            headers={"Authorization": "Bearer invalid-token-here"}
+            "/api/auth/validate", headers={"Authorization": "Bearer invalid-token-here"}
         )
 
         # Should return 401

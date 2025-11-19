@@ -20,7 +20,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from code_indexer.services.temporal.temporal_search_service import TemporalSearchService, ALL_TIME_RANGE
+from code_indexer.services.temporal.temporal_search_service import (
+    TemporalSearchService,
+    ALL_TIME_RANGE,
+)
 
 
 def test_chunk_type_filter_triggers_over_fetch_multiplier():
@@ -45,7 +48,10 @@ def test_chunk_type_filter_triggers_over_fetch_multiplier():
     mock_embedding_provider = MagicMock()
 
     # Mock isinstance check to return True for FilesystemVectorStore
-    with patch('code_indexer.services.temporal.temporal_search_service.isinstance', return_value=True):
+    with patch(
+        "code_indexer.services.temporal.temporal_search_service.isinstance",
+        return_value=True,
+    ):
         # Create search service
         search_service = TemporalSearchService(
             config_manager=mock_config_manager,
@@ -80,7 +86,7 @@ def test_chunk_type_filter_triggers_over_fetch_multiplier():
 
         # Extract the limit parameter from the search call
         call_args = mock_vector_store.search.call_args
-        actual_limit = call_args.kwargs.get('limit') or call_args.kwargs.get('top_k')
+        actual_limit = call_args.kwargs.get("limit") or call_args.kwargs.get("top_k")
 
         # BUG DETECTION: With chunk_type filter, should use over-fetch multiplier
         # With limit=20 and chunk_type="commit_message", expected search_limit ≈ 740 (20 × 37)

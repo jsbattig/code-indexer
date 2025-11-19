@@ -19,7 +19,9 @@ if TYPE_CHECKING:
 # Global instances (will be initialized by app)
 jwt_manager: Optional[JWTManager] = None
 user_manager: Optional[UserManager] = None
-oauth_manager: Optional["OAuthManager"] = None  # Forward reference to avoid circular dependency
+oauth_manager: Optional["OAuthManager"] = (
+    None  # Forward reference to avoid circular dependency
+)
 
 # Security scheme for bearer token authentication
 # auto_error=False allows us to handle missing credentials manually and return 401 per MCP spec
@@ -113,6 +115,7 @@ def get_current_user(
 
         # Check if token is blacklisted
         from src.code_indexer.server.app import is_token_blacklisted
+
         jti = payload.get("jti")
         if jti and is_token_blacklisted(jti):
             raise HTTPException(

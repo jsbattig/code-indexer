@@ -10,7 +10,7 @@ import sys
 def test_query_result_item_import_no_server_init():
     """Test that importing QueryResultItem doesn't initialize server app."""
     # Clear any cached imports
-    modules_to_clear = [m for m in sys.modules if 'code_indexer.server' in m]
+    modules_to_clear = [m for m in sys.modules if "code_indexer.server" in m]
     for module in modules_to_clear:
         del sys.modules[module]
 
@@ -19,12 +19,13 @@ def test_query_result_item_import_no_server_init():
 
     # Verify server app was NOT initialized
     # If server app initialized, it would be in sys.modules
-    assert 'src.code_indexer.server.app' not in sys.modules, \
-        "Server app should not be imported when importing QueryResultItem"
+    assert (
+        "src.code_indexer.server.app" not in sys.modules
+    ), "Server app should not be imported when importing QueryResultItem"
 
     # Verify QueryResultItem is a valid class
     assert QueryResultItem is not None
-    assert hasattr(QueryResultItem, '__init__')
+    assert hasattr(QueryResultItem, "__init__")
 
 
 def test_query_result_item_has_required_fields():
@@ -39,7 +40,7 @@ def test_query_result_item_has_required_fields():
         similarity_score=0.95,
         repository_alias="test-repo",
         file_last_modified=1699999999.0,
-        indexed_timestamp=1700000000.0
+        indexed_timestamp=1700000000.0,
     )
 
     assert result.file_path == "/test/path.py"

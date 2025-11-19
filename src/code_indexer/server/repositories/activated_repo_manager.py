@@ -10,6 +10,7 @@ import os
 import shutil
 import subprocess
 import logging
+
 # yaml import removed - using json for config files
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1837,9 +1838,7 @@ class ActivatedRepoManager:
         """
         try:
             # Step 1: Perform CoW clone to copy EVERYTHING including .code-indexer/
-            self.logger.info(
-                f"CoW cloning repository: {source_path} -> {dest_path}"
-            )
+            self.logger.info(f"CoW cloning repository: {source_path} -> {dest_path}")
 
             # Use cp --reflink=auto to attempt CoW, fallback to regular copy
             result = subprocess.run(
@@ -2478,20 +2477,16 @@ class ActivatedRepoManager:
                 )
 
             # Read existing config
-            with open(config_file, 'r') as f:
+            with open(config_file, "r") as f:
                 config_data = json.load(f)
 
             # Add FilesystemVectorStore and VoyageAI settings
-            config_data["vector_store"] = {
-                "provider": "filesystem"
-            }
+            config_data["vector_store"] = {"provider": "filesystem"}
             config_data["embedding_provider"] = "voyage-ai"
-            config_data["voyage_ai"] = {
-                "model": "voyage-code-3"
-            }
+            config_data["voyage_ai"] = {"model": "voyage-code-3"}
 
             # Write updated config
-            with open(config_file, 'w') as f:
+            with open(config_file, "w") as f:
                 json.dump(config_data, f, indent=2)
 
             self.logger.info(

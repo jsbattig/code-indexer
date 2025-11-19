@@ -16,7 +16,6 @@ Correct behavior:
 """
 
 
-
 def test_string_causes_character_array_explosion():
     """Document the bug: list(string) creates character array."""
     # This documents the bug behavior that we're preventing

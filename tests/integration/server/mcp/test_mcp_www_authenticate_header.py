@@ -39,7 +39,7 @@ class TestMCPWWWAuthenticateHeader:
         response = client.post(
             "/mcp",
             json={"jsonrpc": "2.0", "method": "tools/list", "id": 1},
-            headers={"Authorization": "Bearer invalid_token_xyz"}
+            headers={"Authorization": "Bearer invalid_token_xyz"},
         )
 
         # Should return 401 Unauthorized for invalid token
@@ -51,14 +51,17 @@ class TestMCPWWWAuthenticateHeader:
         www_auth = response.headers["www-authenticate"]
 
         # Should contain resource_metadata parameter
-        assert "resource_metadata" in www_auth.lower(), \
-            f"WWW-Authenticate header missing resource_metadata: {www_auth}"
+        assert (
+            "resource_metadata" in www_auth.lower()
+        ), f"WWW-Authenticate header missing resource_metadata: {www_auth}"
 
         # Should point to OAuth discovery endpoint (/.well-known/oauth-authorization-server)
-        assert ".well-known/oauth-authorization-server" in www_auth, \
-            f"resource_metadata doesn't point to OAuth discovery: {www_auth}"
+        assert (
+            ".well-known/oauth-authorization-server" in www_auth
+        ), f"resource_metadata doesn't point to OAuth discovery: {www_auth}"
 
         # Verify format matches RFC 9728 pattern
         # Expected: Bearer resource_metadata="https://server/.well-known/oauth-authorization-server"
-        assert www_auth.lower().startswith("bearer"), \
-            f"WWW-Authenticate should start with 'Bearer': {www_auth}"
+        assert www_auth.lower().startswith(
+            "bearer"
+        ), f"WWW-Authenticate should start with 'Bearer': {www_auth}"

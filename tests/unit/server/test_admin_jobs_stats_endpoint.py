@@ -6,11 +6,10 @@ from fastapi.testclient import TestClient
 from datetime import datetime
 
 # Import after mocking modules that may not exist
-with patch.dict('sys.modules', {
-    'tantivy': MagicMock(),
-    'qdrant_client': MagicMock(),
-    'voyageai': MagicMock()
-}):
+with patch.dict(
+    "sys.modules",
+    {"tantivy": MagicMock(), "qdrant_client": MagicMock(), "voyageai": MagicMock()},
+):
     from code_indexer.server.app import create_app
 
 
@@ -30,7 +29,9 @@ class TestAdminJobsStatsEndpoint:
 
     @patch("code_indexer.server.auth.dependencies.jwt_manager")
     @patch("code_indexer.server.auth.dependencies.user_manager")
-    def test_stats_endpoint_exists(self, mock_user_manager, mock_jwt_manager, client, admin_headers):
+    def test_stats_endpoint_exists(
+        self, mock_user_manager, mock_jwt_manager, client, admin_headers
+    ):
         """Test that the stats endpoint exists and responds."""
         from code_indexer.server.auth.user_manager import User, UserRole
         from datetime import timezone
@@ -54,7 +55,7 @@ class TestAdminJobsStatsEndpoint:
         # Create client after patches are set
         app = create_app()
         client = TestClient(app)
-        
+
         # Mock the background_job_manager
         with patch("code_indexer.server.app.background_job_manager") as mock_manager:
             mock_manager.list_jobs.return_value = []
@@ -63,16 +64,25 @@ class TestAdminJobsStatsEndpoint:
             response = client.get("/api/admin/jobs/stats", headers=admin_headers)
 
             # Should not return 404
-            assert response.status_code != 404, f"Endpoint not found. Response: {response.text}"
+            assert (
+                response.status_code != 404
+            ), f"Endpoint not found. Response: {response.text}"
 
-    @pytest.mark.xfail(reason="Auth mocking issue - first test works but this identical setup fails with 401")
+    @pytest.mark.xfail(
+        reason="Auth mocking issue - first test works but this identical setup fails with 401"
+    )
     @patch("code_indexer.server.auth.dependencies.jwt_manager")
     @patch("code_indexer.server.auth.dependencies.user_manager")
-    def test_stats_endpoint_calculates_total_jobs(self, mock_user_manager, mock_jwt_manager, admin_headers):
+    def test_stats_endpoint_calculates_total_jobs(
+        self, mock_user_manager, mock_jwt_manager, admin_headers
+    ):
         """Test that stats endpoint correctly calculates total job count."""
         from fastapi.testclient import TestClient
         from code_indexer.server.app import create_app
-        from code_indexer.server.repositories.background_jobs import BackgroundJob, JobStatus
+        from code_indexer.server.repositories.background_jobs import (
+            BackgroundJob,
+            JobStatus,
+        )
         from code_indexer.server.auth.user_manager import User, UserRole
         from datetime import timezone
 
@@ -105,7 +115,7 @@ class TestAdminJobsStatsEndpoint:
                 error=None,
                 username="user1",
                 progress=100,
-                cancelled=False
+                cancelled=False,
             ),
             "job2": BackgroundJob(
                 job_id="job2",
@@ -118,7 +128,7 @@ class TestAdminJobsStatsEndpoint:
                 error="Test error",
                 username="user2",
                 progress=0,
-                cancelled=False
+                cancelled=False,
             ),
             "job3": BackgroundJob(
                 job_id="job3",
@@ -131,14 +141,14 @@ class TestAdminJobsStatsEndpoint:
                 error=None,
                 username="user1",
                 progress=50,
-                cancelled=False
+                cancelled=False,
             ),
         }
 
         # Create client after patches are set
         app = create_app()
         client = TestClient(app)
-        
+
         # Mock the background_job_manager
         with patch("code_indexer.server.app.background_job_manager") as mock_manager:
             mock_manager.list_jobs.return_value = list(test_jobs.values())
@@ -150,4 +160,6 @@ class TestAdminJobsStatsEndpoint:
             data = response.json()
 
             # Verify total jobs count
-            assert data["total_jobs"] == 3, f"Expected 3 total jobs, got {data['total_jobs']}"
+            assert (
+                data["total_jobs"] == 3
+            ), f"Expected 3 total jobs, got {data['total_jobs']}"

@@ -35,10 +35,9 @@ class TestAuthLifecycleIntegration:
         test_jwt_manager = JWTManager(secret_key="test-secret")
 
         # Create a token
-        token = test_jwt_manager.create_token({
-            "username": "testuser",
-            "role": "normal_user"
-        })
+        token = test_jwt_manager.create_token(
+            {"username": "testuser", "role": "normal_user"}
+        )
 
         # Extract JTI
         payload = test_jwt_manager.validate_token(token)
@@ -62,7 +61,7 @@ class TestAuthLifecycleIntegration:
                 role=UserRole.NORMAL_USER,
                 created_at="2024-01-01T00:00:00Z",
                 email="test@example.com",
-                password_hash="fakehash"
+                password_hash="fakehash",
             )
             mock_user_manager.get_user.return_value = mock_user
 
@@ -78,15 +77,13 @@ class TestAuthLifecycleIntegration:
 
             # First, verify token works
             response = client.get(
-                "/api/repos",
-                headers={"Authorization": f"Bearer {token}"}
+                "/api/repos", headers={"Authorization": f"Bearer {token}"}
             )
             assert response.status_code == 200  # Token works
 
             # Now logout
             response = client.post(
-                "/api/auth/logout",
-                headers={"Authorization": f"Bearer {token}"}
+                "/api/auth/logout", headers={"Authorization": f"Bearer {token}"}
             )
             assert response.status_code == 200
             assert jti in token_blacklist
@@ -96,8 +93,7 @@ class TestAuthLifecycleIntegration:
 
             # Try to use the token again - should fail due to blacklist
             response = client.get(
-                "/api/repos",
-                headers={"Authorization": f"Bearer {token}"}
+                "/api/repos", headers={"Authorization": f"Bearer {token}"}
             )
             assert response.status_code == 401  # Token rejected
 

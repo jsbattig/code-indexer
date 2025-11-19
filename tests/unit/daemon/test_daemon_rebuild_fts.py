@@ -32,9 +32,9 @@ class TestDaemonRebuildFTS:
         )
 
         # Verify it's callable
-        assert callable(service.exposed_rebuild_fts_index), (
-            "exposed_rebuild_fts_index must be callable"
-        )
+        assert callable(
+            service.exposed_rebuild_fts_index
+        ), "exposed_rebuild_fts_index must be callable"
 
     def test_daemon_rebuild_implementation_uses_filefinder(self):
         """
@@ -83,7 +83,7 @@ class TestDaemonRebuildFTS:
                     "total_files": 2,
                     "files_completed": 2,
                 },
-                "file_records": {}
+                "file_records": {},
             }
             progress_file.write_text(json.dumps(progress_data))
 
@@ -95,8 +95,7 @@ class TestDaemonRebuildFTS:
 
             # Call rebuild
             result = service.exposed_rebuild_fts_index(
-                project_path=str(project_dir),
-                callback=progress_callback
+                project_path=str(project_dir), callback=progress_callback
             )
 
             # This will FAIL initially because current implementation returns:

@@ -58,6 +58,7 @@ class TestAddGoldenRepoHandler:
             # Verify success response
             assert result["content"][0]["type"] == "text"
             import json
+
             response_data = json.loads(result["content"][0]["text"])
             assert response_data["success"] is True
             assert response_data["job_id"] == "test-job-id-12345"
@@ -107,6 +108,7 @@ class TestRemoveGoldenRepoHandler:
             # Verify success response
             assert result["content"][0]["type"] == "text"
             import json
+
             response_data = json.loads(result["content"][0]["text"])
             assert response_data["success"] is True
             assert response_data["job_id"] == "test-job-id-67890"
@@ -154,6 +156,7 @@ class TestRefreshGoldenRepoHandler:
             # Verify success response
             assert result["content"][0]["type"] == "text"
             import json
+
             response_data = json.loads(result["content"][0]["text"])
             assert response_data["success"] is True
             assert response_data["job_id"] == "test-job-id-11111"

@@ -501,7 +501,9 @@ class VectorCalculationManager:
 
             # DEBUG: Log batch processing start (only if config_dir available)
             if self.config_dir:
-                debug_log_path = get_debug_log_path(self.config_dir, "cidx_vectorcalc_debug.log")
+                debug_log_path = get_debug_log_path(
+                    self.config_dir, "cidx_vectorcalc_debug.log"
+                )
                 with open(debug_log_path, "a") as f:
                     f.write(
                         f"VectorCalc: Processing batch {task.task_id} with {len(chunk_texts_list)} chunks - STARTING API call\n"
@@ -516,7 +518,9 @@ class VectorCalculationManager:
 
             # DEBUG: Log batch processing complete (only if config_dir available)
             if self.config_dir:
-                debug_log_path = get_debug_log_path(self.config_dir, "cidx_vectorcalc_debug.log")
+                debug_log_path = get_debug_log_path(
+                    self.config_dir, "cidx_vectorcalc_debug.log"
+                )
                 with open(debug_log_path, "a") as f:
                     f.write(
                         f"VectorCalc: Batch {task.task_id} COMPLETED in {processing_time:.2f}s - returned {len(embeddings_list)} embeddings\n"

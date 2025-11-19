@@ -38,20 +38,24 @@ def app_with_indexed_repo(tmp_path: Path):
     config_dir.mkdir()
 
     # Create sample code files
-    (repo_dir / "auth.py").write_text("""
+    (repo_dir / "auth.py").write_text(
+        """
 def authenticate(user, password):
     '''Authentication function in Python.'''
     return user and password
-""")
+"""
+    )
 
-    (repo_dir / "user.go").write_text("""
+    (repo_dir / "user.go").write_text(
+        """
 package main
 
 func GetUser(id int) User {
     // User retrieval in Go
     return User{ID: id}
 }
-""")
+"""
+    )
 
     # Create config
     config = {"proxy_mode": False, "embedding_provider": "voyage-ai"}
@@ -108,11 +112,15 @@ class TestMultipleLanguageFilters:
         """Test that multiple language filters work with OR logic."""
         # Mock authentication and query execution
         app = test_client.app
-        app.dependency_overrides[dependencies.get_current_user] = override_get_current_user
+        app.dependency_overrides[dependencies.get_current_user] = (
+            override_get_current_user
+        )
 
         try:
             # Mock the query_user_repositories method to return test results
-            with patch('code_indexer.server.app.semantic_query_manager.query_user_repositories') as mock_query:
+            with patch(
+                "code_indexer.server.app.semantic_query_manager.query_user_repositories"
+            ) as mock_query:
                 mock_query.return_value = {
                     "results": [
                         {
@@ -128,15 +136,15 @@ class TestMultipleLanguageFilters:
                             "code_snippet": "func GetUser",
                             "similarity_score": 0.90,
                             "repository_alias": "test-repo",
-                        }
+                        },
                     ],
                     "total_results": 2,
                     "query_metadata": {
                         "query_text": "user authentication",
                         "execution_time_ms": 100,
                         "repositories_searched": 1,
-                        "timeout_occurred": False
-                    }
+                        "timeout_occurred": False,
+                    },
                 }
 
                 # Test with multiple languages
@@ -145,8 +153,8 @@ class TestMultipleLanguageFilters:
                     json={
                         "query_text": "user authentication",
                         "language": ["python", "go"],
-                        "repository_alias": "test-repo"
-                    }
+                        "repository_alias": "test-repo",
+                    },
                 )
 
                 # Verify response
@@ -167,7 +175,9 @@ class TestMultipleLanguageFilters:
     def test_regex_with_semantic_mode_returns_400(self, test_client: TestClient):
         """Test that regex=True with search_mode=semantic returns 400 error."""
         app = test_client.app
-        app.dependency_overrides[dependencies.get_current_user] = override_get_current_user
+        app.dependency_overrides[dependencies.get_current_user] = (
+            override_get_current_user
+        )
 
         try:
             response = test_client.post(
@@ -176,14 +186,17 @@ class TestMultipleLanguageFilters:
                     "query_text": "def.*",
                     "search_mode": "semantic",
                     "regex": True,
-                    "repository_alias": "test-repo"
-                }
+                    "repository_alias": "test-repo",
+                },
             )
 
             # Should return 400 error
             assert response.status_code == 400
             data = response.json()
-            assert "regex" in data["detail"].lower() or "semantic" in data["detail"].lower()
+            assert (
+                "regex" in data["detail"].lower()
+                or "semantic" in data["detail"].lower()
+            )
 
         finally:
             app.dependency_overrides.clear()
@@ -192,33 +205,53 @@ class TestMultipleLanguageFilters:
 class TestMultiplePathFilters:
     """Test multiple path filters with OR logic."""
 
-    def test_multiple_path_filters_passed_to_fts_search(self, app_with_indexed_repo, tmp_path: Path):
+    def test_multiple_path_filters_passed_to_fts_search(
+        self, app_with_indexed_repo, tmp_path: Path
+    ):
         """Test that multiple path filters are normalized and passed to FTS search."""
         from starlette.testclient import TestClient
 
         test_client = TestClient(app_with_indexed_repo)
         app = test_client.app
-        app.dependency_overrides[dependencies.get_current_user] = override_get_current_user
+        app.dependency_overrides[dependencies.get_current_user] = (
+            override_get_current_user
+        )
 
         try:
             # Create a fake FTS index directory in the test repo to pass the availability check
             from code_indexer.server import app as app_module
+
             activated_repos_dir = app_module.activated_repo_manager.activated_repos_dir
 
-            fts_index_dir = Path(activated_repos_dir) / "testuser" / "test-repo" / ".code-indexer" / "tantivy_index"
+            fts_index_dir = (
+                Path(activated_repos_dir)
+                / "testuser"
+                / "test-repo"
+                / ".code-indexer"
+                / "tantivy_index"
+            )
             fts_index_dir.mkdir(parents=True, exist_ok=True)
 
             # Create a dummy file so the directory exists check passes
             (fts_index_dir / "dummy.txt").write_text("dummy")
 
             # Mock activated repository listing to return our test repo
-            with patch('code_indexer.server.app.activated_repo_manager.list_activated_repositories') as mock_list_repos:
+            with patch(
+                "code_indexer.server.app.activated_repo_manager.list_activated_repositories"
+            ) as mock_list_repos:
                 mock_list_repos.return_value = [
-                    {"user_alias": "test-repo", "path": str(Path(activated_repos_dir) / "testuser" / "test-repo")}
+                    {
+                        "user_alias": "test-repo",
+                        "path": str(
+                            Path(activated_repos_dir) / "testuser" / "test-repo"
+                        ),
+                    }
                 ]
 
                 # Mock the TantivyIndexManager where it's imported
-                with patch('code_indexer.services.tantivy_index_manager.TantivyIndexManager') as MockTantivyClass:
+                with patch(
+                    "code_indexer.services.tantivy_index_manager.TantivyIndexManager"
+                ) as MockTantivyClass:
                     mock_tantivy_instance = MockTantivyClass.return_value
                     mock_tantivy_instance.initialize_index.return_value = None
                     mock_tantivy_instance.search.return_value = []
@@ -229,8 +262,8 @@ class TestMultiplePathFilters:
                             "query_text": "test query",
                             "search_mode": "fts",
                             "path_filter": ["*/src/*", "*/lib/*"],
-                            "repository_alias": "test-repo"
-                        }
+                            "repository_alias": "test-repo",
+                        },
                     )
 
                     # Should return 200 (FTS available and mocked)
@@ -239,12 +272,16 @@ class TestMultiplePathFilters:
                     assert response.status_code == 200
 
                     # Verify search was called
-                    assert mock_tantivy_instance.search.called, "Tantivy search should have been called"
+                    assert (
+                        mock_tantivy_instance.search.called
+                    ), "Tantivy search should have been called"
 
                     call_kwargs = mock_tantivy_instance.search.call_args[1]
                     # This will FAIL until we wire the normalization
-                    assert 'path_filters' in call_kwargs, f"path_filters not in kwargs: {call_kwargs.keys()}"
-                    assert call_kwargs['path_filters'] == ["*/src/*", "*/lib/*"]
+                    assert (
+                        "path_filters" in call_kwargs
+                    ), f"path_filters not in kwargs: {call_kwargs.keys()}"
+                    assert call_kwargs["path_filters"] == ["*/src/*", "*/lib/*"]
 
         finally:
             app.dependency_overrides.clear()

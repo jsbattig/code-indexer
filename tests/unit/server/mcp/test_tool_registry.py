@@ -15,5 +15,6 @@ class TestToolRegistryStructure:
         required_fields = {"name", "description", "inputSchema", "required_permission"}
 
         for tool_name, tool_def in TOOL_REGISTRY.items():
-            assert required_fields.issubset(tool_def.keys()), \
-                f"Tool {tool_name} missing required fields: {required_fields - set(tool_def.keys())}"
+            assert required_fields.issubset(
+                tool_def.keys()
+            ), f"Tool {tool_name} missing required fields: {required_fields - set(tool_def.keys())}"

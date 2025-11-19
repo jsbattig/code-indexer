@@ -53,7 +53,9 @@ class TestExecuteSearchUsesCachedMetadata:
             )
 
             mock_embedding_provider = Mock()
-            mock_embedding_provider.embed.return_value = np.zeros(768)  # Match vector_dim
+            mock_embedding_provider.embed.return_value = np.zeros(
+                768
+            )  # Match vector_dim
             mock_embedding_factory.create.return_value = mock_embedding_provider
 
             # Mock backend and vector store

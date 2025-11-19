@@ -12,6 +12,7 @@ from pathlib import Path
 from rpyc.utils.server import ThreadedServer
 
 from .service import CIDXDaemonService
+
 # Import socket helper for /tmp/cidx socket management (fixes 108-char limit bug)
 from code_indexer.config import ConfigManager
 from code_indexer.daemon.socket_helper import create_mapping_file, cleanup_old_socket
@@ -71,6 +72,7 @@ def start_daemon(config_path: Path) -> None:
         # Socket needs rw permissions for other users to connect
         import os
         import stat
+
         os.chmod(socket_path, stat.S_IRWXU | stat.S_IRWXG)  # 770 (rwxrwx---)
 
         # Create mapping file for debugging (links socket to repo path)

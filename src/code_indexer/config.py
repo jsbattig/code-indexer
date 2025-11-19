@@ -313,11 +313,10 @@ class DaemonConfig(BaseModel):
     )
     socket_mode: Literal["shared", "user"] = Field(
         default="shared",
-        description="Socket mode: 'shared' for multi-user (/tmp/cidx) or 'user' for single-user"
+        description="Socket mode: 'shared' for multi-user (/tmp/cidx) or 'user' for single-user",
     )
     socket_base: Optional[str] = Field(
-        default=None,
-        description="Custom socket base directory (overrides socket_mode)"
+        default=None, description="Custom socket base directory (overrides socket_mode)"
     )
 
     @field_validator("ttl_minutes")
@@ -1078,7 +1077,9 @@ code-indexer index --clear
             socket_path = socket_base / f"{repo_hash}.sock"
         else:
             # Use standard location
-            socket_path = generate_socket_path(self.config_path.parent.parent, socket_mode)
+            socket_path = generate_socket_path(
+                self.config_path.parent.parent, socket_mode
+            )
 
         # Create mapping file for debugging
         create_mapping_file(self.config_path.parent.parent, socket_path)

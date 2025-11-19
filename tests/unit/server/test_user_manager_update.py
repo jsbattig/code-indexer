@@ -33,7 +33,7 @@ def test_update_username_changes_username():
         "john": {
             "role": "normal_user",
             "password_hash": "hashed_password",
-            "created_at": DateTimeParser.format_for_storage(datetime.now(timezone.utc))
+            "created_at": DateTimeParser.format_for_storage(datetime.now(timezone.utc)),
         }
     }
     json.dump(test_users, temp_file)
@@ -67,13 +67,13 @@ def test_update_duplicate_username_raises_error():
         "john": {
             "role": "normal_user",
             "password_hash": "hashed_password",
-            "created_at": DateTimeParser.format_for_storage(datetime.now(timezone.utc))
+            "created_at": DateTimeParser.format_for_storage(datetime.now(timezone.utc)),
         },
         "jane": {
             "role": "power_user",
             "password_hash": "hashed_password",
-            "created_at": DateTimeParser.format_for_storage(datetime.now(timezone.utc))
-        }
+            "created_at": DateTimeParser.format_for_storage(datetime.now(timezone.utc)),
+        },
     }
     json.dump(test_users, temp_file)
     temp_file.close()
@@ -116,7 +116,7 @@ def test_update_email_changes_email():
             "role": "normal_user",
             "password_hash": "hashed_password",
             "created_at": DateTimeParser.format_for_storage(datetime.now(timezone.utc)),
-            "email": "john@example.com"
+            "email": "john@example.com",
         }
     }
     json.dump(test_users, temp_file)
@@ -147,14 +147,14 @@ def test_update_duplicate_email_raises_error():
             "role": "normal_user",
             "password_hash": "hashed_password",
             "created_at": DateTimeParser.format_for_storage(datetime.now(timezone.utc)),
-            "email": "john@example.com"
+            "email": "john@example.com",
         },
         "jane": {
             "role": "power_user",
             "password_hash": "hashed_password",
             "created_at": DateTimeParser.format_for_storage(datetime.now(timezone.utc)),
-            "email": "jane@example.com"
-        }
+            "email": "jane@example.com",
+        },
     }
     json.dump(test_users, temp_file)
     temp_file.close()

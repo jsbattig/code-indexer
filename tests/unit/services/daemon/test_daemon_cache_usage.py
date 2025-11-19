@@ -100,7 +100,10 @@ class TestDaemonCacheUsage:
             mock_backend = MagicMock()
             mock_vector_store = MagicMock(spec=FilesystemVectorStore)
             mock_vector_store.resolve_collection_name.return_value = "collection_test"
-            mock_vector_store.search.return_value = ([], {})  # Empty results with timing
+            mock_vector_store.search.return_value = (
+                [],
+                {},
+            )  # Empty results with timing
             mock_backend.get_vector_store_client.return_value = mock_vector_store
             mock_backend_factory.return_value = mock_backend
 

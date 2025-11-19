@@ -38,8 +38,13 @@ def test_chunk_type_added_to_filter_conditions():
     mock_result = {
         "id": "test:commit:abc:0",
         "score": 0.85,
-        "payload": {"type": "commit_message", "commit_hash": "abc", "path": "dummy", "commit_timestamp": 1704088800},
-        "chunk_text": "test content"
+        "payload": {
+            "type": "commit_message",
+            "commit_hash": "abc",
+            "path": "dummy",
+            "commit_timestamp": 1704088800,
+        },
+        "chunk_text": "test content",
     }
     vector_store_client = Mock()
     vector_store_client.collection_exists.return_value = True
@@ -65,11 +70,15 @@ def test_chunk_type_added_to_filter_conditions():
     )
 
     # Verify vector_store.search was called
-    assert vector_store_client.search.called, "Vector store search should have been called"
+    assert (
+        vector_store_client.search.called
+    ), "Vector store search should have been called"
 
     # Get the filter_conditions that were passed to the vector store
     call_args = vector_store_client.search.call_args
-    filter_conditions = call_args[1].get("filter_conditions", {}) if call_args[1] else {}
+    filter_conditions = (
+        call_args[1].get("filter_conditions", {}) if call_args[1] else {}
+    )
 
     # ASSERTION: filter_conditions should contain chunk_type filter
     # This will FAIL with current implementation
@@ -77,8 +86,8 @@ def test_chunk_type_added_to_filter_conditions():
 
     # Look for a condition that filters by type field
     type_filter_found = any(
-        condition.get("key") == "type" and
-        condition.get("match", {}).get("value") == "commit_message"
+        condition.get("key") == "type"
+        and condition.get("match", {}).get("value") == "commit_message"
         for condition in must_conditions
     )
 

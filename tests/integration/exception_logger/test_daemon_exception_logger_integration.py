@@ -5,7 +5,6 @@ and that exceptions are logged to .code-indexer/error_*.log files.
 """
 
 
-
 class TestDaemonExceptionLoggerIntegration:
     """Test ExceptionLogger integration with daemon service."""
 

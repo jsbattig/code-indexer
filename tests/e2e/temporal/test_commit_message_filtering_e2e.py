@@ -30,7 +30,9 @@ class TestCommitMessageFilteringE2E:
             repo_path = Path(tmpdir)
 
             # Initialize git repo
-            subprocess.run(["git", "init"], cwd=repo_path, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "init"], cwd=repo_path, check=True, capture_output=True
+            )
             subprocess.run(
                 ["git", "config", "user.email", "test@example.com"],
                 cwd=repo_path,
@@ -101,7 +103,14 @@ class TestCommitMessageFilteringE2E:
 
             # Query for "authentication" with --chunk-type commit_message
             result = subprocess.run(
-                ["cidx", "query", "authentication", "--time-range-all", "--chunk-type", "commit_message"],
+                [
+                    "cidx",
+                    "query",
+                    "authentication",
+                    "--time-range-all",
+                    "--chunk-type",
+                    "commit_message",
+                ],
                 cwd=repo_path,
                 capture_output=True,
                 text=True,
@@ -112,7 +121,11 @@ class TestCommitMessageFilteringE2E:
 
             # Parse results
             lines = result.stdout.strip().split("\n")
-            results = [line for line in lines if line and not line.startswith("#") and line.strip()]
+            results = [
+                line
+                for line in lines
+                if line and not line.startswith("#") and line.strip()
+            ]
 
             # ASSERTIONS
 
@@ -124,24 +137,33 @@ class TestCommitMessageFilteringE2E:
 
             # 2. Results should be labeled as [COMMIT MESSAGE MATCH]
             full_output = result.stdout
-            assert "[COMMIT MESSAGE MATCH]" in full_output or "[commit message match]" in full_output.lower(), (
-                f"Expected '[COMMIT MESSAGE MATCH]' label in results, but output was: {result.stdout}"
-            )
+            assert (
+                "[COMMIT MESSAGE MATCH]" in full_output
+                or "[commit message match]" in full_output.lower()
+            ), f"Expected '[COMMIT MESSAGE MATCH]' label in results, but output was: {result.stdout}"
 
             # 3. Results should contain commit message text (when not using --quiet)
-            assert "authentication" in full_output.lower() or "Add authentication module" in full_output, (
-                f"Expected 'authentication' or commit message text in results, but output was: {result.stdout}"
-            )
+            assert (
+                "authentication" in full_output.lower()
+                or "Add authentication module" in full_output
+            ), f"Expected 'authentication' or commit message text in results, but output was: {result.stdout}"
 
             # 3. Results should NOT contain file diff content
             # (File diff content like "def authenticate_user():" should NOT appear)
-            assert "def authenticate_user" not in result.stdout, (
-                f"Results should not contain file diff content, but found file code in: {result.stdout}"
-            )
+            assert (
+                "def authenticate_user" not in result.stdout
+            ), f"Results should not contain file diff content, but found file code in: {result.stdout}"
 
             # 4. Query with --chunk-type commit_diff should return DIFFERENT results
             diff_result = subprocess.run(
-                ["cidx", "query", "authentication", "--time-range-all", "--chunk-type", "commit_diff"],
+                [
+                    "cidx",
+                    "query",
+                    "authentication",
+                    "--time-range-all",
+                    "--chunk-type",
+                    "commit_diff",
+                ],
                 cwd=repo_path,
                 capture_output=True,
                 text=True,
@@ -150,11 +172,14 @@ class TestCommitMessageFilteringE2E:
             print(f"\nDiff query output: {diff_result.stdout}")
 
             # The diff query should contain file content
-            assert "def authenticate_user" in diff_result.stdout or len(diff_result.stdout.strip()) > 0, (
-                f"--chunk-type diff should return file diff content, but got: {diff_result.stdout}"
-            )
+            assert (
+                "def authenticate_user" in diff_result.stdout
+                or len(diff_result.stdout.strip()) > 0
+            ), f"--chunk-type diff should return file diff content, but got: {diff_result.stdout}"
 
-            print("\n✅ AC3 validated: --chunk-type commit_message successfully filters to commit messages only")
+            print(
+                "\n✅ AC3 validated: --chunk-type commit_message successfully filters to commit messages only"
+            )
 
 
 if __name__ == "__main__":

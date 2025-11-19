@@ -24,7 +24,9 @@ def mock_user():
 class TestListFilesBug:
     """Test list_files handler bug - wrong method parameters."""
 
-    async def test_list_files_expects_query_params_object_not_primitives(self, mock_user):
+    async def test_list_files_expects_query_params_object_not_primitives(
+        self, mock_user
+    ):
         """
         BUG FIX VERIFICATION: Handler must pass FileListQueryParams object.
 
@@ -49,8 +51,8 @@ class TestListFilesBug:
             # Check if query_params is passed (positional or keyword)
             if len(args) >= 3:
                 received_query_params = args[2]
-            elif 'query_params' in kwargs:
-                received_query_params = kwargs['query_params']
+            elif "query_params" in kwargs:
+                received_query_params = kwargs["query_params"]
             # Return valid response
             return {"files": [], "pagination": {"page": 1, "total": 0}}
 
@@ -63,14 +65,17 @@ class TestListFilesBug:
             assert mock_file_service.list_files.called
 
             # Verify query_params is FileListQueryParams instance
-            assert received_query_params is not None, \
-                "Handler must pass query_params parameter"
-            assert isinstance(received_query_params, FileListQueryParams), \
-                f"query_params must be FileListQueryParams instance, got {type(received_query_params).__name__}"
+            assert (
+                received_query_params is not None
+            ), "Handler must pass query_params parameter"
+            assert isinstance(
+                received_query_params, FileListQueryParams
+            ), f"query_params must be FileListQueryParams instance, got {type(received_query_params).__name__}"
 
             # Verify query_params has expected values
-            assert received_query_params.path_pattern == "src/", \
-                f"Expected path_pattern='src/', got '{received_query_params.path_pattern}'"
+            assert (
+                received_query_params.path_pattern == "src/"
+            ), f"Expected path_pattern='src/', got '{received_query_params.path_pattern}'"
 
 
 @pytest.mark.asyncio
@@ -86,14 +91,18 @@ class TestGetFileContentBug:
         from code_indexer.server.services.file_service import file_service
 
         # Verify method now exists
-        assert hasattr(file_service, 'get_file_content'), \
-            "FileListingService should have get_file_content method (bug is fixed)"
+        assert hasattr(
+            file_service, "get_file_content"
+        ), "FileListingService should have get_file_content method (bug is fixed)"
 
         # Verify it's callable
-        assert callable(file_service.get_file_content), \
-            "get_file_content should be callable"
+        assert callable(
+            file_service.get_file_content
+        ), "get_file_content should be callable"
 
-    async def test_get_file_content_handler_needs_working_service_method(self, mock_user):
+    async def test_get_file_content_handler_needs_working_service_method(
+        self, mock_user
+    ):
         """
         Test that handler can call get_file_content successfully when implemented.
 
@@ -112,7 +121,7 @@ class TestGetFileContentBug:
         mock_file_service.get_file_content = Mock(
             return_value={
                 "content": "def main():\n    pass",
-                "metadata": {"size": 100, "language": "python"}
+                "metadata": {"size": 100, "language": "python"},
             }
         )
 
@@ -134,7 +143,7 @@ class TestGetFileContentBug:
             mock_file_service.get_file_content.assert_called_once_with(
                 repository_alias="my-repo",
                 file_path="src/main.py",
-                username=mock_user.username
+                username=mock_user.username,
             )
 
 
@@ -157,14 +166,18 @@ class TestGetRepositoryStatisticsBug:
         source = inspect.getsource(service._get_repository_path)
 
         # Verify it now uses ActivatedRepoManager (bug is fixed)
-        assert "ActivatedRepoManager" in source, \
-            "RepositoryStatsService should use ActivatedRepoManager (bug is fixed)"
+        assert (
+            "ActivatedRepoManager" in source
+        ), "RepositoryStatsService should use ActivatedRepoManager (bug is fixed)"
 
         # Verify it does NOT use GoldenRepoManager anymore
-        assert "GoldenRepoManager" not in source, \
-            "RepositoryStatsService should not use GoldenRepoManager anymore"
+        assert (
+            "GoldenRepoManager" not in source
+        ), "RepositoryStatsService should not use GoldenRepoManager anymore"
 
-    async def test_get_repository_statistics_handler_needs_username_parameter(self, mock_user):
+    async def test_get_repository_statistics_handler_needs_username_parameter(
+        self, mock_user
+    ):
         """
         Test that handler can successfully call get_repository_stats with username.
 
@@ -184,7 +197,10 @@ class TestGetRepositoryStatisticsBug:
         # Service should accept username parameter
         mock_stats_service.get_repository_stats = Mock(return_value=mock_response)
 
-        with patch("code_indexer.server.services.stats_service.stats_service", mock_stats_service):
+        with patch(
+            "code_indexer.server.services.stats_service.stats_service",
+            mock_stats_service,
+        ):
             result = await get_repository_statistics(params, mock_user)
 
             # Parse MCP response
@@ -200,9 +216,9 @@ class TestGetRepositoryStatisticsBug:
             if call_args.args and len(call_args.args) > 1:
                 # Username passed as positional arg
                 assert True
-            elif 'username' in call_args.kwargs:
+            elif "username" in call_args.kwargs:
                 # Username passed as keyword arg
-                assert call_args.kwargs['username'] == mock_user.username
+                assert call_args.kwargs["username"] == mock_user.username
             else:
                 pytest.fail(
                     f"get_repository_stats should be called with username parameter. "

@@ -46,6 +46,7 @@ class TestAddGoldenRepoParameterMapping:
             assert result["content"][0]["type"] == "text"
             response_content = result["content"][0]["text"]
             import json
+
             response_data = json.loads(response_content)
             assert response_data["success"] is True
             assert response_data["job_id"] == "test-job-id-12345"
