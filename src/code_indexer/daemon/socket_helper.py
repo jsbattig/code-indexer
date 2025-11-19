@@ -95,8 +95,9 @@ def create_mapping_file(repo_path: Path, socket_path: Path) -> None:
     Creates a .repo-path file alongside the socket that contains
     the full path to the repository for debugging purposes.
 
-    CRITICAL: Silently ignores permission errors in multi-user environments.
-    Mapping files are for debugging only, not critical for daemon operation.
+    CRITICAL: Sets mode 664 (group writable) for multi-user /tmp/cidx/ with setgid.
+    When /tmp/cidx has setgid bit, new files inherit the directory's group,
+    and mode 664 allows group members to read/write the file.
 
     Args:
         repo_path: Path to repository
@@ -104,9 +105,18 @@ def create_mapping_file(repo_path: Path, socket_path: Path) -> None:
     """
     mapping_path = socket_path.with_suffix('.repo-path')
     try:
-        mapping_path.write_text(str(repo_path.resolve()))
+        # CRITICAL: Set umask to 002 so files are created with group-write by default
+        # This ensures write_text() creates the file as 664 (rw-rw-r--) instead of 644
+        old_umask = os.umask(0o002)
+        try:
+            mapping_path.write_text(str(repo_path.resolve()))
+            # Explicitly set permissions to be sure (in case umask didn't work)
+            mapping_path.chmod(0o664)
+        finally:
+            # Always restore original umask
+            os.umask(old_umask)
     except (PermissionError, OSError):
-        # Mapping file write failed (likely exists from different user)
+        # Mapping file write/chmod failed (may exist from different user with restrictive perms)
         # This is non-critical - mapping is only for debugging
         pass
 
